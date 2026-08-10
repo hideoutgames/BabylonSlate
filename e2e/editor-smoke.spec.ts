@@ -6,24 +6,33 @@ test.describe("BabylonSlate editor smoke", () => {
   }) => {
     await page.goto("/?test=1");
 
-    await expect(page.getByTestId("editor-toolbar")).toBeVisible();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("test-mode-badge")).toHaveText("Test mode");
+    await expect(page.getByTestId("project-settings")).toBeVisible();
+
+    await expect(
+      page.locator('[data-testid="document-tab"][data-document-kind="content-browser"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-testid="document-tab"][data-document-kind="content-browser"] [data-testid="document-tab-close"]'),
+    ).toHaveCount(0);
 
     await page.getByTestId("open-project").click();
     await expect(page.getByTestId("project-name")).toContainText(
       "TestProject.babylonslate",
     );
 
-    await expect(page.getByTestId("document-tab-bar")).toBeVisible();
-    await expect(page.getByTestId("document-tab")).toHaveCount(2);
-    await expect(page.getByTestId("document-tab-active")).toBeVisible();
+    await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+
+    await page.getByTestId("content-item-scenes/main.scene.json").click();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
     await expect(page.getByText("Viewport")).toBeVisible();
 
     await page
-      .locator('[data-testid="document-tab"][data-document-kind="graph"]')
+      .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
       .getByTestId("document-tab-select")
       .click();
+    await page.getByTestId("content-item-graphs/main.graph.json").click();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     await expect(
       page.getByTestId("document-workspace-graph").getByText("Graph", {
@@ -32,9 +41,6 @@ test.describe("BabylonSlate editor smoke", () => {
     ).toBeVisible();
 
     await page.getByTestId("save-project").click();
-    await expect(
-      page.getByTestId("document-workspace-graph").locator("canvas"),
-    ).toHaveCount(0);
 
     await page
       .locator('[data-testid="document-tab"][data-document-kind="scene"]')

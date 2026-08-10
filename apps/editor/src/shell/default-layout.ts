@@ -1,22 +1,12 @@
 import type { DockviewApi } from "dockview";
-import type { DocumentKind } from "@babylonslate/shared";
+
+export type DockviewDocumentKind = "scene" | "graph";
 
 export function createSceneDefaultLayout(api: DockviewApi): void {
   const viewport = api.addPanel({
     id: "viewport",
     component: "viewport",
     title: "Viewport",
-  });
-
-  api.addPanel({
-    id: "content",
-    component: "content",
-    title: "Content",
-    position: {
-      referencePanel: viewport,
-      direction: "left",
-    },
-    initialWidth: 260,
   });
 
   api.addPanel({
@@ -41,17 +31,6 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
   });
 
   api.addPanel({
-    id: "content",
-    component: "content",
-    title: "Content",
-    position: {
-      referencePanel: graph,
-      direction: "left",
-    },
-    initialWidth: 260,
-  });
-
-  api.addPanel({
     id: "inspector",
     component: "inspector",
     title: "Inspector",
@@ -67,7 +46,7 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
 
 export function createDefaultLayoutForKind(
   api: DockviewApi,
-  kind: DocumentKind,
+  kind: DockviewDocumentKind,
 ): void {
   if (kind === "scene") {
     createSceneDefaultLayout(api);

@@ -70,7 +70,7 @@ export class ProjectService {
   }
 
   async loadDocument(
-    kind: DocumentKind,
+    kind: Exclude<DocumentKind, "content-browser">,
     path: string,
   ): Promise<SerializedScene | SerializedGraph> {
     if (kind === "scene") {
@@ -80,7 +80,7 @@ export class ProjectService {
   }
 
   async saveDocument(
-    kind: DocumentKind,
+    kind: Exclude<DocumentKind, "content-browser">,
     path: string,
     content: SerializedScene | SerializedGraph,
   ): Promise<void> {

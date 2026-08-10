@@ -3,7 +3,7 @@ import {
   type DockviewApi,
   type DockviewReadyEvent,
 } from "dockview";
-import type { DocumentKind } from "@babylonslate/shared";
+import type { DockviewDocumentKind } from "./default-layout";
 import "dockview/dist/styles/dockview.css";
 import "./dockview-theme.css";
 import { useCallback, useRef } from "react";
@@ -12,7 +12,7 @@ import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
 
 export interface DockviewShellProps {
-  documentKind: DocumentKind;
+  documentKind: DockviewDocumentKind;
   onReady?: (api: DockviewApi) => void;
   initialLayout?: Record<string, unknown> | null;
 }
