@@ -37,10 +37,44 @@ MyGame.babylonslate/
 ```bash
 pnpm install
 pnpm dev          # start Vite dev server
-pnpm verify       # typecheck + lint + test
+pnpm verify       # typecheck + lint + unit tests + Playwright E2E
+pnpm test         # unit tests only
+pnpm test:e2e     # Playwright smoke tests (CI runs this)
 ```
 
-## iOS (Capacitor)
+## Testing on iPad (no Mac)
+
+Automated tests run in GitHub Actions — you do not need a Mac or local terminal.
+
+### GitHub Pages preview
+
+After pushes to `main`, the app deploys to:
+
+**https://hideoutgames.github.io/BabylonSlate/?test=1**
+
+Open that URL in **Safari on your iPad**. Test mode skips folder prompts and uses a fixed test project.
+
+### Manual checklist (~5 min)
+
+1. Toolbar and **Test mode** badge visible
+2. Dockview tabs: Viewport, Graph, Hierarchy, Inspector
+3. Spinning cube in Viewport
+4. Tap **Open** — project name shows `TestProject.babylonslate` (no prompt)
+5. Tap **Save** — no errors
+6. Long-press a tab header to drag panels
+7. Pan in Graph panel; touch-orbit in Viewport
+
+### Automated coverage
+
+| Layer | Tool | What it tests |
+|-------|------|----------------|
+| BabylonJS engine | Vitest + NullEngine | Scene loading, mesh creation (no WebGL) |
+| Graph, storage, project | Vitest | Serialization, command bus, save/load |
+| App shell | Playwright (CI) | Toolbar, Open/Save, canvas mount |
+
+iOS Capacitor / Files App testing is deferred until Mac/Xcode is available.
+
+## iOS (Capacitor) — requires Mac
 
 ```bash
 cd apps/editor

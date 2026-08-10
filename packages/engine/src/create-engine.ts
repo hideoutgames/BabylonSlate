@@ -1,12 +1,7 @@
-import {
-  Color3,
-  Color4,
-  Engine,
-  MeshBuilder,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Color3, Color4, Engine, Scene } from "@babylonjs/core";
 import type { SerializedScene } from "@babylonslate/shared";
+import { createDefaultScene } from "@babylonslate/shared";
+import { applySceneToBabylonScene } from "./scene-loader";
 
 export interface EngineHandle {
   engine: Engine;
@@ -25,22 +20,10 @@ export function createEngine(canvas: HTMLCanvasElement): EngineHandle {
   scene.clearColor = new Color4(0.08, 0.09, 0.11, 1);
 
   const loadScene = (sceneData: SerializedScene) => {
-    scene.meshes.slice().forEach((mesh) => {
-      if (mesh.name !== "__root__") mesh.dispose();
-    });
-
-    for (const meshDef of sceneData.meshes) {
-      if (meshDef.type === "box") {
-        const box = MeshBuilder.CreateBox(meshDef.id, { size: 1.5 }, scene);
-        box.position = new Vector3(...meshDef.position);
-      }
-    }
+    applySceneToBabylonScene(scene, sceneData);
   };
 
-  loadScene({
-    name: "Main",
-    meshes: [{ id: "cube", type: "box", position: [0, 0, 0] }],
-  });
+  loadScene(createDefaultScene());
 
   const resize = () => engine.resize();
 
