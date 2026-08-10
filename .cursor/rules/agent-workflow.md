@@ -6,6 +6,11 @@
 - Add or update tests for new behavior in `packages/*`.
 - Do not open PRs with failing CI.
 
+## Documentation
+
+- Follow `.cursor/rules/docs.md` for all documentation requirements.
+- Update `docs/` in the same change as any behavioral, architectural, or API work — work is not complete without it.
+
 ## Architecture
 
 - `packages/engine` must not import React.

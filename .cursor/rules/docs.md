@@ -1,0 +1,31 @@
+# Documentation Rules
+
+## Mandatory updates
+
+- Any change that adds, removes, or alters behavior, architecture, public APIs, data formats, or integration points **must** include `docs/` updates in the **same branch/PR**.
+- Documentation is part of the definition of done — on par with `pnpm verify` and tests.
+- Never defer documentation to a follow-up task or PR.
+
+## Location and scope
+
+- All project documentation lives in `docs/` at the repository root.
+- **Engine is the priority** (`packages/engine`: scene lifecycle, loaders, command-bus integration, Babylon abstractions).
+- Also document meaningful changes in other packages (`graph`, `shared`, `storage`, `ui`) and `apps/editor` when they affect how the system works.
+
+## Style
+
+- Keep entries **short and concise**: bullet lists, brief tables, minimal prose.
+- Prefer updating an existing doc over creating a duplicate.
+- Document *what* changed and *why it matters* — not line-by-line implementation dumps.
+
+## When to add vs update
+
+- **New feature or subsystem** → add or extend the relevant doc under `docs/`.
+- **Changed behavior or API** → update the affected doc in the same change.
+- **Removed feature** → remove or strike-through obsolete sections; do not leave stale docs.
+
+## Structure (guidance for future docs)
+
+- `docs/engine/` — BabylonSlate engine internals
+- `docs/architecture.md` — monorepo boundaries, command bus, package dependencies
+- Top-level topic files as needed; avoid deep nesting without reason
