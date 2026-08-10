@@ -1,0 +1,71 @@
+---
+alwaysApply: true
+---
+
+# BabylonSlate Agent Rules
+
+## Verification
+
+- Always run `pnpm verify` before considering work complete.
+- Add or update tests for new behavior in `packages/*`.
+- Do not open PRs with failing CI.
+
+## Documentation
+
+- Follow `.cursor/rules/docs.mdc` for all documentation requirements.
+- Update `docs/` in the same change as any behavioral, architectural, or API work — work is not complete without it.
+
+## Architecture
+
+- `packages/engine` must not import React.
+- UI communicates with Babylon via `engineCommandBus` in `@babylonslate/shared`.
+- Graph execution emits commands; it does not touch Babylon directly.
+- File access goes through `ProjectStorage` / `createStorage()` — never call Capacitor plugins directly from UI panels.
+
+## shadcn/ui
+
+- Follow `.cursor/skills/shadcn/SKILL.md` for all UI work.
+- Use `@babylonslate/ui` components; run `npx shadcn@latest add <component> -c apps/editor` to add new ones.
+
+## BabylonJS
+
+- Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work.
+
+## Git: commit and push
+
+**Default:** commit and push without waiting for explicit user permission whenever you have meaningful changes.
+
+- Commit after each logical unit of work — not only at the end of a task.
+- Commit before running verification when there are uncommitted changes.
+- End every agent turn that modified files with committed and pushed changes on the feature branch.
+- Use clear, descriptive commit messages in complete sentences.
+- Push after every commit with `git push -u origin <branch>`.
+- Feature branch naming: `cursor/<descriptive-name>-<suffix>` (e.g. `cursor/fix-viewport-80c9`).
+
+## Git: merge to main
+
+**Default:** merge to `main` automatically when all merge gates pass. Do not ask "should I merge?" when gates pass — merge. Leaving completed work stranded on `cursor/*` branches counts as incomplete work.
+
+### Merge gates (all required)
+
+- Assigned task is complete (not exploratory or blocked on user input).
+- `pnpm verify` passes locally.
+- PR CI is green (`.github/workflows/verify.yml`).
+- No unresolved merge conflicts.
+- User has **not** explicitly asked to hold the PR open, keep it draft, or skip merge.
+- Session is not read-only (e.g. Plan mode).
+
+### When merge is not reasonable (exceptions)
+
+- Incomplete task, ambiguous requirements, or blocked on user decision.
+- CI failures that cannot be fixed in-session.
+- Merge conflicts needing human judgment.
+- User explicitly requested "PR only", "don't merge", or "wait for review".
+
+### Workflow
+
+1. Open or update a PR targeting `main` (use `ManagePullRequest`, not `gh` for create/update/merge).
+2. Mark draft PRs **ready** once local verification passes.
+3. Fix any failing CI before merging; push fixes until CI is green.
+4. **Merge the PR into `main` automatically** when all merge gates pass.
+5. Prefer merge commits (not squash) when the PR contains multiple logical commits, unless the user specifies otherwise.
