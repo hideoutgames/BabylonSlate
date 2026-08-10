@@ -1,5 +1,6 @@
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
+import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { DockviewShell } from "../shell/dockview-shell";
 
 export function DocumentWorkspace() {
@@ -24,6 +25,18 @@ export function DocumentWorkspace() {
         const doc = openDocuments.find((entry) => entry.id === id);
         if (!doc) return null;
         const active = id === activeDocumentId;
+
+        if (doc.ref.kind === "content-browser") {
+          return (
+            <div
+              key={id}
+              className={active ? "flex min-h-0 flex-1" : "hidden"}
+              data-testid="document-workspace-content-browser"
+            >
+              <ContentBrowserWorkspace />
+            </div>
+          );
+        }
 
         return (
           <DocumentWorkspaceProvider key={id} documentId={id}>

@@ -1,23 +1,28 @@
 .dockview-theme-babylonslate {
   --dv-background-color: var(--background);
   --dv-group-view-background-color: var(--background);
-  --dv-tabs-and-actions-container-background-color: var(--muted);
+  --dv-tabs-and-actions-container-background-color: var(--card);
   --dv-tabs-and-actions-container-font-size: 13px;
-  --dv-activegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--chrome-tab-active);
   --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--muted);
   --dv-tab-divider-color: var(--border);
   --dv-separator-border: 1px solid var(--border);
   --dv-paneview-header-border-color: var(--border);
-  --dv-drag-over-background-color: color-mix(in oklch, var(--primary) 20%, transparent);
-  --dv-drag-over-border-color: var(--primary);
+  --dv-drag-over-background-color: color-mix(in oklch, var(--chrome-tab-accent) 20%, transparent);
+  --dv-drag-over-border-color: var(--chrome-tab-accent);
 }
 
 .dockview-theme-babylonslate .dv-tab {
   min-height: 44px;
   padding-inline: 12px;
+  border-radius: 0;
 }
 
 .dockview-theme-babylonslate .dv-content-container {
   background: var(--background);
+}
+
+.dockview-theme-babylonslate .dv-active-tab {
+  box-shadow: inset 0 -2px 0 var(--chrome-tab-accent);
 }

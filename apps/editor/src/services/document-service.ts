@@ -1,15 +1,16 @@
 import type {
-  DocumentKind,
   DocumentRef,
   ProjectLayouts,
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/shared";
 import {
+  CONTENT_BROWSER_ID,
+  CONTENT_BROWSER_REF,
+  createDocumentRef,
   documentId,
+  isContentBrowserId,
   labelFromPath,
-  MAIN_GRAPH_FILE,
-  MAIN_SCENE_FILE,
 } from "@babylonslate/shared";
 import type { ProjectDocument } from "@babylonslate/shared";
 import type { ProjectService } from "./project-service";
@@ -17,7 +18,7 @@ import type { ProjectService } from "./project-service";
 export interface OpenDocument {
   id: string;
   ref: DocumentRef;
-  content: SerializedScene | SerializedGraph;
+  content: SerializedScene | SerializedGraph | null;
   layout: Record<string, unknown> | null;
   dirty: boolean;
 }
@@ -26,19 +27,6 @@ export interface DocumentRegistryState {
   openDocuments: Map<string, OpenDocument>;
   tabOrder: string[];
   activeDocumentId: string | null;
-}
-
-export function createDocumentRef(
-  kind: DocumentKind,
-  path: string,
-  content?: SerializedScene | SerializedGraph,
-): DocumentRef {
-  const baseLabel =
-    kind === "scene" && content && "name" in content
-      ? content.name
-      : labelFromPath(path);
-  const label = kind === "scene" ? `${baseLabel} Scene` : `${baseLabel} Graph`;
-  return { kind, path, label };
 }
 
 export class DocumentService {
@@ -58,6 +46,12 @@ export class DocumentService {
       .filter((doc): doc is OpenDocument => doc !== undefined);
   }
 
+  getClosableDocumentsOrdered(): OpenDocument[] {
+    return this.getOpenDocumentsOrdered().filter(
+      (doc) => doc.ref.kind !== "content-browser",
+    );
+  }
+
   getDocument(id: string): OpenDocument | undefined {
     return this.state.openDocuments.get(id);
   }
@@ -67,9 +61,37 @@ export class DocumentService {
     return this.state.openDocuments.get(this.state.activeDocumentId);
   }
 
+  ensureContentBrowserTab(): void {
+    if (this.state.openDocuments.has(CONTENT_BROWSER_ID)) {
+      this.pinContentBrowserFirst();
+      return;
+    }
+
+    const entry: OpenDocument = {
+      id: CONTENT_BROWSER_ID,
+      ref: CONTENT_BROWSER_REF,
+      content: null,
+      layout: null,
+      dirty: false,
+    };
+
+    this.state.openDocuments.set(CONTENT_BROWSER_ID, entry);
+    this.state.tabOrder.unshift(CONTENT_BROWSER_ID);
+    if (!this.state.activeDocumentId) {
+      this.state.activeDocumentId = CONTENT_BROWSER_ID;
+    }
+  }
+
+  private pinContentBrowserFirst(): void {
+    this.state.tabOrder = [
+      CONTENT_BROWSER_ID,
+      ...this.state.tabOrder.filter((id) => id !== CONTENT_BROWSER_ID),
+    ];
+  }
+
   async initializeFromProject(
     projectService: ProjectService,
-    document: ProjectDocument,
+    _document: ProjectDocument,
     layouts: ProjectLayouts,
   ): Promise<void> {
     this.state = {
@@ -78,18 +100,17 @@ export class DocumentService {
       activeDocumentId: null,
     };
 
-    const savedOrder =
-      layouts.tabOrder.length > 0
-        ? layouts.tabOrder
-        : [
-            documentId({ kind: "scene", path: document.scenes[0] ?? MAIN_SCENE_FILE }),
-            documentId({ kind: "graph", path: document.graphs[0] ?? MAIN_GRAPH_FILE }),
-          ];
+    this.ensureContentBrowserTab();
+
+    const savedOrder = layouts.tabOrder.filter(
+      (id) => !isContentBrowserId(id) && id.includes(":"),
+    );
 
     for (const id of savedOrder) {
-      const [kind, ...pathParts] = id.split(":");
+      const colonIndex = id.indexOf(":");
+      const kind = id.slice(0, colonIndex);
+      const path = id.slice(colonIndex + 1);
       if (kind !== "scene" && kind !== "graph") continue;
-      const path = pathParts.join(":");
       await this.openDocument(
         projectService,
         { kind, path, label: labelFromPath(path) },
@@ -98,26 +119,14 @@ export class DocumentService {
       );
     }
 
-    if (this.state.tabOrder.length === 0) {
-      const scenePath = document.scenes[0] ?? MAIN_SCENE_FILE;
-      const graphPath = document.graphs[0] ?? MAIN_GRAPH_FILE;
-      await this.openDocument(
-        projectService,
-        { kind: "scene", path: scenePath, label: labelFromPath(scenePath) },
-        layouts.documents[documentId({ kind: "scene", path: scenePath })] ?? null,
-        false,
-      );
-      await this.openDocument(
-        projectService,
-        { kind: "graph", path: graphPath, label: labelFromPath(graphPath) },
-        layouts.documents[documentId({ kind: "graph", path: graphPath })] ?? null,
-        false,
-      );
-    }
+    this.pinContentBrowserFirst();
 
-    const sceneTab = this.state.tabOrder.find((id) => id.startsWith("scene:"));
-    this.state.activeDocumentId =
-      sceneTab ?? this.state.tabOrder[0] ?? null;
+    const savedActive = layouts.activeDocumentId;
+    if (savedActive && this.state.openDocuments.has(savedActive)) {
+      this.state.activeDocumentId = savedActive;
+    } else {
+      this.state.activeDocumentId = CONTENT_BROWSER_ID;
+    }
   }
 
   async openDocument(
@@ -126,6 +135,14 @@ export class DocumentService {
     layout: Record<string, unknown> | null = null,
     setActive = true,
   ): Promise<string> {
+    if (ref.kind === "content-browser") {
+      this.ensureContentBrowserTab();
+      if (setActive) {
+        this.state.activeDocumentId = CONTENT_BROWSER_ID;
+      }
+      return CONTENT_BROWSER_ID;
+    }
+
     const id = documentId(ref);
     const existing = this.state.openDocuments.get(id);
     if (existing) {
@@ -148,6 +165,7 @@ export class DocumentService {
 
     this.state.openDocuments.set(id, entry);
     this.state.tabOrder.push(id);
+    this.pinContentBrowserFirst();
     if (setActive) {
       this.state.activeDocumentId = id;
     }
@@ -155,11 +173,16 @@ export class DocumentService {
   }
 
   closeDocument(id: string): void {
+    if (isContentBrowserId(id)) {
+      return;
+    }
+
     this.state.openDocuments.delete(id);
     this.state.tabOrder = this.state.tabOrder.filter((tabId) => tabId !== id);
     if (this.state.activeDocumentId === id) {
-      this.state.activeDocumentId = this.state.tabOrder[0] ?? null;
+      this.state.activeDocumentId = this.state.tabOrder[0] ?? CONTENT_BROWSER_ID;
     }
+    this.pinContentBrowserFirst();
   }
 
   setActiveDocument(id: string): void {
@@ -168,10 +191,18 @@ export class DocumentService {
     }
   }
 
+  reorderClosableTabs(fromClosableIndex: number, toClosableIndex: number): void {
+    const fromIndex = fromClosableIndex + 1;
+    const toIndex = toClosableIndex + 1;
+    this.reorderTabs(fromIndex, toIndex);
+  }
+
   reorderTabs(fromIndex: number, toIndex: number): void {
+    if (fromIndex < 1 || toIndex < 1) {
+      return;
+    }
+
     if (
-      fromIndex < 0 ||
-      toIndex < 0 ||
       fromIndex >= this.state.tabOrder.length ||
       toIndex >= this.state.tabOrder.length ||
       fromIndex === toIndex
@@ -183,6 +214,7 @@ export class DocumentService {
     const [moved] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, moved);
     this.state.tabOrder = next;
+    this.pinContentBrowserFirst();
   }
 
   updateScene(id: string, scene: SerializedScene): void {
@@ -190,7 +222,7 @@ export class DocumentService {
     if (!doc || doc.ref.kind !== "scene") return;
     doc.content = scene;
     doc.dirty = true;
-    doc.ref = { ...doc.ref, label: scene.name };
+    doc.ref = { ...doc.ref, label: `${scene.name} Scene` };
   }
 
   updateGraph(id: string, graph: SerializedGraph): void {
@@ -209,7 +241,9 @@ export class DocumentService {
 
   markAllClean(): void {
     for (const doc of this.state.openDocuments.values()) {
-      doc.dirty = false;
+      if (doc.ref.kind !== "content-browser") {
+        doc.dirty = false;
+      }
     }
   }
 
@@ -223,10 +257,13 @@ export class DocumentService {
     return {
       documents,
       tabOrder: [...this.state.tabOrder],
+      activeDocumentId: this.state.activeDocumentId,
     };
   }
 
   getDirtyDocuments(): OpenDocument[] {
-    return [...this.state.openDocuments.values()].filter((doc) => doc.dirty);
+    return [...this.state.openDocuments.values()].filter(
+      (doc) => doc.dirty && doc.ref.kind !== "content-browser",
+    );
   }
 }

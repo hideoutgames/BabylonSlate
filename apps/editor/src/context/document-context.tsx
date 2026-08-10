@@ -3,18 +3,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import type {
-  DocumentKind,
-  DocumentRef,
-  ProjectDocument,
-  SerializedGraph,
-  SerializedScene,
-} from "@babylonslate/shared";
+import type { SerializedGraph, SerializedScene } from "@babylonslate/shared";
+import type { DocumentRef, ProjectDocument } from "@babylonslate/shared";
 import { documentId } from "@babylonslate/shared";
 import { createStorage } from "@babylonslate/storage";
 import {
@@ -35,11 +31,16 @@ interface DocumentContextValue {
   closeDocument: (id: string) => void;
   setActiveDocument: (id: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
+  reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
   updateScene: (id: string, scene: SerializedScene) => void;
   updateGraph: (id: string, graph: SerializedGraph) => void;
   registerDockviewApi: (id: string, api: DockviewApi) => void;
   captureActiveLayout: () => void;
-  getAvailableDocuments: () => Array<{ kind: DocumentKind; path: string; label: string }>;
+  getAvailableDocuments: () => Array<{
+    kind: "scene" | "graph";
+    path: string;
+    label: string;
+  }>;
 }
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
@@ -60,6 +61,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
 
   const documentService = documentServiceRef.current;
+
+  useEffect(() => {
+    documentService.ensureContentBrowserTab();
+    bump();
+  }, [bump, documentService]);
 
   const captureLayoutForId = useCallback(
     (id: string) => {
@@ -94,7 +100,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
     for (const doc of dirtyDocs) {
-      await projectService.saveDocument(doc.ref.kind, doc.ref.path, doc.content);
+      if (doc.ref.kind === "scene" || doc.ref.kind === "graph") {
+        await projectService.saveDocument(
+          doc.ref.kind,
+          doc.ref.path,
+          doc.content as SerializedScene | SerializedGraph,
+        );
+      }
     }
     const layouts = documentService.buildLayouts();
     await projectService.saveProject(projectDocument, layouts);
@@ -138,6 +150,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, captureLayoutForId, documentService],
   );
 
+  const reorderClosableTabs = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      documentService.reorderClosableTabs(fromIndex, toIndex);
+      bump();
+    },
+    [bump, documentService],
+  );
+
   const reorderTabs = useCallback(
     (fromIndex: number, toIndex: number) => {
       documentService.reorderTabs(fromIndex, toIndex);
@@ -177,8 +197,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (!projectDocument) return [];
     const { tabOrder } = documentService.getState();
     const openIds = new Set(tabOrder);
-    const available: Array<{ kind: DocumentKind; path: string; label: string }> =
-      [];
+    const available: Array<{
+      kind: "scene" | "graph";
+      path: string;
+      label: string;
+    }> = [];
 
     for (const path of projectDocument.scenes) {
       const id = documentId({ kind: "scene", path });
@@ -208,6 +231,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       closeDocument,
       setActiveDocument,
       reorderTabs,
+      reorderClosableTabs,
       updateScene,
       updateGraph,
       registerDockviewApi,
@@ -224,6 +248,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       closeDocument,
       setActiveDocument,
       reorderTabs,
+      reorderClosableTabs,
       updateScene,
       updateGraph,
       registerDockviewApi,
