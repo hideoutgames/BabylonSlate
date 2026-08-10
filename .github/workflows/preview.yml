@@ -48,19 +48,35 @@ jobs:
   smoke:
     needs: deploy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Verify GitHub Pages deployment
+      - name: Verify GitHub Pages source is GitHub Actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build_type=$(gh api "repos/${{ github.repository }}/pages" --jq .build_type)
+          if [ "$build_type" != "workflow" ]; then
+            source_branch=$(gh api "repos/${{ github.repository }}/pages" --jq -r '.source.branch // "unknown"')
+            echo "::error::GitHub Pages is using legacy branch deployment (build_type=$build_type, branch=$source_branch)."
+            echo "The Preview workflow deploys the editor, but Pages is still serving Jekyll-rendered README.md from the repo root."
+            echo "Fix: Settings → Pages → Build and deployment → Source → GitHub Actions"
+            echo "https://github.com/${{ github.repository }}/settings/pages"
+            exit 1
+          fi
+      - name: Verify GitHub Pages deployment serves the editor
         run: |
           url="https://hideoutgames.github.io/BabylonSlate/"
           for attempt in 1 2 3 4 5; do
             status=$(curl -s -o /tmp/pages.html -w "%{http_code}" "$url")
-            if [ "$status" = "200" ] && grep -q "BabylonSlate" /tmp/pages.html; then
+            if [ "$status" = "200" ] && grep -q 'id="root"' /tmp/pages.html && ! grep -q 'Jekyll v' /tmp/pages.html; then
               echo "Pages deployment verified at $url"
               exit 0
             fi
             echo "Attempt $attempt: status=$status, retrying in 15s..."
             sleep 15
           done
-          echo "Pages smoke check failed — ensure GitHub Pages is enabled with GitHub Actions source:"
+          echo "Pages smoke check failed — the site is not serving the built editor."
+          echo "Ensure GitHub Pages source is GitHub Actions (not Deploy from a branch):"
           echo "https://github.com/hideoutgames/BabylonSlate/settings/pages"
           exit 1
