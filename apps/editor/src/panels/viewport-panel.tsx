@@ -1,14 +1,20 @@
 import type { IDockviewPanelProps } from "dockview";
 import { useEffect, useRef } from "react";
 import { createEngine, type EngineHandle } from "@babylonslate/engine";
-import { engineCommandBus } from "@babylonslate/shared";
-import { useProject } from "../context/project-context";
+import { engineCommandBus, type SerializedScene } from "@babylonslate/shared";
+import { useDocuments } from "../context/document-context";
+import { useDocumentWorkspace } from "../context/document-workspace-context";
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
-  const { projectState } = useProject();
+  const { documentId } = useDocumentWorkspace();
+  const { openDocuments } = useDocuments();
+
+  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const scene =
+    doc?.ref.kind === "scene" ? (doc.content as SerializedScene) : null;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -37,10 +43,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, []);
 
   useEffect(() => {
-    if (projectState?.scene && engineRef.current) {
-      engineRef.current.loadScene(projectState.scene);
+    if (scene && engineRef.current) {
+      engineRef.current.loadScene(scene);
     }
-  }, [projectState?.scene]);
+  }, [scene]);
 
   return (
     <div className="h-full w-full bg-background">

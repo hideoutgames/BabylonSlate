@@ -1,16 +1,27 @@
 import type { IDockviewPanelProps } from "dockview";
 import { GraphEditor } from "@babylonslate/graph";
-import { createDefaultGraph } from "@babylonslate/shared";
-import { useProject } from "../context/project-context";
+import { createDefaultGraph, type SerializedGraph } from "@babylonslate/shared";
+import { useDocuments } from "../context/document-context";
+import { useDocumentWorkspace } from "../context/document-workspace-context";
 
 export function GraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { projectState, updateGraph } = useProject();
-  const graph = projectState?.graph ?? createDefaultGraph();
+  const { documentId } = useDocumentWorkspace();
+  const { openDocuments, updateGraph } = useDocuments();
+
+  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const graph =
+    doc?.ref.kind === "graph"
+      ? (doc.content as SerializedGraph)
+      : createDefaultGraph();
 
   return (
     <div className="h-full w-full">
-      <GraphEditor initialGraph={graph} onChange={updateGraph} />
+      <GraphEditor
+        key={documentId}
+        initialGraph={graph}
+        onChange={(next) => updateGraph(documentId, next)}
+      />
     </div>
   );
 }

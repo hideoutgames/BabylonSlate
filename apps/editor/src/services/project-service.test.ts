@@ -10,11 +10,11 @@ describe("project round-trip", () => {
     const service = new ProjectService(storage);
     await storage.pickProjectFolder();
 
-    const state = await service.loadCurrentProject();
-    expect(state.document.metadata.name).toBeTruthy();
-    expect(state.graph.nodes.length).toBeGreaterThan(0);
+    const { document, layouts } = await service.loadCurrentProject();
+    expect(document.metadata.name).toBeTruthy();
+    expect(layouts.tabOrder).toEqual([]);
 
-    await service.saveProject(state);
+    await service.saveProject(document, layouts);
 
     const exists = await storage.exists(PROJECT_FILE);
     expect(exists).toBe(true);

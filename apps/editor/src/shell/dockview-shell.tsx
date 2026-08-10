@@ -3,19 +3,25 @@ import {
   type DockviewApi,
   type DockviewReadyEvent,
 } from "dockview";
+import type { DocumentKind } from "@babylonslate/shared";
 import "dockview/dist/styles/dockview.css";
 import "./dockview-theme.css";
 import { useCallback, useRef } from "react";
-import { createDefaultLayout } from "./default-layout";
+import { createDefaultLayoutForKind } from "./default-layout";
 import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
 
 export interface DockviewShellProps {
+  documentKind: DocumentKind;
   onReady?: (api: DockviewApi) => void;
   initialLayout?: Record<string, unknown> | null;
 }
 
-export function DockviewShell({ onReady, initialLayout }: DockviewShellProps) {
+export function DockviewShell({
+  documentKind,
+  onReady,
+  initialLayout,
+}: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const platformOptions = usePlatformLayoutOptions();
 
@@ -26,7 +32,7 @@ export function DockviewShell({ onReady, initialLayout }: DockviewShellProps) {
       if (initialLayout) {
         event.api.fromJSON(initialLayout as never);
       } else {
-        createDefaultLayout(event.api);
+        createDefaultLayoutForKind(event.api, documentKind);
       }
 
       if (platformOptions.disableFloatingGroups) {
@@ -37,7 +43,7 @@ export function DockviewShell({ onReady, initialLayout }: DockviewShellProps) {
 
       onReady?.(event.api);
     },
-    [initialLayout, onReady, platformOptions.disableFloatingGroups],
+    [documentKind, initialLayout, onReady, platformOptions.disableFloatingGroups],
   );
 
   return (
