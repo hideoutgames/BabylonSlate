@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm --filter editor dev",
     "build": "pnpm -r build",
+    "build:pages": "VITE_BASE_PATH=/BabylonSlate/ VITE_TEST_MODE=true pnpm --filter editor build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "vitest run",

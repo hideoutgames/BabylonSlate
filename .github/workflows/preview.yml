@@ -3,6 +3,7 @@ name: Preview
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,10 +24,13 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - uses: actions/configure-pages@v5
       - run: pnpm install
       - name: Build editor for GitHub Pages
-        run: VITE_BASE_PATH=/BabylonSlate/ pnpm --filter editor build
-        working-directory: .
+        env:
+          VITE_BASE_PATH: /BabylonSlate/
+          VITE_TEST_MODE: "true"
+        run: pnpm --filter editor build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/editor/dist
@@ -40,3 +44,23 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify GitHub Pages deployment
+        run: |
+          url="https://hideoutgames.github.io/BabylonSlate/"
+          for attempt in 1 2 3 4 5; do
+            status=$(curl -s -o /tmp/pages.html -w "%{http_code}" "$url")
+            if [ "$status" = "200" ] && grep -q "BabylonSlate" /tmp/pages.html; then
+              echo "Pages deployment verified at $url"
+              exit 0
+            fi
+            echo "Attempt $attempt: status=$status, retrying in 15s..."
+            sleep 15
+          done
+          echo "Pages smoke check failed — ensure GitHub Pages is enabled with GitHub Actions source:"
+          echo "https://github.com/hideoutgames/BabylonSlate/settings/pages"
+          exit 1

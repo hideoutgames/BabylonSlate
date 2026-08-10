@@ -50,9 +50,25 @@ Automated tests run in GitHub Actions — you do not need a Mac or local termina
 
 After pushes to `main`, the app deploys to:
 
-**https://hideoutgames.github.io/BabylonSlate/?test=1**
+**https://hideoutgames.github.io/BabylonSlate/**
 
-Open that URL in **Safari on your iPad**. Test mode skips folder prompts and uses a fixed test project.
+Open that URL in **Safari on your iPad**. The Pages build has test mode baked in — no folder prompts, fixed test project, and the **Test mode** badge in the toolbar.
+
+You can also append `?test=1` if needed; both URLs behave the same on the deployed preview.
+
+#### One-time setup (repo admin)
+
+If the **Preview** workflow fails with a 404 deployment error, GitHub Pages is not enabled yet:
+
+1. Open [BabylonSlate → Settings → Pages](https://github.com/hideoutgames/BabylonSlate/settings/pages)
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**
+3. Re-run the failed **Preview** workflow (Actions → Preview → Re-run all jobs), or push any commit to `main`
+
+To verify the Pages build locally:
+
+```bash
+pnpm build:pages
+```
 
 ### Manual checklist (~5 min)
 
