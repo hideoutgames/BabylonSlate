@@ -21,3 +21,16 @@
 ## BabylonJS
 
 - Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work.
+
+## Git: merge to main
+
+When agent work is complete and `pnpm verify` passes:
+
+1. Commit and push all changes on the feature branch.
+2. Open or update the PR targeting `main`.
+3. Fix any failing CI before merging.
+4. Mark draft PRs as ready for review once verification passes.
+5. Merge the PR into `main` when the user asks to ship/merge, or when the task is fully complete and no review blockers remain.
+6. Do not leave completed foundation work stranded on `cursor/*` branches.
+
+Prefer merge commits (not squash) when the PR contains multiple logical commits, unless the user specifies otherwise.
