@@ -1,2 +1,2 @@
 # BabylonSlate
-BabylonJS Editor for Touch Devices
+BabylonJS Editor optimised for Touch Devices
