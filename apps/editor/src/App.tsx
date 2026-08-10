@@ -1,27 +1,15 @@
-import { useCallback } from "react";
-import type { DockviewApi } from "dockview";
 import { EditorToolbar } from "./components/editor-toolbar";
-import { ProjectProvider, useProject } from "./context/project-context";
-import { DockviewShell } from "./shell/dockview-shell";
+import { DocumentTabBar } from "./components/document-tab-bar";
+import { DocumentWorkspace } from "./components/document-workspace";
+import { DocumentProvider } from "./context/document-context";
 
 function EditorLayout() {
-  const { projectState, setDockviewApi } = useProject();
-
-  const handleReady = useCallback(
-    (api: DockviewApi) => {
-      setDockviewApi(api);
-    },
-    [setDockviewApi],
-  );
-
   return (
     <div className="flex h-dvh flex-col bg-background text-foreground">
       <EditorToolbar />
-      <main className="min-h-0 flex-1">
-        <DockviewShell
-          onReady={handleReady}
-          initialLayout={projectState?.layout ?? null}
-        />
+      <DocumentTabBar />
+      <main className="flex min-h-0 flex-1 flex-col">
+        <DocumentWorkspace />
       </main>
     </div>
   );
@@ -29,8 +17,8 @@ function EditorLayout() {
 
 export default function App() {
   return (
-    <ProjectProvider>
+    <DocumentProvider>
       <EditorLayout />
-    </ProjectProvider>
+    </DocumentProvider>
   );
 }

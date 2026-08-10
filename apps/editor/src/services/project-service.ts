@@ -1,22 +1,28 @@
 import type { DockviewApi } from "dockview";
-import type { SerializedGraph, SerializedScene } from "@babylonslate/shared";
+import type {
+  DocumentKind,
+  ProjectLayouts,
+  SerializedGraph,
+  SerializedScene,
+} from "@babylonslate/shared";
 import {
   createDefaultGraph,
   createDefaultScene,
+  createEmptyLayouts,
   createEmptyProject,
+  documentId,
   LAYOUT_FILE,
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
+  migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
 } from "@babylonslate/shared";
 import type { ProjectStorage } from "@babylonslate/shared";
 
-export interface ProjectState {
+export interface ProjectLoadResult {
   document: ProjectDocument;
-  layout: Record<string, unknown> | null;
-  graph: SerializedGraph;
-  scene: SerializedScene;
+  layouts: ProjectLayouts;
 }
 
 export class ProjectService {
@@ -30,12 +36,12 @@ export class ProjectService {
     return this.storage;
   }
 
-  async openProject(): Promise<ProjectState> {
+  async openProject(): Promise<ProjectLoadResult> {
     await this.storage.pickProjectFolder();
     return this.loadCurrentProject();
   }
 
-  async loadCurrentProject(): Promise<ProjectState> {
+  async loadCurrentProject(): Promise<ProjectLoadResult> {
     const folder = this.storage.getCurrentFolder();
     if (!folder) {
       throw new Error("No project folder selected");
@@ -46,62 +52,82 @@ export class ProjectService {
       const document = createEmptyProject(folder.name);
       const graph = createDefaultGraph();
       const scene = createDefaultScene();
-      await this.saveProject({ document, layout: null, graph, scene });
-      return { document, layout: null, graph, scene };
+      await this.saveDocument("scene", MAIN_SCENE_FILE, scene);
+      await this.saveDocument("graph", MAIN_GRAPH_FILE, graph);
+      await this.saveProject(document, createEmptyLayouts());
+      return { document, layouts: createEmptyLayouts() };
     }
 
     const document = JSON.parse(
       await this.storage.readText(PROJECT_FILE),
     ) as ProjectDocument;
 
-    const graph = JSON.parse(
-      await this.storage.readText(MAIN_GRAPH_FILE),
-    ) as SerializedGraph;
+    const layouts = await this.loadLayouts(
+      documentId({ kind: "scene", path: MAIN_SCENE_FILE }),
+    );
 
-    const scene = JSON.parse(
-      await this.storage.readText(MAIN_SCENE_FILE),
-    ) as SerializedScene;
-
-    let layout: Record<string, unknown> | null = null;
-    if (await this.storage.exists(LAYOUT_FILE)) {
-      layout = JSON.parse(await this.storage.readText(LAYOUT_FILE)) as Record<
-        string,
-        unknown
-      >;
-    }
-
-    return { document, layout, graph, scene };
+    return { document, layouts };
   }
 
-  async saveProject(state: ProjectState): Promise<void> {
+  async loadDocument(
+    kind: DocumentKind,
+    path: string,
+  ): Promise<SerializedScene | SerializedGraph> {
+    if (kind === "scene") {
+      return JSON.parse(await this.storage.readText(path)) as SerializedScene;
+    }
+    return JSON.parse(await this.storage.readText(path)) as SerializedGraph;
+  }
+
+  async saveDocument(
+    kind: DocumentKind,
+    path: string,
+    content: SerializedScene | SerializedGraph,
+  ): Promise<void> {
+    const dir = kind === "scene" ? "scenes" : "graphs";
+    await this.storage.mkdir(dir, true);
+    await this.storage.writeText(path, JSON.stringify(content, null, 2));
+  }
+
+  async saveProject(
+    document: ProjectDocument,
+    layouts: ProjectLayouts,
+  ): Promise<void> {
     const now = new Date().toISOString();
-    const document: ProjectDocument = {
-      ...state.document,
+    const updated: ProjectDocument = {
+      ...document,
       metadata: {
-        ...state.document.metadata,
+        ...document.metadata,
         updatedAt: now,
       },
     };
 
-    await this.storage.mkdir("graphs", true);
-    await this.storage.mkdir("scenes", true);
-
-    await this.storage.writeText(PROJECT_FILE, JSON.stringify(document, null, 2));
+    await this.storage.writeText(PROJECT_FILE, JSON.stringify(updated, null, 2));
     await this.storage.writeText(
-      MAIN_GRAPH_FILE,
-      JSON.stringify(state.graph, null, 2),
+      LAYOUT_FILE,
+      JSON.stringify(layouts, null, 2),
     );
-    await this.storage.writeText(
-      MAIN_SCENE_FILE,
-      JSON.stringify(state.scene, null, 2),
-    );
+  }
 
-    if (state.layout) {
-      await this.storage.writeText(
-        LAYOUT_FILE,
-        JSON.stringify(state.layout, null, 2),
-      );
+  async loadLayouts(mainSceneId: string): Promise<ProjectLayouts> {
+    if (!(await this.storage.exists(LAYOUT_FILE))) {
+      return createEmptyLayouts();
     }
+
+    const parsed = JSON.parse(
+      await this.storage.readText(LAYOUT_FILE),
+    ) as Record<string, unknown>;
+
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "documents" in parsed &&
+      "tabOrder" in parsed
+    ) {
+      return parsed as unknown as ProjectLayouts;
+    }
+
+    return migrateLegacyLayout(parsed, mainSceneId);
   }
 
   captureLayout(api: DockviewApi): Record<string, unknown> {

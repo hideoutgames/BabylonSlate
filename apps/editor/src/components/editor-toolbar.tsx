@@ -2,10 +2,10 @@ import { FolderOpenIcon, SaveIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { isTestModeEnabled } from "@babylonslate/storage";
-import { useProject } from "../context/project-context";
+import { useDocuments } from "../context/document-context";
 
 export function EditorToolbar() {
-  const { projectName, openProject, saveProject } = useProject();
+  const { projectName, openProject, saveProject } = useDocuments();
   const testMode = isTestModeEnabled();
 
   return (
