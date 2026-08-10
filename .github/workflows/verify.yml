@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 jobs:
-  verify:
+  unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,4 +16,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
-      - run: pnpm verify
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm exec playwright install chromium --with-deps
+      - run: pnpm test:e2e

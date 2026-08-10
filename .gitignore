@@ -6,6 +6,7 @@ dist
 .env.*
 !.env.example
 coverage
+test-results
 .turbo
 android
 .capacitor

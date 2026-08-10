@@ -3,6 +3,7 @@ import type {
   ProjectFolderHandle,
   ProjectStorage,
 } from "@babylonslate/shared";
+import { isTestModeEnabled, TEST_PROJECT_NAME } from "./test-mode";
 
 const FOLDER_KEY = "babylonslate:web-folder";
 
@@ -27,9 +28,10 @@ export class WebStorageAdapter implements ProjectStorage {
   private store = loadStore();
 
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
-    const name =
-      globalThis.prompt?.("Project folder name", "MyGame.babylonslate") ??
-      "MyGame.babylonslate";
+    const name = isTestModeEnabled()
+      ? TEST_PROJECT_NAME
+      : (globalThis.prompt?.("Project folder name", "MyGame.babylonslate") ??
+        "MyGame.babylonslate");
     const folder: ProjectFolderHandle = {
       id: `web:${name}`,
       name,
