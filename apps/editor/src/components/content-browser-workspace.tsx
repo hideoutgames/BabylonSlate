@@ -8,7 +8,7 @@ export function ContentBrowserWorkspace() {
 
   if (!projectDocument) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
         Open a project to browse scenes and graphs
       </div>
     );
@@ -31,9 +31,16 @@ export function ContentBrowserWorkspace() {
 
   return (
     <div
-      className="flex h-full flex-col gap-1 overflow-y-auto bg-background p-4"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
       data-testid="content-browser-workspace"
     >
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">Content Browser</h2>
+        <p className="text-xs text-muted-foreground">
+          Open scenes and graphs for {projectDocument.metadata.name}
+        </p>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-4">
       <div className="px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Scenes
       </div>
@@ -64,6 +71,7 @@ export function ContentBrowserWorkspace() {
           <span className="truncate">{labelFromPath(path)}</span>
         </button>
       ))}
+      </div>
     </div>
   );
 }
