@@ -1,0 +1,12 @@
+{
+	"appId": "no.hideout.babylonslate",
+	"appName": "BabylonSlate",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	},
+	"ios": {
+		"contentInset": "always"
+	},
+	"packageClassList": []
+}

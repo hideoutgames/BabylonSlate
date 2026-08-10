@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merge these keys into ios/App/App/Info.plist after `npx cap add ios`.
+  Required by @daniele-rolli/capacitor-scoped-storage for iOS Files App access.
+-->
+<plist version="1.0">
+<dict>
+  <key>LSSupportsOpeningDocumentsInPlace</key>
+  <true/>
+  <key>UISupportsDocumentBrowser</key>
+  <false/>
+</dict>
+</plist>
