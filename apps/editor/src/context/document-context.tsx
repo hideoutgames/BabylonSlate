@@ -86,6 +86,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const openProject = useCallback(async () => {
     const { document, layouts } = await projectService.openProject();
+    dockviewApisRef.current.clear();
     await documentService.initializeFromProject(
       projectService,
       document,

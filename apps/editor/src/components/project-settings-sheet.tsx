@@ -18,7 +18,7 @@ export function ProjectSettingsSheet({
 }: ProjectSettingsSheetProps) {
   const { projectDocument } = useDocuments();
 
-  if (!projectDocument) {
+  if (!open || !projectDocument) {
     return null;
   }
 

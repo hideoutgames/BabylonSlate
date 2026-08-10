@@ -1,3 +1,4 @@
+import { CONTENT_BROWSER_ID } from "@babylonslate/shared";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
@@ -19,18 +20,23 @@ export function DocumentWorkspace() {
     );
   }
 
+  const resolvedActiveId =
+    activeDocumentId && tabOrder.includes(activeDocumentId)
+      ? activeDocumentId
+      : (tabOrder.find((id) => id === CONTENT_BROWSER_ID) ?? tabOrder[0]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {tabOrder.map((id) => {
         const doc = openDocuments.find((entry) => entry.id === id);
         if (!doc) return null;
-        const active = id === activeDocumentId;
+        const active = id === resolvedActiveId;
 
         if (doc.ref.kind === "content-browser") {
           return (
             <div
               key={id}
-              className={active ? "flex min-h-0 flex-1" : "hidden"}
+              className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
               data-testid="document-workspace-content-browser"
             >
               <ContentBrowserWorkspace />
@@ -41,7 +47,7 @@ export function DocumentWorkspace() {
         return (
           <DocumentWorkspaceProvider key={id} documentId={id}>
             <div
-              className={active ? "flex min-h-0 flex-1" : "hidden"}
+              className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
               data-testid={`document-workspace-${doc.ref.kind}`}
             >
               <DockviewShell

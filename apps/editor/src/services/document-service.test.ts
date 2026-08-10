@@ -53,7 +53,7 @@ describe("DocumentService", () => {
     expect(state.tabOrder[0]).toBe(CONTENT_BROWSER_ID);
     expect(state.tabOrder).toContain(sceneId);
     expect(state.tabOrder).toContain(graphId);
-    expect(state.activeDocumentId).toBe(sceneId);
+    expect(state.activeDocumentId).toBe(CONTENT_BROWSER_ID);
   });
 
   it("cannot close the content browser tab", async () => {

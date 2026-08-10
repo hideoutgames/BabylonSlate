@@ -121,12 +121,9 @@ export class DocumentService {
 
     this.pinContentBrowserFirst();
 
-    const savedActive = layouts.activeDocumentId;
-    if (savedActive && this.state.openDocuments.has(savedActive)) {
-      this.state.activeDocumentId = savedActive;
-    } else {
-      this.state.activeDocumentId = CONTENT_BROWSER_ID;
-    }
+    // Always land on the Content Browser when opening a project so users
+    // don't get dropped into an empty black viewport tab.
+    this.state.activeDocumentId = CONTENT_BROWSER_ID;
   }
 
   async openDocument(

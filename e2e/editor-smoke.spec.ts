@@ -23,6 +23,11 @@ test.describe("BabylonSlate editor smoke", () => {
     );
 
     await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+    await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Content Browser" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("content-item-scenes/main.scene.json")).toBeVisible();
 
     await page.getByTestId("content-item-scenes/main.scene.json").click();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
@@ -46,8 +51,9 @@ test.describe("BabylonSlate editor smoke", () => {
       .locator('[data-testid="document-tab"][data-document-kind="scene"]')
       .getByTestId("document-tab-select")
       .click();
+    await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
     await expect(
       page.getByTestId("document-workspace-scene").locator("canvas"),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
