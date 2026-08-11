@@ -70,4 +70,14 @@ describe("viewport", () => {
     expect(scene.ambientColor.g).toBe(0);
     expect(scene.ambientColor.b).toBe(0);
   });
+
+  it("uses the dark shell background as clearColor (#141414)", () => {
+    const { scene } = createHandle();
+    const channel = 20 / 255;
+
+    expect(scene.clearColor.r).toBeCloseTo(channel);
+    expect(scene.clearColor.g).toBeCloseTo(channel);
+    expect(scene.clearColor.b).toBeCloseTo(channel);
+    expect(scene.clearColor.a).toBe(1);
+  });
 });
