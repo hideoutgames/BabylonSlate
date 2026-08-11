@@ -70,7 +70,8 @@ export class ScopedStorageAdapter implements ProjectStorage {
     return toHandle(folder);
   }
 
-  async openDocumentsProject(_name: string): Promise<ProjectFolderHandle> {
+  async openDocumentsProject(name: string): Promise<ProjectFolderHandle> {
+    void name;
     throw new Error(
       "Documents tier is handled by DocumentsStorageAdapter; use createStorage()",
     );
