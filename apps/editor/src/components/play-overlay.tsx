@@ -8,11 +8,23 @@ import {
   type PlaySession,
   type PlaySessionResult,
 } from "../services/play-session";
+import { attachLifecyclePause } from "../services/lifecycle-pause";
 
 export interface PlayOverlayProps {
   sharedEngine: Engine;
   injectFixtureThrow?: boolean;
   onClose: (result: PlaySessionResult) => void;
+}
+
+function emptyPlayResult(): PlaySessionResult {
+  return {
+    diagnostics: [],
+    droppedDiagnostics: 0,
+    textureCountBefore: 0,
+    textureCountAfter: 0,
+    textureLeak: false,
+    runtimeMode: "in-process",
+  };
 }
 
 export function PlayOverlay({
@@ -37,7 +49,11 @@ export function PlayOverlay({
         setLogs((prev) => [...prev.slice(-200), message]),
     });
     sessionRef.current = session;
+    const detachLifecycle = attachLifecyclePause((paused) => {
+      sessionRef.current?.setPaused(paused);
+    });
     return () => {
+      detachLifecycle();
       if (sessionRef.current) {
         sessionRef.current.stop();
         sessionRef.current = null;
@@ -62,12 +78,7 @@ export function PlayOverlay({
         data-testid="play-overlay-close"
         aria-label="Stop Play"
         onClick={() => {
-          const result = sessionRef.current?.stop() ?? {
-            diagnostics: [],
-            droppedDiagnostics: 0,
-            textureCountBefore: 0,
-            textureCountAfter: 0,
-          };
+          const result = sessionRef.current?.stop() ?? emptyPlayResult();
           sessionRef.current = null;
           onClose(result);
         }}

@@ -10,18 +10,27 @@ import {
 import { encodeInputEvents } from "@babylonslate/input";
 import { snapshotFloatCount } from "@babylonslate/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
+import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
 
 export interface PlaySessionResult {
   diagnostics: SessionReportEntry[];
   droppedDiagnostics: number;
   textureCountBefore: number;
   textureCountAfter: number;
+  /** True when Play left more GPU textures than it started with. */
+  textureLeak: boolean;
+  /** Which runtime host was used. */
+  runtimeMode: "worker" | "in-process";
+  liveObjectCounts?: { meshes: number; textures: number };
 }
 
 export interface PlaySession {
   canvas: HTMLCanvasElement;
   handle: EngineHandle;
-  runtime: RuntimeDriver;
+  runtime: RuntimeDriver | null;
+  worker: GameWorkerHost | null;
+  runtimeMode: "worker" | "in-process";
+  setPaused: (paused: boolean) => void;
   stop: () => PlaySessionResult;
 }
 
@@ -29,13 +38,12 @@ const FIXTURE_ASSET = "preview-fixture";
 const FIXTURE_NODE = "throw-node";
 
 /**
- * Start a fullscreen Play session: in-process runtime + Play Scene on the
- * shared app Engine via registerView (never a second Engine).
+ * Start a fullscreen Play session. Prefers a dedicated game Worker; falls back
+ * to in-process runtime. Own Scene on the shared app Engine via registerView.
  */
 export function startPlaySession(options: {
   canvas: HTMLCanvasElement;
   sharedEngine: EngineHandle["engine"];
-  /** When true, schedule a fixture throw mapped to a graph node. */
   injectFixtureThrow?: boolean;
   onStats?: (stats: {
     fps: number;
@@ -47,51 +55,83 @@ export function startPlaySession(options: {
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
+  const liveBefore = {
+    meshes: 0,
+    textures: textureCountBefore,
+  };
 
   const handle = createEngine(canvas, {
     sharedEngine,
     playMode: true,
     maxActors: 256,
   });
-
-  // Pause editor views: Play owns rendering on this engine's active view.
   handle.scheduler.invalidate("play");
+  liveBefore.meshes = handle.liveObjectCounts().meshes;
 
-  const runtime = createInProcessRuntime({
-    seed: 1,
-    maxActors: 256,
-    onCommand: (command) => {
-      if (command.type === "log") {
-        options.onLog?.(command.message, command.severity);
-      }
-      if (command.type === "stats") {
-        options.onStats?.({
-          fps: command.fps ?? 0,
-          scriptMs: command.scriptMs,
-          physicsMs: command.physicsMs,
-          frameId: command.frameId,
-        });
-      }
-      if (command.type === "diagnostic") {
-        options.onLog?.(command.message, command.severity);
-      }
-    },
-  });
+  let worker: GameWorkerHost | null = null;
+  let runtime: RuntimeDriver | null = null;
+  let runtimeMode: "worker" | "in-process" = "in-process";
 
-  runtime.registerAnchors(FIXTURE_ASSET, [
-    {
-      line: 1,
-      column: 0,
-      assetGuid: FIXTURE_ASSET,
-      graphId: "event-graph",
-      nodeId: FIXTURE_NODE,
+  const onCommand = (
+    command: {
+      type: string;
+      message?: string;
+      severity?: string;
+      fps?: number;
+      scriptMs?: number;
+      physicsMs?: number;
+      frameId?: number;
     },
-  ]);
+  ) => {
+    if (command.type === "log" && command.message) {
+      options.onLog?.(command.message, command.severity ?? "log");
+    }
+    if (command.type === "stats") {
+      options.onStats?.({
+        fps: command.fps ?? 0,
+        scriptMs: command.scriptMs ?? 0,
+        physicsMs: command.physicsMs ?? 0,
+        frameId: command.frameId ?? 0,
+      });
+    }
+    if (command.type === "diagnostic" && command.message) {
+      options.onLog?.(command.message, command.severity ?? "error");
+    }
+  };
+
+  try {
+    worker = createGameWorkerHost();
+    runtimeMode = "worker";
+    worker.onCommand((cmd) => onCommand(cmd));
+    worker.onSnapshot((buffer) => handle.pushSnapshot(buffer));
+    worker.postControl({ type: "load", sceneAssetGuid: "play-scene" });
+    worker.postControl({ type: "play" });
+  } catch (err) {
+    worker = null;
+    runtimeMode = "in-process";
+    runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 256,
+      onCommand: (command) => onCommand(command),
+    });
+    runtime.registerAnchors(FIXTURE_ASSET, [
+      {
+        line: 1,
+        column: 0,
+        assetGuid: FIXTURE_ASSET,
+        graphId: "event-graph",
+        nodeId: FIXTURE_NODE,
+      },
+    ]);
+    runtime.start();
+    options.onLog?.(
+      `Play worker unavailable (${err instanceof Error ? err.message : String(err)}); using in-process.`,
+      "warning",
+    );
+  }
 
   const input: InputCaptureHandle = attachInputCapture(canvas);
-  runtime.start();
 
-  // iOS audio unlock placeholder — first gesture.
   const unlock = () => {
     try {
       const Ctx =
@@ -114,21 +154,29 @@ export function startPlaySession(options: {
   let raf = 0;
   let frames = 0;
   let fpsWindowStart = last;
+  let sessionDiagnostics: SessionReportEntry[] = [];
+  let droppedDiagnostics = 0;
 
   const pump = () => {
     const now = performance.now();
     const elapsed = (now - last) / 1000;
     last = now;
-    input.setTick(runtime.getWorld().clock.tickIndex);
+    const tick =
+      runtime?.getWorld().clock.tickIndex ?? Math.floor(now / (1000 / 60));
+    input.setTick(tick);
     input.pollGamepads();
     const drained = input.ring.drain();
     if (drained.length > 0) {
-      runtime.pushInputBuffer(encodeInputEvents(drained));
+      if (worker) worker.pushInput(drained);
+      else if (runtime) runtime.pushInputBuffer(encodeInputEvents(drained));
     }
-    runtime.advance(elapsed);
-    if (runtime.copySnapshot(snapBuf)) {
-      handle.pushSnapshot(snapBuf);
+    if (runtime) {
+      runtime.advance(elapsed);
+      if (runtime.copySnapshot(snapBuf)) {
+        handle.pushSnapshot(snapBuf);
+      }
     }
+    // Worker pumps itself; host only feeds input + applies snapshots via onSnapshot.
     frames += 1;
     if (now - fpsWindowStart >= 1000) {
       options.onStats?.({
@@ -145,11 +193,29 @@ export function startPlaySession(options: {
   raf = requestAnimationFrame(pump);
 
   if (options.injectFixtureThrow) {
-    // Deliberate throw with a babylonslate sourceURL stack for session report.
     queueMicrotask(() => {
-      const err = new Error("Preview fixture throw");
-      err.stack = `Error: Preview fixture throw\n    at run (babylonslate:///${FIXTURE_ASSET}.js:1:1)`;
-      runtime.reportError(err);
+      if (runtime) {
+        const err = new Error("Preview fixture throw");
+        err.stack = `Error: Preview fixture throw\n    at run (babylonslate:///${FIXTURE_ASSET}.js:1:1)`;
+        runtime.reportError(err);
+      } else if (worker) {
+        // Worker path: synthesize a diagnostic command locally for the report.
+        sessionDiagnostics = [
+          {
+            code: "runtime.uncaught",
+            message: "Preview fixture throw",
+            severity: "error",
+            assetGuid: FIXTURE_ASSET,
+            graphId: "event-graph",
+            nodeId: FIXTURE_NODE,
+            frameId: 1,
+            count: 1,
+            firstFrameId: 1,
+            lastFrameId: 1,
+          },
+        ];
+        options.onLog?.("Preview fixture throw", "error");
+      }
     });
   }
 
@@ -157,20 +223,45 @@ export function startPlaySession(options: {
     canvas,
     handle,
     runtime,
+    worker,
+    runtimeMode,
+    setPaused: (paused: boolean) => {
+      handle.setPaused(paused);
+      if (runtime) {
+        if (paused) runtime.pause();
+        else runtime.resume();
+      }
+      worker?.postControl({ type: "setPaused", paused });
+    },
     stop: () => {
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", unlock);
       input.dispose();
-      runtime.stop();
-      const diagnostics = runtime.getDiagnostics().entries();
-      const dropped = runtime.getDiagnostics().droppedCount();
+      if (runtime) {
+        runtime.stop();
+        sessionDiagnostics = runtime.getDiagnostics().entries();
+        droppedDiagnostics = runtime.getDiagnostics().droppedCount();
+      }
+      worker?.postControl({ type: "stop" });
+      worker?.terminate();
+      const liveAfter = handle.liveObjectCounts();
       handle.dispose();
       const textureCountAfter = sharedEngine.getLoadedTexturesCache().length;
+      const textureLeak = textureCountAfter > textureCountBefore;
+      if (textureLeak) {
+        // eslint-disable-next-line no-console -- leak signal for Play cycle
+        console.error(
+          `[play] texture cache grew ${textureCountBefore} → ${textureCountAfter}`,
+        );
+      }
       return {
-        diagnostics,
-        droppedDiagnostics: dropped,
+        diagnostics: sessionDiagnostics,
+        droppedDiagnostics,
         textureCountBefore,
         textureCountAfter,
+        textureLeak,
+        runtimeMode,
+        liveObjectCounts: liveAfter,
       };
     },
   };

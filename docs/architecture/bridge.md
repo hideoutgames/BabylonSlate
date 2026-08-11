@@ -71,6 +71,10 @@ Hand-rolled request/response over the control channel (`id`, `method`, `params` 
 
 `createInProcessBridge()` runs the same protocols on the calling thread for the deterministic harness. Transport choice is a host option; scenario results must match across in-process, SAB (when available), and transferables.
 
+## Play game Worker
+
+Play prefers a dedicated Worker from `@babylonslate/runtime/worker-entry` (`createGameWorkerHost` in the editor). If Worker construction fails (host/Vite), Play falls back to `createInProcessRuntime` and logs a warning. Both paths share control / input / snapshot / command channels.
+
 ## Seq-lock (SAB)
 
 1. Writer increments `seq` to odd before writing.
