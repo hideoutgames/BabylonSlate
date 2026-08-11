@@ -71,3 +71,14 @@ Design notes: [containers.md](../architecture/containers.md), [vfs.md](../archit
 | Destructive + journal | `p2-destructive-guard` | `assets`, `edit`, `apps/editor`, `ui` | Registry + edit + CB |
 
 Design notes: [command-layer.md](../architecture/command-layer.md), [asset-registry.md](../architecture/asset-registry.md).
+
+## P3 slice ownership
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/` | — |
+| Core foundations | — | `core` | Design notes |
+| Object model | `p3-object-model` | `object-model`, `core` | Design notes + core foundations |
+| Deterministic harness | `p3-harness` | `test-kit`, `object-model`, `vfs` | Object model |
+
+Design notes: [object-model.md](../architecture/object-model.md).

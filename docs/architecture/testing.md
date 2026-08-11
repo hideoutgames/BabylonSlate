@@ -8,7 +8,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/assets`, `packages/test-kit` — pure logic, no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/test-kit` — pure logic, no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
@@ -55,7 +55,11 @@ Static style rules that a running browser cannot prove (a hardcoded radius on an
 
 ## Golden files
 
-`readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
+`readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
+
+## Deterministic runtime harness (P3)
+
+`runDeterministicScenario` in `@babylonslate/test-kit` drives an in-process `@babylonslate/object-model` World with a seeded RNG and fixed dt. Acceptance: a 120-tick scenario matches a committed golden and is identical across two runs. Fake VFS fixtures use `MemoryStorageAdapter` via `installHarnessProjectFixtures`. Worker transport comparison is P4.
 
 ## Property tests
 

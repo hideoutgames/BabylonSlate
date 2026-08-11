@@ -11,6 +11,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config ../../vitest.workspace.ts --project node packages/test-kit"
   },
+  "dependencies": {
+    "@babylonslate/core": "workspace:*",
+    "@babylonslate/object-model": "workspace:*",
+    "@babylonslate/vfs": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "~5.8.2"
   }
