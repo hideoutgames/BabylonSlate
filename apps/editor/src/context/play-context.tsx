@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -14,16 +15,30 @@ import { PlayOverlay } from "../components/play-overlay";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
+import { attachLifecyclePause } from "../services/lifecycle-pause";
 
 interface PlayContextValue {
   playing: boolean;
   startPlay: (options?: { injectFixtureThrow?: boolean }) => void;
   stopPlay: () => void;
   registerSharedEngine: (engine: Engine | null) => void;
+  registerScheduler: (
+    scheduler: {
+      setAlwaysRender: (v: boolean) => void;
+      stats: () => {
+        renderedFps: number;
+        invalidationsPerSecond: number;
+      };
+      setPaused: (v: boolean) => void;
+    } | null,
+  ) => void;
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
   logLines: string[];
+  alwaysRender: boolean;
+  setAlwaysRender: (value: boolean) => void;
+  renderStats: { renderedFps: number; invalidationsPerSecond: number } | null;
 }
 
 const PlayContext = createContext<PlayContextValue | null>(null);
@@ -33,6 +48,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const engineRef = useRef<Engine | null>(null);
   const ownedEngineRef = useRef<Engine | null>(null);
   const ownedCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const schedulerRef = useRef<{
+    setAlwaysRender: (v: boolean) => void;
+    stats: () => {
+      renderedFps: number;
+      invalidationsPerSecond: number;
+    };
+    setPaused: (v: boolean) => void;
+  } | null>(null);
   const [playing, setPlaying] = useState(false);
   const [injectThrow, setInjectThrow] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -40,6 +63,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [dropped, setDropped] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
+  const [alwaysRender, setAlwaysRenderState] = useState(false);
+  const [renderStats, setRenderStats] = useState<{
+    renderedFps: number;
+    invalidationsPerSecond: number;
+  } | null>(null);
 
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
@@ -52,6 +80,44 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       return;
     }
     engineRef.current = ownedEngineRef.current;
+  }, []);
+
+  const registerScheduler = useCallback(
+    (
+      scheduler: {
+        setAlwaysRender: (v: boolean) => void;
+        stats: () => {
+          renderedFps: number;
+          invalidationsPerSecond: number;
+        };
+        setPaused: (v: boolean) => void;
+      } | null,
+    ) => {
+      schedulerRef.current = scheduler;
+      if (scheduler) {
+        scheduler.setAlwaysRender(alwaysRender);
+      }
+    },
+    [alwaysRender],
+  );
+
+  const setAlwaysRender = useCallback((value: boolean) => {
+    setAlwaysRenderState(value);
+    schedulerRef.current?.setAlwaysRender(value);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const stats = schedulerRef.current?.stats();
+      if (stats) setRenderStats(stats);
+    }, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    return attachLifecyclePause((paused) => {
+      schedulerRef.current?.setPaused(paused);
+    });
   }, []);
 
   const ensureEngine = useCallback((): Engine | null => {
@@ -101,18 +167,26 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       startPlay,
       stopPlay: () => setPlaying(false),
       registerSharedEngine,
+      registerScheduler,
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
       logLines,
+      alwaysRender,
+      setAlwaysRender,
+      renderStats,
     }),
     [
       playing,
       startPlay,
       registerSharedEngine,
+      registerScheduler,
       focusedNodeId,
       appendLog,
       logLines,
+      alwaysRender,
+      setAlwaysRender,
+      renderStats,
     ],
   );
 

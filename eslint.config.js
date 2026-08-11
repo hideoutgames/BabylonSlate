@@ -90,7 +90,10 @@ const renderNoReact = boundary(
 const renderTextureCacheOnly = {
   name: "boundary/render-texture-cache",
   files: ["packages/render/src/**/*.{ts,tsx}"],
-  ignores: ["packages/render/src/resource-cache.ts"],
+  ignores: [
+    "packages/render/src/resource-cache.ts",
+    "packages/render/src/**/*.test.ts",
+  ],
   rules: {
     "no-restricted-syntax": [
       "error",

@@ -303,6 +303,9 @@ importers:
 
   packages/test-kit:
     dependencies:
+      '@babylonslate/bridge':
+        specifier: workspace:*
+        version: link:../bridge
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core

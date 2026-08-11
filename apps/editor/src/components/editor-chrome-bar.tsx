@@ -26,6 +26,7 @@ import {
   SettingsIcon,
   Undo2Icon,
   XIcon,
+  BugIcon,
 } from "lucide-react";
 import { useState } from "react";
 import {
@@ -34,6 +35,7 @@ import {
   CONTENT_BROWSER_REF,
   type DocumentKind,
 } from "@babylonslate/core";
+import { isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
@@ -178,7 +180,8 @@ export function EditorChromeBar({
     getAvailableDocuments,
   } = useDocuments();
 
-  const { startPlay, playing } = usePlay();
+  const { startPlay, playing, alwaysRender, setAlwaysRender, renderStats } =
+    usePlay();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const contentBrowserDoc = openDocuments.find(
@@ -315,6 +318,22 @@ export function EditorChromeBar({
             <PlayIcon data-icon="inline-start" />
             Play
           </Button>
+          {isTestModeEnabled() || import.meta.env.DEV ? (
+            <Button
+              size="sm"
+              variant={alwaysRender ? "secondary" : "ghost"}
+              data-testid="always-render-toggle"
+              className="chrome-action-button"
+              aria-label="Always Render"
+              onClick={() => setAlwaysRender(!alwaysRender)}
+            >
+              <BugIcon data-icon="inline-start" />
+              Always Render
+              {renderStats
+                ? ` (${renderStats.renderedFps}/${renderStats.invalidationsPerSecond})`
+                : ""}
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="ghost"

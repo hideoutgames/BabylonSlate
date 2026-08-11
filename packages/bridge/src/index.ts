@@ -38,3 +38,8 @@ export {
   type RpcSuccess,
   type RpcTransport,
 } from "./rpc";
+export {
+  createInProcessBridge,
+  type InProcessBridge,
+  type InProcessBridgeMode,
+} from "./in-process-bridge";

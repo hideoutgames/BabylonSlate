@@ -17,10 +17,12 @@ const scratchMatrix = Matrix.Identity();
 
 export interface SnapshotSceneBinding {
   meshes: Map<number, Mesh>;
+  /** Reused each apply — no per-frame Set allocation. */
+  liveSlots: Set<number>;
 }
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
-  return { meshes: new Map() };
+  return { meshes: new Map(), liveSlots: new Set() };
 }
 
 /**
@@ -36,8 +38,11 @@ export function applySnapshotToScene(
   const prevBlock = scene.blockfreeActiveMeshesAndRenderingGroups;
   scene.blockfreeActiveMeshesAndRenderingGroups = true;
   try {
-    const live = new Set<number>();
-    for (const actor of snapshot.actors) {
+    const live = binding.liveSlots;
+    live.clear();
+    const count = snapshot.actorCount ?? snapshot.actors.length;
+    for (let i = 0; i < count; i++) {
+      const actor = snapshot.actors[i]!;
       live.add(actor.slotId);
       let mesh = binding.meshes.get(actor.slotId);
       if (!mesh) {

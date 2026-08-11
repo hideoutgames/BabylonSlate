@@ -36,6 +36,7 @@ describe("snapshot apply under NullEngine", () => {
       frameId: 1,
       tickIndex: 1,
       alpha: 1,
+      actorCount: 1,
       actors: [
         {
           slotId: 0,
@@ -51,6 +52,7 @@ describe("snapshot apply under NullEngine", () => {
       frameId: 2,
       tickIndex: 2,
       alpha: 1,
+      actorCount: 0,
       actors: [],
     });
     expect(binding.meshes.size).toBe(0);

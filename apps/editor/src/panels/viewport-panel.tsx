@@ -27,7 +27,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const sceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const { openDocuments } = useDocuments();
-  const { registerSharedEngine, playing } = usePlay();
+  const { registerSharedEngine, registerScheduler, playing } = usePlay();
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -59,6 +59,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const handle = createEngine(canvas);
     engineRef.current = handle;
     registerSharedEngine(handle.engine);
+    registerScheduler({
+      setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
+      stats: () => handle.scheduler.stats(),
+      setPaused: (v) => handle.setPaused(v),
+    });
 
     const resizeIfSized = () => resizeCanvasIfSized(canvas, handle);
     resizeIfSized();
@@ -95,12 +100,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       unsubscribe();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
+      registerScheduler(null);
       registerSharedEngine(null);
       handle.dispose();
       engineRef.current = null;
     };
-  }, [registerSharedEngine]);
-
+  }, [registerSharedEngine, registerScheduler]);
   useEffect(() => {
     engineRef.current?.setPaused(playing);
   }, [playing]);
