@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { ClassRegistry } from "./class-registry";
 import {
   InterfaceRegistry,
   dispatchInterface,
