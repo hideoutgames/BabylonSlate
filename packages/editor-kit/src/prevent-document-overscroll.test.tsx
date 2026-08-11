@@ -80,9 +80,9 @@ describe("prevent-document-overscroll", () => {
   });
 
   describe("shouldPreventDocumentOverscroll", () => {
-  beforeEach(() => {
-    document.documentElement.style.overflow = "hidden";
-  });
+    beforeEach(() => {
+      document.documentElement.style.overflow = "hidden";
+    });
 
     it("prevents when the target is not inside a scrollable region", () => {
       const shell = document.createElement("div");
