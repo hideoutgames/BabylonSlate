@@ -1,6 +1,7 @@
-import { Color4, Engine, Scene } from "@babylonjs/core";
+import { Color4, Engine, KhronosTextureContainer2, Scene } from "@babylonjs/core";
 import type { SerializedScene } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
+import { configureKtx2Transcoder } from "./ktx2-transcoder";
 import { applySceneToBabylonScene } from "./scene-loader";
 import { setupDefaultViewport } from "./viewport";
 
@@ -18,6 +19,7 @@ export interface EngineHandle {
  * render-on-demand sync.
  */
 export function createEngine(canvas: HTMLCanvasElement): EngineHandle {
+  configureKtx2Transcoder(KhronosTextureContainer2);
   const engine = new Engine(canvas, true, {
     preserveDrawingBuffer: true,
     stencil: true,

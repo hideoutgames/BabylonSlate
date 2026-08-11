@@ -19,6 +19,7 @@ import {
   ContextMenuOverlay,
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
+  SelectableText,
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import { documentId, labelFromPath } from "@babylonslate/core";
@@ -56,10 +57,9 @@ import {
 const PROJECT_ROOT_ID = "project";
 const ASSETS_ROOT = "assets";
 
-interface DeleteTarget {
-  kind: "assets";
-  guids: string[];
-}
+type DeleteTarget =
+  | { kind: "assets"; guids: string[] }
+  | { kind: "folder"; path: string; guids: string[] };
 
 interface TilePressState {
   pointerId: number;
@@ -73,11 +73,13 @@ function FolderTreeNode({
   node,
   selectedPath,
   onSelect,
+  onRequestDelete,
   depth,
 }: {
   node: FolderNode;
   selectedPath: string;
   onSelect: (path: string) => void;
+  onRequestDelete: (path: string) => void;
   depth: number;
 }) {
   const selected = node.path === selectedPath;
@@ -91,9 +93,14 @@ function FolderTreeNode({
         }`}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={() => onSelect(node.path)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onSelect(node.path);
+          onRequestDelete(node.path);
+        }}
       >
         <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="truncate">{node.name}</span>
+        <SelectableText className="truncate">{node.name}</SelectableText>
       </button>
       {node.children.map((child) => (
         <FolderTreeNode
@@ -101,6 +108,7 @@ function FolderTreeNode({
           node={child}
           selectedPath={selectedPath}
           onSelect={onSelect}
+          onRequestDelete={onRequestDelete}
           depth={depth + 1}
         />
       ))}
@@ -198,7 +206,9 @@ function AssetTile({
       <div className="flex items-start gap-2">
         <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{asset.header.name}</div>
+          <SelectableText className="truncate text-sm font-medium">
+            {asset.header.name}
+          </SelectableText>
           <div className="truncate text-xs text-muted-foreground">
             {asset.header.type}
           </div>
@@ -314,15 +324,37 @@ export function ContentBrowserWorkspace() {
     setDeleteTarget({ kind: "assets", guids });
   }, []);
 
+  const requestDeleteFolder = useCallback(
+    (path: string) => {
+      if (!folderTree || path === ASSETS_ROOT) return;
+      const guids = [...collectFolderGuids(path, folderTree)];
+      setDeleteTarget({ kind: "folder", path, guids });
+    },
+    [folderTree],
+  );
+
   const contextItems = useMemo(
     () => [
+      {
+        id: "retry-encoding",
+        label: "Retry encoding",
+        onSelect: () => {
+          void (async () => {
+            if (!assetRegistry) return;
+            for (const guid of menuTargetGuidsRef.current) {
+              await assetRegistry.retryTextureEncoding(guid);
+            }
+            await refreshAssetRegistry();
+          })();
+        },
+      },
       {
         id: "delete",
         label: "Delete",
         onSelect: () => requestDelete(menuTargetGuidsRef.current),
       },
     ],
-    [requestDelete],
+    [assetRegistry, refreshAssetRegistry, requestDelete],
   );
 
   const { menu, closeMenu, openMenuAt, bind } = useContextMenu({
@@ -355,7 +387,9 @@ export function ContentBrowserWorkspace() {
     const refs = new Set<string>();
     for (const guid of deleteTarget.guids) {
       for (const inbound of assetRegistry.showReferences(guid).inbound) {
-        refs.add(inbound);
+        if (!deleteTarget.guids.includes(inbound)) {
+          refs.add(inbound);
+        }
       }
     }
     return [...refs].map((guid) => ({
@@ -368,8 +402,16 @@ export function ContentBrowserWorkspace() {
     if (!assetRegistry || !deleteTarget) return;
     setBusy(true);
     try {
-      for (const guid of deleteTarget.guids) {
-        await assetRegistry.deleteAsset(guid);
+      if (deleteTarget.kind === "folder") {
+        const relative = folderRelativePath(deleteTarget.path, ASSETS_ROOT);
+        await assetRegistry.deleteFolder(PROJECT_ROOT_ID, relative);
+        if (selectedFolderPath === deleteTarget.path) {
+          setSelectedFolderPath(ASSETS_ROOT);
+        }
+      } else {
+        for (const guid of deleteTarget.guids) {
+          await assetRegistry.deleteAsset(guid);
+        }
       }
       setSelectedGuids(new Set());
       setDeleteTarget(null);
@@ -377,7 +419,12 @@ export function ContentBrowserWorkspace() {
     } finally {
       setBusy(false);
     }
-  }, [assetRegistry, deleteTarget, refreshAssetRegistry]);
+  }, [
+    assetRegistry,
+    deleteTarget,
+    refreshAssetRegistry,
+    selectedFolderPath,
+  ]);
 
   const handleImport = useCallback(
     async (files: FileList | null) => {
@@ -527,6 +574,7 @@ export function ContentBrowserWorkspace() {
             node={folderTree}
             selectedPath={selectedFolderPath}
             onSelect={setSelectedFolderPath}
+            onRequestDelete={requestDeleteFolder}
             depth={0}
           />
         </aside>
@@ -679,16 +727,23 @@ export function ContentBrowserWorkspace() {
       >
         <AlertDialogContent data-testid="content-browser-delete-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete assets?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {deleteTarget?.kind === "folder"
+                ? "Delete folder?"
+                : "Delete assets?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              The following assets will be removed permanently. This action is not
-              undoable.
+              {deleteTarget?.kind === "folder"
+                ? `Folder ${deleteTarget.path} and its assets will be removed permanently. This action is not undoable.`
+                : "The following assets will be removed permanently. This action is not undoable."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-2 text-sm text-muted-foreground">
             <ul className="list-disc pl-5">
               {deleteTarget?.guids.map((guid) => (
-                <li key={guid}>{resolveAssetName(guid)}</li>
+                <li key={guid}>
+                  <SelectableText>{resolveAssetName(guid)}</SelectableText>
+                </li>
               ))}
             </ul>
             {deleteInboundRefs.length > 0 ? (
@@ -696,7 +751,9 @@ export function ContentBrowserWorkspace() {
                 <p>Inbound references from other assets:</p>
                 <ul className="list-disc pl-5">
                   {deleteInboundRefs.map((ref) => (
-                    <li key={ref.guid}>{ref.name}</li>
+                    <li key={ref.guid}>
+                      <SelectableText>{ref.name}</SelectableText>
+                    </li>
                   ))}
                 </ul>
               </>

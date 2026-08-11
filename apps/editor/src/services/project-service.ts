@@ -25,6 +25,8 @@ import {
   createProjectFromTemplate,
   createVfsBlobStore,
   decodeAssetDocument,
+  DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  EncodeQueue,
   encodeAssetDocument,
   exportProjectZip,
   isAssetDocumentPath,
@@ -68,12 +70,59 @@ export class ProjectService {
   private readonly migrations = defaultRegistry();
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
+  private readonly encodeQueue: EncodeQueue;
+  private visibilityBound = false;
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
 
   constructor(storage: ProjectStorage) {
     this.storage = storage;
     this.blobs = createVfsBlobStore(storage);
+    this.encodeQueue = new EncodeQueue({
+      onState: (guid, state) => {
+        // `compressed` is written with the KTX2 chunk in onComplete.
+        if (state === "compressed") return;
+        void this.assetRegistry?.setCompressionState(guid, state);
+      },
+      onComplete: async (result) => {
+        await this.assetRegistry?.commitCompressedTexture(result);
+      },
+      onError: (guid) => {
+        void this.assetRegistry?.setCompressionState(guid, "encode_failed");
+      },
+    });
+    this.bindEncodeQueueVisibility();
+  }
+
+  get textureEncodeQueue(): EncodeQueue {
+    return this.encodeQueue;
+  }
+
+  /** Pause encode jobs while Preview runs (engineplan §3.5). */
+  pauseTextureEncodeQueue(): void {
+    this.encodeQueue.pause();
+  }
+
+  resumeTextureEncodeQueue(): void {
+    this.encodeQueue.resume();
+  }
+
+  async retryTextureEncoding(guid: string): Promise<boolean> {
+    return (await this.assetRegistry?.retryTextureEncoding(guid)) ?? false;
+  }
+
+  async retryAllFailedTextureEncoding(): Promise<number> {
+    if (!this.assetRegistry) return 0;
+    let count = 0;
+    for (const asset of this.assetRegistry.list({ type: "Texture" })) {
+      const state = asset.header.payload.compressionState;
+      if (state === "encode_failed" || state === "fallback_uncompressed") {
+        if (await this.assetRegistry.retryTextureEncoding(asset.header.guid)) {
+          count += 1;
+        }
+      }
+    }
+    return count;
   }
 
   get storagePort(): ProjectStorage {
@@ -190,6 +239,7 @@ export class ProjectService {
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw, folder.name);
     this.projectGuid = raw.guid ?? newGuid();
+    this.loadedTextureSettings = document.settings.textures;
 
     // Project manifest schema migration (type Project).
     const projectVersion =
@@ -263,11 +313,36 @@ export class ProjectService {
     return { ...document, scenes, graphs };
   }
 
+  private loadedTextureSettings: {
+    autoRequeueUncompressed: boolean;
+    maxTextureDimension: number;
+  } | null = null;
+
   private async mountAssetRegistry(): Promise<AssetRegistry> {
+    const maxDimension =
+      this.loadedTextureSettings?.maxTextureDimension ??
+      DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
     const registry = new AssetRegistry(this.storage, { blobs: this.blobs });
+    registry.setEncodePipeline(this.encodeQueue, {
+      ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
+      maxDimension,
+    });
     await registry.mountRoot(projectContentRoot());
     this.assetRegistry = registry;
+    const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
+    if (auto) {
+      await registry.requeueUncompressedTextures();
+    }
     return registry;
+  }
+
+  private bindEncodeQueueVisibility(): void {
+    if (this.visibilityBound || typeof document === "undefined") return;
+    this.visibilityBound = true;
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.encodeQueue.pause();
+      else this.encodeQueue.resume();
+    });
   }
 
   /** Re-scan project assets after registry file operations (import, create, delete). */
@@ -311,6 +386,7 @@ export class ProjectService {
   private async scaffoldNewProject(name: string): Promise<ProjectLoadResult> {
     const document = createEmptyProject(name);
     this.projectGuid = newGuid();
+    this.loadedTextureSettings = document.settings.textures;
     const graph = createDefaultGraph();
     const scene = createDefaultScene();
     await this.storage.mkdir("assets/.blobs", true);

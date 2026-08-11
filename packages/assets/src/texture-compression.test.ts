@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { EncodeQueue } from "./encode-queue";
 import {
   clampDimension,
@@ -9,6 +10,8 @@ import {
 } from "./texture-compression";
 import { selectTextureChunk } from "./texture-loader";
 import { encodeBabasset, readBabassetHeader } from "./babasset";
+import { projectContentRoot } from "./content-root";
+import { AssetRegistry } from "./registry";
 
 describe("texture compression policy", () => {
   it("leaves pixel art, sprites, UI and fonts uncompressed", () => {
@@ -152,5 +155,108 @@ describe("stubEncodeKtx2", () => {
       generateMipmaps: true,
     });
     expect(new TextDecoder().decode(ktx2.subarray(0, 12))).toContain("BABS-KTX2");
+  });
+});
+
+describe("registry encode pipeline", () => {
+  it("enqueues compressible imports and commits a KTX2 chunk", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("encode.babproject");
+    await storage.mkdir("assets", true);
+
+    const registry = new AssetRegistry(storage);
+    const queue = new EncodeQueue({
+      onComplete: async (result) => {
+        await registry.commitCompressedTexture(result);
+      },
+    });
+    registry.setEncodePipeline(queue);
+    await registry.mountRoot(projectContentRoot());
+
+    const [texture] = await registry.importFile(
+      "project",
+      "",
+      "albedo.png",
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]),
+    );
+    expect(texture!.header.payload.compressionState).toBe("pending");
+
+    await vi.waitFor(() => {
+      const updated = registry.getByGuid(texture!.header.guid)!;
+      expect(updated.header.payload.compressionState).toBe("compressed");
+      expect(updated.header.chunks.some((chunk) => chunk.kind === "ktx2")).toBe(
+        true,
+      );
+    });
+  });
+
+  it("retries encode_failed textures", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("retry.babproject");
+    await storage.mkdir("assets", true);
+    const bytes = await encodeBabasset({
+      header: {
+        guid: "fail-tex",
+        type: "Texture",
+        name: "Fail",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: { compressionState: "encode_failed", usage: "albedo" },
+      },
+      chunks: [
+        {
+          id: "pixels",
+          kind: "pixels",
+          mime: "image/png",
+          data: new Uint8Array([9, 8, 7]),
+        },
+      ],
+    });
+    await storage.writeBinary("assets/fail.babasset", bytes);
+
+    const registry = new AssetRegistry(storage);
+    let attempts = 0;
+    const queue = new EncodeQueue({
+      encode: async (source, settings) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("boom");
+        return stubEncodeKtx2(source, settings);
+      },
+      onComplete: async (result) => {
+        await registry.commitCompressedTexture(result);
+      },
+      onError: async (guid) => {
+        await registry.setCompressionState(guid, "encode_failed");
+      },
+    });
+    registry.setEncodePipeline(queue);
+    await registry.mountRoot(projectContentRoot());
+
+    queue.enqueue({
+      assetGuid: "fail-tex",
+      source: new Uint8Array([9, 8, 7]),
+      settings: {
+        format: "uastc",
+        quality: 2,
+        maxDimension: 2048,
+        generateMipmaps: true,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(
+        registry.getByGuid("fail-tex")!.header.payload.compressionState,
+      ).toBe("encode_failed");
+    });
+
+    await registry.retryTextureEncoding("fail-tex");
+    await vi.waitFor(() => {
+      expect(
+        registry.getByGuid("fail-tex")!.header.payload.compressionState,
+      ).toBe("compressed");
+    });
+    expect(attempts).toBe(2);
   });
 });

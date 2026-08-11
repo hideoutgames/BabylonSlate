@@ -19,6 +19,15 @@ describe("importers", () => {
     expect(results[0]!.chunks[0]!.kind).toBe("pixels");
   });
 
+  it("leaves pixel-art images uncompressed by policy", async () => {
+    const results = await importImage(new Uint8Array([1, 2, 3]), {
+      fileName: "hero_pixel.png",
+      existingGuids: new Set(),
+    });
+    expect(results[0]!.payload.usage).toBe("pixelArt");
+    expect(results[0]!.payload.compressionState).toBeUndefined();
+  });
+
   it("imports models with material/texture/animation dependents", async () => {
     const results = await importModel(new Uint8Array([9]), {
       fileName: "hero.glb",
