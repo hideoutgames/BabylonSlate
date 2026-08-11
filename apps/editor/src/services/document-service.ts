@@ -3,7 +3,7 @@ import type {
   ProjectLayouts,
   SerializedGraph,
   SerializedScene,
-} from "@babylonslate/shared";
+} from "@babylonslate/core";
 import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
@@ -11,8 +11,8 @@ import {
   documentId,
   isContentBrowserId,
   labelFromPath,
-} from "@babylonslate/shared";
-import type { ProjectDocument } from "@babylonslate/shared";
+} from "@babylonslate/core";
+import type { ProjectDocument } from "@babylonslate/core";
 import type { ProjectService } from "./project-service";
 
 export interface OpenDocument {

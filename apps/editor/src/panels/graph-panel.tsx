@@ -1,6 +1,6 @@
-import type { IDockviewPanelProps } from "dockview";
-import { GraphEditor } from "@babylonslate/graph";
-import { createDefaultGraph, type SerializedGraph } from "@babylonslate/shared";
+import type { IDockviewPanelProps } from "dockview-react";
+import { GraphEditor } from "@babylonslate/graph-ui";
+import { createDefaultGraph, type SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 

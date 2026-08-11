@@ -1,7 +1,11 @@
-import type { IDockviewPanelProps } from "dockview";
+import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useRef } from "react";
-import { createEngine, type EngineHandle } from "@babylonslate/engine";
-import { engineCommandBus, type SerializedScene } from "@babylonslate/shared";
+import {
+  ContextMenuOverlay,
+  useContextMenu,
+} from "@babylonslate/editor-kit";
+import { createEngine, type EngineHandle } from "@babylonslate/render";
+import { engineCommandBus, type SerializedScene } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 
@@ -16,11 +20,27 @@ function resizeCanvasIfSized(
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
+  const panelRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const { openDocuments } = useDocuments();
+
+  const { menu, closeMenu, bind } = useContextMenu(panelRef, {
+    items: [
+      {
+        id: "reload-scene",
+        label: "Reload scene",
+        onSelect: () => {
+          const current = sceneRef.current;
+          if (current && engineRef.current) {
+            engineRef.current.loadScene(current);
+          }
+        },
+      },
+    ],
+  });
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const scene =
@@ -84,8 +104,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [scene]);
 
   return (
-    <div className="h-full w-full bg-background">
+    <div
+      ref={panelRef}
+      className="relative h-full w-full bg-background"
+      data-testid="viewport-panel"
+      {...bind}
+    >
       <canvas ref={canvasRef} className="h-full w-full touch-none" />
+      <ContextMenuOverlay menu={menu} onClose={closeMenu} />
     </div>
   );
 }

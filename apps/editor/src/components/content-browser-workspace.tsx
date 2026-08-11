@@ -1,5 +1,5 @@
 import { FileJsonIcon, LayersIcon } from "lucide-react";
-import { documentId, labelFromPath } from "@babylonslate/shared";
+import { documentId, labelFromPath } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 
 export function ContentBrowserWorkspace() {

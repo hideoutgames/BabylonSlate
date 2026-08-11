@@ -1,0 +1,22 @@
+{
+  "name": "@babylonslate/vfs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/vfs"
+  },
+  "dependencies": {
+    "@babylonslate/core": "workspace:*",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/preferences": "^8.0.0",
+    "@daniele-rolli/capacitor-scoped-storage": "^0.0.3"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  }
+}

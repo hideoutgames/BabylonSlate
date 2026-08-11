@@ -8,24 +8,30 @@
     "build:pages": "VITE_BASE_PATH=/BabylonSlate/ VITE_TEST_MODE=true pnpm --filter editor build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --config vitest.workspace.ts",
+    "test:coverage": "vitest run --config vitest.workspace.ts --coverage",
+    "test:watch": "vitest --config vitest.workspace.ts",
     "test:e2e": "playwright test",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:e2e"
+    "verify": "pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm test:e2e"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
+    "@testing-library/react": "^16.3.0",
     "@types/node": "^22.13.10",
+    "@vitest/coverage-v8": "^4.0.0",
     "eslint": "^9.22.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
+    "fast-check": "^4.3.0",
     "globals": "^16.0.0",
     "jsdom": "^26.0.0",
-    "@playwright/test": "^1.51.0",
+    "@playwright/test": "^1.62.0",
     "prettier": "^3.5.3",
     "typescript": "~5.8.2",
     "typescript-eslint": "^8.26.1",
-    "vitest": "^3.0.9"
+    "vitest": "^4.0.0",
+    "zod": "^4.0.0",
+    "coi-serviceworker": "^0.1.7"
   },
   "packageManager": "pnpm@10.33.3"
 }

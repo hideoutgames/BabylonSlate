@@ -1,0 +1,38 @@
+.selectable-text {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+
+.context-menu-panel {
+  position: fixed;
+  z-index: 101;
+  min-width: 12rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  padding: 0.25rem;
+  box-shadow: 0 4px 12px color-mix(in oklch, var(--background) 40%, transparent);
+}
+
+.context-menu-item {
+  display: flex;
+  min-height: 44px;
+  width: 100%;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  padding-inline: 0.5rem;
+  text-align: left;
+  font-size: 0.8125rem;
+  color: var(--popover-foreground);
+}
+
+.context-menu-item:hover {
+  background: var(--accent);
+}

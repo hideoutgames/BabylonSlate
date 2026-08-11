@@ -1,0 +1,25 @@
+{
+  "name": "@babylonslate/graph-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/graph-ui"
+  },
+  "dependencies": {
+    "@babylonslate/core": "workspace:*",
+    "@xyflow/react": "^12.11.2",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.10",
+    "typescript": "~5.8.2"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}
