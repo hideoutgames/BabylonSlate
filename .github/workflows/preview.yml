@@ -55,9 +55,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          build_type=$(gh api "repos/${{ github.repository }}/pages" --jq .build_type)
+          # gh --jq takes one expression; do not pass jq's -r flag.
+          build_type=$(gh api "repos/${{ github.repository }}/pages" --jq '.build_type')
           if [ "$build_type" != "workflow" ]; then
-            source_branch=$(gh api "repos/${{ github.repository }}/pages" --jq -r '.source.branch // "unknown"')
+            source_branch=$(gh api "repos/${{ github.repository }}/pages" --jq '.source.branch // "unknown"')
             echo "::error::GitHub Pages is using legacy branch deployment (build_type=$build_type, branch=$source_branch)."
             echo "The Preview workflow deploys the editor, but Pages is still serving Jekyll-rendered README.md from the repo root."
             echo "Fix: Settings → Pages → Build and deployment → Source → GitHub Actions"
@@ -76,7 +77,7 @@ jobs:
             echo "Attempt $attempt: status=$status, retrying in 15s..."
             sleep 15
           done
-          echo "Pages smoke check failed — the site is not serving the built editor."
+          echo "::error::Pages smoke check failed — the site is not serving the built editor."
           echo "Ensure GitHub Pages source is GitHub Actions (not Deploy from a branch):"
           echo "https://github.com/hideoutgames/BabylonSlate/settings/pages"
           exit 1

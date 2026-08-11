@@ -491,7 +491,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [documentService, projectDocument]);
 
   const value = useMemo<DocumentContextValue>(
-    () => ({
+    () => {
+      // registryVersion is a bump counter for imperative document-service
+      // mutations that are not themselves React state.
+      void registryVersion;
+      return {
       route,
       projectDocument,
       projectName: projectDocument?.metadata.name ?? null,
@@ -529,7 +533,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       captureActiveLayout,
       getAvailableDocuments,
-    }),
+    };
+    },
     [
       registryVersion,
       route,
@@ -573,6 +578,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Context modules intentionally export the provider plus consumer hooks.
+/* eslint-disable react-refresh/only-export-components -- context module */
 export function useDocuments(): DocumentContextValue {
   const context = useContext(DocumentContext);
   if (!context) {
@@ -588,3 +595,4 @@ export function useProject(): DocumentContextValue {
 
 /** @deprecated Use DocumentProvider instead */
 export const ProjectProvider = DocumentProvider;
+/* eslint-enable react-refresh/only-export-components */
