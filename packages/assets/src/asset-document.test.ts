@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   decodeAssetDocument,
@@ -106,5 +106,20 @@ describe("vfs blob store", () => {
   it("reports missing blobs", async () => {
     const blobs = createMemoryBlobStore();
     await expect(blobs.readBlob("nope")).rejects.toThrow(/Blob not found/);
+  });
+
+  it("keeps unchanged large chunks out of a re-save", async () => {
+    const storage = await boundStorage();
+    const blobs = createVfsBlobStore(storage);
+    const payload = { notes: "y".repeat(100 * 1024) };
+    const writeBinary = vi.spyOn(storage, "writeBinary");
+
+    await encodeAssetDocument({ ...scene, payload }, { blobs });
+    const afterFirst = writeBinary.mock.calls.length;
+    await encodeAssetDocument({ ...scene, payload }, { blobs });
+
+    // Second save re-hashes but writes no blob bytes: the §19 mitigation that
+    // keeps large immutable chunks out of every save.
+    expect(writeBinary.mock.calls.length).toBe(afterFirst);
   });
 });
