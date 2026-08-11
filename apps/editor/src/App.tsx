@@ -4,6 +4,20 @@ import {
   useSuppressNativeContextMenu,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { isTestModeEnabled } from "@babylonslate/vfs";
+import { ComponentGallery } from "./components/component-gallery";
 import { EditorChromeBar } from "./components/editor-chrome-bar";
 import { DocumentWorkspace } from "./components/document-workspace";
 import { Homepage } from "./components/homepage";
@@ -11,34 +25,38 @@ import { DocumentProvider, useDocuments } from "./context/document-context";
 
 function DirtyCloseDialog({
   dirtyNames,
+  open,
   onSave,
   onDiscard,
   onCancel,
 }: {
   dirtyNames: string[];
+  open: boolean;
   onSave: () => void;
   onDiscard: () => void;
   onCancel: () => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      data-testid="dirty-close-dialog"
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
     >
-      <div className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-border bg-background p-6 shadow-lg">
-        <h2 className="text-lg font-medium">Unsaved documents</h2>
-        <p className="text-sm text-muted-foreground">
-          Save before closing? Unsaved:
-        </p>
+      <AlertDialogContent data-testid="dirty-close-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unsaved documents</AlertDialogTitle>
+          <AlertDialogDescription>
+            Save before closing? Unsaved:
+          </AlertDialogDescription>
+        </AlertDialogHeader>
         <ul className="list-disc pl-5 text-sm">
           {dirtyNames.map((name) => (
             <li key={name}>{name}</li>
           ))}
         </ul>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="outline" data-testid="dirty-cancel" onClick={onCancel}>
-            Cancel
-          </Button>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="dirty-cancel">Cancel</AlertDialogCancel>
           <Button
             variant="secondary"
             data-testid="dirty-discard"
@@ -46,50 +64,54 @@ function DirtyCloseDialog({
           >
             Discard
           </Button>
-          <Button data-testid="dirty-save" onClick={onSave}>
+          <AlertDialogAction data-testid="dirty-save" onClick={onSave}>
             Save All
-          </Button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
 function MigrationPrompt({
   paths,
+  open,
   onApprove,
   onCancel,
 }: {
   paths: string[];
+  open: boolean;
   onApprove: () => void;
   onCancel: () => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      data-testid="migrate-on-save-dialog"
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
     >
-      <div className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-border bg-background p-6 shadow-lg">
-        <h2 className="text-lg font-medium">Schema migration required</h2>
-        <p className="text-sm text-muted-foreground">
-          Some assets were made with an older schema. Migrate them on save? Files
-          you do not save stay untouched.
-        </p>
+      <AlertDialogContent data-testid="migrate-on-save-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Schema migration required</AlertDialogTitle>
+          <AlertDialogDescription>
+            Some assets were made with an older schema. Migrate them on save?
+            Files you do not save stay untouched.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
         <ul className="list-disc pl-5 text-sm">
           {paths.map((path) => (
             <li key={path}>{path}</li>
           ))}
         </ul>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="outline" data-testid="migrate-cancel" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button data-testid="migrate-approve" onClick={onApprove}>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="migrate-cancel">Cancel</AlertDialogCancel>
+          <AlertDialogAction data-testid="migrate-approve" onClick={onApprove}>
             Migrate on save
-          </Button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -97,27 +119,29 @@ function RecoveryBanner() {
   const { recoveryAvailable, keepRecovery, dismissRecovery } = useDocuments();
   if (!recoveryAvailable) return null;
   return (
-    <div
-      className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3"
+    <Alert
+      className="rounded-none border-x-0 border-t-0"
       data-testid="recovery-prompt"
     >
-      <p className="text-sm">
-        A recovery journal was found. Replay unsaved graph edits, or discard the
-        journal.
-      </p>
-      <div className="flex gap-2">
-        <Button data-testid="recover-journal" onClick={() => void keepRecovery()}>
-          Recover edits
-        </Button>
-        <Button
-          variant="outline"
-          data-testid="dismiss-journal"
-          onClick={() => void dismissRecovery()}
-        >
-          Discard journal
-        </Button>
-      </div>
-    </div>
+      <AlertTitle>Recovery journal found</AlertTitle>
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+        <span>
+          Replay unsaved graph edits, or discard the journal.
+        </span>
+        <div className="flex gap-2">
+          <Button data-testid="recover-journal" onClick={() => void keepRecovery()}>
+            Recover edits
+          </Button>
+          <Button
+            variant="outline"
+            data-testid="dismiss-journal"
+            onClick={() => void dismissRecovery()}
+          >
+            Discard journal
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -158,37 +182,43 @@ function EditorLayout() {
       <main className="flex min-h-0 flex-1 flex-col">
         <DocumentWorkspace />
       </main>
-      {dirtyPrompt ? (
-        <DirtyCloseDialog
-          dirtyNames={dirtyPrompt}
-          onCancel={() => setDirtyPrompt(null)}
-          onDiscard={() => {
+      <DirtyCloseDialog
+        dirtyNames={dirtyPrompt ?? []}
+        open={dirtyPrompt !== null}
+        onCancel={() => setDirtyPrompt(null)}
+        onDiscard={() => {
+          setDirtyPrompt(null);
+          void forceCloseProject();
+        }}
+        onSave={() => {
+          void (async () => {
+            await requestSave();
             setDirtyPrompt(null);
-            void forceCloseProject();
-          }}
-          onSave={() => {
-            void (async () => {
-              await requestSave();
-              setDirtyPrompt(null);
-              await forceCloseProject();
-            })();
-          }}
-        />
-      ) : null}
-      {showMigrate ? (
-        <MigrationPrompt
-          paths={migrationPending.map((p) => p.path)}
-          onCancel={() => setShowMigrate(false)}
-          onApprove={() => {
-            setShowMigrate(false);
-            void approveMigrationsAndSave();
-          }}
-        />
-      ) : null}
+            await forceCloseProject();
+          })();
+        }}
+      />
+      <MigrationPrompt
+        paths={migrationPending.map((p) => p.path)}
+        open={showMigrate}
+        onCancel={() => setShowMigrate(false)}
+        onApprove={() => {
+          setShowMigrate(false);
+          void approveMigrationsAndSave();
+        }}
+      />
       <span className="sr-only" data-testid="dirty-count">
         {dirtyDocuments.length}
       </span>
     </div>
+  );
+}
+
+function isComponentGalleryRoute(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    isTestModeEnabled() &&
+    new URLSearchParams(window.location.search).has("gallery")
   );
 }
 
@@ -210,6 +240,10 @@ function AppRoutes() {
     keepRecovery,
     dismissRecovery,
   } = useDocuments();
+
+  if (isComponentGalleryRoute()) {
+    return <ComponentGallery />;
+  }
 
   if (route === "home") {
     return (
@@ -235,8 +269,10 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <DocumentProvider>
-      <AppRoutes />
-    </DocumentProvider>
+    <TooltipProvider>
+      <DocumentProvider>
+        <AppRoutes />
+      </DocumentProvider>
+    </TooltipProvider>
   );
 }

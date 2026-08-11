@@ -47,6 +47,38 @@ test.describe("Touch shell UX", () => {
     expect(box!.height).toBeGreaterThanOrEqual(44);
   });
 
+  test("global toolbar buttons meet minimum touch target size", async ({
+    page,
+  }) => {
+    const button = page.getByTestId("undo-document");
+    await expect(button).toBeVisible();
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  });
+
+  test("content browser search meets minimum touch target size", async ({
+    page,
+  }) => {
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+      .click();
+    const search = page.getByTestId("content-browser-search");
+    await expect(search).toBeVisible({ timeout: 10_000 });
+    const box = await search.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  });
+
+  test("defines --touch-target on the document root", async ({ page }) => {
+    const touchTarget = await page.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--touch-target")
+        .trim(),
+    );
+    expect(touchTarget).toBe("44px");
+  });
+
   test("opens context menu on right click in viewport panel", async ({
     page,
   }) => {

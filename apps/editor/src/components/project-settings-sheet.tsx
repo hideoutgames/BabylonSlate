@@ -1,11 +1,24 @@
 import { Button } from "@babylonslate/ui/components/button";
 import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
+import { Separator } from "@babylonslate/ui/components/separator";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@babylonslate/ui/components/sheet";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@babylonslate/ui/components/tabs";
 import { useDocuments } from "../context/document-context";
 
 interface ProjectSettingsSheetProps {
@@ -37,46 +50,54 @@ export function ProjectSettingsSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right">
+      <SheetContent side="right" className="w-full sm:max-w-md">
         <SheetHeader>
           <SheetTitle>Project Settings</SheetTitle>
           <SheetDescription>
             Configuration for {projectDocument.metadata.name}
           </SheetDescription>
         </SheetHeader>
-        <div className="flex flex-col gap-4 px-4 pb-4">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">
-              Project name
-            </span>
-            <span className="text-sm">{projectDocument.metadata.name}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">
-              Version
-            </span>
-            <span className="text-sm">{projectDocument.metadata.version}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">
-              Touch target minimum
-            </span>
-            <span className="text-sm">
-              {projectDocument.settings.touchMinTargetPx}px
-            </span>
-          </div>
-          <div className="flex flex-col gap-2 border-t border-border pt-4">
-            <span className="text-xs font-medium text-muted-foreground">
-              Textures
-            </span>
-            <p className="text-sm text-muted-foreground">
-              Max dimension {projectDocument.settings.textures.maxTextureDimension}
-              px. Auto re-queue uncompressed:{" "}
-              {projectDocument.settings.textures.autoRequeueUncompressed
-                ? "on"
-                : "off"}
-              .
-            </p>
+        <Tabs defaultValue="general" className="px-4 pb-4">
+          <TabsList className="w-full">
+            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="textures">Textures</TabsTrigger>
+            <TabsTrigger value="export">Export</TabsTrigger>
+          </TabsList>
+          <TabsContent value="general" className="pt-4">
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Project name</FieldLabel>
+                <p className="text-sm">{projectDocument.metadata.name}</p>
+              </Field>
+              <Field>
+                <FieldLabel>Version</FieldLabel>
+                <p className="text-sm">{projectDocument.metadata.version}</p>
+              </Field>
+              <Field>
+                <FieldLabel>Touch target minimum</FieldLabel>
+                <p className="text-sm">
+                  {projectDocument.settings.touchMinTargetPx}px
+                </p>
+                <FieldDescription>
+                  Matches shell <code>--touch-target</code> on this device.
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+          </TabsContent>
+          <TabsContent value="textures" className="flex flex-col gap-4 pt-4">
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Texture policy</FieldLabel>
+                <FieldDescription>
+                  Max dimension {projectDocument.settings.textures.maxTextureDimension}
+                  px. Auto re-queue uncompressed:{" "}
+                  {projectDocument.settings.textures.autoRequeueUncompressed
+                    ? "on"
+                    : "off"}
+                  .
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
             <Button
               variant="secondary"
               data-testid="retry-texture-encoding"
@@ -84,19 +105,23 @@ export function ProjectSettingsSheet({
             >
               Retry encoding
             </Button>
-          </div>
-          <div className="flex flex-col gap-2 border-t border-border pt-4">
-            <span className="text-xs font-medium text-muted-foreground">
-              Export
-            </span>
+          </TabsContent>
+          <TabsContent value="export" className="flex flex-col gap-4 pt-4">
+            <Separator />
+            <Field>
+              <FieldLabel>Export Project</FieldLabel>
+              <FieldDescription>
+                Download a zip of the project directory layout.
+              </FieldDescription>
+            </Field>
             <Button
               data-testid="export-project"
               onClick={() => void handleExport()}
             >
               Export Project
             </Button>
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </SheetContent>
     </Sheet>
   );

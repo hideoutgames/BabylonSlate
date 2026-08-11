@@ -27,7 +27,19 @@ import { documentId, labelFromPath } from "@babylonslate/core";
 import { pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -725,48 +737,54 @@ export function ContentBrowserWorkspace() {
               Create a new asset in the selected folder.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex flex-col gap-3 py-2">
-            <label className="flex flex-col gap-1 text-sm">
-              Type
-              <select
-                className="min-h-11 rounded-md border border-border bg-background px-3"
+          <FieldGroup className="py-2">
+            <Field>
+              <FieldLabel htmlFor="new-asset-type">Type</FieldLabel>
+              <Select
                 value={newAssetType}
-                onChange={(event) =>
-                  setNewAssetType(event.target.value as CreatableAssetType)
+                onValueChange={(value) =>
+                  setNewAssetType(value as CreatableAssetType)
                 }
               >
-                {CREATABLE_ASSET_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Name
+                <SelectTrigger id="new-asset-type" className="min-h-11 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CREATABLE_ASSET_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
               <Input
+                id="new-asset-name"
                 className="min-h-11"
                 value={newAssetName}
                 onChange={(event) => setNewAssetName(event.target.value)}
               />
-            </label>
+            </Field>
             {newAssetType === "Class" ? (
-              <label className="flex flex-col gap-1 text-sm">
-                Parent class
-                <select
-                  className="min-h-11 rounded-md border border-border bg-background px-3"
-                  value={newAssetParent}
-                  onChange={(event) => setNewAssetParent(event.target.value)}
-                >
-                  {ENGINE_BASE_CLASSES.map((base) => (
-                    <option key={base} value={base}>
-                      {base}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <Field>
+                <FieldLabel htmlFor="new-asset-parent">Parent class</FieldLabel>
+                <Select value={newAssetParent} onValueChange={setNewAssetParent}>
+                  <SelectTrigger id="new-asset-parent" className="min-h-11 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ENGINE_BASE_CLASSES.map((base) => (
+                      <SelectItem key={base} value={base}>
+                        {base}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
             ) : null}
-          </div>
+          </FieldGroup>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction

@@ -19,6 +19,7 @@ import {
   LayersIcon,
   LayoutGridIcon,
   LogOutIcon,
+  PlusIcon,
   Redo2Icon,
   SaveIcon,
   SettingsIcon,
@@ -26,12 +27,19 @@ import {
   XIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { Button } from "@babylonslate/ui/components/button";
 import {
+  labelFromPath,
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   type DocumentKind,
 } from "@babylonslate/core";
+import { Button } from "@babylonslate/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@babylonslate/ui/components/dropdown-menu";
 import { useDocuments } from "../context/document-context";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectSettingsSheet } from "./project-settings-sheet";
@@ -164,6 +172,8 @@ export function EditorChromeBar({
     redoActiveDocument,
     canUndoActiveDocument,
     canRedoActiveDocument,
+    openDocument,
+    getAvailableDocuments,
   } = useDocuments();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -174,6 +184,7 @@ export function EditorChromeBar({
   const closableDocs = openDocuments.filter(
     (doc) => doc.ref.kind !== "content-browser",
   );
+  const available = getAvailableDocuments();
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -238,6 +249,42 @@ export function EditorChromeBar({
               ))}
             </SortableContext>
           </DndContext>
+
+          {projectName && available.length > 0 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid="document-tab-add"
+                    className="chrome-action-button shrink-0"
+                  />
+                }
+              >
+                <PlusIcon data-icon="inline-start" />
+                Add
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {available.map((item) => (
+                  <DropdownMenuItem
+                    key={`${item.kind}:${item.path}`}
+                    data-testid={`add-document-${item.kind}-${item.path.replace(/\//g, "-")}`}
+                    onClick={() => {
+                      void openDocument({
+                        kind: item.kind,
+                        path: item.path,
+                        label: labelFromPath(item.path),
+                      });
+                    }}
+                  >
+                    {kindIcon(item.kind)}
+                    <span className="truncate">{labelFromPath(item.path)}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </header>
 
