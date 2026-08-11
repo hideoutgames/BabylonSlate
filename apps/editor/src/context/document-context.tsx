@@ -713,8 +713,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       captureActiveLayout,
       getAvailableDocuments,
-      refreshAssetRegistry,
-      projectService,
     ],
   );
 

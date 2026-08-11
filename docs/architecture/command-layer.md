@@ -69,7 +69,7 @@ Each line is one JSON object:
 
 - Append after a successful `apply` on an open document (`appendJournalLine` in derived data).
 - Clean **Close Project** truncates the journal.
-- Recovery uses `replayJournalLines` → `reviveCommand` → `apply` on open graph documents, then truncates the journal.
+- Recovery (Homepage **Recover edits**) uses `replayJournalLines` → `reviveCommand` → `apply` on open graph documents, then truncates the journal.
 - Schema version `v` allows journal migration without inventing a parallel recovery path.
 
 ## Dirty / debounce saves
