@@ -74,6 +74,7 @@
 
 .chrome-tab {
   display: flex;
+  min-height: 44px;
   flex-shrink: 0;
   align-items: stretch;
   border-right: 1px solid var(--border);
