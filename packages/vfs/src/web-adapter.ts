@@ -241,17 +241,25 @@ export class OpfsStorageAdapter implements ProjectStorage {
       throw new Error(`File not found: ${path}`);
     }
     const out: DirEntry[] = [];
-    for await (const [name, handle] of dir.entries()) {
-      if (handle.kind === "directory") {
-        out.push({ name, isDir: true, size: null, mtime: null });
-      } else {
-        const file = await (handle as FileSystemFileHandle).getFile();
-        out.push({
-          name,
-          isDir: false,
-          size: file.size,
-          mtime: file.lastModified,
-        });
+    // FileSystemDirectoryHandle async iterator (entries may be missing from older DOM libs).
+    const dirHandle = dir as FileSystemDirectoryHandle & {
+      entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+      values?: () => AsyncIterableIterator<FileSystemHandle>;
+      keys?: () => AsyncIterableIterator<string>;
+    };
+    if (dirHandle.entries) {
+      for await (const [name, handle] of dirHandle.entries()) {
+        if (handle.kind === "directory") {
+          out.push({ name, isDir: true, size: null, mtime: null });
+        } else {
+          const file = await (handle as FileSystemFileHandle).getFile();
+          out.push({
+            name,
+            isDir: false,
+            size: file.size,
+            mtime: file.lastModified,
+          });
+        }
       }
     }
     return out;

@@ -1,10 +1,17 @@
 import { expect, test } from "@playwright/test";
 
+async function openTestProject(page: import("@playwright/test").Page) {
+  await page.goto("/?test=1");
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await page.getByTestId("create-project-empty").click();
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+}
+
 test.describe("BabylonSlate editor smoke", () => {
   test("loads shell, opens project, and shows viewport canvas", async ({
     page,
   }) => {
-    await page.goto("/?test=1");
+    await openTestProject(page);
 
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("test-mode-badge")).toHaveText("Test mode");
@@ -17,7 +24,6 @@ test.describe("BabylonSlate editor smoke", () => {
       page.locator('[data-testid="document-tab"][data-document-kind="content-browser"] [data-testid="document-tab-close"]'),
     ).toHaveCount(0);
 
-    await page.getByTestId("open-project").click();
     await expect(page.getByTestId("project-name")).toContainText(
       "TestProject.babproject",
     );
@@ -61,14 +67,14 @@ test.describe("BabylonSlate editor smoke", () => {
   test("does not mount viewport canvas until scene tab is opened", async ({
     page,
   }) => {
-    await page.goto("/?test=1");
-    await page.getByTestId("open-project").click();
+    await openTestProject(page);
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
     await expect(page.locator("canvas")).toHaveCount(0);
 
     await page.getByTestId("save-project").click();
-    await page.reload();
-    await page.getByTestId("open-project").click();
+    await page.getByTestId("close-project").click();
+    await expect(page.getByTestId("homepage")).toBeVisible();
+    await page.getByTestId("create-project-empty").click();
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
     await expect(page.locator("canvas")).toHaveCount(0);
   });

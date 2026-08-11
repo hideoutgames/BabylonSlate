@@ -4,7 +4,6 @@ export * from "./create-storage";
 export * from "./memory-adapter";
 export * from "./memory-app-settings";
 export * from "./mobile-storage-adapter";
-export * from "./node-adapter";
 export * from "./platform";
 export * from "./preferences-app-settings";
 export * from "./scoped-storage-adapter";

@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@babylonslate/assets": "workspace:*",
     "@babylonslate/core": "workspace:*",
     "@babylonslate/editor-kit": "workspace:*",
     "@babylonslate/graph-ui": "workspace:*",

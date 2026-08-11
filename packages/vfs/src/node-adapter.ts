@@ -13,9 +13,11 @@ import type {
 export class NodeStorageAdapter implements ProjectStorage {
   private folder: ProjectFolderHandle | null = null;
   private rootPath: string | null = null;
+  private readonly baseDir: string;
 
-  constructor(private readonly baseDir: string) {}
-
+  constructor(baseDir: string) {
+    this.baseDir = baseDir;
+  }
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
     return this.openDocumentsProject("MyGame.babproject");
   }

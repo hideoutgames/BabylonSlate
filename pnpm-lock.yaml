@@ -62,6 +62,9 @@ importers:
 
   apps/editor:
     dependencies:
+      '@babylonslate/assets':
+        specifier: workspace:*
+        version: link:../../packages/assets
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../../packages/core

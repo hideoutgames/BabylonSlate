@@ -45,7 +45,8 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `assets`, `test-kit` | React, Babylon, Capacitor |
+| `core`, `test-kit` | React, Babylon, Capacitor |
+| `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |
 | `ui`, `editor-kit`, `graph-ui` | Babylon, Capacitor |
