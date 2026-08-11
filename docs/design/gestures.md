@@ -11,12 +11,24 @@ BabylonSlate is touch-first. Do not assume hover or right-click.
 | Tap | Buttons, tabs, list items | Primary action |
 | `contextmenu` | Desktop secondary click | Same as long-press menu |
 
-- Native callout suppressed: `-webkit-touch-callout: none` on shell.
-- Long-press cancels on scroll or when drag arms.
+### Native menu suppression
+
+Two mechanisms, both required:
+
+- `-webkit-touch-callout: none` on the shell stops the iOS text callout.
+- `useSuppressNativeContextMenu` (applied once at the shell) calls `preventDefault` on `contextmenu` document-wide, so long-press and right-click reach our menu instead of the browser's.
+
+Inputs, textareas, `contenteditable` and anything inside `SelectableText` keep the platform menu, since that is where cut/copy/paste is still wanted.
+
+### Cancellation
+
+`useContextMenu` cancels a pending long-press when the pointer moves past 8px or on scroll (captured document-wide, since `scroll` does not bubble). The 500ms delay and 8px tolerance deliberately match Dockview's `LongPressDetector` defaults, so a panel drag and a context menu can never both fire from one gesture.
 
 ## Dockview
 
-- Tab strips and sashes: enlarged hit areas (44px+).
+- Dockview 8's `dndStrategy` defaults to `'auto'`: HTML5 drag for mouse, pointer events for touch and pen. Touch panel drag therefore needs no extra configuration.
+- Tab strips are 52px on coarse pointers; grips are 44px+.
+- Sashes stay visually thin (4px) but carry a widened hit area via a transparent pseudo-element, because Dockview sizes the sash element itself from an internal constant that CSS cannot override.
 - Panel **content** is a gesture-safe zone — viewport and graph handle their own gestures.
 - No popout / floating groups on iOS/Android.
 

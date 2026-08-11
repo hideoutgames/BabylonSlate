@@ -1,5 +1,4 @@
 .dockview-theme-babylonslate {
-  --dv-background-color: var(--background);
   --dv-group-view-background-color: var(--background);
   --dv-tabs-and-actions-container-background-color: var(--card);
   --dv-tabs-and-actions-container-font-size: 13px;
@@ -24,13 +23,31 @@
   min-height: 52px;
 }
 
-.dockview-theme-babylonslate .dv-sash {
-  /* Widen sash hit area for touch */
-  --dv-sash-size: 12px;
+/*
+ * Dockview sizes sashes inline from its own constant, so the hit area is
+ * widened with a transparent pseudo-element rather than by changing layout.
+ */
+.dockview-theme-babylonslate .dv-sash-container .dv-sash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 
-.dockview-theme-babylonslate .dv-drag-over-overlay {
-  min-height: 52px;
+.dockview-theme-babylonslate
+  .dv-split-view-container.dv-horizontal
+  > .dv-sash-container
+  > .dv-sash::after {
+  inset-inline: -10px;
+}
+
+.dockview-theme-babylonslate
+  .dv-split-view-container.dv-vertical
+  > .dv-sash-container
+  > .dv-sash::after {
+  inset-block: -10px;
+}
+
+.dockview-theme-babylonslate .dv-drop-target-anchor {
   border-radius: var(--radius-md);
 }
 

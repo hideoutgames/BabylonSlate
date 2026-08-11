@@ -4,10 +4,13 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-  type RefObject,
 } from "react";
 
+/** Matches dockview's own long-press drag timing so the two never disagree. */
 export const CONTEXT_MENU_LONG_PRESS_MS = 500;
+
+/** Matches dockview's press tolerance, so arming a panel drag cancels the menu. */
+export const CONTEXT_MENU_MOVE_TOLERANCE_PX = 8;
 
 export interface ContextMenuItem {
   id: string;
@@ -56,7 +59,6 @@ function distance(ax: number, ay: number, bx: number, by: number): number {
  * Cancels when the pointer moves beyond the movement threshold or on scroll.
  */
 export function useContextMenu(
-  targetRef: RefObject<Element | null>,
   options: UseContextMenuOptions,
 ): UseContextMenuResult {
   const { items, enabled = true, longPressMs = CONTEXT_MENU_LONG_PRESS_MS } =
@@ -113,7 +115,10 @@ export function useContextMenu(
     (event: React.PointerEvent) => {
       const press = pressRef.current;
       if (!press || press.pointerId !== event.pointerId) return;
-      if (distance(press.startX, press.startY, event.clientX, event.clientY) > 8) {
+      if (
+        distance(press.startX, press.startY, event.clientX, event.clientY) >
+        CONTEXT_MENU_MOVE_TOLERANCE_PX
+      ) {
         clearPress();
       }
     },
@@ -142,17 +147,20 @@ export function useContextMenu(
 
   useEffect(() => {
     if (!enabled) return;
-    const el = targetRef.current;
-    if (!el) return;
 
     const onScroll = () => {
       clearPress();
       closeMenu();
     };
 
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [clearPress, closeMenu, enabled, targetRef]);
+    // Scroll does not bubble, so capture on document to catch nested scrollers.
+    document.addEventListener("scroll", onScroll, {
+      capture: true,
+      passive: true,
+    });
+    return () =>
+      document.removeEventListener("scroll", onScroll, { capture: true });
+  }, [clearPress, closeMenu, enabled]);
 
   return {
     menu,

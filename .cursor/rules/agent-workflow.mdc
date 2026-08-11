@@ -17,11 +17,26 @@ alwaysApply: true
 
 ## Architecture
 
-- **Engine plan:** [docs/renderplan.md](docs/renderplan.md) — authoritative architecture, roadmap, and delivery checklist.
-- `packages/render` must not import React.
+- **Engine plan:** [docs/engineplan.md](docs/engineplan.md) — authoritative architecture, roadmap, and delivery checklist.
+
+Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
+
+| Package | May not import |
+| --- | --- |
+| `packages/core`, `packages/test-kit` | React, Babylon, Capacitor |
+| `packages/vfs` | React, Babylon |
+| `packages/render` | React, Capacitor |
+| `packages/ui`, `packages/editor-kit`, `packages/graph-ui` | Babylon, Capacitor |
+| `apps/editor/src` | Capacitor |
+
 - UI communicates with Babylon via `engineCommandBus` in `@babylonslate/core`.
 - Graph execution emits commands; it does not touch Babylon directly.
-- File access goes through `ProjectStorage` / `createStorage()` — never call Capacitor plugins directly from UI panels.
+- File access goes through `ProjectStorage` / `createStorage()`; platform detection goes through `getHostPlatform()` in `@babylonslate/vfs`. Never call Capacitor plugins directly from UI.
+
+## Testing
+
+- See [docs/architecture/testing.md](docs/architecture/testing.md) for the Vitest projects, per-package coverage gates, and known environment limits.
+- `pnpm verify` runs typecheck, lint, unit tests with coverage, and Playwright.
 
 ## shadcn/ui
 

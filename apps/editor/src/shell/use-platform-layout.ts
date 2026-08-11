@@ -1,9 +1,4 @@
-import { Capacitor } from "@capacitor/core";
-
-export function isMobilePlatform(): boolean {
-  const platform = Capacitor.getPlatform();
-  return platform === "ios" || platform === "android";
-}
+import { isMobilePlatform } from "@babylonslate/vfs";
 
 export function usePlatformLayoutOptions() {
   return {

@@ -75,9 +75,11 @@
 
 .chrome-tab {
   display: flex;
-  shrink: 0;
+  flex-shrink: 0;
   align-items: stretch;
   border-right: 1px solid var(--border);
+  border-start-start-radius: var(--radius-sm);
+  border-start-end-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted-foreground);
 }

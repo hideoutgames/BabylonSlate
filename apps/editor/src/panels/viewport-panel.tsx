@@ -27,7 +27,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments } = useDocuments();
 
-  const { menu, closeMenu, bind } = useContextMenu(panelRef, {
+  const { menu, closeMenu, bind } = useContextMenu({
     items: [
       {
         id: "reload-scene",

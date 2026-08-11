@@ -61,4 +61,42 @@ describe("scene-loader", () => {
     clearSceneMeshes(scene);
     expect(countSceneMeshes(scene)).toBe(0);
   });
+
+  it("places each box at its serialized position", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(scene, {
+      name: "Positions",
+      meshes: [{ id: "box-a", type: "box", position: [1, 2, 3] }],
+    });
+
+    const box = scene.getMeshByName("box-a");
+    expect(box).not.toBeNull();
+    expect([box!.position.x, box!.position.y, box!.position.z]).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  it("ignores mesh definitions of unknown type", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(scene, {
+      name: "Unknown",
+      meshes: [
+        { id: "box-a", type: "box", position: [0, 0, 0] },
+        {
+          id: "mystery",
+          type: "sphere" as unknown as "box",
+          position: [0, 0, 0],
+        },
+      ],
+    });
+
+    expect(countSceneMeshes(scene)).toBe(1);
+    expect(scene.getMeshByName("mystery")).toBeNull();
+  });
+
+  it("clearSceneMeshes is safe on an already empty scene", () => {
+    const { scene } = createHandle();
+    clearSceneMeshes(scene);
+    expect(countSceneMeshes(scene)).toBe(0);
+  });
 });
