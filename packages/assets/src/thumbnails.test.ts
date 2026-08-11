@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MemoryProjectStorage } from "@babylonslate/vfs";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   generateThumbnailBytes,
   readThumbnail,
@@ -9,7 +9,8 @@ import {
 
 describe("thumbnails I/O", () => {
   it("writes and reads derived thumbnail bytes", async () => {
-    const storage = new MemoryProjectStorage();
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("thumbs-root");
     const bytes = new Uint8Array([1, 2, 3, 4]);
     await writeThumbnail(storage, "proj-1", "asset-1", bytes);
     expect(thumbnailPath("proj-1", "asset-1")).toBe(
