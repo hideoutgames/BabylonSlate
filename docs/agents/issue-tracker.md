@@ -84,3 +84,16 @@ Design notes: [command-layer.md](../architecture/command-layer.md), [asset-regis
 | Deterministic harness | `p3-harness` | `test-kit`, `object-model`, `vfs` | Object model |
 
 Design notes: [object-model.md](../architecture/object-model.md).
+
+## P4 slice ownership
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/bridge.md`, `render.md` | — |
+| Bridge | `p4-bridge` | `bridge`, `apps/editor` (COI) | Design notes |
+| Runtime | `p4-runtime-worker` | `runtime`, `test-kit` | Bridge |
+| Input | `p4-input-capture` | `input`, `apps/editor` | Bridge |
+| Render | `p4-render-sync`, `p4-render-on-demand`, `p4-resource-cache` | `render` | Bridge |
+| Play + report | `p4-play-overlay`, `p4-preview-report` | `apps/editor`, `runtime` | Runtime + Render + Input |
+
+Design notes: [bridge.md](../architecture/bridge.md), [render.md](../architecture/render.md).

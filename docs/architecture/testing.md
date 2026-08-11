@@ -8,7 +8,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/test-kit` — pure logic, no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/bridge`, `packages/runtime`, `packages/input`, `packages/test-kit` — pure logic, no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
@@ -57,9 +57,11 @@ Static style rules that a running browser cannot prove (a hardcoded radius on an
 
 `readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
 
-## Deterministic runtime harness (P3)
+## Deterministic runtime harness (P3 / P4)
 
-`runDeterministicScenario` in `@babylonslate/test-kit` drives an in-process `@babylonslate/object-model` World with a seeded RNG and fixed dt. Acceptance: a 120-tick scenario matches a committed golden and is identical across two runs. Fake VFS fixtures use `MemoryStorageAdapter` via `installHarnessProjectFixtures`. Worker transport comparison is P4.
+`runDeterministicScenario` in `@babylonslate/test-kit` drives an in-process `@babylonslate/object-model` World with a seeded RNG and fixed dt. Acceptance: a 120-tick scenario matches a committed golden and is identical across two runs. Fake VFS fixtures use `MemoryStorageAdapter` via `installHarnessProjectFixtures`.
+
+P4 adds multi-transport comparison: the same scenario must agree **in-process**, over **transferable** ping-pong, and over **SAB** when `SharedArrayBuffer` / `crossOriginIsolated` is available. SAB is never required for CI green — transferables are mandatory.
 
 ## Property tests
 
