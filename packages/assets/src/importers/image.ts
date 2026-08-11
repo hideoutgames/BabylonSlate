@@ -12,6 +12,14 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   gif: "image/gif",
 };
 
+function usageFromFileName(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (/(pixel|sprite|tileset)/.test(lower)) return "pixelArt";
+  if (/(ui[_-]|hud[_-]|button)/.test(lower)) return "ui";
+  if (/normal/.test(lower)) return "normal";
+  return "albedo";
+}
+
 /** Images become a Texture asset with a pending compression state (§3.5). */
 export async function importImage(
   bytes: Uint8Array,
@@ -19,6 +27,7 @@ export async function importImage(
 ): Promise<ImportResult[]> {
   const extension = extensionOf(options.fileName);
   const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
+  const usage = usageFromFileName(options.fileName);
 
   return [
     {
@@ -28,7 +37,7 @@ export async function importImage(
       version: 1,
       dependencies: [],
       parentClass: null,
-      payload: { compressionState: "pending", usage: "albedo" },
+      payload: { compressionState: "pending", usage },
       chunks: [{ id: "pixels", kind: "pixels", mime, data: bytes }],
     },
   ];

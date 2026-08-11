@@ -35,7 +35,8 @@ class MergeableCommand implements EditCommand<TestDoc> {
     readonly target: number,
   ) {}
 
-  apply(_doc: TestDoc): TestDoc {
+  apply(doc: TestDoc): TestDoc {
+    void doc;
     return { value: this.target };
   }
 

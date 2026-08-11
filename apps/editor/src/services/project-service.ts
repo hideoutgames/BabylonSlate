@@ -10,6 +10,7 @@ import {
   createDefaultScene,
   createEmptyLayouts,
   createEmptyProject,
+  normalizeProjectSettings,
   documentId,
   LAYOUT_FILE,
   MAIN_GRAPH_FILE,
@@ -524,7 +525,10 @@ function normalizeProjectDocument(
   fallbackName: string,
 ): ProjectDocument {
   if (raw.metadata && raw.settings && raw.scenes && raw.graphs) {
-    return raw;
+    return {
+      ...raw,
+      settings: normalizeProjectSettings(raw.settings),
+    };
   }
   return createEmptyProject(
     typeof raw.name === "string" ? raw.name : fallbackName,

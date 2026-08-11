@@ -72,7 +72,7 @@ Per Texture asset (engineplan §3.5):
 
 Queue: one dedicated import Worker; one job at a time; pause on Preview / background; recycle worker after N jobs. Source + KTX2 chunks both commit on the `.babasset`. Policy defaults leave pixel art, sprites, UI, and fonts uncompressed. Max dimension clamp default 2048 (Project Settings).
 
-Loader prefers KTX2 when present; self-hosted transcoder via `KhronosTextureContainer2.URLConfig`. Silent fallback is forbidden — state must be explicit.
+Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder via `configureKtx2Transcoder` / `KhronosTextureContainer2.URLConfig` under `apps/editor/public/ktx2/`. Silent fallback is forbidden — state must be explicit. Encode runs on `EncodeQueue` (one job, pauseable, recycle after N) with a stub encoder in tests and Basis wasm in the import Worker.
 
 ## Tests
 
