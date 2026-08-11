@@ -37,6 +37,8 @@ See [design/perf-budget.md](design/perf-budget.md). In particular:
 - Behaviour changes need tests in the owning package.
 - Golden files for byte-exact surfaces (containers, compiler output).
 - TDD for new pure logic; see `.cursor/skills/test-driven-development/SKILL.md`.
+- Per-package coverage is gated at 60%. Add tests or split out the untestable part with a documented exclusion — never lower a threshold to go green.
+- Read [architecture/testing.md](architecture/testing.md) before writing DOM or gesture tests: jsdom lacks `PointerEvent` and `ResizeObserver`, which has already caused tests that passed without asserting anything.
 
 ## Git / PRs
 
