@@ -120,6 +120,11 @@
 }
 
 @layer base {
+  html {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
   * {
     @apply border-border outline-ring/50;
     }

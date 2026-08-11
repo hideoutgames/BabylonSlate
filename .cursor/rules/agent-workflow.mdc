@@ -17,9 +17,9 @@ alwaysApply: true
 
 ## Architecture
 
-- **Engine plan:** [docs/engineplan.md](docs/engineplan.md) — authoritative architecture, roadmap, and delivery checklist.
-- `packages/engine` must not import React.
-- UI communicates with Babylon via `engineCommandBus` in `@babylonslate/shared`.
+- **Engine plan:** [docs/renderplan.md](docs/renderplan.md) — authoritative architecture, roadmap, and delivery checklist.
+- `packages/render` must not import React.
+- UI communicates with Babylon via `engineCommandBus` in `@babylonslate/core`.
 - Graph execution emits commands; it does not touch Babylon directly.
 - File access goes through `ProjectStorage` / `createStorage()` — never call Capacitor plugins directly from UI panels.
 

@@ -7,7 +7,7 @@ import {
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   migrateLegacyLayout,
-} from "@babylonslate/shared";
+} from "@babylonslate/core";
 import { DocumentService } from "./document-service";
 import { ProjectService } from "./project-service";
 

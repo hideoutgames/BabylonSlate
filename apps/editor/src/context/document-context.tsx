@@ -1,4 +1,4 @@
-import type { DockviewApi } from "dockview";
+import type { DockviewApi } from "dockview-react";
 import {
   createContext,
   useCallback,
@@ -9,10 +9,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SerializedGraph, SerializedScene } from "@babylonslate/shared";
-import type { DocumentRef, ProjectDocument } from "@babylonslate/shared";
-import { documentId } from "@babylonslate/shared";
-import { createStorage } from "@babylonslate/storage";
+import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
+import type { DocumentRef, ProjectDocument } from "@babylonslate/core";
+import { documentId } from "@babylonslate/core";
+import { createStorage } from "@babylonslate/vfs";
 import {
   DocumentService,
   type OpenDocument,

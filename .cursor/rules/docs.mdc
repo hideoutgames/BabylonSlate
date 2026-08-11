@@ -14,8 +14,8 @@ alwaysApply: false
 ## Location and scope
 
 - All project documentation lives in `docs/` at the repository root.
-- **Engine is the priority** (`packages/engine`: scene lifecycle, loaders, command-bus integration, Babylon abstractions).
-- Also document meaningful changes in other packages (`graph`, `shared`, `storage`, `ui`) and `apps/editor` when they affect how the system works.
+- **Engine is the priority** (`packages/render`: scene lifecycle, loaders, command-bus integration, Babylon abstractions).
+- Also document meaningful changes in other packages (`graph-ui`, `core`, `vfs`, `ui`) and `apps/editor` when they affect how the system works.
 
 ## Style
 
@@ -31,7 +31,7 @@ alwaysApply: false
 
 ## Structure (guidance for future docs)
 
-- `docs/engineplan.md` — authoritative engine architecture, feature spec, roadmap, and delivery checklist
-- `docs/engine/` — BabylonSlate engine internals (as slices land)
+- `docs/renderplan.md` — authoritative engine architecture, feature spec, roadmap, and delivery checklist
+- `docs/render/` — BabylonSlate engine internals (as slices land)
 - `docs/architecture.md` — monorepo boundaries, command bus, package dependencies
 - Top-level topic files as needed; avoid deep nesting without reason

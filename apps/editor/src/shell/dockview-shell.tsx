@@ -2,9 +2,9 @@ import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
-} from "dockview";
+} from "dockview-react";
 import type { DockviewDocumentKind } from "./default-layout";
-import "dockview/dist/styles/dockview.css";
+import "dockview-react/dist/styles/dockview.css";
 import "./dockview-theme.css";
 import { useCallback, useRef } from "react";
 import { createDefaultLayoutForKind } from "./default-layout";

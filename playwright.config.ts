@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const IPAD_TOUCH = {
+  hasTouch: true,
+  deviceScaleFactor: 2,
+};
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -13,13 +18,22 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "chromium",
+      name: "desktop-chrome",
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      name: "iPad Pro 11",
+      name: "ipad-landscape",
+      use: {
+        ...devices["iPad Pro 11 landscape"],
+        ...IPAD_TOUCH,
+        browserName: "chromium",
+      },
+    },
+    {
+      name: "ipad-portrait",
       use: {
         ...devices["iPad Pro 11"],
+        ...IPAD_TOUCH,
         browserName: "chromium",
       },
     },
@@ -29,6 +43,6 @@ export default defineConfig({
       "VITE_TEST_MODE=true pnpm --filter editor build && pnpm --filter editor preview -- --host 127.0.0.1 --port 4173",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 180_000,
   },
 });

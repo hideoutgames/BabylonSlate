@@ -32,8 +32,8 @@ import {
   CONTENT_BROWSER_REF,
   type DocumentKind,
   labelFromPath,
-} from "@babylonslate/shared";
-import { isTestModeEnabled } from "@babylonslate/storage";
+} from "@babylonslate/core";
+import { isTestModeEnabled } from "@babylonslate/vfs";
 import { useDocuments } from "../context/document-context";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectSettingsSheet } from "./project-settings-sheet";

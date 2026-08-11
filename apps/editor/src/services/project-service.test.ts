@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { PROJECT_FILE } from "@babylonslate/shared";
-import { WebStorageAdapter } from "@babylonslate/storage";
+import { PROJECT_FILE } from "@babylonslate/core";
+import { WebStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
 
 describe("project round-trip", () => {

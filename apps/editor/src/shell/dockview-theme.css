@@ -14,9 +14,24 @@
 }
 
 .dockview-theme-babylonslate .dv-tab {
-  min-height: 44px;
+  min-height: 52px;
+  min-width: 44px;
   padding-inline: 12px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
+}
+
+.dockview-theme-babylonslate .dv-tabs-and-actions-container {
+  min-height: 52px;
+}
+
+.dockview-theme-babylonslate .dv-sash {
+  /* Widen sash hit area for touch */
+  --dv-sash-size: 12px;
+}
+
+.dockview-theme-babylonslate .dv-drag-over-overlay {
+  min-height: 52px;
+  border-radius: var(--radius-md);
 }
 
 .dockview-theme-babylonslate .dv-content-container {

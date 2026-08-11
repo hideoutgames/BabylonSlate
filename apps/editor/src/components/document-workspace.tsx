@@ -1,4 +1,4 @@
-import { CONTENT_BROWSER_ID } from "@babylonslate/shared";
+import { CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { useEffect, useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";

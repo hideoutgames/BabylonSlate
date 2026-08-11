@@ -1,0 +1,20 @@
+{
+  "name": "@babylonslate/render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/render"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^9.20.0",
+    "@babylonslate/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  }
+}

@@ -1,10 +1,10 @@
-import type { DockviewApi } from "dockview";
+import type { DockviewApi } from "dockview-react";
 import type {
   DocumentKind,
   ProjectLayouts,
   SerializedGraph,
   SerializedScene,
-} from "@babylonslate/shared";
+} from "@babylonslate/core";
 import {
   createDefaultGraph,
   createDefaultScene,
@@ -17,8 +17,8 @@ import {
   migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
-} from "@babylonslate/shared";
-import type { ProjectStorage } from "@babylonslate/shared";
+} from "@babylonslate/core";
+import type { ProjectStorage } from "@babylonslate/core";
 
 export interface ProjectLoadResult {
   document: ProjectDocument;
