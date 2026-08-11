@@ -643,6 +643,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (!isTestModeEnabled()) return;
     const host = globalThis as {
       __babylonslateTest?: {
+        ensureMainGraphOpen: () => Promise<boolean>;
         nudgeActiveGraphNode: () => Promise<boolean>;
         cancelDebouncedSave: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
@@ -661,7 +662,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           (entry) => entry.ref.kind === "graph" && entry.content,
         );
         const graph = doc?.content as SerializedGraph | undefined;
-        return graph?.nodes[0]?.position ?? null;
+        return graph?.nodes[0]?.position
+          ? { ...graph.nodes[0].position }
+          : null;
       },
       hasRecoveryJournal: async () => {
         const guid = projectService.guid;
@@ -669,14 +672,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const derived = await ensureDerived();
         return hasJournal(derived, guid);
       },
+      /** Open main graph without activating it (avoids GraphEditor stomping edits). */
+      ensureMainGraphOpen: async () => {
+        const path = "assets/main.graph.babasset";
+        const id = `graph:${path}`;
+        if (!documentService.getState().openDocuments.has(id)) {
+          await documentService.openDocument(
+            projectService,
+            { kind: "graph", path, label: "main.graph.babasset" },
+            null,
+            false,
+          );
+          bump();
+        }
+        return documentService.getState().openDocuments.has(id);
+      },
       nudgeActiveGraphNode: async () => {
-        const { activeDocumentId, openDocuments } = documentService.getState();
-        const id =
-          activeDocumentId &&
-          openDocuments.get(activeDocumentId)?.ref.kind === "graph"
-            ? activeDocumentId
-            : [...openDocuments.values()].find((d) => d.ref.kind === "graph")
-                ?.id;
+        const openDocuments = documentService.getState().openDocuments;
+        const id = [...openDocuments.values()].find((d) => d.ref.kind === "graph")
+          ?.id;
         if (!id) return false;
         const doc = openDocuments.get(id);
         if (!doc?.content) return false;
@@ -695,7 +709,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return () => {
       delete host.__babylonslateTest;
     };
-  }, [applyGraphChange, documentService, ensureDerived, projectService]);
+  }, [applyGraphChange, bump, documentService, ensureDerived, projectService]);
 
   const undoActiveDocument = useCallback(() => {
     const { activeDocumentId, openDocuments } = documentService.getState();

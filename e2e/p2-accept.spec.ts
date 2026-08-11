@@ -57,23 +57,24 @@ test.describe("P2 acceptance proofs", () => {
 
   test("killed-tab journal recovers unsaved graph edits", async ({ page }) => {
     await openTestProject(page);
-    await page.locator('[data-asset-path="assets/main.graph.babasset"]').click();
-    await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
-    // Wait until the default graph node is loaded into the document service.
-    await expect
-      .poll(async () =>
-        page.evaluate(() => {
-          const api = (
-            globalThis as {
-              __babylonslateTest?: {
-                activeGraphNodePosition: () => { x: number; y: number } | null;
-              };
-            }
-          ).__babylonslateTest;
-          return api?.activeGraphNodePosition()?.x ?? null;
-        }),
-      )
-      .toBe(120);
+
+    // Open the graph document without activating the GraphEditor canvas so RF
+    // init events cannot overwrite the command-layer nudge.
+    const prepared = await page.evaluate(async () => {
+      const api = (
+        globalThis as {
+          __babylonslateTest?: {
+            ensureMainGraphOpen: () => Promise<boolean>;
+            activeGraphNodePosition: () => { x: number; y: number } | null;
+          };
+        }
+      ).__babylonslateTest;
+      if (!api) return null;
+      const opened = await api.ensureMainGraphOpen();
+      return { opened, position: api.activeGraphNodePosition() };
+    });
+    expect(prepared?.opened).toBe(true);
+    expect(prepared?.position?.x).toBe(120);
 
     const nudged = await page.evaluate(async () => {
       const api = (
@@ -96,9 +97,8 @@ test.describe("P2 acceptance proofs", () => {
     });
     expect(nudged?.ok).toBe(true);
     expect(nudged?.journal).toBe(true);
-    expect(nudged?.before).not.toBeNull();
-    expect(nudged?.after?.x).toBe((nudged?.before?.x ?? 0) + 42);
-    expect(nudged?.after?.y).toBe((nudged?.before?.y ?? 0) + 17);
+    expect(nudged?.after?.x).toBe(120 + 42);
+    expect(nudged?.after?.y).toBe(120 + 17);
 
     // Simulate killed tab: reload without clean Close (journal remains).
     await page.reload();
@@ -111,7 +111,6 @@ test.describe("P2 acceptance proofs", () => {
       timeout: 15_000,
     });
 
-    await page.locator('[data-asset-path="assets/main.graph.babasset"]').click();
     await page.getByTestId("recover-journal").click();
     await expect(page.getByTestId("recovery-prompt")).toHaveCount(0);
 

@@ -1,6 +1,7 @@
 import {
   Background,
   Controls,
+  applyNodeChanges,
   type Node,
   type NodeProps,
   ReactFlow,
@@ -34,7 +35,7 @@ export interface GraphEditorProps {
 }
 
 export function GraphEditor({ initialGraph, onChange }: GraphEditorProps) {
-  const [nodes, , onNodesChange] = useNodesState(
+  const [nodes, setNodes, onNodesChange] = useNodesState(
     initialGraph.nodes.map((node) => ({
       id: node.id,
       type: node.type,
@@ -45,10 +46,16 @@ export function GraphEditor({ initialGraph, onChange }: GraphEditorProps) {
 
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
-      onNodesChange(changes);
-      onChange?.(toSerializedGraph(nodes, initialGraph.edges));
+      // Apply changes locally before notifying the parent — calling onChange with
+      // the pre-update `nodes` closure would overwrite external edits (and journal
+      // recovery) with stale positions.
+      setNodes((current) => {
+        const next = applyNodeChanges(changes, current);
+        onChange?.(toSerializedGraph(next, initialGraph.edges));
+        return next;
+      });
     },
-    [initialGraph.edges, nodes, onChange, onNodesChange],
+    [initialGraph.edges, onChange, setNodes],
   );
 
   return (
