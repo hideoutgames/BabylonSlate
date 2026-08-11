@@ -47,6 +47,12 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 
 - Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work.
 
+## Subagent models
+
+- Prefer Composer 2.5 for Task / subagents when choosing a model. Composer 2.5 Fast (`composer-2.5-fast`) is fine.
+- Preference only — not a hard requirement. Omitting `model` so the subagent inherits the parent is OK; do not force an explicit Composer slug on every Task call.
+- If the user or task asks for a different model, follow that request.
+
 ## Git: commit and push
 
 **Default:** commit and push without waiting for explicit user permission whenever you have meaningful changes.
