@@ -4,7 +4,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 
 ## Packages and boundaries
 
-- `core`, `vfs`, `object-model`, `scripting`, `input`, `behaviour-tree` — no React or Babylon imports.
+- `core`, `edit`, `assets`, `vfs`, `object-model`, `scripting`, `input`, `behaviour-tree` — no React or Babylon imports.
 - `render` — Babylon only; no React.
 - `runtime` — no Babylon or DOM.
 - Only `vfs` adapters touch Capacitor plugins directly.

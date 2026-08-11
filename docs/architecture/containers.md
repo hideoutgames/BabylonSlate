@@ -39,7 +39,7 @@ Inline locators point at byte ranges after the header. Blob locators name `asset
 
 ### Header-only read
 
-`readBabassetHeader(bytes)` returns guid/type/name/deps/chunk table **without allocating chunk payloads**. The asset registry (P2) depends on this invariant.
+`readBabassetHeader(bytes)` returns guid/type/name/deps/chunk table **without allocating chunk payloads**. The asset registry indexes headers only — see [asset-registry.md](asset-registry.md).
 
 ### Editor documents
 

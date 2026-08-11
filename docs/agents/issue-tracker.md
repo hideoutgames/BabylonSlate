@@ -49,3 +49,16 @@ Operating model (engineplan §16.1):
 | Homepage | `p1-homepage` | `apps/editor`, thin `ui`/`editor-kit` | vfs + settings + babproject |
 
 Design notes: [containers.md](../architecture/containers.md), [vfs.md](../architecture/vfs.md).
+
+## P2 slice ownership
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/` | — |
+| Registry + importers | `p2-registry` | `assets`, `core`, `test-kit` | Design notes |
+| Edit / undo | `p2-edit-undo` | `edit`, `apps/editor`, `graph-ui` | Design notes |
+| Texture pipeline | `p2-texture-compression` | `assets`, `render`, `test-kit`, `apps/editor/public` | Registry API |
+| Content Browser | `p2-content-browser` | `apps/editor`, `editor-kit`, `ui` | Registry |
+| Destructive + journal | `p2-destructive-guard` | `assets`, `edit`, `apps/editor`, `ui` | Registry + edit + CB |
+
+Design notes: [command-layer.md](../architecture/command-layer.md), [asset-registry.md](../architecture/asset-registry.md).
