@@ -17,6 +17,7 @@ alwaysApply: true
 
 ## Architecture
 
+- **Engine plan:** [docs/engineplan.md](docs/engineplan.md) — authoritative architecture, roadmap, and delivery checklist.
 - `packages/engine` must not import React.
 - UI communicates with Babylon via `engineCommandBus` in `@babylonslate/shared`.
 - Graph execution emits commands; it does not touch Babylon directly.
