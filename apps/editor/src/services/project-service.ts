@@ -22,8 +22,10 @@ import {
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   AssetRegistry,
+  canUseWorkerEncode,
   createProjectFromTemplate,
   createVfsBlobStore,
+  createWorkerEncodeFn,
   decodeAssetDocument,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   EncodeQueue,
@@ -35,7 +37,9 @@ import {
   projectContentRoot,
   readAssetDocumentHeader,
   readProjectTree,
+  writeThumbnail,
   type BlobStore,
+  type EncodeFn,
   type MigrationPending,
   type ProjectTreeFile,
 } from "@babylonslate/assets";
@@ -71,14 +75,23 @@ export class ProjectService {
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
   private readonly encodeQueue: EncodeQueue;
+  private readonly workerEncode:
+    | (EncodeFn & { dispose: () => void; recycleCount: () => number })
+    | null;
   private visibilityBound = false;
+  private transcoderAvailable = true;
+  private derivedStorage: ProjectStorage | null = null;
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
 
   constructor(storage: ProjectStorage) {
     this.storage = storage;
     this.blobs = createVfsBlobStore(storage);
+    this.workerEncode = canUseWorkerEncode()
+      ? createWorkerEncodeFn({ workerUrl: "/basis/encode-worker.js" })
+      : null;
     this.encodeQueue = new EncodeQueue({
+      encode: this.workerEncode ?? undefined,
       onState: (guid, state) => {
         // `compressed` is written with the KTX2 chunk in onComplete.
         if (state === "compressed") return;
@@ -92,6 +105,53 @@ export class ProjectService {
       },
     });
     this.bindEncodeQueueVisibility();
+  }
+
+  /** When self-hosted transcoder files are missing, prefer source chunks. */
+  async setTranscoderAvailable(available: boolean): Promise<void> {
+    this.transcoderAvailable = available;
+    if (!available && this.assetRegistry) {
+      await this.markCompressedTexturesFallback();
+    }
+  }
+
+  get isTranscoderAvailable(): boolean {
+    return this.transcoderAvailable;
+  }
+
+  /** Bind app-private derived storage for thumbnail writes at import. */
+  setDerivedStorage(derived: ProjectStorage | null): void {
+    this.derivedStorage = derived;
+    this.bindThumbnailWriter();
+  }
+
+  private bindThumbnailWriter(): void {
+    if (!this.assetRegistry) return;
+    const derived = this.derivedStorage;
+    const guid = this.projectGuid;
+    if (!derived || !guid) {
+      this.assetRegistry.setThumbnailWriter(null);
+      return;
+    }
+    this.assetRegistry.setThumbnailWriter(async (assetGuid, bytes) => {
+      await writeThumbnail(derived, guid, assetGuid, bytes);
+    });
+  }
+
+  private async markCompressedTexturesFallback(): Promise<void> {
+    if (!this.assetRegistry) return;
+    for (const asset of this.assetRegistry.list({ type: "Texture" })) {
+      const hasKtx2 = asset.header.chunks.some(
+        (chunk) => chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"),
+      );
+      const state = asset.header.payload.compressionState;
+      if (hasKtx2 && state === "compressed") {
+        await this.assetRegistry.setCompressionState(
+          asset.header.guid,
+          "fallback_uncompressed",
+        );
+      }
+    }
   }
 
   get textureEncodeQueue(): EncodeQueue {
@@ -329,6 +389,7 @@ export class ProjectService {
     });
     await registry.mountRoot(projectContentRoot());
     this.assetRegistry = registry;
+    this.bindThumbnailWriter();
     const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
     if (auto) {
       await registry.requeueUncompressedTextures();
@@ -347,7 +408,11 @@ export class ProjectService {
 
   /** Re-scan project assets after registry file operations (import, create, delete). */
   async remountRegistry(): Promise<AssetRegistry> {
-    return this.mountAssetRegistry();
+    const registry = await this.mountAssetRegistry();
+    if (!this.transcoderAvailable) {
+      await this.markCompressedTexturesFallback();
+    }
+    return registry;
   }
 
   private async keepExisting(paths: string[]): Promise<string[]> {

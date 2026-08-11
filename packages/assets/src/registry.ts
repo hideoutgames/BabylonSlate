@@ -24,6 +24,7 @@ import {
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
+import { generateThumbnailBytes } from "./thumbnails";
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
 export interface IndexedAsset {
@@ -31,6 +32,11 @@ export interface IndexedAsset {
   path: string;
   header: BabassetHeader;
 }
+
+export type ThumbnailWriter = (
+  assetGuid: string,
+  bytes: Uint8Array,
+) => Promise<void>;
 
 export interface FolderNode {
   name: string;
@@ -64,6 +70,7 @@ export class AssetRegistry {
   private encodeSettings: TextureEncodeSettings = {
     ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
   };
+  private thumbnailWriter: ThumbnailWriter | null = null;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -79,6 +86,11 @@ export class AssetRegistry {
   ): void {
     this.encodeQueue = queue;
     this.encodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, ...settings };
+  }
+
+  /** Write CB thumbnails into derived data (ProjectService supplies storage). */
+  setThumbnailWriter(writer: ThumbnailWriter | null): void {
+    this.thumbnailWriter = writer;
   }
 
   get payloadLoader(): AccountedPayloadLoader {
@@ -247,9 +259,25 @@ export class AssetRegistry {
       const relativePath = joinRelative(folderRelative, `${sanitizeFileName(result.name)}.babasset`);
       const asset = await this.createAsset(rootId, relativePath, result);
       created.push(asset);
+      await this.maybeWriteThumbnail(asset, result);
       await this.maybeEnqueueTextureEncode(asset);
     }
     return created;
+  }
+
+  private async maybeWriteThumbnail(
+    asset: IndexedAsset,
+    result: ImportResult,
+  ): Promise<void> {
+    if (!this.thumbnailWriter) return;
+    if (asset.header.type !== "Texture") return;
+    const pixels = result.chunks.find(
+      (chunk) => chunk.id === "pixels" || chunk.kind === "pixels",
+    );
+    if (!pixels?.data?.byteLength) return;
+    const thumb = await generateThumbnailBytes(pixels.data);
+    if (!thumb) return;
+    await this.thumbnailWriter(asset.header.guid, thumb);
   }
 
   async setCompressionState(

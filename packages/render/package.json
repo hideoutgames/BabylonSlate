@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@babylonjs/core": "^9.20.0",
+    "@babylonjs/ktx2decoder": "9.20.0",
     "@babylonslate/core": "workspace:*"
   },
   "devDependencies": {

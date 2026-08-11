@@ -5,6 +5,8 @@
 
 export interface Ktx2TranscoderUrls {
   jsDecoderModule: string;
+  jsMSCTranscoder: string;
+  wasmMSCTranscoder: string;
   wasmUASTCToASTC: string;
   wasmUASTCToBC7: string;
   wasmZSTDDecoder: string;
@@ -18,6 +20,8 @@ export function ktx2TranscoderUrls(
   const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
   return {
     jsDecoderModule: `${base}babylon.ktx2Decoder.js`,
+    jsMSCTranscoder: `${base}msc_basis_transcoder.js`,
+    wasmMSCTranscoder: `${base}msc_basis_transcoder.wasm`,
     wasmUASTCToASTC: `${base}uastc_astc.wasm`,
     wasmUASTCToBC7: `${base}uastc_bc7.wasm`,
     wasmZSTDDecoder: `${base}zstddec.wasm`,
@@ -37,9 +41,30 @@ export function configureKtx2Transcoder(
   container.URLConfig = {
     ...container.URLConfig,
     jsDecoderModule: urls.jsDecoderModule,
+    jsMSCTranscoder: urls.jsMSCTranscoder,
+    wasmMSCTranscoder: urls.wasmMSCTranscoder,
     wasmUASTCToASTC: urls.wasmUASTCToASTC,
     wasmUASTCToBC7: urls.wasmUASTCToBC7,
     wasmZSTDDecoder: urls.wasmZSTDDecoder,
   };
   return urls;
+}
+
+/**
+ * HEAD/GET the decoder module URL. Used to decide `fallback_uncompressed`
+ * when self-hosted transcoder files are missing (export / bad deploy).
+ */
+export async function probeKtx2TranscoderAvailable(
+  basePath: string = DEFAULT_KTX2_PUBLIC_BASE,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  const urls = ktx2TranscoderUrls(basePath);
+  try {
+    const response = await fetchImpl(urls.jsDecoderModule, { method: "HEAD" });
+    if (response.ok) return true;
+    const get = await fetchImpl(urls.jsDecoderModule, { method: "GET" });
+    return get.ok;
+  } catch {
+    return false;
+  }
 }

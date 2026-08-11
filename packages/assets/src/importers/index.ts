@@ -47,6 +47,7 @@ export async function importByExtension(
 export * from "./audio";
 export * from "./babasset";
 export * from "./font";
+export * from "./glb-parse";
 export * from "./guid-remap";
 export * from "./image";
 export * from "./model";

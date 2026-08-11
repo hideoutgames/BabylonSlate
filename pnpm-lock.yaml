@@ -156,6 +156,9 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      ktx-parse:
+        specifier: ^1.1.0
+        version: 1.1.0
       zod:
         specifier: ^4.0.0
         version: 4.4.3
@@ -223,6 +226,9 @@ importers:
       '@babylonjs/core':
         specifier: ^9.20.0
         version: 9.20.0
+      '@babylonjs/ktx2decoder':
+        specifier: 9.20.0
+        version: 9.20.0(@babylonjs/core@9.20.0)
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
@@ -439,6 +445,11 @@ packages:
 
   '@babylonjs/core@9.20.0':
     resolution: {integrity: sha512-iWM/Re+FnqTEOxkGxvjRjChcPZzydcb0OGtnVk5o0vDQizqwkcpWFlJzfIv1Ij7Li2edJJJDZd6jRzC8QSWuuw==}
+
+  '@babylonjs/ktx2decoder@9.20.0':
+    resolution: {integrity: sha512-hMafgr6KbFsl5rm2l4eQDzk8SeX0TQRV78/qthgTPInR+hSG+JCTaWaXD9ejryqW+FehGZUnQ6VRqHfKfKJqSQ==}
+    peerDependencies:
+      '@babylonjs/core': ^9.0.0
 
   '@base-ui/react@1.7.0':
     resolution: {integrity: sha512-j+8QjX44C32jrXD/qyEAGpFr70FRpGL2CY61mQd9nBPWN737CK0xxD1ceJ055rW4RtdvFDT1e7otzdlfxvsYug==}
@@ -2286,6 +2297,9 @@ packages:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
 
+  ktx-parse@1.1.0:
+    resolution: {integrity: sha512-mKp3y+FaYgR7mXWAbyyzpa/r1zDWeaunH+INJO4fou3hb45XuNSwar+7llrRyvpMWafxSIi99RNFJ05MHedaJQ==}
+
   levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
@@ -3599,6 +3613,10 @@ snapshots:
       '@babel/helper-validator-identifier': 7.29.7
 
   '@babylonjs/core@9.20.0': {}
+
+  '@babylonjs/ktx2decoder@9.20.0(@babylonjs/core@9.20.0)':
+    dependencies:
+      '@babylonjs/core': 9.20.0
 
   '@base-ui/react@1.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
@@ -5391,6 +5409,8 @@ snapshots:
   kleur@3.0.3: {}
 
   kleur@4.1.5: {}
+
+  ktx-parse@1.1.0: {}
 
   levn@0.4.1:
     dependencies:

@@ -90,6 +90,34 @@ function MigrationPrompt({
   );
 }
 
+function RecoveryBanner() {
+  const { recoveryAvailable, keepRecovery, dismissRecovery } = useDocuments();
+  if (!recoveryAvailable) return null;
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3"
+      data-testid="recovery-prompt"
+    >
+      <p className="text-sm">
+        A recovery journal was found. Replay unsaved graph edits, or discard the
+        journal.
+      </p>
+      <div className="flex gap-2">
+        <Button data-testid="recover-journal" onClick={() => void keepRecovery()}>
+          Recover edits
+        </Button>
+        <Button
+          variant="outline"
+          data-testid="dismiss-journal"
+          onClick={() => void dismissRecovery()}
+        >
+          Discard journal
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function EditorLayout() {
   useSuppressNativeContextMenu();
   const {
@@ -124,6 +152,7 @@ function EditorLayout() {
         onCloseProject={() => void requestClose()}
         onSaveProject={() => void requestSave()}
       />
+      <RecoveryBanner />
       <main className="flex min-h-0 flex-1 flex-col">
         <DocumentWorkspace />
       </main>

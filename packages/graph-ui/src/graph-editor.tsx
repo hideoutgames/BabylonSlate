@@ -1,7 +1,9 @@
 import {
   Background,
   Controls,
+  applyNodeChanges,
   type Node,
+  type NodeChange,
   type NodeProps,
   ReactFlow,
   useNodesState,
@@ -14,6 +16,8 @@ import { toSerializedGraph } from "./graph-model";
 type LogNodeData = {
   message: string;
 };
+
+type CanvasNode = Node<Record<string, unknown>>;
 
 function LogMessageNode({ data }: NodeProps<Node<LogNodeData>>) {
   return (
@@ -34,7 +38,7 @@ export interface GraphEditorProps {
 }
 
 export function GraphEditor({ initialGraph, onChange }: GraphEditorProps) {
-  const [nodes, , onNodesChange] = useNodesState(
+  const [nodes, setNodes] = useNodesState<CanvasNode>(
     initialGraph.nodes.map((node) => ({
       id: node.id,
       type: node.type,
@@ -44,11 +48,17 @@ export function GraphEditor({ initialGraph, onChange }: GraphEditorProps) {
   );
 
   const handleNodesChange = useCallback(
-    (changes: Parameters<typeof onNodesChange>[0]) => {
-      onNodesChange(changes);
-      onChange?.(toSerializedGraph(nodes, initialGraph.edges));
+    (changes: NodeChange<CanvasNode>[]) => {
+      // Apply changes locally before notifying the parent — calling onChange with
+      // the pre-update `nodes` closure would overwrite external edits (and journal
+      // recovery) with stale positions.
+      setNodes((current) => {
+        const next = applyNodeChanges(changes, current);
+        onChange?.(toSerializedGraph(next, initialGraph.edges));
+        return next;
+      });
     },
-    [initialGraph.edges, nodes, onChange, onNodesChange],
+    [initialGraph.edges, onChange, setNodes],
   );
 
   return (
