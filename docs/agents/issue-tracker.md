@@ -37,6 +37,15 @@ Operating model (engineplan §16.1):
 - **API before implementation.** A slice others depend on lands its types and a failing test suite first, so downstream agents can start against a stable signature instead of guessing.
 - **Design notes for shared surfaces.** Shared surfaces (bridge protocol, container formats) get a design note in `docs/architecture/` before parallel implementation starts.
 
+## Subagent model preference
+
+When a parent agent launches Task / subagents and chooses a model:
+
+- Prefer **Composer 2.5**. **Composer 2.5 Fast** (`composer-2.5-fast`) is an acceptable default.
+- Soft preference only — do not hard-require an explicit Composer model on every Task call. Omitting `model` (inherit parent) is fine.
+- Honor an explicit user or task request for another model.
+- See [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (Subagent models).
+
 ## P1 slice ownership
 
 | Slice | Checklist | Packages | Depends on |
