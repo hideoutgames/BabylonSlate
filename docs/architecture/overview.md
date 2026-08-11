@@ -2,21 +2,22 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
-## Monorepo (current P1)
+## Monorepo (P2)
 
 ```
-apps/editor/          Editor shell + Homepage + main-thread renderer
+apps/editor/          Editor shell + Homepage + Content Browser + main-thread renderer
 packages/core/        GUIDs, schemas, command bus, storage port
 packages/vfs/         Storage adapters, platform detection, app settings
-packages/assets/      .babasset + .babproject codecs, migration harness
-packages/render/      Babylon viewport
-packages/graph-ui/    React Flow graph editor
+packages/assets/      Containers, asset registry, importers, encode queue
+packages/edit/        Per-document undo stacks and reversible commands
+packages/render/      Babylon viewport + KTX2 transcoder config
+packages/graph-ui/    React Flow graph editor (mutations via edit)
 packages/ui/          shadcn primitives
 packages/editor-kit/  Touch-shell hooks and components
-packages/test-kit/    Golden-file and style-audit test helpers
+packages/test-kit/    Golden-file, fixtures, and style-audit helpers
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md).
 
 ## Target threading (P4+)
 
@@ -35,7 +36,8 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Lifecycle**: Homepage opens/creates a `.babproject`; editor shell only runs against an open project.
 - **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab.
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
-- **Containers**: `@babylonslate/assets` encodes `.babasset` / `.babproject` (directory + zip).
+- **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only).
+- **Edits**: `@babylonslate/edit` owns per-document undo; graph UI routes mutations through commands.
 - **Graph → engine**: `engineCommandBus` in `core` (minimal commands today).
 - **Viewport**: `createEngine()` on main thread (demo loop until P4). Scene-only helpers live in `render/viewport.ts` so they are testable under `NullEngine`; `create-engine.ts` holds the canvas-bound parts.
 
@@ -45,7 +47,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `test-kit` | React, Babylon, Capacitor |
+| `core`, `edit`, `test-kit` | React, Babylon, Capacitor |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |

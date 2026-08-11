@@ -61,7 +61,7 @@ Decided for P1, in this order:
 
 1. **Write only dirty documents.** Save walks the dirty set, never the whole tree.
 2. **Blob store for large immutable chunks.** Chunks at or above the threshold externalise to `assets/.blobs/<sha256>`; an existing hash is never rewritten, so a re-save of an asset whose big chunks did not change writes no blob bytes.
-3. **Debounce batches** when interactive saving arrives with the command layer (P2).
+3. **Debounce batches** behind the command layer ([command-layer.md](command-layer.md)): mark dirty on apply, flush dirty documents after a short idle.
 
 **Pack format is not adopted.** One `.babasset` per asset stays the unit on disk; revisit only if device numbers show the first three are insufficient. That keeps the P2 registry and Content Browser free of a pack indirection they would otherwise have to assume.
 
