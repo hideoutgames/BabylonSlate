@@ -69,6 +69,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     renderedFps: number;
     invalidationsPerSecond: number;
   } | null>(null);
+  const [lastRuntimeMode, setLastRuntimeMode] = useState<
+    "worker" | "in-process" | null
+  >(null);
 
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
@@ -155,6 +158,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setEncodeQueuePauseReason("play", false);
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
+      setLastRuntimeMode(result.runtimeMode);
       if (result.diagnostics.length > 0) {
         setReportOpen(true);
       }
@@ -232,6 +236,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             data-node-id={focusedNodeId}
           >
             {focusedNodeId}
+          </span>
+        ) : null}
+        {lastRuntimeMode ? (
+          <span
+            className="sr-only"
+            data-testid="play-last-runtime"
+            data-mode={lastRuntimeMode}
+          >
+            {lastRuntimeMode}
           </span>
         ) : null}
       </OutputLogContext.Provider>

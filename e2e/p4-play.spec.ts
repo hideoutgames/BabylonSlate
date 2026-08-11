@@ -25,9 +25,9 @@ test.describe("P4 Play overlay and session report", () => {
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("preview-session-report")).toBeVisible();
-    // Output log records runtime mode + texture counts from Play stop.
-    await expect(page.getByTestId("output-log-panel")).toContainText(
-      /Play ended \((worker|in-process)/,
+    await expect(page.getByTestId("play-last-runtime")).toHaveAttribute(
+      "data-mode",
+      /^(worker|in-process)$/,
     );
     await page.getByTestId("session-report-row").click();
     await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
