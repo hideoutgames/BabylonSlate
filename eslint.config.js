@@ -110,7 +110,17 @@ const appNoCapacitor = boundary(
 );
 
 export default tseslint.config(
-  { ignores: ["dist", "ios", "android", "node_modules"] },
+  {
+    ignores: [
+      "dist",
+      "ios",
+      "android",
+      "node_modules",
+      "coverage",
+      "playwright-report",
+      "test-results",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
