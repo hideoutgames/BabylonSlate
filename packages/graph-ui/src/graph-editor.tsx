@@ -35,7 +35,7 @@ export interface GraphEditorProps {
 }
 
 export function GraphEditor({ initialGraph, onChange }: GraphEditorProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState(
+  const [nodes, setNodes] = useNodesState(
     initialGraph.nodes.map((node) => ({
       id: node.id,
       type: node.type,
@@ -45,7 +45,7 @@ export function GraphEditor({ initialGraph, onChange }: GraphEditorProps) {
   );
 
   const handleNodesChange = useCallback(
-    (changes: Parameters<typeof onNodesChange>[0]) => {
+    (changes: Parameters<typeof applyNodeChanges<Node>>[0]) => {
       // Apply changes locally before notifying the parent — calling onChange with
       // the pre-update `nodes` closure would overwrite external edits (and journal
       // recovery) with stale positions.
