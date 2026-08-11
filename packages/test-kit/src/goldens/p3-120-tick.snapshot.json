@@ -1,0 +1,78 @@
+{
+  "tickIndex": 120,
+  "dt": 0.016666666666666666,
+  "gameInstance": {
+    "guid": "harness-gi",
+    "classId": "GameInstance",
+    "variables": {
+      "acc": 57.13441193290055,
+      "ticks": 120
+    }
+  },
+  "actors": [
+    {
+      "guid": "h-1",
+      "classId": "Enemy",
+      "spawnIndex": 0,
+      "transform": {
+        "position": [
+          64.16327359387651,
+          32.081636796938255,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "variables": {
+        "n": 64.16327359387651,
+        "speed": 1
+      },
+      "components": [
+        {
+          "guid": "h-2",
+          "classId": "MeshComponent",
+          "assetGuid": "mesh-stub",
+          "variables": {
+            "frames": 120
+          }
+        }
+      ]
+    },
+    {
+      "guid": "h-3",
+      "classId": "Actor",
+      "spawnIndex": 1,
+      "transform": {
+        "position": [
+          0,
+          0,
+          5.847856458090249
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "variables": {
+        "tag": "follower"
+      },
+      "components": []
+    }
+  ]
+}
