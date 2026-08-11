@@ -221,6 +221,16 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/object-model:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/render:
     dependencies:
       '@babylonjs/core':
@@ -238,6 +248,16 @@ importers:
         version: 5.8.3
 
   packages/test-kit:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+      '@babylonslate/object-model':
+        specifier: workspace:*
+        version: link:../object-model
+      '@babylonslate/vfs':
+        specifier: workspace:*
+        version: link:../vfs
     devDependencies:
       typescript:
         specifier: ~5.8.2
