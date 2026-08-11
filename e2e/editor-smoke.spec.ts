@@ -28,6 +28,7 @@ test.describe("BabylonSlate editor smoke", () => {
       page.getByRole("heading", { name: "Content Browser" }),
     ).toBeVisible();
     await expect(page.getByTestId("content-item-scenes/main.scene.json")).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(0);
 
     await page.getByTestId("content-item-scenes/main.scene.json").click();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
@@ -55,5 +56,20 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(
       page.getByTestId("document-workspace-scene").locator("canvas"),
     ).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("does not mount viewport canvas until scene tab is opened", async ({
+    page,
+  }) => {
+    await page.goto("/?test=1");
+    await page.getByTestId("open-project").click();
+    await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(0);
+
+    await page.getByTestId("save-project").click();
+    await page.reload();
+    await page.getByTestId("open-project").click();
+    await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(0);
   });
 });
