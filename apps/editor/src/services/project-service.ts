@@ -72,11 +72,7 @@ export class ProjectService {
   }
 
   async openListedProject(handle: ProjectFolderHandle): Promise<ProjectLoadResult> {
-    if (handle.tier === "documents" || handle.tier === "opfs") {
-      await this.storage.openDocumentsProject(handle.name);
-    } else {
-      await this.storage.pickProjectFolder();
-    }
+    await this.storage.openKnownFolder(handle);
     return this.loadCurrentProject();
   }
 

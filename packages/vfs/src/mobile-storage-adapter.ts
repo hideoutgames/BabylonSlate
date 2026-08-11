@@ -4,24 +4,28 @@ import type {
   ProjectFolderHandle,
   ProjectStorage,
 } from "@babylonslate/core";
-import { MemoryStorageAdapter } from "./memory-adapter";
+import { DocumentsStorageAdapter } from "./documents-adapter";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
 
 /**
- * Composite iPad storage: Documents default tier (no picker) plus opt-in external.
- *
- * Documents uses an in-process memory tree mirrored as the default project root
- * until `@capacitor/filesystem` Documents wiring lands with the custom Swift plugin.
- * External folders use ScopedStorageAdapter (picker + bookmarks + Reconnect).
+ * Composite iPad storage: durable Documents default tier (no picker) plus
+ * opt-in external folders (picker + bookmarks + Reconnect).
  */
 export class MobileStorageAdapter implements ProjectStorage {
-  private readonly documents = new MemoryStorageAdapter("documents");
+  private readonly documents: DocumentsStorageAdapter;
   private readonly external = new ScopedStorageAdapter();
   private active: "documents" | "external" = "documents";
 
+  constructor(documents?: DocumentsStorageAdapter) {
+    this.documents = documents ?? new DocumentsStorageAdapter();
+  }
+
   async init(): Promise<void> {
     await this.external.init();
-    if (this.external.getCurrentFolder() && !(await this.external.needsReconnect?.())) {
+    if (
+      this.external.getCurrentFolder() &&
+      !(await this.external.needsReconnect?.())
+    ) {
       this.active = "external";
     }
   }
@@ -40,6 +44,19 @@ export class MobileStorageAdapter implements ProjectStorage {
     const handle = await this.documents.openDocumentsProject(name);
     this.active = "documents";
     return handle;
+  }
+
+  async openKnownFolder(
+    handle: ProjectFolderHandle,
+  ): Promise<ProjectFolderHandle> {
+    if (handle.tier === "external") {
+      const opened = await this.external.openKnownFolder(handle);
+      this.active = "external";
+      return opened;
+    }
+    const opened = await this.documents.openKnownFolder(handle);
+    this.active = "documents";
+    return opened;
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {

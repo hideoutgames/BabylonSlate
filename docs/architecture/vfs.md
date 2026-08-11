@@ -18,10 +18,12 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 | Adapter | Host | Notes |
 | --- | --- | --- |
 | OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids |
-| Documents | iPad default | App Documents; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
-| Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; Reconnect on staleness |
+| Documents | iPad default | `@capacitor/filesystem` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
+| Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; `openKnownFolder` reopens without picker; Reconnect on staleness |
 | Memory | Tests | In-memory tree |
 | Node | CI / tools | Real filesystem under a root path |
+
+`openKnownFolder(handle)` rebinds a previously known project (Documents / OPFS / external bookmark) without showing a picker. The picker is only for first bind and Reconnect.
 
 ### External tier / Working Copy spike
 

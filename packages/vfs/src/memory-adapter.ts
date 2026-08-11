@@ -50,6 +50,12 @@ export class MemoryStorageAdapter implements ProjectStorage {
     return this.bindProject(name, "documents");
   }
 
+  async openKnownFolder(
+    handle: ProjectFolderHandle,
+  ): Promise<ProjectFolderHandle> {
+    return this.bindProject(handle.name, handle.tier);
+  }
+
   async listProjects(): Promise<ProjectFolderHandle[]> {
     return [...this.roots.keys()].map((id) => {
       const name = id.includes(":") ? id.slice(id.indexOf(":") + 1) : id;

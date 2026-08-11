@@ -1,6 +1,7 @@
 export * from "./app-settings";
 export * from "./create-app-settings";
 export * from "./create-storage";
+export * from "./documents-adapter";
 export * from "./memory-adapter";
 export * from "./memory-app-settings";
 export * from "./mobile-storage-adapter";
