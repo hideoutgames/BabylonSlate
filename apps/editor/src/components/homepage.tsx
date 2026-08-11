@@ -62,7 +62,7 @@ export function Homepage({
 
   return (
     <div
-      className="flex min-h-svh h-dvh flex-col bg-background text-foreground"
+      className="flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground"
       data-testid="homepage"
     >
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
@@ -81,7 +81,7 @@ export function Homepage({
         </Button>
       </header>
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-8">
+      <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-8 overflow-y-auto overscroll-y-contain px-6 py-8">
         {needsReconnect ? (
           <div
             className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4"
