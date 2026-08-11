@@ -20,7 +20,9 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       <GraphEditor
         key={documentId}
         initialGraph={graph}
-        onChange={(next) => applyGraphChange(documentId, next)}
+        onChange={(next) => {
+          void applyGraphChange(documentId, next);
+        }}
       />
     </div>
   );

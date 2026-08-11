@@ -93,7 +93,7 @@ interface DocumentContextValue {
   updateScene: (id: string, scene: SerializedScene) => void;
   updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
-  applyGraphChange: (id: string, next: SerializedGraph) => void;
+  applyGraphChange: (id: string, next: SerializedGraph) => Promise<void>;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -586,13 +586,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const applyGraphChange = useCallback(
-    (id: string, next: SerializedGraph) => {
+    (id: string, next: SerializedGraph): Promise<void> => {
       const doc = documentService.getState().openDocuments.get(id);
-      if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
+      if (!doc || doc.ref.kind !== "graph" || !doc.content) {
+        return Promise.resolve();
+      }
       const previous = doc.content as SerializedGraph;
       const commands = diffGraphCommands(previous, next);
       if (commands.length === 0) {
-        return;
+        return Promise.resolve();
       }
       let current = previous;
       for (const command of commands) {
@@ -600,24 +602,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       documentService.updateGraph(id, current);
       const guid = projectService.guid;
-      if (guid) {
-        void ensureDerived().then(async (derived) => {
-          for (const command of commands) {
-            await appendJournalLine(
-              derived,
-              guid,
-              serializeJournalLine({
-                v: 1,
-                docId: id,
-                at: new Date().toISOString(),
-                command: commandToJournalPayload(command),
-              }),
-            );
-          }
-        });
-      }
+      const journalWrite = guid
+        ? ensureDerived().then(async (derived) => {
+            for (const command of commands) {
+              await appendJournalLine(
+                derived,
+                guid,
+                serializeJournalLine({
+                  v: 1,
+                  docId: id,
+                  at: new Date().toISOString(),
+                  command: commandToJournalPayload(command),
+                }),
+              );
+            }
+          })
+        : Promise.resolve();
       scheduleDebouncedSave();
       bump();
+      return journalWrite;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
@@ -641,9 +644,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (!isTestModeEnabled()) return;
     const host = globalThis as {
       __babylonslateTest?: {
-        nudgeActiveGraphNode: () => boolean;
+        nudgeActiveGraphNode: () => Promise<boolean>;
         cancelDebouncedSave: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
+        hasRecoveryJournal: () => Promise<boolean>;
       };
     };
     host.__babylonslateTest = {
@@ -660,7 +664,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const graph = doc?.content as SerializedGraph | undefined;
         return graph?.nodes[0]?.position ?? null;
       },
-      nudgeActiveGraphNode: () => {
+      hasRecoveryJournal: async () => {
+        const guid = projectService.guid;
+        if (!guid) return false;
+        const derived = await ensureDerived();
+        return hasJournal(derived, guid);
+      },
+      nudgeActiveGraphNode: async () => {
         const { activeDocumentId, openDocuments } = documentService.getState();
         const id =
           activeDocumentId &&
@@ -673,7 +683,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!doc?.content) return false;
         const graph = doc.content as SerializedGraph;
         if (!graph.nodes[0]) return false;
-        applyGraphChange(id, {
+        await applyGraphChange(id, {
           ...graph,
           nodes: graph.nodes.map((entry, index) =>
             index === 0
@@ -693,7 +703,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return () => {
       delete host.__babylonslateTest;
     };
-  }, [applyGraphChange, documentService]);
+  }, [applyGraphChange, documentService, ensureDerived, projectService]);
 
   const undoActiveDocument = useCallback(() => {
     const { activeDocumentId, openDocuments } = documentService.getState();

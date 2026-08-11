@@ -57,24 +57,27 @@ test.describe("P2 acceptance proofs", () => {
     await page.locator('[data-asset-path="assets/main.graph.babasset"]').click();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
 
-    const nudged = await page.evaluate(() => {
+    const nudged = await page.evaluate(async () => {
       const api = (
         globalThis as {
           __babylonslateTest?: {
-            nudgeActiveGraphNode: () => boolean;
+            nudgeActiveGraphNode: () => Promise<boolean>;
             cancelDebouncedSave: () => void;
             activeGraphNodePosition: () => { x: number; y: number } | null;
+            hasRecoveryJournal: () => Promise<boolean>;
           };
         }
       ).__babylonslateTest;
       if (!api) return null;
       const before = api.activeGraphNodePosition();
-      const ok = api.nudgeActiveGraphNode();
+      const ok = await api.nudgeActiveGraphNode();
       api.cancelDebouncedSave();
       const after = api.activeGraphNodePosition();
-      return { ok, before, after };
+      const journal = await api.hasRecoveryJournal();
+      return { ok, before, after, journal };
     });
     expect(nudged?.ok).toBe(true);
+    expect(nudged?.journal).toBe(true);
     expect(nudged?.after?.x).toBe((nudged?.before?.x ?? 0) + 42);
 
     // Simulate killed tab: reload without clean Close (journal remains).
