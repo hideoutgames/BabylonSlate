@@ -283,6 +283,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setProjectDocument(document);
       setMigrationPending(pending);
       setRoute("editor");
+      const { probeKtx2TranscoderAvailable } = await import(
+        "@babylonslate/render"
+      );
+      const transcoderOk = await probeKtx2TranscoderAvailable();
+      await projectService.setTranscoderAvailable(transcoderOk);
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();

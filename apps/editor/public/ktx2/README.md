@@ -1,11 +1,14 @@
 # Self-hosted KTX2 transcoder
 
-Place Babylon `KhronosTextureContainer2` decoder assets here for offline use:
+Vendored Babylon `KhronosTextureContainer2` decoder assets (never a CDN):
 
-- `babylon.ktx2Decoder.js`
-- `uastc_astc.wasm`
-- `uastc_bc7.wasm`
-- `zstddec.wasm`
+| File | Role |
+| --- | --- |
+| `babylon.ktx2Decoder.js` | Decoder bootstrap |
+| `msc_basis_transcoder.js` / `.wasm` | MSC Basis transcoder |
+| `uastc_astc.wasm` | UASTC → ASTC |
+| `uastc_bc7.wasm` | UASTC → BC7 |
+| `zstddec.wasm` | Zstd supercompression |
 
-Configured via `@babylonslate/render` `configureKtx2Transcoder` — never a CDN.
-Placeholder `.keep` files let the directory ship in git until binaries are vendored.
+Configured via `@babylonslate/render` `configureKtx2Transcoder` in `createEngine`.
+Encode uses a separate Basis encoder under `/basis/` (`encode-worker.js`).
