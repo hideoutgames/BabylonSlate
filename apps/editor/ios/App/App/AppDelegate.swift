@@ -7,8 +7,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        disableWebViewBounce()
         return true
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        disableWebViewBounce()
+    }
+
+    /// WKWebView rubber-band is independent of CSS overflow; disable it for the app shell.
+    private func disableWebViewBounce() {
+        DispatchQueue.main.async {
+            guard let root = self.window?.rootViewController as? CAPBridgeViewController,
+                  let scrollView = root.webView?.scrollView else { return }
+            scrollView.bounces = false
+            scrollView.alwaysBounceVertical = false
+            scrollView.alwaysBounceHorizontal = false
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

@@ -24,6 +24,24 @@ Inputs, textareas, `contenteditable` and anything inside `SelectableText` keep t
 
 `useContextMenu` cancels a pending long-press when the pointer moves past 8px or on scroll (captured document-wide, since `scroll` does not bubble). The 500ms delay and 8px tolerance deliberately match Dockview's `LongPressDetector` defaults, so a panel drag and a context menu can never both fire from one gesture.
 
+## Document scroll lock
+
+The editor shell is a full-viewport IDE, not a scrollable web page. Document rubber-band overscroll is disabled so drags on the viewport, dock chrome, and other non-scrollable areas do not bounce the whole page (especially on iOS Safari).
+
+| Layer | Mechanism | Scope |
+| --- | --- | --- |
+| CSS | `overflow: hidden` and `overscroll-behavior: none` on `html`, `body`, `#root`, and app shell roots | All platforms |
+| CSS | `overscroll-behavior: contain` on intentional scroll regions | Content browser, chrome tab strip, homepage body |
+| JS | `usePreventDocumentOverscroll` — `touchmove` guard on coarse pointers | iOS Safari / touch fallback |
+| Native | WKWebView `scrollView.bounces = false` | Capacitor iOS app only |
+
+### Regions that still scroll internally
+
+- Homepage `<main>` — project list and create cards
+- Chrome tab strip — horizontal overflow
+- Content browser — folder tree and asset grid
+- Graph panel — React Flow pan/zoom (unchanged)
+
 ## Dockview
 
 - Dockview 8's `dndStrategy` defaults to `'auto'`: HTML5 drag for mouse, pointer events for touch and pen. Touch panel drag therefore needs no extra configuration.
