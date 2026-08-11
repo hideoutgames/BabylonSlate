@@ -98,6 +98,15 @@ export class OpfsStorageAdapter implements ProjectStorage {
     return this.bind(name);
   }
 
+  async openKnownFolder(
+    handle: ProjectFolderHandle,
+  ): Promise<ProjectFolderHandle> {
+    if (handle.tier !== "opfs") {
+      throw new Error(`OPFS adapter cannot open tier ${handle.tier}`);
+    }
+    return this.bind(handle.name);
+  }
+
   async listProjects(): Promise<ProjectFolderHandle[]> {
     return loadMeta().projects.map((p) => ({
       id: p.id,

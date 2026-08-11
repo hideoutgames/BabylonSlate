@@ -14,6 +14,7 @@ function fakeStorage(): ProjectStorage {
       name,
       tier: "opfs",
     }),
+    openKnownFolder: async (handle) => handle,
     listProjects: async () => [],
     getCurrentFolder: () => ({ id: "x", name: "Test", tier: "opfs" }),
     releaseFolder: async () => {},

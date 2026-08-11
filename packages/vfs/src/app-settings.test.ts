@@ -42,4 +42,10 @@ describe("app settings", () => {
     const reloaded = new WebAppSettingsStore();
     expect((await reloaded.load()).viewportFrameCap).toBe(30);
   });
+
+  it("falls back to defaults when localStorage holds invalid JSON", async () => {
+    localStorage.setItem("babylonslate:engine-settings", "{not-json");
+    const store = new WebAppSettingsStore();
+    expect((await store.load()).undoHistoryLength).toBe(50);
+  });
 });

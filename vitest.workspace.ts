@@ -44,6 +44,11 @@ export default defineConfig({
         "**/scoped-storage-adapter.ts",
         "**/mobile-storage-adapter.ts",
         "**/preferences-app-settings.ts",
+        // Documents adapter production path uses Capacitor Filesystem; behaviour
+        // is covered by documents-adapter.test.ts with an injected fake FS.
+        "**/documents-adapter.ts",
+        // Thin factory over OPFS/Documents; covered by Playwright cold-reopen.
+        "**/derived-storage.ts",
         // Node adapter is CI/tooling-only; covered by its own unit tests without
         // dragging the browser package coverage gate.
         "**/node-adapter.ts",

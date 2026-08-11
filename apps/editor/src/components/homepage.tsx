@@ -16,9 +16,11 @@ import {
 
 interface HomepageProps {
   projects: ProjectFolderHandle[];
+  templates: Array<{ id: string; name: string }>;
   needsReconnect: boolean;
   recoveryAvailable: boolean;
   onCreateEmpty: () => Promise<void>;
+  onCreateFromTemplate: (templateId: string, name: string) => Promise<void>;
   onOpenExternal: () => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
   onReconnect: () => Promise<void>;
@@ -28,9 +30,11 @@ interface HomepageProps {
 
 export function Homepage({
   projects,
+  templates,
   needsReconnect,
   recoveryAvailable,
   onCreateEmpty,
+  onCreateFromTemplate,
   onOpenExternal,
   onOpenProject,
   onReconnect,
@@ -127,11 +131,30 @@ export function Homepage({
             >
               Empty
             </Button>
-            <p className="self-center text-sm text-muted-foreground">
-              Template cards appear when a templates folder is set in Engine
-              Settings (not available on web).
-            </p>
+            {templates.map((template) => (
+              <Button
+                key={template.id}
+                variant="secondary"
+                data-testid={`create-project-template-${template.id}`}
+                disabled={busy}
+                onClick={() =>
+                  void run(() =>
+                    onCreateFromTemplate(
+                      template.id,
+                      `${template.name}-copy.babproject`,
+                    ),
+                  )
+                }
+              >
+                {template.name}
+              </Button>
+            ))}
           </div>
+          <p className="text-sm text-muted-foreground">
+            {templates.length === 0
+              ? "Template cards appear when a templates folder is set in Engine Settings (not available on web)."
+              : "Creating from a template copies the project and rewrites only its name and identity."}
+          </p>
         </section>
 
         <section className="flex flex-col gap-3">

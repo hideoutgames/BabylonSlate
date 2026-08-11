@@ -19,12 +19,21 @@ import {
   type ProjectDocument,
 } from "@babylonslate/core";
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
-import { exportProjectZip } from "@babylonslate/assets";
+import {
+  createProjectFromTemplate,
+  exportProjectZip,
+  loadPayloadWithMigration,
+  defaultRegistry,
+  readProjectTree,
+  type MigrationPending,
+  type ProjectTreeFile,
+} from "@babylonslate/assets";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 
 export interface ProjectLoadResult {
   document: ProjectDocument;
   layouts: ProjectLayouts;
+  migrationPending: MigrationPending[];
 }
 
 function newGuid(): string {
@@ -37,6 +46,9 @@ function newGuid(): string {
 export class ProjectService {
   private readonly storage: ProjectStorage;
   private projectGuid: string | null = null;
+  private migrationPending: MigrationPending[] = [];
+  private migrateOnSaveApproved = false;
+  private readonly migrations = defaultRegistry();
 
   constructor(storage: ProjectStorage) {
     this.storage = storage;
@@ -48,6 +60,18 @@ export class ProjectService {
 
   get guid(): string | null {
     return this.projectGuid;
+  }
+
+  get pendingMigrations(): MigrationPending[] {
+    return [...this.migrationPending];
+  }
+
+  approveMigrateOnSave(): void {
+    this.migrateOnSaveApproved = true;
+  }
+
+  clearMigrateOnSaveApproval(): void {
+    this.migrateOnSaveApproved = false;
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
@@ -64,25 +88,41 @@ export class ProjectService {
       name ??
       (isTestModeEnabled() ? TEST_PROJECT_NAME : "MyGame.babproject");
     await this.storage.openDocumentsProject(projectName);
-    // Force create fresh scaffold
     if (await this.storage.exists(PROJECT_FILE)) {
       return this.loadCurrentProject();
     }
     return this.scaffoldNewProject(projectName);
   }
 
+  async createFromTemplate(options: {
+    templateFiles: ProjectTreeFile[];
+    name: string;
+  }): Promise<ProjectLoadResult> {
+    const projectName = options.name.endsWith(".babproject")
+      ? options.name
+      : `${options.name}.babproject`;
+    await this.storage.openDocumentsProject(projectName);
+    const guid = newGuid();
+    await createProjectFromTemplate({
+      templateFiles: options.templateFiles,
+      destination: this.storage,
+      guid,
+      name: projectName,
+    });
+    this.projectGuid = guid;
+    return this.loadCurrentProject();
+  }
+
   async openListedProject(handle: ProjectFolderHandle): Promise<ProjectLoadResult> {
-    if (handle.tier === "documents" || handle.tier === "opfs") {
-      await this.storage.openDocumentsProject(handle.name);
-    } else {
-      await this.storage.pickProjectFolder();
-    }
+    await this.storage.openKnownFolder(handle);
     return this.loadCurrentProject();
   }
 
   async closeProject(): Promise<void> {
     await this.storage.releaseFolder();
     this.projectGuid = null;
+    this.migrationPending = [];
+    this.migrateOnSaveApproved = false;
   }
 
   async exportZip(): Promise<Uint8Array> {
@@ -98,11 +138,18 @@ export class ProjectService {
     return this.loadCurrentProject();
   }
 
+  async readTree(): Promise<ProjectTreeFile[]> {
+    return readProjectTree(this.storage);
+  }
+
   async loadCurrentProject(): Promise<ProjectLoadResult> {
     const folder = this.storage.getCurrentFolder();
     if (!folder) {
       throw new Error("No project folder selected");
     }
+
+    this.migrationPending = [];
+    this.migrateOnSaveApproved = false;
 
     const hasProject = await this.storage.exists(PROJECT_FILE);
     if (!hasProject) {
@@ -111,15 +158,34 @@ export class ProjectService {
 
     const raw = JSON.parse(
       await this.storage.readText(PROJECT_FILE),
-    ) as ProjectDocument & { guid?: string; kind?: string };
+    ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw, folder.name);
-    this.projectGuid = (raw as { guid?: string }).guid ?? newGuid();
+    this.projectGuid = raw.guid ?? newGuid();
+
+    // Project manifest schema migration (type Project).
+    const projectVersion =
+      typeof raw.version === "number"
+        ? raw.version
+        : this.migrations.currentVersion("Project");
+    const migrated = loadPayloadWithMigration(this.migrations, {
+      type: "Project",
+      version: projectVersion,
+      payload: raw as unknown as Record<string, unknown>,
+      path: PROJECT_FILE,
+    });
+    if (migrated.pending) {
+      this.migrationPending.push(migrated.pending);
+    }
 
     const layouts = await this.loadLayouts(
       documentId({ kind: "scene", path: MAIN_SCENE_FILE }),
     );
 
-    return { document, layouts };
+    return {
+      document,
+      layouts,
+      migrationPending: this.pendingMigrations,
+    };
   }
 
   private async scaffoldNewProject(name: string): Promise<ProjectLoadResult> {
@@ -134,24 +200,50 @@ export class ProjectService {
     await this.saveDocument("scene", MAIN_SCENE_FILE, scene);
     await this.saveDocument("graph", MAIN_GRAPH_FILE, graph);
     await this.saveProject(document, createEmptyLayouts());
-    // Persist guid alongside legacy ProjectDocument shape
     const stored = JSON.parse(
       await this.storage.readText(PROJECT_FILE),
     ) as Record<string, unknown>;
     stored.guid = this.projectGuid;
     stored.kind = "project";
+    stored.version = this.migrations.currentVersion("Project");
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
-    return { document, layouts: createEmptyLayouts() };
+    return {
+      document,
+      layouts: createEmptyLayouts(),
+      migrationPending: [],
+    };
   }
 
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
   ): Promise<SerializedScene | SerializedGraph> {
-    if (kind === "scene") {
-      return JSON.parse(await this.storage.readText(path)) as SerializedScene;
+    const raw = JSON.parse(await this.storage.readText(path)) as Record<
+      string,
+      unknown
+    > & { version?: number };
+    const type = kind === "scene" ? "Scene" : "Graph";
+    const version =
+      typeof raw.version === "number"
+        ? raw.version
+        : this.migrations.currentVersion(type);
+    const migrated = loadPayloadWithMigration(this.migrations, {
+      type,
+      version,
+      payload: raw,
+      path,
+    });
+    if (migrated.pending) {
+      this.migrationPending.push(migrated.pending);
     }
-    return JSON.parse(await this.storage.readText(path)) as SerializedGraph;
+    const { version: _v, ...content } = migrated.payload as typeof raw & {
+      version?: number;
+    };
+    void _v;
+    if (kind === "scene") {
+      return content as unknown as SerializedScene;
+    }
+    return content as unknown as SerializedGraph;
   }
 
   async saveDocument(
@@ -159,15 +251,34 @@ export class ProjectService {
     path: string,
     content: SerializedScene | SerializedGraph,
   ): Promise<void> {
+    if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
+      throw new Error(
+        "Asset schema migration requires user approval before save",
+      );
+    }
     const dir = kind === "scene" ? "scenes" : "graphs";
     await this.storage.mkdir(dir, true);
-    await this.storage.writeText(path, JSON.stringify(content, null, 2));
+    const type = kind === "scene" ? "Scene" : "Graph";
+    const payload = {
+      ...content,
+      version: this.migrations.currentVersion(type),
+    };
+    await this.storage.writeText(path, JSON.stringify(payload, null, 2));
+    this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
   }
 
   async saveProject(
     document: ProjectDocument,
     layouts: ProjectLayouts,
   ): Promise<void> {
+    if (
+      this.migrationPending.some((p) => p.path === PROJECT_FILE) &&
+      !this.migrateOnSaveApproved
+    ) {
+      throw new Error(
+        "Asset schema migration requires user approval before save",
+      );
+    }
     const now = new Date().toISOString();
     const updated: ProjectDocument = {
       ...document,
@@ -181,6 +292,7 @@ export class ProjectService {
       ...updated,
       guid: this.projectGuid ?? newGuid(),
       kind: "project",
+      version: this.migrations.currentVersion("Project"),
     };
     this.projectGuid = payload.guid as string;
 
@@ -188,6 +300,9 @@ export class ProjectService {
     await this.storage.writeText(
       LAYOUT_FILE,
       JSON.stringify(layouts, null, 2),
+    );
+    this.migrationPending = this.migrationPending.filter(
+      (p) => p.path !== PROJECT_FILE,
     );
   }
 
@@ -230,7 +345,6 @@ function normalizeProjectDocument(
   if (raw.metadata && raw.settings && raw.scenes && raw.graphs) {
     return raw;
   }
-  // Manifest-style project.json from createEmptyProjectFiles
   return createEmptyProject(
     typeof raw.name === "string" ? raw.name : fallbackName,
   );

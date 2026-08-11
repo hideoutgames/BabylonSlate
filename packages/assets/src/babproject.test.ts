@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
 import {
   createEmptyProjectFiles,
+  createProjectFromTemplate,
   decodeProjectZip,
   encodeProjectZip,
   exportProjectZip,
   importProjectZip,
   readProjectTree,
+  rewriteProjectIdentity,
   writeProjectTree,
 } from "./babproject";
 import { bytesEqual } from "./bytes";
@@ -15,6 +20,9 @@ import {
   truncateJournal,
   writeJournalStub,
 } from "./derived-data";
+
+const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
+const UPDATE = process.env.UPDATE_GOLDENS === "1";
 
 describe("babproject codec", () => {
   it("round-trips directory ↔ zip byte-identically for sorted trees", async () => {
@@ -38,8 +46,14 @@ describe("babproject codec", () => {
       expect(bytesEqual(fromDir[i]!.data, fromZip[i]!.data)).toBe(true);
     }
 
-    // Second encode of the same tree is byte-identical.
     expect(bytesEqual(zip, encodeProjectZip(fromZip))).toBe(true);
+
+    const relative = "__fixtures__/demo.babproject.zip";
+    if (UPDATE) {
+      writeGoldenBinary(FIXTURE_DIR, relative, zip);
+    }
+    const golden = readGoldenBinary(FIXTURE_DIR, relative);
+    expect(bytesEqual(zip, golden)).toBe(true);
   });
 
   it("exports and re-imports through ProjectStorage", async () => {
@@ -66,6 +80,48 @@ describe("babproject codec", () => {
     });
     expect(files.some((f) => f.path === "plugin.json")).toBe(true);
     expect(files.some((f) => f.path === "layout.json")).toBe(false);
+  });
+
+  it("creates a project from a template rewriting only name and guid", async () => {
+    const template = createEmptyProjectFiles({
+      guid: "template-guid",
+      name: "Template",
+    });
+    const dest = new MemoryStorageAdapter("documents");
+    await dest.openDocumentsProject("FromTemplate.babproject");
+    await createProjectFromTemplate({
+      templateFiles: template,
+      destination: dest,
+      guid: "new-guid",
+      name: "FromTemplate.babproject",
+    });
+    const tree = await readProjectTree(dest);
+    const manifest = JSON.parse(
+      new TextDecoder().decode(
+        tree.find((f) => f.path === "project.json")!.data,
+      ),
+    ) as { guid: string; name: string };
+    expect(manifest.guid).toBe("new-guid");
+    expect(manifest.name).toBe("FromTemplate.babproject");
+  });
+
+  it("rewriteProjectIdentity leaves non-manifest files intact", () => {
+    const files = [
+      {
+        path: "assets/x.txt",
+        data: new TextEncoder().encode("keep"),
+      },
+      ...createEmptyProjectFiles({ guid: "old", name: "Old" }),
+    ];
+    const rewritten = rewriteProjectIdentity(files, {
+      guid: "new",
+      name: "New",
+    });
+    expect(
+      new TextDecoder().decode(
+        rewritten.find((f) => f.path === "assets/x.txt")!.data,
+      ),
+    ).toBe("keep");
   });
 });
 

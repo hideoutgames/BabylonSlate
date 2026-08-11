@@ -77,13 +77,14 @@ export async function readProjectTree(
 
 /**
  * Zip backend: encode a project tree to a single .babproject zip.
+ * Uses a fixed mtime so encoded bytes are golden-stable.
  */
 export function encodeProjectZip(files: ProjectTreeFile[]): Uint8Array {
   const record: Record<string, Uint8Array> = {};
   for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
     record[file.path] = file.data;
   }
-  return zipSync(record, { level: 6 });
+  return zipSync(record, { level: 6, mtime: new Date(Date.UTC(1980, 0, 1)) });
 }
 
 export function decodeProjectZip(bytes: Uint8Array): ProjectTreeFile[] {
@@ -139,4 +140,53 @@ export async function importProjectZip(
   zipBytes: Uint8Array,
 ): Promise<void> {
   await writeProjectTree(storage, decodeProjectZip(zipBytes));
+}
+
+/**
+ * Rewrite only project name and identity when instantiating from a template (§7.1).
+ */
+export function rewriteProjectIdentity(
+  files: ProjectTreeFile[],
+  options: { guid: string; name: string },
+): ProjectTreeFile[] {
+  return files.map((file) => {
+    if (file.path !== PROJECT_MANIFEST_FILE && file.path !== PLUGIN_MANIFEST_FILE) {
+      return file;
+    }
+    const json = JSON.parse(new TextDecoder().decode(file.data)) as Record<
+      string,
+      unknown
+    >;
+    json.guid = options.guid;
+    json.name = options.name;
+    if (json.metadata && typeof json.metadata === "object") {
+      const metadata = json.metadata as Record<string, unknown>;
+      metadata.name = options.name;
+      metadata.updatedAt = new Date().toISOString();
+    }
+    return {
+      path: file.path,
+      data: new TextEncoder().encode(stableStringify(json)),
+    };
+  });
+}
+
+/** Copy a template tree into destination storage with a new name/guid. */
+export async function createProjectFromTemplate(options: {
+  templateFiles: ProjectTreeFile[];
+  destination: ProjectStorage;
+  guid: string;
+  name: string;
+}): Promise<void> {
+  const rewritten = rewriteProjectIdentity(options.templateFiles, {
+    guid: options.guid,
+    name: options.name,
+  });
+  await writeProjectTree(options.destination, rewritten);
+}
+
+export interface TemplateCard {
+  name: string;
+  /** Directory- or zip-backed template identifier. */
+  id: string;
 }

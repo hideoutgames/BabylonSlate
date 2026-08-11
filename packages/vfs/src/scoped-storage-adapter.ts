@@ -77,6 +77,27 @@ export class ScopedStorageAdapter implements ProjectStorage {
     );
   }
 
+  async openKnownFolder(
+    handle: ProjectFolderHandle,
+  ): Promise<ProjectFolderHandle> {
+    if (handle.tier !== "external") {
+      throw new Error(`Scoped adapter cannot open tier ${handle.tier}`);
+    }
+    if (this.stale) {
+      throw new Error("Project folder bookmark is stale; reconnect required");
+    }
+    // Rebind from persisted bookmark without showing the picker.
+    if (this.folder && this.folder.id === handle.id) {
+      return toHandle(this.folder);
+    }
+    this.folder = { id: handle.id, name: handle.name };
+    await Preferences.set({
+      key: FOLDER_PREF_KEY,
+      value: JSON.stringify(this.folder),
+    });
+    return toHandle(this.folder);
+  }
+
   async listProjects(): Promise<ProjectFolderHandle[]> {
     return this.folder && !this.stale ? [toHandle(this.folder)] : [];
   }

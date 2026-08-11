@@ -30,6 +30,12 @@ export class NodeStorageAdapter implements ProjectStorage {
     return this.folder;
   }
 
+  async openKnownFolder(
+    handle: ProjectFolderHandle,
+  ): Promise<ProjectFolderHandle> {
+    return this.openDocumentsProject(handle.name);
+  }
+
   async listProjects(): Promise<ProjectFolderHandle[]> {
     await mkdir(this.baseDir, { recursive: true });
     const entries = await readdir(this.baseDir, { withFileTypes: true });

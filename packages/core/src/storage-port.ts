@@ -28,6 +28,11 @@ export interface ProjectStorage {
   pickProjectFolder(): Promise<ProjectFolderHandle>;
   /** Default iPad / desktop Documents tier — no picker. */
   openDocumentsProject(name: string): Promise<ProjectFolderHandle>;
+  /**
+   * Rebind a previously known folder (Documents / OPFS / external bookmark)
+   * without showing a picker. Picker is only for first bind / Reconnect.
+   */
+  openKnownFolder(handle: ProjectFolderHandle): Promise<ProjectFolderHandle>;
   /** Enumerate known projects on the default Documents / OPFS tier. */
   listProjects(): Promise<ProjectFolderHandle[]>;
   getCurrentFolder(): ProjectFolderHandle | null;

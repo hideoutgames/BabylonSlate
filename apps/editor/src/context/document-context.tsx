@@ -20,8 +20,16 @@ import {
   hasJournal,
   truncateJournal,
   writeJournalStub,
+  type MigrationPending,
+  type ProjectTreeFile,
 } from "@babylonslate/assets";
-import { createStorage, MemoryStorageAdapter } from "@babylonslate/vfs";
+import {
+  createAppSettingsStore,
+  createDerivedStorage,
+  createStorage,
+  defaultEngineSettings,
+} from "@babylonslate/vfs";
+import type { ProjectStorage } from "@babylonslate/core";
 import {
   DocumentService,
   type OpenDocument,
@@ -41,12 +49,16 @@ interface DocumentContextValue {
   needsReconnect: boolean;
   recoveryAvailable: boolean;
   dirtyDocuments: OpenDocument[];
+  migrationPending: MigrationPending[];
+  templates: Array<{ id: string; name: string; files: ProjectTreeFile[] }>;
   openProject: () => Promise<void>;
   createEmptyProject: () => Promise<void>;
+  createFromTemplate: (templateId: string, name: string) => Promise<void>;
   openListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<void>;
   saveAll: () => Promise<void>;
+  approveMigrationsAndSave: () => Promise<void>;
   closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[] }>;
   forceCloseProject: () => Promise<void>;
   refreshProjectList: () => Promise<void>;
@@ -77,7 +89,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new ProjectService(projectStorage),
     [projectStorage],
   );
-  const derivedStorage = useMemo(() => new MemoryStorageAdapter("documents"), []);
+  const settingsStore = useMemo(() => createAppSettingsStore(), []);
+  const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
 
@@ -90,19 +103,68 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
+    [],
+  );
+  const [templates, setTemplates] = useState<
+    Array<{ id: string; name: string; files: ProjectTreeFile[] }>
+  >([]);
   const [registryVersion, setRegistryVersion] = useState(0);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
   const documentService = documentServiceRef.current;
 
+  const ensureDerived = useCallback(async () => {
+    if (!derivedStorageRef.current) {
+      derivedStorageRef.current = await createDerivedStorage();
+    }
+    return derivedStorageRef.current;
+  }, []);
+
+  const recordRecent = useCallback(
+    async (handle: ProjectFolderHandle | null) => {
+      if (!handle) return;
+      const settings = await settingsStore.load();
+      const next = defaultEngineSettings();
+      Object.assign(next, settings);
+      next.recents = [
+        {
+          id: handle.id,
+          name: handle.name,
+          tier: handle.tier,
+          lastOpenedAt: new Date().toISOString(),
+          bookmark: handle.tier === "external" ? handle.id : null,
+        },
+        ...settings.recents.filter((r) => r.id !== handle.id),
+      ].slice(0, 20);
+      await settingsStore.save(next);
+    },
+    [settingsStore],
+  );
+
   const refreshProjectList = useCallback(async () => {
-    setListedProjects(await projectService.listProjects());
+    const fromStorage = await projectService.listProjects();
+    const settings = await settingsStore.load();
+    // Merge recents that may not appear in listProjects yet (external bookmarks).
+    const byId = new Map(fromStorage.map((p) => [p.id, p]));
+    for (const recent of settings.recents) {
+      if (!byId.has(recent.id)) {
+        byId.set(recent.id, {
+          id: recent.id,
+          name: recent.name,
+          tier: recent.tier,
+        });
+      }
+    }
+    setListedProjects([...byId.values()]);
     setNeedsReconnect(await projectService.needsReconnect());
-  }, [projectService]);
+  }, [projectService, settingsStore]);
 
   useEffect(() => {
     documentService.ensureContentBrowserTab();
     void refreshProjectList();
+    // Web has Empty only; non-web templates come from settings folder (cards empty until set).
+    setTemplates([]);
     bump();
   }, [bump, documentService, refreshProjectList]);
 
@@ -124,9 +186,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [captureLayoutForId, documentService]);
 
   const enterEditor = useCallback(
-    async (document: ProjectDocument, layouts: Awaited<
-      ReturnType<ProjectService["loadCurrentProject"]>
-    >["layouts"]) => {
+    async (
+      document: ProjectDocument,
+      layouts: Awaited<
+        ReturnType<ProjectService["loadCurrentProject"]>
+      >["layouts"],
+      pending: MigrationPending[] = [],
+    ) => {
       dockviewApisRef.current.clear();
       await documentService.initializeFromProject(
         projectService,
@@ -134,50 +200,77 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         layouts,
       );
       setProjectDocument(document);
+      setMigrationPending(pending);
       setRoute("editor");
       const guid = projectService.guid;
       if (guid) {
-        await derivedStorage.openDocumentsProject("derived");
-        setRecoveryAvailable(await hasJournal(derivedStorage, guid));
+        const derived = await ensureDerived();
+        setRecoveryAvailable(await hasJournal(derived, guid));
       }
+      await recordRecent(projectService.storagePort.getCurrentFolder());
       await refreshProjectList();
       bump();
     },
     [
       bump,
-      derivedStorage,
       documentService,
+      ensureDerived,
       projectService,
+      recordRecent,
       refreshProjectList,
     ],
   );
 
   const openProject = useCallback(async () => {
-    const { document, layouts } = await projectService.openProject();
-    await enterEditor(document, layouts);
+    const { document, layouts, migrationPending: pending } =
+      await projectService.openProject();
+    await enterEditor(document, layouts, pending);
   }, [enterEditor, projectService]);
 
   const createEmptyProject = useCallback(async () => {
-    const { document, layouts } = await projectService.createEmptyProject();
-    await enterEditor(document, layouts);
+    const { document, layouts, migrationPending: pending } =
+      await projectService.createEmptyProject();
+    await enterEditor(document, layouts, pending);
   }, [enterEditor, projectService]);
+
+  const createFromTemplate = useCallback(
+    async (templateId: string, name: string) => {
+      const template = templates.find((t) => t.id === templateId);
+      if (!template) {
+        throw new Error(`Unknown template: ${templateId}`);
+      }
+      const { document, layouts, migrationPending: pending } =
+        await projectService.createFromTemplate({
+          templateFiles: template.files,
+          name,
+        });
+      await enterEditor(document, layouts, pending);
+    },
+    [enterEditor, projectService, templates],
+  );
 
   const openListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
-      const { document, layouts } =
+      const { document, layouts, migrationPending: pending } =
         await projectService.openListedProject(handle);
-      await enterEditor(document, layouts);
+      await enterEditor(document, layouts, pending);
     },
     [enterEditor, projectService],
   );
 
   const reconnectProject = useCallback(async () => {
-    const { document, layouts } = await projectService.reconnect();
-    await enterEditor(document, layouts);
+    const { document, layouts, migrationPending: pending } =
+      await projectService.reconnect();
+    await enterEditor(document, layouts, pending);
   }, [enterEditor, projectService]);
 
   const saveProject = useCallback(async () => {
     if (!projectDocument) return;
+    if (projectService.pendingMigrations.length > 0) {
+      setMigrationPending(projectService.pendingMigrations);
+      // Caller must use approveMigrationsAndSave — never silently rewrite.
+      return;
+    }
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
     for (const doc of dirtyDocs) {
@@ -192,6 +285,28 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const layouts = documentService.buildLayouts();
     await projectService.saveProject(projectDocument, layouts);
     documentService.markAllClean();
+    setMigrationPending([]);
+    bump();
+  }, [bump, captureAllLayouts, documentService, projectDocument, projectService]);
+
+  const approveMigrationsAndSave = useCallback(async () => {
+    if (!projectDocument) return;
+    projectService.approveMigrateOnSave();
+    captureAllLayouts();
+    const dirtyDocs = documentService.getDirtyDocuments();
+    for (const doc of dirtyDocs) {
+      if (doc.ref.kind === "scene" || doc.ref.kind === "graph") {
+        await projectService.saveDocument(
+          doc.ref.kind,
+          doc.ref.path,
+          doc.content as SerializedScene | SerializedGraph,
+        );
+      }
+    }
+    const layouts = documentService.buildLayouts();
+    await projectService.saveProject(projectDocument, layouts);
+    documentService.markAllClean();
+    setMigrationPending([]);
     bump();
   }, [bump, captureAllLayouts, documentService, projectDocument, projectService]);
 
@@ -200,21 +315,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const forceCloseProject = useCallback(async () => {
     const guid = projectService.guid;
     if (guid) {
-      await derivedStorage.openDocumentsProject("derived");
-      await truncateJournal(derivedStorage, guid);
+      const derived = await ensureDerived();
+      await truncateJournal(derived, guid);
     }
     await projectService.closeProject();
     dockviewApisRef.current.clear();
     documentService.ensureContentBrowserTab();
     setProjectDocument(null);
     setRecoveryAvailable(false);
+    setMigrationPending([]);
     setRoute("home");
     await refreshProjectList();
     bump();
   }, [
     bump,
-    derivedStorage,
     documentService,
+    ensureDerived,
     projectService,
     refreshProjectList,
   ]);
@@ -235,21 +351,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const dismissRecovery = useCallback(async () => {
     const guid = projectService.guid;
     if (guid) {
-      await derivedStorage.openDocumentsProject("derived");
-      await truncateJournal(derivedStorage, guid);
+      const derived = await ensureDerived();
+      await truncateJournal(derived, guid);
     }
     setRecoveryAvailable(false);
-  }, [derivedStorage, projectService]);
+  }, [ensureDerived, projectService]);
 
   const keepRecovery = useCallback(() => {
     const guid = projectService.guid;
     if (guid) {
-      void derivedStorage.openDocumentsProject("derived").then(() =>
-        writeJournalStub(derivedStorage, guid, ["pending-p2-replay"]),
+      void ensureDerived().then((derived) =>
+        writeJournalStub(derived, guid, ["pending-p2-replay"]),
       );
     }
     setRecoveryAvailable(false);
-  }, [derivedStorage, projectService]);
+  }, [ensureDerived, projectService]);
 
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
@@ -375,12 +491,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       needsReconnect,
       recoveryAvailable,
       dirtyDocuments: documentService.getDirtyDocuments(),
+      migrationPending,
+      templates,
       openProject,
       createEmptyProject,
+      createFromTemplate,
       openListedProject,
       reconnectProject,
       saveProject,
       saveAll,
+      approveMigrationsAndSave,
       closeProject,
       forceCloseProject,
       refreshProjectList,
@@ -406,12 +526,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       listedProjects,
       needsReconnect,
       recoveryAvailable,
+      migrationPending,
+      templates,
       openProject,
       createEmptyProject,
+      createFromTemplate,
       openListedProject,
       reconnectProject,
       saveProject,
       saveAll,
+      approveMigrationsAndSave,
       closeProject,
       forceCloseProject,
       refreshProjectList,

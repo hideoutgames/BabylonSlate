@@ -58,12 +58,19 @@ export interface EncodeBabassetOptions {
   blobThreshold?: number;
   /** Existing blob store writer; required when externalising. */
   writeBlob?: (sha256: string, data: Uint8Array) => Promise<void>;
+  /**
+   * Bundled mode: dependency assets embedded as nested `asset` chunks.
+   * Each entry's bytes should already be a complete .babasset.
+   */
+  nestedAssets?: Array<{ guid: string; bytes: Uint8Array }>;
 }
 
 export interface DecodedBabasset {
   header: BabassetHeader;
   /** Absolute file offsets are resolved; payloads may be empty for header-only. */
   chunks: Map<string, Uint8Array>;
+  /** Nested dependency assets unpacked from bundled mode. */
+  nestedAssets: Map<string, Uint8Array>;
 }
 
 function assertMagic(bytes: Uint8Array): void {
@@ -102,7 +109,19 @@ export async function encodeBabasset(
   const table: ChunkEntry[] = [];
   let inlineOffset = 0;
 
-  for (const chunk of options.chunks) {
+  const allChunks: ChunkInput[] = [...options.chunks];
+  if (mode === "bundled" && options.nestedAssets) {
+    for (const nested of options.nestedAssets) {
+      allChunks.push({
+        id: `nested:${nested.guid}`,
+        kind: "asset",
+        mime: "application/vnd.babylonslate.babasset",
+        data: nested.bytes,
+      });
+    }
+  }
+
+  for (const chunk of allChunks) {
     const hash = await sha256Hex(chunk.data);
     const externalise =
       mode === "thin" && chunk.data.byteLength >= threshold && options.writeBlob;
@@ -133,6 +152,7 @@ export async function encodeBabasset(
 
   const header: BabassetHeader = babassetHeaderSchema.parse({
     ...options.header,
+    mode,
     chunks: table,
   });
   const headerJson = stableStringify(header);
@@ -155,23 +175,26 @@ export async function decodeBabasset(
   const headerLen = readU32LE(bytes, 8);
   const payloadStart = 12 + headerLen;
   const chunks = new Map<string, Uint8Array>();
+  const nestedAssets = new Map<string, Uint8Array>();
 
   for (const entry of header.chunks) {
+    let data: Uint8Array;
     if ("inline" in entry.locator) {
       const { offset, length } = entry.locator.inline;
-      chunks.set(
-        entry.id,
-        bytes.subarray(payloadStart + offset, payloadStart + offset + length),
-      );
+      data = bytes.subarray(payloadStart + offset, payloadStart + offset + length);
     } else {
       if (!readBlob) {
         throw new Error(
           `Chunk ${entry.id} uses a blob locator but no readBlob was provided`,
         );
       }
-      chunks.set(entry.id, await readBlob(entry.locator.blob));
+      data = await readBlob(entry.locator.blob);
+    }
+    chunks.set(entry.id, data);
+    if (entry.kind === "asset" && entry.id.startsWith("nested:")) {
+      nestedAssets.set(entry.id.slice("nested:".length), data);
     }
   }
 
-  return { header, chunks };
+  return { header, chunks, nestedAssets };
 }
