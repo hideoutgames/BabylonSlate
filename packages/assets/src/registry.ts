@@ -269,7 +269,8 @@ export class AssetRegistry {
       chunksById.set(chunk.id, chunk);
     }
 
-    const { chunks: _existingChunks, ...headerRest } = decoded.header;
+    const { chunks, ...headerRest } = decoded.header;
+    void chunks;
     const bytes = await encodeBabasset({
       header: { ...headerRest, payload: { ...headerRest.payload, ...result.payload } },
       chunks: [...chunksById.values()],
