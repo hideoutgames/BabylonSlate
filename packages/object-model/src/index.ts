@@ -1,0 +1,45 @@
+export {
+  ENGINE_BASE_CLASS_IDS,
+  ENGINE_COMPONENT_CLASS_IDS,
+  type EngineBaseClassId,
+  type EngineComponentClassId,
+} from "./ids";
+export {
+  ClassRegistry,
+  type ClassDef,
+  type ClassKind,
+  type ReparentResult,
+  type VariableDef,
+} from "./class-registry";
+export {
+  InterfaceRegistry,
+  dispatchInterface,
+  interfaceHandlerKey,
+  type InterfaceDispatchTarget,
+  type InterfaceHandler,
+  type InterfaceMethodDef,
+  type ScriptInterfaceDef,
+} from "./interfaces";
+export {
+  Actor,
+  ActorComponent,
+  BObject,
+  GameInstance,
+  type GameInstanceHooks,
+  type LifecycleHooks,
+  type TickContext,
+  type WorldLike,
+} from "./objects";
+export {
+  TICK_PHASES,
+  TickClock,
+  type PhaseHook,
+  type TickPhase,
+  type TickSchedulerOptions,
+} from "./tick";
+export { World, type WorldOptions } from "./world";
+export {
+  createWorldSnapshot,
+  stringifyWorldSnapshot,
+  type WorldSnapshot,
+} from "./snapshot";

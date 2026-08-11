@@ -1,0 +1,210 @@
+import {
+  createSeededRng,
+  type Guid,
+  type GuidFactory,
+  type Rng,
+} from "@babylonslate/core";
+import type { ClassRegistry } from "./class-registry";
+import type { InterfaceRegistry } from "./interfaces";
+import { Actor, ActorComponent, GameInstance, type TickContext } from "./objects";
+import { TICK_PHASES, TickClock, type PhaseHook, type TickPhase } from "./tick";
+
+export interface WorldOptions {
+  seed: number;
+  dt: number;
+  classRegistry: ClassRegistry;
+  interfaceRegistry?: InterfaceRegistry;
+  guidFactory?: GuidFactory;
+  onPhase?: PhaseHook;
+  /** Optional post-physics fixup callback. */
+  onPostPhysics?: (ctx: TickContext) => void;
+}
+
+export class World {
+  readonly classRegistry: ClassRegistry;
+  readonly interfaceRegistry: InterfaceRegistry | null;
+  readonly clock: TickClock;
+  readonly rng: Rng;
+  private readonly guidFactory?: GuidFactory;
+  private readonly onPhase?: PhaseHook;
+  private readonly onPostPhysics?: (ctx: TickContext) => void;
+
+  gameInstance: GameInstance | null = null;
+  /** Actors in spawn order — never iterate a Map for tick/snapshot. */
+  private readonly actors: Actor[] = [];
+  private readonly pendingSpawn: Actor[] = [];
+  private readonly pendingDestroy: Guid[] = [];
+  private started = false;
+
+  constructor(options: WorldOptions) {
+    this.classRegistry = options.classRegistry;
+    this.interfaceRegistry = options.interfaceRegistry ?? null;
+    this.clock = new TickClock(options.dt);
+    this.rng = createSeededRng(options.seed);
+    this.guidFactory = options.guidFactory;
+    this.onPhase = options.onPhase;
+    this.onPostPhysics = options.onPostPhysics;
+  }
+
+  rngNextFloat(): number {
+    return this.rng.nextFloat();
+  }
+
+  setGameInstance(instance: GameInstance): void {
+    this.gameInstance = instance;
+  }
+
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    this.gameInstance?.callOnCreation();
+    this.gameInstance?.callOnGameStart();
+  }
+
+  end(): void {
+    this.gameInstance?.callOnGameEnd();
+  }
+
+  loadScene(sceneName: string): void {
+    this.gameInstance?.callOnSceneLoaded(sceneName);
+  }
+
+  /** Queue actor for spawn; applied after the current phase / at end of tick. */
+  spawnActor(actor: Actor): Actor {
+    this.pendingSpawn.push(actor);
+    return actor;
+  }
+
+  /** Immediately spawn if not mid-tick; otherwise queues. */
+  spawnActorNow(actor: Actor): Actor {
+    this.commitSpawn(actor);
+    return actor;
+  }
+
+  destroyActor(guid: Guid): void {
+    this.pendingDestroy.push(guid);
+  }
+
+  getActors(): readonly Actor[] {
+    return this.actors;
+  }
+
+  findActor(guid: Guid): Actor | undefined {
+    return this.actors.find((a) => a.guid === guid);
+  }
+
+  private commitSpawn(actor: Actor): void {
+    if (actor.destroyed) return;
+    actor.world = this;
+    actor.spawnIndex = this.actors.length;
+    this.actors.push(actor);
+    actor.callOnCreation();
+  }
+
+  private flushDeferred(): void {
+    while (this.pendingSpawn.length > 0 || this.pendingDestroy.length > 0) {
+      while (this.pendingSpawn.length > 0) {
+        const actor = this.pendingSpawn.shift()!;
+        this.commitSpawn(actor);
+      }
+      while (this.pendingDestroy.length > 0) {
+        const guid = this.pendingDestroy.shift()!;
+        this.commitDestroy(guid);
+      }
+    }
+  }
+
+  private commitDestroy(guid: Guid): void {
+    const index = this.actors.findIndex((a) => a.guid === guid);
+    if (index < 0) return;
+    const actor = this.actors[index]!;
+    for (const component of [...actor.components].reverse()) {
+      component.destroyed = true;
+      component.callOnDestroyed();
+      component.owner = null;
+    }
+    actor.components.length = 0;
+    actor.destroyed = true;
+    actor.callOnDestroyed();
+    actor.world = null;
+    this.actors.splice(index, 1);
+    // Keep spawnIndex stable for remaining actors' historical order:
+    // reassign sequential indices after removal so order stays dense.
+    for (let i = 0; i < this.actors.length; i++) {
+      this.actors[i]!.spawnIndex = i;
+    }
+  }
+
+  private phaseContext(tickIndex: number): TickContext {
+    return { dt: this.clock.dt, tickIndex, world: this };
+  }
+
+  private runPhase(phase: TickPhase, tickIndex: number): void {
+    this.onPhase?.(phase, this.clock.dt, tickIndex);
+    const ctx = this.phaseContext(tickIndex);
+
+    switch (phase) {
+      case "gameInstance":
+        this.gameInstance?.callOnTick(ctx);
+        break;
+      case "actors":
+        for (const actor of [...this.actors]) {
+          if (!actor.destroyed) actor.callOnTick(ctx);
+        }
+        break;
+      case "components":
+        for (const actor of [...this.actors]) {
+          if (actor.destroyed) continue;
+          for (const component of [...actor.components]) {
+            if (!component.destroyed) component.callOnTick(ctx);
+          }
+        }
+        break;
+      case "physics":
+        // Reserved for P7 — must remain a named no-op slot.
+        break;
+      case "postPhysics":
+        this.onPostPhysics?.(ctx);
+        break;
+    }
+
+    this.flushDeferred();
+  }
+
+  tick(): number {
+    if (!this.started) this.start();
+    this.flushDeferred();
+    const tickIndex = this.clock.advance();
+    for (const phase of TICK_PHASES) {
+      this.runPhase(phase, tickIndex);
+    }
+    return tickIndex;
+  }
+
+  createActor(options: {
+    classId: string;
+    guid?: Guid;
+    variables?: Record<string, unknown>;
+    hooks?: ConstructorParameters<typeof Actor>[0]["hooks"];
+    implementedInterfaces?: string[];
+    transform?: ConstructorParameters<typeof Actor>[0]["transform"];
+  }): Actor {
+    return new Actor({
+      ...options,
+      guidFactory: this.guidFactory,
+    });
+  }
+
+  createComponent(options: {
+    classId: string;
+    guid?: Guid;
+    variables?: Record<string, unknown>;
+    hooks?: ConstructorParameters<typeof ActorComponent>[0]["hooks"];
+    assetGuid?: Guid | null;
+  }): ActorComponent {
+    return new ActorComponent({
+      ...options,
+      guidFactory: this.guidFactory,
+    });
+  }
+}

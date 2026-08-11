@@ -11,6 +11,7 @@ export default defineConfig({
             "packages/core/**/*.test.ts",
             "packages/assets/**/*.test.ts",
             "packages/edit/**/*.test.ts",
+            "packages/object-model/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
           ],
         },
@@ -102,6 +103,12 @@ export default defineConfig({
           statements: 60,
         },
         "packages/edit/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/object-model/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,
