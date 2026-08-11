@@ -44,4 +44,9 @@ Inputs, textareas, `contenteditable` and anything inside `SelectableText` keep t
 
 ## Document tabs (chrome bar)
 
-- Long-press on grip to reorder (dnd-kit); distinct from Dockview panel drag.
+| Gesture | Action |
+| --- | --- |
+| Quick horizontal swipe on tab strip | Scroll overflow tabs |
+| Tap tab label | Select tab |
+| Tap close | Close tab |
+| Long-press (~300 ms, stationary) on tab, then drag horizontally | Reorder tab (dnd-kit); distinct from Dockview panel drag |

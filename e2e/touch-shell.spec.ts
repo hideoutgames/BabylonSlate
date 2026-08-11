@@ -17,10 +17,12 @@ test.describe("Touch shell UX", () => {
     expect(userSelect).toBe("none");
   });
 
-  test("chrome tab grips meet minimum touch target size", async ({ page }) => {
-    const grip = page.locator(".chrome-tab-grip").first();
-    await expect(grip).toBeVisible();
-    const box = await grip.boundingBox();
+  test("chrome document tabs meet minimum touch target size", async ({ page }) => {
+    const tab = page
+      .locator('[data-testid="document-tab"][data-document-kind="scene"]')
+      .first();
+    await expect(tab).toBeVisible();
+    const box = await tab.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.width).toBeGreaterThanOrEqual(44);
     expect(box!.height).toBeGreaterThanOrEqual(44);
