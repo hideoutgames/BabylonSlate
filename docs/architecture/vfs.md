@@ -42,11 +42,27 @@ Global Engine Settings stored **outside** any project:
 | Backend | Platform |
 | --- | --- |
 | Capacitor Preferences | iPad / Android |
-| OPFS or localStorage | Web |
-| Electron userData | Desktop (stub until P14) |
+| localStorage | Web |
+| Electron userData bridge | Desktop — settings only until the P14 host lands |
 
 Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap, hardware scaling, thumbnail toggle, debugger defaults.
 
-## Write performance (§19)
+`createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. With no bridge the Electron store keeps settings in memory, so desktop never silently loses them to a missing backend.
 
-Many small Capacitor writes are slow. Mitigations (decide in P1 before registry): write only dirty assets, blob store for large immutable chunks, debounce batches. CI microbench covers memory + OPFS adapters (jsdom uses the OPFS memory fallback; Playwright exercises real OPFS). Device Capacitor write numbers when available.
+## Templates folder
+
+`createTemplateStorage(folder)` binds the Engine Settings templates folder in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends. Web has no folder picker for a templates location, so it offers **Empty only**; other hosts show a card per `*.babproject` entry that has a manifest. Entries without a manifest are skipped rather than failing the Homepage.
+
+## Write performance decision (§19)
+
+Cost model: the Documents tier crosses the Capacitor bridge **once per asset write**, with base64 encoding on each crossing (asserted in `write-bench.test.ts` with a fake filesystem). A file provider is slower still.
+
+Decided for P1, in this order:
+
+1. **Write only dirty documents.** Save walks the dirty set, never the whole tree.
+2. **Blob store for large immutable chunks.** Chunks at or above the threshold externalise to `assets/.blobs/<sha256>`; an existing hash is never rewritten, so a re-save of an asset whose big chunks did not change writes no blob bytes.
+3. **Debounce batches** when interactive saving arrives with the command layer (P2).
+
+**Pack format is not adopted.** One `.babasset` per asset stays the unit on disk; revisit only if device numbers show the first three are insufficient. That keeps the P2 registry and Content Browser free of a pack indirection they would otherwise have to assume.
+
+CI covers memory, OPFS (jsdom memory fallback) and Documents-via-fake-filesystem; Playwright exercises real OPFS. Device Capacitor timings still need an iPad and remain open.
