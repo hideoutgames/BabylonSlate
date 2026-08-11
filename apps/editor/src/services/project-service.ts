@@ -270,6 +270,11 @@ export class ProjectService {
     return registry;
   }
 
+  /** Re-scan project assets after registry file operations (import, create, delete). */
+  async remountRegistry(): Promise<AssetRegistry> {
+    return this.mountAssetRegistry();
+  }
+
   private async keepExisting(paths: string[]): Promise<string[]> {
     const kept: string[] = [];
     for (const path of paths) {

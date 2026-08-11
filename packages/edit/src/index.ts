@@ -28,3 +28,4 @@ export {
   commandToJournalPayload,
   registerGraphCommandRevivers,
 } from "./journal";
+export { replayJournalLines, type JournalReplayResult } from "./journal-replay";

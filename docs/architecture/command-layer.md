@@ -12,6 +12,7 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 | `diffGraphCommands` | Derives graph commands from before/after `SerializedGraph` snapshots |
 | `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand` | Graph document commands |
 | `serializeJournalLine` / `parseJournalLine` | JSONL journal line codec |
+| `replayJournalLines` | Replay journal onto open graph documents |
 | `reviveCommand` / `registerCommandReviver` | Registry to rebuild commands from journal JSON |
 
 Editor wiring: `DocumentProvider` owns an `EditSession`; graph panels call `applyGraphChange`; chrome **Undo** / **Redo** act on the active document only.
@@ -66,9 +67,9 @@ Each line is one JSON object:
 {"v":1,"docId":"…","at":"ISO-8601","command":{"type":"…",…}}
 ```
 
-- Append after a successful `apply` on an open document.
+- Append after a successful `apply` on an open document (`appendJournalLine` in derived data).
 - Clean **Close Project** truncates the journal.
-- Recovery reopens the project, then replays lines through the same `apply` path (no second serialisation format).
+- Recovery uses `replayJournalLines` → `reviveCommand` → `apply` on open graph documents, then truncates the journal.
 - Schema version `v` allows journal migration without inventing a parallel recovery path.
 
 ## Dirty / debounce saves

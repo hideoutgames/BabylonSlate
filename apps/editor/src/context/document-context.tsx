@@ -17,13 +17,21 @@ import type {
 } from "@babylonslate/core";
 import { documentId } from "@babylonslate/core";
 import {
+  appendJournalLine,
   hasJournal,
+  readJournalLines,
   truncateJournal,
-  writeJournalStub,
+  type AssetRegistry,
   type MigrationPending,
   type ProjectTemplate,
 } from "@babylonslate/assets";
-import { diffGraphCommands, EditSession } from "@babylonslate/edit";
+import {
+  commandToJournalPayload,
+  diffGraphCommands,
+  EditSession,
+  replayJournalLines,
+  serializeJournalLine,
+} from "@babylonslate/edit";
 import {
   createAppSettingsStore,
   createDerivedStorage,
@@ -46,6 +54,8 @@ interface DocumentContextValue {
   route: AppRoute;
   projectDocument: ProjectDocument | null;
   projectName: string | null;
+  assetRegistry: AssetRegistry | null;
+  refreshAssetRegistry: () => Promise<void>;
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -208,6 +218,45 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       captureLayoutForId(id);
     }
   }, [captureLayoutForId, documentService]);
+
+  const refreshAssetRegistry = useCallback(async () => {
+    await projectService.remountRegistry();
+    const paths = projectService.registry?.listDocumentPaths();
+    if (projectDocument && paths) {
+      setProjectDocument({
+        ...projectDocument,
+        scenes: paths.scenes,
+        graphs: paths.graphs,
+      });
+    }
+    bump();
+  }, [bump, projectDocument, projectService]);
+
+  const replayRecoveryJournal = useCallback(async () => {
+    const guid = projectService.guid;
+    if (!guid) return;
+    const derived = await ensureDerived();
+    const lines = await readJournalLines(derived, guid);
+    if (lines.length === 0) {
+      setRecoveryAvailable(false);
+      return;
+    }
+
+    const openGraphs = new Map<string, SerializedGraph>();
+    for (const doc of documentService.getOpenDocumentsOrdered()) {
+      if (doc.ref.kind === "graph" && doc.content) {
+        openGraphs.set(doc.id, doc.content as SerializedGraph);
+      }
+    }
+
+    const { documents } = replayJournalLines(lines, openGraphs);
+    for (const [id, graph] of documents) {
+      documentService.updateGraph(id, graph);
+    }
+    await truncateJournal(derived, guid);
+    setRecoveryAvailable(false);
+    bump();
+  }, [bump, documentService, ensureDerived, projectService]);
 
   const enterEditor = useCallback(
     async (
@@ -383,15 +432,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setRecoveryAvailable(false);
   }, [ensureDerived, projectService]);
 
-  const keepRecovery = useCallback(() => {
-    const guid = projectService.guid;
-    if (guid) {
-      void ensureDerived().then((derived) =>
-        writeJournalStub(derived, guid, ["pending-p2-replay"]),
-      );
-    }
-    setRecoveryAvailable(false);
-  }, [ensureDerived, projectService]);
+  const keepRecovery = useCallback(async () => {
+    await replayRecoveryJournal();
+  }, [replayRecoveryJournal]);
 
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
@@ -476,9 +519,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
       documentService.updateGraph(id, current);
+      const guid = projectService.guid;
+      if (guid) {
+        void ensureDerived().then(async (derived) => {
+          for (const command of commands) {
+            await appendJournalLine(
+              derived,
+              guid,
+              serializeJournalLine({
+                v: 1,
+                docId: id,
+                at: new Date().toISOString(),
+                command: commandToJournalPayload(command),
+              }),
+            );
+          }
+        });
+      }
       bump();
     },
-    [bump, documentService],
+    [bump, documentService, ensureDerived, projectService],
   );
 
   const undoActiveDocument = useCallback(() => {
@@ -609,6 +669,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       captureActiveLayout,
       getAvailableDocuments,
+      assetRegistry: projectService.registry,
+      refreshAssetRegistry,
     };
     },
     [
@@ -616,6 +678,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       route,
       projectDocument,
       documentService,
+      projectService,
+      refreshAssetRegistry,
       listedProjects,
       needsReconnect,
       recoveryAvailable,
@@ -649,6 +713,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       captureActiveLayout,
       getAvailableDocuments,
+      refreshAssetRegistry,
+      projectService,
     ],
   );
 

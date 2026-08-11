@@ -190,7 +190,7 @@ function AppRoutes() {
         onOpenExternal={openProject}
         onOpenProject={openListedProject}
         onReconnect={reconnectProject}
-        onRecover={keepRecovery}
+        onRecover={() => void keepRecovery()}
         onDismissRecovery={() => void dismissRecovery()}
         onSettingsChanged={refreshTemplates}
       />

@@ -24,7 +24,7 @@ interface HomepageProps {
   onOpenExternal: () => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
   onReconnect: () => Promise<void>;
-  onRecover: () => void;
+  onRecover: () => void | Promise<void>;
   onDismissRecovery: () => void;
   /** Engine Settings changes can add or remove template cards. */
   onSettingsChanged: () => Promise<void>;
@@ -106,12 +106,15 @@ export function Homepage({
             data-testid="recovery-prompt"
           >
             <p className="text-sm">
-              A recovery journal was found for this project. Full command replay
-              arrives in P2; you can dismiss the journal for now.
+              A recovery journal was found for this project. Replay unsaved
+              edits now, or discard the journal.
             </p>
             <div className="flex gap-2">
-              <Button data-testid="recover-journal" onClick={onRecover}>
-                Keep journal
+              <Button
+                data-testid="recover-journal"
+                onClick={() => void onRecover()}
+              >
+                Recover edits
               </Button>
               <Button
                 variant="outline"

@@ -31,7 +31,7 @@ interface ContentRoot {
 | `mountRoot` / `unmountRoot` | Add or remove a content root and (re)scan headers |
 | `getByGuid` / `list` / `folderTree` | Index queries |
 | `showReferences(guid)` | Inbound + outbound deps from header `dependencies[]` |
-| `importFiles` | Document-picker bytes → importers → write `.babasset` + enqueue work |
+| `importFile` | Document-picker bytes → importers → write `.babasset` + enqueue work |
 | `createAsset` / `deleteAsset` / `deleteFolder` | File ops (confirm delete in UI via Show References) |
 | `accountedPayloadBytes` | Diagnostic for the hundreds-of-assets open test |
 
@@ -74,9 +74,28 @@ Queue: one dedicated import Worker; one job at a time; pause on Preview / backgr
 
 Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder via `configureKtx2Transcoder` / `KhronosTextureContainer2.URLConfig` under `apps/editor/public/ktx2/`. Silent fallback is forbidden — state must be explicit. Encode runs on `EncodeQueue` (one job, pauseable, recycle after N) with a stub encoder in tests and Basis wasm in the import Worker.
 
+## Content Browser (P2)
+
+`apps/editor/src/components/content-browser-workspace.tsx` is the registry-backed project asset UI:
+
+- Folder tree from `folderTree("project")`; asset grid filtered by folder, type chips, and search.
+- Import via hidden `<input type="file" multiple>` → `registry.importFile` (no Capacitor from UI).
+- **New Asset** uses type + engine-base parent-class pickers → `registry.createAsset`.
+- Long-press multi-select + `ContextMenuOverlay` delete; `AlertDialog` lists removed assets and inbound refs from `showReferences`.
+- Drag source MIME `application/x-babylonslate-asset` with `{ guid, type, path }`.
+- Texture tiles show `payload.compressionState` badges (`pending`, `encoding`, `fallback_uncompressed`, `encode_failed`).
+- Empty `data-lock-slot` on tiles reserved for P15 lock decoration.
+
+`DocumentProvider` exposes `assetRegistry` and `refreshAssetRegistry()` (`projectService.remountRegistry()`).
+
+## Content Browser
+
+Pinned tab consumes the registry: folder tree, type filters, search, Import (file input), New Asset (type + parent class), long-press multi-select, drag payload `application/x-babylonslate-asset`, compression badges, and delete confirmation listing inbound refs. Lock decoration is an empty `data-lock-slot` for P15.
+
 ## Tests
 
 - Second synthetic root mounts and resolves across roots.
 - Hundreds of assets open with near-zero `accountedPayloadBytes`.
 - Importer unit tests + guid-remap cases.
 - Encode queue states; loader KTX2 vs source; transcoder omitted smoke.
+- Content Browser helpers (filter / new-asset / drag MIME) unit-tested in the editor.
