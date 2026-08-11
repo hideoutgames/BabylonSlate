@@ -1,15 +1,8 @@
-import {
-  ArcRotateCamera,
-  Color3,
-  Color4,
-  Engine,
-  HemisphericLight,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Color4, Engine, Scene } from "@babylonjs/core";
 import type { SerializedScene } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
 import { applySceneToBabylonScene } from "./scene-loader";
+import { setupDefaultViewport } from "./viewport";
 
 export interface EngineHandle {
   engine: Engine;
@@ -19,21 +12,11 @@ export interface EngineHandle {
   loadScene: (sceneData: SerializedScene) => void;
 }
 
-export function setupDefaultViewport(scene: Scene): void {
-  const camera = new ArcRotateCamera(
-    "camera",
-    -Math.PI / 2,
-    Math.PI / 2.5,
-    8,
-    Vector3.Zero(),
-    scene,
-  );
-  scene.activeCamera = camera;
-
-  const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
-  light.intensity = 0.9;
-}
-
+/**
+ * Requires a real WebGL context, so it is covered by the Playwright suite
+ * rather than by unit tests. P4 replaces this demo loop with snapshot-driven,
+ * render-on-demand sync.
+ */
 export function createEngine(canvas: HTMLCanvasElement): EngineHandle {
   const engine = new Engine(canvas, true, {
     preserveDrawingBuffer: true,
@@ -71,8 +54,4 @@ export function createEngine(canvas: HTMLCanvasElement): EngineHandle {
     resize,
     loadScene,
   };
-}
-
-export function setHighlightColor(scene: Scene, color: Color3): void {
-  scene.ambientColor = color;
 }

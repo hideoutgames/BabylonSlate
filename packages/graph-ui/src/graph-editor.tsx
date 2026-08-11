@@ -9,7 +9,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useCallback } from "react";
 import type { SerializedGraph } from "@babylonslate/core";
-import { deserializeGraph, serializeGraph } from "./graph-serialization";
+import { toSerializedGraph } from "./graph-model";
 
 type LogNodeData = {
   message: string;
@@ -46,19 +46,7 @@ export function GraphEditor({ initialGraph, onChange }: GraphEditorProps) {
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
       onNodesChange(changes);
-      onChange?.(
-        deserializeGraph(
-          serializeGraph({
-            nodes: nodes.map((n) => ({
-              id: n.id,
-              type: n.type ?? "logMessage",
-              position: n.position,
-              data: n.data as Record<string, unknown>,
-            })),
-            edges: initialGraph.edges,
-          }),
-        ),
-      );
+      onChange?.(toSerializedGraph(nodes, initialGraph.edges));
     },
     [initialGraph.edges, nodes, onChange, onNodesChange],
   );
