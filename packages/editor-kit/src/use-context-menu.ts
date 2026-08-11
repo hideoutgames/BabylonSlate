@@ -34,6 +34,8 @@ export interface UseContextMenuOptions {
 export interface UseContextMenuResult {
   menu: ContextMenuState | null;
   closeMenu: () => void;
+  /** Open the menu at viewport coordinates (e.g. after tile long-press). */
+  openMenuAt: (clientX: number, clientY: number) => void;
   bind: {
     onContextMenu: (event: ReactMouseEvent) => void;
     onPointerDown: (event: React.PointerEvent) => void;
@@ -165,6 +167,7 @@ export function useContextMenu(
   return {
     menu,
     closeMenu,
+    openMenuAt: openAt,
     bind: {
       onContextMenu,
       onPointerDown,

@@ -10,6 +10,7 @@ export default defineConfig({
           include: [
             "packages/core/**/*.test.ts",
             "packages/assets/**/*.test.ts",
+            "packages/edit/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
           ],
         },
@@ -91,6 +92,12 @@ export default defineConfig({
           statements: 60,
         },
         "packages/assets/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/edit/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,

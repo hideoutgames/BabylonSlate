@@ -7,7 +7,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 export function GraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, updateGraph } = useDocuments();
+  const { openDocuments, applyGraphChange } = useDocuments();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
@@ -20,7 +20,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       <GraphEditor
         key={documentId}
         initialGraph={graph}
-        onChange={(next) => updateGraph(documentId, next)}
+        onChange={(next) => applyGraphChange(documentId, next)}
       />
     </div>
   );

@@ -17,12 +17,21 @@ import type {
 } from "@babylonslate/core";
 import { documentId } from "@babylonslate/core";
 import {
+  appendJournalLine,
   hasJournal,
+  readJournalLines,
   truncateJournal,
-  writeJournalStub,
+  type AssetRegistry,
   type MigrationPending,
   type ProjectTemplate,
 } from "@babylonslate/assets";
+import {
+  commandToJournalPayload,
+  diffGraphCommands,
+  EditSession,
+  replayJournalLines,
+  serializeJournalLine,
+} from "@babylonslate/edit";
 import {
   createAppSettingsStore,
   createDerivedStorage,
@@ -45,6 +54,8 @@ interface DocumentContextValue {
   route: AppRoute;
   projectDocument: ProjectDocument | null;
   projectName: string | null;
+  assetRegistry: AssetRegistry | null;
+  refreshAssetRegistry: () => Promise<void>;
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -76,6 +87,12 @@ interface DocumentContextValue {
   reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
   updateScene: (id: string, scene: SerializedScene) => void;
   updateGraph: (id: string, graph: SerializedGraph) => void;
+  /** Apply a graph edit through the command layer (marks dirty + undoable). */
+  applyGraphChange: (id: string, next: SerializedGraph) => void;
+  undoActiveDocument: () => void;
+  redoActiveDocument: () => void;
+  canUndoActiveDocument: boolean;
+  canRedoActiveDocument: boolean;
   registerDockviewApi: (id: string, api: DockviewApi) => void;
   captureActiveLayout: () => void;
   getAvailableDocuments: () => Array<{
@@ -96,6 +113,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const settingsStore = useMemo(() => createAppSettingsStore(), []);
   const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());
+  const editSessionRef = useRef(new EditSession());
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
 
   const [route, setRoute] = useState<AppRoute>("home");
@@ -176,8 +194,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService.ensureContentBrowserTab();
     void refreshProjectList();
     void refreshTemplates();
+    void settingsStore.load().then((settings) => {
+      editSessionRef.current.configure({
+        maxEntries: settings.undoHistoryLength,
+      });
+    });
     bump();
-  }, [bump, documentService, refreshProjectList, refreshTemplates]);
+  }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
 
   const captureLayoutForId = useCallback(
     (id: string) => {
@@ -196,6 +219,45 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [captureLayoutForId, documentService]);
 
+  const refreshAssetRegistry = useCallback(async () => {
+    await projectService.remountRegistry();
+    const paths = projectService.registry?.listDocumentPaths();
+    if (projectDocument && paths) {
+      setProjectDocument({
+        ...projectDocument,
+        scenes: paths.scenes,
+        graphs: paths.graphs,
+      });
+    }
+    bump();
+  }, [bump, projectDocument, projectService]);
+
+  const replayRecoveryJournal = useCallback(async () => {
+    const guid = projectService.guid;
+    if (!guid) return;
+    const derived = await ensureDerived();
+    const lines = await readJournalLines(derived, guid);
+    if (lines.length === 0) {
+      setRecoveryAvailable(false);
+      return;
+    }
+
+    const openGraphs = new Map<string, SerializedGraph>();
+    for (const doc of documentService.getOpenDocumentsOrdered()) {
+      if (doc.ref.kind === "graph" && doc.content) {
+        openGraphs.set(doc.id, doc.content as SerializedGraph);
+      }
+    }
+
+    const { documents } = replayJournalLines(lines, openGraphs);
+    for (const [id, graph] of documents) {
+      documentService.updateGraph(id, graph);
+    }
+    await truncateJournal(derived, guid);
+    setRecoveryAvailable(false);
+    bump();
+  }, [bump, documentService, ensureDerived, projectService]);
+
   const enterEditor = useCallback(
     async (
       document: ProjectDocument,
@@ -205,6 +267,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pending: MigrationPending[] = [],
     ) => {
       dockviewApisRef.current.clear();
+      editSessionRef.current.clear();
       await documentService.initializeFromProject(
         projectService,
         document,
@@ -331,6 +394,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     await projectService.closeProject();
     dockviewApisRef.current.clear();
+    editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
     setProjectDocument(null);
     setRecoveryAvailable(false);
@@ -368,15 +432,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setRecoveryAvailable(false);
   }, [ensureDerived, projectService]);
 
-  const keepRecovery = useCallback(() => {
-    const guid = projectService.guid;
-    if (guid) {
-      void ensureDerived().then((derived) =>
-        writeJournalStub(derived, guid, ["pending-p2-replay"]),
-      );
-    }
-    setRecoveryAvailable(false);
-  }, [ensureDerived, projectService]);
+  const keepRecovery = useCallback(async () => {
+    await replayRecoveryJournal();
+  }, [replayRecoveryJournal]);
 
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
@@ -396,6 +454,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       dockviewApisRef.current.delete(id);
       documentService.closeDocument(id);
+      editSessionRef.current.dropDocument(id);
       bump();
     },
     [bump, documentService],
@@ -445,6 +504,68 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [bump, documentService],
   );
+
+  const applyGraphChange = useCallback(
+    (id: string, next: SerializedGraph) => {
+      const doc = documentService.getState().openDocuments.get(id);
+      if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
+      const previous = doc.content as SerializedGraph;
+      const commands = diffGraphCommands(previous, next);
+      if (commands.length === 0) {
+        return;
+      }
+      let current = previous;
+      for (const command of commands) {
+        current = editSessionRef.current.apply(id, current, command).doc;
+      }
+      documentService.updateGraph(id, current);
+      const guid = projectService.guid;
+      if (guid) {
+        void ensureDerived().then(async (derived) => {
+          for (const command of commands) {
+            await appendJournalLine(
+              derived,
+              guid,
+              serializeJournalLine({
+                v: 1,
+                docId: id,
+                at: new Date().toISOString(),
+                command: commandToJournalPayload(command),
+              }),
+            );
+          }
+        });
+      }
+      bump();
+    },
+    [bump, documentService, ensureDerived, projectService],
+  );
+
+  const undoActiveDocument = useCallback(() => {
+    const { activeDocumentId, openDocuments } = documentService.getState();
+    if (!activeDocumentId) return;
+    const doc = openDocuments.get(activeDocumentId);
+    if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
+    const stack =
+      editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
+    const result = stack.undo(doc.content as SerializedGraph);
+    if (!result) return;
+    documentService.updateGraph(activeDocumentId, result.doc);
+    bump();
+  }, [bump, documentService]);
+
+  const redoActiveDocument = useCallback(() => {
+    const { activeDocumentId, openDocuments } = documentService.getState();
+    if (!activeDocumentId) return;
+    const doc = openDocuments.get(activeDocumentId);
+    if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
+    const stack =
+      editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
+    const result = stack.redo(doc.content as SerializedGraph);
+    if (!result) return;
+    documentService.updateGraph(activeDocumentId, result.doc);
+    bump();
+  }, [bump, documentService]);
 
   const registerDockviewApi = useCallback((id: string, api: DockviewApi) => {
     dockviewApisRef.current.set(id, api);
@@ -530,9 +651,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       reorderClosableTabs,
       updateScene,
       updateGraph,
+      applyGraphChange,
+      undoActiveDocument,
+      redoActiveDocument,
+      canUndoActiveDocument: (() => {
+        const activeId = documentService.getState().activeDocumentId;
+        return activeId
+          ? editSessionRef.current.getStack(activeId).canUndo
+          : false;
+      })(),
+      canRedoActiveDocument: (() => {
+        const activeId = documentService.getState().activeDocumentId;
+        return activeId
+          ? editSessionRef.current.getStack(activeId).canRedo
+          : false;
+      })(),
       registerDockviewApi,
       captureActiveLayout,
       getAvailableDocuments,
+      assetRegistry: projectService.registry,
+      refreshAssetRegistry,
     };
     },
     [
@@ -540,6 +678,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       route,
       projectDocument,
       documentService,
+      projectService,
+      refreshAssetRegistry,
       listedProjects,
       needsReconnect,
       recoveryAvailable,
@@ -567,6 +707,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       reorderClosableTabs,
       updateScene,
       updateGraph,
+      applyGraphChange,
+      undoActiveDocument,
+      redoActiveDocument,
       registerDockviewApi,
       captureActiveLayout,
       getAvailableDocuments,

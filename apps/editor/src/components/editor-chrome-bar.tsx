@@ -20,8 +20,10 @@ import {
   LayoutGridIcon,
   LogOutIcon,
   PlusIcon,
+  Redo2Icon,
   SaveIcon,
   SettingsIcon,
+  Undo2Icon,
   XIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -166,6 +168,10 @@ export function EditorChromeBar({
     saveAll,
     openDocument,
     getAvailableDocuments,
+    undoActiveDocument,
+    redoActiveDocument,
+    canUndoActiveDocument,
+    canRedoActiveDocument,
   } = useDocuments();
 
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -212,6 +218,30 @@ export function EditorChromeBar({
           </span>
         ) : null}
         <Separator orientation="vertical" className="chrome-separator" />
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="undo-document"
+          className="chrome-action-button"
+          aria-label="Undo"
+          disabled={!canUndoActiveDocument}
+          onClick={() => undoActiveDocument()}
+        >
+          <Undo2Icon data-icon="inline-start" />
+          Undo
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="redo-document"
+          className="chrome-action-button"
+          aria-label="Redo"
+          disabled={!canRedoActiveDocument}
+          onClick={() => redoActiveDocument()}
+        >
+          <Redo2Icon data-icon="inline-start" />
+          Redo
+        </Button>
         <Button
           size="sm"
           variant="ghost"

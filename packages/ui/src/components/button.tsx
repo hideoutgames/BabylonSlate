@@ -55,7 +55,4 @@ function Button({
   )
 }
 
-// shadcn pattern: variant helper is shared with the Button component.
-/* eslint-disable react-refresh/only-export-components -- shadcn buttonVariants */
 export { Button, buttonVariants }
-/* eslint-enable react-refresh/only-export-components */

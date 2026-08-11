@@ -10,8 +10,16 @@ export interface ProjectMetadata {
   updatedAt: string;
 }
 
+export interface TextureProjectSettings {
+  /** Max imported texture dimension (default 2048 for A16 baseline). */
+  maxTextureDimension: number;
+  /** When true, missing KTX2 chunks are re-queued once transcoder is available. */
+  autoRequeueUncompressed: boolean;
+}
+
 export interface ProjectSettings {
   touchMinTargetPx: number;
+  textures: TextureProjectSettings;
 }
 
 export interface ProjectDocument {
@@ -44,6 +52,27 @@ export interface SerializedScene {
   }>;
 }
 
+export const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
+  maxTextureDimension: 2048,
+  autoRequeueUncompressed: true,
+};
+
+export function normalizeProjectSettings(
+  settings: Partial<ProjectSettings> | undefined,
+): ProjectSettings {
+  return {
+    touchMinTargetPx: settings?.touchMinTargetPx ?? 44,
+    textures: {
+      maxTextureDimension:
+        settings?.textures?.maxTextureDimension ??
+        DEFAULT_TEXTURE_PROJECT_SETTINGS.maxTextureDimension,
+      autoRequeueUncompressed:
+        settings?.textures?.autoRequeueUncompressed ??
+        DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
+    },
+  };
+}
+
 export function createEmptyProject(name: string): ProjectDocument {
   const now = new Date().toISOString();
   return {
@@ -53,9 +82,7 @@ export function createEmptyProject(name: string): ProjectDocument {
       createdAt: now,
       updatedAt: now,
     },
-    settings: {
-      touchMinTargetPx: 44,
-    },
+    settings: normalizeProjectSettings(undefined),
     scenes: [MAIN_SCENE_FILE],
     graphs: [MAIN_GRAPH_FILE],
   };

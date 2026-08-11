@@ -10,6 +10,7 @@ import {
   createDefaultScene,
   createEmptyLayouts,
   createEmptyProject,
+  normalizeProjectSettings,
   documentId,
   LAYOUT_FILE,
   MAIN_GRAPH_FILE,
@@ -20,6 +21,7 @@ import {
 } from "@babylonslate/core";
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
+  AssetRegistry,
   createProjectFromTemplate,
   createVfsBlobStore,
   decodeAssetDocument,
@@ -28,6 +30,7 @@ import {
   isAssetDocumentPath,
   loadPayloadWithMigration,
   defaultRegistry,
+  projectContentRoot,
   readAssetDocumentHeader,
   readProjectTree,
   type BlobStore,
@@ -64,6 +67,7 @@ export class ProjectService {
   private migrateOnSaveApproved = false;
   private readonly migrations = defaultRegistry();
   private readonly blobs: BlobStore;
+  private assetRegistry: AssetRegistry | null = null;
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
 
@@ -74,6 +78,10 @@ export class ProjectService {
 
   get storagePort(): ProjectStorage {
     return this.storage;
+  }
+
+  get registry(): AssetRegistry | null {
+    return this.assetRegistry;
   }
 
   get guid(): string | null {
@@ -142,6 +150,7 @@ export class ProjectService {
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
+    this.assetRegistry = null;
   }
 
   async exportZip(): Promise<Uint8Array> {
@@ -213,20 +222,30 @@ export class ProjectService {
   }
 
   /**
-   * Reconcile the manifest's document list with what is on disk. Templates and
-   * hand-edited projects can list documents that do not exist, or ship assets
-   * the manifest never mentioned. P2's asset registry replaces this scan.
+   * Reconcile the manifest's document list with the asset registry (header-only
+   * index). Legacy `.json` scene/graph files still participate via a thin
+   * fallback so pre-container projects keep opening.
    */
   private async ensureDocuments(
     document: ProjectDocument,
   ): Promise<ProjectDocument> {
-    const found = await this.discoverDocuments();
-    const scenes = found.scenes.length
-      ? found.scenes
-      : await this.keepExisting(document.scenes);
-    const graphs = found.graphs.length
-      ? found.graphs
-      : await this.keepExisting(document.graphs);
+    await this.mountAssetRegistry();
+    const found = this.assetRegistry!.listDocumentPaths();
+    const legacy = await this.discoverLegacyJsonDocuments();
+    const scenes = uniquePaths([
+      ...found.scenes,
+      ...legacy.scenes,
+      ...(found.scenes.length || legacy.scenes.length
+        ? []
+        : await this.keepExisting(document.scenes)),
+    ]);
+    const graphs = uniquePaths([
+      ...found.graphs,
+      ...legacy.graphs,
+      ...(found.graphs.length || legacy.graphs.length
+        ? []
+        : await this.keepExisting(document.graphs)),
+    ]);
 
     if (scenes.length && graphs.length) {
       return { ...document, scenes, graphs };
@@ -240,7 +259,20 @@ export class ProjectService {
       await this.saveDocument("graph", MAIN_GRAPH_FILE, createDefaultGraph());
       graphs.push(MAIN_GRAPH_FILE);
     }
+    await this.mountAssetRegistry();
     return { ...document, scenes, graphs };
+  }
+
+  private async mountAssetRegistry(): Promise<AssetRegistry> {
+    const registry = new AssetRegistry(this.storage, { blobs: this.blobs });
+    await registry.mountRoot(projectContentRoot());
+    this.assetRegistry = registry;
+    return registry;
+  }
+
+  /** Re-scan project assets after registry file operations (import, create, delete). */
+  async remountRegistry(): Promise<AssetRegistry> {
+    return this.mountAssetRegistry();
   }
 
   private async keepExisting(paths: string[]): Promise<string[]> {
@@ -251,7 +283,8 @@ export class ProjectService {
     return kept;
   }
 
-  private async discoverDocuments(): Promise<{
+  /** Pre-container `.json` documents that the registry does not index. */
+  private async discoverLegacyJsonDocuments(): Promise<{
     scenes: string[];
     graphs: string[];
   }> {
@@ -268,8 +301,8 @@ export class ProjectService {
       for (const entry of entries) {
         if (entry.isDir) continue;
         const path = `${dir}/${entry.name}`;
-        if (/\.scene\.(babasset|json)$/.test(entry.name)) scenes.push(path);
-        if (/\.graph\.(babasset|json)$/.test(entry.name)) graphs.push(path);
+        if (/\.scene\.json$/.test(entry.name)) scenes.push(path);
+        if (/\.graph\.json$/.test(entry.name)) graphs.push(path);
       }
     }
     return { scenes: scenes.sort(), graphs: graphs.sort() };
@@ -292,6 +325,7 @@ export class ProjectService {
     stored.kind = "project";
     stored.version = this.migrations.currentVersion("Project");
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
+    await this.mountAssetRegistry();
     return {
       document,
       layouts: createEmptyLayouts(),
@@ -496,9 +530,16 @@ function normalizeProjectDocument(
   fallbackName: string,
 ): ProjectDocument {
   if (raw.metadata && raw.settings && raw.scenes && raw.graphs) {
-    return raw;
+    return {
+      ...raw,
+      settings: normalizeProjectSettings(raw.settings),
+    };
   }
   return createEmptyProject(
     typeof raw.name === "string" ? raw.name : fallbackName,
   );
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return [...new Set(paths)].sort();
 }

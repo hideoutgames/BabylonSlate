@@ -41,3 +41,35 @@ export async function writeJournalStub(
     lines.length ? `${lines.join("\n")}\n` : "",
   );
 }
+
+/** Append one JSONL line to the recovery journal (creates the file if missing). */
+export async function appendJournalLine(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+  line: string,
+): Promise<void> {
+  const path = journalPath(projectGuid);
+  const root = derivedDataRoot(projectGuid);
+  await derivedStorage.mkdir(root, true);
+  const existing = (await derivedStorage.exists(path))
+    ? await derivedStorage.readText(path)
+    : "";
+  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+  await derivedStorage.writeText(path, `${existing}${prefix}${line}\n`);
+}
+
+/** Read non-empty journal lines in file order. */
+export async function readJournalLines(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+): Promise<string[]> {
+  const path = journalPath(projectGuid);
+  if (!(await derivedStorage.exists(path))) {
+    return [];
+  }
+  const text = await derivedStorage.readText(path);
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}

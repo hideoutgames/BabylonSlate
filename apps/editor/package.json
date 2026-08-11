@@ -13,6 +13,8 @@
   "dependencies": {
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/core": "workspace:*",
+    "@babylonslate/edit": "workspace:*",
+    "@babylonslate/edit": "workspace:*",
     "@babylonslate/editor-kit": "workspace:*",
     "@babylonslate/graph-ui": "workspace:*",
     "@babylonslate/render": "workspace:*",

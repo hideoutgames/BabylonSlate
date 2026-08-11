@@ -31,7 +31,7 @@ interface ContentRoot {
 | `mountRoot` / `unmountRoot` | Add or remove a content root and (re)scan headers |
 | `getByGuid` / `list` / `folderTree` | Index queries |
 | `showReferences(guid)` | Inbound + outbound deps from header `dependencies[]` |
-| `importFiles` | Document-picker bytes → importers → write `.babasset` + enqueue work |
+| `importFile` | Document-picker bytes → importers → write `.babasset` + enqueue work |
 | `createAsset` / `deleteAsset` / `deleteFolder` | File ops (confirm delete in UI via Show References) |
 | `accountedPayloadBytes` | Diagnostic for the hundreds-of-assets open test |
 
@@ -72,7 +72,22 @@ Per Texture asset (engineplan §3.5):
 
 Queue: one dedicated import Worker; one job at a time; pause on Preview / background; recycle worker after N jobs. Source + KTX2 chunks both commit on the `.babasset`. Policy defaults leave pixel art, sprites, UI, and fonts uncompressed. Max dimension clamp default 2048 (Project Settings).
 
-Loader prefers KTX2 when present; self-hosted transcoder via `KhronosTextureContainer2.URLConfig`. Silent fallback is forbidden — state must be explicit.
+Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder via `configureKtx2Transcoder` / `KhronosTextureContainer2.URLConfig` under `apps/editor/public/ktx2/`. Silent fallback is forbidden — state must be explicit. Encode runs on `EncodeQueue` (one job, pauseable, recycle after N) with a stub encoder in tests and Basis wasm in the import Worker.
+
+## Content Browser (P2)
+
+`apps/editor/src/components/content-browser-workspace.tsx` is the registry-backed project asset UI:
+
+- Folder tree from `folderTree("project")`; asset grid filtered by folder, type chips, and search.
+- Import via hidden `<input type="file" multiple>` → `registry.importFile` (no Capacitor from UI).
+- **New Asset** uses type + engine-base parent-class pickers → `registry.createAsset`.
+- Long-press multi-select + `ContextMenuOverlay` delete; `AlertDialog` lists removed assets and inbound refs from `showReferences`.
+- Drag source MIME `application/x-babylonslate-asset` with `{ guid, type, path }`.
+- Texture tiles show `payload.compressionState` badges (`pending`, `encoding`, `fallback_uncompressed`, `encode_failed`).
+- Empty `data-lock-slot` on tiles reserved for P15 lock decoration.
+- Grid tiles expose stable `data-testid="content-item-{path}"` (and `data-asset-guid`) for Playwright smoke/touch suites.
+
+`DocumentProvider` exposes `assetRegistry` and `refreshAssetRegistry()` (`projectService.remountRegistry()`).
 
 ## Tests
 
@@ -80,3 +95,5 @@ Loader prefers KTX2 when present; self-hosted transcoder via `KhronosTextureCont
 - Hundreds of assets open with near-zero `accountedPayloadBytes`.
 - Importer unit tests + guid-remap cases.
 - Encode queue states; loader KTX2 vs source; transcoder omitted smoke.
+- Content Browser helpers (filter / new-asset / drag MIME) unit-tested in the editor.
+- E2E opens Scene/Graph via `[data-asset-path="assets/main.*.babasset"]` after empty-project create.

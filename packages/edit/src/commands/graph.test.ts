@@ -1,0 +1,89 @@
+import { describe, expect, it } from "vitest";
+import fc from "fast-check";
+import type { SerializedGraph } from "@babylonslate/core";
+import {
+  AddEdgeCommand,
+  MoveNodeCommand,
+  RemoveEdgeCommand,
+  SetNodeDataCommand,
+} from "../commands/graph";
+
+const positionArb = fc.record({
+  x: fc.integer({ min: -1000, max: 1000 }),
+  y: fc.integer({ min: -1000, max: 1000 }),
+});
+
+const nodeArb = fc.record({
+  id: fc.string({ minLength: 1, maxLength: 12 }),
+  type: fc.constant("logMessage"),
+  position: positionArb,
+  data: fc.dictionary(fc.string({ minLength: 1, maxLength: 8 }), fc.string()),
+});
+
+const edgeArb = fc.record({
+  id: fc.string({ minLength: 1, maxLength: 12 }),
+  source: fc.string({ minLength: 1, maxLength: 12 }),
+  target: fc.string({ minLength: 1, maxLength: 12 }),
+});
+
+function graphWithNode(node: SerializedGraph["nodes"][number]): SerializedGraph {
+  return { nodes: [node], edges: [] };
+}
+
+describe("graph commands", () => {
+  it("MoveNodeCommand apply-then-invert restores the document", () => {
+    fc.assert(
+      fc.property(nodeArb, positionArb, positionArb, (node, from, to) => {
+        const doc = graphWithNode({ ...node, position: from });
+        const command = new MoveNodeCommand(node.id, from, to);
+        const afterApply = command.apply(doc);
+        const restored = command.invert().apply(afterApply);
+        expect(restored).toEqual(doc);
+      }),
+    );
+  });
+
+  it("AddEdgeCommand apply-then-invert restores the document", () => {
+    fc.assert(
+      fc.property(nodeArb, edgeArb, (node, edge) => {
+        const doc = graphWithNode(node);
+        const command = new AddEdgeCommand(edge);
+        const afterApply = command.apply(doc);
+        const restored = command.invert().apply(afterApply);
+        expect(restored).toEqual(doc);
+      }),
+    );
+  });
+
+  it("RemoveEdgeCommand apply-then-invert restores the document", () => {
+    fc.assert(
+      fc.property(nodeArb, edgeArb, (node, edge) => {
+        const doc: SerializedGraph = {
+          nodes: [node],
+          edges: [edge],
+        };
+        const command = new RemoveEdgeCommand(edge);
+        const afterApply = command.apply(doc);
+        const restored = command.invert().apply(afterApply);
+        expect(restored).toEqual(doc);
+      }),
+    );
+  });
+
+  it("SetNodeDataCommand apply-then-invert restores the document", () => {
+    fc.assert(
+      fc.property(
+        nodeArb,
+        fc.dictionary(fc.string({ minLength: 1, maxLength: 8 }), fc.string()),
+        fc.dictionary(fc.string({ minLength: 1, maxLength: 8 }), fc.string()),
+        (node, from, to) => {
+          const doc = graphWithNode({ ...node, data: from });
+          const command = new SetNodeDataCommand(node.id, from, to);
+          const afterApply = command.apply(doc);
+          const restored = command.invert().apply(afterApply);
+          expect(restored).toEqual(doc);
+        },
+      ),
+    );
+  });
+});
