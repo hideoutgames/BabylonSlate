@@ -2,26 +2,28 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
-## Monorepo (P4)
+## Monorepo (P4 complete; P5 packages next)
 
 ```
 apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer
-packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port
+packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue (P5)
 packages/vfs/         Storage adapters, platform detection, app settings
 packages/assets/      Containers, asset registry, importers, encode queue
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
 packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
-packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics
+packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader
 packages/input/       Raw tick-stamped input ring (action/axis mappings land in P6)
 packages/render/      Snapshot sync, render-on-demand, resource cache, KTX2 transcoder
-packages/graph-ui/    React Flow graph editor (mutations via edit)
+packages/scripting/   Graph IR, pin types, validator, JS codegen + anchors (P5)
+packages/scripting-nodes/ Data-driven node catalog (P5)
+packages/graph-ui/    React Flow graph editor (mutations via edit); P5 touch shell rework
 packages/ui/          shadcn primitives
-packages/editor-kit/  Touch-shell hooks and components
+packages/editor-kit/  Touch-shell hooks and components (parameter-list editor in P5)
 packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md), [bridge.md](bridge.md), [render.md](render.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md).
 
 ## Threading (P4)
 
@@ -45,6 +47,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Object model**: `@babylonslate/object-model` owns headless World, class registry, and deterministic tick.
 - **Bridge / runtime**: `@babylonslate/bridge` + `@babylonslate/runtime` own Play transports, fixed-step worker, and diagnostics.
 - **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
+- **Visual scripting (P5)**: `@babylonslate/scripting` compiles logic graphs to JS modules with anchor tables; `@babylonslate/scripting-nodes` supplies the catalog; `runtime.loadCompiledModule` + Preview report already consume anchors (see [scripting.md](scripting.md)).
 - **Viewport**: App-lifetime `Engine`; editor and Play scenes via `registerView`; dirty-driven render-on-demand.
 
 ## Package rules
@@ -53,7 +56,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `edit`, `object-model`, `bridge`, `runtime`, `input`, `test-kit` | React, Babylon, Capacitor |
+| `core`, `edit`, `object-model`, `bridge`, `runtime`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |

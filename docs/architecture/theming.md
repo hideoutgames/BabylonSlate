@@ -63,7 +63,7 @@ Muted text uses Minimal Neutral `--muted-foreground`.
 | --- | --- |
 | `--vector` (`text-vector`, `bg-vector`) | Vector values and related pins |
 
-Further type colors land here as those surfaces ship — not as shell accents.
+Further type colors land here as P5 graph pins ship (`exec`, `bool`, `int`/`float`, `string`, object/actor refs, wildcard, etc.) — not as shell accents. See [scripting.md](scripting.md).
 
 ## Surfaces
 
