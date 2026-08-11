@@ -19,7 +19,7 @@ test.describe("BabylonSlate editor smoke", () => {
 
     await page.getByTestId("open-project").click();
     await expect(page.getByTestId("project-name")).toContainText(
-      "TestProject.babylonslate",
+      "TestProject.babproject",
     );
 
     await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();

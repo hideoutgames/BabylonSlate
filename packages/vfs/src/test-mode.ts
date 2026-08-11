@@ -1,4 +1,4 @@
-export const TEST_PROJECT_NAME = "TestProject.babylonslate";
+export const TEST_PROJECT_NAME = "TestProject.babproject";
 
 function isViteTestModeEnabled(): boolean {
   if (typeof import.meta === "undefined") {

@@ -47,6 +47,8 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UISupportsDocumentBrowser</key>
 	<false/>
 </dict>
