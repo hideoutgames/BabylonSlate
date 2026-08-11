@@ -22,6 +22,11 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-11 | cursor/p3-object-model-e177 / cursor/p3-spawn-deferral-e177 | p3-object-model | Standards | `spawnActorNow` ignored mid-tick and committed immediately (doc requires deferral) | Resolved |
 | 2026-08-11 | cursor/p3-object-model-e177 / cursor/p3-spawn-deferral-e177 | p3-object-model | Standards | Doc listed `TickScheduler`; exports are `TickClock` / `TICK_PHASES` | Resolved |
 | 2026-08-11 | cursor/p3-object-model-e177 | p3-object-model / p3-harness | Spec | Acceptance (120-tick golden) met; remaining notes are intentional P3 scope (registry not wired into spawn, World-owned spawn API, flat components, VFS fixture decoupled from scenario) | Accepted |
+| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-play-overlay | Spec | Play uses in-process runtime; `worker-entry.ts` shipped but Vite Worker host wiring deferred (in-process + worker-entry both exist; Playwright exercises overlay) | Accepted |
+| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-render-sync | Standards | Per-frame ActorSlot/Set alloc in snapshot sync — fixed to reuse scratch | Resolved |
+| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-bridge | Spec | Multi-transport parity harness now exercises SAB + transferable against in-process snapshot payload | Resolved |
+| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-preview-report | Spec | Navigate focuses fixture node id (full graph/bodyLine navigation waits on P5 compiler) | Accepted |
+| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-input-capture | Spec | Synthetic encode/decode tested; full harness replay-through-runtime deferred with action mappings to P6 | Accepted |
 
 ## PR checklist
 
@@ -84,3 +89,16 @@ Design notes: [command-layer.md](../architecture/command-layer.md), [asset-regis
 | Deterministic harness | `p3-harness` | `test-kit`, `object-model`, `vfs` | Object model |
 
 Design notes: [object-model.md](../architecture/object-model.md).
+
+## P4 slice ownership
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/bridge.md`, `render.md` | — |
+| Bridge | `p4-bridge` | `bridge`, `apps/editor` (COI) | Design notes |
+| Runtime | `p4-runtime-worker` | `runtime`, `test-kit` | Bridge |
+| Input | `p4-input-capture` | `input`, `apps/editor` | Bridge |
+| Render | `p4-render-sync`, `p4-render-on-demand`, `p4-resource-cache` | `render` | Bridge |
+| Play + report | `p4-play-overlay`, `p4-preview-report` | `apps/editor`, `runtime` | Runtime + Render + Input |
+
+Design notes: [bridge.md](../architecture/bridge.md), [render.md](../architecture/render.md).

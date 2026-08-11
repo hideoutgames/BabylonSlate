@@ -62,9 +62,15 @@ importers:
 
   apps/editor:
     dependencies:
+      '@babylonjs/core':
+        specifier: ^9.20.0
+        version: 9.20.0
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../../packages/assets
+      '@babylonslate/bridge':
+        specifier: workspace:*
+        version: link:../../packages/bridge
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -77,9 +83,15 @@ importers:
       '@babylonslate/graph-ui':
         specifier: workspace:*
         version: link:../../packages/graph-ui
+      '@babylonslate/input':
+        specifier: workspace:*
+        version: link:../../packages/input
       '@babylonslate/render':
         specifier: workspace:*
         version: link:../../packages/render
+      '@babylonslate/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@babylonslate/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -173,6 +185,16 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/bridge:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/core:
     devDependencies:
       typescript:
@@ -221,6 +243,16 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/input:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/object-model:
     dependencies:
       '@babylonslate/core':
@@ -239,6 +271,9 @@ importers:
       '@babylonjs/ktx2decoder':
         specifier: 9.20.0
         version: 9.20.0(@babylonjs/core@9.20.0)
+      '@babylonslate/bridge':
+        specifier: workspace:*
+        version: link:../bridge
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
@@ -247,14 +282,39 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/runtime:
+    dependencies:
+      '@babylonslate/bridge':
+        specifier: workspace:*
+        version: link:../bridge
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+      '@babylonslate/input':
+        specifier: workspace:*
+        version: link:../input
+      '@babylonslate/object-model':
+        specifier: workspace:*
+        version: link:../object-model
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/test-kit:
     dependencies:
+      '@babylonslate/bridge':
+        specifier: workspace:*
+        version: link:../bridge
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
       '@babylonslate/object-model':
         specifier: workspace:*
         version: link:../object-model
+      '@babylonslate/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@babylonslate/vfs':
         specifier: workspace:*
         version: link:../vfs

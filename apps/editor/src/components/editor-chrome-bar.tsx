@@ -19,12 +19,14 @@ import {
   LayersIcon,
   LayoutGridIcon,
   LogOutIcon,
+  PlayIcon,
   PlusIcon,
   Redo2Icon,
   SaveIcon,
   SettingsIcon,
   Undo2Icon,
   XIcon,
+  BugIcon,
 } from "lucide-react";
 import { useState } from "react";
 import {
@@ -33,6 +35,7 @@ import {
   CONTENT_BROWSER_REF,
   type DocumentKind,
 } from "@babylonslate/core";
+import { isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
@@ -41,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { useDocuments } from "../context/document-context";
+import { usePlay } from "../context/play-context";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectSettingsSheet } from "./project-settings-sheet";
 import "../shell/editor-chrome.css";
@@ -176,6 +180,8 @@ export function EditorChromeBar({
     getAvailableDocuments,
   } = useDocuments();
 
+  const { startPlay, playing, alwaysRender, setAlwaysRender, renderStats } =
+    usePlay();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const contentBrowserDoc = openDocuments.find(
@@ -293,6 +299,41 @@ export function EditorChromeBar({
         data-testid="editor-global-toolbar"
       >
         <div className="editor-global-toolbar-actions">
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="play-preview"
+            className="chrome-action-button"
+            aria-label="Play"
+            disabled={!projectName || playing}
+            onClick={() => {
+              const inject =
+                typeof window !== "undefined" &&
+                new URLSearchParams(window.location.search).get(
+                  "previewThrow",
+                ) === "1";
+              startPlay({ injectFixtureThrow: inject });
+            }}
+          >
+            <PlayIcon data-icon="inline-start" />
+            Play
+          </Button>
+          {isTestModeEnabled() || import.meta.env.DEV ? (
+            <Button
+              size="sm"
+              variant={alwaysRender ? "secondary" : "ghost"}
+              data-testid="always-render-toggle"
+              className="chrome-action-button"
+              aria-label="Always Render"
+              onClick={() => setAlwaysRender(!alwaysRender)}
+            >
+              <BugIcon data-icon="inline-start" />
+              Always Render
+              {renderStats
+                ? ` (${renderStats.renderedFps}/${renderStats.invalidationsPerSecond})`
+                : ""}
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="ghost"

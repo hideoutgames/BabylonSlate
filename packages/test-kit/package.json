@@ -12,8 +12,10 @@
     "test": "vitest run --config ../../vitest.workspace.ts --project node packages/test-kit"
   },
   "dependencies": {
+    "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",
     "@babylonslate/object-model": "workspace:*",
+    "@babylonslate/runtime": "workspace:*",
     "@babylonslate/vfs": "workspace:*"
   },
   "devDependencies": {

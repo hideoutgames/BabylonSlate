@@ -12,6 +12,9 @@ export default defineConfig({
             "packages/assets/**/*.test.ts",
             "packages/edit/**/*.test.ts",
             "packages/object-model/**/*.test.ts",
+            "packages/bridge/**/*.test.ts",
+            "packages/runtime/**/*.test.ts",
+            "packages/input/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
           ],
         },
@@ -55,6 +58,8 @@ export default defineConfig({
         "**/node-adapter.ts",
         // Needs a real WebGL context; covered by the Playwright viewport specs.
         "**/create-engine.ts",
+        // Game worker entry needs a Worker host; covered by Play e2e.
+        "**/worker-entry.ts",
         // Browser Worker + OffscreenCanvas encode path; covered by editor wiring
         // and the Node Basis A16 smoke (`node-basis-encode.ts`).
         "**/worker-encode.ts",
@@ -109,6 +114,24 @@ export default defineConfig({
           statements: 60,
         },
         "packages/object-model/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/bridge/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/runtime/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/input/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,

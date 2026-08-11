@@ -2,25 +2,28 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
-## Monorepo (P3)
+## Monorepo (P4)
 
 ```
-apps/editor/          Editor shell + Homepage + Content Browser + main-thread renderer
+apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer
 packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port
 packages/vfs/         Storage adapters, platform detection, app settings
 packages/assets/      Containers, asset registry, importers, encode queue
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
-packages/render/      Babylon viewport + KTX2 transcoder config
+packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
+packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics
+packages/input/       Raw tick-stamped input ring (action/axis mappings land in P6)
+packages/render/      Snapshot sync, render-on-demand, resource cache, KTX2 transcoder
 packages/graph-ui/    React Flow graph editor (mutations via edit)
 packages/ui/          shadcn primitives
 packages/editor-kit/  Touch-shell hooks and components
-packages/test-kit/    Golden-file, fixtures, deterministic runtime harness
+packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md), [bridge.md](bridge.md), [render.md](render.md).
 
-## Target threading (P4+)
+## Threading (P4)
 
 ```mermaid
 flowchart LR
@@ -30,7 +33,7 @@ flowchart LR
   Bridge --> Render[Babylon render]
 ```
 
-Game logic and physics share one worker; transforms use SAB or transferable snapshots; structural commands use ordered messages.
+Game logic and physics share one worker; transforms use SAB or transferable snapshots; structural commands use ordered messages. See [bridge.md](bridge.md).
 
 ## Data flow today
 
@@ -39,9 +42,10 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
 - **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only).
 - **Edits**: `@babylonslate/edit` owns per-document undo; graph UI routes mutations through commands.
-- **Object model**: `@babylonslate/object-model` owns headless World, class registry, and deterministic tick (P3); Play/bridge lands in P4.
-- **Graph → engine**: `engineCommandBus` in `core` (minimal commands today).
-- **Viewport**: `createEngine()` on main thread (demo loop until P4). Scene-only helpers live in `render/viewport.ts` so they are testable under `NullEngine`; `create-engine.ts` holds the canvas-bound parts.
+- **Object model**: `@babylonslate/object-model` owns headless World, class registry, and deterministic tick.
+- **Bridge / runtime**: `@babylonslate/bridge` + `@babylonslate/runtime` own Play transports, fixed-step worker, and diagnostics.
+- **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
+- **Viewport**: App-lifetime `Engine`; editor and Play scenes via `registerView`; dirty-driven render-on-demand.
 
 ## Package rules
 
@@ -49,7 +53,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `edit`, `object-model`, `test-kit` | React, Babylon, Capacitor |
+| `core`, `edit`, `object-model`, `bridge`, `runtime`, `input`, `test-kit` | React, Babylon, Capacitor |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |

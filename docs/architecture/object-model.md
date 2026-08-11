@@ -74,4 +74,4 @@ Behaviour is filled by later phases (render sync, physics, UI, AI).
 
 Acceptance: a 120-tick scenario reproduces a committed golden byte-exactly and is identical across two runs with the same seed.
 
-Worker / SAB comparison is P4.
+Worker / SAB comparison lands in P4 via `@babylonslate/bridge` and `@babylonslate/test-kit` multi-transport harness (see [bridge.md](bridge.md)).

@@ -33,18 +33,21 @@ const pureNoReactNoBabylon = boundary(
     "packages/assets/**/*.{ts,tsx}",
     "packages/edit/**/*.{ts,tsx}",
     "packages/object-model/**/*.{ts,tsx}",
+    "packages/bridge/**/*.{ts,tsx}",
+    "packages/runtime/**/*.{ts,tsx}",
+    "packages/input/**/*.{ts,tsx}",
     "packages/test-kit/**/*.{ts,tsx}",
   ],
   [
     {
       group: REACT_PATTERNS,
       message:
-        "core, assets, edit, object-model, and test-kit must not import React (engineplan section 2.2).",
+        "core, assets, edit, object-model, bridge, runtime, input, and test-kit must not import React (engineplan section 2.2).",
     },
     {
       group: BABYLON_PATTERNS,
       message:
-        "core, assets, edit, object-model, and test-kit must not import Babylon (engineplan section 2.2).",
+        "core, assets, edit, object-model, bridge, runtime, input, and test-kit must not import Babylon (engineplan section 2.2).",
     },
     {
       group: CAPACITOR_PATTERNS,
@@ -82,6 +85,27 @@ const renderNoReact = boundary(
     },
   ],
 );
+
+/** Ban constructing Babylon Texture outside resource-cache.ts (engineplan §2.4). */
+const renderTextureCacheOnly = {
+  name: "boundary/render-texture-cache",
+  files: ["packages/render/src/**/*.{ts,tsx}"],
+  ignores: [
+    "packages/render/src/resource-cache.ts",
+    "packages/render/src/**/*.test.ts",
+  ],
+  rules: {
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector:
+          "NewExpression[callee.name='Texture'], NewExpression[callee.property.name='Texture']",
+        message:
+          "Construct textures only via ResourceCache (engineplan section 2.4).",
+      },
+    ],
+  },
+};
 
 const uiNoBabylonNoCapacitor = boundary(
   "boundary/ui-packages",
@@ -149,6 +173,7 @@ export default tseslint.config(
   pureNoReactNoBabylon,
   vfsNoReactNoBabylon,
   renderNoReact,
+  renderTextureCacheOnly,
   uiNoBabylonNoCapacitor,
   appNoCapacitor,
 );
