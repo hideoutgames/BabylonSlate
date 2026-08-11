@@ -1,13 +1,4 @@
 import { Button } from "@babylonslate/ui/components/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@babylonslate/ui/components/sheet";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { SelectableText } from "@babylonslate/editor-kit";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 
@@ -19,6 +10,10 @@ export interface PreviewSessionReportProps {
   onNavigate: (entry: SessionReportEntry) => void;
 }
 
+/**
+ * Bottom-sheet style report (fixed panel). Avoids animated Sheet portals that
+ * can leave interactive rows outside the layout viewport in Playwright.
+ */
 export function PreviewSessionReport({
   open,
   entries,
@@ -26,6 +21,8 @@ export function PreviewSessionReport({
   onOpenChange,
   onNavigate,
 }: PreviewSessionReportProps) {
+  if (!open) return null;
+
   const copyReport = async () => {
     const text = entries
       .map(
@@ -38,59 +35,58 @@ export function PreviewSessionReport({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="max-h-[70vh]"
-        data-testid="preview-session-report"
-      >
-        <SheetHeader>
-          <SheetTitle>Preview session report</SheetTitle>
-          <SheetDescription>
-            Runtime errors from the last Play session.
-            {dropped > 0 ? ` (${dropped} more dropped)` : ""}
-          </SheetDescription>
-        </SheetHeader>
-        <ScrollArea className="max-h-[40vh] px-4">
-          <ul className="flex flex-col gap-2 py-2">
-            {entries.map((entry) => (
-              <li key={`${entry.code}-${entry.assetGuid}-${entry.nodeId}`}>
-                <button
-                  type="button"
-                  className="flex min-h-11 w-full flex-col items-start gap-1 rounded-md border border-border px-3 py-2 text-left"
-                  data-testid="session-report-row"
-                  data-node-id={entry.nodeId ?? ""}
-                  onClick={() => onNavigate(entry)}
-                >
-                  <span className="text-sm font-medium">
-                    {entry.severity}: {entry.message}
-                    {entry.count > 1 ? ` ×${entry.count}` : ""}
-                  </span>
-                  <SelectableText className="text-xs text-muted-foreground">
-                    {entry.assetGuid ?? "unknown"}
-                    {entry.nodeId ? ` › ${entry.nodeId}` : ""}
-                  </SelectableText>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </ScrollArea>
-        <SheetFooter>
-          <Button
-            variant="secondary"
-            data-testid="session-report-copy"
-            onClick={() => void copyReport()}
-          >
-            Copy report
-          </Button>
-          <Button
-            data-testid="session-report-close"
-            onClick={() => onOpenChange(false)}
-          >
-            Close
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+    <div
+      className="fixed inset-x-0 bottom-0 z-50 flex flex-col gap-3 border-t border-border bg-popover p-4 text-popover-foreground shadow-lg"
+      data-testid="preview-session-report"
+      role="dialog"
+      aria-label="Preview session report"
+    >
+      <div className="flex flex-col gap-1">
+        <h2 className="font-heading text-base font-medium">
+          Preview session report
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Runtime errors from the last Play session.
+          {dropped > 0 ? ` (${dropped} more dropped)` : ""}
+        </p>
+      </div>
+      <ul className="flex max-h-48 flex-col gap-2 overflow-y-auto">
+        {entries.map((entry) => (
+          <li key={`${entry.code}-${entry.assetGuid}-${entry.nodeId}`}>
+            <button
+              type="button"
+              className="flex min-h-11 w-full flex-col items-start gap-1 rounded-md border border-border px-3 py-2 text-left"
+              data-testid="session-report-row"
+              data-node-id={entry.nodeId ?? ""}
+              onClick={() => onNavigate(entry)}
+            >
+              <span className="text-sm font-medium">
+                {entry.severity}: {entry.message}
+                {entry.count > 1 ? ` ×${entry.count}` : ""}
+              </span>
+              <SelectableText className="text-xs text-muted-foreground">
+                {entry.assetGuid ?? "unknown"}
+                {entry.nodeId ? ` › ${entry.nodeId}` : ""}
+              </SelectableText>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="secondary"
+          data-testid="session-report-copy"
+          onClick={() => void copyReport()}
+        >
+          Copy report
+        </Button>
+        <Button
+          data-testid="session-report-close"
+          onClick={() => onOpenChange(false)}
+        >
+          Close
+        </Button>
+      </div>
+    </div>
   );
 }
