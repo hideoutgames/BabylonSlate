@@ -21,12 +21,20 @@ Dirty-driven editor loop: early-return unless invalidated. Continuous-render lea
 
 ## Resource cache
 
-LRU with byte ceiling (~512 MB accounted) plus refcounts. Stable blob URL per asset guid for app lifetime; one canonical sampling-option set so engine-level `InternalTexture` dedupe hits across editor and Play scenes.
+LRU with byte ceiling (~512 MB accounted) plus refcounts. Stable blob URL per asset guid for app lifetime; textures resolve only via `ResourceCache.getTexture()` with one canonical sampling-option set so engine-level `InternalTexture` dedupe hits across editor and Play scenes.
 
 Cache key includes `url`, `noMipmap`, `samplingMode`, `invertY`, `useSRGBBuffer`, `isCube`. Constructing `Texture` outside the cache is lint-banned.
 
 Self-computed bytes: RGBA8 = 4 B/texel, ASTC 4×4 = 1, plus ~⅓ for mipmaps. Context-loss restore drops one quality tier and flushes the LRU.
 
-Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().length`.
+Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().length` (asserted in Play stop + unit cache cycle).
+
+## Picking
+
+`skipPointerMovePicking: true` (no hover). Explicit taps use `pickAtCanvas` / `EngineHandle.pickAt`.
+
+## Lifecycle pause
+
+`visibilitychange` (and Capacitor app-state when present) pauses the render scheduler, game worker / in-process runtime tick, and texture encode queue. Encode pause uses a reason set (`visibility` | `play`) so ending Play does not resume encoding while the tab is still hidden.
 
 See [bridge.md](bridge.md) for the snapshot wire format and [perf-budget.md](../design/perf-budget.md) for budgets.

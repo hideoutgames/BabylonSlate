@@ -9,3 +9,4 @@ export * from "./render-scheduler";
 export * from "./snapshot-sync";
 export * from "./snapshot-apply";
 export * from "./hardware-scaling";
+export * from "./picking";

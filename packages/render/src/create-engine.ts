@@ -13,15 +13,14 @@ import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import { ResourceCache } from "./resource-cache";
 import { HardwareScalingController } from "./hardware-scaling";
-import {
-  SnapshotInterpolator,
-} from "./snapshot-sync";
+import { SnapshotInterpolator } from "./snapshot-sync";
 import {
   applySnapshotToScene,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
+import { pickAtCanvas } from "./picking";
 
 export interface EngineHandle {
   engine: Engine;
@@ -37,6 +36,11 @@ export interface EngineHandle {
   setPaused: (paused: boolean) => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
   liveObjectCounts: () => { meshes: number; textures: number };
+  /** Explicit tap pick (hover picking is disabled). */
+  pickAt: (
+    canvasX: number,
+    canvasY: number,
+  ) => { meshName: string; slotId: number | null } | null;
 }
 
 export interface CreateEngineOptions {
@@ -96,11 +100,12 @@ export function createEngine(
   const resize = () => engine.resize();
 
   let lastFrame = performance.now();
+  let interpAlpha = 1;
   engine.runRenderLoop(() => {
     if (!scheduler.shouldRender()) {
       return;
     }
-    const sampled = interpolator.sample(1);
+    const sampled = interpolator.sample(interpAlpha);
     if (sampled) {
       applySnapshotToScene(scene, binding, sampled);
     }
@@ -128,6 +133,18 @@ export function createEngine(
     scheduler.invalidate("manual");
   });
 
+  // Tap-to-pick: continuous hover picking is off for touch.
+  const onPointerDown = (event: PointerEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const hit = pickAtCanvas(scene, x, y);
+    if (hit) {
+      scheduler.invalidate("selection");
+    }
+  };
+  canvas.addEventListener("pointerdown", onPointerDown);
+
   return {
     engine,
     scene,
@@ -135,6 +152,7 @@ export function createEngine(
     resourceCache,
     scaling,
     dispose: () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
@@ -152,6 +170,7 @@ export function createEngine(
     loadScene,
     pushSnapshot: (buffer: Float32Array) => {
       interpolator.push(buffer);
+      interpAlpha = 1;
       scheduler.invalidate("snapshot");
     },
     setPaused: (paused: boolean) => scheduler.setPaused(paused),
@@ -159,6 +178,12 @@ export function createEngine(
       meshes: scene.meshes.length,
       textures: engine.getLoadedTexturesCache().length,
     }),
+    pickAt: (x, y) => {
+      const hit = pickAtCanvas(scene, x, y);
+      return hit
+        ? { meshName: hit.meshName, slotId: hit.slotId }
+        : null;
+    },
   };
 }
 

@@ -398,11 +398,15 @@ export class ProjectService {
   }
 
   private bindEncodeQueueVisibility(): void {
-    if (this.visibilityBound || typeof document === "undefined") return;
+    if (this.visibilityBound) return;
     this.visibilityBound = true;
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) this.encodeQueue.pause();
-      else this.encodeQueue.resume();
+    // Play + visibility publish reasons via encode-queue-pause; this service owns
+    // the queue and applies the merged paused state (engineplan §2.4 / §3.5).
+    void import("./encode-queue-pause").then(({ onEncodeQueuePause }) => {
+      onEncodeQueuePause((paused) => {
+        if (paused) this.encodeQueue.pause();
+        else this.encodeQueue.resume();
+      });
     });
   }
 

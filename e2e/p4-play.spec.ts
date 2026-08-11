@@ -25,6 +25,10 @@ test.describe("P4 Play overlay and session report", () => {
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("preview-session-report")).toBeVisible();
+    await expect(page.getByTestId("play-last-runtime")).toHaveAttribute(
+      "data-mode",
+      /^(worker|in-process)$/,
+    );
     await page.getByTestId("session-report-row").click();
     await expect(page.getByTestId("focused-graph-node")).toHaveAttribute(
       "data-node-id",

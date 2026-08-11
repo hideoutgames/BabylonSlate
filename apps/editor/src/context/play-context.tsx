@@ -16,6 +16,7 @@ import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 
 interface PlayContextValue {
   playing: boolean;
@@ -68,6 +69,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     renderedFps: number;
     invalidationsPerSecond: number;
   } | null>(null);
+  const [lastRuntimeMode, setLastRuntimeMode] = useState<
+    "worker" | "in-process" | null
+  >(null);
 
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
@@ -117,6 +121,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return attachLifecyclePause((paused) => {
       schedulerRef.current?.setPaused(paused);
+      setEncodeQueuePauseReason("visibility", paused);
     });
   }, []);
 
@@ -140,6 +145,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         appendLog("Play failed: could not create Engine.");
         return;
       }
+      setEncodeQueuePauseReason("play", true);
       setInjectThrow(Boolean(options?.injectFixtureThrow));
       setPlaying(true);
     },
@@ -149,14 +155,22 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const handleClose = useCallback(
     (result: PlaySessionResult) => {
       setPlaying(false);
+      setEncodeQueuePauseReason("play", false);
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
+      setLastRuntimeMode(result.runtimeMode);
       if (result.diagnostics.length > 0) {
         setReportOpen(true);
       }
+      const leakNote = result.textureLeak ? " LEAK" : "";
       appendLog(
-        `Play ended (textures ${result.textureCountBefore}→${result.textureCountAfter})`,
+        `Play ended (${result.runtimeMode}; textures ${result.textureCountBefore}→${result.textureCountAfter}${leakNote})`,
       );
+      if (result.textureLeak) {
+        appendLog(
+          `Texture leak detected: ${result.textureCountBefore} → ${result.textureCountAfter}`,
+        );
+      }
     },
     [appendLog],
   );
@@ -222,6 +236,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             data-node-id={focusedNodeId}
           >
             {focusedNodeId}
+          </span>
+        ) : null}
+        {lastRuntimeMode ? (
+          <span
+            className="sr-only"
+            data-testid="play-last-runtime"
+            data-mode={lastRuntimeMode}
+          >
+            {lastRuntimeMode}
           </span>
         ) : null}
       </OutputLogContext.Provider>
