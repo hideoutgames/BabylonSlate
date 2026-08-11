@@ -20,6 +20,8 @@ import {
   appendJournalLine,
   hasJournal,
   readJournalLines,
+  readThumbnail,
+  ThumbnailDecodeLru,
   truncateJournal,
   type AssetRegistry,
   type MigrationPending,
@@ -27,6 +29,7 @@ import {
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
+  DEFAULT_EDIT_BYTE_BUDGET,
   diffGraphCommands,
   EditSession,
   replayJournalLines,
@@ -39,6 +42,7 @@ import {
   createTemplateStorage,
   defaultEngineSettings,
   getHostPlatform,
+  isTestModeEnabled,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
 import {
@@ -101,6 +105,9 @@ interface DocumentContextValue {
     path: string;
     label: string;
   }>;
+  /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
+  loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
+  thumbnailsEnabled: boolean;
 }
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
@@ -114,8 +121,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const settingsStore = useMemo(() => createAppSettingsStore(), []);
   const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());
-  const editSessionRef = useRef(new EditSession());
+  const editSessionRef = useRef(
+    new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
+  );
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
+  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const thumbnailLruRef = useRef(new ThumbnailDecodeLru(64));
+  const thumbnailsEnabledRef = useRef(true);
 
   const [route, setRoute] = useState<AppRoute>("home");
   const [projectDocument, setProjectDocument] = useState<ProjectDocument | null>(
@@ -131,6 +143,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [registryVersion, setRegistryVersion] = useState(0);
+  const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
   const documentService = documentServiceRef.current;
@@ -198,7 +211,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     void settingsStore.load().then((settings) => {
       editSessionRef.current.configure({
         maxEntries: settings.undoHistoryLength,
+        maxBytes: DEFAULT_EDIT_BYTE_BUDGET,
       });
+      thumbnailsEnabledRef.current = settings.thumbnailsEnabled !== false;
+      setThumbnailsEnabled(settings.thumbnailsEnabled !== false);
     });
     bump();
   }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
@@ -249,6 +265,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Ensure every journal target graph is open so replay is not skipped.
+    for (const raw of lines) {
+      try {
+        const line = JSON.parse(raw) as { docId?: string };
+        const docId = line.docId;
+        if (!docId || !docId.startsWith("graph:")) continue;
+        if (documentService.getState().openDocuments.has(docId)) continue;
+        const path = docId.slice("graph:".length);
+        await documentService.openDocument(
+          projectService,
+          { kind: "graph", path, label: path.split("/").pop() ?? path },
+          null,
+          false,
+        );
+      } catch {
+        // Skip malformed lines; replayJournalLines will ignore them too.
+      }
+    }
+
     const openGraphs = new Map<string, SerializedGraph>();
     for (const doc of documentService.getOpenDocumentsOrdered()) {
       if (doc.ref.kind === "graph" && doc.content) {
@@ -288,9 +323,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
       const transcoderOk = await probeKtx2TranscoderAvailable();
       await projectService.setTranscoderAvailable(transcoderOk);
+      const derived = await ensureDerived();
+      projectService.setDerivedStorage(derived);
       const guid = projectService.guid;
       if (guid) {
-        const derived = await ensureDerived();
         setRecoveryAvailable(await hasJournal(derived, guid));
       }
       await recordRecent(projectService.storagePort.getCurrentFolder());
@@ -357,6 +393,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // Caller must use approveMigrationsAndSave — never silently rewrite.
       return;
     }
+    if (saveDebounceRef.current) {
+      clearTimeout(saveDebounceRef.current);
+      saveDebounceRef.current = null;
+    }
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
     for (const doc of dirtyDocs) {
@@ -372,8 +412,31 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await projectService.saveProject(projectDocument, layouts);
     documentService.markAllClean();
     setMigrationPending([]);
+    const guid = projectService.guid;
+    if (guid) {
+      const derived = await ensureDerived();
+      await truncateJournal(derived, guid);
+      setRecoveryAvailable(false);
+    }
     bump();
-  }, [bump, captureAllLayouts, documentService, projectDocument, projectService]);
+  }, [
+    bump,
+    captureAllLayouts,
+    documentService,
+    ensureDerived,
+    projectDocument,
+    projectService,
+  ]);
+
+  const scheduleDebouncedSave = useCallback(() => {
+    if (saveDebounceRef.current) {
+      clearTimeout(saveDebounceRef.current);
+    }
+    saveDebounceRef.current = setTimeout(() => {
+      saveDebounceRef.current = null;
+      void saveProject();
+    }, 400);
+  }, [saveProject]);
 
   const approveMigrationsAndSave = useCallback(async () => {
     if (!projectDocument) return;
@@ -399,12 +462,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const saveAll = saveProject;
 
   const forceCloseProject = useCallback(async () => {
+    if (saveDebounceRef.current) {
+      clearTimeout(saveDebounceRef.current);
+      saveDebounceRef.current = null;
+    }
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
       await truncateJournal(derived, guid);
     }
     await projectService.closeProject();
+    projectService.setDerivedStorage(null);
     dockviewApisRef.current.clear();
     editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
@@ -548,10 +616,84 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           }
         });
       }
+      scheduleDebouncedSave();
       bump();
     },
-    [bump, documentService, ensureDerived, projectService],
+    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
+
+  const loadAssetThumbnail = useCallback(
+    async (assetGuid: string): Promise<Uint8Array | null> => {
+      if (!thumbnailsEnabledRef.current) return null;
+      const cached = thumbnailLruRef.current.get(assetGuid);
+      if (cached) return cached;
+      const guid = projectService.guid;
+      if (!guid) return null;
+      const derived = await ensureDerived();
+      const bytes = await readThumbnail(derived, guid, assetGuid);
+      if (bytes) thumbnailLruRef.current.set(assetGuid, bytes);
+      return bytes;
+    },
+    [ensureDerived, projectService],
+  );
+
+  useEffect(() => {
+    if (!isTestModeEnabled()) return;
+    const host = globalThis as {
+      __babylonslateTest?: {
+        nudgeActiveGraphNode: () => boolean;
+        cancelDebouncedSave: () => void;
+        activeGraphNodePosition: () => { x: number; y: number } | null;
+      };
+    };
+    host.__babylonslateTest = {
+      cancelDebouncedSave: () => {
+        if (saveDebounceRef.current) {
+          clearTimeout(saveDebounceRef.current);
+          saveDebounceRef.current = null;
+        }
+      },
+      activeGraphNodePosition: () => {
+        const doc = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "graph" && entry.content,
+        );
+        const graph = doc?.content as SerializedGraph | undefined;
+        return graph?.nodes[0]?.position ?? null;
+      },
+      nudgeActiveGraphNode: () => {
+        const { activeDocumentId, openDocuments } = documentService.getState();
+        const id =
+          activeDocumentId &&
+          openDocuments.get(activeDocumentId)?.ref.kind === "graph"
+            ? activeDocumentId
+            : [...openDocuments.values()].find((d) => d.ref.kind === "graph")
+                ?.id;
+        if (!id) return false;
+        const doc = openDocuments.get(id);
+        if (!doc?.content) return false;
+        const graph = doc.content as SerializedGraph;
+        if (!graph.nodes[0]) return false;
+        applyGraphChange(id, {
+          ...graph,
+          nodes: graph.nodes.map((entry, index) =>
+            index === 0
+              ? {
+                  ...entry,
+                  position: {
+                    x: entry.position.x + 42,
+                    y: entry.position.y + 17,
+                  },
+                }
+              : entry,
+          ),
+        });
+        return true;
+      },
+    };
+    return () => {
+      delete host.__babylonslateTest;
+    };
+  }, [applyGraphChange, documentService]);
 
   const undoActiveDocument = useCallback(() => {
     const { activeDocumentId, openDocuments } = documentService.getState();
@@ -684,6 +826,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       assetRegistry: projectService.registry,
       refreshAssetRegistry,
       retryFailedTextureEncoding,
+      loadAssetThumbnail,
+      thumbnailsEnabled,
     };
     },
     [
@@ -694,6 +838,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectService,
       refreshAssetRegistry,
       retryFailedTextureEncoding,
+      loadAssetThumbnail,
+      thumbnailsEnabled,
       listedProjects,
       needsReconnect,
       recoveryAvailable,

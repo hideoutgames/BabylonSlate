@@ -72,14 +72,18 @@ Per Texture asset (engineplan §3.5):
 
 Queue: `EncodeQueue` on `ProjectService` (one job at a time; pause on document `visibilitychange` / Preview hooks; recycle counter after N jobs). Import of compressible textures enqueues immediately; `commitCompressedTexture` writes the KTX2 chunk + `compressed` state. Policy defaults leave pixel art, sprites, UI, and fonts uncompressed (no `pending` state). Max dimension clamp default 2048 (Project Settings). **Retry encoding** lives in Project Settings and the Content Browser tile menu; `autoRequeueUncompressed` re-queues `fallback_uncompressed` on registry mount.
 
-Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder via `configureKtx2Transcoder(KhronosTextureContainer2)` in `createEngine`, URLs under `apps/editor/public/ktx2/`. Silent fallback is forbidden — state must be explicit. The default encoder is still the **stub** (`stubEncodeKtx2`); swapping in a Basis wasm Worker is the remaining §3.5 host work (binaries not vendored yet).
+Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder via `configureKtx2Transcoder(KhronosTextureContainer2)` in `createEngine`, URLs under `apps/editor/public/ktx2/` (vendored `babylon.ktx2Decoder.js`, MSC Basis, UASTC→ASTC/BC7, Zstd). Silent fallback is forbidden — state must be explicit.
+
+**Encode path:** the editor wires `createWorkerEncodeFn` (`/basis/encode-worker.js` + vendored Basis encoder wasm under `apps/editor/public/basis/`) into `EncodeQueue`. Unit tests keep `stubEncodeKtx2` as the default when no Worker is injected. CI runs a real Basis encode smoke (`a16-encode-smoke.test.ts` / `createNodeBasisEncodeFn`) against checked-in A16 wall envelopes in `@babylonslate/test-kit`. On project enter, `probeKtx2TranscoderAvailable` marks compressed textures `fallback_uncompressed` when decoder files are missing.
+
+**GLB/glTF import:** `parseGlbForBrowse` extracts materials, embedded images (pixel chunks), and animation names so CB dependents are browsable; mesh runtime fidelity stays thin until Play.
 
 ## Content Browser (P2)
 
 `apps/editor/src/components/content-browser-workspace.tsx` is the registry-backed project asset UI:
 
 - Folder tree from `folderTree("project")`; asset grid filtered by folder, type chips, and search.
-- Import via hidden `<input type="file" multiple>` → `registry.importFile` (no Capacitor from UI).
+- Import through `pickImportFiles()` in `@babylonslate/vfs` (web/electron: DOM file input; iOS/Android: optional `babylonslate.documentPicker` bridge, else the same DOM picker). UI never calls Capacitor plugins directly. A hidden `content-browser-import-input` remains for Playwright `setInputFiles`.
 - **New Asset** uses type + engine-base parent-class pickers → `registry.createAsset`.
 - Long-press multi-select + `ContextMenuOverlay` delete / Retry encoding; folder right-click opens the same delete confirm for the folder tree (assets root is protected).
 - `AlertDialog` lists removed asset names and inbound refs from `showReferences` (names are `SelectableText`).
@@ -87,7 +91,7 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 - Texture tiles show `payload.compressionState` badges (`pending`, `encoding`, `fallback_uncompressed`, `encode_failed`).
 - Empty `data-lock-slot` on tiles reserved for P15 lock decoration.
 - Grid tiles expose stable `data-testid="content-item-{path}"` plus `data-asset-path` / `data-asset-guid` for Playwright.
-- Thumbnails: `writeThumbnail` / `ThumbnailDecodeLru` APIs exist; CB tiles still use icons (lazy thumbnail grid decode is remaining polish).
+- Thumbnails: `generateThumbnailBytes` at import → `writeThumbnail` in derived data; CB grid lazy-decodes visible Texture cells via `ThumbnailDecodeLru` / `loadAssetThumbnail`.
 
 `DocumentProvider` exposes `assetRegistry` and `refreshAssetRegistry()` (`projectService.remountRegistry()`).
 
@@ -95,7 +99,7 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 
 - Second synthetic root mounts and resolves across roots.
 - Hundreds of assets open with near-zero `accountedPayloadBytes`.
-- Importer unit tests + guid-remap cases.
-- Encode queue states; loader KTX2 vs source; transcoder omitted smoke.
+- Importer unit tests + guid-remap cases + GLB browse parse.
+- Encode queue states; loader KTX2 vs source; transcoder unavailable / export-omitted smoke; A16 Basis encode CI smoke.
 - Content Browser helpers (filter / new-asset / drag MIME) unit-tested in the editor.
-- E2E opens Scene/Graph via `[data-asset-path="assets/main.*.babasset"]` after empty-project create.
+- E2E: Scene/Graph open, PNG+GLB import→reload, killed-tab journal recovery (`e2e/p2-accept.spec.ts`).

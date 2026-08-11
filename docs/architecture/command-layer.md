@@ -15,7 +15,7 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 | `replayJournalLines` | Replay journal onto open graph documents |
 | `reviveCommand` / `registerCommandReviver` | Registry to rebuild commands from journal JSON |
 
-Editor wiring: `DocumentProvider` owns an `EditSession`; graph panels call `applyGraphChange`; chrome **Undo** / **Redo** act on the active document only.
+Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`; chrome **Undo** / **Redo** act on the active document only. `SetNodeDataCommand` records `byteSize` from its payload so snapshot-style data edits count toward the budget.
 
 ## Ownership
 
@@ -68,14 +68,14 @@ Each line is one JSON object:
 ```
 
 - Append after a successful `apply` on an open document (`appendJournalLine` in derived data).
-- Clean **Close Project** truncates the journal.
-- Recovery (Homepage **Recover edits**) uses `replayJournalLines` → `reviveCommand` → `apply` on open graph documents, then truncates the journal.
+- Clean **Close Project** and a successful **Save** truncate the journal (recovery is for *unsaved* edits).
+- Recovery banner in the editor shell (`data-testid="recovery-prompt"`) offers **Recover edits** / **Discard journal**. Replay opens any missing journal target graphs, then `replayJournalLines` → `reviveCommand` → `apply`, then truncates. Graph-scoped until scene commands land in P6.
 - Schema version `v` allows journal migration without inventing a parallel recovery path.
 
 ## Dirty / debounce saves
 
-Interactive edits mark the document dirty on apply. Save batches are **debounced** behind the command layer (engineplan §19 / [vfs.md](vfs.md)): only dirty documents write; large immutable chunks stay in the blob store.
+Interactive edits mark the document dirty on apply. `applyGraphChange` schedules a **~400ms debounced** `saveProject` (manual Save remains; debounce cancels on explicit Save). Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
 
 ## Tests
 
-Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping.
+Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery (graph-scoped).

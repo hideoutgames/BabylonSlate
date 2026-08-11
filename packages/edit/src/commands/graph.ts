@@ -84,6 +84,8 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
   readonly nodeId: string;
   readonly from: Record<string, unknown>;
   readonly to: Record<string, unknown>;
+  /** Captured payload size so snapshot-style data edits count toward the byte budget. */
+  readonly byteSize: number;
 
   constructor(
     nodeId: string,
@@ -95,6 +97,8 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
     this.from = from;
     this.to = to;
     this.mergeKey = mergeKey ?? `data:${nodeId}`;
+    this.byteSize =
+      new TextEncoder().encode(JSON.stringify({ from, to })).byteLength;
   }
 
   apply(doc: SerializedGraph): SerializedGraph {

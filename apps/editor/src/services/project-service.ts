@@ -37,6 +37,7 @@ import {
   projectContentRoot,
   readAssetDocumentHeader,
   readProjectTree,
+  writeThumbnail,
   type BlobStore,
   type EncodeFn,
   type MigrationPending,
@@ -79,6 +80,7 @@ export class ProjectService {
     | null;
   private visibilityBound = false;
   private transcoderAvailable = true;
+  private derivedStorage: ProjectStorage | null = null;
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
 
@@ -115,6 +117,25 @@ export class ProjectService {
 
   get isTranscoderAvailable(): boolean {
     return this.transcoderAvailable;
+  }
+
+  /** Bind app-private derived storage for thumbnail writes at import. */
+  setDerivedStorage(derived: ProjectStorage | null): void {
+    this.derivedStorage = derived;
+    this.bindThumbnailWriter();
+  }
+
+  private bindThumbnailWriter(): void {
+    if (!this.assetRegistry) return;
+    const derived = this.derivedStorage;
+    const guid = this.projectGuid;
+    if (!derived || !guid) {
+      this.assetRegistry.setThumbnailWriter(null);
+      return;
+    }
+    this.assetRegistry.setThumbnailWriter(async (assetGuid, bytes) => {
+      await writeThumbnail(derived, guid, assetGuid, bytes);
+    });
   }
 
   private async markCompressedTexturesFallback(): Promise<void> {
@@ -368,6 +389,7 @@ export class ProjectService {
     });
     await registry.mountRoot(projectContentRoot());
     this.assetRegistry = registry;
+    this.bindThumbnailWriter();
     const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
     if (auto) {
       await registry.requeueUncompressedTextures();

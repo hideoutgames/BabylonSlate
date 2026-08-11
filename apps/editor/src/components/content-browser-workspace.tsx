@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -23,6 +24,7 @@ import {
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import { documentId, labelFromPath } from "@babylonslate/core";
+import { pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
@@ -122,12 +124,14 @@ function AssetTile({
   onOpen,
   onToggleSelect,
   onLongPressMenu,
+  thumbnailUrl,
 }: {
   asset: IndexedAsset;
   selected: boolean;
   onOpen: () => void;
   onToggleSelect: () => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
+  thumbnailUrl: string | null;
 }) {
   const pressRef = useRef<TilePressState | null>(null);
   const compression = textureCompressionState(asset);
@@ -204,7 +208,16 @@ function AssetTile({
       onDragStart={onDragStart}
     >
       <div className="flex items-start gap-2">
-        <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        {thumbnailUrl ? (
+          <img
+            src={thumbnailUrl}
+            alt=""
+            data-testid={`content-item-thumb-${asset.header.guid}`}
+            className="mt-0.5 size-10 shrink-0 rounded-sm object-cover"
+          />
+        ) : (
+          <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        )}
         <div className="min-w-0 flex-1">
           <SelectableText className="truncate text-sm font-medium">
             {asset.header.name}
@@ -232,6 +245,8 @@ export function ContentBrowserWorkspace() {
     openDocument,
     setActiveDocument,
     tabOrder,
+    loadAssetThumbnail,
+    thumbnailsEnabled,
   } = useDocuments();
 
   const [selectedFolderPath, setSelectedFolderPath] = useState(ASSETS_ROOT);
@@ -245,7 +260,11 @@ export function ContentBrowserWorkspace() {
   const [newAssetName, setNewAssetName] = useState("NewAsset");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [busy, setBusy] = useState(false);
-  const importInputRef = useRef<HTMLInputElement>(null);
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
+    {},
+  );
+  const thumbnailUrlsRef = useRef(thumbnailUrls);
+  thumbnailUrlsRef.current = thumbnailUrls;
   const menuTargetGuidsRef = useRef<string[]>([]);
 
   const folderTree = useMemo(
@@ -272,6 +291,30 @@ export function ContentBrowserWorkspace() {
       }),
     [allAssets, folderGuids, search, typeFilter],
   );
+
+  useEffect(() => {
+    if (!thumbnailsEnabled) return;
+    let cancelled = false;
+    const objectUrls: string[] = [];
+    void (async () => {
+      const next: Record<string, string> = { ...thumbnailUrlsRef.current };
+      for (const asset of visibleAssets) {
+        if (asset.header.type !== "Texture") continue;
+        if (next[asset.header.guid]) continue;
+        const bytes = await loadAssetThumbnail(asset.header.guid);
+        if (cancelled || !bytes) continue;
+        const url = URL.createObjectURL(
+          new Blob([bytes], { type: "image/jpeg" }),
+        );
+        objectUrls.push(url);
+        next[asset.header.guid] = url;
+      }
+      if (!cancelled) setThumbnailUrls(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadAssetThumbnail, thumbnailsEnabled, visibleAssets]);
 
   const typeChips = useMemo(() => uniqueAssetTypes(allAssets), [allAssets]);
 
@@ -426,30 +469,46 @@ export function ContentBrowserWorkspace() {
     selectedFolderPath,
   ]);
 
-  const handleImport = useCallback(
-    async (files: FileList | null) => {
-      if (!assetRegistry || !files?.length) return;
+  const importPickedFiles = useCallback(
+    async (files: Array<{ name: string; bytes: Uint8Array }>) => {
+      if (!assetRegistry || !files.length) return;
       setBusy(true);
       try {
         const folder = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
-        for (const file of Array.from(files)) {
-          const bytes = new Uint8Array(await file.arrayBuffer());
+        for (const file of files) {
           await assetRegistry.importFile(
             PROJECT_ROOT_ID,
             folder,
             file.name,
-            bytes,
+            file.bytes,
           );
         }
         await refreshAssetRegistry();
       } finally {
         setBusy(false);
-        if (importInputRef.current) {
-          importInputRef.current.value = "";
-        }
       }
     },
     [assetRegistry, refreshAssetRegistry, selectedFolderPath],
+  );
+
+  const handleImport = useCallback(async () => {
+    const files = await pickImportFiles({ multiple: true });
+    await importPickedFiles(files);
+  }, [importPickedFiles]);
+
+  const handleImportInputChange = useCallback(
+    async (fileList: FileList | null) => {
+      if (!fileList?.length) return;
+      const files: Array<{ name: string; bytes: Uint8Array }> = [];
+      for (const file of Array.from(fileList)) {
+        files.push({
+          name: file.name,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        });
+      }
+      await importPickedFiles(files);
+    },
+    [importPickedFiles],
   );
 
   const handleCreateAsset = useCallback(async () => {
@@ -526,7 +585,7 @@ export function ContentBrowserWorkspace() {
             className="min-h-11"
             data-testid="content-browser-import"
             disabled={busy}
-            onClick={() => importInputRef.current?.click()}
+            onClick={() => void handleImport()}
           >
             <UploadIcon className="size-4" />
             Import
@@ -555,13 +614,16 @@ export function ContentBrowserWorkspace() {
             </Button>
           ) : null}
         </div>
+        {/* Capacitor-free Playwright / automated import path (UI uses pickImportFiles). */}
         <input
-          ref={importInputRef}
           type="file"
           multiple
           className="hidden"
           data-testid="content-browser-import-input"
-          onChange={(event) => void handleImport(event.target.files)}
+          onChange={(event) => {
+            void handleImportInputChange(event.target.files);
+            event.target.value = "";
+          }}
         />
       </div>
 
@@ -632,6 +694,7 @@ export function ContentBrowserWorkspace() {
                 key={asset.header.guid}
                 asset={asset}
                 selected={selectedGuids.has(asset.header.guid)}
+                thumbnailUrl={thumbnailUrls[asset.header.guid] ?? null}
                 onOpen={() => {
                   if (selectedGuids.size > 0) {
                     toggleGuid(asset.header.guid);
