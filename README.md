@@ -2,6 +2,8 @@
 
 BabylonJS Editor optimised for Touch Devices — an iPad-first game engine with a shadcn React UI, Dockview panel layout, React Flow visual scripting, and Capacitor native shells.
 
+**Engine plan:** [docs/engineplan.md](docs/engineplan.md) — architecture, roadmap, and delivery checklist.
+
 ## Stack
 
 - **Monorepo**: pnpm workspaces

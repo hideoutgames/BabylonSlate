@@ -31,6 +31,7 @@ alwaysApply: false
 
 ## Structure (guidance for future docs)
 
-- `docs/engine/` — BabylonSlate engine internals
+- `docs/engineplan.md` — authoritative engine architecture, feature spec, roadmap, and delivery checklist
+- `docs/engine/` — BabylonSlate engine internals (as slices land)
 - `docs/architecture.md` — monorepo boundaries, command bus, package dependencies
 - Top-level topic files as needed; avoid deep nesting without reason
