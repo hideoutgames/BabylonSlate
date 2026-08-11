@@ -23,7 +23,8 @@ export function createEngine(canvas: HTMLCanvasElement): EngineHandle {
     stencil: true,
   });
   const scene = new Scene(engine);
-  scene.clearColor = new Color4(0.08, 0.09, 0.11, 1);
+  // Match dark shell --background (#141414).
+  scene.clearColor = new Color4(20 / 255, 20 / 255, 20 / 255, 1);
 
   setupDefaultViewport(scene);
 

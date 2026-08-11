@@ -50,4 +50,4 @@ Patterns rather than exact module names, so deep imports such as `@babylonjs/cor
 
 Platform detection lives behind `getHostPlatform()` in `vfs`, so Capacitor stays in one package.
 
-See [CODING_STANDARDS.md](../CODING_STANDARDS.md) for conventions and [testing.md](testing.md) for the test topology.
+See [CODING_STANDARDS.md](../CODING_STANDARDS.md) for conventions, [theming.md](theming.md) for the UI palette, and [testing.md](testing.md) for the test topology.
