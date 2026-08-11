@@ -23,6 +23,7 @@ import {
   type MigrationPending,
   type ProjectTemplate,
 } from "@babylonslate/assets";
+import { diffGraphCommands, EditSession } from "@babylonslate/edit";
 import {
   createAppSettingsStore,
   createDerivedStorage,
@@ -36,8 +37,10 @@ import {
   DocumentService,
   type OpenDocument,
 } from "../services/document-service";
+import { EditService } from "../services/edit-service";
 import { ProjectService } from "../services/project-service";
 import { loadTemplateCards } from "../services/template-service";
+import { EditServiceProvider } from "./edit-context";
 
 export type AppRoute = "home" | "editor";
 
@@ -76,6 +79,12 @@ interface DocumentContextValue {
   reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
   updateScene: (id: string, scene: SerializedScene) => void;
   updateGraph: (id: string, graph: SerializedGraph) => void;
+  /** Apply a graph edit through the command layer (marks dirty + undoable). */
+  applyGraphChange: (id: string, next: SerializedGraph) => void;
+  undoActiveDocument: () => void;
+  redoActiveDocument: () => void;
+  canUndoActiveDocument: boolean;
+  canRedoActiveDocument: boolean;
   registerDockviewApi: (id: string, api: DockviewApi) => void;
   captureActiveLayout: () => void;
   getAvailableDocuments: () => Array<{
@@ -96,6 +105,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const settingsStore = useMemo(() => createAppSettingsStore(), []);
   const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());
+  const editSessionRef = useRef(new EditSession());
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
 
   const [route, setRoute] = useState<AppRoute>("home");
@@ -331,6 +341,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     await projectService.closeProject();
     dockviewApisRef.current.clear();
+    editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
     setProjectDocument(null);
     setRecoveryAvailable(false);
@@ -396,6 +407,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       dockviewApisRef.current.delete(id);
       documentService.closeDocument(id);
+      editSessionRef.current.dropDocument(id);
       bump();
     },
     [bump, documentService],
@@ -445,6 +457,58 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [bump, documentService],
   );
+
+  const applyGraphChange = useCallback(
+    (id: string, next: SerializedGraph) => {
+      const doc = documentService.getState().openDocuments.get(id);
+      if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
+      const previous = doc.content as SerializedGraph;
+      const commands = diffGraphCommands(previous, next);
+      if (commands.length === 0) {
+        documentService.updateGraph(id, next);
+        bump();
+        return;
+      }
+      void settingsStore.load().then((settings) => {
+        editSessionRef.current.configure({
+          maxEntries: settings.undoHistoryLength,
+        });
+      });
+      let current = previous;
+      for (const command of commands) {
+        current = editSessionRef.current.apply(id, current, command).doc;
+      }
+      documentService.updateGraph(id, current);
+      bump();
+    },
+    [bump, documentService, settingsStore],
+  );
+
+  const undoActiveDocument = useCallback(() => {
+    const { activeDocumentId, openDocuments } = documentService.getState();
+    if (!activeDocumentId) return;
+    const doc = openDocuments.get(activeDocumentId);
+    if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
+    const stack =
+      editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
+    const result = stack.undo(doc.content as SerializedGraph);
+    if (!result) return;
+    documentService.updateGraph(activeDocumentId, result.doc);
+    bump();
+  }, [bump, documentService]);
+
+  const redoActiveDocument = useCallback(() => {
+    const { activeDocumentId, openDocuments } = documentService.getState();
+    if (!activeDocumentId) return;
+    const doc = openDocuments.get(activeDocumentId);
+    if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
+    const stack =
+      editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
+    const result = stack.redo(doc.content as SerializedGraph);
+    if (!result) return;
+    documentService.updateGraph(activeDocumentId, result.doc);
+    bump();
+  }, [bump, documentService]);
 
   const registerDockviewApi = useCallback((id: string, api: DockviewApi) => {
     dockviewApisRef.current.set(id, api);
@@ -530,6 +594,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       reorderClosableTabs,
       updateScene,
       updateGraph,
+      applyGraphChange,
+      undoActiveDocument,
+      redoActiveDocument,
+      canUndoActiveDocument: (() => {
+        const activeId = documentService.getState().activeDocumentId;
+        return activeId
+          ? editSessionRef.current.getStack(activeId).canUndo
+          : false;
+      })(),
+      canRedoActiveDocument: (() => {
+        const activeId = documentService.getState().activeDocumentId;
+        return activeId
+          ? editSessionRef.current.getStack(activeId).canRedo
+          : false;
+      })(),
       registerDockviewApi,
       captureActiveLayout,
       getAvailableDocuments,
@@ -567,6 +646,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       reorderClosableTabs,
       updateScene,
       updateGraph,
+      applyGraphChange,
+      undoActiveDocument,
+      redoActiveDocument,
       registerDockviewApi,
       captureActiveLayout,
       getAvailableDocuments,
@@ -574,7 +656,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>
+    <EditServiceProvider editService={editServiceRef.current}>
+      <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>
+    </EditServiceProvider>
   );
 }
 
