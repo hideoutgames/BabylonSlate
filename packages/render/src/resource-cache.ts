@@ -218,7 +218,6 @@ export class ResourceCache {
         // ignore
       }
     }
-    // eslint-disable-next-line no-console -- intentional eviction log (engineplan §2.4)
     console.info(`[resource-cache] evict ${assetGuid} (${reason})`);
     this.onEvict?.(assetGuid, reason);
   }

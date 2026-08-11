@@ -249,7 +249,6 @@ export function startPlaySession(options: {
       const textureCountAfter = sharedEngine.getLoadedTexturesCache().length;
       const textureLeak = textureCountAfter > textureCountBefore;
       if (textureLeak) {
-        // eslint-disable-next-line no-console -- leak signal for Play cycle
         console.error(
           `[play] texture cache grew ${textureCountBefore} → ${textureCountAfter}`,
         );
