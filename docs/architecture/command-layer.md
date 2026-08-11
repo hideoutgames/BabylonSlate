@@ -2,6 +2,20 @@
 
 Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3, 2.4, 16.1). Implementation lives in `@babylonslate/edit`.
 
+## Package API (`@babylonslate/edit`)
+
+| Export | Role |
+| --- | --- |
+| `EditCommand` | Reversible mutation contract (`apply`, `invert`, optional `mergeKey` / `byteSize`) |
+| `DocumentEditStack` | Per-document undo/redo stack with entry + byte budgets |
+| `EditSession` | Map of `docId → DocumentEditStack`; `apply` / `undo` / `redo` / `dropDocument` |
+| `diffGraphCommands` | Derives graph commands from before/after `SerializedGraph` snapshots |
+| `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand` | Graph document commands |
+| `serializeJournalLine` / `parseJournalLine` | JSONL journal line codec |
+| `reviveCommand` / `registerCommandReviver` | Registry to rebuild commands from journal JSON |
+
+Editor wiring: `DocumentProvider` owns an `EditSession`; graph panels call `applyGraphChange`; chrome **Undo** / **Redo** act on the active document only.
+
 ## Ownership
 
 | Concern | Owner |

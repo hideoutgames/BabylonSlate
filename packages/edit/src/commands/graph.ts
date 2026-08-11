@@ -4,12 +4,18 @@ import type { EditCommand } from "../command";
 export class MoveNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.moveNode";
   readonly mergeKey: string;
+  readonly nodeId: string;
+  readonly from: { x: number; y: number };
+  readonly to: { x: number; y: number };
 
   constructor(
-    readonly nodeId: string,
-    readonly from: { x: number; y: number },
-    readonly to: { x: number; y: number },
+    nodeId: string,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
   ) {
+    this.nodeId = nodeId;
+    this.from = from;
+    this.to = to;
     this.mergeKey = `move:${nodeId}`;
   }
 
@@ -31,8 +37,11 @@ export class MoveNodeCommand implements EditCommand<SerializedGraph> {
 
 export class AddEdgeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.addEdge";
+  readonly edge: SerializedGraph["edges"][number];
 
-  constructor(readonly edge: SerializedGraph["edges"][number]) {}
+  constructor(edge: SerializedGraph["edges"][number]) {
+    this.edge = edge;
+  }
 
   apply(doc: SerializedGraph): SerializedGraph {
     if (doc.edges.some((entry) => entry.id === this.edge.id)) {
@@ -51,8 +60,11 @@ export class AddEdgeCommand implements EditCommand<SerializedGraph> {
 
 export class RemoveEdgeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.removeEdge";
+  readonly edge: SerializedGraph["edges"][number];
 
-  constructor(readonly edge: SerializedGraph["edges"][number]) {}
+  constructor(edge: SerializedGraph["edges"][number]) {
+    this.edge = edge;
+  }
 
   apply(doc: SerializedGraph): SerializedGraph {
     return {
@@ -69,13 +81,19 @@ export class RemoveEdgeCommand implements EditCommand<SerializedGraph> {
 export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.setNodeData";
   readonly mergeKey: string;
+  readonly nodeId: string;
+  readonly from: Record<string, unknown>;
+  readonly to: Record<string, unknown>;
 
   constructor(
-    readonly nodeId: string,
-    readonly from: Record<string, unknown>,
-    readonly to: Record<string, unknown>,
+    nodeId: string,
+    from: Record<string, unknown>,
+    to: Record<string, unknown>,
     mergeKey?: string,
   ) {
+    this.nodeId = nodeId;
+    this.from = from;
+    this.to = to;
     this.mergeKey = mergeKey ?? `data:${nodeId}`;
   }
 
@@ -105,10 +123,10 @@ export type GraphEditCommand =
   | SetNodeDataCommand;
 
 export const GRAPH_COMMAND_TYPES = [
-  MoveNodeCommand.prototype.type,
-  AddEdgeCommand.prototype.type,
-  RemoveEdgeCommand.prototype.type,
-  SetNodeDataCommand.prototype.type,
+  "graph.moveNode",
+  "graph.addEdge",
+  "graph.removeEdge",
+  "graph.setNodeData",
 ] as const;
 
 export function createMoveNodeCommandFromJson(
@@ -116,27 +134,19 @@ export function createMoveNodeCommandFromJson(
 ): MoveNodeCommand {
   const from = payload.from as { x: number; y: number };
   const to = payload.to as { x: number; y: number };
-  return new MoveNodeCommand(
-    String(payload.nodeId),
-    from,
-    to,
-  );
+  return new MoveNodeCommand(String(payload.nodeId), from, to);
 }
 
 export function createAddEdgeCommandFromJson(
   payload: Record<string, unknown>,
 ): AddEdgeCommand {
-  return new AddEdgeCommand(
-    payload.edge as SerializedGraph["edges"][number],
-  );
+  return new AddEdgeCommand(payload.edge as SerializedGraph["edges"][number]);
 }
 
 export function createRemoveEdgeCommandFromJson(
   payload: Record<string, unknown>,
 ): RemoveEdgeCommand {
-  return new RemoveEdgeCommand(
-    payload.edge as SerializedGraph["edges"][number],
-  );
+  return new RemoveEdgeCommand(payload.edge as SerializedGraph["edges"][number]);
 }
 
 export function createSetNodeDataCommandFromJson(

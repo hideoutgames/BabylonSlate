@@ -37,10 +37,8 @@ import {
   DocumentService,
   type OpenDocument,
 } from "../services/document-service";
-import { EditService } from "../services/edit-service";
 import { ProjectService } from "../services/project-service";
 import { loadTemplateCards } from "../services/template-service";
-import { EditServiceProvider } from "./edit-context";
 
 export type AppRoute = "home" | "editor";
 
@@ -186,8 +184,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService.ensureContentBrowserTab();
     void refreshProjectList();
     void refreshTemplates();
+    void settingsStore.load().then((settings) => {
+      editSessionRef.current.configure({
+        maxEntries: settings.undoHistoryLength,
+      });
+    });
     bump();
-  }, [bump, documentService, refreshProjectList, refreshTemplates]);
+  }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
 
   const captureLayoutForId = useCallback(
     (id: string) => {
@@ -215,6 +218,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pending: MigrationPending[] = [],
     ) => {
       dockviewApisRef.current.clear();
+      editSessionRef.current.clear();
       await documentService.initializeFromProject(
         projectService,
         document,
@@ -465,15 +469,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const previous = doc.content as SerializedGraph;
       const commands = diffGraphCommands(previous, next);
       if (commands.length === 0) {
-        documentService.updateGraph(id, next);
-        bump();
         return;
       }
-      void settingsStore.load().then((settings) => {
-        editSessionRef.current.configure({
-          maxEntries: settings.undoHistoryLength,
-        });
-      });
       let current = previous;
       for (const command of commands) {
         current = editSessionRef.current.apply(id, current, command).doc;
@@ -481,7 +478,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService.updateGraph(id, current);
       bump();
     },
-    [bump, documentService, settingsStore],
+    [bump, documentService],
   );
 
   const undoActiveDocument = useCallback(() => {
@@ -656,9 +653,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <EditServiceProvider editService={editServiceRef.current}>
-      <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>
-    </EditServiceProvider>
+    <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>
   );
 }
 
