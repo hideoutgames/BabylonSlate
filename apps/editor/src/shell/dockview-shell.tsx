@@ -49,6 +49,8 @@ export function DockviewShell({
   return (
     <DockviewReact
       className="dockview-theme-babylonslate h-full w-full"
+      dndStrategy={platformOptions.dndStrategy}
+      disableFloatingGroups={platformOptions.disableFloatingGroups}
       onReady={handleReady}
       components={panelComponents}
     />

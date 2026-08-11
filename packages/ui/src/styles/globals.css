@@ -25,6 +25,7 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
     --color-success: var(--success);
     --color-vector: var(--vector);
     --color-accent-foreground: var(--accent-foreground);
@@ -50,83 +51,104 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * Minimal Neutral — https://tweakcn.com/themes/cmho4nr9l000h04l1gu419ckw
+ * Tailwind v4 / OKLCH export. Geist retained; sidebar-primary and primary
+ * overridden to ink (no brand accent chrome).
+ */
 :root {
-    --background: #F8F8F8;
-    --foreground: #141414;
-    --card: #F3F3F3;
-    --card-foreground: #141414;
-    --popover: #F3F3F3;
-    --popover-foreground: #141414;
-    /* Primary actions use text/icon color — no brand accent chrome. */
-    --primary: #141414;
-    --primary-foreground: #F8F8F8;
-    --secondary: #F3F3F3;
-    --secondary-foreground: #141414;
-    --muted: #F3F3F3;
-    --muted-foreground: #6B6B6B;
-    --accent: #F3F3F3;
-    --accent-foreground: #141414;
-    --destructive: #A50C19;
-    --success: #007041;
-    --vector: #FFAD0A;
-    --border: #EEEEEE;
-    --input: #EEEEEE;
-    --ring: #141414;
-    --chrome-tab-active: #F3F3F3;
-    --chrome-tab-accent: #141414;
-    --chart-1: #FFAD0A;
-    --chart-2: #007041;
-    --chart-3: #A50C19;
-    --chart-4: #4C4C4C;
-    --chart-5: #141414;
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.145 0 0);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.145 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.145 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(1 0 0);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.81 0.10 252);
+    --chart-2: oklch(0.62 0.19 260);
+    --chart-3: oklch(0.55 0.22 263);
+    --chart-4: oklch(0.49 0.22 264);
+    --chart-5: oklch(0.42 0.18 266);
     --radius: 0.625rem;
-    --sidebar: #F3F3F3;
-    --sidebar-foreground: #141414;
-    --sidebar-primary: #141414;
-    --sidebar-primary-foreground: #F8F8F8;
-    --sidebar-accent: #F3F3F3;
-    --sidebar-accent-foreground: #141414;
-    --sidebar-border: #EEEEEE;
-    --sidebar-ring: #141414;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.145 0 0);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.145 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+    --shadow-color: oklch(0 0 0);
+    --shadow-opacity: 0.1;
+    --shadow-blur: 3px;
+    --shadow-spread: 0px;
+    --shadow-offset-x: 0;
+    --shadow-offset-y: 1px;
+    /* BabylonSlate extensions */
+    --success: oklch(0.45 0.12 155);
+    --vector: oklch(0.79 0.16 75);
+    --chrome-tab-active: var(--card);
+    --chrome-tab-accent: var(--foreground);
+    --touch-target: 44px;
 }
 
 .dark {
-    --background: #141414;
-    --foreground: #F0F0F0;
-    --card: #181818;
-    --card-foreground: #F0F0F0;
-    --popover: #181818;
-    --popover-foreground: #F0F0F0;
-    /* Primary actions use text/icon color — no brand accent chrome. */
-    --primary: #F0F0F0;
-    --primary-foreground: #141414;
-    --secondary: #181818;
-    --secondary-foreground: #F0F0F0;
-    --muted: #181818;
-    --muted-foreground: #A8A8A8;
-    --accent: #181818;
-    --accent-foreground: #F0F0F0;
-    --destructive: #A50C19;
-    --success: #007041;
-    --vector: #FFAD0A;
-    --border: #4C4C4C;
-    --input: #4C4C4C;
-    --ring: #F0F0F0;
-    --chrome-tab-active: #181818;
-    --chrome-tab-accent: #F0F0F0;
-    --chart-1: #FFAD0A;
-    --chart-2: #007041;
-    --chart-3: #A50C19;
-    --chart-4: #4C4C4C;
-    --chart-5: #F0F0F0;
-    --sidebar: #181818;
-    --sidebar-foreground: #F0F0F0;
-    --sidebar-primary: #F0F0F0;
-    --sidebar-primary-foreground: #141414;
-    --sidebar-accent: #181818;
-    --sidebar-accent-foreground: #F0F0F0;
-    --sidebar-border: #4C4C4C;
-    --sidebar-ring: #F0F0F0;
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.269 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.985 0 0);
+    --primary-foreground: oklch(0.145 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.371 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(0.275 0 0);
+    --input: oklch(0.325 0 0);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.81 0.10 252);
+    --chart-2: oklch(0.62 0.19 260);
+    --chart-3: oklch(0.55 0.22 263);
+    --chart-4: oklch(0.49 0.22 264);
+    --chart-5: oklch(0.42 0.18 266);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.985 0 0);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(0.275 0 0);
+    --sidebar-ring: oklch(0.439 0 0);
+    --shadow-color: oklch(0 0 0);
+    --shadow-opacity: 0.1;
+    --shadow-blur: 3px;
+    --shadow-spread: 0px;
+    --shadow-offset-x: 0;
+    --shadow-offset-y: 1px;
+    /* BabylonSlate extensions */
+    --success: oklch(0.45 0.12 155);
+    --vector: oklch(0.79 0.16 75);
+    --chrome-tab-active: var(--card);
+    --chrome-tab-accent: var(--foreground);
+    --touch-target: 44px;
 }
 
 @layer base {

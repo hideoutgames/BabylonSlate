@@ -1,11 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@babylonslate/ui/components/button";
+import { FolderOpenIcon, LayoutTemplateIcon } from "lucide-react";
 import type { ProjectFolderHandle } from "@babylonslate/core";
 import {
   createAppSettingsStore,
   defaultEngineSettings,
   type EngineSettings,
 } from "@babylonslate/vfs";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import { Button } from "@babylonslate/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@babylonslate/ui/components/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import {
   Sheet,
   SheetContent,
@@ -13,6 +29,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@babylonslate/ui/components/sheet";
+import { EngineSettingsForm } from "./engine-settings-form";
 
 interface HomepageProps {
   projects: ProjectFolderHandle[];
@@ -26,7 +43,6 @@ interface HomepageProps {
   onReconnect: () => Promise<void>;
   onRecover: () => void | Promise<void>;
   onDismissRecovery: () => void;
-  /** Engine Settings changes can add or remove template cards. */
   onSettingsChanged: () => Promise<void>;
 }
 
@@ -81,55 +97,64 @@ export function Homepage({
         </Button>
       </header>
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-8">
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 py-8">
         {needsReconnect ? (
-          <div
-            className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4"
-            data-testid="reconnect-banner"
-          >
-            <p className="text-sm">
-              The external project folder bookmark is stale. Reconnect to continue.
-            </p>
-            <Button
-              data-testid="reconnect-project"
-              disabled={busy}
-              onClick={() => void run(onReconnect)}
-            >
-              Reconnect project folder
-            </Button>
-          </div>
+          <Alert variant="destructive" data-testid="reconnect-banner">
+            <AlertTitle>Project folder unavailable</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3">
+              <span>
+                The external project folder bookmark is stale. Reconnect to
+                continue.
+              </span>
+              <Button
+                className="w-fit"
+                data-testid="reconnect-project"
+                disabled={busy}
+                onClick={() => void run(onReconnect)}
+              >
+                Reconnect project folder
+              </Button>
+            </AlertDescription>
+          </Alert>
         ) : null}
 
         {recoveryAvailable ? (
-          <div
-            className="flex flex-col gap-3 rounded-lg border border-border p-4"
-            data-testid="recovery-prompt"
-          >
-            <p className="text-sm">
-              A recovery journal was found for this project. Replay unsaved
-              edits now, or discard the journal.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                data-testid="recover-journal"
-                onClick={() => void onRecover()}
-              >
-                Recover edits
-              </Button>
-              <Button
-                variant="outline"
-                data-testid="dismiss-journal"
-                onClick={onDismissRecovery}
-              >
-                Discard journal
-              </Button>
-            </div>
-          </div>
+          <Alert data-testid="recovery-prompt">
+            <AlertTitle>Recovery journal found</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3">
+              <span>
+                A recovery journal was found for this project. Replay unsaved
+                edits now, or discard the journal.
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  data-testid="recover-journal"
+                  onClick={() => void onRecover()}
+                >
+                  Recover edits
+                </Button>
+                <Button
+                  variant="outline"
+                  data-testid="dismiss-journal"
+                  onClick={onDismissRecovery}
+                >
+                  Discard journal
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
         ) : null}
 
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-medium">Create Project</h2>
-          <div className="flex flex-wrap gap-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Create Project</CardTitle>
+            <CardDescription>
+              {templates.length === 0
+                ? "Template cards appear when a templates folder is set in Engine Settings (not available on web)."
+                : "Creating from a template copies the project and rewrites only its name and identity."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
             <Button
               data-testid="create-project-empty"
               disabled={busy}
@@ -152,59 +177,70 @@ export function Homepage({
                   )
                 }
               >
+                <LayoutTemplateIcon data-icon="inline-start" />
                 {template.name}
               </Button>
             ))}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {templates.length === 0
-              ? "Template cards appear when a templates folder is set in Engine Settings (not available on web)."
-              : "Creating from a template copies the project and rewrites only its name and identity."}
-          </p>
-        </section>
+          </CardContent>
+        </Card>
 
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-medium">Projects</h2>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <div className="flex flex-col gap-1">
+              <CardTitle>Projects</CardTitle>
+              <CardDescription>Recently opened projects on this device.</CardDescription>
+            </div>
             <Button
               variant="secondary"
               data-testid="open-project"
               disabled={busy}
               onClick={() => void run(onOpenExternal)}
             >
+              <FolderOpenIcon data-icon="inline-start" />
               Open folder…
             </Button>
-          </div>
-          {projects.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="no-projects">
-              No projects yet. Create an Empty project to get started.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-2" data-testid="project-list">
-              {projects.map((project) => (
-                <li key={project.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between rounded-lg border border-border px-4 py-3 text-left hover:bg-muted/40"
-                    data-testid={`open-listed-project-${project.name}`}
-                    disabled={busy}
-                    onClick={() => void run(() => onOpenProject(project))}
-                  >
-                    <span className="font-medium">{project.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {project.tier}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+          </CardHeader>
+          <CardContent>
+            {projects.length === 0 ? (
+              <Empty data-testid="no-projects">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <FolderOpenIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>No projects yet</EmptyTitle>
+                  <EmptyDescription>
+                    Create an Empty project to get started.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <ul className="flex flex-col gap-2" data-testid="project-list">
+                {projects.map((project) => (
+                  <li key={project.id}>
+                    <Button
+                      variant="outline"
+                      className="h-auto min-h-[var(--touch-target,44px)] w-full justify-between px-4 py-3"
+                      data-testid={`open-listed-project-${project.name}`}
+                      disabled={busy}
+                      onClick={() => void run(() => onOpenProject(project))}
+                    >
+                      <span className="font-medium">{project.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {project.tier}
+                      </span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
 
         {error ? (
-          <p className="text-sm text-destructive" data-testid="homepage-error">
-            {error}
-          </p>
+          <Alert variant="destructive" data-testid="homepage-error">
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : null}
       </main>
 
@@ -250,56 +286,7 @@ function EngineSettingsSheet({
             Global editor preferences stored outside any project
           </SheetDescription>
         </SheetHeader>
-        <div className="flex flex-col gap-4 px-4 pb-4" data-testid="engine-settings-sheet">
-          <label className="flex flex-col gap-1 text-sm">
-            Undo history length
-            <input
-              type="number"
-              className="rounded-md border border-border bg-background px-3 py-2"
-              data-testid="setting-undo-length"
-              value={settings.undoHistoryLength}
-              onChange={(e) =>
-                void save({ undoHistoryLength: Number(e.target.value) || 50 })
-              }
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Viewport frame cap
-            <input
-              type="number"
-              className="rounded-md border border-border bg-background px-3 py-2"
-              data-testid="setting-frame-cap"
-              value={settings.viewportFrameCap}
-              onChange={(e) =>
-                void save({ viewportFrameCap: Number(e.target.value) || 60 })
-              }
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              data-testid="setting-thumbnails"
-              checked={settings.thumbnailsEnabled}
-              onChange={(e) => void save({ thumbnailsEnabled: e.target.checked })}
-            />
-            Generate thumbnails
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Templates folder
-            <input
-              type="text"
-              className="rounded-md border border-border bg-background px-3 py-2"
-              data-testid="setting-templates-folder"
-              placeholder="Not available on web"
-              value={settings.templatesFolder ?? ""}
-              onChange={(e) =>
-                void save({
-                  templatesFolder: e.target.value ? e.target.value : null,
-                })
-              }
-            />
-          </label>
-        </div>
+        <EngineSettingsForm settings={settings} onChange={save} />
       </SheetContent>
     </Sheet>
   );

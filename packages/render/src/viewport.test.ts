@@ -71,9 +71,9 @@ describe("viewport", () => {
     expect(scene.ambientColor.b).toBe(0);
   });
 
-  it("uses the dark shell background as clearColor (#141414)", () => {
+  it("uses the dark shell background as clearColor (Minimal Neutral oklch(0.145 0 0))", () => {
     const { scene } = createHandle();
-    const channel = 20 / 255;
+    const channel = 37 / 255;
 
     expect(scene.clearColor.r).toBeCloseTo(channel);
     expect(scene.clearColor.g).toBeCloseTo(channel);
