@@ -2,6 +2,7 @@ import {
   DndContext,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -15,11 +16,9 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   FileJsonIcon,
-  GripVerticalIcon,
   LayersIcon,
   LayoutGridIcon,
   LogOutIcon,
-  PlusIcon,
   Redo2Icon,
   SaveIcon,
   SettingsIcon,
@@ -28,14 +27,11 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@babylonslate/ui/components/button";
-import { Separator } from "@babylonslate/ui/components/separator";
 import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   type DocumentKind,
-  labelFromPath,
 } from "@babylonslate/core";
-import { isTestModeEnabled } from "@babylonslate/vfs";
 import { useDocuments } from "../context/document-context";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectSettingsSheet } from "./project-settings-sheet";
@@ -75,7 +71,9 @@ function SortableDocumentTab({
   } = useSortable({ id: doc.id });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: transform
+      ? CSS.Transform.toString({ ...transform, y: 0 })
+      : undefined,
     transition,
   };
 
@@ -87,16 +85,9 @@ function SortableDocumentTab({
       data-active={active ? "true" : "false"}
       data-document-kind={doc.ref.kind}
       className={`chrome-tab chrome-tab-closable ${active ? "chrome-tab-active" : ""} ${isDragging ? "chrome-tab-dragging" : ""}`}
+      {...attributes}
+      {...listeners}
     >
-      <button
-        type="button"
-        className="chrome-tab-grip"
-        aria-label={`Reorder ${doc.ref.label}`}
-        {...attributes}
-        {...listeners}
-      >
-        <GripVerticalIcon />
-      </button>
       <button
         type="button"
         data-testid={active ? "document-tab-active" : "document-tab-select"}
@@ -114,6 +105,7 @@ function SortableDocumentTab({
         data-testid="document-tab-close"
         className="chrome-tab-close"
         aria-label={`Close ${doc.ref.label}`}
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={onClose}
       >
         <XIcon />
@@ -150,6 +142,8 @@ function PinnedContentBrowserTab({
   );
 }
 
+const TAB_DRAG_ACTIVATION = { delay: 300, tolerance: 8 } as const;
+
 export function EditorChromeBar({
   onCloseProject,
   onSaveProject,
@@ -166,17 +160,13 @@ export function EditorChromeBar({
     reorderClosableTabs,
     saveProject,
     saveAll,
-    openDocument,
-    getAvailableDocuments,
     undoActiveDocument,
     redoActiveDocument,
     canUndoActiveDocument,
     canRedoActiveDocument,
   } = useDocuments();
 
-  const [showAddMenu, setShowAddMenu] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const testMode = isTestModeEnabled();
 
   const contentBrowserDoc = openDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
@@ -187,7 +177,10 @@ export function EditorChromeBar({
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { delay: 300, tolerance: 8 },
+      activationConstraint: TAB_DRAG_ACTIVATION,
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: TAB_DRAG_ACTIVATION,
     }),
     useSensor(KeyboardSensor),
   );
@@ -203,160 +196,121 @@ export function EditorChromeBar({
     reorderClosableTabs(fromIndex, toIndex);
   };
 
-  const available = getAvailableDocuments();
-
   return (
-    <header
-      className="editor-chrome-bar"
-      data-testid="editor-chrome-bar"
-    >
-      <div className="editor-chrome-left">
-        <div className="editor-chrome-title">BabylonSlate</div>
-        {testMode ? (
-          <span className="chrome-test-badge" data-testid="test-mode-badge">
-            Test mode
-          </span>
-        ) : null}
-        <Separator orientation="vertical" className="chrome-separator" />
-        <Button
-          size="sm"
-          variant="ghost"
-          data-testid="undo-document"
-          className="chrome-action-button"
-          aria-label="Undo"
-          disabled={!canUndoActiveDocument}
-          onClick={() => undoActiveDocument()}
+    <div className="editor-chrome-shell">
+      <header
+        className="editor-chrome-bar"
+        data-testid="editor-chrome-bar"
+      >
+        <div
+          className="editor-chrome-title"
+          data-testid="project-name"
+          title={projectName ?? undefined}
         >
-          <Undo2Icon data-icon="inline-start" />
-          Undo
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          data-testid="redo-document"
-          className="chrome-action-button"
-          aria-label="Redo"
-          disabled={!canRedoActiveDocument}
-          onClick={() => redoActiveDocument()}
-        >
-          <Redo2Icon data-icon="inline-start" />
-          Redo
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          data-testid="save-project"
-          className="chrome-action-button"
-          disabled={!projectName}
-          onClick={() => {
-            if (onSaveProject) onSaveProject();
-            else void saveProject();
-          }}
-        >
-          <SaveIcon data-icon="inline-start" />
-          Save
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          data-testid="save-all-project"
-          className="chrome-action-button"
-          disabled={!projectName}
-          onClick={() => {
-            if (onSaveProject) onSaveProject();
-            else void saveAll();
-          }}
-        >
-          <SaveIcon data-icon="inline-start" />
-          Save All
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          data-testid="close-project"
-          className="chrome-action-button"
-          disabled={!projectName}
-          onClick={() => onCloseProject?.()}
-        >
-          <LogOutIcon data-icon="inline-start" />
-          Close
-        </Button>
-        {projectName ? (
-          <span className="chrome-project-name" data-testid="project-name">
-            {projectName}
-          </span>
-        ) : null}
-      </div>
+          {projectName ?? ""}
+        </div>
 
-      <div className="editor-chrome-tabs" data-testid="document-tab-bar">
-        {contentBrowserDoc ? (
-          <PinnedContentBrowserTab
-            active={activeDocumentId === CONTENT_BROWSER_ID}
-            onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
-          />
-        ) : null}
+        <div className="editor-chrome-tabs" data-testid="document-tab-bar">
+          {contentBrowserDoc ? (
+            <PinnedContentBrowserTab
+              active={activeDocumentId === CONTENT_BROWSER_ID}
+              onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
+            />
+          ) : null}
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={closableDocs.map((doc) => doc.id)}
-            strategy={horizontalListSortingStrategy}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
           >
-            {closableDocs.map((doc) => (
-              <SortableDocumentTab
-                key={doc.id}
-                doc={doc}
-                active={doc.id === activeDocumentId}
-                onSelect={() => setActiveDocument(doc.id)}
-                onClose={() => closeDocument(doc.id)}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
-
-        {projectName ? (
-          <div className="relative shrink-0">
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="document-tab-add"
-              className="chrome-action-button"
-              onClick={() => setShowAddMenu((open) => !open)}
+            <SortableContext
+              items={closableDocs.map((doc) => doc.id)}
+              strategy={horizontalListSortingStrategy}
             >
-              <PlusIcon data-icon="inline-start" />
-              Add
-            </Button>
-            {showAddMenu && available.length > 0 ? (
-              <div className="chrome-add-menu">
-                {available.map((item) => (
-                  <button
-                    key={`${item.kind}:${item.path}`}
-                    type="button"
-                    data-testid={`add-document-${item.kind}-${item.path.replace(/\//g, "-")}`}
-                    className="chrome-add-menu-item"
-                    onClick={() => {
-                      void openDocument({
-                        kind: item.kind,
-                        path: item.path,
-                        label: labelFromPath(item.path),
-                      });
-                      setShowAddMenu(false);
-                    }}
-                  >
-                    {kindIcon(item.kind)}
-                    <span className="truncate">{labelFromPath(item.path)}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+              {closableDocs.map((doc) => (
+                <SortableDocumentTab
+                  key={doc.id}
+                  doc={doc}
+                  active={doc.id === activeDocumentId}
+                  onSelect={() => setActiveDocument(doc.id)}
+                  onClose={() => closeDocument(doc.id)}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        </div>
+      </header>
 
-      <div className="editor-chrome-right">
+      <div
+        className="editor-global-toolbar"
+        data-testid="editor-global-toolbar"
+      >
+        <div className="editor-global-toolbar-actions">
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="undo-document"
+            className="chrome-action-button"
+            aria-label="Undo"
+            disabled={!canUndoActiveDocument}
+            onClick={() => undoActiveDocument()}
+          >
+            <Undo2Icon data-icon="inline-start" />
+            Undo
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="redo-document"
+            className="chrome-action-button"
+            aria-label="Redo"
+            disabled={!canRedoActiveDocument}
+            onClick={() => redoActiveDocument()}
+          >
+            <Redo2Icon data-icon="inline-start" />
+            Redo
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="save-project"
+            className="chrome-action-button"
+            disabled={!projectName}
+            onClick={() => {
+              if (onSaveProject) onSaveProject();
+              else void saveProject();
+            }}
+          >
+            <SaveIcon data-icon="inline-start" />
+            Save
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="save-all-project"
+            className="chrome-action-button"
+            disabled={!projectName}
+            onClick={() => {
+              if (onSaveProject) onSaveProject();
+              else void saveAll();
+            }}
+          >
+            <SaveIcon data-icon="inline-start" />
+            Save All
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="close-project"
+            className="chrome-action-button"
+            disabled={!projectName}
+            onClick={() => onCloseProject?.()}
+          >
+            <LogOutIcon data-icon="inline-start" />
+            Close
+          </Button>
+        </div>
+
         <Button
           size="icon-sm"
           variant="ghost"
@@ -371,6 +325,6 @@ export function EditorChromeBar({
       </div>
 
       <ProjectSettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
-    </header>
+    </div>
   );
 }

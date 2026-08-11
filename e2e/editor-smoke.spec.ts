@@ -14,7 +14,7 @@ test.describe("BabylonSlate editor smoke", () => {
     await openTestProject(page);
 
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-    await expect(page.getByTestId("test-mode-badge")).toHaveText("Test mode");
+    await expect(page.getByTestId("editor-global-toolbar")).toBeVisible();
     await expect(page.getByTestId("project-settings")).toBeVisible();
 
     await expect(
