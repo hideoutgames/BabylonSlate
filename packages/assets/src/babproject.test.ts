@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
+import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import {
   createEmptyProjectFiles,
   createProjectFromTemplate,
@@ -36,6 +37,18 @@ describe("babproject codec", () => {
       path: "assets/readme.txt",
       data: new TextEncoder().encode("hello"),
     });
+    // The golden carries a real asset so the container covers the shape the
+    // editor actually writes, not just manifests.
+    files.push({
+      path: "assets/main.scene.babasset",
+      data: await encodeAssetDocument({
+        type: "Scene",
+        name: "main.scene",
+        guid: "00000000-0000-4000-8000-00000000scene".slice(0, 36),
+        version: 1,
+        payload: { name: "Main", meshes: [] },
+      }),
+    });
     await writeProjectTree(storage, files);
 
     const fromDir = await readProjectTree(storage);
@@ -54,6 +67,14 @@ describe("babproject codec", () => {
     }
     const golden = readGoldenBinary(FIXTURE_DIR, relative);
     expect(bytesEqual(zip, golden)).toBe(true);
+
+    const sceneFromGolden = decodeProjectZip(golden).find(
+      (f) => f.path === "assets/main.scene.babasset",
+    );
+    expect((await decodeAssetDocument(sceneFromGolden!.data)).payload).toEqual({
+      name: "Main",
+      meshes: [],
+    });
   });
 
   it("exports and re-imports through ProjectStorage", async () => {

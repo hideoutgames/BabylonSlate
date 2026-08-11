@@ -40,8 +40,7 @@ export default defineConfig({
       // Packages carry unit-coverage gates; apps/editor is covered by e2e.
       include: ["packages/*/src/**/*.{ts,tsx}"],
       exclude: [
-        // Capacitor-backed adapters need a device; covered by P1 device spikes.
-        "**/scoped-storage-adapter.ts",
+        // Capacitor-backed composites need a device; covered by P1 device spikes.
         "**/mobile-storage-adapter.ts",
         "**/preferences-app-settings.ts",
         // Documents adapter production path uses Capacitor Filesystem; behaviour

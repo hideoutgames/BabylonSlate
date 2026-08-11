@@ -41,6 +41,12 @@ Inline locators point at byte ranges after the header. Blob locators name `asset
 
 `readBabassetHeader(bytes)` returns guid/type/name/deps/chunk table **without allocating chunk payloads**. The asset registry (P2) depends on this invariant.
 
+### Editor documents
+
+Scenes and graphs are `.babasset` files under `assets/` (`assets/main.scene.babasset`, `assets/main.graph.babasset`). `encodeAssetDocument` / `decodeAssetDocument` keep the JSON body in a single `document` chunk so type, schema version and guid stay header-only readable. Asset guids survive a re-save: an existing file's guid is read from its header rather than regenerated.
+
+Projects authored before this move still load: `ProjectService` reads a `.json` document as an unversioned-or-versioned payload and writes it back in the same format. Nothing rewrites a legacy file into a container behind the user's back.
+
 ### Modes
 
 - **thin** — dependencies by guid; large chunks may externalise to the blob store.
@@ -74,8 +80,9 @@ App-private storage keyed by project guid: compiled scripts, thumbnails, import 
 
 - Each asset type owns ordered migrations `N → N+1`, applied on load.
 - Future (unknown) versions refuse with a clear message.
-- Opening a project that needs migration prompts once; migrate-on-save; never silently rewrite untouched files.
-- Golden fixtures: one committed `.babasset` per historical version per type.
+- Opening a project that needs migration prompts once; migrate-on-save; never silently rewrite untouched files. `ProjectService.saveDocument` / `saveProject` refuse a pending path until `approveMigrateOnSave()`.
+- Golden fixtures: one committed `.babasset` per historical version per type — `graph-v0.babasset` (payload in header), `scene-v0.babasset` (payload in the document chunk, the shape the editor writes), `graph-v1.babasset` at current.
+- The project manifest (`project.json`) migrates as type `Project` on load and is gated by the same approval.
 
 ## Golden / property tests
 

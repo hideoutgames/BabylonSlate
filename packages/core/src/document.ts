@@ -57,7 +57,7 @@ export function labelFromPath(path: string): string {
     path
       .split("/")
       .pop()
-      ?.replace(/\.(scene|graph)\.json$/, "") ?? path;
+      ?.replace(/\.(scene|graph)\.(babasset|json)$/, "") ?? path;
   return base
     .split(/[-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

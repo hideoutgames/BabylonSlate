@@ -1,7 +1,7 @@
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
-export const MAIN_GRAPH_FILE = "graphs/main.graph.json";
-export const MAIN_SCENE_FILE = "scenes/main.scene.json";
+export const MAIN_GRAPH_FILE = "assets/main.graph.babasset";
+export const MAIN_SCENE_FILE = "assets/main.scene.babasset";
 
 export interface ProjectMetadata {
   name: string;
