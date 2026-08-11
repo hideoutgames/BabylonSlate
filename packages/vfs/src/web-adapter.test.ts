@@ -157,4 +157,27 @@ describe("OPFS / web storage adapter", () => {
     await storage.remove("gone.txt");
     expect(await storage.exists("gone.txt")).toBe(false);
   });
+
+  it("reopens a known OPFS project without prompting", async () => {
+    const storage = await openedAdapter();
+    await storage.writeText("keep.txt", "yes");
+    const handle = storage.getCurrentFolder()!;
+    await storage.releaseFolder();
+
+    // Same adapter instance: jsdom OPFS memory fallback is per-instance;
+    // Playwright covers durable OPFS across page reloads.
+    await storage.openKnownFolder(handle);
+    expect(await storage.readText("keep.txt")).toBe("yes");
+  });
+
+  it("rejects openKnownFolder for non-opfs tiers", async () => {
+    const storage = new OpfsStorageAdapter();
+    await expect(
+      storage.openKnownFolder({
+        id: "documents:x",
+        name: "x",
+        tier: "documents",
+      }),
+    ).rejects.toThrow(/cannot open tier/);
+  });
 });

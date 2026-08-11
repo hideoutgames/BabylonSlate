@@ -77,13 +77,14 @@ export async function readProjectTree(
 
 /**
  * Zip backend: encode a project tree to a single .babproject zip.
+ * Uses a fixed mtime so encoded bytes are golden-stable.
  */
 export function encodeProjectZip(files: ProjectTreeFile[]): Uint8Array {
   const record: Record<string, Uint8Array> = {};
   for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
     record[file.path] = file.data;
   }
-  return zipSync(record, { level: 6 });
+  return zipSync(record, { level: 6, mtime: new Date(Date.UTC(1980, 0, 1)) });
 }
 
 export function decodeProjectZip(bytes: Uint8Array): ProjectTreeFile[] {
