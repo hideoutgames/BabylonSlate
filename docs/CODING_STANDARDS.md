@@ -19,8 +19,8 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 ## React / editor
 
 - Minimum **44px** touch targets on interactive chrome (buttons, tabs, grips).
-- Use `@babylonslate/ui` and semantic tokens (`bg-background`, `text-muted-foreground`) — no raw hex colors in app code.
-- Palette and token roles: [architecture/theming.md](architecture/theming.md). Edit tokens only in `packages/ui/src/styles/globals.css`.
+- Use `@babylonslate/ui` and semantic tokens (`bg-background`, `text-muted-foreground`, `text-vector`) — no raw hex colors in app code.
+- Palette and token roles: [architecture/theming.md](architecture/theming.md). Edit tokens only in `packages/ui/src/styles/globals.css`. No brand accent chrome — saturated colors are type/status cues for small UI only.
 - Use `flex` + `gap-*` for spacing, not `space-y-*`.
 - Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`.
 - Use radius tokens (`rounded-md`, `rounded-lg`) — no hardcoded `border-radius` literals in editor CSS except token definitions.
