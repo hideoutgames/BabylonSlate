@@ -8,6 +8,7 @@ import {
 } from "./babasset";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import type { ContentRoot } from "./content-root";
+import type { EncodeJobResult, EncodeQueue } from "./encode-queue";
 import {
   importByExtension,
   remapImportResultGuids,
@@ -15,6 +16,14 @@ import {
   type ImportResult,
 } from "./importers";
 import { AccountedPayloadLoader } from "./payload-loader";
+import {
+  DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  encodeSettingsHash,
+  ktx2ChunkId,
+  shouldCompressTexture,
+  type TextureCompressionState,
+  type TextureEncodeSettings,
+} from "./texture-compression";
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
 export interface IndexedAsset {
@@ -51,12 +60,25 @@ export class AssetRegistry {
   private readonly byPath = new Map<string, IndexedAsset>();
   /** guid -> guids of assets whose header `dependencies[]` names it. */
   private readonly inbound = new Map<string, Set<string>>();
+  private encodeQueue: EncodeQueue | null = null;
+  private encodeSettings: TextureEncodeSettings = {
+    ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  };
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
     this.blobs = options.blobs ?? createVfsBlobStore(storage);
     this.loader =
       options.payloadLoader ?? new AccountedPayloadLoader(storage, { blobs: this.blobs });
+  }
+
+  /** Bind the §3.5 encode scheduler (ProjectService owns the queue lifetime). */
+  setEncodePipeline(
+    queue: EncodeQueue | null,
+    settings: TextureEncodeSettings = DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  ): void {
+    this.encodeQueue = queue;
+    this.encodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, ...settings };
   }
 
   get payloadLoader(): AccountedPayloadLoader {
@@ -223,9 +245,73 @@ export class AssetRegistry {
         continue;
       }
       const relativePath = joinRelative(folderRelative, `${sanitizeFileName(result.name)}.babasset`);
-      created.push(await this.createAsset(rootId, relativePath, result));
+      const asset = await this.createAsset(rootId, relativePath, result);
+      created.push(asset);
+      await this.maybeEnqueueTextureEncode(asset);
     }
     return created;
+  }
+
+  async setCompressionState(
+    guid: string,
+    state: TextureCompressionState,
+  ): Promise<void> {
+    await this.rewriteTexture(guid, async (header, chunks) => {
+      header.payload = { ...header.payload, compressionState: state };
+      return { header, chunks };
+    });
+  }
+
+  async commitCompressedTexture(result: EncodeJobResult): Promise<void> {
+    const hash = await encodeSettingsHash(result.settings);
+    const chunkId = ktx2ChunkId(hash);
+    await this.rewriteTexture(result.assetGuid, async (header, chunks) => {
+      chunks.set(chunkId, {
+        id: chunkId,
+        kind: "ktx2",
+        mime: "image/ktx2",
+        data: result.ktx2,
+      });
+      header.payload = {
+        ...header.payload,
+        compressionState: "compressed",
+        encodeWallMs: result.wallMs,
+        ktx2ChunkId: chunkId,
+      };
+      return { header, chunks };
+    });
+  }
+
+  async retryTextureEncoding(guid: string): Promise<boolean> {
+    const asset = this.byGuid.get(guid);
+    if (!asset || asset.header.type !== "Texture" || !this.encodeQueue) {
+      return false;
+    }
+    const state = asset.header.payload.compressionState;
+    if (state !== "encode_failed" && state !== "fallback_uncompressed") {
+      return false;
+    }
+    const source = await this.loadSourcePixels(asset);
+    if (!source) return false;
+    await this.setCompressionState(guid, "pending");
+    this.encodeQueue.enqueue({
+      assetGuid: guid,
+      source,
+      settings: this.encodeSettings,
+    });
+    return true;
+  }
+
+  /** Re-queue textures that fell back when the transcoder was unavailable. */
+  async requeueUncompressedTextures(): Promise<number> {
+    if (!this.encodeQueue) return 0;
+    let count = 0;
+    for (const asset of this.list({ type: "Texture" })) {
+      if (asset.header.payload.compressionState === "fallback_uncompressed") {
+        if (await this.retryTextureEncoding(asset.header.guid)) count += 1;
+      }
+    }
+    return count;
   }
 
   /** Paths of Scene and Graph assets for ProjectDocument reconciliation. */
@@ -247,6 +333,70 @@ export class AssetRegistry {
       }
     }
     return map;
+  }
+
+  private async maybeEnqueueTextureEncode(asset: IndexedAsset): Promise<void> {
+    if (asset.header.type !== "Texture" || !this.encodeQueue) return;
+    const usage = String(asset.header.payload.usage ?? "albedo");
+    if (!shouldCompressTexture(usage)) return;
+    if (asset.header.payload.compressionState !== "pending") return;
+    const source = await this.loadSourcePixels(asset);
+    if (!source) return;
+    this.encodeQueue.enqueue({
+      assetGuid: asset.header.guid,
+      source,
+      settings: this.encodeSettings,
+    });
+  }
+
+  private async loadSourcePixels(
+    asset: IndexedAsset,
+  ): Promise<Uint8Array | null> {
+    const pixels = asset.header.chunks.find((chunk) => chunk.kind === "pixels");
+    if (!pixels) return null;
+    const fileBytes = await this.storage.readBinary(asset.path);
+    return this.loader.loadChunk(fileBytes, pixels);
+  }
+
+  private async rewriteTexture(
+    guid: string,
+    mutate: (
+      header: Omit<BabassetHeader, "chunks">,
+      chunks: Map<string, ChunkInput>,
+    ) => Promise<{
+      header: Omit<BabassetHeader, "chunks">;
+      chunks: Map<string, ChunkInput>;
+    }>,
+  ): Promise<void> {
+    const asset = this.byGuid.get(guid);
+    if (!asset) return;
+    const fileBytes = await this.storage.readBinary(asset.path);
+    const decoded = await decodeBabasset(fileBytes, (sha256) =>
+      this.blobs.readBlob(sha256),
+    );
+    const chunksById = new Map<string, ChunkInput>();
+    for (const entry of decoded.header.chunks) {
+      const data = decoded.chunks.get(entry.id);
+      if (data) {
+        chunksById.set(entry.id, {
+          id: entry.id,
+          kind: entry.kind,
+          mime: entry.mime,
+          data,
+        });
+      }
+    }
+    const { chunks, ...headerRest } = decoded.header;
+    void chunks;
+    const next = await mutate({ ...headerRest }, chunksById);
+    const bytes = await encodeBabasset({
+      header: next.header,
+      chunks: [...next.chunks.values()],
+      writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
+    });
+    await this.storage.writeBinary(asset.path, bytes);
+    const header = readBabassetHeader(bytes);
+    this.indexHeader(asset.rootId, asset.path, header);
   }
 
   /** Attach a representation chunk (facetype / msdf) to an existing Font asset. */

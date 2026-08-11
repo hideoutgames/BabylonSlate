@@ -17,7 +17,8 @@ export function ProjectSettingsSheet({
   open,
   onOpenChange,
 }: ProjectSettingsSheetProps) {
-  const { projectDocument, exportProject } = useDocuments();
+  const { projectDocument, exportProject, retryFailedTextureEncoding } =
+    useDocuments();
 
   if (!open || !projectDocument) {
     return null;
@@ -63,6 +64,26 @@ export function ProjectSettingsSheet({
             <span className="text-sm">
               {projectDocument.settings.touchMinTargetPx}px
             </span>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-border pt-4">
+            <span className="text-xs font-medium text-muted-foreground">
+              Textures
+            </span>
+            <p className="text-sm text-muted-foreground">
+              Max dimension {projectDocument.settings.textures.maxTextureDimension}
+              px. Auto re-queue uncompressed:{" "}
+              {projectDocument.settings.textures.autoRequeueUncompressed
+                ? "on"
+                : "off"}
+              .
+            </p>
+            <Button
+              variant="secondary"
+              data-testid="retry-texture-encoding"
+              onClick={() => void retryFailedTextureEncoding()}
+            >
+              Retry encoding
+            </Button>
           </div>
           <div className="flex flex-col gap-2 border-t border-border pt-4">
             <span className="text-xs font-medium text-muted-foreground">

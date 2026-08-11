@@ -56,6 +56,7 @@ interface DocumentContextValue {
   projectName: string | null;
   assetRegistry: AssetRegistry | null;
   refreshAssetRegistry: () => Promise<void>;
+  retryFailedTextureEncoding: () => Promise<number>;
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -231,6 +232,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     bump();
   }, [bump, projectDocument, projectService]);
+
+  const retryFailedTextureEncoding = useCallback(async () => {
+    const count = await projectService.retryAllFailedTextureEncoding();
+    bump();
+    return count;
+  }, [bump, projectService]);
 
   const replayRecoveryJournal = useCallback(async () => {
     const guid = projectService.guid;
@@ -671,6 +678,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       getAvailableDocuments,
       assetRegistry: projectService.registry,
       refreshAssetRegistry,
+      retryFailedTextureEncoding,
     };
     },
     [
@@ -680,6 +688,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService,
       projectService,
       refreshAssetRegistry,
+      retryFailedTextureEncoding,
       listedProjects,
       needsReconnect,
       recoveryAvailable,

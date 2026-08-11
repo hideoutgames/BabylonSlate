@@ -1,4 +1,5 @@
 import { newAssetGuid } from "../guid";
+import { shouldCompressTexture } from "../texture-compression";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 
@@ -28,6 +29,10 @@ export async function importImage(
   const extension = extensionOf(options.fileName);
   const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
   const usage = usageFromFileName(options.fileName);
+  const payload: Record<string, unknown> = { usage };
+  if (shouldCompressTexture(usage)) {
+    payload.compressionState = "pending";
+  }
 
   return [
     {
@@ -37,7 +42,7 @@ export async function importImage(
       version: 1,
       dependencies: [],
       parentClass: null,
-      payload: { compressionState: "pending", usage },
+      payload,
       chunks: [{ id: "pixels", kind: "pixels", mime, data: bytes }],
     },
   ];

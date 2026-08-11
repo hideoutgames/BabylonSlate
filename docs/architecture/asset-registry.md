@@ -70,9 +70,9 @@ Per Texture asset (engineplan §3.5):
 | `fallback_uncompressed` | Transcoder unavailable / failed — render from source |
 | `encode_failed` | Worker encode failed — source still renders |
 
-Queue: one dedicated import Worker; one job at a time; pause on Preview / background; recycle worker after N jobs. Source + KTX2 chunks both commit on the `.babasset`. Policy defaults leave pixel art, sprites, UI, and fonts uncompressed. Max dimension clamp default 2048 (Project Settings).
+Queue: `EncodeQueue` on `ProjectService` (one job at a time; pause on document `visibilitychange` / Preview hooks; recycle counter after N jobs). Import of compressible textures enqueues immediately; `commitCompressedTexture` writes the KTX2 chunk + `compressed` state. Policy defaults leave pixel art, sprites, UI, and fonts uncompressed (no `pending` state). Max dimension clamp default 2048 (Project Settings). **Retry encoding** lives in Project Settings and the Content Browser tile menu; `autoRequeueUncompressed` re-queues `fallback_uncompressed` on registry mount.
 
-Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder via `configureKtx2Transcoder` / `KhronosTextureContainer2.URLConfig` under `apps/editor/public/ktx2/`. Silent fallback is forbidden — state must be explicit. Encode runs on `EncodeQueue` (one job, pauseable, recycle after N) with a stub encoder in tests and Basis wasm in the import Worker.
+Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder via `configureKtx2Transcoder(KhronosTextureContainer2)` in `createEngine`, URLs under `apps/editor/public/ktx2/`. Silent fallback is forbidden — state must be explicit. The default encoder is still the **stub** (`stubEncodeKtx2`); swapping in a Basis wasm Worker is the remaining §3.5 host work (binaries not vendored yet).
 
 ## Content Browser (P2)
 
@@ -81,11 +81,13 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 - Folder tree from `folderTree("project")`; asset grid filtered by folder, type chips, and search.
 - Import via hidden `<input type="file" multiple>` → `registry.importFile` (no Capacitor from UI).
 - **New Asset** uses type + engine-base parent-class pickers → `registry.createAsset`.
-- Long-press multi-select + `ContextMenuOverlay` delete; `AlertDialog` lists removed assets and inbound refs from `showReferences`.
+- Long-press multi-select + `ContextMenuOverlay` delete / Retry encoding; folder right-click opens the same delete confirm for the folder tree (assets root is protected).
+- `AlertDialog` lists removed asset names and inbound refs from `showReferences` (names are `SelectableText`).
 - Drag source MIME `application/x-babylonslate-asset` with `{ guid, type, path }`.
 - Texture tiles show `payload.compressionState` badges (`pending`, `encoding`, `fallback_uncompressed`, `encode_failed`).
 - Empty `data-lock-slot` on tiles reserved for P15 lock decoration.
-- Grid tiles expose stable `data-testid="content-item-{path}"` (and `data-asset-guid`) for Playwright smoke/touch suites.
+- Grid tiles expose stable `data-testid="content-item-{path}"` plus `data-asset-path` / `data-asset-guid` for Playwright.
+- Thumbnails: `writeThumbnail` / `ThumbnailDecodeLru` APIs exist; CB tiles still use icons (lazy thumbnail grid decode is remaining polish).
 
 `DocumentProvider` exposes `assetRegistry` and `refreshAssetRegistry()` (`projectService.remountRegistry()`).
 
