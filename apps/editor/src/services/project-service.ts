@@ -21,10 +21,16 @@ import {
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   createProjectFromTemplate,
+  createVfsBlobStore,
+  decodeAssetDocument,
+  encodeAssetDocument,
   exportProjectZip,
+  isAssetDocumentPath,
   loadPayloadWithMigration,
   defaultRegistry,
+  readAssetDocumentHeader,
   readProjectTree,
+  type BlobStore,
   type MigrationPending,
   type ProjectTreeFile,
 } from "@babylonslate/assets";
@@ -43,15 +49,27 @@ function newGuid(): string {
   return `proj-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function assetName(path: string): string {
+  return (path.split("/").pop() ?? path).replace(/\.babasset$/, "");
+}
+
+function parentDir(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+}
+
 export class ProjectService {
   private readonly storage: ProjectStorage;
   private projectGuid: string | null = null;
   private migrationPending: MigrationPending[] = [];
   private migrateOnSaveApproved = false;
   private readonly migrations = defaultRegistry();
+  private readonly blobs: BlobStore;
+  /** Asset guids stay stable across saves so references survive a rewrite. */
+  private readonly assetGuids = new Map<string, string>();
 
   constructor(storage: ProjectStorage) {
     this.storage = storage;
+    this.blobs = createVfsBlobStore(storage);
   }
 
   get storagePort(): ProjectStorage {
@@ -123,6 +141,7 @@ export class ProjectService {
     this.projectGuid = null;
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
+    this.assetGuids.clear();
   }
 
   async exportZip(): Promise<Uint8Array> {
@@ -150,6 +169,7 @@ export class ProjectService {
 
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
+    this.assetGuids.clear();
 
     const hasProject = await this.storage.exists(PROJECT_FILE);
     if (!hasProject) {
@@ -177,15 +197,82 @@ export class ProjectService {
       this.migrationPending.push(migrated.pending);
     }
 
+    const withDocuments = await this.ensureDocuments(document);
     const layouts = await this.loadLayouts(
-      documentId({ kind: "scene", path: MAIN_SCENE_FILE }),
+      documentId({
+        kind: "scene",
+        path: withDocuments.scenes[0] ?? MAIN_SCENE_FILE,
+      }),
     );
 
     return {
-      document,
+      document: withDocuments,
       layouts,
       migrationPending: this.pendingMigrations,
     };
+  }
+
+  /**
+   * Reconcile the manifest's document list with what is on disk. Templates and
+   * hand-edited projects can list documents that do not exist, or ship assets
+   * the manifest never mentioned. P2's asset registry replaces this scan.
+   */
+  private async ensureDocuments(
+    document: ProjectDocument,
+  ): Promise<ProjectDocument> {
+    const found = await this.discoverDocuments();
+    const scenes = found.scenes.length
+      ? found.scenes
+      : await this.keepExisting(document.scenes);
+    const graphs = found.graphs.length
+      ? found.graphs
+      : await this.keepExisting(document.graphs);
+
+    if (scenes.length && graphs.length) {
+      return { ...document, scenes, graphs };
+    }
+
+    if (!scenes.length) {
+      await this.saveDocument("scene", MAIN_SCENE_FILE, createDefaultScene());
+      scenes.push(MAIN_SCENE_FILE);
+    }
+    if (!graphs.length) {
+      await this.saveDocument("graph", MAIN_GRAPH_FILE, createDefaultGraph());
+      graphs.push(MAIN_GRAPH_FILE);
+    }
+    return { ...document, scenes, graphs };
+  }
+
+  private async keepExisting(paths: string[]): Promise<string[]> {
+    const kept: string[] = [];
+    for (const path of paths) {
+      if (await this.storage.exists(path)) kept.push(path);
+    }
+    return kept;
+  }
+
+  private async discoverDocuments(): Promise<{
+    scenes: string[];
+    graphs: string[];
+  }> {
+    const scenes: string[] = [];
+    const graphs: string[] = [];
+
+    for (const dir of ["assets", "scenes", "graphs"]) {
+      let entries;
+      try {
+        entries = await this.storage.readdir(dir);
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (entry.isDir) continue;
+        const path = `${dir}/${entry.name}`;
+        if (/\.scene\.(babasset|json)$/.test(entry.name)) scenes.push(path);
+        if (/\.graph\.(babasset|json)$/.test(entry.name)) graphs.push(path);
+      }
+    }
+    return { scenes: scenes.sort(), graphs: graphs.sort() };
   }
 
   private async scaffoldNewProject(name: string): Promise<ProjectLoadResult> {
@@ -195,8 +282,6 @@ export class ProjectService {
     const scene = createDefaultScene();
     await this.storage.mkdir("assets/.blobs", true);
     await this.storage.mkdir("plugins", true);
-    await this.storage.mkdir("scenes", true);
-    await this.storage.mkdir("graphs", true);
     await this.saveDocument("scene", MAIN_SCENE_FILE, scene);
     await this.saveDocument("graph", MAIN_GRAPH_FILE, graph);
     await this.saveProject(document, createEmptyLayouts());
@@ -218,32 +303,64 @@ export class ProjectService {
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
   ): Promise<SerializedScene | SerializedGraph> {
-    const raw = JSON.parse(await this.storage.readText(path)) as Record<
-      string,
-      unknown
-    > & { version?: number };
-    const type = kind === "scene" ? "Scene" : "Graph";
-    const version =
-      typeof raw.version === "number"
-        ? raw.version
-        : this.migrations.currentVersion(type);
+    const fallbackType = kind === "scene" ? "Scene" : "Graph";
+    const raw = isAssetDocumentPath(path)
+      ? await this.readAssetDocument(path, fallbackType)
+      : await this.readLegacyJsonDocument(path, fallbackType);
+
     const migrated = loadPayloadWithMigration(this.migrations, {
-      type,
-      version,
-      payload: raw,
+      type: raw.type,
+      version: raw.version,
+      payload: raw.payload,
       path,
     });
     if (migrated.pending) {
       this.migrationPending.push(migrated.pending);
     }
-    const { version: _v, ...content } = migrated.payload as typeof raw & {
-      version?: number;
-    };
+    const { version: _v, ...content } = migrated.payload as Record<
+      string,
+      unknown
+    > & { version?: number };
     void _v;
     if (kind === "scene") {
       return content as unknown as SerializedScene;
     }
     return content as unknown as SerializedGraph;
+  }
+
+  private async readAssetDocument(
+    path: string,
+    fallbackType: string,
+  ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
+    const decoded = await decodeAssetDocument(
+      await this.storage.readBinary(path),
+      { blobs: this.blobs },
+    );
+    this.assetGuids.set(path, decoded.guid);
+    return {
+      type: decoded.type || fallbackType,
+      version: decoded.version,
+      payload: decoded.payload,
+    };
+  }
+
+  /** Projects authored before assets moved to .babasset still load from JSON. */
+  private async readLegacyJsonDocument(
+    path: string,
+    type: string,
+  ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
+    const raw = JSON.parse(await this.storage.readText(path)) as Record<
+      string,
+      unknown
+    > & { version?: number };
+    return {
+      type,
+      version:
+        typeof raw.version === "number"
+          ? raw.version
+          : this.migrations.currentVersion(type),
+      payload: raw,
+    };
   }
 
   async saveDocument(
@@ -256,15 +373,51 @@ export class ProjectService {
         "Asset schema migration requires user approval before save",
       );
     }
-    const dir = kind === "scene" ? "scenes" : "graphs";
-    await this.storage.mkdir(dir, true);
+    const dir = parentDir(path);
+    if (dir) {
+      await this.storage.mkdir(dir, true);
+    }
     const type = kind === "scene" ? "Scene" : "Graph";
-    const payload = {
-      ...content,
-      version: this.migrations.currentVersion(type),
-    };
-    await this.storage.writeText(path, JSON.stringify(payload, null, 2));
+    const version = this.migrations.currentVersion(type);
+
+    if (isAssetDocumentPath(path)) {
+      const bytes = await encodeAssetDocument(
+        {
+          type,
+          name: assetName(path),
+          guid: await this.guidForAsset(path),
+          version,
+          payload: content as unknown as Record<string, unknown>,
+        },
+        { blobs: this.blobs },
+      );
+      await this.storage.writeBinary(path, bytes);
+    } else {
+      await this.storage.writeText(
+        path,
+        JSON.stringify({ ...content, version }, null, 2),
+      );
+    }
     this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
+  }
+
+  private async guidForAsset(path: string): Promise<string> {
+    const cached = this.assetGuids.get(path);
+    if (cached) return cached;
+    if (await this.storage.exists(path)) {
+      try {
+        const header = readAssetDocumentHeader(
+          await this.storage.readBinary(path),
+        );
+        this.assetGuids.set(path, header.guid);
+        return header.guid;
+      } catch {
+        /* unreadable asset: fall through to a fresh guid */
+      }
+    }
+    const guid = newGuid();
+    this.assetGuids.set(path, guid);
+    return guid;
   }
 
   async saveProject(

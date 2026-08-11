@@ -26,6 +26,8 @@ interface HomepageProps {
   onReconnect: () => Promise<void>;
   onRecover: () => void;
   onDismissRecovery: () => void;
+  /** Engine Settings changes can add or remove template cards. */
+  onSettingsChanged: () => Promise<void>;
 }
 
 export function Homepage({
@@ -40,6 +42,7 @@ export function Homepage({
   onReconnect,
   onRecover,
   onDismissRecovery,
+  onSettingsChanged,
 }: HomepageProps) {
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -202,7 +205,11 @@ export function Homepage({
         ) : null}
       </main>
 
-      <EngineSettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <EngineSettingsSheet
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onSaved={onSettingsChanged}
+      />
     </div>
   );
 }
@@ -210,9 +217,11 @@ export function Homepage({
 function EngineSettingsSheet({
   open,
   onOpenChange,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSaved: () => Promise<void>;
 }) {
   const store = useMemo(() => createAppSettingsStore(), []);
   const [settings, setSettings] = useState<EngineSettings>(defaultEngineSettings());
@@ -226,6 +235,7 @@ function EngineSettingsSheet({
     const next = { ...settings, ...patch };
     setSettings(next);
     await store.save(next);
+    await onSaved();
   };
 
   return (

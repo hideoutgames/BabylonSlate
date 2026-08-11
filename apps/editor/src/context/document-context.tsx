@@ -21,13 +21,15 @@ import {
   truncateJournal,
   writeJournalStub,
   type MigrationPending,
-  type ProjectTreeFile,
+  type ProjectTemplate,
 } from "@babylonslate/assets";
 import {
   createAppSettingsStore,
   createDerivedStorage,
   createStorage,
+  createTemplateStorage,
   defaultEngineSettings,
+  getHostPlatform,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
 import {
@@ -35,6 +37,7 @@ import {
   type OpenDocument,
 } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
+import { loadTemplateCards } from "../services/template-service";
 
 export type AppRoute = "home" | "editor";
 
@@ -50,7 +53,8 @@ interface DocumentContextValue {
   recoveryAvailable: boolean;
   dirtyDocuments: OpenDocument[];
   migrationPending: MigrationPending[];
-  templates: Array<{ id: string; name: string; files: ProjectTreeFile[] }>;
+  templates: ProjectTemplate[];
+  refreshTemplates: () => Promise<void>;
   openProject: () => Promise<void>;
   createEmptyProject: () => Promise<void>;
   createFromTemplate: (templateId: string, name: string) => Promise<void>;
@@ -106,9 +110,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
     [],
   );
-  const [templates, setTemplates] = useState<
-    Array<{ id: string; name: string; files: ProjectTreeFile[] }>
-  >([]);
+  const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [registryVersion, setRegistryVersion] = useState(0);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
@@ -160,13 +162,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setNeedsReconnect(await projectService.needsReconnect());
   }, [projectService, settingsStore]);
 
+  const refreshTemplates = useCallback(async () => {
+    setTemplates(
+      await loadTemplateCards({
+        platform: getHostPlatform(),
+        loadSettings: () => settingsStore.load(),
+        openTemplatesFolder: createTemplateStorage,
+      }),
+    );
+  }, [settingsStore]);
+
   useEffect(() => {
     documentService.ensureContentBrowserTab();
     void refreshProjectList();
-    // Web has Empty only; non-web templates come from settings folder (cards empty until set).
-    setTemplates([]);
+    void refreshTemplates();
     bump();
-  }, [bump, documentService, refreshProjectList]);
+  }, [bump, documentService, refreshProjectList, refreshTemplates]);
 
   const captureLayoutForId = useCallback(
     (id: string) => {
@@ -493,6 +504,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dirtyDocuments: documentService.getDirtyDocuments(),
       migrationPending,
       templates,
+      refreshTemplates,
       openProject,
       createEmptyProject,
       createFromTemplate,
@@ -528,6 +540,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       recoveryAvailable,
       migrationPending,
       templates,
+      refreshTemplates,
       openProject,
       createEmptyProject,
       createFromTemplate,

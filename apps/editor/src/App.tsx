@@ -168,6 +168,7 @@ function AppRoutes() {
     needsReconnect,
     recoveryAvailable,
     templates,
+    refreshTemplates,
     createEmptyProject,
     createFromTemplate,
     openProject,
@@ -191,6 +192,7 @@ function AppRoutes() {
         onReconnect={reconnectProject}
         onRecover={keepRecovery}
         onDismissRecovery={() => void dismissRecovery()}
+        onSettingsChanged={refreshTemplates}
       />
     );
   }
