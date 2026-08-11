@@ -35,6 +35,8 @@ export class World {
   private readonly pendingSpawn: Actor[] = [];
   private readonly pendingDestroy: Guid[] = [];
   private started = false;
+  /** True while a tick phase is executing (before deferred flush). */
+  private ticking = false;
 
   constructor(options: WorldOptions) {
     this.classRegistry = options.classRegistry;
@@ -75,8 +77,12 @@ export class World {
     return actor;
   }
 
-  /** Immediately spawn if not mid-tick; otherwise queues. */
+  /** Immediately spawn if not mid-tick; otherwise queues like `spawnActor`. */
   spawnActorNow(actor: Actor): Actor {
+    if (this.ticking) {
+      this.pendingSpawn.push(actor);
+      return actor;
+    }
     this.commitSpawn(actor);
     return actor;
   }
@@ -128,8 +134,7 @@ export class World {
     actor.callOnDestroyed();
     actor.world = null;
     this.actors.splice(index, 1);
-    // Keep spawnIndex stable for remaining actors' historical order:
-    // reassign sequential indices after removal so order stays dense.
+    // Reassign dense spawn indices so order stays contiguous after removal.
     for (let i = 0; i < this.actors.length; i++) {
       this.actors[i]!.spawnIndex = i;
     }
@@ -143,29 +148,34 @@ export class World {
     this.onPhase?.(phase, this.clock.dt, tickIndex);
     const ctx = this.phaseContext(tickIndex);
 
-    switch (phase) {
-      case "gameInstance":
-        this.gameInstance?.callOnTick(ctx);
-        break;
-      case "actors":
-        for (const actor of [...this.actors]) {
-          if (!actor.destroyed) actor.callOnTick(ctx);
-        }
-        break;
-      case "components":
-        for (const actor of [...this.actors]) {
-          if (actor.destroyed) continue;
-          for (const component of [...actor.components]) {
-            if (!component.destroyed) component.callOnTick(ctx);
+    this.ticking = true;
+    try {
+      switch (phase) {
+        case "gameInstance":
+          this.gameInstance?.callOnTick(ctx);
+          break;
+        case "actors":
+          for (const actor of [...this.actors]) {
+            if (!actor.destroyed) actor.callOnTick(ctx);
           }
-        }
-        break;
-      case "physics":
-        // Reserved for P7 — must remain a named no-op slot.
-        break;
-      case "postPhysics":
-        this.onPostPhysics?.(ctx);
-        break;
+          break;
+        case "components":
+          for (const actor of [...this.actors]) {
+            if (actor.destroyed) continue;
+            for (const component of [...actor.components]) {
+              if (!component.destroyed) component.callOnTick(ctx);
+            }
+          }
+          break;
+        case "physics":
+          // Reserved for P7 — must remain a named no-op slot.
+          break;
+        case "postPhysics":
+          this.onPostPhysics?.(ctx);
+          break;
+      }
+    } finally {
+      this.ticking = false;
     }
 
     this.flushDeferred();

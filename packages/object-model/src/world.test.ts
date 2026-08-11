@@ -99,6 +99,31 @@ describe("World tick", () => {
     expect(world.getActors().map((a) => a.guid)).toEqual([a2.guid]);
   });
 
+  it("defers mid-tick spawnActorNow until after the phase", () => {
+    const order: string[] = [];
+    const world = createTestWorld();
+    const a1 = world.createActor({
+      classId: "Actor",
+      hooks: {
+        onTick: () => {
+          order.push("a1");
+          const child = world.createActor({
+            classId: "Actor",
+            hooks: { onTick: () => order.push("child") },
+          });
+          world.spawnActorNow(child);
+        },
+      },
+    });
+    world.spawnActorNow(a1);
+    world.tick();
+    // Child must not tick in the same actors phase it was spawned.
+    expect(order).toEqual(["a1"]);
+    expect(world.getActors()).toHaveLength(2);
+    world.tick();
+    expect(order).toEqual(["a1", "a1", "child"]);
+  });
+
   it("produces identical snapshots for the same seed", () => {
     const run = (seed: number) => {
       const world = createTestWorld(seed);

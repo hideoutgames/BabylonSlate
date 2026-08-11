@@ -19,7 +19,8 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
-| — | — | — | — | — | — |
+| 2026-08-11 | cursor/p3-object-model-e177 / cursor/p3-spawn-deferral-e177 | p3-object-model | Standards | `spawnActorNow` ignored mid-tick and committed immediately (doc requires deferral) | Resolved |
+| 2026-08-11 | cursor/p3-object-model-e177 / cursor/p3-spawn-deferral-e177 | p3-object-model | Standards | Doc listed `TickScheduler`; exports are `TickClock` / `TICK_PHASES` | Resolved |
 
 ## PR checklist
 
