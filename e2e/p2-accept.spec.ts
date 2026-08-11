@@ -10,6 +10,9 @@ async function openTestProject(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
 
+// Shared TestProject OPFS name — keep these serial to avoid cross-test stomps.
+test.describe.configure({ mode: "serial" });
+
 test.describe("P2 acceptance proofs", () => {
   test("imports PNG + GLB, survives reload, keeps assets browsable", async ({
     page,
@@ -78,7 +81,9 @@ test.describe("P2 acceptance proofs", () => {
     });
     expect(nudged?.ok).toBe(true);
     expect(nudged?.journal).toBe(true);
+    expect(nudged?.before).not.toBeNull();
     expect(nudged?.after?.x).toBe((nudged?.before?.x ?? 0) + 42);
+    expect(nudged?.after?.y).toBe((nudged?.before?.y ?? 0) + 17);
 
     // Simulate killed tab: reload without clean Close (journal remains).
     await page.reload();
