@@ -49,7 +49,9 @@ test.describe("Touch shell UX", () => {
   test("content browser search meets minimum touch target size", async ({
     page,
   }) => {
-    await page.getByTestId("document-tab-select").first().click();
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+      .click();
     const search = page.getByTestId("content-browser-search");
     await expect(search).toBeVisible({ timeout: 10_000 });
     const box = await search.boundingBox();
