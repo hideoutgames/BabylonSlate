@@ -49,4 +49,4 @@ Fields: templates folder, default project location, recents + bookmarks, appeara
 
 ## Write performance (§19)
 
-Many small Capacitor writes are slow. Mitigations (decide in P1 before registry): write only dirty assets, blob store for large immutable chunks, debounce batches. CI microbench covers memory + OPFS; device numbers when available.
+Many small Capacitor writes are slow. Mitigations (decide in P1 before registry): write only dirty assets, blob store for large immutable chunks, debounce batches. CI microbench covers memory + OPFS adapters (jsdom uses the OPFS memory fallback; Playwright exercises real OPFS). Device Capacitor write numbers when available.

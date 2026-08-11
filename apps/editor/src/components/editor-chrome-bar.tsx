@@ -150,8 +150,10 @@ function PinnedContentBrowserTab({
 
 export function EditorChromeBar({
   onCloseProject,
+  onSaveProject,
 }: {
   onCloseProject?: () => void;
+  onSaveProject?: () => void;
 }) {
   const {
     projectName,
@@ -216,7 +218,10 @@ export function EditorChromeBar({
           data-testid="save-project"
           className="chrome-action-button"
           disabled={!projectName}
-          onClick={() => void saveProject()}
+          onClick={() => {
+            if (onSaveProject) onSaveProject();
+            else void saveProject();
+          }}
         >
           <SaveIcon data-icon="inline-start" />
           Save
@@ -227,7 +232,10 @@ export function EditorChromeBar({
           data-testid="save-all-project"
           className="chrome-action-button"
           disabled={!projectName}
-          onClick={() => void saveAll()}
+          onClick={() => {
+            if (onSaveProject) onSaveProject();
+            else void saveAll();
+          }}
         >
           <SaveIcon data-icon="inline-start" />
           Save All

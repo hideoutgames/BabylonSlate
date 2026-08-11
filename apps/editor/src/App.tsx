@@ -52,6 +52,44 @@ function DirtyCloseDialog({
   );
 }
 
+function MigrationPrompt({
+  paths,
+  onApprove,
+  onCancel,
+}: {
+  paths: string[];
+  onApprove: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      data-testid="migrate-on-save-dialog"
+    >
+      <div className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-border bg-background p-6 shadow-lg">
+        <h2 className="text-lg font-medium">Schema migration required</h2>
+        <p className="text-sm text-muted-foreground">
+          Some assets were made with an older schema. Migrate them on save? Files
+          you do not save stay untouched.
+        </p>
+        <ul className="list-disc pl-5 text-sm">
+          {paths.map((path) => (
+            <li key={path}>{path}</li>
+          ))}
+        </ul>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" data-testid="migrate-cancel" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button data-testid="migrate-approve" onClick={onApprove}>
+            Migrate on save
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditorLayout() {
   useSuppressNativeContextMenu();
   const {
@@ -59,8 +97,11 @@ function EditorLayout() {
     forceCloseProject,
     saveAll,
     dirtyDocuments,
+    migrationPending,
+    approveMigrationsAndSave,
   } = useDocuments();
   const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
+  const [showMigrate, setShowMigrate] = useState(false);
 
   const requestClose = async () => {
     const result = await closeProject();
@@ -69,9 +110,20 @@ function EditorLayout() {
     }
   };
 
+  const requestSave = async () => {
+    if (migrationPending.length > 0) {
+      setShowMigrate(true);
+      return;
+    }
+    await saveAll();
+  };
+
   return (
     <div className="flex min-h-svh h-dvh flex-col bg-background text-foreground">
-      <EditorChromeBar onCloseProject={() => void requestClose()} />
+      <EditorChromeBar
+        onCloseProject={() => void requestClose()}
+        onSaveProject={() => void requestSave()}
+      />
       <main className="flex min-h-0 flex-1 flex-col">
         <DocumentWorkspace />
       </main>
@@ -85,14 +137,23 @@ function EditorLayout() {
           }}
           onSave={() => {
             void (async () => {
-              await saveAll();
+              await requestSave();
               setDirtyPrompt(null);
               await forceCloseProject();
             })();
           }}
         />
       ) : null}
-      {/* expose dirty count for tests */}
+      {showMigrate ? (
+        <MigrationPrompt
+          paths={migrationPending.map((p) => p.path)}
+          onCancel={() => setShowMigrate(false)}
+          onApprove={() => {
+            setShowMigrate(false);
+            void approveMigrationsAndSave();
+          }}
+        />
+      ) : null}
       <span className="sr-only" data-testid="dirty-count">
         {dirtyDocuments.length}
       </span>
@@ -106,7 +167,9 @@ function AppRoutes() {
     listedProjects,
     needsReconnect,
     recoveryAvailable,
+    templates,
     createEmptyProject,
+    createFromTemplate,
     openProject,
     openListedProject,
     reconnectProject,
@@ -118,9 +181,11 @@ function AppRoutes() {
     return (
       <Homepage
         projects={listedProjects}
+        templates={templates.map((t) => ({ id: t.id, name: t.name }))}
         needsReconnect={needsReconnect}
         recoveryAvailable={recoveryAvailable}
         onCreateEmpty={createEmptyProject}
+        onCreateFromTemplate={(id, name) => createFromTemplate(id, name)}
         onOpenExternal={openProject}
         onOpenProject={openListedProject}
         onReconnect={reconnectProject}

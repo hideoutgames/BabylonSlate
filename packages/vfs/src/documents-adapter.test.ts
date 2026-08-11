@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { DocumentsFilesystemApi } from "./documents-adapter";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 

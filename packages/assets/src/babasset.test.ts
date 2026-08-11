@@ -134,6 +134,50 @@ describe("babasset codec", () => {
       { numRuns: 25 },
     );
   });
+
+  it("bundles nested dependency assets and unpacks them on decode", async () => {
+    const nested = await encodeBabasset({
+      header: {
+        guid: "dep-1",
+        type: "Texture",
+        name: "Tex",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        payload: {},
+      },
+      chunks: [
+        {
+          id: "pixels",
+          kind: "pixels",
+          mime: "application/octet-stream",
+          data: new Uint8Array([7, 7, 7]),
+        },
+      ],
+      blobThreshold: 1024 * 1024,
+    });
+
+    const bundled = await encodeBabasset({
+      header: {
+        guid: "root",
+        type: "Material",
+        name: "Mat",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "bundled",
+        dependencies: ["dep-1"],
+        payload: {},
+      },
+      chunks: [],
+      nestedAssets: [{ guid: "dep-1", bytes: nested }],
+    });
+
+    const header = readBabassetHeader(bundled);
+    expect(header.mode).toBe("bundled");
+    const decoded = await decodeBabasset(bundled);
+    expect(decoded.nestedAssets.get("dep-1")).toEqual(nested);
+  });
 });
 
 describe("schema migration", () => {

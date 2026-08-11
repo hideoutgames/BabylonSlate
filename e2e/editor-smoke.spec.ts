@@ -78,4 +78,31 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
     await expect(page.locator("canvas")).toHaveCount(0);
   });
+
+  test("cold-reopens an OPFS project from the Homepage without a prompt", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page.getByTestId("save-project").click();
+    await expect(page.getByTestId("project-name")).toContainText(
+      "TestProject.babproject",
+    );
+    await page.getByTestId("close-project").click();
+    await expect(page.getByTestId("homepage")).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByTestId("homepage")).toBeVisible();
+    await expect(
+      page.getByTestId("open-listed-project-TestProject.babproject"),
+    ).toBeVisible();
+
+    await page
+      .getByTestId("open-listed-project-TestProject.babproject")
+      .click();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await expect(page.getByTestId("project-name")).toContainText(
+      "TestProject.babproject",
+    );
+    await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
+  });
 });
