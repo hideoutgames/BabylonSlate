@@ -1,5 +1,8 @@
-import { snapshotFloatCount } from "./layout";
-import { writeSnapshotHeader } from "./snapshot-buffer";
+import {
+  SNAPSHOT_LAYOUT_VERSION,
+  SNAPSHOT_MAGIC_F32,
+  snapshotFloatCount,
+} from "./layout";
 
 const SEQ_INDEX = 7;
 const MAX_READ_RETRIES = 64;
@@ -65,14 +68,8 @@ export class SeqLockSnapshotPair {
   publish(): void {
     const buf = this.writerBuffer();
     const nextEven = (this.getSeq(buf) + 1) & ~1;
-    writeSnapshotHeader(buf, {
-      frameId: buf[2] ?? 0,
-      tickIndex: buf[3] ?? 0,
-      actorCount: buf[4] ?? 0,
-      scriptMs: buf[5] ?? 0,
-      physicsMs: buf[6] ?? 0,
-      seq: nextEven,
-    });
+    buf[0] = SNAPSHOT_MAGIC_F32;
+    buf[1] = SNAPSHOT_LAYOUT_VERSION;
     this.setSeq(buf, nextEven);
     this.writeIndex = 1 - this.writeIndex;
   }

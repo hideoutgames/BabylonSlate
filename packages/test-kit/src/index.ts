@@ -22,3 +22,11 @@ export {
   assertHarnessFixtureReadable,
   type HarnessProjectFixtures,
 } from "./harness-fixtures";
+export {
+  createInProcessRuntime,
+  createWorldSnapshot,
+  stringifyWorldSnapshot,
+  type RuntimeDriver,
+  type RuntimeDriverOptions,
+  type TransportMode,
+} from "./transport-harness";

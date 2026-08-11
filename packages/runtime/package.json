@@ -1,0 +1,22 @@
+{
+  "name": "@babylonslate/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/runtime"
+  },
+  "dependencies": {
+    "@babylonslate/bridge": "workspace:*",
+    "@babylonslate/core": "workspace:*",
+    "@babylonslate/input": "workspace:*",
+    "@babylonslate/object-model": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  }
+}

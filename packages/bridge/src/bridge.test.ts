@@ -68,13 +68,13 @@ describe("SAB seq-lock transport", () => {
   it("publishes a stable snapshot the reader can copy", () => {
     const pair = SeqLockSnapshotPair.create(4);
     const writer = pair.writerBuffer();
+    pair.beginWrite();
     writeSnapshotHeader(writer, {
       frameId: 1,
       tickIndex: 1,
       actorCount: 1,
       scriptMs: 0.1,
       physicsMs: 0,
-      seq: 0,
     });
     writeActorSlot(writer, 0, {
       slotId: 0,

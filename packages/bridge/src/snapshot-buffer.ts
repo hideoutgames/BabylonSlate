@@ -42,8 +42,8 @@ export interface ActorSlot {
 
 export function writeSnapshotHeader(
   buf: Float32Array,
-  header: Omit<SnapshotHeader, "magic" | "version"> &
-    Partial<Pick<SnapshotHeader, "magic" | "version">>,
+  header: Omit<SnapshotHeader, "magic" | "version" | "seq"> &
+    Partial<Pick<SnapshotHeader, "magic" | "version" | "seq">>,
 ): void {
   buf[0] = header.magic ?? SNAPSHOT_MAGIC_F32;
   buf[1] = header.version ?? SNAPSHOT_LAYOUT_VERSION;
@@ -52,8 +52,10 @@ export function writeSnapshotHeader(
   buf[4] = header.actorCount;
   buf[5] = header.scriptMs;
   buf[6] = header.physicsMs;
-  // Seq is an integer stored as raw u32 bits in float slot 7 (seq-lock / Atomics).
-  buf[7] = u32ToFloatBits(header.seq >>> 0);
+  if (header.seq !== undefined) {
+    // Seq is an integer stored as raw u32 bits in float slot 7 (seq-lock / Atomics).
+    buf[7] = u32ToFloatBits(header.seq >>> 0);
+  }
   for (let i = 8; i < SNAPSHOT_HEADER_FLOATS; i++) {
     buf[i] = 0;
   }
