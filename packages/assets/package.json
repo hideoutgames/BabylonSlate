@@ -1,0 +1,23 @@
+{
+  "name": "@babylonslate/assets",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/assets"
+  },
+  "dependencies": {
+    "@babylonslate/core": "workspace:*",
+    "fflate": "^0.8.3",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@babylonslate/test-kit": "workspace:*",
+    "@babylonslate/vfs": "workspace:*",
+    "typescript": "~5.8.2"
+  }
+}

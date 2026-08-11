@@ -8,7 +8,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/test-kit` — pure logic, no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/test-kit` — pure logic, no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
