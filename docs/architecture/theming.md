@@ -1,8 +1,16 @@
 # UI theming
 
-Canonical tokens live in [`packages/ui/src/styles/globals.css`](../../packages/ui/src/styles/globals.css). Tailwind v4 maps them via `@theme inline`; components use semantic utilities (`bg-background`, `text-primary`, `bg-success`, …) — not raw hex in app code.
+Canonical tokens live in [`packages/ui/src/styles/globals.css`](../../packages/ui/src/styles/globals.css). Tailwind v4 maps them via `@theme inline`; components use semantic utilities (`bg-background`, `text-foreground`, `text-vector`, …) — not raw hex in app code.
 
 The editor defaults to dark mode (`<html class="dark">`). A runtime appearance toggle is planned under Engine Settings (`p1-app-settings`).
+
+## Design philosophy
+
+BabylonSlate is a game engine editor: keep chrome quiet and clutter low.
+
+- **No brand accent color.** Primary actions, focus rings, and tab indicators use the text/icon color (`--foreground` / `--primary` aliases of that ink).
+- **Avoid decorative highlights.** Prefer borders, weight, and layout over saturated underlines or glow.
+- **Saturated colors are type cues**, reserved for small UI (pins, property rows, graph wires) and status — not shell chrome. Add new type tokens as features need them (objects, etc.).
 
 ## Base palettes
 
@@ -15,21 +23,28 @@ The editor defaults to dark mode (`<html class="dark">`). A runtime appearance t
 
 Muted text uses derived mid grays (`#A8A8A8` dark, `#6B6B6B` light).
 
-## Accent mapping
+## Action and status tokens
 
-| Spec | Hex | Token |
+| Role | Token | Notes |
 | --- | --- | --- |
-| Orange | `#FFAD0A` | `--primary`, `--ring`, `--sidebar-primary`, `--chrome-tab-accent` |
-| Red | `#A50C19` | `--destructive` |
-| Green | `#007041` | `--success` (`bg-success`, `text-success`) |
+| Default actions / ink | `--primary` | Same as text/icon color; inverted `--primary-foreground` for filled buttons |
+| Focus / tab indicator | `--ring`, `--chrome-tab-accent`, `--sidebar-ring` | Text/icon color |
+| Destructive | `--destructive` (`#A50C19`) | Errors and destructive actions |
+| Success | `--success` (`#007041`) | Positive status when needed |
 
-`--primary-foreground` is `#141414` so CTAs stay readable on orange in both modes.
+## Type / value colors
+
+| Spec | Hex | Token | Use |
+| --- | --- | --- | --- |
+| Orange | `#FFAD0A` | `--vector` (`text-vector`, `bg-vector`) | Vector values (and related pins / property cues) |
+
+Further type colors (objects, etc.) land here as those surfaces ship — not as shell accents.
 
 ## Surfaces
 
 Secondary background fills `--card`, `--popover`, `--secondary`, `--muted`, `--accent`, `--sidebar`, and `--chrome-tab-active`. Borders map to `--border`, `--input`, and `--sidebar-border`.
 
-Charts (`--chart-1`…`--chart-5`) use orange, green, red, plus two neutrals from the border/text ladder.
+Charts (`--chart-1`…`--chart-5`) reuse type/status colors plus neutrals from the border/text ladder.
 
 ## Viewport
 
