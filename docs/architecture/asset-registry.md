@@ -85,12 +85,9 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 - Drag source MIME `application/x-babylonslate-asset` with `{ guid, type, path }`.
 - Texture tiles show `payload.compressionState` badges (`pending`, `encoding`, `fallback_uncompressed`, `encode_failed`).
 - Empty `data-lock-slot` on tiles reserved for P15 lock decoration.
+- Grid tiles expose stable `data-testid="content-item-{path}"` (and `data-asset-guid`) for Playwright smoke/touch suites.
 
 `DocumentProvider` exposes `assetRegistry` and `refreshAssetRegistry()` (`projectService.remountRegistry()`).
-
-## Content Browser
-
-Pinned tab consumes the registry: folder tree, type filters, search, Import (file input), New Asset (type + parent class), long-press multi-select, drag payload `application/x-babylonslate-asset`, compression badges, and delete confirmation listing inbound refs. Lock decoration is an empty `data-lock-slot` for P15.
 
 ## Tests
 
@@ -99,3 +96,4 @@ Pinned tab consumes the registry: folder tree, type filters, search, Import (fil
 - Importer unit tests + guid-remap cases.
 - Encode queue states; loader KTX2 vs source; transcoder omitted smoke.
 - Content Browser helpers (filter / new-asset / drag MIME) unit-tested in the editor.
+- E2E opens Scene/Graph via `content-item-assets/main.*.babasset` after empty-project create.
