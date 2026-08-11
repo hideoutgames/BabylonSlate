@@ -26,14 +26,16 @@ export function ktx2TranscoderUrls(
 
 /**
  * Apply URLConfig on a KhronosTextureContainer2-like object. Kept free of a
- * hard Babylon import so unit tests can pass a mock.
+ * hard Babylon import so unit tests can pass a mock. Values may be nullable on
+ * Babylon's static `URLConfig` shape.
  */
 export function configureKtx2Transcoder(
-  container: { URLConfig: Record<string, string> },
+  container: { URLConfig: Record<string, string | null> },
   basePath: string = DEFAULT_KTX2_PUBLIC_BASE,
 ): Ktx2TranscoderUrls {
   const urls = ktx2TranscoderUrls(basePath);
   container.URLConfig = {
+    ...container.URLConfig,
     jsDecoderModule: urls.jsDecoderModule,
     wasmUASTCToASTC: urls.wasmUASTCToASTC,
     wasmUASTCToBC7: urls.wasmUASTCToBC7,
