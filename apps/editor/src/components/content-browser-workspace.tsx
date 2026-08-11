@@ -641,7 +641,7 @@ export function ContentBrowserWorkspace() {
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside
-          className="flex w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border p-2"
+          className="flex w-56 shrink-0 flex-col gap-1 overflow-y-auto overscroll-y-contain border-r border-border p-2"
           data-testid="content-browser-folder-tree"
         >
           <FolderTreeNode
@@ -698,7 +698,7 @@ export function ContentBrowserWorkspace() {
           </div>
 
           <div
-            className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3 overflow-y-auto p-4"
+            className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3 overflow-y-auto overscroll-y-contain p-4"
             data-testid="content-browser-asset-grid"
           >
             {visibleAssets.map((asset) => (

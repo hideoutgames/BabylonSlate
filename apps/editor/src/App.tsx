@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { useSuppressNativeContextMenu } from "@babylonslate/editor-kit";
+import {
+  usePreventDocumentOverscroll,
+  useSuppressNativeContextMenu,
+} from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   AlertDialog,
@@ -143,7 +146,6 @@ function RecoveryBanner() {
 }
 
 function EditorLayout() {
-  useSuppressNativeContextMenu();
   const {
     closeProject,
     forceCloseProject,
@@ -171,7 +173,7 @@ function EditorLayout() {
   };
 
   return (
-    <div className="flex min-h-svh h-dvh flex-col bg-background text-foreground">
+    <div className="flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground">
       <EditorChromeBar
         onCloseProject={() => void requestClose()}
         onSaveProject={() => void requestSave()}
@@ -221,6 +223,8 @@ function isComponentGalleryRoute(): boolean {
 }
 
 function AppRoutes() {
+  useSuppressNativeContextMenu();
+  usePreventDocumentOverscroll();
   const {
     route,
     listedProjects,

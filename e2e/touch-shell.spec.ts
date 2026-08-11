@@ -17,6 +17,17 @@ test.describe("Touch shell UX", () => {
     expect(userSelect).toBe("none");
   });
 
+  test("locks document scroll on the root shell", async ({ page }) => {
+    const overflow = await page.evaluate(() => ({
+      html: getComputedStyle(document.documentElement).overflow,
+      body: getComputedStyle(document.body).overflow,
+      root: getComputedStyle(document.getElementById("root")!).overflow,
+    }));
+    expect(overflow.html).toBe("hidden");
+    expect(overflow.body).toBe("hidden");
+    expect(overflow.root).toBe("hidden");
+  });
+
   test("chrome document tabs meet minimum touch target size", async ({ page }) => {
     const tab = page
       .locator('[data-testid="document-tab"][data-document-kind="scene"]')
