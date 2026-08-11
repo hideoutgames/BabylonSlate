@@ -96,4 +96,4 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 - Importer unit tests + guid-remap cases.
 - Encode queue states; loader KTX2 vs source; transcoder omitted smoke.
 - Content Browser helpers (filter / new-asset / drag MIME) unit-tested in the editor.
-- E2E opens Scene/Graph via `content-item-assets/main.*.babasset` after empty-project create.
+- E2E opens Scene/Graph via `[data-asset-path="assets/main.*.babasset"]` after empty-project create.

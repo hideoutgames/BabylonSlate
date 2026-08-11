@@ -33,10 +33,12 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(
       page.getByRole("heading", { name: "Content Browser" }),
     ).toBeVisible();
-    await expect(page.getByTestId("content-item-assets/main.scene.babasset")).toBeVisible();
+    await expect(
+      page.locator('[data-asset-path="assets/main.scene.babasset"]'),
+    ).toBeVisible();
     await expect(page.locator("canvas")).toHaveCount(0);
 
-    await page.getByTestId("content-item-assets/main.scene.babasset").click();
+    await page.locator('[data-asset-path="assets/main.scene.babasset"]').click();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
     await expect(page.getByText("Viewport")).toBeVisible();
 
@@ -44,7 +46,7 @@ test.describe("BabylonSlate editor smoke", () => {
       .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
       .getByTestId("document-tab-select")
       .click();
-    await page.getByTestId("content-item-assets/main.graph.babasset").click();
+    await page.locator('[data-asset-path="assets/main.graph.babasset"]').click();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     await expect(
       page.getByTestId("document-workspace-graph").getByText("Graph", {
