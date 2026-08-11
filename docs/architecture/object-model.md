@@ -12,7 +12,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `GameInstance` | Session singleton: `onGameStart` / `onTick` / `onGameEnd` / `onSceneLoaded` |
 | `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot |
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components |
-| `TickPhase` / `TickScheduler` | Fixed-dt phases including empty `physics` slot for P7 |
+| `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases including empty `physics` slot for P7 |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` | Stable string ids for engine types |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
