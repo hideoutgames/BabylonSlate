@@ -22,6 +22,7 @@ import { EditorChromeBar } from "./components/editor-chrome-bar";
 import { DocumentWorkspace } from "./components/document-workspace";
 import { Homepage } from "./components/homepage";
 import { DocumentProvider, useDocuments } from "./context/document-context";
+import { PlayProvider } from "./context/play-context";
 
 function DirtyCloseDialog({
   dirtyNames,
@@ -271,7 +272,9 @@ export default function App() {
   return (
     <TooltipProvider>
       <DocumentProvider>
-        <AppRoutes />
+        <PlayProvider>
+          <AppRoutes />
+        </PlayProvider>
       </DocumentProvider>
     </TooltipProvider>
   );

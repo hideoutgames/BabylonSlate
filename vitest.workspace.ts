@@ -58,6 +58,8 @@ export default defineConfig({
         "**/node-adapter.ts",
         // Needs a real WebGL context; covered by the Playwright viewport specs.
         "**/create-engine.ts",
+        // Game worker entry needs a Worker host; covered by Play e2e.
+        "**/worker-entry.ts",
         // Browser Worker + OffscreenCanvas encode path; covered by editor wiring
         // and the Node Basis A16 smoke (`node-basis-encode.ts`).
         "**/worker-encode.ts",

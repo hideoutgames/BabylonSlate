@@ -3,7 +3,6 @@ import {
   parseStackFrames,
   lookupAnchor,
   type AnchorEntry,
-  type StackFrame,
 } from "./stack-map";
 import { LogRingBuffer } from "./log-ring";
 import { loadCompiledModule } from "./module-loader";
@@ -77,7 +76,7 @@ describe("module loader", () => {
       //# sourceURL=babylonslate:///fixture.js
     `;
     const mod = await loadCompiledModule(source, "fixture");
-    expect(mod.run()).toBe(42);
+    expect(mod.run?.()).toBe(42);
   });
 });
 

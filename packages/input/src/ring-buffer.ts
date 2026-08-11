@@ -79,22 +79,22 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
       o += 4;
       view.setFloat32(o, event.y, true);
       o += 4;
-      view.setUint8(o, event.button, true);
+      view.setUint8(o, event.button);
       o += 1;
     } else if (event.kind === "key") {
       view.setUint8(o, PHASE[event.phase]);
       o += 1;
       o += writeString(view, o, event.code);
     } else {
-      view.setUint8(o, event.gamepadIndex, true);
+      view.setUint8(o, event.gamepadIndex);
       o += 1;
-      view.setUint8(o, event.axes.length, true);
+      view.setUint8(o, event.axes.length);
       o += 1;
       for (const axis of event.axes) {
         view.setFloat32(o, axis, true);
         o += 4;
       }
-      view.setUint8(o, event.buttons.length, true);
+      view.setUint8(o, event.buttons.length);
       o += 1;
       for (const button of event.buttons) {
         view.setFloat32(o, button, true);

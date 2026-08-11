@@ -86,6 +86,24 @@ const renderNoReact = boundary(
   ],
 );
 
+/** Ban constructing Babylon Texture outside resource-cache.ts (engineplan §2.4). */
+const renderTextureCacheOnly = {
+  name: "boundary/render-texture-cache",
+  files: ["packages/render/src/**/*.{ts,tsx}"],
+  ignores: ["packages/render/src/resource-cache.ts"],
+  rules: {
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector:
+          "NewExpression[callee.name='Texture'], NewExpression[callee.property.name='Texture']",
+        message:
+          "Construct textures only via ResourceCache (engineplan section 2.4).",
+      },
+    ],
+  },
+};
+
 const uiNoBabylonNoCapacitor = boundary(
   "boundary/ui-packages",
   [
@@ -152,6 +170,7 @@ export default tseslint.config(
   pureNoReactNoBabylon,
   vfsNoReactNoBabylon,
   renderNoReact,
+  renderTextureCacheOnly,
   uiNoBabylonNoCapacitor,
   appNoCapacitor,
 );

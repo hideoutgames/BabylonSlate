@@ -100,7 +100,7 @@ class InProcessRuntime implements RuntimeDriver {
       dt: this.dt,
       classRegistry: registry,
       guidFactory: () => `rt-${++guidSeq}`,
-      onPhase: (phase, _dt, _tick) => {
+      onPhase: (phase) => {
         // Timing hooks measure script vs physics phases.
         void phase;
       },

@@ -20,6 +20,17 @@ export function createSceneDefaultLayout(api: DockviewApi): void {
     initialWidth: 280,
   });
 
+  api.addPanel({
+    id: "output-log",
+    component: "output-log",
+    title: "Output Log",
+    position: {
+      referencePanel: viewport,
+      direction: "below",
+    },
+    initialHeight: 160,
+  });
+
   viewport.api.setActive();
 }
 

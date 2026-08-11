@@ -19,6 +19,7 @@ import {
   LayersIcon,
   LayoutGridIcon,
   LogOutIcon,
+  PlayIcon,
   PlusIcon,
   Redo2Icon,
   SaveIcon,
@@ -41,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { useDocuments } from "../context/document-context";
+import { usePlay } from "../context/play-context";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectSettingsSheet } from "./project-settings-sheet";
 import "../shell/editor-chrome.css";
@@ -176,6 +178,7 @@ export function EditorChromeBar({
     getAvailableDocuments,
   } = useDocuments();
 
+  const { startPlay, playing } = usePlay();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const contentBrowserDoc = openDocuments.find(
@@ -293,6 +296,25 @@ export function EditorChromeBar({
         data-testid="editor-global-toolbar"
       >
         <div className="editor-global-toolbar-actions">
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="play-preview"
+            className="chrome-action-button"
+            aria-label="Play"
+            disabled={!projectName || playing}
+            onClick={() => {
+              const inject =
+                typeof window !== "undefined" &&
+                new URLSearchParams(window.location.search).get(
+                  "previewThrow",
+                ) === "1";
+              startPlay({ injectFixtureThrow: inject });
+            }}
+          >
+            <PlayIcon data-icon="inline-start" />
+            Play
+          </Button>
           <Button
             size="sm"
             variant="ghost"

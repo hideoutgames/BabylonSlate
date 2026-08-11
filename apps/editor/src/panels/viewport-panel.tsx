@@ -8,6 +8,7 @@ import { createEngine, type EngineHandle } from "@babylonslate/render";
 import { engineCommandBus, type SerializedScene } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { usePlay } from "../context/play-context";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -26,6 +27,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const sceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
   const { openDocuments } = useDocuments();
+  const { registerSharedEngine, playing } = usePlay();
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -56,6 +58,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
     const handle = createEngine(canvas);
     engineRef.current = handle;
+    registerSharedEngine(handle.engine);
 
     const resizeIfSized = () => resizeCanvasIfSized(canvas, handle);
     resizeIfSized();
@@ -92,11 +95,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       unsubscribe();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
+      registerSharedEngine(null);
       handle.dispose();
       engineRef.current = null;
     };
-  }, []);
+  }, [registerSharedEngine]);
 
+  useEffect(() => {
+    engineRef.current?.setPaused(playing);
+  }, [playing]);
   useEffect(() => {
     if (scene && engineRef.current) {
       engineRef.current.loadScene(scene);

@@ -16,7 +16,7 @@ import {
 } from "./snapshot-buffer";
 import { SeqLockSnapshotPair } from "./seq-lock";
 import { TransferablePingPong } from "./transferable";
-import { createRpcHost, type RpcTransport } from "./rpc";
+import { createRpcHost, type RpcResponse, type RpcTransport } from "./rpc";
 
 describe("snapshot layout", () => {
   it("uses the locked header and stride sizes from bridge.md", () => {
@@ -117,7 +117,10 @@ describe("transferable ping-pong", () => {
 
 describe("typed RPC", () => {
   it("round-trips a request and response over a fake transport", async () => {
-    const pending: Array<{ data: unknown; reply: (v: unknown) => void }> = [];
+    const pending: Array<{
+      data: unknown;
+      reply: (v: RpcResponse) => void;
+    }> = [];
     const transport: RpcTransport = {
       post(message) {
         return new Promise((resolve) => {
