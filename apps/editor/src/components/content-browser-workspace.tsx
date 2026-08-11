@@ -177,7 +177,8 @@ function AssetTile({
     <button
       type="button"
       draggable
-      data-testid={`asset-tile-${asset.header.guid}`}
+      data-testid={`content-item-${asset.path}`}
+      data-asset-guid={asset.header.guid}
       className={`relative flex min-h-11 flex-col gap-1 rounded-md border p-3 text-left hover:bg-accent ${
         selected ? "border-primary bg-accent/60" : "border-border"
       }`}
