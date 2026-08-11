@@ -104,3 +104,21 @@ Design notes: [object-model.md](../architecture/object-model.md).
 | Play + report | `p4-play-overlay`, `p4-preview-report` | `apps/editor`, `runtime` | Runtime + Render + Input |
 
 Design notes: [bridge.md](../architecture/bridge.md), [render.md](../architecture/render.md).
+
+## P5 slice ownership
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/scripting.md` | P4 complete |
+| Scripting core | `p5-scripting-core` | `scripting`, `core` (IR/diagnostic types as needed), ESLint boundaries | Design notes |
+| Wildcard + formatValue | `p5-wildcard` | `scripting`, `core` | Scripting core types API |
+| Node catalog | `p5-node-catalog` | `scripting-nodes` (one agent per category) | Scripting core registry + codegen API |
+| ExecuteJavaScript | `p5-execute-js` | `scripting-nodes`, `editor-kit`, `apps/editor` | Core + parameter-list editor |
+| Log / Print | `p5-log-print` | `scripting-nodes`, `runtime`, `core` (`formatValue`), thin editor HUD hook | Core + wildcard |
+| Graph UI shell | `p5-graph-ui` | `graph-ui`, `ui` (type tokens), `apps/editor` | IR serialisation stable |
+| Type assets | `p5-types` | `assets` (schemas), `object-model` (FunctionLibrary base), `apps/editor`, `editor-kit` | Pin type system |
+| Validation UX | `p5-graph-validation` | `apps/editor`, `graph-ui`, `scripting` fixtures, Content Browser overlay | Validator + Compiler Results UI |
+
+Design notes: [scripting.md](../architecture/scripting.md).
+
+**Parallelism:** after `p5-scripting-core` lands its types and a failing/passing golden harness, catalog categories may run as separate PRs (one package ownership set per agent). Do not start `p5-graph-ui` and `p5-scripting-core` against competing IR shapes — core owns the IR contract first.

@@ -55,7 +55,7 @@ Behaviour is filled by later phases (render sync, physics, UI, AI).
 
 - An interface def is a guid plus method signatures (name, input/output pin defaults as plain values).
 - `dispatchInterface(target, interfaceGuid, method, args)` invokes a registered handler or returns pin defaults (no-op).
-- Classes declare implemented interface guids; handlers are injectable so P5 can bind compiled graphs without changing the dispatch shape.
+- Classes declare implemented interface guids; handlers are injectable so P5 can bind compiled graphs without changing the dispatch shape (see [scripting.md](scripting.md)).
 
 ## Re-parenting
 

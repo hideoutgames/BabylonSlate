@@ -1,0 +1,253 @@
+# Visual scripting (P5)
+
+Shared surface for graph IR, pin types, validation, and JS codegen (engineplan §6, §6.1–6.2, §9.7 anchors, checklist `p5-*`). New packages: `@babylonslate/scripting`, `@babylonslate/scripting-nodes`. Editor shell: `@babylonslate/graph-ui` + class / type asset panels in `apps/editor`.
+
+P4 already owns stack→node mapping (`AnchorEntry`, `loadCompiledModule`, Preview session report). P5 fills the compiler that emits those anchors and the editor that navigates to them.
+
+## Package boundaries
+
+| Package | Owns | Must not import |
+| --- | --- | --- |
+| `scripting` | Graph IR, pin type system, type context, pure validator + rule hook, deterministic JS codegen + anchor table | React, Babylon, Capacitor |
+| `scripting-nodes` | Data-driven node catalog (id, title, category, pins, codegen) | React, Babylon, Capacitor |
+| `graph-ui` | Touch React Flow shell reusable by script / shader / anim / BT graphs; node chrome; pin colors via semantic tokens | Babylon, Capacitor |
+| `core` | Shared `formatValue`, diagnostic / pin type primitives reused outside scripting | React, Babylon, Capacitor |
+| `runtime` | Loads compiled modules, registers anchors, Log/Print command forwarding | Babylon, DOM |
+| `apps/editor` | Class document, My Class, Compiler Results, validation gates, type asset editors | Capacitor |
+
+Add `scripting` / `scripting-nodes` to the ESLint pure-package allowlist beside `object-model` (same React/Babylon/Capacitor bans).
+
+`scripting-nodes` depends on `scripting` (types + codegen helpers). `scripting` must not depend on `scripting-nodes` — the compiler takes a **node registry** injected at compile time so catalog categories stay independently testable.
+
+## Graph IR
+
+Replace today's placeholder `SerializedGraph` (untyped nodes + edges without pin ends) with a typed IR stored in the owning class / function asset payload.
+
+```ts
+type PinKind = "exec" | "data";
+type GraphPin = {
+  id: string;
+  name: string;
+  kind: PinKind;
+  direction: "in" | "out";
+  type: PinType; // see types
+  optional?: boolean;
+};
+type GraphNode = {
+  id: string;
+  typeId: string; // catalog id, e.g. "flow.branch"
+  position: { x: number; y: number };
+  pins: GraphPin[];
+  properties: Record<string, unknown>; // node-local (severity, body, async, …)
+};
+type GraphEdge = {
+  id: string;
+  sourceNodeId: string;
+  sourcePinId: string;
+  targetNodeId: string;
+  targetPinId: string;
+};
+type LogicGraph = {
+  id: string;
+  kind: "event" | "function" | "macro";
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+};
+```
+
+Migration: bump graph asset schema; committed historical goldens under `packages/assets` migration chains (same pattern as P1). Keep a thin adapter from the old `SerializedGraph` until editor documents are migrated.
+
+## Pin type system
+
+Single module `packages/scripting/src/types.ts` (exhaustively tested, prefer fast-check for assignability).
+
+| Family | Forms |
+| --- | --- |
+| Exec | `exec` |
+| Primitives | `bool`, `int`, `float`, `string` |
+| Math | `vec2`, `vec3`, `vec4`, `rotator`, `transform`, `color` |
+| Refs | `objectRef(classId)`, `actorRef(classId)`, `structRef(guid)`, `enumRef(guid)` |
+| Containers | `array(T)`, `map(K, V)` |
+| Other | `delegate(signature)`, `resolvingWildcard`, `boxedWildcard` |
+
+**Assignability (summary):**
+
+- `int` → `float` widening; never the reverse without an explicit cast node.
+- Subclass object/actor refs assignable to superclass refs (via class registry).
+- Anything → `boxedWildcard`; never implicit unbox (use `WildcardTo*`).
+- `resolvingWildcard` has no runtime value; resolution groups unify at validate/compile time.
+
+### Two wildcards (do not conflate)
+
+| Kind | Role | Runtime |
+| --- | --- | --- |
+| Resolving | Compile-time generic for container nodes (Get, Append, Map Find) | None — pins adopt concrete type of first connection; group must agree |
+| Boxed | Tagged any for Print and user wildcard params | `{ tag, value }` |
+
+Generated conversion family (`WildcardToString`, `WildcardToFloat`, …, `WildcardTypeOf`, `WildcardIs`) from the type table. Test: every registered concrete type has a converter. Failures expose success + fallback outputs (except `WildcardToString`, which always succeeds via `formatValue`).
+
+### `formatValue` (`@babylonslate/core`)
+
+Deterministic stringification shared by Log and Print. Golden-tested for structs, enums, arrays, maps, and object refs (`ClassName` + guid). Lives in `core` so runtime and scripting both depend on one implementation.
+
+## Validator
+
+Pure function: `(graphs, TypeContext, registeredRules) → Diagnostic[]`.
+
+```ts
+type Diagnostic = {
+  severity: "error" | "warning" | "info";
+  code: string; // e.g. "type.mismatch"
+  message: string;
+  assetGuid: string;
+  graphId: string;
+  nodeId?: string;
+  pinId?: string;
+  relatedNodeId?: string;
+  // ExecuteJavaScript body errors:
+  bodyLine?: number;
+  bodyColumn?: number;
+};
+```
+
+**Rule registration hook:** `registerValidationRule(rule)` so `behaviour-tree` (P11) adds BT structural rules without a second linter. P5 ships the core rule set only; the hook and its contract are required from day one.
+
+**Rule groups (engineplan §6.2):** structural, pin typing, references (needs registry), signatures (needs class graph), semantic, ExecuteJavaScript parse, BT (later).
+
+**When it runs:**
+
+| Trigger | Scope |
+| --- | --- |
+| Edit (≈300ms debounce) | Open graph |
+| Save | Document + dependents with reference diagnostics |
+| Pre-Preview | Startup map, GameInstance, classes referenced by open scene, enabled plugin EUOs |
+| Export | Hard gate + export-only rules (Print strip, debug-tier commands) |
+| CI | Golden fixture projects |
+
+Warnings never block. Errors block Preview via dialog (tap-to-navigate + **Play Anyway** + Engine Settings "don't ask again"), not a hard refuse. Export-preset-only rules stay off the edit-time path.
+
+## Compiler
+
+IR → **plain JavaScript ES modules** (no TypeScript in the browser).
+
+| Concern | Behaviour |
+| --- | --- |
+| Exec flow | Straight-line statements; Branch/Sequence/loops → native `if`/`for`/`while` |
+| Pure data | Inlined expressions + CSE |
+| Latent (Delay, Timeline, async ExecuteJavaScript) | Async generator state machines |
+| FunctionLibrary | Module of static functions |
+| Determinism | Stable text; golden tests are the primary gate |
+| Anchors | Per-statement `{ line, column, assetGuid, graphId, nodeId, bodyLine? }` + `//# sourceURL=babylonslate:///<assetGuid>.js` |
+| Load | `runtime.loadCompiledModule` (blob URL, `new Function` fallback) |
+| Output location | Derived data outside the project folder (compiled scripts + anchor tables) |
+
+Validator and compiler share the **type context builder** so a graph that validates compiles.
+
+Anchor tables are position-based: any pass that moves generated lines (packed export concat) must rewrite offsets. Never minify compiled game scripts.
+
+## Special nodes (§6.1)
+
+Ship with the catalog but own dedicated designs (not one-line templates):
+
+| Node | Notes |
+| --- | --- |
+| **ExecuteJavaScript** | Editable in/out pin lists (JS identifier validation); fixed exec in/out; body → module-scope named function with defaulted outputs; async → latent; CodeMirror 6 body editor (lazy, accessory key bar, selection enabled); parse errors → Compiler Results with `bodyLine`/`bodyColumn` |
+| **Log** | Severity + category → runtime log / Output Log / ring buffer |
+| **Print** | Boxed wildcard via `formatValue`; colour + duration; keyed registry replaces in place; worker sends command, HUD draws; export may strip or degrade to log |
+| **ExecuteConsoleCommand** | Stub/compile against command registry when P8 lands; P5 may emit a call site + warning diagnostic when registry absent |
+
+Shared **parameter-list editor** (typed named reorderable rows) lives in `editor-kit` — reused by ExecuteJavaScript, My Class function signatures, ScriptInterface, and later `BDebugCommand`.
+
+## Node catalog (`scripting-nodes`)
+
+One module + one test file per category:
+
+`flow`, `math`, `vector`, `string`, `array`/`map`, `actor`, `component`, `transform`, `physics` (stubs until P7), `input` (stubs until P6), `audio`, `ui`, `scene`, `debug`, `interface`, `variables`, `casting`, `timers`.
+
+Each node: `{ id, title, category, pins, codegen(ctx) }`. Physics/input nodes may register with compile-time "not yet available" or emit TODOs that fail validation until those phases — prefer stub codegen that throws a clear diagnostic over silently no-op.
+
+AI / navigation categories wait for P11.
+
+## Editor surfaces
+
+### Class document
+
+- **Graph** canvas (event + per-function graphs) + node palette bottom sheet (`Sheet`).
+- **My Class**: variables, functions, event dispatchers, implemented interfaces, Actor component tree; inherited members shown and marked. Re-parenting UX consumes `ClassRegistry.reparent` invalidation list (design here; do not retrofit later).
+- **Details**: selected node / variable / component; ExecuteJavaScript pin lists + body.
+- **Compiler Results**: diagnostics grouped by graph; tap → select node, pan canvas, flash pin (or scroll CodeMirror to `bodyLine`).
+- **Prefab** (Actor): deferred polish OK if My Class + Graph work; 3D preview can stay minimal until P6 viewport.
+
+### `graph-ui` rework
+
+Touch-first React Flow 12 shell:
+
+- Tap-to-connect **and** drag-to-connect (gestures.md).
+- Node palette as bottom `Sheet`.
+- Compose from `@babylonslate/ui` only for chrome (`Card`, `Sheet`, `ScrollArea`, `AlertDialog`) — no ad-hoc styled containers.
+- Pin/type colors via semantic tokens (`text-vector`, plus new type tokens in `globals.css` / theming.md as they ship).
+- Blocking Preview dialog uses `AlertDialog`.
+
+Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node types, validation binder) injectable; do not hardcode scripting-only assumptions into the canvas host.
+
+### Validation UX (`p5-graph-validation`)
+
+- Debounced edit-time pass → Compiler Results + inline node/pin markers.
+- Content Browser compile-error overlay (same iconography as missing ref).
+- Play button error-count badge.
+- Pre-Preview project sweep → blocking dialog with Play Anyway.
+- Headless CI over golden fixture projects (`packages/scripting/fixtures/` — one broken graph per diagnostic code).
+
+### Type assets (`p5-types`)
+
+| Asset | Editor | Feeds |
+| --- | --- | --- |
+| Enum | Row editor | `enumRef` pin types |
+| Structure | Field editor | `structRef` pin types |
+| ScriptInterface | Signature editor (parameter-list editor) | Interface call nodes + class "implements" |
+| FunctionLibrary | Class inheriting FunctionLibrary | Static global nodes in the palette |
+
+## Runtime binding
+
+Compiled class graphs bind to object-model lifecycle without changing dispatch shape:
+
+- `BObject` / `Actor` / `GameInstance` event graphs → handlers invoked from existing `onCreation` / `onTick` / …
+- ScriptInterface method graphs → `interfaceHandlers` map already supported by `dispatchInterface`
+- FunctionLibrary → imported static module
+
+Play path: compile dirty graphs into derived data → worker `loadCompiledModule` → `registerAnchors` → tick.
+
+## Acceptance (phase)
+
+An actor scripted in the editor compiles and runs in the worker; a type mismatch is flagged before Preview and tap-to-navigate focuses the pin; an ExecuteJavaScript node round-trips values through the graph; compiler golden tests cover IR→JS + anchors.
+
+## Explicit non-goals / deferrals
+
+| Item | Owner |
+| --- | --- |
+| Full physics / input node behaviour | P7 / P6 |
+| ExecuteConsoleCommand registry + debug-tier warnings | P8 (P5 may stub) |
+| Keyed Print HUD polish + strip-on-export preset UI | P8 / export |
+| Behaviour-tree validation rules | P11 |
+| Shader / AnimationGraph validators | P9 |
+| Scene viewport Play badge on 3D viewport | P6 scene chrome (wire badge API in P5; host may be class-doc Play until then) |
+
+## Implementation order
+
+See [issue-tracker P5 slice ownership](../agents/issue-tracker.md#p5-slice-ownership). Summary:
+
+1. **Design notes** (this doc) + ESLint / workspace stubs.
+2. **`p5-scripting-core`** — IR, types, validator hook, compiler + goldens (**API before catalog**).
+3. **`p5-wildcard`** + `formatValue` — can land with or immediately after core.
+4. **`p5-node-catalog`** — parallel agents per category against the stable registry API.
+5. **`p5-execute-js`** / **`p5-log-print`** — special nodes + editor-kit parameter list / CodeMirror.
+6. **`p5-graph-ui`** + **`p5-types`** — parallel once IR serialisation is stable.
+7. **`p5-graph-validation`** — editor gates and CI fixtures last, consuming Compiler Results from graph-ui.
+
+## Risks (from §19, P5-relevant)
+
+- Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
+- Re-parenting class invalidation — design My Class UX against `ClassRegistry.reparent` from the start.
+- Blocking Preview dialog becoming dismiss-reflex — Play Anyway + "don't ask again"; demote noisy rules rather than harden the dialog.
+- ExecuteJavaScript unsandboxed — disclose on import when assets contain JS bodies.
+- Anchor tables invalidated by code moves — rewrite offsets on concat; never minify.
