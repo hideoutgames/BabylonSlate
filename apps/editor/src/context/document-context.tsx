@@ -93,7 +93,7 @@ interface DocumentContextValue {
   updateScene: (id: string, scene: SerializedScene) => void;
   updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
-  applyGraphChange: (id: string, next: SerializedGraph) => Promise<void>;
+  applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -586,15 +586,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const applyGraphChange = useCallback(
-    (id: string, next: SerializedGraph): Promise<void> => {
+    async (id: string, next: SerializedGraph): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
       if (!doc || doc.ref.kind !== "graph" || !doc.content) {
-        return Promise.resolve();
+        return false;
       }
       const previous = doc.content as SerializedGraph;
       const commands = diffGraphCommands(previous, next);
       if (commands.length === 0) {
-        return Promise.resolve();
+        return false;
       }
       let current = previous;
       for (const command of commands) {
@@ -602,25 +602,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       documentService.updateGraph(id, current);
       const guid = projectService.guid;
-      const journalWrite = guid
-        ? ensureDerived().then(async (derived) => {
-            for (const command of commands) {
-              await appendJournalLine(
-                derived,
-                guid,
-                serializeJournalLine({
-                  v: 1,
-                  docId: id,
-                  at: new Date().toISOString(),
-                  command: commandToJournalPayload(command),
-                }),
-              );
-            }
-          })
-        : Promise.resolve();
+      if (guid) {
+        const derived = await ensureDerived();
+        for (const command of commands) {
+          await appendJournalLine(
+            derived,
+            guid,
+            serializeJournalLine({
+              v: 1,
+              docId: id,
+              at: new Date().toISOString(),
+              command: commandToJournalPayload(command),
+            }),
+          );
+        }
+      }
       scheduleDebouncedSave();
       bump();
-      return journalWrite;
+      return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
@@ -681,23 +680,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!id) return false;
         const doc = openDocuments.get(id);
         if (!doc?.content) return false;
-        const graph = doc.content as SerializedGraph;
+        const graph = structuredClone(doc.content as SerializedGraph);
         if (!graph.nodes[0]) return false;
-        await applyGraphChange(id, {
-          ...graph,
-          nodes: graph.nodes.map((entry, index) =>
-            index === 0
-              ? {
-                  ...entry,
-                  position: {
-                    x: entry.position.x + 42,
-                    y: entry.position.y + 17,
-                  },
-                }
-              : entry,
-          ),
-        });
-        return true;
+        graph.nodes[0] = {
+          ...graph.nodes[0],
+          position: {
+            x: graph.nodes[0].position.x + 42,
+            y: graph.nodes[0].position.y + 17,
+          },
+        };
+        return applyGraphChange(id, graph);
       },
     };
     return () => {

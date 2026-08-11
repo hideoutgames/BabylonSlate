@@ -59,6 +59,21 @@ test.describe("P2 acceptance proofs", () => {
     await openTestProject(page);
     await page.locator('[data-asset-path="assets/main.graph.babasset"]').click();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
+    // Wait until the default graph node is loaded into the document service.
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const api = (
+            globalThis as {
+              __babylonslateTest?: {
+                activeGraphNodePosition: () => { x: number; y: number } | null;
+              };
+            }
+          ).__babylonslateTest;
+          return api?.activeGraphNodePosition()?.x ?? null;
+        }),
+      )
+      .toBe(120);
 
     const nudged = await page.evaluate(async () => {
       const api = (
