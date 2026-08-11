@@ -73,14 +73,14 @@ export class World {
 
   /** Queue actor for spawn; applied after the current phase / at end of tick. */
   spawnActor(actor: Actor): Actor {
-    this.pendingSpawn.push(actor);
+    this.enqueueSpawn(actor);
     return actor;
   }
 
   /** Immediately spawn if not mid-tick; otherwise queues like `spawnActor`. */
   spawnActorNow(actor: Actor): Actor {
     if (this.ticking) {
-      this.pendingSpawn.push(actor);
+      this.enqueueSpawn(actor);
       return actor;
     }
     this.commitSpawn(actor);
@@ -99,8 +99,26 @@ export class World {
     return this.actors.find((a) => a.guid === guid);
   }
 
+  private enqueueSpawn(actor: Actor): void {
+    if (this.isSpawned(actor) || this.isPendingSpawn(actor)) {
+      throw new Error(`actor already spawned: ${actor.guid}`);
+    }
+    this.pendingSpawn.push(actor);
+  }
+
+  private isSpawned(actor: Actor): boolean {
+    return actor.world === this || this.actors.some((a) => a.guid === actor.guid);
+  }
+
+  private isPendingSpawn(actor: Actor): boolean {
+    return this.pendingSpawn.some((a) => a.guid === actor.guid);
+  }
+
   private commitSpawn(actor: Actor): void {
     if (actor.destroyed) return;
+    if (this.isSpawned(actor)) {
+      throw new Error(`actor already spawned: ${actor.guid}`);
+    }
     actor.world = this;
     actor.spawnIndex = this.actors.length;
     this.actors.push(actor);

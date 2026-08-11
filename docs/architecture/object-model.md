@@ -75,3 +75,7 @@ Behaviour is filled by later phases (render sync, physics, UI, AI).
 Acceptance: a 120-tick scenario reproduces a committed golden byte-exactly and is identical across two runs with the same seed.
 
 Worker / SAB comparison is P4.
+
+## Status
+
+**P3 complete on `main`.** Ready for P4 (bridge, workers, Play). P4 should wrap `World.tick()` in `packages/runtime`, introduce a separate `Float32Array` bridge snapshot layout (do not overload harness JSON snapshots), and keep spawn/destroy through `World` with the deferred queues.

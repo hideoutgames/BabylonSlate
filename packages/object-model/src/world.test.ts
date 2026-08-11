@@ -124,6 +124,20 @@ describe("World tick", () => {
     expect(order).toEqual(["a1", "a1", "child"]);
   });
 
+  it("rejects double-spawning the same actor", () => {
+    const world = createTestWorld();
+    let creations = 0;
+    const actor = world.createActor({
+      classId: "Actor",
+      hooks: { onCreation: () => creations++ },
+    });
+    world.spawnActorNow(actor);
+    expect(creations).toBe(1);
+    expect(() => world.spawnActorNow(actor)).toThrow(/already spawned/);
+    expect(world.getActors()).toHaveLength(1);
+    expect(creations).toBe(1);
+  });
+
   it("produces identical snapshots for the same seed", () => {
     const run = (seed: number) => {
       const world = createTestWorld(seed);
