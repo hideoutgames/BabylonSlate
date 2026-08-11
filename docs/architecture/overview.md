@@ -2,18 +2,21 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
-## Monorepo (current P0)
+## Monorepo (current P1)
 
 ```
-apps/editor/          Editor shell + main-thread renderer
-packages/core/        GUIDs, schemas, command bus (was shared)
-packages/vfs/         Storage port, adapters, platform detection (was storage)
-packages/render/      Babylon viewport (was engine)
-packages/graph-ui/    React Flow graph editor (was graph)
+apps/editor/          Editor shell + Homepage + main-thread renderer
+packages/core/        GUIDs, schemas, command bus, storage port
+packages/vfs/         Storage adapters, platform detection, app settings
+packages/assets/      .babasset + .babproject codecs, migration harness
+packages/render/      Babylon viewport
+packages/graph-ui/    React Flow graph editor
 packages/ui/          shadcn primitives
-packages/editor-kit/  Touch-shell hooks and components (context menu, SelectableText)
+packages/editor-kit/  Touch-shell hooks and components
 packages/test-kit/    Golden-file and style-audit test helpers
 ```
+
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md).
 
 ## Target threading (P4+)
 
@@ -29,8 +32,10 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 
 ## Data flow today
 
+- **Lifecycle**: Homepage opens/creates a `.babproject`; editor shell only runs against an open project.
 - **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab.
-- **Files**: `ProjectStorage` via `createStorage()` — never Capacitor from panels.
+- **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
+- **Containers**: `@babylonslate/assets` encodes `.babasset` / `.babproject` (directory + zip).
 - **Graph → engine**: `engineCommandBus` in `core` (minimal commands today).
 - **Viewport**: `createEngine()` on main thread (demo loop until P4). Scene-only helpers live in `render/viewport.ts` so they are testable under `NullEngine`; `create-engine.ts` holds the canvas-bound parts.
 
@@ -40,7 +45,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `test-kit` | React, Babylon, Capacitor |
+| `core`, `assets`, `test-kit` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |
 | `ui`, `editor-kit`, `graph-ui` | Babylon, Capacitor |
