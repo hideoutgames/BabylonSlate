@@ -185,7 +185,7 @@ export class World {
     classId: string;
     guid?: Guid;
     variables?: Record<string, unknown>;
-    hooks?: ConstructorParameters<typeof Actor>[0]["hooks"];
+    hooks?: import("./objects").LifecycleHooks<Actor>;
     implementedInterfaces?: string[];
     transform?: ConstructorParameters<typeof Actor>[0]["transform"];
   }): Actor {
@@ -199,7 +199,7 @@ export class World {
     classId: string;
     guid?: Guid;
     variables?: Record<string, unknown>;
-    hooks?: ConstructorParameters<typeof ActorComponent>[0]["hooks"];
+    hooks?: import("./objects").LifecycleHooks<ActorComponent>;
     assetGuid?: Guid | null;
   }): ActorComponent {
     return new ActorComponent({

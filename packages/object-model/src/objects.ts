@@ -16,10 +16,10 @@ export interface WorldLike {
   rngNextFloat(): number;
 }
 
-export type LifecycleHooks = {
-  onCreation?: (self: BObject) => void;
-  onTick?: (self: BObject, ctx: TickContext) => void;
-  onDestroyed?: (self: BObject) => void;
+export type LifecycleHooks<T extends BObject = BObject> = {
+  onCreation?: (self: T) => void;
+  onTick?: (self: T, ctx: TickContext) => void;
+  onDestroyed?: (self: T) => void;
 };
 
 export class BObject {
@@ -79,11 +79,20 @@ export class Actor extends BObject {
   spawnIndex = -1;
 
   constructor(
-    options: ConstructorParameters<typeof BObject>[0] & {
+    options: {
+      classId: string;
+      guid?: Guid;
+      guidFactory?: GuidFactory;
+      variables?: Record<string, unknown>;
+      hooks?: LifecycleHooks<Actor>;
+      implementedInterfaces?: string[];
       transform?: Transform;
     },
   ) {
-    super({ ...options, classId: options.classId });
+    super({
+      ...options,
+      hooks: options.hooks as LifecycleHooks | undefined,
+    });
     this.transform = options.transform
       ? {
           position: { ...options.transform.position },
@@ -109,16 +118,25 @@ export class ActorComponent extends BObject {
   assetGuid: Guid | null = null;
 
   constructor(
-    options: ConstructorParameters<typeof BObject>[0] & {
+    options: {
+      classId: string;
+      guid?: Guid;
+      guidFactory?: GuidFactory;
+      variables?: Record<string, unknown>;
+      hooks?: LifecycleHooks<ActorComponent>;
+      implementedInterfaces?: string[];
       assetGuid?: Guid | null;
     },
   ) {
-    super(options);
+    super({
+      ...options,
+      hooks: options.hooks as LifecycleHooks | undefined,
+    });
     this.assetGuid = options.assetGuid ?? null;
   }
 }
 
-export type GameInstanceHooks = LifecycleHooks & {
+export type GameInstanceHooks = LifecycleHooks<GameInstance> & {
   onGameStart?: (self: GameInstance) => void;
   onGameEnd?: (self: GameInstance) => void;
   onSceneLoaded?: (self: GameInstance, sceneName: string) => void;
@@ -128,14 +146,18 @@ export class GameInstance extends BObject {
   private readonly gameHooks: GameInstanceHooks;
 
   constructor(
-    options: Omit<ConstructorParameters<typeof BObject>[0], "hooks"> & {
+    options: {
+      classId: string;
+      guid?: Guid;
+      guidFactory?: GuidFactory;
+      variables?: Record<string, unknown>;
       hooks?: GameInstanceHooks;
+      implementedInterfaces?: string[];
     },
   ) {
     super({
       ...options,
-      classId: options.classId,
-      hooks: options.hooks,
+      hooks: options.hooks as LifecycleHooks | undefined,
     });
     this.gameHooks = options.hooks ?? {};
   }
