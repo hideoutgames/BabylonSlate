@@ -4,7 +4,7 @@ import { DocumentProvider } from "./context/document-context";
 
 function EditorLayout() {
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
+    <div className="flex min-h-svh h-dvh flex-col bg-background text-foreground">
       <EditorChromeBar />
       <main className="flex min-h-0 flex-1 flex-col">
         <DocumentWorkspace />
