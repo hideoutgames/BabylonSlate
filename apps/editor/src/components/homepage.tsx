@@ -97,11 +97,7 @@ export function Homepage({
         </Button>
       </header>
 
-<<<<<<< HEAD
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 py-8">
-=======
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-8 overflow-y-auto overscroll-y-contain px-6 py-8">
->>>>>>> origin/main
         {needsReconnect ? (
           <Alert variant="destructive" data-testid="reconnect-banner">
             <AlertTitle>Project folder unavailable</AlertTitle>
