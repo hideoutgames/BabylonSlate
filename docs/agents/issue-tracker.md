@@ -36,3 +36,16 @@ Operating model (engineplan §16.1):
 - **One slice, one PR, one owner** per package set. Two agents never hold the same package at once — this is why the package boundaries are drawn narrowly.
 - **API before implementation.** A slice others depend on lands its types and a failing test suite first, so downstream agents can start against a stable signature instead of guessing.
 - **Design notes for shared surfaces.** Shared surfaces (bridge protocol, container formats) get a design note in `docs/architecture/` before parallel implementation starts.
+
+## P1 slice ownership
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/` | — |
+| Binary VFS | `p1-vfs` | `core`, `vfs` | Design notes |
+| App settings | `p1-app-settings` | `vfs` | Design notes |
+| Containers + migration | `p1-babasset`, `p1-schema-migration` | `assets`, `test-kit` | `p1-vfs` |
+| Project codec | `p1-babproject` | `assets` | babasset |
+| Homepage | `p1-homepage` | `apps/editor`, thin `ui`/`editor-kit` | vfs + settings + babproject |
+
+Design notes: [containers.md](../architecture/containers.md), [vfs.md](../architecture/vfs.md).

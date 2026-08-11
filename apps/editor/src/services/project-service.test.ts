@@ -8,7 +8,7 @@ describe("project round-trip", () => {
     localStorage.clear();
     const storage = new WebStorageAdapter();
     const service = new ProjectService(storage);
-    await storage.pickProjectFolder();
+    await storage.openDocumentsProject("RoundTrip.babproject");
 
     const { document, layouts } = await service.loadCurrentProject();
     expect(document.metadata.name).toBeTruthy();

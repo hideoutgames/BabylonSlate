@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./node": "./src/node-adapter.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -14,7 +15,8 @@
     "@babylonslate/core": "workspace:*",
     "@capacitor/core": "^8.0.0",
     "@capacitor/preferences": "^8.0.0",
-    "@daniele-rolli/capacitor-scoped-storage": "^0.0.3"
+    "@daniele-rolli/capacitor-scoped-storage": "^0.0.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "~5.8.2"

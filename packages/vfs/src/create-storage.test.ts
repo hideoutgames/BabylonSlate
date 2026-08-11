@@ -8,15 +8,15 @@ vi.mock("./platform", () => ({
   getHostPlatform: () => (isMobile() ? "ios" : "web"),
 }));
 
-vi.mock("./scoped-storage-adapter", () => ({
-  ScopedStorageAdapter: class {
+vi.mock("./mobile-storage-adapter", () => ({
+  MobileStorageAdapter: class {
     init = init;
   },
 }));
 
 const { createStorage } = await import("./create-storage");
-const { WebStorageAdapter } = await import("./web-adapter");
-const { ScopedStorageAdapter } = await import("./scoped-storage-adapter");
+const { OpfsStorageAdapter } = await import("./web-adapter");
+const { MobileStorageAdapter } = await import("./mobile-storage-adapter");
 
 describe("createStorage", () => {
   beforeEach(() => {
@@ -24,14 +24,14 @@ describe("createStorage", () => {
     init.mockClear();
   });
 
-  it("uses the web adapter on web hosts", () => {
-    expect(createStorage()).toBeInstanceOf(WebStorageAdapter);
+  it("uses the OPFS adapter on web hosts", () => {
+    expect(createStorage()).toBeInstanceOf(OpfsStorageAdapter);
     expect(init).not.toHaveBeenCalled();
   });
 
-  it("uses the scoped-storage adapter on mobile hosts and initializes it", () => {
+  it("uses the mobile adapter on mobile hosts and initializes it", () => {
     isMobile.mockReturnValue(true);
-    expect(createStorage()).toBeInstanceOf(ScopedStorageAdapter);
+    expect(createStorage()).toBeInstanceOf(MobileStorageAdapter);
     expect(init).toHaveBeenCalledOnce();
   });
 });

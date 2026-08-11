@@ -28,3 +28,20 @@ export function writeGolden(
 export function normalizeGoldenText(text: string): string {
   return text.replace(/\r\n/g, "\n").trimEnd();
 }
+
+/** Read a binary golden fixture. */
+export function readGoldenBinary(
+  testDir: string,
+  relativePath: string,
+): Uint8Array {
+  return new Uint8Array(readFileSync(resolve(testDir, relativePath)));
+}
+
+/** Write a binary golden fixture. */
+export function writeGoldenBinary(
+  testDir: string,
+  relativePath: string,
+  content: Uint8Array,
+): void {
+  writeFileSync(resolve(testDir, relativePath), content);
+}

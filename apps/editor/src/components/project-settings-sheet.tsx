@@ -1,3 +1,4 @@
+import { Button } from "@babylonslate/ui/components/button";
 import {
   Sheet,
   SheetContent,
@@ -16,11 +17,22 @@ export function ProjectSettingsSheet({
   open,
   onOpenChange,
 }: ProjectSettingsSheetProps) {
-  const { projectDocument } = useDocuments();
+  const { projectDocument, exportProject } = useDocuments();
 
   if (!open || !projectDocument) {
     return null;
   }
+
+  const handleExport = async () => {
+    const bytes = await exportProject();
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/zip" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${projectDocument.metadata.name.replace(/\s+/g, "_")}.babproject`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -51,6 +63,17 @@ export function ProjectSettingsSheet({
             <span className="text-sm">
               {projectDocument.settings.touchMinTargetPx}px
             </span>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-border pt-4">
+            <span className="text-xs font-medium text-muted-foreground">
+              Export
+            </span>
+            <Button
+              data-testid="export-project"
+              onClick={() => void handleExport()}
+            >
+              Export Project
+            </Button>
           </div>
         </div>
       </SheetContent>

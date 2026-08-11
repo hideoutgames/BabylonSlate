@@ -1,13 +1,13 @@
 import type { ProjectStorage } from "@babylonslate/core";
 import { isMobilePlatform } from "./platform";
-import { ScopedStorageAdapter } from "./scoped-storage-adapter";
-import { WebStorageAdapter } from "./web-adapter";
+import { MobileStorageAdapter } from "./mobile-storage-adapter";
+import { OpfsStorageAdapter } from "./web-adapter";
 
 export function createStorage(): ProjectStorage {
   if (isMobilePlatform()) {
-    const adapter = new ScopedStorageAdapter();
+    const adapter = new MobileStorageAdapter();
     void adapter.init();
     return adapter;
   }
-  return new WebStorageAdapter();
+  return new OpfsStorageAdapter();
 }

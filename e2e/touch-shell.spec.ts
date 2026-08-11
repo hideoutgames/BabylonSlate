@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test.describe("Touch shell UX", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/?test=1");
-    await page.getByTestId("open-project").click();
+    await page.getByTestId("create-project-empty").click();
     await page.getByTestId("content-item-scenes/main.scene.json").click();
     await expect(page.getByTestId("viewport-panel")).toBeVisible({
       timeout: 15_000,

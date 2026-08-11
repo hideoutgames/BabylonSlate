@@ -10,23 +10,49 @@ import {
   type ReactNode,
 } from "react";
 import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
-import type { DocumentRef, ProjectDocument } from "@babylonslate/core";
+import type {
+  DocumentRef,
+  ProjectDocument,
+  ProjectFolderHandle,
+} from "@babylonslate/core";
 import { documentId } from "@babylonslate/core";
-import { createStorage } from "@babylonslate/vfs";
+import {
+  hasJournal,
+  truncateJournal,
+  writeJournalStub,
+} from "@babylonslate/assets";
+import { createStorage, MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   DocumentService,
   type OpenDocument,
 } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 
+export type AppRoute = "home" | "editor";
+
 interface DocumentContextValue {
+  route: AppRoute;
   projectDocument: ProjectDocument | null;
   projectName: string | null;
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
+  listedProjects: ProjectFolderHandle[];
+  needsReconnect: boolean;
+  recoveryAvailable: boolean;
+  dirtyDocuments: OpenDocument[];
   openProject: () => Promise<void>;
+  createEmptyProject: () => Promise<void>;
+  openListedProject: (handle: ProjectFolderHandle) => Promise<void>;
+  reconnectProject: () => Promise<void>;
   saveProject: () => Promise<void>;
+  saveAll: () => Promise<void>;
+  closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[] }>;
+  forceCloseProject: () => Promise<void>;
+  refreshProjectList: () => Promise<void>;
+  exportProject: () => Promise<Uint8Array>;
+  dismissRecovery: () => Promise<void>;
+  keepRecovery: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
   closeDocument: (id: string) => void;
   setActiveDocument: (id: string) => void;
@@ -46,26 +72,39 @@ interface DocumentContextValue {
 const DocumentContext = createContext<DocumentContextValue | null>(null);
 
 export function DocumentProvider({ children }: { children: ReactNode }) {
+  const projectStorage = useMemo(() => createStorage(), []);
   const projectService = useMemo(
-    () => new ProjectService(createStorage()),
-    [],
+    () => new ProjectService(projectStorage),
+    [projectStorage],
   );
+  const derivedStorage = useMemo(() => new MemoryStorageAdapter("documents"), []);
   const documentServiceRef = useRef(new DocumentService());
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
 
+  const [route, setRoute] = useState<AppRoute>("home");
   const [projectDocument, setProjectDocument] = useState<ProjectDocument | null>(
     null,
   );
+  const [listedProjects, setListedProjects] = useState<ProjectFolderHandle[]>(
+    [],
+  );
+  const [needsReconnect, setNeedsReconnect] = useState(false);
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
   const [registryVersion, setRegistryVersion] = useState(0);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
-
   const documentService = documentServiceRef.current;
+
+  const refreshProjectList = useCallback(async () => {
+    setListedProjects(await projectService.listProjects());
+    setNeedsReconnect(await projectService.needsReconnect());
+  }, [projectService]);
 
   useEffect(() => {
     documentService.ensureContentBrowserTab();
+    void refreshProjectList();
     bump();
-  }, [bump, documentService]);
+  }, [bump, documentService, refreshProjectList]);
 
   const captureLayoutForId = useCallback(
     (id: string) => {
@@ -84,17 +123,58 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [captureLayoutForId, documentService]);
 
+  const enterEditor = useCallback(
+    async (document: ProjectDocument, layouts: Awaited<
+      ReturnType<ProjectService["loadCurrentProject"]>
+    >["layouts"]) => {
+      dockviewApisRef.current.clear();
+      await documentService.initializeFromProject(
+        projectService,
+        document,
+        layouts,
+      );
+      setProjectDocument(document);
+      setRoute("editor");
+      const guid = projectService.guid;
+      if (guid) {
+        await derivedStorage.openDocumentsProject("derived");
+        setRecoveryAvailable(await hasJournal(derivedStorage, guid));
+      }
+      await refreshProjectList();
+      bump();
+    },
+    [
+      bump,
+      derivedStorage,
+      documentService,
+      projectService,
+      refreshProjectList,
+    ],
+  );
+
   const openProject = useCallback(async () => {
     const { document, layouts } = await projectService.openProject();
-    dockviewApisRef.current.clear();
-    await documentService.initializeFromProject(
-      projectService,
-      document,
-      layouts,
-    );
-    setProjectDocument(document);
-    bump();
-  }, [bump, documentService, projectService]);
+    await enterEditor(document, layouts);
+  }, [enterEditor, projectService]);
+
+  const createEmptyProject = useCallback(async () => {
+    const { document, layouts } = await projectService.createEmptyProject();
+    await enterEditor(document, layouts);
+  }, [enterEditor, projectService]);
+
+  const openListedProject = useCallback(
+    async (handle: ProjectFolderHandle) => {
+      const { document, layouts } =
+        await projectService.openListedProject(handle);
+      await enterEditor(document, layouts);
+    },
+    [enterEditor, projectService],
+  );
+
+  const reconnectProject = useCallback(async () => {
+    const { document, layouts } = await projectService.reconnect();
+    await enterEditor(document, layouts);
+  }, [enterEditor, projectService]);
 
   const saveProject = useCallback(async () => {
     if (!projectDocument) return;
@@ -114,6 +194,62 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService.markAllClean();
     bump();
   }, [bump, captureAllLayouts, documentService, projectDocument, projectService]);
+
+  const saveAll = saveProject;
+
+  const forceCloseProject = useCallback(async () => {
+    const guid = projectService.guid;
+    if (guid) {
+      await derivedStorage.openDocumentsProject("derived");
+      await truncateJournal(derivedStorage, guid);
+    }
+    await projectService.closeProject();
+    dockviewApisRef.current.clear();
+    documentService.ensureContentBrowserTab();
+    setProjectDocument(null);
+    setRecoveryAvailable(false);
+    setRoute("home");
+    await refreshProjectList();
+    bump();
+  }, [
+    bump,
+    derivedStorage,
+    documentService,
+    projectService,
+    refreshProjectList,
+  ]);
+
+  const closeProject = useCallback(async () => {
+    const dirty = documentService.getDirtyDocuments();
+    if (dirty.length > 0) {
+      return { blocked: true, dirty };
+    }
+    await forceCloseProject();
+    return { blocked: false, dirty: [] };
+  }, [documentService, forceCloseProject]);
+
+  const exportProject = useCallback(async () => {
+    return projectService.exportZip();
+  }, [projectService]);
+
+  const dismissRecovery = useCallback(async () => {
+    const guid = projectService.guid;
+    if (guid) {
+      await derivedStorage.openDocumentsProject("derived");
+      await truncateJournal(derivedStorage, guid);
+    }
+    setRecoveryAvailable(false);
+  }, [derivedStorage, projectService]);
+
+  const keepRecovery = useCallback(() => {
+    const guid = projectService.guid;
+    if (guid) {
+      void derivedStorage.openDocumentsProject("derived").then(() =>
+        writeJournalStub(derivedStorage, guid, ["pending-p2-replay"]),
+      );
+    }
+    setRecoveryAvailable(false);
+  }, [derivedStorage, projectService]);
 
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
@@ -207,13 +343,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const path of projectDocument.scenes) {
       const id = documentId({ kind: "scene", path });
       if (!openIds.has(id)) {
-        available.push({ kind: "scene", path, label: path.split("/").pop() ?? path });
+        available.push({
+          kind: "scene",
+          path,
+          label: path.split("/").pop() ?? path,
+        });
       }
     }
     for (const path of projectDocument.graphs) {
       const id = documentId({ kind: "graph", path });
       if (!openIds.has(id)) {
-        available.push({ kind: "graph", path, label: path.split("/").pop() ?? path });
+        available.push({
+          kind: "graph",
+          path,
+          label: path.split("/").pop() ?? path,
+        });
       }
     }
     return available;
@@ -221,13 +365,28 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DocumentContextValue>(
     () => ({
+      route,
       projectDocument,
       projectName: projectDocument?.metadata.name ?? null,
       openDocuments: documentService.getOpenDocumentsOrdered(),
       tabOrder: [...documentService.getState().tabOrder],
       activeDocumentId: documentService.getState().activeDocumentId,
+      listedProjects,
+      needsReconnect,
+      recoveryAvailable,
+      dirtyDocuments: documentService.getDirtyDocuments(),
       openProject,
+      createEmptyProject,
+      openListedProject,
+      reconnectProject,
       saveProject,
+      saveAll,
+      closeProject,
+      forceCloseProject,
+      refreshProjectList,
+      exportProject,
+      dismissRecovery,
+      keepRecovery,
       openDocument,
       closeDocument,
       setActiveDocument,
@@ -241,10 +400,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }),
     [
       registryVersion,
+      route,
       projectDocument,
       documentService,
+      listedProjects,
+      needsReconnect,
+      recoveryAvailable,
       openProject,
+      createEmptyProject,
+      openListedProject,
+      reconnectProject,
       saveProject,
+      saveAll,
+      closeProject,
+      forceCloseProject,
+      refreshProjectList,
+      exportProject,
+      dismissRecovery,
+      keepRecovery,
       openDocument,
       closeDocument,
       setActiveDocument,

@@ -15,10 +15,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   FileJsonIcon,
-  FolderOpenIcon,
   GripVerticalIcon,
   LayersIcon,
   LayoutGridIcon,
+  LogOutIcon,
   PlusIcon,
   SaveIcon,
   SettingsIcon,
@@ -148,7 +148,11 @@ function PinnedContentBrowserTab({
   );
 }
 
-export function EditorChromeBar() {
+export function EditorChromeBar({
+  onCloseProject,
+}: {
+  onCloseProject?: () => void;
+}) {
   const {
     projectName,
     openDocuments,
@@ -156,28 +160,15 @@ export function EditorChromeBar() {
     setActiveDocument,
     closeDocument,
     reorderClosableTabs,
-    openProject,
     saveProject,
+    saveAll,
     openDocument,
     getAvailableDocuments,
   } = useDocuments();
 
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [openError, setOpenError] = useState<string | null>(null);
   const testMode = isTestModeEnabled();
-
-  const handleOpenProject = async () => {
-    setOpenError(null);
-    try {
-      await openProject();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to open project";
-      console.error("[Open project]", error);
-      setOpenError(message);
-    }
-  };
 
   const contentBrowserDoc = openDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
@@ -222,25 +213,6 @@ export function EditorChromeBar() {
         <Button
           size="sm"
           variant="ghost"
-          data-testid="open-project"
-          className="chrome-action-button"
-          onClick={() => void handleOpenProject()}
-        >
-          <FolderOpenIcon data-icon="inline-start" />
-          Open
-        </Button>
-        {openError ? (
-          <span
-            className="max-w-48 truncate text-xs text-destructive"
-            data-testid="open-project-error"
-            title={openError}
-          >
-            {openError}
-          </span>
-        ) : null}
-        <Button
-          size="sm"
-          variant="ghost"
           data-testid="save-project"
           className="chrome-action-button"
           disabled={!projectName}
@@ -248,6 +220,28 @@ export function EditorChromeBar() {
         >
           <SaveIcon data-icon="inline-start" />
           Save
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="save-all-project"
+          className="chrome-action-button"
+          disabled={!projectName}
+          onClick={() => void saveAll()}
+        >
+          <SaveIcon data-icon="inline-start" />
+          Save All
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="close-project"
+          className="chrome-action-button"
+          disabled={!projectName}
+          onClick={() => onCloseProject?.()}
+        >
+          <LogOutIcon data-icon="inline-start" />
+          Close
         </Button>
         {projectName ? (
           <span className="chrome-project-name" data-testid="project-name">
