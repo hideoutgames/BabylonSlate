@@ -16,6 +16,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
+import { isTestModeEnabled } from "@babylonslate/vfs";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -183,9 +184,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     if (scene && engineRef.current) {
       engineRef.current.loadScene(scene);
-      engineRef.current.editor?.setSelectedActors(selectedActorIds);
     }
-  }, [scene, selectedActorIds]);
+  }, [scene]);
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(selectedActorIds);
@@ -238,6 +238,48 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         : null,
     );
   }, [projectDocument?.settings.twoD, viewportMode]);
+
+  useEffect(() => {
+    if (!isTestModeEnabled()) return;
+    type ViewportTestHost = {
+      __babylonslateViewportTest?: {
+        commitGizmoNudge: () => Promise<boolean>;
+        activeSceneMeshPosition: () => [number, number, number] | null;
+      };
+    };
+    const host = globalThis as ViewportTestHost;
+
+    host.__babylonslateViewportTest = {
+      activeSceneMeshPosition: () => {
+        const actorId = sceneRef.current?.actors[0]?.id;
+        if (!actorId) return null;
+        const mesh = engineRef.current?.editor?.sync.meshForActor(actorId);
+        if (!mesh) return null;
+        return [mesh.position.x, mesh.position.y, mesh.position.z];
+      },
+      /**
+       * Simulate a finished gizmo drag: mutate the live Babylon mesh, then
+       * commit through the same path as onGizmoDragEnd (not a document-only nudge).
+       */
+      commitGizmoNudge: async () => {
+        const handle = engineRef.current;
+        const current = sceneRef.current;
+        const actorId = current?.actors[0]?.id;
+        if (!handle?.editor || !current || !actorId) return false;
+        const mesh = handle.editor.sync.meshForActor(actorId);
+        if (!mesh) return false;
+        handle.editor.setSelectedActors([actorId]);
+        mesh.position.x += 1.5;
+        dragStartSceneRef.current = current;
+        commitGizmoTransform();
+        return true;
+      },
+    };
+
+    return () => {
+      delete host.__babylonslateViewportTest;
+    };
+  }, [commitGizmoTransform]);
 
   return (
     <div

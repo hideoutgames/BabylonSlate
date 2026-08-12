@@ -15,17 +15,18 @@ async function openMainScene(page: Page) {
   ).toBeVisible({ timeout: 15_000 });
 }
 
-async function nudgeSceneActor(page: Page): Promise<boolean> {
+/** Commit a simulated gizmo drag (mesh mutation → applySceneChange). */
+async function commitGizmoNudge(page: Page): Promise<boolean> {
   return page.evaluate(() =>
     (
       globalThis as {
-        __babylonslateTest: { nudgeActiveSceneActor: () => Promise<boolean> };
+        __babylonslateViewportTest: { commitGizmoNudge: () => Promise<boolean> };
       }
-    ).__babylonslateTest.nudgeActiveSceneActor(),
+    ).__babylonslateViewportTest.commitGizmoNudge(),
   );
 }
 
-async function sceneActorX(page: Page): Promise<number | null> {
+async function sceneDocumentX(page: Page): Promise<number | null> {
   return page.evaluate(() => {
     const position = (
       globalThis as {
@@ -34,6 +35,19 @@ async function sceneActorX(page: Page): Promise<number | null> {
         };
       }
     ).__babylonslateTest.activeSceneActorPosition();
+    return position?.[0] ?? null;
+  });
+}
+
+async function sceneMeshX(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const position = (
+      globalThis as {
+        __babylonslateViewportTest: {
+          activeSceneMeshPosition: () => [number, number, number] | null;
+        };
+      }
+    ).__babylonslateViewportTest.activeSceneMeshPosition();
     return position?.[0] ?? null;
   });
 }
@@ -76,17 +90,30 @@ test.describe("P6 first-playable scene editing", () => {
 
     await page.getByTestId("outliner-add-actor").click();
 
-    const before = await sceneActorX(page);
-    expect(before).not.toBeNull();
+    const beforeDoc = await sceneDocumentX(page);
+    const beforeMesh = await sceneMeshX(page);
+    expect(beforeDoc).not.toBeNull();
+    expect(beforeMesh).not.toBeNull();
+    expect(beforeMesh).toBeCloseTo(beforeDoc ?? 0, 5);
 
-    expect(await nudgeSceneActor(page)).toBe(true);
-    await expect.poll(async () => sceneActorX(page)).toBeCloseTo((before ?? 0) + 1.5, 5);
+    expect(await commitGizmoNudge(page)).toBe(true);
+    await expect
+      .poll(async () => sceneDocumentX(page))
+      .toBeCloseTo((beforeDoc ?? 0) + 1.5, 5);
+    await expect
+      .poll(async () => sceneMeshX(page))
+      .toBeCloseTo((beforeMesh ?? 0) + 1.5, 5);
 
     await page.getByTestId("undo-document").click();
-    await expect.poll(async () => sceneActorX(page)).toBeCloseTo(before ?? 0, 5);
+    await expect.poll(async () => sceneDocumentX(page)).toBeCloseTo(beforeDoc ?? 0, 5);
+    await expect.poll(async () => sceneMeshX(page)).toBeCloseTo(beforeMesh ?? 0, 5);
 
     await page.getByTestId("save-project").click();
 
+    await page.getByTestId("viewport-mode-toggle").click();
+    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+    await page.getByTestId("undo-document").click();
+    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("3D");
     await page.getByTestId("viewport-mode-toggle").click();
     await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
     await page.getByTestId("save-project").click();
@@ -102,6 +129,7 @@ test.describe("P6 first-playable scene editing", () => {
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-canvas")).toBeVisible();
+    // Prefer resolved InputResolver Move.x (play-session.lastMoveX) over raw axis.
     await expect
       .poll(async () => {
         const attr = await page

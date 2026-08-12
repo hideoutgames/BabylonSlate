@@ -15,7 +15,7 @@ import {
 } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createEditorGrid, buildGridLines, gridLineOffsets } from "./editor-grid";
-import { createGizmoHost } from "./gizmo-host";
+import { createGizmoHost, gizmoAxisEnabledFlags } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
 import { editorMeshName } from "./scene-loader";
@@ -320,17 +320,33 @@ describe("selection outline", () => {
 
 describe("gizmo host", () => {
   it("hides the axes 2D cannot use", () => {
+    expect(gizmoAxisEnabledFlags("2d", "translate")).toEqual({
+      position: { x: true, y: true, z: false },
+      rotation: { x: false, y: false, z: false },
+      scale: { x: false, y: false, z: false, uniform: false },
+    });
+    expect(gizmoAxisEnabledFlags("2d", "rotate")).toEqual({
+      position: { x: false, y: false, z: false },
+      rotation: { x: false, y: false, z: true },
+      scale: { x: false, y: false, z: false, uniform: false },
+    });
+    expect(gizmoAxisEnabledFlags("2d", "scale")).toEqual({
+      position: { x: false, y: false, z: false },
+      rotation: { x: false, y: false, z: false },
+      scale: { x: true, y: true, z: false, uniform: true },
+    });
+    expect(gizmoAxisEnabledFlags("3d", "translate").position.z).toBe(true);
+    expect(gizmoAxisEnabledFlags("3d", "rotate").rotation.x).toBe(true);
+  });
+
+  it("applies 2D axis flags to the live Babylon gizmos", () => {
     const { scene } = createHandle();
     const host = createGizmoHost(scene, { mode: "2d", tool: "translate" });
     expect(host.mode).toBe("2d");
-
-    host.setTool("translate");
-    host.setMode("2d");
     host.setTool("rotate");
-    host.setTool("translate");
+    expect(host.tool).toBe("rotate");
     host.setMode("3d");
-    host.setMode("2d");
-
+    expect(host.mode).toBe("3d");
     host.dispose();
   });
 

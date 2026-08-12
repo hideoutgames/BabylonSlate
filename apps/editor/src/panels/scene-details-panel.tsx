@@ -148,6 +148,20 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onChange: (name) => mutate({ ...scene, name }),
       },
       {
+        kind: "text",
+        id: "scene-game-instance-class",
+        label: "Game instance class",
+        value: scene.settings.gameInstanceClass ?? "",
+        onChange: (gameInstanceClass) =>
+          mutate({
+            ...scene,
+            settings: {
+              ...scene.settings,
+              gameInstanceClass: gameInstanceClass.trim() || null,
+            },
+          }),
+      },
+      {
         kind: "enum",
         id: "scene-viewport-mode",
         label: "Default viewport mode",
@@ -310,6 +324,86 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         updateActor((entry) => ({
           ...entry,
           transform: { ...entry.transform, position },
+        })),
+    },
+    {
+      kind: "number",
+      id: "actor-rotation-x",
+      label: "Rotation X",
+      value: actor.transform.rotation[0],
+      defaultValue: 0,
+      onChange: (rx) =>
+        updateActor((entry) => ({
+          ...entry,
+          transform: {
+            ...entry.transform,
+            rotation: [
+              rx,
+              entry.transform.rotation[1],
+              entry.transform.rotation[2],
+              entry.transform.rotation[3],
+            ],
+          },
+        })),
+    },
+    {
+      kind: "number",
+      id: "actor-rotation-y",
+      label: "Rotation Y",
+      value: actor.transform.rotation[1],
+      defaultValue: 0,
+      onChange: (ry) =>
+        updateActor((entry) => ({
+          ...entry,
+          transform: {
+            ...entry.transform,
+            rotation: [
+              entry.transform.rotation[0],
+              ry,
+              entry.transform.rotation[2],
+              entry.transform.rotation[3],
+            ],
+          },
+        })),
+    },
+    {
+      kind: "number",
+      id: "actor-rotation-z",
+      label: "Rotation Z",
+      value: actor.transform.rotation[2],
+      defaultValue: 0,
+      onChange: (rz) =>
+        updateActor((entry) => ({
+          ...entry,
+          transform: {
+            ...entry.transform,
+            rotation: [
+              entry.transform.rotation[0],
+              entry.transform.rotation[1],
+              rz,
+              entry.transform.rotation[3],
+            ],
+          },
+        })),
+    },
+    {
+      kind: "number",
+      id: "actor-rotation-w",
+      label: "Rotation W",
+      value: actor.transform.rotation[3],
+      defaultValue: 1,
+      onChange: (rw) =>
+        updateActor((entry) => ({
+          ...entry,
+          transform: {
+            ...entry.transform,
+            rotation: [
+              entry.transform.rotation[0],
+              entry.transform.rotation[1],
+              entry.transform.rotation[2],
+              rw,
+            ],
+          },
         })),
     },
     {

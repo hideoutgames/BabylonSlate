@@ -63,3 +63,17 @@ export function applyPixelArtSampling(texture: BaseTexture): void {
   editable.wrapV = Texture.CLAMP_ADDRESSMODE;
   editable.anisotropicFilteringLevel = 1;
 }
+
+/**
+ * Walk every texture currently registered on a Babylon scene and apply
+ * pixel-art sampling. Call when pixel-perfect mode turns on (and after
+ * textures load into a pixel-perfect project) so nearest filtering is not
+ * left as a dead helper.
+ */
+export function applyPixelArtSamplingToScene(scene: {
+  textures: BaseTexture[];
+}): void {
+  for (const texture of scene.textures) {
+    applyPixelArtSampling(texture);
+  }
+}

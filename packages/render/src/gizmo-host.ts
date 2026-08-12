@@ -44,6 +44,38 @@ export interface GizmoHost {
 /** Touch handles need to be well past the 44px floor at typical zoom. */
 export const DEFAULT_GIZMO_HANDLE_SCALE = 1.6;
 
+export interface GizmoAxisEnabledFlags {
+  position: { x: boolean; y: boolean; z: boolean };
+  rotation: { x: boolean; y: boolean; z: boolean };
+  scale: { x: boolean; y: boolean; z: boolean; uniform: boolean };
+}
+
+/** Pure axis visibility for 2D/3D + tool — unit-tested without Babylon gizmos. */
+export function gizmoAxisEnabledFlags(
+  mode: ViewportMode,
+  tool: GizmoTool,
+): GizmoAxisEnabledFlags {
+  const twoD = mode === "2d";
+  return {
+    position: {
+      x: tool === "translate",
+      y: tool === "translate",
+      z: tool === "translate" && !twoD,
+    },
+    rotation: {
+      x: tool === "rotate" && !twoD,
+      y: tool === "rotate" && !twoD,
+      z: tool === "rotate",
+    },
+    scale: {
+      x: tool === "scale",
+      y: tool === "scale",
+      z: tool === "scale" && !twoD,
+      uniform: tool === "scale",
+    },
+  };
+}
+
 /**
  * Translate / rotate / scale gizmos on a utility layer, with the axis set
  * filtered by viewport mode: 2D exposes XY translate, Z rotate and XY scale and
@@ -106,17 +138,17 @@ export function createGizmoHost(
   }
 
   const applyAxisVisibility = () => {
-    const twoD = mode === "2d";
-    position.xGizmo.isEnabled = tool === "translate";
-    position.yGizmo.isEnabled = tool === "translate";
-    position.zGizmo.isEnabled = tool === "translate" && !twoD;
-    rotation.xGizmo.isEnabled = tool === "rotate" && !twoD;
-    rotation.yGizmo.isEnabled = tool === "rotate" && !twoD;
-    rotation.zGizmo.isEnabled = tool === "rotate";
-    scale.xGizmo.isEnabled = tool === "scale";
-    scale.yGizmo.isEnabled = tool === "scale";
-    scale.zGizmo.isEnabled = tool === "scale" && !twoD;
-    scale.uniformScaleGizmo.isEnabled = tool === "scale";
+    const flags = gizmoAxisEnabledFlags(mode, tool);
+    position.xGizmo.isEnabled = flags.position.x;
+    position.yGizmo.isEnabled = flags.position.y;
+    position.zGizmo.isEnabled = flags.position.z;
+    rotation.xGizmo.isEnabled = flags.rotation.x;
+    rotation.yGizmo.isEnabled = flags.rotation.y;
+    rotation.zGizmo.isEnabled = flags.rotation.z;
+    scale.xGizmo.isEnabled = flags.scale.x;
+    scale.yGizmo.isEnabled = flags.scale.y;
+    scale.zGizmo.isEnabled = flags.scale.z;
+    scale.uniformScaleGizmo.isEnabled = flags.scale.uniform;
   };
 
   const applyAttachment = () => {

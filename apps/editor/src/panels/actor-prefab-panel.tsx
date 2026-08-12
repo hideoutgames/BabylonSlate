@@ -37,6 +37,10 @@ export function previewSceneFor(
 /**
  * Actor Prefab tab for class documents: the component tree the class spawns
  * with, plus a minimal 3D preview of the same components.
+ *
+ * Persistence of this tree onto the class document is deferred (see
+ * docs/agents/issue-tracker.md — P6 prefab persistence). Edits here are
+ * preview-only for the session.
  */
 export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -117,6 +121,12 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
       }
     >
       <div className="flex h-full min-h-0 flex-col">
+        <p
+          className="border-b border-border px-3 py-2 text-xs text-muted-foreground"
+          data-testid="prefab-preview-only-note"
+        >
+          Preview only — component edits are not saved to the class document yet.
+        </p>
         <div className="min-h-32 flex-1">
           <TreeView
             nodes={nodes}

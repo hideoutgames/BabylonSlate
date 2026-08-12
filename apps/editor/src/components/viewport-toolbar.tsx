@@ -38,6 +38,20 @@ export function ViewportToolbar() {
     }
   };
 
+  const toggleSnap = () => {
+    const next = !snapEnabled;
+    setSnapEnabled(next);
+    if (scene && scene.settings.grid.snapEnabled !== next) {
+      void applySceneChange(documentId, {
+        ...scene,
+        settings: {
+          ...scene.settings,
+          grid: { ...scene.settings.grid, snapEnabled: next },
+        },
+      });
+    }
+  };
+
   return (
     <div
       className="flex flex-wrap items-center gap-1"
@@ -61,7 +75,7 @@ export function ViewportToolbar() {
         variant={snapEnabled ? "secondary" : "ghost"}
         className="min-h-11 min-w-11"
         aria-pressed={snapEnabled}
-        onClick={() => setSnapEnabled(!snapEnabled)}
+        onClick={toggleSnap}
         data-testid="gizmo-snap-toggle"
       >
         Snap

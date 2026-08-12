@@ -31,6 +31,7 @@ import {
 } from "./snapshot-apply";
 import { pickAtCanvas } from "./picking";
 import { meshNamesInCanvasRect } from "./two-d";
+import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 
 export interface EngineHandle {
   engine: Engine;
@@ -210,6 +211,9 @@ export function createEngine(
       setPixelPerfect: (settings) => {
         cameraController.setCanvasHeight(engine.getRenderHeight());
         cameraController.setPixelPerfect(settings);
+        if (settings) {
+          applyPixelArtSamplingToScene(scene);
+        }
       },
       setSortingLayers: (layers) => {
         editorSync.setSortingLayers(layers);
@@ -224,7 +228,11 @@ export function createEngine(
       setSelectedActors: (actorIds: string[]) => {
         const meshes = actorIds.map((id) => editorSync.meshForActor(id));
         selection.set(meshes);
-        gizmos.attachTo(meshes[0] ?? null);
+        // Locked actors are not pickable; keep the gizmo off them so lock is
+        // more than a pick filter.
+        const gizmoTarget =
+          meshes.find((mesh) => mesh !== null && mesh.isPickable) ?? null;
+        gizmos.attachTo(gizmoTarget);
         scheduler.invalidate("selection");
       },
       frameActor: (actorId: string) => {
