@@ -17,7 +17,11 @@ import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys } from "./viewport-fly-keys";
 import { configureKtx2Transcoder } from "./ktx2-transcoder";
-import { EDITOR_CLEAR_COLOR } from "./editor-clear-color";
+import {
+  documentEditorColorScheme,
+  editorClearColor,
+  type EditorColorScheme,
+} from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
@@ -76,6 +80,8 @@ export interface CreateEngineOptions {
   onGizmoDragEnd?: () => void;
   /** When false, WASD does not fly the editor camera (Play overlay). */
   editorFlyEnabled?: () => boolean;
+  /** Viewport clear color scheme; defaults from `html.dark` when present. */
+  colorScheme?: EditorColorScheme;
 }
 
 export interface EditorTools {
@@ -137,7 +143,9 @@ export function createEngine(
 
   const scene = new Scene(engine);
   scene.skipPointerMovePicking = true;
-  scene.clearColor = EDITOR_CLEAR_COLOR.clone();
+  scene.clearColor = editorClearColor(
+    options.colorScheme ?? documentEditorColorScheme(),
+  );
   if (options.playMode) {
     scene.performancePriority = ScenePerformancePriority.Intermediate;
   }

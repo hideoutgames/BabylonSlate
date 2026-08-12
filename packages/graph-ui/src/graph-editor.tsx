@@ -41,6 +41,7 @@ export interface GraphEditorProps {
   diagnostics?: GraphDiagnostic[];
   onNavigateRequest?: (request: NavigateRequest) => void;
   paletteNodes?: PaletteNode[];
+  colorMode?: "light" | "dark";
 }
 
 function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
@@ -100,6 +101,11 @@ function FocusedNodeSync({ focusedNodeId }: { focusedNodeId?: string }) {
   return null;
 }
 
+function documentColorMode(): "light" | "dark" {
+  if (typeof document === "undefined") return "dark";
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
 function GraphEditorCanvas({
   initialGraph,
   onChange,
@@ -107,6 +113,7 @@ function GraphEditorCanvas({
   diagnostics,
   onNavigateRequest,
   paletteNodes,
+  colorMode = documentColorMode(),
 }: GraphEditorProps) {
   const [nodes, setNodes] = useState<CanvasNode[]>(() =>
     toCanvasNodes(initialGraph.nodes),
@@ -297,7 +304,7 @@ function GraphEditorCanvas({
       <div className="relative h-full w-full touch-manipulation">
         <ReactFlow
           className="graph-editor-canvas"
-          colorMode="dark"
+          colorMode={colorMode}
           nodes={nodes}
           edges={styledEdges}
           nodeTypes={graphNodeTypes}

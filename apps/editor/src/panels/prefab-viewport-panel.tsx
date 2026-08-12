@@ -1,9 +1,15 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useRef } from "react";
-import { createEngine, syncEditorPlayState, type EngineHandle } from "@babylonslate/render";
+import {
+  applyEditorClearColor,
+  createEngine,
+  syncEditorPlayState,
+  type EngineHandle,
+} from "@babylonslate/render";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { usePlay } from "../context/play-context";
+import { useResolvedTheme } from "../context/theme-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { previewSceneFor } from "../lib/prefab-preview";
@@ -29,11 +35,16 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const { gizmoTool, snapEnabled, viewportMode, selectedActorIds } =
     useSceneEditing();
   const { registerScheduler, playing } = usePlay();
+  const colorScheme = useResolvedTheme();
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const handle = createEngine(canvas, { editor: true, viewportMode });
+    const handle = createEngine(canvas, {
+      editor: true,
+      viewportMode,
+      colorScheme,
+    });
     engineRef.current = handle;
     const unregisterScheduler = registerScheduler({
       setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
@@ -64,6 +75,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       syncEditorPlayState(engineRef.current, playing);
     }
   }, [playing]);
+
+  useEffect(() => {
+    const handle = engineRef.current;
+    if (!handle) return;
+    applyEditorClearColor(handle.scene, colorScheme);
+    handle.scheduler.invalidate("asset");
+  }, [colorScheme]);
 
   useEffect(() => {
     engineRef.current?.loadScene(previewSceneFor(components));
