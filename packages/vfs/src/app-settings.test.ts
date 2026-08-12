@@ -12,6 +12,18 @@ describe("app settings", () => {
     expect(settings.undoHistoryLength).toBe(50);
     expect(settings.thumbnailsEnabled).toBe(true);
     expect(settings.appearance.theme).toBe("system");
+    expect(settings.focusKeepPanels).toEqual({
+      scene: ["viewport"],
+      graph: ["graph"],
+    });
+  });
+
+  it("fills focus keep-panel defaults when saved JSON omits the field", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.focusKeepPanels.scene).toEqual(["viewport"]);
+    expect(parsed.focusKeepPanels.graph).toEqual(["graph"]);
   });
 
   it("round-trips through the memory store", async () => {
