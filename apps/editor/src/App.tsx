@@ -22,6 +22,7 @@ import { EditorChromeBar } from "./components/editor-chrome-bar";
 import { DocumentWorkspace } from "./components/document-workspace";
 import { Homepage } from "./components/homepage";
 import { DocumentProvider, useDocuments } from "./context/document-context";
+import { EditorThemeProvider } from "./context/theme-context";
 import { PlayProvider } from "./context/play-context";
 import { ProjectSearchProvider } from "./context/project-search-context";
 import { ValidationProvider } from "./context/validation-context";
@@ -277,15 +278,17 @@ function AppRoutes() {
 export default function App() {
   return (
     <TooltipProvider>
-      <DocumentProvider>
-        <PlayProvider>
-          <ValidationProvider>
-            <ProjectSearchProvider>
-              <AppRoutes />
-            </ProjectSearchProvider>
-          </ValidationProvider>
-        </PlayProvider>
-      </DocumentProvider>
+      <EditorThemeProvider>
+        <DocumentProvider>
+          <PlayProvider>
+            <ValidationProvider>
+              <ProjectSearchProvider>
+                <AppRoutes />
+              </ProjectSearchProvider>
+            </ValidationProvider>
+          </PlayProvider>
+        </DocumentProvider>
+      </EditorThemeProvider>
     </TooltipProvider>
   );
 }

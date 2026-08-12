@@ -16,6 +16,7 @@ export type ViewportRenderTarget = {
 
 export function dispatchEngineSettingsChanged(settings: {
   viewportFrameCap: number;
+  theme?: "system" | "light" | "dark";
 }): void {
   window.dispatchEvent(
     new CustomEvent(ENGINE_SETTINGS_CHANGED_EVENT, { detail: settings }),
