@@ -172,7 +172,9 @@ export function openDockWindow(
       ? { initialHeight: target.initialHeight }
       : {}),
   });
-  panel?.api.setActive?.();
+  if (panel) {
+    panel.api.setActive?.();
+  }
 }
 
 export function closeDockWindow(

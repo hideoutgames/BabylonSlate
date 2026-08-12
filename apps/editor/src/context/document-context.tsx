@@ -57,6 +57,15 @@ import { loadTemplateCards } from "../services/template-service";
 import { compileGraphDocuments } from "../services/script-compiler";
 import { applyFocusLayout } from "../shell/layout-ops";
 import {
+  capturePanelPlacement,
+  isDockWindowOpen as isDockWindowOpenOnApi,
+  listDockPanels,
+  toggleDockWindow as toggleDockWindowOnApi,
+  type DockWindowApi,
+} from "../shell/dock-window-ops";
+import { findDockWindow } from "../shell/window-catalog";
+import { listEditorUtilityWindows } from "../shell/editor-utility-windows";
+import {
   listedProjectsFromRecents,
   type ListedProject,
 } from "../lib/listed-projects";
@@ -131,6 +140,9 @@ interface DocumentContextValue {
   canRedoActiveDocument: boolean;
   registerDockviewApi: (id: string, api: DockviewApi) => void;
   activateDockPanel: (panelId: string) => void;
+  toggleDockWindow: (panelId: string) => void;
+  isDockWindowOpen: (panelId: string) => boolean;
+  openDockWindowCount: number;
   captureActiveLayout: () => void;
   isLayoutFocused: boolean;
   toggleLayoutFocus: () => void;
@@ -150,6 +162,20 @@ interface DocumentContextValue {
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
 
+function asDockWindowApi(api: DockviewApi): DockWindowApi {
+  return api as unknown as DockWindowApi;
+}
+
+function findWindowDefinition(
+  kind: "scene" | "graph",
+  panelId: string,
+) {
+  return (
+    findDockWindow(kind, panelId) ??
+    listEditorUtilityWindows().find((entry) => entry.id === panelId)
+  );
+}
+
 export function DocumentProvider({ children }: { children: ReactNode }) {
   const projectStorage = useMemo(() => createStorage(), []);
   const projectService = useMemo(
@@ -163,6 +189,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
+  const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
   const preFocusLayoutsRef = useRef(new Map<string, Record<string, unknown>>());
   const [focusedLayoutIds, setFocusedLayoutIds] = useState<Set<string>>(
     () => new Set(),
@@ -189,6 +216,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
   const documentService = documentServiceRef.current;
+
+  const disposeDockSubscriptions = useCallback((id?: string) => {
+    if (id) {
+      for (const sub of dockSubscriptionsRef.current.get(id) ?? []) {
+        sub.dispose();
+      }
+      dockSubscriptionsRef.current.delete(id);
+      return;
+    }
+    for (const subs of dockSubscriptionsRef.current.values()) {
+      for (const sub of subs) sub.dispose();
+    }
+    dockSubscriptionsRef.current.clear();
+  }, []);
 
   const ensureDerived = useCallback(async () => {
     if (!derivedStorageRef.current) {
@@ -364,6 +405,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pending: MigrationPending[] = [],
     ) => {
       dockviewApisRef.current.clear();
+      disposeDockSubscriptions();
       preFocusLayoutsRef.current.clear();
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
@@ -392,6 +434,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [
       bump,
+      disposeDockSubscriptions,
       documentService,
       ensureDerived,
       projectService,
@@ -574,6 +617,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await projectService.closeProject();
     projectService.setDerivedStorage(null);
     dockviewApisRef.current.clear();
+    disposeDockSubscriptions();
     preFocusLayoutsRef.current.clear();
     setFocusedLayoutIds(new Set());
     editSessionRef.current.clear();
@@ -586,6 +630,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump();
   }, [
     bump,
+    disposeDockSubscriptions,
     documentService,
     ensureDerived,
     projectService,
@@ -635,6 +680,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const closeDocument = useCallback(
     (id: string) => {
       dockviewApisRef.current.delete(id);
+      disposeDockSubscriptions(id);
       preFocusLayoutsRef.current.delete(id);
       setFocusedLayoutIds((current) => {
         if (!current.has(id)) return current;
@@ -646,7 +692,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       editSessionRef.current.dropDocument(id);
       bump();
     },
-    [bump, documentService],
+    [bump, disposeDockSubscriptions, documentService],
   );
 
   const setActiveDocument = useCallback(
@@ -1041,12 +1087,64 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const registerDockviewApi = useCallback((id: string, api: DockviewApi) => {
     dockviewApisRef.current.set(id, api);
-  }, []);
+    disposeDockSubscriptions(id);
+    const rememberPlacements = () => {
+      if (preFocusLayoutsRef.current.has(id)) return;
+      const dock = asDockWindowApi(api);
+      for (const panel of listDockPanels(dock)) {
+        const placement = capturePanelPlacement(dock, panel.id);
+        if (placement) {
+          documentService.setPanelPlacement(id, panel.id, placement);
+        }
+      }
+    };
+    dockSubscriptionsRef.current.set(id, [
+      api.onDidAddPanel(() => bump()),
+      api.onDidRemovePanel(() => bump()),
+      api.onDidLayoutChange(rememberPlacements),
+    ]);
+    rememberPlacements();
+  }, [bump, disposeDockSubscriptions, documentService]);
 
   const activateDockPanel = useCallback((panelId: string) => {
     const { activeDocumentId } = documentService.getState();
     if (!activeDocumentId) return;
     dockviewApisRef.current.get(activeDocumentId)?.getPanel(panelId)?.api.setActive();
+  }, [documentService]);
+
+  const toggleDockWindow = useCallback((panelId: string) => {
+    const { activeDocumentId } = documentService.getState();
+    if (!activeDocumentId) return;
+    const doc = documentService.getDocument(activeDocumentId);
+    if (!doc || (doc.ref.kind !== "scene" && doc.ref.kind !== "graph")) {
+      return;
+    }
+    const api = dockviewApisRef.current.get(activeDocumentId);
+    if (!api) return;
+    const def = findWindowDefinition(doc.ref.kind, panelId);
+    if (!def) return;
+    const remembered =
+      documentService.getPanelPlacements(activeDocumentId)[panelId] ?? null;
+    const result = toggleDockWindowOnApi(
+      asDockWindowApi(api),
+      def,
+      remembered,
+    );
+    if (result.placement) {
+      documentService.setPanelPlacement(
+        activeDocumentId,
+        panelId,
+        result.placement,
+      );
+    }
+    bump();
+  }, [bump, documentService]);
+
+  const isDockWindowOpen = useCallback((panelId: string) => {
+    const { activeDocumentId } = documentService.getState();
+    if (!activeDocumentId) return false;
+    const api = dockviewApisRef.current.get(activeDocumentId);
+    return api ? isDockWindowOpenOnApi(asDockWindowApi(api), panelId) : false;
   }, [documentService]);
 
   const toggleLayoutFocus = useCallback(() => {
@@ -1188,6 +1286,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       })(),
       registerDockviewApi,
       activateDockPanel,
+      toggleDockWindow,
+      isDockWindowOpen,
+      openDockWindowCount: (() => {
+        const activeId = documentService.getState().activeDocumentId;
+        if (!activeId) return 0;
+        const api = dockviewApisRef.current.get(activeId);
+        return api ? listDockPanels(asDockWindowApi(api)).length : 0;
+      })(),
       captureActiveLayout,
       isLayoutFocused: (() => {
         const activeId = documentService.getState().activeDocumentId;
@@ -1253,6 +1359,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       redoActiveDocument,
       registerDockviewApi,
       activateDockPanel,
+      toggleDockWindow,
+      isDockWindowOpen,
       captureActiveLayout,
       toggleLayoutFocus,
       focusedLayoutIds,
