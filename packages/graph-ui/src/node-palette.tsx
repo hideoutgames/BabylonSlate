@@ -86,7 +86,6 @@ export function NodePalette({ paletteNodes, onAddNode }: NodePaletteProps) {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search nodes"
-        autoFocusSearch
         data-testid="node-palette"
       >
         {grouped.length === 0 ? (

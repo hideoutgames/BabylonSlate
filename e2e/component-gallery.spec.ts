@@ -21,6 +21,8 @@ test("gallery catalog dialog does not autofocus search", async ({ page }) => {
   await expect(page.getByTestId("gallery-catalog-search")).not.toHaveAttribute(
     "data-autofocus-search",
   );
+  await expect(page.getByTestId("gallery-catalog-search")).not.toBeFocused();
+  await expect(page.getByTestId("gallery-catalog-body")).toBeVisible();
 });
 
 test("component gallery renders every editor-kit composite", async ({
