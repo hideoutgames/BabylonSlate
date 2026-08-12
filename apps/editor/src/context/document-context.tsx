@@ -123,6 +123,7 @@ interface DocumentContextValue {
   canUndoActiveDocument: boolean;
   canRedoActiveDocument: boolean;
   registerDockviewApi: (id: string, api: DockviewApi) => void;
+  activateDockPanel: (panelId: string) => void;
   captureActiveLayout: () => void;
   isLayoutFocused: boolean;
   toggleLayoutFocus: () => void;
@@ -489,6 +490,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
       }
     }
+    if (document.settings.compileOnSave) {
+      const graphs = documentService
+        .getOpenDocumentsOrdered()
+        .filter((doc) => doc.ref.kind === "graph" && doc.content)
+        .map((doc) => ({
+          path: doc.ref.path,
+          content: doc.content as SerializedGraph,
+        }));
+      compileGraphDocuments(graphs);
+    }
     const layouts = documentService.buildLayouts();
     await projectService.saveProject(document, layouts);
     documentService.markAllClean();
@@ -503,13 +514,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [bump, captureAllLayouts, documentService, ensureDerived, projectService]);
 
   const scheduleDebouncedSave = useCallback(() => {
-    if (saveDebounceRef.current) {
-      clearTimeout(saveDebounceRef.current);
-    }
+    if (saveDebounceRef.current) return;
+    const interval =
+      projectDocumentRef.current?.settings.autoSaveIntervalMs ?? 120_000;
     saveDebounceRef.current = setTimeout(() => {
       saveDebounceRef.current = null;
       void saveProject();
-    }, 400);
+    }, interval);
   }, [saveProject]);
 
   const approveMigrationsAndSave = useCallback(async () => {
@@ -1017,6 +1028,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     dockviewApisRef.current.set(id, api);
   }, []);
 
+  const activateDockPanel = useCallback((panelId: string) => {
+    const { activeDocumentId } = documentService.getState();
+    if (!activeDocumentId) return;
+    dockviewApisRef.current.get(activeDocumentId)?.getPanel(panelId)?.api.setActive();
+  }, [documentService]);
+
   const toggleLayoutFocus = useCallback(() => {
     const { activeDocumentId } = documentService.getState();
     if (!activeDocumentId) return;
@@ -1155,6 +1172,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           : false;
       })(),
       registerDockviewApi,
+      activateDockPanel,
       captureActiveLayout,
       isLayoutFocused: (() => {
         const activeId = documentService.getState().activeDocumentId;
@@ -1219,6 +1237,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,
+      activateDockPanel,
       captureActiveLayout,
       toggleLayoutFocus,
       focusedLayoutIds,

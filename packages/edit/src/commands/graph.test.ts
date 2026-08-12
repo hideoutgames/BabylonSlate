@@ -7,6 +7,7 @@ import {
   MoveNodeCommand,
   RemoveEdgeCommand,
   RemoveNodeCommand,
+  SetGraphMembersCommand,
   SetNodeDataCommand,
 } from "../commands/graph";
 
@@ -114,5 +115,14 @@ describe("graph commands", () => {
         expect(restored).toEqual(doc);
       }),
     );
+  });
+
+  it("SetGraphMembersCommand apply-then-invert restores the document", () => {
+    const doc: SerializedGraph = { nodes: [], edges: [] };
+    const members = [{ id: "fn-1", kind: "function" as const, name: "Jump" }];
+    const command = new SetGraphMembersCommand(undefined, members);
+    const afterApply = command.apply(doc);
+    expect(afterApply.members).toEqual(members);
+    expect(command.invert().apply(afterApply)).toEqual(doc);
   });
 });

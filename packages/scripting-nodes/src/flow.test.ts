@@ -7,4 +7,12 @@ describe("flow nodes", () => {
     expect(flowNodes[0]?.id).toBeTruthy();
     expect(flowNodes[0]?.category).toBeTruthy();
   });
+
+  it("registers a custom event entry node", () => {
+    const custom = flowNodes.find((node) => node.id === "flow.event.custom");
+    expect(custom?.title).toBe("Event Custom");
+    expect(custom?.pins({}).some((pin) => pin.kind === "exec" && pin.direction === "out")).toBe(
+      true,
+    );
+  });
 });

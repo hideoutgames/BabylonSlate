@@ -27,7 +27,7 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 | Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| Viewport / graph canvas | `--background` | `oklch(1 0 0)` | `oklch(0.145 0 0)` ≈ `#242424` |
+| Viewport / graph canvas (always dark) | `--background` (dark) | n/a — canvases ignore light chrome | `oklch(0.145 0 0)` ≈ `#242424` |
 | Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` |
 | Chrome / raised cards | `--card` | `oklch(1 0 0)` | `oklch(0.205 0 0)` |
 | Headers / category bars | `--secondary` / `--muted` | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
@@ -91,7 +91,7 @@ Title-bar fills for Blueprint-like nodes:
 | --- | --- | --- |
 | `--touch-target` | `44px` | Graph pin rows and remaining large hit boxes |
 | `--chrome-row` | `28px` | Editor chrome, panel headers, property rows, catalog item rows |
-| `--graph-pin-size` | `16px` | Visual pin diamond/circle |
+| `--graph-pin-size` | `22px` | Visual pin diamond/circle |
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 
@@ -99,7 +99,7 @@ Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/sh
 
 ## Axis colors
 
-Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`, `--axis-z` is an independent blue (`oklch(0.50 0.14 250)` light / `oklch(0.62 0.14 250)` dark) — not `var(--primary)`, because primary is ink (`text-axis-x` / `y` / `z`).
+Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`, `--axis-z` is an independent blue (`oklch(0.50 0.14 250)` light / `oklch(0.62 0.14 250)` dark) — not `var(--primary)`, because primary is ink (`text-axis-x` / `y` / `z`). Scene/Prefab transform gizmos in `@babylonslate/render` cannot read CSS; they hardcode matching `Color3`s in `GIZMO_AXIS_COLORS` (`x` 0.86/0.24/0.22, `y` 0.22/0.68/0.38, `z` 0.28/0.48/0.86). Keep those in sync when axis tokens change.
 
 ## Other extension tokens
 
@@ -111,9 +111,11 @@ Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`,
 
 ## Viewport and graph canvas
 
-`packages/render` sets Babylon `scene.clearColor` from `editorClearColor("light" | "dark")` to match Neutral `--background` (white / `#242424`). Editor and Prefab viewports update the live scene and invalidate when the resolved scheme changes.
+Scene, Prefab, and graph **canvases stay dark** regardless of Appearance → Theme. Chrome still follows `html.dark`.
 
-`GraphEditor` takes `colorMode` (`"light" | "dark"`), defaulting from `html.dark`. The graph panel passes the resolved scheme from `EditorThemeProvider`. XYFlow chrome uses `--background` / `--border`.
+`packages/render` sets Babylon `scene.clearColor` from `editorClearColor("dark")` via `EDITOR_CANVAS_COLOR_SCHEME`. `editorClearColor("light")` remains for tests. Editor and Prefab viewports pass `colorScheme: EDITOR_CANVAS_COLOR_SCHEME` into `createEngine` and do not follow the resolved chrome scheme.
+
+`GraphEditor` takes `colorMode` (`"light" | "dark"`). The graph panel always passes `"dark"` and scopes dark graph tokens on the canvas wrapper so a light `html` does not wash nodes or wires. Per-edge `style.stroke` from the source pin color wins; the canvas must not force `--xy-edge-stroke` to `--pin-exec`. XYFlow chrome uses `--background` / `--border` under that dark scope.
 
 Toolbar `DropdownMenu`s (Debug, Settings, Add) default to `modal={false}` so they do not paint a full-viewport `position: fixed` backdrop over the Babylon canvas. On iPad WKWebView that overlay composites as a full black page. Dialog / Sheet / AlertDialog stay modal.
 
@@ -131,7 +133,7 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 | --- | --- |
 | `Button variant="outline"` | Visible actions (chrome Save All / Undo, panel Add/Remove, catalog primary controls) |
 | `Button variant="ghost"` | Tabs, menu items, icon-only close |
-| `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses secondary fill + `aria-pressed` |
+| `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses **accent fill + primary border** + `aria-pressed` (not a near-invisible secondary wash) |
 | Catalog / folder / outliner selected | `variant="secondary"` (where applicable) plus a 2px start-edge **primary** bar (`border-l-2 border-l-primary`) |
 
 **Touch sizes** on `Button` / `Toggle`: `touch` and `touch-icon` map to `min-h/min-w: var(--touch-target, 44px)`. Prefer these over repeating `min-h-11` at call sites. Docked panels omit `PanelFrame` titles when Dockview already shows the tab name; keep a toolbar-only row when actions are present. `PanelFrame` uses `--sidebar`; headers use `--card`.

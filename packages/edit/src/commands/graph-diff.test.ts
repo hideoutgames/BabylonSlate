@@ -4,6 +4,7 @@ import {
   AddNodeCommand,
   MoveNodeCommand,
   RemoveNodeCommand,
+  SetGraphMembersCommand,
 } from "./graph";
 import { diffGraphCommands } from "./graph-diff";
 
@@ -50,6 +51,18 @@ describe("diffGraphCommands", () => {
 
     const commands = diffGraphCommands(before, after);
     expect(commands.some((c) => c instanceof RemoveNodeCommand)).toBe(true);
+  });
+
+  it("emits SetGraphMembersCommand when class members change", () => {
+    const before = createDefaultGraph();
+    const after = {
+      ...before,
+      members: [{ id: "fn-1", kind: "function" as const, name: "Jump" }],
+    };
+    const commands = diffGraphCommands(before, after);
+    expect(commands.some((c) => c instanceof SetGraphMembersCommand)).toBe(
+      true,
+    );
   });
 });
 

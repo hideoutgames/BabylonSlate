@@ -60,16 +60,18 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 - **Pinch** (two fingers, spread change) zooms / dollies. Two-finger translation does not orbit or pan.
 - **Three fingers** pan (move the camera).
 - **WASD** flies in 3D (look-relative) and pans on XY in 2D. Ignored while typing, while Play is open, or when the canvas is hidden.
-- **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Not the P9 game `TouchJoystick`.
+- **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Scene and Prefab toolbars expose a joystick toggle; Scene persists the setting, Prefab uses live context. Not the P9 game `TouchJoystick`.
 - **Gizmo drag** coalesces to one undo step via `mergeKey` on `SetActorTransformCommand` (`transform:{actorId}`).
 - Canvas uses `touch-none` so UI chrome does not steal gestures.
 - Selection on explicit tap pick, not hover.
 
 ## Graph (React Flow)
 
-- One-finger pan/zoom inside graph panel only.
-- **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`). Pin hit boxes are `--touch-target` (44px); visual pins are `--graph-pin-size` (16px). Wires use `--pin-*` colors and 4–5px strokes.
-- **Drag-to-connect:** allowed by the gesture contract; deferred as polish (see issue-tracker P5 follow-ups).
+- One-finger pan/zoom inside graph panel only. **Tap empty pane** clears selection. **Hold empty pane ~250ms, then move** marquees (do not steal one-finger pan until the hold arms).
+- **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`). Pin hit boxes are `--touch-target` (44px); visual pins are `--graph-pin-size` (22px). Wires use `--pin-*` colors and 4–5px strokes.
+- **Drag-to-connect:** shipped. React Flow `onConnect` / `isValidConnection` persist the same `addEdge` path as tap-to-connect. Connection preview uses the dragged pin’s color. `onConnectEnd` on empty pane (not within ~48px of the source pin or an existing handle) opens Add Node filtered to nodes with a compatible opposite pin, places at the drop, and auto-wires.
+- **Double-tap empty pane** opens the unfiltered Add Node catalog. There is no floating Add node button.
+- Overlay toolbar: Copy / Paste / Delete on the selection; **Format** is a visible disabled stub (see engineplan §7.4 / issue-tracker).
 - Node palette is a centered `CatalogDialog` (search **not** autofocused); long-press / secondary click for node context menus when enabled.
 
 ## Document tabs (chrome bar)
@@ -87,4 +89,9 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | --- | --- |
 | Tap / click a tile | Select (replace selection) |
 | Double-tap / double-click a Scene or Graph | Open the document (`openOrFocusDocument`) |
-| Long-press / right-click | Context menu (move, rename, duplicate, delete, …) |
+| Move before ~250ms | Scroll / ignore (do not open menu or start reorder) |
+| Hold ~250ms, then move | Drag-reorder (drop on a folder or among siblings); HTML5 `ASSET_DRAG_MIME` once armed |
+| Hold still to ~500ms | Context menu; cancel drag |
+| Right-click | Same as long-press menu |
+
+Outliner `TreeView` uses the same hold-to-reorder vs menu split (`onReparent` already exists). **Double-tap** an outliner row frames that actor.

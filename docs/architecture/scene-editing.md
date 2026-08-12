@@ -53,7 +53,7 @@ Both systems are **mode-parametric** via `ViewportMode` from `@babylonslate/core
 
 **2D convention** (fixed, left-handed Babylon): content on the **XY plane**, **+Y up**, **+X right**, editor camera at **−Z** looking toward **+Z**. `scene.useRightHandedSystem` stays `false`.
 
-Implementation: `editor-camera.ts`, `gizmo-host.ts` in `@babylonslate/render`.
+Implementation: `editor-camera.ts`, `gizmo-host.ts` in `@babylonslate/render`. Gizmos stay Babylon `PositionGizmo` / `RotationGizmo` / `ScaleGizmo` on a utility layer. Restyle (not a custom mesh engine): unlit `disableLighting` + emissive axis `Color3`s (`GIZMO_AXIS_COLORS`, paired with chrome `--axis-x/y/z` in [theming.md](theming.md)), `GIZMO_SHAFT_THICKNESS` 0.45, rotation tessellation 64, planar translate squares at idle alpha ~0.16 / hover ~0.42, hover brightens the active axis. Uniform scale uses a small center cube. Keep `gizmoAxisEnabledFlags` (2D hides unused axes), snap, drag leases / undo coalesce, and `hitTest` blocking camera look. Prefab shares the same host. Selection outline in `selection-outline.ts` stays a cheap mesh outline (color ~`(0.42, 0.78, 1)`, width `0.022`) — not a HighlightLayer.
 
 ## EditorSceneSync
 
@@ -75,9 +75,9 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 ## Outliner and Details visuals
 
-- **Outliner** (`TreeView`): 32px rows, type icon, selected row `bg-primary/20` + `border-l-primary`. Visibility/lock toggles are compact `sm` controls. **+** opens a **Place Actors** `CatalogDialog` (Shapes, Lights, Camera, Empty, Project assets). Spawned lights are outliner/details-complete; the viewport still uses its default hemispheric light.
-- **Details** (`PropertyGrid`): Unreal-style **label | value** rows at `--chrome-row` (32px). Category headers use `--secondary`. Vector axes use `--axis-x/y/z` on one nowrap row. Checkboxes are compact (`size-4`) inside the row. **Add Component** uses the same catalog chrome, grouped Rendering / Camera / Physics. Numeric rows (`NumericDragField`) keep an empty typed draft; emptying does not commit `0` — blur restores the last committed number.
-- **Viewport overlay**: toolbar island on `--popover` with a shadow so it separates from the 3D view.
+- **Outliner** (`TreeView`): 32px rows, type icon, selected row `bg-primary/20` + `border-l-primary`. **Search** and **+** share one row. Visibility/lock toggles are compact `sm` controls. Hold ~250ms arms reorder (`onReparent`); move before that scrolls. **Double-tap** frames the actor (`frameActor` via viewport context). **+** opens a **Place Actors** `CatalogDialog` (Shapes, Lights, Camera, Empty, Project assets). Spawned lights are outliner/details-complete; the viewport still uses its default hemispheric light.
+- **Details** (`PropertyGrid`): Unreal-style **label | value** rows at `--chrome-row` (32px) with a wider label column (`minmax(0,8rem)`). Labels are humanized (`meshKind` → `Mesh kind`). Category headers use `--secondary`. Vector axes use `--axis-x/y/z` on one nowrap row (letters live on `NumericDragField`). Checkboxes are compact (`size-4`) inside the row. Reset is a compact icon button (`↺`), not the word Reset. **Add Component** uses the same catalog chrome, grouped Rendering / Camera / Physics. Numeric rows (`NumericDragField`) keep an empty typed draft; emptying does not commit `0` — blur restores the last committed number.
+- **Viewport overlay**: toolbar island on `--popover` with a shadow so it separates from the 3D view. Gizmo / snap / joystick / Focus pressed states use accent fill + primary border.
 
 ## 2D specifics
 
@@ -96,9 +96,9 @@ Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`
 | Dock | Panels |
 | --- | --- |
 | Center group | **Graph** and **Prefab** as siblings (`direction: "within"`). Selecting Prefab fills the workspace like Viewport does on a Scene. |
-| Left | **Components** above **My Blueprint** (compact member tree). |
+| Left | **Components** above **Class** (compact member tree; inline **+** on Functions / Variables / Events / Interfaces). |
 | Right / bottom | Inspector, Compiler Results |
 
-The Prefab viewport reuses `ViewportToolbar` + `createEngine` (touch gizmos, fly/look camera). The canvas is full-size, not a 160px sidebar strip. Component add/remove updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
+The Prefab viewport reuses `ViewportToolbar` + `createEngine` (unlit gizmos, fly/look camera, joystick when enabled). The canvas is full-size, not a 160px sidebar strip, and stays dark like the Scene viewport. Component add/remove/reorder updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
 
 See [command-layer.md](command-layer.md) for undo/journal and [gestures.md](../design/gestures.md) for touch contracts.

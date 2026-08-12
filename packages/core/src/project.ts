@@ -62,6 +62,10 @@ export interface ProjectSettings {
   touchMinTargetPx: number;
   /** Play/Preview render cap in fps. Editor viewports use Engine Settings. */
   playFrameCap: number;
+  /** Recompile open graphs whenever the project is saved. */
+  compileOnSave: boolean;
+  /** Idle interval before dirty documents are written. */
+  autoSaveIntervalMs: number;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
   input: ProjectInputSettings;
@@ -72,6 +76,19 @@ export interface ProjectDocument {
   settings: ProjectSettings;
   scenes: string[];
   graphs: string[];
+}
+
+export type GraphClassMemberKind =
+  | "function"
+  | "variable"
+  | "event"
+  | "interface";
+
+/** Lightweight Class panel rows stored on the graph until class documents exist. */
+export interface GraphClassMember {
+  id: string;
+  kind: GraphClassMemberKind;
+  name: string;
 }
 
 export interface SerializedGraph {
@@ -88,10 +105,12 @@ export interface SerializedGraph {
     sourceHandle?: string;
     targetHandle?: string;
   }>;
+  members?: GraphClassMember[];
 }
 
 
 export const DEFAULT_PLAY_FRAME_CAP = 60;
+export const DEFAULT_AUTO_SAVE_INTERVAL_MS = 120_000;
 
 export const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
   maxTextureDimension: 2048,
@@ -198,6 +217,12 @@ export function normalizeProjectSettings(
       typeof settings?.playFrameCap === "number" && settings.playFrameCap > 0
         ? settings.playFrameCap
         : DEFAULT_PLAY_FRAME_CAP,
+    compileOnSave: settings?.compileOnSave !== false,
+    autoSaveIntervalMs:
+      typeof settings?.autoSaveIntervalMs === "number" &&
+      settings.autoSaveIntervalMs > 0
+        ? settings.autoSaveIntervalMs
+        : DEFAULT_AUTO_SAVE_INTERVAL_MS,
     twoD: {
       pixelsPerUnit:
         typeof twoD?.pixelsPerUnit === "number" && twoD.pixelsPerUnit > 0
@@ -245,6 +270,37 @@ export function createDefaultScene(): SerializedScene {
       }),
     ],
   };
+}
+
+const MEMBER_KINDS = new Set<GraphClassMemberKind>([
+  "function",
+  "variable",
+  "event",
+  "interface",
+]);
+
+export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
+  if (!Array.isArray(value)) return [];
+  const members: GraphClassMember[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const id = typeof row.id === "string" ? row.id.trim() : "";
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    const kind = row.kind;
+    if (!id || !name) continue;
+    if (
+      kind !== "function" &&
+      kind !== "variable" &&
+      kind !== "event" &&
+      kind !== "interface"
+    ) {
+      continue;
+    }
+    if (!MEMBER_KINDS.has(kind)) continue;
+    members.push({ id, kind, name });
+  }
+  return members;
 }
 
 export function createDefaultGraph(): SerializedGraph {

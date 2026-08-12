@@ -24,6 +24,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     setSelectedId,
     addComponent,
     removeSelected,
+    reparentComponent,
   } = usePrefabEditing();
   const [addOpen, setAddOpen] = useState(false);
 
@@ -80,6 +81,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         nodes={nodes}
         selectedId={selectedId}
         onSelect={setSelectedId}
+        onReparent={reparentComponent}
         emptyLabel="No components"
         data-testid="prefab-tree"
       />

@@ -15,7 +15,7 @@ import {
 } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createEditorGrid, buildGridLines, gridLineOffsets } from "./editor-grid";
-import { createGizmoHost, gizmoAxisEnabledFlags } from "./gizmo-host";
+import { createGizmoHost, gizmoAxisEnabledFlags, GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
 import { editorMeshName } from "./scene-loader";
@@ -430,6 +430,29 @@ describe("gizmo host", () => {
     const host = createGizmoHost(scene);
     host.setSnap({ enabled: true, translate: 0.5, rotateDeg: 90, scale: 0.25 });
     host.setSnap({ enabled: false, translate: 0.5, rotateDeg: 90, scale: 0.25 });
+    host.dispose();
+  });
+
+  it("styles axis handles unlit with shared X/Y/Z colors", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    const x = host.positionGizmo.xGizmo;
+    const y = host.positionGizmo.yGizmo;
+    const z = host.positionGizmo.zGizmo;
+    expect(x.coloredMaterial.disableLighting).toBe(true);
+    expect(y.coloredMaterial.disableLighting).toBe(true);
+    expect(z.coloredMaterial.disableLighting).toBe(true);
+    expect(x.coloredMaterial.emissiveColor.r).toBeCloseTo(GIZMO_AXIS_COLORS.x.r);
+    expect(y.coloredMaterial.emissiveColor.g).toBeCloseTo(GIZMO_AXIS_COLORS.y.g);
+    expect(z.coloredMaterial.emissiveColor.b).toBeCloseTo(GIZMO_AXIS_COLORS.z.b);
+    expect(x.hoverMaterial.disableLighting).toBe(true);
+    expect(x.hoverMaterial.emissiveColor.r).toBeGreaterThan(
+      x.coloredMaterial.emissiveColor.r - 0.001,
+    );
+    expect(host.positionGizmo.xPlaneGizmo.coloredMaterial.alpha).toBeLessThan(0.25);
+    expect(host.positionGizmo.xPlaneGizmo.coloredMaterial.alpha).toBeGreaterThan(
+      0.1,
+    );
     host.dispose();
   });
 });

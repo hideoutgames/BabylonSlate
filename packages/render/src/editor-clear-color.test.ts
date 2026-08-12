@@ -4,6 +4,7 @@ import {
   applyEditorClearColor,
   documentEditorColorScheme,
   editorClearColor,
+  EDITOR_CANVAS_COLOR_SCHEME,
 } from "./editor-clear-color";
 
 describe("editorClearColor", () => {
@@ -33,5 +34,9 @@ describe("editorClearColor", () => {
 
   it("defaults to dark when no document is present", () => {
     expect(documentEditorColorScheme()).toBe("dark");
+  });
+
+  it("locks editor canvases to the dark scheme", () => {
+    expect(EDITOR_CANVAS_COLOR_SCHEME).toBe("dark");
   });
 });

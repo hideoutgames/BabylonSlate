@@ -2,12 +2,17 @@ import { useMemo, useState } from "react";
 import { CatalogDialog } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { cn } from "@babylonslate/ui/lib/utils";
-import type { PaletteNode } from "./graph-types";
+import type { PaletteNode, SerializedPin } from "./graph-types";
+import { filterPaletteForPin } from "./graph-connect";
 import { nodeRoleClass, nodeVisualRole } from "./node-theme";
 
 export interface NodePaletteProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   paletteNodes?: PaletteNode[];
   onAddNode: (node: PaletteNode) => void;
+  /** When set, only nodes with a compatible opposite pin are listed. */
+  filterPin?: SerializedPin | null;
 }
 
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
@@ -18,12 +23,20 @@ function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   );
 }
 
-export function NodePalette({ paletteNodes, onAddNode }: NodePaletteProps) {
-  const [open, setOpen] = useState(false);
+export function NodePalette({
+  open,
+  onOpenChange,
+  paletteNodes,
+  onAddNode,
+  filterPin = null,
+}: NodePaletteProps) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
 
-  const allNodes = useMemo(() => paletteNodes ?? [], [paletteNodes]);
+  const allNodes = useMemo(() => {
+    const nodes = paletteNodes ?? [];
+    return filterPin ? filterPaletteForPin(nodes, filterPin) : nodes;
+  }, [filterPin, paletteNodes]);
 
   const categories = useMemo(() => {
     const map = new Map<string, number>();
@@ -52,88 +65,72 @@ export function NodePalette({ paletteNodes, onAddNode }: NodePaletteProps) {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [filtered]);
 
-  if (!allNodes.length) return null;
+  if (!paletteNodes?.length) return null;
 
   return (
-    <>
-      <Button
-        type="button"
-        size="sm"
-        className="absolute bottom-4 left-1/2 z-10 min-h-[var(--touch-target,44px)] -translate-x-1/2 touch-manipulation"
-        onClick={() => {
+    <CatalogDialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) {
           setSearch("");
           setActiveCategory("all");
-          setOpen(true);
-        }}
-        data-testid="add-node-button"
-      >
-        Add node
-      </Button>
-
-      <CatalogDialog
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) {
-            setSearch("");
-            setActiveCategory("all");
-          }
-        }}
-        title="Add node"
-        categories={categories}
-        activeCategoryId={activeCategory}
-        onCategoryChange={setActiveCategory}
-        search={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Search nodes"
-        data-testid="node-palette"
-      >
-        {grouped.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matches</p>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {grouped.map(([category, nodes]) => (
-              <section key={category}>
-                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {category}
-                </h3>
-                <div className="flex flex-col gap-2">
-                  {nodes.map((node) => (
-                    <Button
-                      key={node.id}
-                      type="button"
-                      variant="outline"
-                      className="h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 touch-manipulation"
-                      data-testid={`node-palette-item-${node.id}`}
-                      onClick={() => {
-                        onAddNode(node);
-                        setOpen(false);
-                      }}
-                    >
-                      <span
-                        className={cn(
-                          "size-2.5 shrink-0 rounded-sm",
-                          nodeRoleClass(
-                            nodeVisualRole({
-                              nodeType: node.id,
-                              title: node.title,
-                              category: node.category,
-                              pure: node.pure,
-                              latent: node.latent,
-                            }),
-                          ),
-                        )}
-                        aria-hidden="true"
-                      />
-                      {node.title}
-                    </Button>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
-      </CatalogDialog>
-    </>
+        }
+      }}
+      title={filterPin ? "Add node" : "Add node"}
+      categories={categories}
+      activeCategoryId={activeCategory}
+      onCategoryChange={setActiveCategory}
+      search={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="Search nodes"
+      data-testid="node-palette"
+    >
+      {grouped.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No matches</p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {grouped.map(([category, nodes]) => (
+            <section key={category}>
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {category}
+              </h3>
+              <div className="flex flex-col gap-2">
+                {nodes.map((node) => (
+                  <Button
+                    key={node.id}
+                    type="button"
+                    variant="outline"
+                    className="h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 touch-manipulation"
+                    data-testid={`node-palette-item-${node.id}`}
+                    onClick={() => {
+                      onAddNode(node);
+                      onOpenChange(false);
+                    }}
+                  >
+                    <span
+                      className={cn(
+                        "size-2.5 shrink-0 rounded-sm",
+                        nodeRoleClass(
+                          nodeVisualRole({
+                            nodeType: node.id,
+                            title: node.title,
+                            category: node.category,
+                            pure: node.pure,
+                            latent: node.latent,
+                          }),
+                        ),
+                      )}
+                      aria-hidden="true"
+                    />
+                    {node.title}
+                  </Button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </CatalogDialog>
   );
 }

@@ -7,6 +7,7 @@ import {
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
+  normalizeGraphMembers,
   normalizeProjectSettings,
 } from "./project";
 
@@ -41,6 +42,22 @@ describe("project schema", () => {
     expect(createDefaultGraph().nodes.length).toBeGreaterThan(0);
   });
 
+  it("normalizes graph class members and drops invalid rows", () => {
+    expect(normalizeGraphMembers(undefined)).toEqual([]);
+    expect(
+      normalizeGraphMembers([
+        { id: "fn-1", kind: "function", name: " Jump " },
+        { id: "", kind: "variable", name: "Health" },
+        { kind: "event", name: "Tick" },
+        { id: "bad", kind: "graphs", name: "Nope" },
+        { id: "var-1", kind: "variable", name: "Health" },
+      ]),
+    ).toEqual([
+      { id: "fn-1", kind: "function", name: "Jump" },
+      { id: "var-1", kind: "variable", name: "Health" },
+    ]);
+  });
+
   it("normalizes missing 2D settings and drops duplicate sorting layers", () => {
     const settings = normalizeProjectSettings({
       touchMinTargetPx: 48,
@@ -62,5 +79,18 @@ describe("project schema", () => {
     expect(normalizeProjectSettings({}).playFrameCap).toBe(60);
     expect(normalizeProjectSettings({ playFrameCap: 0 }).playFrameCap).toBe(60);
     expect(normalizeProjectSettings({ playFrameCap: 30 }).playFrameCap).toBe(30);
+  });
+
+  it("defaults compile on save and a two-minute autosave interval", () => {
+    const defaults = normalizeProjectSettings(undefined);
+    expect(defaults.compileOnSave).toBe(true);
+    expect(defaults.autoSaveIntervalMs).toBe(120_000);
+    expect(
+      normalizeProjectSettings({ compileOnSave: false, autoSaveIntervalMs: 5000 })
+        .compileOnSave,
+    ).toBe(false);
+    expect(
+      normalizeProjectSettings({ autoSaveIntervalMs: 0 }).autoSaveIntervalMs,
+    ).toBe(120_000);
   });
 });

@@ -3,6 +3,7 @@ import {
   findHardcodedRadii,
   findRadiusDeclarations,
 } from "@babylonslate/test-kit/style-audit";
+import { toggleVariants } from "@babylonslate/ui/components/toggle";
 import chromeCss from "./editor-chrome.css?raw";
 import dockviewCss from "./dockview-theme.css?raw";
 import globalsCss from "../../../../packages/ui/src/styles/globals.css?raw";
@@ -136,13 +137,18 @@ describe("Minimal Neutral theme tokens", () => {
   });
 
   it("defines touch-sized graph pin and edge tokens", () => {
-    expect(tokenValue(dark, "--graph-pin-size")).toBe("16px");
+    expect(tokenValue(dark, "--graph-pin-size")).toBe("22px");
     expect(tokenValue(dark, "--graph-edge-exec")).toBe("5px");
     expect(tokenValue(dark, "--graph-edge-data")).toBe("4px");
   });
 
   it("defines a compact chrome row token", () => {
     expect(tokenValue(root, "--chrome-row")).toBe("28px");
+  });
+
+  it("fills pressed toggles with accent so tools read as on", () => {
+    expect(toggleVariants()).toContain("aria-pressed:bg-accent");
+    expect(toggleVariants()).toContain("data-[state=on]:bg-accent");
   });
 });
 

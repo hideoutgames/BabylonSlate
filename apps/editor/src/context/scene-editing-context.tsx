@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -20,9 +21,13 @@ export interface SceneEditingContextValue {
   setGizmoTool: (tool: GizmoTool) => void;
   snapEnabled: boolean;
   setSnapEnabled: (enabled: boolean) => void;
+  joystickEnabled: boolean;
+  setJoystickEnabled: (enabled: boolean) => void;
   /** Live viewport mode; the scene document holds the per-scene default. */
   viewportMode: ViewportMode;
   setViewportMode: (mode: ViewportMode) => void;
+  frameActor: (actorId: string) => void;
+  setFrameActorHandler: (handler: ((actorId: string) => void) | null) => void;
 }
 
 const SceneEditingContext = createContext<SceneEditingContextValue | null>(null);
@@ -42,6 +47,7 @@ export function SceneEditingProvider({
   initialViewportMode = "3d",
   documentViewportMode,
   documentSnapEnabled,
+  documentJoystickEnabled,
 }: {
   children: ReactNode;
   initialViewportMode?: ViewportMode;
@@ -49,14 +55,22 @@ export function SceneEditingProvider({
   documentViewportMode?: ViewportMode;
   /** When the scene document's grid.snapEnabled changes, sync the toolbar toggle. */
   documentSnapEnabled?: boolean;
+  /** When the scene document's editorJoystickEnabled changes, sync the toolbar. */
+  documentJoystickEnabled?: boolean;
 }) {
   const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
   const [gizmoTool, setGizmoTool] = useState<GizmoTool>("translate");
   const [snapEnabled, setSnapEnabled] = useState(
     documentSnapEnabled ?? false,
   );
+  const [joystickEnabled, setJoystickEnabled] = useState(
+    documentJoystickEnabled ?? false,
+  );
   const [viewportMode, setViewportMode] = useState<ViewportMode>(
     resolveDocumentViewportMode(documentViewportMode ?? initialViewportMode),
+  );
+  const frameActorHandlerRef = useRef<((actorId: string) => void) | null>(
+    null,
   );
 
   useEffect(() => {
@@ -68,6 +82,11 @@ export function SceneEditingProvider({
     if (documentSnapEnabled === undefined) return;
     setSnapEnabled(documentSnapEnabled);
   }, [documentSnapEnabled]);
+
+  useEffect(() => {
+    if (documentJoystickEnabled === undefined) return;
+    setJoystickEnabled(documentJoystickEnabled);
+  }, [documentJoystickEnabled]);
 
   const selectActor = useCallback(
     (actorId: string | null, additive = false) => {
@@ -82,6 +101,17 @@ export function SceneEditingProvider({
     [],
   );
 
+  const setFrameActorHandler = useCallback(
+    (handler: ((actorId: string) => void) | null) => {
+      frameActorHandlerRef.current = handler;
+    },
+    [],
+  );
+
+  const frameActor = useCallback((actorId: string) => {
+    frameActorHandlerRef.current?.(actorId);
+  }, []);
+
   const value = useMemo<SceneEditingContextValue>(
     () => ({
       selectedActorIds,
@@ -92,10 +122,23 @@ export function SceneEditingProvider({
       setGizmoTool,
       snapEnabled,
       setSnapEnabled,
+      joystickEnabled,
+      setJoystickEnabled,
       viewportMode,
       setViewportMode,
+      frameActor,
+      setFrameActorHandler,
     }),
-    [gizmoTool, selectActor, selectedActorIds, snapEnabled, viewportMode],
+    [
+      frameActor,
+      gizmoTool,
+      joystickEnabled,
+      selectActor,
+      selectedActorIds,
+      setFrameActorHandler,
+      snapEnabled,
+      viewportMode,
+    ],
   );
 
   return (

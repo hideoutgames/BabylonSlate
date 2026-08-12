@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createEdgeId,
   DEFAULT_NODE_TYPE,
+  nodesMissingFromLocal,
   toSerializedGraph,
 } from "./graph-model";
 
@@ -93,6 +94,25 @@ describe("toSerializedGraph", () => {
 
   it("returns an empty node list for an empty canvas", () => {
     expect(toSerializedGraph([], [])).toEqual({ nodes: [], edges: [] });
+  });
+
+  it("preserves class members when they are passed through", () => {
+    expect(
+      toSerializedGraph([], [], {
+        members: [{ id: "fn-1", kind: "function", name: "Jump" }],
+      }).members,
+    ).toEqual([{ id: "fn-1", kind: "function", name: "Jump" }]);
+  });
+});
+
+describe("nodesMissingFromLocal", () => {
+  it("returns incoming nodes the local canvas does not already have", () => {
+    expect(
+      nodesMissingFromLocal(
+        [{ id: "a" }],
+        [{ id: "a" }, { id: "b" }, { id: "c" }],
+      ),
+    ).toEqual([{ id: "b" }, { id: "c" }]);
   });
 });
 

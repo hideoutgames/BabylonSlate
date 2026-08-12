@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { PropertyGrid, type PropertyRow } from "./property-grid";
+import { PropertyGrid, humanizePropertyLabel, type PropertyRow } from "./property-grid";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 describe("PropertyGrid", () => {
@@ -136,6 +136,45 @@ describe("PropertyGrid", () => {
     );
     screen.getByTestId("property-mesh").click();
     expect(onPick).toHaveBeenCalled();
+  });
+
+  it("humanizes camelCase property keys", () => {
+    expect(humanizePropertyLabel("meshKind")).toBe("Mesh kind");
+    expect(humanizePropertyLabel("fixedTimestepMs")).toBe("Fixed timestep ms");
+    expect(humanizePropertyLabel("Name")).toBe("Name");
+  });
+
+  it("uses a compact icon reset instead of the word Reset", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "number",
+            id: "speed",
+            label: "Speed",
+            value: 5,
+            defaultValue: 1,
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const reset = screen.getByTestId("property-speed-reset");
+    expect(reset.textContent).not.toMatch(/Reset/i);
+    expect(reset.getAttribute("aria-label")).toBe("Reset Speed");
+  });
+
+  it("gives the label column room to stay on one line", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          { kind: "text", id: "name", label: "Name", value: "Cube", onChange: () => {} },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("property-row-name").className).toContain(
+      "minmax(0,8rem)",
+    );
   });
 
   it("lays out the label beside its control", () => {

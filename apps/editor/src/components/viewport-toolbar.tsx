@@ -11,6 +11,7 @@ import {
 import type { SerializedScene } from "@babylonslate/core";
 import type { GizmoTool } from "@babylonslate/render";
 import {
+  Gamepad2Icon,
   MagnetIcon,
   MoveIcon,
   RotateCwIcon,
@@ -42,6 +43,8 @@ export function ViewportToolbar({
     setGizmoTool,
     snapEnabled,
     setSnapEnabled,
+    joystickEnabled,
+    setJoystickEnabled,
     viewportMode,
     setViewportMode,
   } = useSceneEditing();
@@ -54,6 +57,16 @@ export function ViewportToolbar({
     setViewportMode(next);
     if (scene && scene.viewportMode !== next) {
       void applySceneChange(documentId, { ...scene, viewportMode: next });
+    }
+  };
+
+  const toggleJoystick = (enabled: boolean) => {
+    setJoystickEnabled(enabled);
+    if (scene && scene.settings.editorJoystickEnabled !== enabled) {
+      void applySceneChange(documentId, {
+        ...scene,
+        settings: { ...scene.settings, editorJoystickEnabled: enabled },
+      });
     }
   };
 
@@ -116,6 +129,23 @@ export function ViewportToolbar({
           }
         />
         <TooltipContent>Snap</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toggle
+              variant="outline"
+              size="sm"
+              aria-label="Camera joystick"
+              pressed={joystickEnabled}
+              onPressedChange={toggleJoystick}
+              data-testid={`${testIdPrefix}gizmo-joystick-toggle`}
+            >
+              <Gamepad2Icon />
+            </Toggle>
+          }
+        />
+        <TooltipContent>Joystick</TooltipContent>
       </Tooltip>
       <ToggleGroup
         variant="outline"

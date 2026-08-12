@@ -11,6 +11,7 @@ import {
   FileIcon,
   FolderIcon,
   FolderPlusIcon,
+  ListFilterIcon,
   PlusIcon,
   Trash2Icon,
   UploadIcon,
@@ -21,6 +22,8 @@ import {
   ContextMenuOverlay,
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
+  DRAG_ARM_MS,
+  SearchInput,
   SelectableText,
   TreeView,
   useContextMenu,
@@ -30,9 +33,13 @@ import { pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@babylonslate/ui/components/dropdown-menu";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   Card,
@@ -84,6 +91,7 @@ import {
   collectFolderGuids,
   compressionBadgeLabel,
   defaultParentClassForType,
+  displayAssetTitle,
   filterAssets,
   flattenFolderTree,
   folderRelativePath,
@@ -96,6 +104,7 @@ import { revealAssetFromTarget } from "../lib/search-navigation";
 
 const PROJECT_ROOT_ID = "project";
 const ASSETS_ROOT = "assets";
+const FOLDER_DRAG_MIME = "application/x-babylonslate-folder";
 
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
@@ -106,33 +115,59 @@ interface TilePressState {
   guid: string;
   startX: number;
   startY: number;
-  timerId: ReturnType<typeof setTimeout>;
+  startedAt: number;
+  menuTimerId: ReturnType<typeof setTimeout>;
+  dragTimerId: ReturnType<typeof setTimeout>;
+  armed: boolean;
 }
 
 function FolderTreeNode({
   node,
   selectedPath,
+  dropPath,
   onSelect,
   onRequestDelete,
+  onDropAsset,
+  onDropFolder,
+  onFolderDragStart,
   depth,
 }: {
   node: FolderNode;
   selectedPath: string;
+  dropPath: string | null;
   onSelect: (path: string) => void;
   onRequestDelete: (path: string) => void;
+  onDropAsset: (guid: string, folderPath: string) => void;
+  onDropFolder: (fromPath: string, toPath: string) => void;
+  onFolderDragStart: (path: string, event: DragEvent) => void;
   depth: number;
 }) {
   const selected = node.path === selectedPath;
+  const dropTarget = dropPath === node.path;
+
+  const acceptDrop = (event: DragEvent) => {
+    if (
+      event.dataTransfer.types.includes(ASSET_DRAG_MIME) ||
+      event.dataTransfer.types.includes(FOLDER_DRAG_MIME)
+    ) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    }
+  };
+
   return (
     <div className="flex flex-col">
       <Button
         type="button"
         variant={selected ? "secondary" : "ghost"}
         size="sm"
+        draggable={node.path !== ASSETS_ROOT}
         data-testid={`folder-node-${node.path}`}
+        data-folder-path={node.path}
         className={cn(
           "w-full justify-start rounded-md border-l-2 px-2 text-left",
           selected ? "border-l-primary" : "border-l-transparent",
+          dropTarget && "bg-accent",
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={() => onSelect(node.path)}
@@ -140,6 +175,23 @@ function FolderTreeNode({
           event.preventDefault();
           onSelect(node.path);
           onRequestDelete(node.path);
+        }}
+        onDragStart={(event) => onFolderDragStart(node.path, event)}
+        onDragOver={acceptDrop}
+        onDrop={(event) => {
+          event.preventDefault();
+          const assetGuid = event.dataTransfer.getData(ASSET_DRAG_MIME);
+          if (assetGuid) {
+            try {
+              const payload = JSON.parse(assetGuid) as { guid?: string };
+              if (payload.guid) onDropAsset(payload.guid, node.path);
+            } catch {
+              onDropAsset(assetGuid, node.path);
+            }
+            return;
+          }
+          const fromPath = event.dataTransfer.getData(FOLDER_DRAG_MIME);
+          if (fromPath) onDropFolder(fromPath, node.path);
         }}
       >
         <FolderIcon data-icon="inline-start" />
@@ -150,8 +202,12 @@ function FolderTreeNode({
           key={child.path}
           node={child}
           selectedPath={selectedPath}
+          dropPath={dropPath}
           onSelect={onSelect}
           onRequestDelete={onRequestDelete}
+          onDropAsset={onDropAsset}
+          onDropFolder={onDropFolder}
+          onFolderDragStart={onFolderDragStart}
           depth={depth + 1}
         />
       ))}
@@ -165,6 +221,8 @@ function AssetTile({
   onOpen,
   onSelect,
   onLongPressMenu,
+  onArmedDrag,
+  onDropAsset,
   thumbnailUrl,
   hasCompileError = false,
 }: {
@@ -173,16 +231,22 @@ function AssetTile({
   onOpen: () => void;
   onSelect: () => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
+  onArmedDrag: (guid: string) => void;
+  onDropAsset: (guid: string, folderPath: string) => void;
   thumbnailUrl: string | null;
   hasCompileError?: boolean;
 }) {
   const pressRef = useRef<TilePressState | null>(null);
   const compression = textureCompressionState(asset);
+  const folderPath = asset.path.includes("/")
+    ? asset.path.slice(0, asset.path.lastIndexOf("/"))
+    : ASSETS_ROOT;
 
   const clearPress = () => {
     const press = pressRef.current;
     if (press) {
-      clearTimeout(press.timerId);
+      clearTimeout(press.menuTimerId);
+      clearTimeout(press.dragTimerId);
       pressRef.current = null;
     }
   };
@@ -190,7 +254,15 @@ function AssetTile({
   const onPointerDown = (event: ReactPointerEvent) => {
     if (event.pointerType === "mouse") return;
     clearPress();
-    const timerId = setTimeout(() => {
+    const dragTimerId = setTimeout(() => {
+      const press = pressRef.current;
+      if (!press) return;
+      press.armed = true;
+      onArmedDrag(asset.header.guid);
+    }, DRAG_ARM_MS);
+    const menuTimerId = setTimeout(() => {
+      const press = pressRef.current;
+      if (!press || press.armed) return;
       pressRef.current = null;
       onSelect();
       onLongPressMenu(event.clientX, event.clientY);
@@ -200,7 +272,10 @@ function AssetTile({
       guid: asset.header.guid,
       startX: event.clientX,
       startY: event.clientY,
-      timerId,
+      startedAt: Date.now(),
+      menuTimerId,
+      dragTimerId,
+      armed: false,
     };
   };
 
@@ -211,21 +286,31 @@ function AssetTile({
       press.startX - event.clientX,
       press.startY - event.clientY,
     );
-    if (distance > CONTEXT_MENU_MOVE_TOLERANCE_PX) {
+    if (distance <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
+    if (!press.armed) {
       clearPress();
+      return;
     }
+    clearTimeout(press.menuTimerId);
   };
 
   const onPointerUp = (event: ReactPointerEvent) => {
     const press = pressRef.current;
     if (press && press.pointerId === event.pointerId) {
+      if (press.armed) {
+        const target = document.elementFromPoint(event.clientX, event.clientY);
+        const dropFolder =
+          target?.closest("[data-folder-path]")?.getAttribute("data-folder-path") ??
+          target?.closest("[data-asset-folder]")?.getAttribute("data-asset-folder");
+        if (dropFolder) onDropAsset(asset.header.guid, dropFolder);
+      }
       clearPress();
     }
   };
 
   const onDragStart = (event: DragEvent) => {
     event.dataTransfer.setData(ASSET_DRAG_MIME, assetDragPayload(asset));
-    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.effectAllowed = "copyMove";
   };
 
   return (
@@ -235,6 +320,7 @@ function AssetTile({
         "relative w-full gap-0 overflow-hidden py-0",
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
+      data-asset-folder={folderPath}
     >
       <button
         type="button"
@@ -256,6 +342,24 @@ function AssetTile({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onDragStart={onDragStart}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes(ASSET_DRAG_MIME)) {
+            event.preventDefault();
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          const raw = event.dataTransfer.getData(ASSET_DRAG_MIME);
+          if (!raw) return;
+          try {
+            const payload = JSON.parse(raw) as { guid?: string };
+            if (payload.guid && payload.guid !== asset.header.guid) {
+              onDropAsset(payload.guid, folderPath);
+            }
+          } catch {
+            /* ignore malformed payloads */
+          }
+        }}
       >
         <div className="aspect-square w-full bg-muted">
           {thumbnailUrl ? (
@@ -266,18 +370,18 @@ function AssetTile({
               className="size-full object-cover"
             />
           ) : (
-            <FileIcon className="size-full p-6 text-muted-foreground" />
+            <FileIcon className="size-full p-4 text-muted-foreground" />
           )}
         </div>
-        <CardHeader className="gap-1 p-2">
-          <CardTitle className="truncate text-sm font-medium">
-            <SelectableText>{asset.header.name}</SelectableText>
+        <CardHeader className="gap-0.5 p-1.5">
+          <CardTitle className="truncate text-xs font-medium">
+            <SelectableText>{displayAssetTitle(asset.header.name)}</SelectableText>
           </CardTitle>
-          <CardDescription className="truncate text-xs">
+          <CardDescription className="truncate text-[10px]">
             {asset.header.type}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-1 px-2 pb-2">
+        <CardContent className="flex flex-wrap gap-1 px-1.5 pb-1.5">
           {compression ? (
             <Badge variant="secondary" className="w-fit text-[10px]">
               {compressionBadgeLabel(compression)}
@@ -323,7 +427,7 @@ export function ContentBrowserWorkspace() {
 
   const [selectedFolderPath, setSelectedFolderPath] = useState(ASSETS_ROOT);
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [selectedGuids, setSelectedGuids] = useState<Set<string>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [newAssetOpen, setNewAssetOpen] = useState(false);
@@ -364,7 +468,7 @@ export function ContentBrowserWorkspace() {
       ? reveal.path.slice(0, reveal.path.lastIndexOf("/"))
       : ASSETS_ROOT;
     setSelectedFolderPath(folder || ASSETS_ROOT);
-    setTypeFilter(null);
+    setTypeFilters([]);
     setSearch("");
     setSelectedGuids(new Set([reveal.guid]));
     clearPendingTarget();
@@ -389,10 +493,10 @@ export function ContentBrowserWorkspace() {
     () =>
       filterAssets(allAssets, {
         folderGuids,
-        typeFilter,
+        typeFilters,
         search,
       }),
-    [allAssets, folderGuids, search, typeFilter],
+    [allAssets, folderGuids, search, typeFilters],
   );
 
   useEffect(() => {
@@ -464,7 +568,7 @@ export function ContentBrowserWorkspace() {
   const requestDeleteFolder = useCallback(
     (path: string) => {
       if (!folderTree || path === ASSETS_ROOT) return;
-      const guids = [...collectFolderGuids(path, folderTree)];
+      const guids = [...collectFolderGuids(path, folderTree, { recursive: true })];
       setDeleteTarget({ kind: "folder", path, guids });
     },
     [folderTree],
@@ -736,6 +840,50 @@ export function ContentBrowserWorkspace() {
     }
   }, [assetRegistry, moveTarget, refreshAssetRegistry, repairDocumentPath]);
 
+  const dropAssetOnFolder = useCallback(
+    async (guid: string, folderPath: string) => {
+      if (!assetRegistry) return;
+      const before = assetRegistry.getByGuid(guid);
+      if (!before) return;
+      const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
+      const folder = folderRelativePath(folderPath, ASSETS_ROOT);
+      const relative = folder ? `${folder}/${fileName}` : fileName;
+      if (relative === before.path.replace(/^assets\//, "") || `assets/${relative}` === before.path) {
+        return;
+      }
+      setBusy(true);
+      try {
+        const moved = await assetRegistry.moveAsset(
+          guid,
+          PROJECT_ROOT_ID,
+          relative,
+        );
+        repairDocumentPath(before.path, moved.path, moved.header.type);
+        await refreshAssetRegistry();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [assetRegistry, refreshAssetRegistry, repairDocumentPath],
+  );
+
+  const dropFolderOnFolder = useCallback(
+    async (fromPath: string, toPath: string) => {
+      if (!assetRegistry || fromPath === ASSETS_ROOT || fromPath === toPath) return;
+      if (toPath === fromPath || toPath.startsWith(`${fromPath}/`)) return;
+      const relative = folderRelativePath(fromPath, ASSETS_ROOT);
+      const parent = folderRelativePath(toPath, ASSETS_ROOT);
+      setBusy(true);
+      try {
+        await assetRegistry.moveFolder(PROJECT_ROOT_ID, relative, parent);
+        await refreshAssetRegistry();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [assetRegistry, refreshAssetRegistry],
+  );
+
   const handleImport = useCallback(async () => {
     const files = await pickImportFiles({ multiple: true });
     await importPickedFiles(files);
@@ -836,39 +984,57 @@ export function ContentBrowserWorkspace() {
           <PlusIcon data-icon="inline-start" />
           New Asset
         </Button>
-        <Input
+        <SearchInput
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={setSearch}
           placeholder="Search assets…"
-          className="min-h-[var(--chrome-row,28px)] min-w-40 flex-1"
+          className="min-h-[var(--chrome-row,28px)] min-w-40"
           data-testid="content-browser-search"
         />
-        <ToggleGroup
-          variant="outline"
-          size="sm"
-          spacing={1}
-          className="flex-wrap"
-          data-testid="content-browser-type-filters"
-          value={[typeFilter ?? "all"]}
-          onValueChange={(value) => {
-            const next = value[0];
-            setTypeFilter(!next || next === "all" ? null : next);
-          }}
-          aria-label="Asset type filter"
-        >
-          <ToggleGroupItem value="all" data-testid="content-browser-filter-all">
-            All
-          </ToggleGroupItem>
-          {typeChips.map((type) => (
-            <ToggleGroupItem
-              key={type}
-              value={type}
-              data-testid={`content-browser-filter-${type}`}
-            >
-              {type}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="content-browser-filter"
+                aria-label="Filter"
+              />
+            }
+          >
+            <ListFilterIcon data-icon="inline-start" />
+            Filter
+            {typeFilters.length > 0 ? ` (${typeFilters.length})` : ""}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="min-w-44"
+            data-testid="content-browser-filter-menu"
+          >
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Asset types</DropdownMenuLabel>
+              {typeChips.map((type) => (
+                <DropdownMenuCheckboxItem
+                  key={type}
+                  checked={typeFilters.includes(type)}
+                  data-testid={`content-browser-filter-${type}`}
+                  onCheckedChange={(checked) => {
+                    setTypeFilters((current) =>
+                      checked === true
+                        ? current.includes(type)
+                          ? current
+                          : [...current, type]
+                        : current.filter((entry) => entry !== type),
+                    );
+                  }}
+                >
+                  {type}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {selectedGuids.size > 0 ? (
           <Button
             type="button"
@@ -913,18 +1079,35 @@ export function ContentBrowserWorkspace() {
             <FolderPlusIcon data-icon="inline-start" />
             New Folder
           </Button>
-          <FolderTreeNode
-            node={folderTree}
-            selectedPath={selectedFolderPath}
-            onSelect={setSelectedFolderPath}
-            onRequestDelete={requestDeleteFolder}
-            depth={0}
-          />
+          {folderTree ? (
+            <FolderTreeNode
+              node={folderTree}
+              selectedPath={selectedFolderPath}
+              dropPath={null}
+              onSelect={setSelectedFolderPath}
+              onRequestDelete={requestDeleteFolder}
+              onDropAsset={(guid, folderPath) => {
+                void dropAssetOnFolder(guid, folderPath);
+              }}
+              onDropFolder={(fromPath, toPath) => {
+                void dropFolderOnFolder(fromPath, toPath);
+              }}
+              onFolderDragStart={(path, event) => {
+                if (path === ASSETS_ROOT) {
+                  event.preventDefault();
+                  return;
+                }
+                event.dataTransfer.setData(FOLDER_DRAG_MIME, path);
+                event.dataTransfer.effectAllowed = "move";
+              }}
+              depth={0}
+            />
+          ) : null}
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
-            className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,10rem)] content-start gap-3 overflow-y-auto overscroll-y-contain p-4"
+            className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,7rem)] content-start gap-2 overflow-y-auto overscroll-y-contain p-3"
             data-testid="content-browser-asset-grid"
           >
             {visibleAssets.map((asset) => (
@@ -942,6 +1125,12 @@ export function ContentBrowserWorkspace() {
                 }
                 onOpen={() => void openOrFocusDocument(asset)}
                 onLongPressMenu={(x, y) => openTileMenu(asset.header.guid, x, y)}
+                onArmedDrag={() => {
+                  setSelectedGuids(new Set([asset.header.guid]));
+                }}
+                onDropAsset={(guid, folderPath) => {
+                  void dropAssetOnFolder(guid, folderPath);
+                }}
               />
             ))}
             {visibleAssets.length === 0 ? (

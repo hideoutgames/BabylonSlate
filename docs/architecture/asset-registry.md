@@ -85,9 +85,10 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 `apps/editor/src/components/content-browser-workspace.tsx` is the registry-backed project asset UI:
 
 - Folder tree from `folderTree("project")` (includes empty folders via `.babylonslate-folder` markers); **New Folder** sits on the tree (`content-browser-new-folder`), not the main toolbar.
-- One toolbar row: Import, New Asset, Search, type filter `ToggleGroup`, Delete when a tile is selected. No page heading or subtitle.
-- Fixed-size shadcn `Card` tiles (`grid-cols-[repeat(auto-fill,10rem)]`, `size="sm"`): square thumb (`aspect-square` + `object-cover`, icon fallback), then `CardTitle` / `CardDescription` / badges. Cells do not stretch with `minmax(…, 1fr)`.
-- **Click / tap selects** (replace selection; `data-selected`). **Double-click / double-tap opens** Scene and Graph via `openOrFocusDocument`. Context menu still on right-click / long-press.
+- One toolbar row: Import, New Asset, shared **SearchInput** (clear when non-empty), **Filter** dropdown (multi-select type checkboxes; empty = all types), Delete when a tile is selected. No page heading or subtitle.
+- Fixed-size shadcn `Card` tiles (`grid-cols-[repeat(auto-fill,7rem)]`, `size="sm"`): square thumb (`aspect-square` + `object-cover`, icon fallback), then `CardTitle` / `CardDescription` / badges. Titles strip a trailing `.{type}` suffix; type stays in the description. Cells do not stretch with `minmax(…, 1fr)`.
+- Root folder `assets` lists the whole tree; any other folder shows **direct children only** (`collectFolderGuids`).
+- **Click / tap selects** (replace selection; `data-selected`). **Double-click / double-tap opens** Scene and Graph via `openOrFocusDocument`. Hold ~250ms arms drag-reorder; hold still to ~500ms opens the context menu.
 - Import through `pickImportFiles()` in `@babylonslate/vfs` (web/electron: DOM file input; iOS/Android: optional `babylonslate.documentPicker` bridge, else the same DOM picker). UI never calls Capacitor plugins directly. A hidden `content-browser-import-input` remains for Playwright `setInputFiles`.
 - **New Asset** uses type + engine-base parent-class pickers → `registry.createAsset`.
 - **New Folder** → `registry.createFolder` (mkdir + `.babylonslate-folder` marker so empty folders survive Git).

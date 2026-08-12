@@ -11,6 +11,7 @@ export {
   MoveNodeCommand,
   RemoveEdgeCommand,
   RemoveNodeCommand,
+  SetGraphMembersCommand,
   SetNodeDataCommand,
   type GraphEditCommand,
   createMoveNodeCommandFromJson,
@@ -19,6 +20,7 @@ export {
   createSetNodeDataCommandFromJson,
   createAddNodeCommandFromJson,
   createRemoveNodeCommandFromJson,
+  createSetGraphMembersCommandFromJson,
 } from "./commands/graph";
 export { diffGraphCommands } from "./commands/graph-diff";
 export {

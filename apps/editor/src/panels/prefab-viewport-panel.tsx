@@ -1,15 +1,15 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useRef } from "react";
 import {
-  applyEditorClearColor,
   createEngine,
+  EDITOR_CANVAS_COLOR_SCHEME,
   syncEditorPlayState,
   type EngineHandle,
 } from "@babylonslate/render";
 import { ViewportToolbar } from "../components/viewport-toolbar";
+import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { usePlay } from "../context/play-context";
-import { useResolvedTheme } from "../context/theme-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { previewSceneFor } from "../lib/prefab-preview";
@@ -31,11 +31,16 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   void _props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const joystickLeaseRef = useRef<(() => void) | null>(null);
   const { components } = usePrefabEditing();
-  const { gizmoTool, snapEnabled, viewportMode, selectedActorIds } =
-    useSceneEditing();
+  const {
+    gizmoTool,
+    snapEnabled,
+    viewportMode,
+    selectedActorIds,
+    joystickEnabled,
+  } = useSceneEditing();
   const { registerScheduler, playing } = usePlay();
-  const colorScheme = useResolvedTheme();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -43,7 +48,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     const handle = createEngine(canvas, {
       editor: true,
       viewportMode,
-      colorScheme,
+      colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
     });
     engineRef.current = handle;
     const unregisterScheduler = registerScheduler({
@@ -63,6 +68,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       resizeObserver.disconnect();
       detachRenderGate();
       unregisterScheduler();
+      joystickLeaseRef.current?.();
+      joystickLeaseRef.current = null;
       handle.dispose();
       engineRef.current = null;
     };
@@ -75,13 +82,6 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       syncEditorPlayState(engineRef.current, playing);
     }
   }, [playing]);
-
-  useEffect(() => {
-    const handle = engineRef.current;
-    if (!handle) return;
-    applyEditorClearColor(handle.scene, colorScheme);
-    handle.scheduler.invalidate("asset");
-  }, [colorScheme]);
 
   useEffect(() => {
     engineRef.current?.loadScene(previewSceneFor(components));
@@ -124,6 +124,29 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         className="h-full min-h-0 w-full flex-1 touch-none"
         data-testid="prefab-preview-canvas"
       />
+      {joystickEnabled ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
+          <div className="pointer-events-auto">
+            <ViewportJoystick
+              onFly={(forward, right) => {
+                engineRef.current?.editor?.camera.fly(forward, right);
+              }}
+              onActiveChange={(active) => {
+                const scheduler = engineRef.current?.scheduler;
+                if (!scheduler) return;
+                if (active) {
+                  joystickLeaseRef.current ??= scheduler.acquireContinuous(
+                    "viewport-joystick",
+                  );
+                } else {
+                  joystickLeaseRef.current?.();
+                  joystickLeaseRef.current = null;
+                }
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

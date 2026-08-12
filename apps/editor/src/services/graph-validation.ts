@@ -83,6 +83,10 @@ export function hydrateSerializedGraphForEditor(
 
       const def = nodeRegistry.get(typeId);
       const pins: GraphPin[] = def ? def.pins(properties) : [];
+      const authoredTitle =
+        typeof rawData.title === "string" && rawData.title.trim()
+          ? rawData.title
+          : undefined;
 
       return {
         ...node,
@@ -90,7 +94,11 @@ export function hydrateSerializedGraphForEditor(
         data: withVisualMeta(
           {
             ...properties,
-            ...(def ? { title: def.title } : {}),
+            ...(def
+              ? { title: authoredTitle ?? def.title }
+              : authoredTitle
+                ? { title: authoredTitle }
+                : {}),
             __pins: pins,
           },
           def,

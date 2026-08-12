@@ -3,6 +3,7 @@ import type { IndexedAsset } from "@babylonslate/assets";
 import {
   collectFolderGuids,
   compressionBadgeLabel,
+  displayAssetTitle,
   filterAssets,
   flattenFolderTree,
   matchesAssetSearch,
@@ -45,7 +46,7 @@ describe("content-browser-helpers", () => {
     expect(
       filterAssets(items, {
         folderGuids: new Set(["a"]),
-        typeFilter: null,
+        typeFilters: null,
         search: "",
       }),
     ).toHaveLength(1);
@@ -53,7 +54,7 @@ describe("content-browser-helpers", () => {
     expect(
       filterAssets(items, {
         folderGuids: null,
-        typeFilter: "Scene",
+        typeFilters: ["Scene"],
         search: "",
       }),
     ).toHaveLength(1);
@@ -61,7 +62,23 @@ describe("content-browser-helpers", () => {
     expect(
       filterAssets(items, {
         folderGuids: null,
-        typeFilter: null,
+        typeFilters: ["Scene", "Texture"],
+        search: "",
+      }),
+    ).toHaveLength(2);
+
+    expect(
+      filterAssets(items, {
+        folderGuids: null,
+        typeFilters: [],
+        search: "",
+      }),
+    ).toHaveLength(2);
+
+    expect(
+      filterAssets(items, {
+        folderGuids: null,
+        typeFilters: null,
         search: "hero",
       }),
     ).toHaveLength(1);
@@ -83,7 +100,14 @@ describe("content-browser-helpers", () => {
     expect(textureCompressionState(asset({ type: "Scene" }))).toBeNull();
   });
 
-  it("collects guids from a folder subtree", () => {
+  it("strips a trailing type suffix from asset titles", () => {
+    expect(displayAssetTitle("main.scene")).toBe("main");
+    expect(displayAssetTitle("logic.graph")).toBe("logic");
+    expect(displayAssetTitle("Hero")).toBe("Hero");
+    expect(displayAssetTitle("crate.model")).toBe("crate");
+  });
+
+  it("collects only direct children unless the folder is recursive", () => {
     const tree = {
       path: "assets",
       assets: ["root"],
@@ -91,12 +115,23 @@ describe("content-browser-helpers", () => {
         {
           path: "assets/textures",
           assets: ["child"],
-          children: [],
+          children: [
+            {
+              path: "assets/textures/ui",
+              assets: ["nested"],
+              children: [],
+            },
+          ],
         },
       ],
     };
-    const guids = collectFolderGuids("assets/textures", tree);
-    expect([...guids]).toEqual(["child"]);
+    expect([...collectFolderGuids("assets/textures", tree)]).toEqual(["child"]);
+    expect([...collectFolderGuids("assets", tree)].sort()).toEqual(
+      ["child", "nested", "root"].sort(),
+    );
+    expect([
+      ...collectFolderGuids("assets/textures", tree, { recursive: true }),
+    ]).toEqual(["child", "nested"]);
   });
 
   it("flattens a folder tree for the Move picker", () => {

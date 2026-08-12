@@ -42,7 +42,7 @@ export function applyFocusLayout(
   }
 }
 
-/** Drop retired panels and restack My Blueprint under Components. */
+/** Drop retired panels and restack Class under Components. */
 export function migrateRestoredLayout(api: FocusableDockApi): void {
   api.getPanel("mini-asset-browser")?.api.close();
   const myClass = api.getPanel("my-class");

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { TREE_ROW_HEIGHT, TreeView, type TreeViewNode } from "./tree-view";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
-import { CONTEXT_MENU_LONG_PRESS_MS } from "./use-context-menu";
+import { CONTEXT_MENU_LONG_PRESS_MS, DRAG_ARM_MS } from "./use-context-menu";
 
 const nodes: TreeViewNode[] = [
   { id: "root", label: "Root", depth: 0, hasChildren: true, expanded: true },
@@ -51,7 +51,28 @@ describe("TreeView", () => {
     expect(onToggleExpanded).toHaveBeenCalledWith("root");
   });
 
-  it("reparents when a row is dragged onto another row", () => {
+  it("reparents when a row is held then dragged onto another row", () => {
+    vi.useFakeTimers();
+    const onReparent = vi.fn();
+    render(<TreeView nodes={nodes} onReparent={onReparent} data-testid="tree" />);
+
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 96 }) as DOMRect;
+
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    act(() => {
+      vi.advanceTimersByTime(DRAG_ARM_MS);
+    });
+    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 80 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 80 });
+
+    expect(onReparent).toHaveBeenCalledWith("child", "other");
+    vi.useRealTimers();
+  });
+
+  it("does not reparent when the pointer moves before the hold arms", () => {
     const onReparent = vi.fn();
     render(<TreeView nodes={nodes} onReparent={onReparent} data-testid="tree" />);
 
@@ -64,7 +85,7 @@ describe("TreeView", () => {
     dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 80 });
     dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 80 });
 
-    expect(onReparent).toHaveBeenCalledWith("child", "other");
+    expect(onReparent).not.toHaveBeenCalled();
   });
 
   it("does not select a row when the pointer dragged", () => {
@@ -97,6 +118,19 @@ describe("TreeView", () => {
     });
     expect(onContextMenu).toHaveBeenCalledWith("root", 12, 20);
     vi.useRealTimers();
+  });
+
+  it("activates a row on double tap", () => {
+    const onActivate = vi.fn();
+    render(
+      <TreeView nodes={nodes} onActivate={onActivate} data-testid="tree" />,
+    );
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 10 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 10 });
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 10 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 10 });
+    expect(onActivate).toHaveBeenCalledWith("child");
   });
 
   it("renders an empty label with no nodes", () => {

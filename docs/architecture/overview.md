@@ -20,7 +20,7 @@ packages/scripting/   Graph IR, pin types, validator, JS codegen + anchors (P5)
 packages/scripting-nodes/ Data-driven node catalog (P5)
 packages/graph-ui/    React Flow graph editor with Blueprint node chrome (mutations via edit)
 packages/ui/          shadcn primitives
-packages/editor-kit/  Touch-shell hooks, property grid, tree view, panel frame, asset picker, parameter-list editor
+packages/editor-kit/  Touch-shell hooks, property grid, tree view, panel frame, asset picker, SearchInput, parameter-list editor
 packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness
 ```
 

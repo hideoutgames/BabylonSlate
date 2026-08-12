@@ -5,12 +5,14 @@ import {
   MoveNodeCommand,
   RemoveEdgeCommand,
   RemoveNodeCommand,
+  SetGraphMembersCommand,
   SetNodeDataCommand,
   createAddEdgeCommandFromJson,
   createAddNodeCommandFromJson,
   createMoveNodeCommandFromJson,
   createRemoveEdgeCommandFromJson,
   createRemoveNodeCommandFromJson,
+  createSetGraphMembersCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
 import {
@@ -138,6 +140,14 @@ export function commandToJournalPayload(
         node: remove.node,
       };
     }
+    case "graph.setMembers": {
+      const members = command as SetGraphMembersCommand;
+      return {
+        type: members.type,
+        from: members.from,
+        to: members.to,
+      };
+    }
     default: {
       if (command.type.startsWith("scene.")) {
         // Scene commands keep every payload field as an own property, so a
@@ -170,6 +180,10 @@ export function registerGraphCommandRevivers(): void {
   registerCommandReviver("graph.setNodeData", createSetNodeDataCommandFromJson);
   registerCommandReviver("graph.addNode", createAddNodeCommandFromJson);
   registerCommandReviver("graph.removeNode", createRemoveNodeCommandFromJson);
+  registerCommandReviver(
+    "graph.setMembers",
+    createSetGraphMembersCommandFromJson,
+  );
 }
 
 export function registerSceneCommandRevivers(): void {

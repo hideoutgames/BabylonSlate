@@ -65,7 +65,7 @@ describe("migrateRestoredLayout", () => {
     expect(api.getPanel("mini-asset-browser")!.api.close).toHaveBeenCalled();
   });
 
-  it("moves My Blueprint below Components when they share a group", () => {
+  it("moves Class below Components when they share a group", () => {
     const group = { id: "left" };
     const myClass = {
       api: { close: vi.fn(), moveTo: vi.fn() },

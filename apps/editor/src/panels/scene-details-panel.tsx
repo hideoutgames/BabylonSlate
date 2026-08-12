@@ -132,7 +132,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "text",
         id: "scene-game-instance-class",
-        label: "Game instance class",
+        label: "Game instance",
         value: scene.settings.gameInstanceClass ?? "",
         onChange: (gameInstanceClass) =>
           mutate({
@@ -146,7 +146,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "enum",
         id: "scene-viewport-mode",
-        label: "Default viewport mode",
+        label: "Viewport",
         value: scene.viewportMode,
         options: [
           { value: "3d", label: "3D" },
@@ -176,7 +176,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "color",
         id: "scene-environment-color",
-        label: "Environment color",
+        label: "Environment",
         value: scene.settings.environmentColor,
         defaultValue: defaults.environmentColor,
         onChange: (environmentColor) =>
@@ -197,7 +197,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "boolean",
         id: "scene-editor-joystick",
-        label: "Editor camera joystick",
+        label: "Joystick",
         value: scene.settings.editorJoystickEnabled,
         defaultValue: defaults.editorJoystickEnabled,
         onChange: (editorJoystickEnabled) =>
@@ -218,7 +218,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "number",
         id: "scene-fixed-timestep",
-        label: "Fixed timestep (ms)",
+        label: "Timestep",
         value: scene.settings.fixedTimestepMs,
         defaultValue: defaults.fixedTimestepMs,
         onChange: (fixedTimestepMs) =>

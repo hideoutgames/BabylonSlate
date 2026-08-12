@@ -45,6 +45,19 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("viewport-panel")).toBeVisible();
   });
 
+  test("Content Browser Filter menu toggles asset types", async ({ page }) => {
+    await openTestProject(page);
+    await page.getByTestId("content-browser-filter").click();
+    await expect(page.getByTestId("content-browser-filter-menu")).toBeVisible();
+    await page.getByTestId("content-browser-filter-Scene").click();
+    await expect(
+      page.locator('[data-asset-path="assets/main.graph.babasset"]'),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('[data-asset-path="assets/main.scene.babasset"]'),
+    ).toBeVisible();
+  });
+
   test("Focus hides the Outliner; Place Actors catalog does not focus search", async ({
     page,
   }) => {
@@ -90,7 +103,9 @@ test.describe("Editor density and IA", () => {
       timeout: 15_000,
     });
 
-    await page.getByTestId("add-node-button").click();
+    const pane = page.locator(".react-flow__pane");
+    await pane.click();
+    await pane.click();
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await expect(page.getByTestId("node-palette-search")).not.toBeFocused();
     await expect(page.getByTestId("node-palette-body")).toBeVisible();
@@ -144,5 +159,32 @@ test.describe("Editor density and IA", () => {
       "aria-label",
       "Save All (unsaved changes)",
     );
+  });
+
+  test("gizmo tools look pressed and the joystick toggle is on the toolbar", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("viewport-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const translate = page.getByTestId("gizmo-tool-translate");
+    await expect(translate).toHaveAttribute("aria-pressed", "true");
+    await expect(translate).toHaveClass(/aria-pressed:bg-accent/);
+
+    const focus = page.getByTestId("focus-layout");
+    await expect(focus).toBeEnabled();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(focus).toHaveClass(/aria-pressed:bg-accent/);
+
+    const joystick = page.getByTestId("gizmo-joystick-toggle");
+    await expect(joystick).toBeVisible();
+    await expect(joystick).toHaveAttribute("aria-pressed", "false");
+    await joystick.click();
+    await expect(joystick).toHaveAttribute("aria-pressed", "true");
   });
 });

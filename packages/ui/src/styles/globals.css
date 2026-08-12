@@ -142,7 +142,7 @@
     --chrome-tab-accent: var(--foreground);
     --chrome-row: 28px;
     --touch-target: 44px;
-    --graph-pin-size: 16px;
+    --graph-pin-size: 22px;
     --graph-edge-exec: 5px;
     --graph-edge-data: 4px;
     --pin-exec: oklch(0.145 0 0);
@@ -219,7 +219,7 @@
     --chrome-tab-accent: var(--foreground);
     --chrome-row: 28px;
     --touch-target: 44px;
-    --graph-pin-size: 16px;
+    --graph-pin-size: 22px;
     --graph-edge-exec: 5px;
     --graph-edge-data: 4px;
     --pin-exec: oklch(0.95 0 0);

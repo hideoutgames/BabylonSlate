@@ -5,6 +5,7 @@ import {
   MoveNodeCommand,
   RemoveEdgeCommand,
   RemoveNodeCommand,
+  SetGraphMembersCommand,
   SetNodeDataCommand,
 } from "./graph";
 
@@ -31,6 +32,13 @@ function dataEqual(
  * Derives minimal graph edit commands from a before/after pair.
  * Used by the graph editor to route mutations through the undo stack.
  */
+function membersEqual(
+  a: SerializedGraph["members"],
+  b: SerializedGraph["members"],
+): boolean {
+  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+}
+
 export function diffGraphCommands(
   before: SerializedGraph,
   after: SerializedGraph,
@@ -41,6 +49,7 @@ export function diffGraphCommands(
   | SetNodeDataCommand
   | AddNodeCommand
   | RemoveNodeCommand
+  | SetGraphMembersCommand
 > {
   const commands: Array<
     | MoveNodeCommand
@@ -49,6 +58,7 @@ export function diffGraphCommands(
     | SetNodeDataCommand
     | AddNodeCommand
     | RemoveNodeCommand
+    | SetGraphMembersCommand
   > = [];
 
   const beforeNodes = new Map(before.nodes.map((node) => [node.id, node]));
@@ -91,6 +101,10 @@ export function diffGraphCommands(
     if (!afterEdges.has(edgeId)) {
       commands.push(new RemoveEdgeCommand(edge));
     }
+  }
+
+  if (!membersEqual(before.members, after.members)) {
+    commands.push(new SetGraphMembersCommand(before.members, after.members));
   }
 
   return commands;

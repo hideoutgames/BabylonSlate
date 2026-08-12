@@ -1,16 +1,17 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent, type PointerEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   PanelFrame,
   TreeView,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
-import { classIdForGraphPath } from "../services/script-compiler";
+import { addClassMember } from "../lib/class-members";
 import { defaultNodeRegistry } from "../services/graph-validation";
+import { classIdForGraphPath } from "../services/script-compiler";
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
@@ -23,26 +24,41 @@ export type MyClassMember = {
 export type MyClassPanelProps = IDockviewPanelProps;
 
 export const BLUEPRINT_SECTIONS = [
-  { id: "graphs", label: "Graphs", kind: null },
   { id: "functions", label: "Functions", kind: "function" },
   { id: "variables", label: "Variables", kind: "variable" },
   { id: "events", label: "Events", kind: "event" },
   { id: "interfaces", label: "Interfaces", kind: "interface" },
 ] as const;
 
+function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
+  const title = node.data.title;
+  if (typeof title === "string" && title.trim()) return title;
+  const named = node.data.name;
+  if (typeof named === "string" && named.trim()) return `Event ${named}`;
+  return defaultNodeRegistry.get(node.type)?.title ?? node.type;
+}
+
 /**
- * Members the current graph actually declares. Variables, functions, and
- * implemented interfaces stay empty until class documents store that metadata.
+ * Members the current graph declares. Events come from event nodes; other
+ * kinds come from the optional `members` list on the serialized graph.
  */
 export function membersForGraph(graph: SerializedGraph | null): MyClassMember[] {
   if (!graph) return [];
-  return graph.nodes
+  const declared = (graph.members ?? [])
+    .filter((member) => member.kind !== "event")
+    .map((member) => ({
+      kind: member.kind,
+      name: member.name,
+      detail: member.id,
+    }));
+  const events = graph.nodes
     .filter((node) => node.type.startsWith("flow.event."))
     .map((node) => ({
       kind: "event" as const,
-      name: defaultNodeRegistry.get(node.type)?.title ?? node.type,
+      name: eventDisplayName(node),
       detail: node.id,
     }));
+  return [...declared, ...events];
 }
 
 export function membersForSection(
@@ -83,11 +99,30 @@ export function blueprintTreeNodes(
   return rows;
 }
 
-/** My Blueprint panel — compact member tree stacked under Components. */
+function promptMemberName(kind: GraphClassMemberKind): string | null {
+  const label =
+    kind === "function"
+      ? "Function name"
+      : kind === "variable"
+        ? "Variable name"
+        : kind === "event"
+          ? "Event name"
+          : "Interface name";
+  const raw = window.prompt(label);
+  if (raw === null) return null;
+  const name = raw.trim();
+  return name.length > 0 ? name : null;
+}
+
+function stopRowGesture(event: MouseEvent | PointerEvent) {
+  event.stopPropagation();
+}
+
+/** Class panel — compact member tree stacked under Components. */
 export function MyClassPanel(_props: MyClassPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
+  const { openDocuments, applyGraphChange } = useDocuments();
   const { setFocusDiagnostic } = useValidation();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
@@ -96,10 +131,39 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     doc?.ref.kind === "graph" ? (doc.content as SerializedGraph) : null;
   const members = useMemo(() => membersForGraph(graph), [graph]);
   const className = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : null;
-  const nodes = useMemo(
-    () => blueprintTreeNodes(members, collapsed),
-    [collapsed, members],
-  );
+  const nodes = useMemo(() => {
+    const rows = blueprintTreeNodes(members, collapsed);
+    return rows.map((row) => {
+      if (!row.id.startsWith("section-")) return row;
+      const sectionId = row.id.replace(/^section-/, "");
+      const section = BLUEPRINT_SECTIONS.find((entry) => entry.id === sectionId);
+      if (!section) return row;
+      return {
+        ...row,
+        trailing: (
+          <button
+            type="button"
+            className="flex size-7 items-center justify-center rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label={`Add ${section.label.slice(0, -1).toLowerCase()}`}
+            data-testid={`class-add-${section.id}`}
+            onPointerDown={stopRowGesture}
+            onClick={(event) => {
+              stopRowGesture(event);
+              if (!graph) return;
+              const name = promptMemberName(section.kind);
+              if (!name) return;
+              void applyGraphChange(
+                documentId,
+                addClassMember(graph, section.kind, name),
+              );
+            }}
+          >
+            +
+          </button>
+        ),
+      };
+    });
+  }, [applyGraphChange, collapsed, documentId, graph, members]);
 
   return (
     <PanelFrame data-testid="my-class-panel">

@@ -50,6 +50,13 @@ function graphWithPins(): GraphDocument {
   };
 }
 
+function openPalette(container: HTMLElement) {
+  const pane = container.querySelector(".react-flow__pane");
+  expect(pane).not.toBeNull();
+  fireEvent.click(pane!);
+  fireEvent.click(pane!);
+}
+
 describe("GraphEditor", () => {
   it("renders a node for each node in the graph", () => {
     const graph = createDefaultGraph();
@@ -135,7 +142,7 @@ describe("GraphEditor", () => {
 
   it("opens the node palette and adds a node from paletteNodes", () => {
     const onChange = vi.fn();
-    const { getByRole, getByText } = render(
+    const { getByText, container } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[
@@ -145,7 +152,7 @@ describe("GraphEditor", () => {
       />,
     );
 
-    fireEvent.click(getByRole("button", { name: "Add node" }));
+    openPalette(container);
     fireEvent.click(getByText("Log"));
 
     expect(onChange).toHaveBeenCalled();
@@ -156,14 +163,14 @@ describe("GraphEditor", () => {
   });
 
   it("does not autofocus palette search on open", () => {
-    const { getByRole, getByPlaceholderText, getByTestId } = render(
+    const { getByPlaceholderText, getByTestId, container } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
       />,
     );
 
-    fireEvent.click(getByRole("button", { name: "Add node" }));
+    openPalette(container);
     const search = getByPlaceholderText("Search nodes");
     expect(search.getAttribute("data-autofocus-search")).toBeNull();
     expect(document.activeElement).not.toBe(search);
@@ -172,7 +179,7 @@ describe("GraphEditor", () => {
 
   it("embeds palette pins into added nodes so handles appear", () => {
     const onChange = vi.fn();
-    const { getByRole, getByText, container } = render(
+    const { getByText, container } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[
@@ -188,7 +195,7 @@ describe("GraphEditor", () => {
       />,
     );
 
-    fireEvent.click(getByRole("button", { name: "Add node" }));
+    openPalette(container);
     fireEvent.click(getByText("Log"));
 
     expect(container.querySelectorAll(".react-flow__handle").length).toBeGreaterThan(
@@ -272,22 +279,43 @@ describe("GraphEditor", () => {
     expect(canvas?.className).toMatch(/\blight\b/);
   });
 
-  it("defaults colorMode from the document scheme", () => {
+  it("defaults to a dark canvas so editor theme does not wash the graph", () => {
     document.documentElement.classList.remove("dark");
-    const { container, unmount } = render(
+    const { container } = render(
       <GraphEditor initialGraph={{ nodes: [], edges: [] }} />,
     );
-    expect(container.querySelector(".react-flow")?.className).toMatch(
-      /\blight\b/,
+    expect(container.querySelector(".react-flow")?.className).toMatch(/\bdark\b/);
+  });
+
+  it("does not render an Add node button", () => {
+    const { queryByRole, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+      />,
     );
-    unmount();
-    document.documentElement.classList.add("dark");
-    const again = render(
-      <GraphEditor initialGraph={{ nodes: [], edges: [] }} />,
+    expect(queryByRole("button", { name: "Add node" })).toBeNull();
+    expect(getByTestId("graph-toolbar")).toBeTruthy();
+    expect(getByTestId("graph-format")).toHaveProperty("disabled", true);
+  });
+
+  it("titles event nodes Event … when data.title is missing", () => {
+    const { getByText } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "begin",
+              type: "flow.event.beginPlay",
+              position: { x: 0, y: 0 },
+              data: { __nodeType: "flow.event.beginPlay" },
+            },
+          ],
+          edges: [],
+        }}
+      />,
     );
-    expect(again.container.querySelector(".react-flow")?.className).toMatch(
-      /\bdark\b/,
-    );
+    expect(getByText("Event Begin Play")).toBeTruthy();
   });
 });
 

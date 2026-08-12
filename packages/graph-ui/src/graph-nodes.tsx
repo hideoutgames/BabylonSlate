@@ -8,6 +8,7 @@ import { useCallback, type MouseEvent, type ReactNode } from "react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
+import { displayNodeTitle } from "./graph-connect";
 import {
   nodeRoleClass,
   nodeVisualRole,
@@ -30,10 +31,10 @@ function visualFromData(
 } {
   const nodeType =
     typeof data.__nodeType === "string" ? data.__nodeType : (type ?? "Node");
-  const title =
-    typeof data.title === "string"
-      ? data.title
-      : nodeType.replace(/\./g, " ");
+  const title = displayNodeTitle(
+    nodeType,
+    typeof data.title === "string" ? data.title : undefined,
+  );
   return {
     title,
     role: nodeVisualRole({
@@ -124,8 +125,8 @@ function PinHandle({
           pin.kind === "exec" ? "rotate-45 rounded-sm" : "rounded-full",
         )}
         style={{
-          width: "var(--graph-pin-size, 16px)",
-          height: "var(--graph-pin-size, 16px)",
+          width: "var(--graph-pin-size, 22px)",
+          height: "var(--graph-pin-size, 22px)",
           background: pinCssVar(pin.type),
         }}
         aria-hidden="true"
@@ -161,7 +162,7 @@ function PinRow({
               pending={isPending(incoming)}
               hasError={pinHasError(nodeId, incoming.id)}
             />
-            <span className="truncate text-sm text-foreground">
+            <span className="max-w-[9rem] text-sm leading-snug break-words text-foreground">
               {incoming.name}
             </span>
           </>
@@ -172,7 +173,7 @@ function PinRow({
       <div className="flex min-w-0 flex-1 items-center justify-end">
         {outgoing ? (
           <>
-            <span className="truncate text-right text-sm text-foreground">
+            <span className="max-w-[9rem] text-right text-sm leading-snug break-words text-foreground">
               {outgoing.name}
             </span>
             <PinHandle
@@ -242,14 +243,14 @@ function BlueprintNodeShell({
     <div
       data-node-role={role}
       className={cn(
-        "relative min-w-64 overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
+        "relative min-w-72 rounded-lg border border-border bg-card text-card-foreground shadow-md",
         selected && "ring-2 ring-primary",
       )}
     >
       <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} />
       <div
         className={cn(
-          "px-3 py-2 text-sm font-semibold text-node-title",
+          "px-3 py-2 text-sm font-semibold leading-snug break-words text-node-title",
           nodeRoleClass(role),
         )}
       >

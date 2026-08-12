@@ -6,7 +6,11 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { CONTEXT_MENU_LONG_PRESS_MS, CONTEXT_MENU_MOVE_TOLERANCE_PX } from "./use-context-menu";
+import {
+  CONTEXT_MENU_LONG_PRESS_MS,
+  CONTEXT_MENU_MOVE_TOLERANCE_PX,
+  DRAG_ARM_MS,
+} from "./use-context-menu";
 
 /** Row height for compact outliner / folder trees. */
 export const TREE_ROW_HEIGHT = 32;
@@ -32,6 +36,8 @@ export interface TreeViewProps {
   onToggleExpanded?: (id: string) => void;
   /** Drop `dragId` onto `targetId`; null means the scene root. */
   onReparent?: (dragId: string, targetId: string | null) => void;
+  /** Double-tap / double-click a row (frame camera, open, …). */
+  onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
   rowHeight?: number;
   emptyLabel?: string;
@@ -44,6 +50,9 @@ interface DragState {
   startX: number;
   startY: number;
   armed: boolean;
+  canDrag: boolean;
+  moved: boolean;
+  dragArmTimer: ReturnType<typeof setTimeout> | null;
   longPressTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -57,6 +66,7 @@ export function TreeView({
   onSelect,
   onToggleExpanded,
   onReparent,
+  onActivate,
   onContextMenu,
   rowHeight = TREE_ROW_HEIGHT,
   emptyLabel = "Nothing here yet",
@@ -105,9 +115,12 @@ export function TreeView({
     [nodes, rowHeight],
   );
 
+  const lastTapRef = useRef<{ id: string; at: number } | null>(null);
+
   const clearDrag = useCallback(() => {
     const drag = dragRef.current;
     if (drag?.longPressTimer) clearTimeout(drag.longPressTimer);
+    if (drag?.dragArmTimer) clearTimeout(drag.dragArmTimer);
     dragRef.current = null;
     setDropTargetId(undefined);
   }, []);
@@ -117,10 +130,17 @@ export function TreeView({
       const longPressTimer = onContextMenu
         ? setTimeout(() => {
             const drag = dragRef.current;
-            if (!drag || drag.armed) return;
+            if (!drag || drag.armed || drag.moved) return;
             dragRef.current = null;
             onContextMenu(nodeId, event.clientX, event.clientY);
           }, CONTEXT_MENU_LONG_PRESS_MS)
+        : null;
+      const dragArmTimer = onReparent
+        ? setTimeout(() => {
+            const drag = dragRef.current;
+            if (!drag || drag.moved) return;
+            drag.canDrag = true;
+          }, DRAG_ARM_MS)
         : null;
       dragRef.current = {
         pointerId: event.pointerId,
@@ -128,10 +148,13 @@ export function TreeView({
         startX: event.clientX,
         startY: event.clientY,
         armed: false,
+        canDrag: false,
+        moved: false,
+        dragArmTimer,
         longPressTimer,
       };
     },
-    [onContextMenu],
+    [onContextMenu, onReparent],
   );
 
   const onPointerMove = useCallback(
@@ -142,12 +165,21 @@ export function TreeView({
         event.clientX - drag.startX,
         event.clientY - drag.startY,
       );
-      if (!drag.armed && moved > CONTEXT_MENU_MOVE_TOLERANCE_PX) {
+      if (moved <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
+      drag.moved = true;
+      if (!drag.canDrag) {
+        if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
+        drag.longPressTimer = null;
+        if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
+        drag.dragArmTimer = null;
+        return;
+      }
+      if (!drag.armed) {
         drag.armed = true;
         if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
         drag.longPressTimer = null;
       }
-      if (!drag.armed || !onReparent) return;
+      if (!onReparent) return;
       const target = nodeIdAtClientY(event.clientY);
       setDropTargetId(target === drag.nodeId ? undefined : target);
     },
@@ -166,12 +198,20 @@ export function TreeView({
         if (target !== drag.nodeId) {
           onReparent(drag.nodeId, target);
         }
-      } else if (!drag.armed) {
+      } else if (!drag.armed && !drag.moved) {
         onSelect?.(drag.nodeId);
+        const now = Date.now();
+        const last = lastTapRef.current;
+        if (last && last.id === drag.nodeId && now - last.at <= 350) {
+          onActivate?.(drag.nodeId);
+          lastTapRef.current = null;
+        } else {
+          lastTapRef.current = { id: drag.nodeId, at: now };
+        }
       }
       clearDrag();
     },
-    [clearDrag, nodeIdAtClientY, onReparent, onSelect],
+    [clearDrag, nodeIdAtClientY, onActivate, onReparent, onSelect],
   );
 
   return (

@@ -1,7 +1,7 @@
 import { Color3, type AbstractMesh, type Mesh, type Scene } from "@babylonjs/core";
 
-export const SELECTION_OUTLINE_COLOR = new Color3(0.35, 0.7, 1);
-export const SELECTION_OUTLINE_WIDTH = 0.03;
+export const SELECTION_OUTLINE_COLOR = new Color3(0.42, 0.78, 1);
+export const SELECTION_OUTLINE_WIDTH = 0.022;
 
 /**
  * Mesh outline rather than a HighlightLayer pass: one extra draw per selected
