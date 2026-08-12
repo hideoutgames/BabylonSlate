@@ -2,7 +2,6 @@ import { Button } from "@babylonslate/ui/components/button";
 import type { SerializedScene } from "@babylonslate/core";
 import type { GizmoTool } from "@babylonslate/render";
 import {
-  BoxIcon,
   MagnetIcon,
   MoveIcon,
   RotateCwIcon,
@@ -102,7 +101,6 @@ export function ViewportToolbar() {
         onClick={toggleMode}
         data-testid="viewport-mode-toggle"
       >
-        <BoxIcon data-icon="inline-start" />
         {viewportMode === "3d" ? "3D" : "2D"}
       </Button>
     </div>
