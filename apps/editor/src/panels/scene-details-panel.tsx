@@ -17,30 +17,12 @@ import { Button } from "@babylonslate/ui/components/button";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
-
-const COMPONENT_CLASSES = [
-  { id: "MeshComponent", label: "Mesh", description: "Renderable primitive" },
-  { id: "SpriteComponent", label: "Sprite", description: "2D sprite" },
-  { id: "CameraComponent", label: "Camera", description: "Scene camera" },
-  { id: "LightComponent", label: "Light", description: "Scene light" },
-];
+import {
+  ADDABLE_COMPONENT_CLASSES,
+  defaultPropertiesFor,
+} from "./add-component-catalog";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
-
-function defaultPropertiesFor(classId: string): Record<string, unknown> {
-  switch (classId) {
-    case "MeshComponent":
-      return { meshKind: "box", assetGuid: null };
-    case "SpriteComponent":
-      return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
-    case "CameraComponent":
-      return { fieldOfView: 60, orthographicSize: 5 };
-    case "LightComponent":
-      return { intensity: 1, color: [1, 1, 1] };
-    default:
-      return {};
-  }
-}
 
 function componentPropertyRows(
   actor: SerializedActor,
@@ -549,7 +531,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         open={addComponentOpen}
         onOpenChange={setAddComponentOpen}
         title="Add component"
-        items={COMPONENT_CLASSES.map((entry) => ({
+        items={ADDABLE_COMPONENT_CLASSES.map((entry) => ({
           id: entry.id,
           label: entry.label,
           description: entry.description,
@@ -562,7 +544,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               {
                 id: `${entry.id}-component-${entry.components.length + 1}`,
                 classId,
-                properties: defaultPropertiesFor(classId),
+                properties: defaultPropertiesFor(
+                  classId,
+                  scene.settings.physicsWorld,
+                ),
               },
             ],
           }))

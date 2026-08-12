@@ -29,7 +29,7 @@ Double-buffered `Float32Array`. Views are little-endian; header and per-actor sl
 | 3 | `tickIndex` | Last completed simulation tick |
 | 4 | `actorCount` | Occupied slots |
 | 5 | `scriptMs` | Script phase time for last tick |
-| 6 | `physicsMs` | Physics phase time (filled by P7; separate from `scriptMs`) |
+| 6 | `physicsMs` | Physics phase time (separate from `scriptMs`; full 5 Hz HUD is P8) |
 | 7 | `seq` | Seq-lock sequence (even = stable) for SAB |
 | 8–15 | reserved | Zero |
 
@@ -56,7 +56,7 @@ Capacity is fixed at create time (`maxActors`). Writer fills slots `[0, actorCou
 
 | Channel | Direction | Payload |
 | --- | --- | --- |
-| Control | main → worker | `load`, `play`, `pause`, `step`, `stop`, `setPaused` |
+| Control | main → worker | `load` (`sceneAssetGuid`, optional `seed`, `physicsWorld`, `gravity`, `havokWasmUrl`), `loadScripts`, `play`, `pause`, `step`, `stop`, `setPaused` |
 | Commands | worker → main (ordered) | `spawn`, `despawn`, `assignMesh`, `assignMaterial`, `log`, `diagnostic`, `stats` |
 | Input ring | main → worker | Tick-stamped raw events (see `@babylonslate/input`) |
 | Snapshots | worker → main | Hot-path transform buffers (SAB or transferable) |
@@ -73,7 +73,7 @@ Hand-rolled request/response over the control channel (`id`, `method`, `params` 
 
 ## Play game Worker
 
-Play prefers a dedicated Worker from `@babylonslate/runtime/worker-entry` (`createGameWorkerHost` in the editor). If Worker construction fails (host/Vite), Play falls back to `createInProcessRuntime` and logs a warning. Both paths share control / input / snapshot / command channels.
+Play prefers a dedicated Worker from `@babylonslate/runtime/worker-entry` (`createGameWorkerHost` in the editor). If Worker construction fails (host/Vite), Play falls back to `createInProcessRuntime` and logs a warning. Both paths share control / input / snapshot / command channels. The `load` message includes the open scene's `physicsWorld` / `gravity` and the vendored `/havok/HavokPhysics.wasm` URL so `loadPhysics()` can construct `HavokPlugin` (3d) or Rapier (2d) instead of staying on the AABB software backend.
 
 Diagnostics: `worker-entry.ts` mirrors the in-process driver's `reportError` on the worker's own uncaught `error` / `unhandledrejection` handlers, emitting the same `diagnostic` command shape. `play-session.ts` feeds every `diagnostic` command into a `SessionDiagnosticAggregator` on the main thread (`diagnosticFromCommand`) so the Preview session report is populated for the Worker transport too, not only the in-process fallback.
 

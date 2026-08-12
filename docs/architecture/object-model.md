@@ -12,7 +12,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `GameInstance` | Session singleton: `onGameStart` / `onTick` / `onGameEnd` / `onSceneLoaded` |
 | `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot |
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components |
-| `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` (P7) |
+| `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` | Stable string ids for engine types |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
@@ -45,7 +45,7 @@ The world owns a seeded PRNG from `createSeededRng` in `@babylonslate/core`. Sim
 
 ## Engine components
 
-Registered as typed stubs (asset refs + lifecycle hooks) from day one; physics components gain behaviour in P7:
+Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBodyComponent` / `ColliderComponent` are synced by `PhysicsWorldSync` in `@babylonslate/runtime`:
 
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
 

@@ -48,7 +48,7 @@ export interface PhysicsBackend {
     end: PhysicsTransform,
   ): HitResult;
 
-  /** 2D kinematic character controller (no-op / unsupported on 3d backends). */
+  /** 2D Rapier kinematic character controller; 3D uses Babylon `PhysicsCharacterController`. */
   createCharacterController(desc: CharacterControllerDesc): void;
   destroyCharacterController(id: string): void;
   moveCharacter(

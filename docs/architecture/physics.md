@@ -38,7 +38,7 @@ Rejected alternative for 2D: constraining Havok (companion anchor + 6DOF per bod
 
 ## Scene declaration
 
-`SceneSettings.physicsWorld: "3d" | "2d"` (defaults from `viewportMode` on create). A scene never mixes worlds. Collider shape variants that do not apply to the active world are ignored at load with a diagnostic.
+`SceneSettings.physicsWorld: "3d" | "2d"` (defaults from `viewportMode` on create). A scene never mixes worlds. Collider shape variants that do not apply to the active world are coerced to that world's default box at parse time (`parseColliderProperties`); a mixed-shape diagnostic is a named P7 polish follow-up, not current behaviour.
 
 ## Tick integration
 
@@ -49,6 +49,10 @@ Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** 
 3. `RuntimeDriver` times script phases and the physics phase separately into snapshot/`stats` `scriptMs` and `physicsMs`.
 
 Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, then `RuntimeDriver.loadPhysics()` swaps in Havok or Rapier and re-syncs already-spawned bodies. `preferSoftwarePhysics` skips the swap (unit tests / wasm-free CI).
+
+The Play `load` control message carries `physicsWorld`, `gravity`, and `havokWasmUrl`. The editor vendors `HavokPhysics.wasm` at `/havok/HavokPhysics.wasm` (same self-host pattern as the KTX2 transcoder) so browser Play does not silently keep the AABB backend. Details / Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent`.
+
+Play still does **not** instantiate the open `SerializedScene` (dummy `play-scene` + demo actors + script spawn). Authored physics components therefore do not simulate until `p7-play-scene-load`.
 
 ## Components
 
@@ -66,18 +70,23 @@ Spawn/attach creates bodies; destroy removes them. Transforms after `step` overw
 
 ## Scripting
 
-Sync nodes (exec pin continues same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, plus 2D kinematic character-controller nodes.
+Sync nodes (exec pin continues same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`. Rapier (and V2) character controllers exist on the backend; the graph `physics.moveCharacter` node is still a log stub (`p7-character-controller`).
 
 `ScriptHost` binds `ctx.lineTrace` / overlap / sweep / impulse to the active backend.
 
 ## Determinism
 
-Harness scenarios run on each backend where shapes overlap. Goldens are per-backend (numeric drift between engines is expected; within-backend reproducibility is required).
+Harness scenarios run on each backend where shapes overlap. Within-backend reproducibility is required. Do not require identical Havok vs Rapier **file** goldens — numeric drift between engines is expected.
 
 ## Deferred
 
 | Item | Owner |
 | --- | --- |
+| Play loads the active `SerializedScene` into the worker | `p7-play-scene-load` |
+| `physics.moveCharacter` scripting (backend CC exists) | `p7-character-controller` |
+| Mixed 2D/3D collider diagnostic | P7 polish |
+| Rapier `shapeSweep` ≈ lineTrace; Havok `sphereOverlap` uses AABB | P7 polish / as needed by gameplay |
 | Tilemap merged chain colliders | P10 |
 | Full 5 Hz debugger stats HUD | P8 (`p8-console-hud`); P7 exposes `physicsMs` + Play overlay readout |
+| `planck.js` fallback | Not used; software AABB is the wasm-failure path |
 | Separate physics worker | Not planned for v1 |

@@ -18,6 +18,11 @@ import {
 import { spawnListForScripts } from "./script-compiler";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
+import {
+  inProcessPlayRuntimeOptions,
+  playLoadControl,
+  type PlayPhysicsSettings,
+} from "./play-physics";
 
 /**
  * Extract a `RuntimeDiagnostic` from a worker `diagnostic` command so it can
@@ -77,6 +82,8 @@ export function startPlaySession(options: {
   canvas: HTMLCanvasElement;
   sharedEngine: EngineHandle["engine"];
   injectFixtureThrow?: boolean;
+  /** Scene physics world and gravity from the open scene document. */
+  physics?: PlayPhysicsSettings;
   /** Compiled project graphs to run for this session. */
   scripts?: readonly ScriptBundleEntry[];
   onStats?: (stats: {
@@ -144,13 +151,22 @@ export function startPlaySession(options: {
 
   const scripts = options.scripts ?? [];
   const spawn = spawnListForScripts(scripts);
+  const physics = options.physics ?? {
+    physicsWorld: "3d" as const,
+    gravity: [0, -9.81, 0] as [number, number, number],
+  };
+  const loadControl = playLoadControl({
+    sceneAssetGuid: "play-scene",
+    physicsWorld: physics.physicsWorld,
+    gravity: physics.gravity,
+  });
 
   try {
     worker = createGameWorkerHost();
     runtimeMode = "worker";
     worker.onCommand((cmd) => onCommand(cmd));
     worker.onSnapshot((buffer) => handle.pushSnapshot(buffer));
-    worker.postControl({ type: "load", sceneAssetGuid: "play-scene" });
+    worker.postControl(loadControl);
     if (scripts.length > 0) {
       worker.postControl({
         type: "loadScripts",
@@ -165,6 +181,7 @@ export function startPlaySession(options: {
     runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 256,
+      ...inProcessPlayRuntimeOptions(physics),
       onCommand: (command) => onCommand(command),
     });
     runtime.registerAnchors(FIXTURE_ASSET, [
