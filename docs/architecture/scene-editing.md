@@ -73,7 +73,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 | `@babylonslate/edit` | Scene commands + `diffSceneCommands`; journal revivers |
 | `@babylonslate/render` | Editor tools: camera, gizmos, grid, outline, sync, gestures |
 | `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker |
-| `apps/editor` | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists these dock tabs and toggles them. |
+| `apps/editor` | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists these dock tabs and toggles them; reopen restores addPanel-relative last placement. |
 
 ## Outliner and Details visuals
 
