@@ -42,6 +42,17 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
   });
 
   api.addPanel({
+    id: "my-class",
+    component: "my-class",
+    title: "My Class",
+    position: {
+      referencePanel: graph,
+      direction: "left",
+    },
+    initialWidth: 260,
+  });
+
+  api.addPanel({
     id: "inspector",
     component: "inspector",
     title: "Inspector",
@@ -50,6 +61,17 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
       direction: "right",
     },
     initialWidth: 280,
+  });
+
+  api.addPanel({
+    id: "compiler-results",
+    component: "compiler-results",
+    title: "Compiler Results",
+    position: {
+      referencePanel: graph,
+      direction: "below",
+    },
+    initialHeight: 160,
   });
 
   graph.api.setActive();

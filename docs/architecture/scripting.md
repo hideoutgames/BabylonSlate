@@ -180,13 +180,14 @@ AI / navigation categories wait for P11.
 
 ### `graph-ui` rework
 
-Touch-first React Flow 12 shell:
+Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 
-- Tap-to-connect **and** drag-to-connect (gestures.md).
-- Node palette as bottom `Sheet`.
-- Compose from `@babylonslate/ui` only for chrome (`Card`, `Sheet`, `ScrollArea`, `AlertDialog`) — no ad-hoc styled containers.
+- **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + bottom-sheet **Add node** affordance.
+- **`GraphDocument`**: local extension of core `SerializedGraph`; edges may carry optional `sourceHandle` / `targetHandle` for pin-aware wiring.
+- **Nodes**: legacy `logMessage` without `data.__pins` uses the existing card; scripting nodes with `data.__pins` render exec (gray) and data handles; tap output pin → tap input pin to connect.
+- Tap-to-connect **and** drag-to-connect (gestures.md) — drag deferred; palette uses semantic Tailwind chrome (`rounded-lg border bg-card`) until `@babylonslate/ui` Sheet is wired.
 - Pin/type colors via semantic tokens (`text-vector`, plus new type tokens in `globals.css` / theming.md as they ship).
-- Blocking Preview dialog uses `AlertDialog`.
+- Blocking Preview dialog uses `AlertDialog` (editor host).
 
 Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node types, validation binder) injectable; do not hardcode scripting-only assumptions into the canvas host.
 
@@ -244,7 +245,11 @@ See [issue-tracker P5 slice ownership](../agents/issue-tracker.md#p5-slice-owner
 6. **`p5-graph-ui`** + **`p5-types`** — parallel once IR serialisation is stable.
 7. **`p5-graph-validation`** — editor gates and CI fixtures last, consuming Compiler Results from graph-ui.
 
-## Risks (from §19, P5-relevant)
+## Implementation status (landed)
+
+Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tree. Editor wires validation (Compiler Results, Play badge + Play Anyway `AlertDialog`), graph-ui tap-to-connect + Sheet palette, My Class panel, CodeMirror ExecuteJavaScript body editor, Enum/Structure/ScriptInterface creatable assets, `FunctionLibrary` engine base, `formatValue`, and validator fixtures.
+
+**Follow-ups (non-blocking polish):** full row editors for Enum/Structure/Interface documents; project-wide pre-Preview sweep beyond the active graph; export-time Print strip preset; debounce timer (currently validates on graph change).
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design My Class UX against `ClassRegistry.reparent` from the start.

@@ -51,6 +51,7 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { useDocuments } from "../context/document-context";
+import { useValidation } from "../context/validation-context";
 import {
   ASSET_DRAG_MIME,
   CREATABLE_ASSET_TYPES,
@@ -137,6 +138,7 @@ function AssetTile({
   onToggleSelect,
   onLongPressMenu,
   thumbnailUrl,
+  hasCompileError = false,
 }: {
   asset: IndexedAsset;
   selected: boolean;
@@ -144,6 +146,7 @@ function AssetTile({
   onToggleSelect: () => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
   thumbnailUrl: string | null;
+  hasCompileError?: boolean;
 }) {
   const pressRef = useRef<TilePressState | null>(null);
   const compression = textureCompressionState(asset);
@@ -244,6 +247,15 @@ function AssetTile({
           {compressionBadgeLabel(compression)}
         </Badge>
       ) : null}
+      {hasCompileError ? (
+        <Badge
+          variant="destructive"
+          className="w-fit text-[10px]"
+          data-testid={`compile-error-overlay-${asset.header.guid}`}
+        >
+          Compile error
+        </Badge>
+      ) : null}
       <span data-lock-slot className="hidden" aria-hidden />
     </button>
   );
@@ -260,6 +272,14 @@ export function ContentBrowserWorkspace() {
     loadAssetThumbnail,
     thumbnailsEnabled,
   } = useDocuments();
+  const { diagnostics } = useValidation();
+  const compileErrorGuids = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of diagnostics) {
+      if (d.severity === "error") set.add(d.assetGuid);
+    }
+    return set;
+  }, [diagnostics]);
 
   const [selectedFolderPath, setSelectedFolderPath] = useState(ASSETS_ROOT);
   const [search, setSearch] = useState("");
@@ -707,6 +727,10 @@ export function ContentBrowserWorkspace() {
                 asset={asset}
                 selected={selectedGuids.has(asset.header.guid)}
                 thumbnailUrl={thumbnailUrls[asset.header.guid] ?? null}
+                hasCompileError={
+                  compileErrorGuids.has(asset.header.guid) ||
+                  compileErrorGuids.has(asset.path)
+                }
                 onOpen={() => {
                   if (selectedGuids.size > 0) {
                     toggleGuid(asset.header.guid);

@@ -15,6 +15,8 @@ export default defineConfig({
             "packages/bridge/**/*.test.ts",
             "packages/runtime/**/*.test.ts",
             "packages/input/**/*.test.ts",
+            "packages/scripting/**/*.test.ts",
+            "packages/scripting-nodes/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
           ],
         },
@@ -132,6 +134,18 @@ export default defineConfig({
           statements: 60,
         },
         "packages/input/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/scripting/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/scripting-nodes/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,

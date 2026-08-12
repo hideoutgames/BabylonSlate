@@ -4,6 +4,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   "Actor",
   "ActorComponent",
   "GameInstance",
+  "FunctionLibrary",
 ] as const;
 
 export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];

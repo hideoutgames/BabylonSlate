@@ -1,0 +1,59 @@
+{
+  "id": "type-mismatch",
+  "kind": "event",
+  "nodes": [
+    {
+      "id": "a",
+      "typeId": "flow.entry",
+      "position": { "x": 0, "y": 0 },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": { "kind": "exec" }
+        },
+        {
+          "id": "out",
+          "name": "value",
+          "kind": "data",
+          "direction": "out",
+          "type": { "kind": "int" }
+        }
+      ],
+      "properties": {}
+    },
+    {
+      "id": "b",
+      "typeId": "debug.log",
+      "position": { "x": 200, "y": 0 },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": { "kind": "exec" }
+        },
+        {
+          "id": "message",
+          "name": "message",
+          "kind": "data",
+          "direction": "in",
+          "type": { "kind": "string" }
+        }
+      ],
+      "properties": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "sourceNodeId": "a",
+      "sourcePinId": "out",
+      "targetNodeId": "b",
+      "targetPinId": "message"
+    }
+  ]
+}

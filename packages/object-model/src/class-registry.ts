@@ -70,6 +70,13 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
+    this.register({
+      id: "FunctionLibrary",
+      parentClassId: "BObject",
+      kind: "other",
+      variables: [],
+      implementedInterfaces: [],
+    });
     for (const id of ENGINE_COMPONENT_CLASS_IDS) {
       this.register({
         id,

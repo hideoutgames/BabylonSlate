@@ -40,6 +40,8 @@ export interface SerializedGraph {
     id: string;
     source: string;
     target: string;
+    sourceHandle?: string;
+    targetHandle?: string;
   }>;
 }
 

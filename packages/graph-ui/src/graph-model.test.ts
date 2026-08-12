@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_NODE_TYPE, toSerializedGraph } from "./graph-model";
+import {
+  createEdgeId,
+  DEFAULT_NODE_TYPE,
+  toSerializedGraph,
+} from "./graph-model";
 
 describe("toSerializedGraph", () => {
   it("keeps id, type, position and data for each node", () => {
@@ -44,12 +48,56 @@ describe("toSerializedGraph", () => {
     expect(graph.nodes[0].data).toEqual({});
   });
 
-  it("passes edges through untouched", () => {
+  it("preserves optional source and target handles on edges", () => {
+    const edges = [
+      {
+        id: "e1",
+        source: "n1",
+        target: "n2",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+    ];
+    expect(toSerializedGraph([], edges).edges).toEqual(edges);
+  });
+
+  it("omits handle keys when they are absent", () => {
     const edges = [{ id: "e1", source: "n1", target: "n2" }];
-    expect(toSerializedGraph([], edges).edges).toBe(edges);
+    expect(toSerializedGraph([], edges).edges[0]).toEqual({
+      id: "e1",
+      source: "n1",
+      target: "n2",
+    });
+  });
+
+  it("round-trips scripting node type via internal __nodeType data", () => {
+    expect(
+      toSerializedGraph(
+        [
+          {
+            id: "n1",
+            type: "pinNode",
+            position: { x: 0, y: 0 },
+            data: { title: "Log", __nodeType: "debug.log", __pins: [] },
+          },
+        ],
+        [],
+      ).nodes[0],
+    ).toEqual({
+      id: "n1",
+      type: "debug.log",
+      position: { x: 0, y: 0 },
+      data: { title: "Log", __pins: [] },
+    });
   });
 
   it("returns an empty node list for an empty canvas", () => {
     expect(toSerializedGraph([], [])).toEqual({ nodes: [], edges: [] });
+  });
+});
+
+describe("createEdgeId", () => {
+  it("builds a stable id from node and pin endpoints", () => {
+    expect(createEdgeId("a", "out", "b", "in")).toBe("e:a:out:b:in");
   });
 });
