@@ -22,9 +22,10 @@ When updating the theme:
 
 BabylonSlate is a game engine editor: keep chrome quiet and clutter low.
 
-- **No brand accent color.** Primary actions, focus rings, and tab indicators use the text/icon color (`--foreground` / `--primary` aliases of that ink). Minimal Neutral’s default sidebar-primary blue is overridden to ink.
+- **No brand accent color on chrome.** Primary actions, focus rings, and tab indicators use the text/icon color (`--foreground` / `--primary` aliases of that ink). Minimal Neutral’s default sidebar-primary blue is overridden to ink.
 - **Avoid decorative highlights.** Prefer borders, weight, and layout over saturated underlines or glow.
 - **Saturated colors are type cues**, reserved for small UI (pins, property rows, graph wires) and status — not shell chrome.
+- **Sparse action accents are allowed.** Play uses `--success` (green). Destructive actions use `--destructive`. Do not paint entire toolbars or panels with accent fills.
 
 ## BabylonSlate extension tokens
 
@@ -59,7 +60,7 @@ Muted text uses Minimal Neutral `--muted-foreground`.
 | Default actions / ink | `--primary` | Same as text/icon color |
 | Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Text/icon color |
 | Destructive | `--destructive` | Errors and destructive actions (Minimal Neutral red) |
-| Success | `--success` | BabylonSlate extension |
+| Success / Play | `--success` | Positive status and the global Play control |
 
 ## Type / value colors
 

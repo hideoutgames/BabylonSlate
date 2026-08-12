@@ -172,7 +172,7 @@ AI / navigation categories wait for P11.
 
 ### Class document
 
-- **Graph** canvas (event + per-function graphs) + node palette bottom sheet (`Sheet`).
+- **Graph** canvas (event + per-function graphs) + centered **Add Node** catalog modal (`Dialog` with categories + search).
 - **My Class**: variables, functions, event dispatchers, implemented interfaces, Actor component tree; inherited members shown and marked. Re-parenting UX consumes `ClassRegistry.reparent` invalidation list (design here; do not retrofit later).
 - **Details**: selected node / variable / component; ExecuteJavaScript pin lists + body.
 - **Compiler Results**: diagnostics grouped by graph; tap → select node, pan canvas, flash pin (or scroll CodeMirror to `bodyLine`).
@@ -182,10 +182,10 @@ AI / navigation categories wait for P11.
 
 Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 
-- **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + bottom-sheet **Add node** affordance.
+- **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + centered **Add node** catalog modal.
 - **`GraphDocument`**: local extension of core `SerializedGraph`; edges may carry optional `sourceHandle` / `targetHandle` for pin-aware wiring.
 - **Nodes**: legacy `logMessage` without `data.__pins` uses the existing card; scripting nodes with `data.__pins` render exec (gray) and data handles; tap output pin → tap input pin to connect.
-- Tap-to-connect **and** drag-to-connect (gestures.md) — drag deferred; palette uses semantic Tailwind chrome (`rounded-lg border bg-card`) until `@babylonslate/ui` Sheet is wired.
+- Tap-to-connect **and** drag-to-connect (gestures.md) — drag deferred; palette uses the shared Dialog catalog shell (`@babylonslate/ui` Dialog + ScrollArea).
 - Pin/type colors via semantic tokens (`text-vector`, plus new type tokens in `globals.css` / theming.md as they ship).
 - Blocking Preview dialog uses `AlertDialog` (editor host).
 

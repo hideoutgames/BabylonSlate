@@ -257,6 +257,97 @@ describe("AssetRegistry", () => {
       graphs: ["assets/main.graph.babasset"],
     });
   });
+
+  it("creates empty folders with a git-visible marker", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    await registry.createFolder("project", "fx/vfx");
+    expect(await storage.exists("assets/fx/vfx/.babylonslate-folder")).toBe(true);
+
+    const remounted = new AssetRegistry(storage);
+    await remounted.mountRoot(projectContentRoot());
+    const tree = remounted.folderTree("project");
+    const fx = tree.children.find((child) => child.name === "fx");
+    expect(fx).toBeDefined();
+    expect(fx?.children.some((child) => child.name === "vfx")).toBe(true);
+  });
+
+  it("moves an asset without changing its guid", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/tex.babasset", {
+      guid: "tex-1",
+      type: "Texture",
+      name: "tex",
+    });
+    await writeAsset(storage, "assets/mat.babasset", {
+      guid: "mat-1",
+      type: "Material",
+      name: "mat",
+      dependencies: ["tex-1"],
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const moved = await registry.moveAsset("tex-1", "project", "textures/tex.babasset");
+    expect(moved.header.guid).toBe("tex-1");
+    expect(moved.path).toBe("assets/textures/tex.babasset");
+    expect(await storage.exists("assets/tex.babasset")).toBe(false);
+    expect(await storage.exists("assets/textures/tex.babasset")).toBe(true);
+    expect(registry.showReferences("tex-1").inbound).toEqual(["mat-1"]);
+  });
+
+  it("duplicates an asset with a new guid", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/tex.babasset", {
+      guid: "tex-1",
+      type: "Texture",
+      name: "tex",
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const copy = await registry.duplicateAsset("tex-1", "project", "copies");
+    expect(copy.header.guid).not.toBe("tex-1");
+    expect(copy.path).toBe("assets/copies/tex.babasset");
+    expect(registry.getByGuid("tex-1")).toBeDefined();
+    expect(registry.getByGuid(copy.header.guid)).toBeDefined();
+  });
+
+  it("renames an asset path while keeping the guid", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/old.babasset", {
+      guid: "tex-1",
+      type: "Texture",
+      name: "old",
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const renamed = await registry.renameAsset("tex-1", "shiny");
+    expect(renamed.header.guid).toBe("tex-1");
+    expect(renamed.path).toBe("assets/shiny.babasset");
+    expect(renamed.header.name).toBe("shiny");
+  });
+
+  it("moves a folder and all assets under it", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", {
+      guid: "spark-1",
+      type: "Texture",
+      name: "spark",
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.moveFolder("project", "fx", "effects");
+    expect(registry.getByGuid("spark-1")?.path).toBe(
+      "assets/effects/fx/spark.babasset",
+    );
+    expect(await storage.exists("assets/fx/spark.babasset")).toBe(false);
+  });
 });
 
 describe("ThumbnailDecodeLru", () => {
