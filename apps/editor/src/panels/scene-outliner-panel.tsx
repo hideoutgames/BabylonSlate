@@ -17,7 +17,7 @@ import {
 } from "@babylonslate/core";
 import { Input } from "@babylonslate/ui/components/input";
 import { Toggle } from "@babylonslate/ui/components/toggle";
-import { EyeIcon, EyeOffIcon, LockIcon, PlusIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, LockIcon, PlusIcon, BoxIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
@@ -50,6 +50,7 @@ export function flattenActors(
         hasChildren: false,
         expanded: false,
         muted: !actor.visible,
+        icon: <BoxIcon />,
       }));
   }
 
@@ -65,6 +66,7 @@ export function flattenActors(
         hasChildren: children.length > 0,
         expanded,
         muted: !actor.visible,
+        icon: <BoxIcon />,
       });
       if (expanded) {
         walk(actor.id, depth + 1);
@@ -232,7 +234,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               trailing: (
                 <>
                   <Toggle
-                    variant="outline"
+                    variant="default"
                     size="touch"
                     aria-label={`Toggle visibility of ${node.label}`}
                     pressed={!node.muted}
@@ -242,7 +244,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                     {node.muted ? <EyeOffIcon /> : <EyeIcon />}
                   </Toggle>
                   <Toggle
-                    variant="outline"
+                    variant="default"
                     size="touch"
                     aria-label={`Toggle lock of ${node.label}`}
                     pressed={lockedIds.has(node.id)}

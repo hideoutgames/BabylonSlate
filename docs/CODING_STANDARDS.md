@@ -20,10 +20,10 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 ## React / editor
 
 - Minimum **44px** touch targets on interactive chrome (buttons, tabs, grips).
-- Use `@babylonslate/ui` and semantic tokens (`bg-background`, `text-muted-foreground`, `text-vector`) — no raw hex colors in app code.
+- Use `@babylonslate/ui` and semantic tokens (`bg-background`, `text-muted-foreground`, `text-primary`, `bg-node-event`) — no raw hex colors in app code.
 - Compose forms from `Field` + shadcn inputs (`Input`, `Select`, `Switch`, `Checkbox`) — no raw `<input>`, `<select>`, or `<textarea>` with hand-rolled Tailwind in `apps/editor/src`.
 - Use `@babylonslate/editor-kit` panel composites (`PanelFrame`, `ToolbarStrip`) for docked panel chrome.
-- Palette and token roles: [architecture/theming.md](architecture/theming.md). Edit tokens only in `packages/ui/src/styles/globals.css`. No brand accent chrome — saturated colors are type/status cues for small UI only.
+- Palette and token roles: [architecture/theming.md](architecture/theming.md). Edit tokens only in `packages/ui/src/styles/globals.css`. `--primary` is the selection accent; saturated pin/node tokens (`--pin-*`, `--node-*`) are type cues.
 - Use `flex` + `gap-*` for spacing, not `space-y-*`.
 - Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`.
 - Use radius tokens (`rounded-md`, `rounded-lg`) — no hardcoded `border-radius` literals in editor CSS except token definitions.

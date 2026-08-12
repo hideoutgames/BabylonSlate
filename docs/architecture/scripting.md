@@ -10,7 +10,7 @@ P4 already owns stack→node mapping (`AnchorEntry`, `loadCompiledModule`, Previ
 | --- | --- | --- |
 | `scripting` | Graph IR, pin type system, type context, pure validator + rule hook, deterministic JS codegen + anchor table | React, Babylon, Capacitor |
 | `scripting-nodes` | Data-driven node catalog (id, title, category, pins, codegen) | React, Babylon, Capacitor |
-| `graph-ui` | Touch React Flow shell reusable by script / shader / anim / BT graphs; node chrome; pin colors via semantic tokens | Babylon, Capacitor |
+| `graph-ui` | Touch React Flow shell reusable by script / shader / anim / BT graphs; Blueprint node chrome; pin/wire colors via `--pin-*` tokens | Babylon, Capacitor |
 | `core` | Shared `formatValue`, diagnostic / pin type primitives reused outside scripting | React, Babylon, Capacitor |
 | `runtime` | Loads compiled modules, registers anchors, Log/Print command forwarding | Babylon, DOM |
 | `apps/editor` | Class document, My Class, Compiler Results, validation gates, type asset editors | Capacitor |
@@ -184,12 +184,12 @@ Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 
 - **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + centered **Add node** catalog modal.
 - **`GraphDocument`**: local extension of core `SerializedGraph`; edges may carry optional `sourceHandle` / `targetHandle` for pin-aware wiring.
-- **Nodes**: scripting nodes render via `PinNode` when `data.__pins` is present (exec gray + data handles); tap output pin → tap input pin to connect. Legacy `logMessage` without pins still uses the message card until the host hydrates.
-- **Host pin hydration** (`hydrateSerializedGraphForEditor` in the editor): injects `__pins` from `@babylonslate/scripting-nodes` on load; palette entries carry `pins` + `defaultData` so Add node creates connectable handles. `graph-ui` stays free of the catalog package.
+- **Nodes**: scripting nodes render via `PinNode` when `data.__pins` is present. Chrome is Blueprint-like: role-colored title bar (`--node-*`), two-column pin rows, exec diamonds and data circles. Each pin row is `--touch-target` (44px) tall; the visual pin is `--graph-pin-size` (16px). Tap output pin → tap input pin to connect. Legacy `logMessage` without pins still uses the same shell until the host hydrates.
+- **Host pin hydration** (`hydrateSerializedGraphForEditor` in the editor): injects `__pins` plus `__category` / `__pure` / `__latent` from `@babylonslate/scripting-nodes` on load; palette entries carry `pins`, `pure`, `latent`, and `defaultData` so Add node creates connectable, colored handles. `graph-ui` stays free of the catalog package (`node-theme.ts` maps type/category strings only).
 - **New graphs** seed `flow.event.beginPlay` + `flow.event.tick` via `createDefaultLogicGraphSerialized` (project scaffold + Content Browser create). Existing `logMessage` graphs hydrate to `debug.log` pins without auto-injecting events.
 - **Undo**: `AddNodeCommand` / `RemoveNodeCommand` in `@babylonslate/edit` so palette adds persist through `diffGraphCommands`.
-- Tap-to-connect shipped; drag-to-connect remains deferred polish. Palette uses the shared Dialog catalog shell (`@babylonslate/ui` Dialog + ScrollArea).
-- Pin/type colors via semantic tokens (`text-vector`, plus new type tokens in `globals.css` / theming.md as they ship).
+- Tap-to-connect shipped; drag-to-connect remains deferred polish. Palette uses the shared Dialog catalog shell (`@babylonslate/ui` Dialog + ScrollArea) with a role-color chip per item.
+- Pin and wire colors use `--pin-*` tokens (exec white, bool red, float green, string magenta, vector yellow, …). Exec wires are 5px, data wires 4px. The canvas sets XYFlow `colorMode="dark"` and `--xy-*` overrides in `graph-editor.css`.
 - Blocking Preview dialog uses `AlertDialog` (editor host).
 
 Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node types, validation binder) injectable; do not hardcode scripting-only assumptions into the canvas host.

@@ -1,3 +1,4 @@
+export * from "./editor-clear-color";
 export * from "./create-engine";
 export * from "./create-null-engine";
 export * from "./ktx2-transcoder";

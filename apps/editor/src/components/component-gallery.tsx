@@ -261,7 +261,7 @@ export function ComponentGallery() {
       <header className="border-b border-border px-6 py-4">
         <h1 className="text-xl font-semibold">Component Gallery</h1>
         <p className="text-sm text-muted-foreground">
-          Dev-only audit surface for Minimal Neutral and editor-kit composites.
+          Dev-only audit surface for Unreal-inspired tokens and editor-kit composites.
           Open with{" "}
           <SelectableText className="font-mono text-xs">
             ?test=1&amp;gallery=1
@@ -288,7 +288,7 @@ export function ComponentGallery() {
             <h2 className="text-lg font-medium">Feedback</h2>
             <Alert>
               <AlertTitle>Default alert</AlertTitle>
-              <AlertDescription>Minimal Neutral surface tokens.</AlertDescription>
+              <AlertDescription>Layered charcoal surface tokens.</AlertDescription>
             </Alert>
             <div className="flex gap-2">
               <Badge>Default</Badge>

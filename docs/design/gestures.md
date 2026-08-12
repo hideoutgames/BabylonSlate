@@ -65,7 +65,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 ## Graph (React Flow)
 
 - One-finger pan/zoom inside graph panel only.
-- **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`).
+- **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`). Pin hit boxes are `--touch-target` (44px); visual pins are `--graph-pin-size` (16px). Wires use `--pin-*` colors and 4–5px strokes.
 - **Drag-to-connect:** allowed by the gesture contract; deferred as polish (see issue-tracker P5 follow-ups).
 - Node palette is a centered `CatalogDialog` (search autofocused); long-press / secondary click for node context menus when enabled.
 

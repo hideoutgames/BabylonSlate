@@ -35,6 +35,8 @@ export type PaletteNode = {
   pins?: SerializedPin[];
   /** Default property bag (message, severity, …) merged into node data. */
   defaultData?: Record<string, unknown>;
+  pure?: boolean;
+  latent?: boolean;
 };
 
 export type NavigateRequest = {

@@ -137,4 +137,42 @@ describe("PropertyGrid", () => {
     screen.getByTestId("property-mesh").click();
     expect(onPick).toHaveBeenCalled();
   });
+
+  it("lays out the label beside its control", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          { kind: "text", id: "name", label: "Name", value: "Cube", onChange: () => {} },
+        ]}
+      />,
+    );
+    const row = screen.getByTestId("property-row-name");
+    expect(row.className).toContain("grid");
+    expect(row.textContent).toContain("Name");
+  });
+
+  it("colors vector axis scrub labels", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "vector3",
+            id: "position",
+            label: "Position",
+            value: [1, 2, 3],
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("property-position-x-scrub").className).toContain(
+      "text-axis-x",
+    );
+    expect(screen.getByTestId("property-position-y-scrub").className).toContain(
+      "text-axis-y",
+    );
+    expect(screen.getByTestId("property-position-z-scrub").className).toContain(
+      "text-axis-z",
+    );
+  });
 });

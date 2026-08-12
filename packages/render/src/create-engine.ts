@@ -1,5 +1,4 @@
 import {
-  Color4,
   Engine,
   KhronosTextureContainer2,
   Scene,
@@ -17,6 +16,7 @@ import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
 import { configureKtx2Transcoder } from "./ktx2-transcoder";
+import { EDITOR_CLEAR_COLOR } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
@@ -132,7 +132,7 @@ export function createEngine(
 
   const scene = new Scene(engine);
   scene.skipPointerMovePicking = true;
-  scene.clearColor = new Color4(37 / 255, 37 / 255, 37 / 255, 1);
+  scene.clearColor = EDITOR_CLEAR_COLOR.clone();
   if (options.playMode) {
     scene.performancePriority = ScenePerformancePriority.Intermediate;
   }

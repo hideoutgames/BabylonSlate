@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { CatalogDialog } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { cn } from "@babylonslate/ui/lib/utils";
 import type { PaletteNode } from "./graph-types";
+import { nodeRoleClass, nodeVisualRole } from "./node-theme";
 
 export interface NodePaletteProps {
   paletteNodes?: PaletteNode[];
@@ -102,13 +104,28 @@ export function NodePalette({ paletteNodes, onAddNode }: NodePaletteProps) {
                       key={node.id}
                       type="button"
                       variant="outline"
-                      className="h-auto min-h-[var(--touch-target,44px)] justify-start touch-manipulation"
+                      className="h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 touch-manipulation"
                       data-testid={`node-palette-item-${node.id}`}
                       onClick={() => {
                         onAddNode(node);
                         setOpen(false);
                       }}
                     >
+                      <span
+                        className={cn(
+                          "size-2.5 shrink-0 rounded-sm",
+                          nodeRoleClass(
+                            nodeVisualRole({
+                              nodeType: node.id,
+                              title: node.title,
+                              category: node.category,
+                              pure: node.pure,
+                              latent: node.latent,
+                            }),
+                          ),
+                        )}
+                        aria-hidden="true"
+                      />
                       {node.title}
                     </Button>
                   ))}

@@ -85,6 +85,25 @@ describe("hydrateSerializedGraphForEditor", () => {
     const hydrated = hydrateSerializedGraphForEditor(graph, registry);
     expect(hydrated.nodes[0]?.data.__pins).toEqual(customPins);
   });
+
+  it("injects node visual metadata from the registry", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.__category).toBe("flow");
+    expect(hydrated.nodes[0]?.data.__pure).toBe(true);
+    expect(hydrated.nodes[0]?.data.__latent).toBe(false);
+    expect(hydrated.nodes[0]?.data.__nodeType).toBe("flow.event.beginPlay");
+  });
 });
 
 describe("createDefaultLogicGraphSerialized", () => {

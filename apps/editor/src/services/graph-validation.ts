@@ -18,6 +18,22 @@ function hasNonEmptyPins(data: Record<string, unknown>): boolean {
   return Array.isArray(data.__pins) && data.__pins.length > 0;
 }
 
+function withVisualMeta(
+  data: Record<string, unknown>,
+  def: { category: string; pure?: boolean; latent?: boolean } | undefined,
+  typeId: string,
+): Record<string, unknown> {
+  return {
+    ...data,
+    __nodeType:
+      typeof data.__nodeType === "string" ? data.__nodeType : typeId,
+    __category:
+      typeof data.__category === "string" ? data.__category : def?.category,
+    __pure: data.__pure ?? def?.pure ?? false,
+    __latent: data.__latent ?? def?.latent ?? false,
+  };
+}
+
 /**
  * Injects `data.__pins` from the node registry for canvas rendering.
  * Compile/validate already materialize pins separately; this keeps the UI in sync.
@@ -30,8 +46,17 @@ export function hydrateSerializedGraphForEditor(
     ...graph,
     nodes: graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
+      const typeIdHint =
+        typeof rawData.__nodeType === "string" ? rawData.__nodeType : node.type;
       if (hasNonEmptyPins(rawData)) {
-        return { ...node, data: rawData };
+        return {
+          ...node,
+          data: withVisualMeta(
+            rawData,
+            nodeRegistry.get(typeIdHint),
+            typeIdHint,
+          ),
+        };
       }
 
       let typeId =
@@ -62,11 +87,15 @@ export function hydrateSerializedGraphForEditor(
       return {
         ...node,
         type: typeId,
-        data: {
-          ...properties,
-          ...(def ? { title: def.title } : {}),
-          __pins: pins,
-        },
+        data: withVisualMeta(
+          {
+            ...properties,
+            ...(def ? { title: def.title } : {}),
+            __pins: pins,
+          },
+          def,
+          typeId,
+        ),
       };
     }),
   };

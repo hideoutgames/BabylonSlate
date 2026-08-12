@@ -5,6 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { CONTEXT_MENU_LONG_PRESS_MS, CONTEXT_MENU_MOVE_TOLERANCE_PX } from "./use-context-menu";
 
 /** Row height matches the touch-target floor so every row is a valid target. */
@@ -18,6 +19,8 @@ export interface TreeViewNode {
   expanded: boolean;
   /** Trailing controls such as visibility and lock toggles. */
   trailing?: ReactNode;
+  /** Optional type cue, rendered between the disclosure and the label. */
+  icon?: ReactNode;
   muted?: boolean;
 }
 
@@ -196,13 +199,17 @@ export function TreeView({
                 aria-expanded={node.hasChildren ? node.expanded : undefined}
                 data-testid={`tree-row-${node.id}`}
                 data-drop-target={dropTargetId === node.id ? "true" : undefined}
-                className={`absolute right-0 left-0 flex touch-none items-center gap-1 px-1 text-sm ${
-                  selected ? "bg-accent font-medium" : "hover:bg-accent/50"
-                } ${dropTargetId === node.id ? "outline outline-1 outline-ring" : ""}`}
+                className={cn(
+                  "absolute right-0 left-0 flex touch-none items-center gap-1 border-l-2 px-1 text-sm",
+                  selected
+                    ? "border-l-primary bg-primary/20 font-medium"
+                    : "border-l-transparent hover:bg-accent/50",
+                  dropTargetId === node.id ? "outline outline-1 outline-ring" : "",
+                )}
                 style={{
                   top,
                   height: rowHeight,
-                  paddingLeft: `${node.depth * 12 + 4}px`,
+                  paddingLeft: `${node.depth * 16 + 8}px`,
                 }}
                 onPointerDown={(event) => onPointerDown(event, node.id)}
                 onContextMenu={(event) => {
@@ -228,8 +235,16 @@ export function TreeView({
                 >
                   {node.hasChildren ? (node.expanded ? "▾" : "▸") : ""}
                 </button>
+                {node.icon ? (
+                  <span className="flex size-4 shrink-0 items-center justify-center text-primary [&_svg]:size-4">
+                    {node.icon}
+                  </span>
+                ) : null}
                 <span
-                  className={`min-w-0 flex-1 truncate ${node.muted ? "text-muted-foreground" : ""}`}
+                  className={cn(
+                    "min-w-0 flex-1 truncate font-medium",
+                    node.muted ? "text-muted-foreground" : "",
+                  )}
                 >
                   {node.label}
                 </span>
