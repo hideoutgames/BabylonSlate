@@ -1,13 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
-
-async function openTestProject(page: import("@playwright/test").Page) {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("create-project-empty").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-}
 
 test.describe("BabylonSlate editor smoke", () => {
   test("loads shell, opens project, and shows viewport canvas", async ({
@@ -81,7 +75,7 @@ test.describe("BabylonSlate editor smoke", () => {
     await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
-    await page.getByTestId("create-project-empty").click();
+    await openTestProject(page);
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
     await expect(page.locator("canvas")).toHaveCount(0);
   });

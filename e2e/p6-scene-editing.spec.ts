@@ -1,13 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
-
-async function openTestProject(page: Page) {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("create-project-empty").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-}
 
 async function openMainScene(page: Page) {
   await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();

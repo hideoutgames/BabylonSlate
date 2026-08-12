@@ -17,7 +17,7 @@ import {
 import { ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { useSceneEditing } from "../context/scene-editing-context";
+import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
 import { defaultPropertiesFor } from "./add-component-catalog";
@@ -82,7 +82,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
-  const { selectedActorIds } = useSceneEditing();
+  const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
   const [addComponentOpen, setAddComponentOpen] = useState(false);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -387,7 +387,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       label: "Locked",
       value: actor.locked,
       defaultValue: false,
-      onChange: (locked) => updateActor((entry) => ({ ...entry, locked })),
+      onChange: (locked) => {
+        updateActor((entry) => ({ ...entry, locked }));
+        setSelectedActorIds(
+          selectionAfterLockChange(selectedActorIds, actor.id, locked),
+        );
+      },
     },
   ];
 

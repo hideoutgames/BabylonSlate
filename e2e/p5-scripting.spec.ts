@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { openTestProject } from "./open-test-project";
 
 /**
  * Event Tick → Print("P5 script running"), keyed so repeated ticks replace the
@@ -34,13 +35,6 @@ const SCRIPTED_GRAPH = {
     },
   ],
 };
-
-async function openTestProject(page: Page) {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("create-project-empty").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-}
 
 test.describe("P5 visual scripting acceptance", () => {
   test("a scripted actor compiles and runs in Preview", async ({ page }) => {

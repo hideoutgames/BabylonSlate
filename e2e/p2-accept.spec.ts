@@ -1,16 +1,10 @@
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
 const fixtures = path.join(process.cwd(), "e2e/fixtures");
-
-async function openTestProject(page: import("@playwright/test").Page) {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("create-project-empty").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-}
 
 // Shared TestProject OPFS name — keep these serial to avoid cross-test stomps.
 test.describe.configure({ mode: "serial" });
@@ -29,9 +23,13 @@ test.describe("P2 acceptance proofs", () => {
         path.join(fixtures, "hero.glb"),
       ]);
 
+    await expect(page.getByTestId("importing-overlay")).toBeVisible();
+    await expect(page.getByTestId("importing-count")).toBeVisible();
+
     await expect(
       page.locator('[data-asset-path="assets/albedo.babasset"]'),
     ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("importing-overlay")).toHaveCount(0);
     await expect(
       page.locator('[data-asset-path="assets/hero.babasset"]'),
     ).toBeVisible();

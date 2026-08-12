@@ -240,10 +240,25 @@ export class ProjectService {
     return this.loadCurrentProject();
   }
 
-  async createEmptyProject(name?: string): Promise<ProjectLoadResult> {
+  async createEmptyProject(
+    name?: string,
+    options?: { pickFolder?: boolean },
+  ): Promise<ProjectLoadResult> {
     const projectName =
-      name ??
-      (isTestModeEnabled() ? TEST_PROJECT_NAME : "MyGame.babproject");
+      name && name.trim()
+        ? name.endsWith(".babproject")
+          ? name
+          : `${name}.babproject`
+        : isTestModeEnabled()
+          ? TEST_PROJECT_NAME
+          : "MyGame.babproject";
+    if (options?.pickFolder) {
+      await this.storage.pickProjectFolder();
+      if (await this.storage.exists(PROJECT_FILE)) {
+        return this.loadCurrentProject();
+      }
+      return this.scaffoldNewProject(projectName);
+    }
     await this.storage.openDocumentsProject(projectName);
     if (await this.storage.exists(PROJECT_FILE)) {
       return this.loadCurrentProject();
@@ -254,11 +269,16 @@ export class ProjectService {
   async createFromTemplate(options: {
     templateFiles: ProjectTreeFile[];
     name: string;
+    pickFolder?: boolean;
   }): Promise<ProjectLoadResult> {
     const projectName = options.name.endsWith(".babproject")
       ? options.name
       : `${options.name}.babproject`;
-    await this.storage.openDocumentsProject(projectName);
+    if (options.pickFolder) {
+      await this.storage.pickProjectFolder();
+    } else {
+      await this.storage.openDocumentsProject(projectName);
+    }
     const guid = newGuid();
     await createProjectFromTemplate({
       templateFiles: options.templateFiles,

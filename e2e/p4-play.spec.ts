@@ -1,17 +1,11 @@
 import { expect, test } from "@playwright/test";
-
-async function openTestProject(page: import("@playwright/test").Page) {
-  await page.goto("/?test=1&previewThrow=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("create-project-empty").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-}
+import { openTestProject } from "./open-test-project";
 
 test.describe("P4 Play overlay and session report", () => {
   test("Play opens overlay; fixture throw shows report and focuses node", async ({
     page,
   }) => {
-    await openTestProject(page);
+    await openTestProject(page, "/?test=1&previewThrow=1");
 
     await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
@@ -22,6 +16,7 @@ test.describe("P4 Play overlay and session report", () => {
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-canvas")).toBeVisible();
+    await expect(page.getByTestId("play-frame-cap")).toHaveCount(0);
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("preview-session-report")).toBeVisible();

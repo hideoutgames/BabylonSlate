@@ -42,6 +42,16 @@ export function resolveDocumentViewportMode(
   return mode === "2d" ? "2d" : "3d";
 }
 
+/** Drop a newly locked actor from the live selection; unlock does not reselect. */
+export function selectionAfterLockChange(
+  selectedActorIds: readonly string[],
+  actorId: string,
+  locked: boolean,
+): string[] {
+  if (!locked) return [...selectedActorIds];
+  return selectedActorIds.filter((id) => id !== actorId);
+}
+
 export function SceneEditingProvider({
   children,
   initialViewportMode = "3d",

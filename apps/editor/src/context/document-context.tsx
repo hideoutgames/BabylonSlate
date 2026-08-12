@@ -87,8 +87,15 @@ interface DocumentContextValue {
   templates: ProjectTemplate[];
   refreshTemplates: () => Promise<void>;
   openProject: () => Promise<void>;
-  createEmptyProject: () => Promise<void>;
-  createFromTemplate: (templateId: string, name: string) => Promise<void>;
+  createEmptyProject: (
+    name: string,
+    options?: { pickFolder?: boolean },
+  ) => Promise<void>;
+  createFromTemplate: (
+    templateId: string,
+    name: string,
+    options?: { pickFolder?: boolean },
+  ) => Promise<void>;
   openListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   renameListedProject: (
     handle: ProjectFolderHandle,
@@ -399,14 +406,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await enterEditor(document, layouts, pending);
   }, [enterEditor, projectService]);
 
-  const createEmptyProject = useCallback(async () => {
-    const { document, layouts, migrationPending: pending } =
-      await projectService.createEmptyProject();
-    await enterEditor(document, layouts, pending);
-  }, [enterEditor, projectService]);
+  const createEmptyProject = useCallback(
+    async (name: string, options?: { pickFolder?: boolean }) => {
+      const { document, layouts, migrationPending: pending } =
+        await projectService.createEmptyProject(name, options);
+      await enterEditor(document, layouts, pending);
+    },
+    [enterEditor, projectService],
+  );
 
   const createFromTemplate = useCallback(
-    async (templateId: string, name: string) => {
+    async (
+      templateId: string,
+      name: string,
+      options?: { pickFolder?: boolean },
+    ) => {
       const template = templates.find((t) => t.id === templateId);
       if (!template) {
         throw new Error(`Unknown template: ${templateId}`);
@@ -415,6 +429,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await projectService.createFromTemplate({
           templateFiles: template.files,
           name,
+          pickFolder: options?.pickFolder,
         });
       await enterEditor(document, layouts, pending);
     },

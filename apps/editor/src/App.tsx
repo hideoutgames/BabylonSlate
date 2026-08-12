@@ -261,7 +261,7 @@ function AppRoutes() {
         needsReconnect={needsReconnect}
         recoveryAvailable={recoveryAvailable}
         onCreateEmpty={createEmptyProject}
-        onCreateFromTemplate={(id, name) => createFromTemplate(id, name)}
+        onCreateFromTemplate={createFromTemplate}
         onOpenExternal={openProject}
         onOpenProject={openListedProject}
         onRenameProject={renameListedProject}

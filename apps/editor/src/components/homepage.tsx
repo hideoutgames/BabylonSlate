@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FolderOpenIcon, LayoutTemplateIcon } from "lucide-react";
 import type { ProjectFolderHandle } from "@babylonslate/core";
+import { getHostPlatform, isTestModeEnabled } from "@babylonslate/vfs";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -34,8 +35,14 @@ import {
 } from "@babylonslate/ui/components/empty";
 import { Field, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { displayProjectName } from "../lib/display-project-name";
 import type { ListedProject } from "../lib/listed-projects";
+import {
+  defaultCreateProjectDisplayName,
+  normalizeProjectFolderName,
+  type CreateProjectOptions,
+} from "../lib/create-project";
 import { SettingsModal } from "./settings-modal";
 
 interface HomepageProps {
@@ -43,8 +50,12 @@ interface HomepageProps {
   templates: Array<{ id: string; name: string }>;
   needsReconnect: boolean;
   recoveryAvailable: boolean;
-  onCreateEmpty: () => Promise<void>;
-  onCreateFromTemplate: (templateId: string, name: string) => Promise<void>;
+  onCreateEmpty: (name: string, options?: CreateProjectOptions) => Promise<void>;
+  onCreateFromTemplate: (
+    templateId: string,
+    name: string,
+    options?: CreateProjectOptions,
+  ) => Promise<void>;
   onOpenExternal: () => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
   onRenameProject: (handle: ProjectFolderHandle, name: string) => Promise<void>;
@@ -76,6 +87,11 @@ export function Homepage({
   const [busy, setBusy] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ListedProject | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createTemplateId, setCreateTemplateId] = useState<string>("empty");
+  const [pickFolder, setPickFolder] = useState(false);
+  const hostPlatform = getHostPlatform();
 
   const run = async (fn: () => Promise<void>) => {
     setError(null);
@@ -168,33 +184,21 @@ export function Homepage({
                 : "Creating from a template copies the project and rewrites only its name and identity."}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
+          <CardContent>
             <Button
-              data-testid="create-project-empty"
+              data-testid="create-project"
               disabled={busy}
-              onClick={() => void run(onCreateEmpty)}
+              onClick={() => {
+                setCreateName(
+                  defaultCreateProjectDisplayName(isTestModeEnabled()),
+                );
+                setCreateTemplateId("empty");
+                setPickFolder(false);
+                setCreateOpen(true);
+              }}
             >
-              Empty
+              Create Project
             </Button>
-            {templates.map((template) => (
-              <Button
-                key={template.id}
-                variant="secondary"
-                data-testid={`create-project-template-${template.id}`}
-                disabled={busy}
-                onClick={() =>
-                  void run(() =>
-                    onCreateFromTemplate(
-                      template.id,
-                      `${template.name}-copy.babproject`,
-                    ),
-                  )
-                }
-              >
-                <LayoutTemplateIcon data-icon="inline-start" />
-                {template.name}
-              </Button>
-            ))}
           </CardContent>
         </Card>
 
@@ -288,6 +292,156 @@ export function Homepage({
           </Alert>
         ) : null}
       </main>
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open) setCreateOpen(false);
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-lg"
+          data-testid="create-project-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>Create Project</DialogTitle>
+            <DialogDescription>
+              Name the project, pick Empty or a template, then create.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="create-project-name">Name</FieldLabel>
+              <Input
+                id="create-project-name"
+                data-testid="create-project-name"
+                autoFocus
+                value={createName}
+                onChange={(event) => setCreateName(event.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Template</FieldLabel>
+              <div
+                className="flex flex-wrap gap-2"
+                data-testid="create-project-templates"
+              >
+                <Card
+                  size="sm"
+                  role="button"
+                  tabIndex={0}
+                  data-testid="create-project-empty"
+                  data-selected={createTemplateId === "empty" ? "true" : "false"}
+                  className={cn(
+                    "min-w-28 cursor-pointer",
+                    createTemplateId === "empty" ? "ring-2 ring-primary" : "",
+                  )}
+                  onClick={() => setCreateTemplateId("empty")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setCreateTemplateId("empty");
+                    }
+                  }}
+                >
+                  <CardHeader>
+                    <CardTitle>Empty</CardTitle>
+                    <CardDescription>Blank project</CardDescription>
+                  </CardHeader>
+                </Card>
+                {templates.map((template) => (
+                  <Card
+                    key={template.id}
+                    size="sm"
+                    role="button"
+                    tabIndex={0}
+                    data-testid={`create-project-template-${template.id}`}
+                    data-selected={
+                      createTemplateId === template.id ? "true" : "false"
+                    }
+                    className={cn(
+                      "min-w-28 cursor-pointer",
+                      createTemplateId === template.id
+                        ? "ring-2 ring-primary"
+                        : "",
+                    )}
+                    onClick={() => setCreateTemplateId(template.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setCreateTemplateId(template.id);
+                      }
+                    }}
+                  >
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-1">
+                        <LayoutTemplateIcon data-icon="inline-start" />
+                        {template.name}
+                      </CardTitle>
+                    </CardHeader>
+                  </Card>
+                ))}
+              </div>
+            </Field>
+            <Field>
+              <FieldLabel>Location</FieldLabel>
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="create-project-location"
+              >
+                {hostPlatform === "web"
+                  ? "This browser (OPFS)"
+                  : pickFolder
+                    ? "Choose a folder when you create"
+                    : "App Documents"}
+              </p>
+              {hostPlatform !== "web" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="create-project-choose-folder"
+                  onClick={() => setPickFolder((current) => !current)}
+                >
+                  {pickFolder ? "Use App Documents" : "Choose folder…"}
+                </Button>
+              ) : null}
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              data-testid="create-project-submit"
+              disabled={busy || !createName.trim()}
+              onClick={() => {
+                const folderName = normalizeProjectFolderName(createName);
+                if (!folderName) return;
+                const options: CreateProjectOptions = { pickFolder };
+                setCreateOpen(false);
+                if (createTemplateId === "empty") {
+                  void run(() => onCreateEmpty(folderName, options));
+                } else {
+                  void run(() =>
+                    onCreateFromTemplate(
+                      createTemplateId,
+                      folderName,
+                      options,
+                    ),
+                  );
+                }
+              }}
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={renameTarget !== null}

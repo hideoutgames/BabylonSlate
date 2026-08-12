@@ -6,6 +6,8 @@ import {
   displayAssetTitle,
   filterAssets,
   flattenFolderTree,
+  isFolderNameTaken,
+  isNewAssetNameTaken,
   matchesAssetSearch,
   textureCompressionState,
 } from "./content-browser-helpers";
@@ -172,5 +174,29 @@ describe("content-browser-helpers", () => {
       "assets",
       "assets/textures",
     ]);
+  });
+
+  it("detects a New Asset name that already exists in the folder", () => {
+    const paths = [
+      "assets/main.scene.babasset",
+      "assets/hero.babasset",
+      "assets/textures/hero.babasset",
+    ];
+    expect(isNewAssetNameTaken(paths, "assets", "Scene", "main")).toBe(true);
+    expect(isNewAssetNameTaken(paths, "assets", "Texture", "hero")).toBe(true);
+    expect(isNewAssetNameTaken(paths, "assets", "Texture", "crate")).toBe(false);
+    expect(isNewAssetNameTaken(paths, "assets/textures", "Texture", "hero")).toBe(
+      true,
+    );
+    expect(isNewAssetNameTaken(paths, "assets/textures", "Texture", "main")).toBe(
+      false,
+    );
+  });
+
+  it("detects a folder name that already exists under the parent", () => {
+    const folders = ["assets", "assets/textures", "assets/fx"];
+    expect(isFolderNameTaken(folders, "assets", "textures")).toBe(true);
+    expect(isFolderNameTaken(folders, "assets", "audio")).toBe(false);
+    expect(isFolderNameTaken(folders, "assets/textures", "ui")).toBe(false);
   });
 });

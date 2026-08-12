@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { XIcon } from "lucide-react";
 import { DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
-import { Input } from "@babylonslate/ui/components/input";
 import { SelectableText } from "@babylonslate/editor-kit";
 import type { Engine } from "@babylonjs/core";
 import {
@@ -20,7 +19,7 @@ export interface PlayOverlayProps {
   injectFixtureThrow?: boolean;
   scripts?: readonly ScriptBundleEntry[];
   physics?: PlayPhysicsSettings;
-  /** Project `playFrameCap` used at session start. Overlay tweaks stay in-session. */
+  /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
   onClose: (result: PlaySessionResult) => void;
 }
@@ -51,7 +50,6 @@ export function PlayOverlay({
   const [physicsMs, setPhysicsMs] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [moveX, setMoveX] = useState<number | null>(null);
-  const [sessionFrameCap, setSessionFrameCap] = useState(frameCap);
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -107,23 +105,6 @@ export function PlayOverlay({
         <span data-testid="play-fps">
           <SelectableText>{fps} fps</SelectableText>
         </span>
-        <label className="pointer-events-auto inline-flex items-center gap-1">
-          <span>cap</span>
-          <Input
-            type="number"
-            min={1}
-            step={1}
-            aria-label="Play frame cap"
-            data-testid="play-frame-cap"
-            className="h-[var(--touch-target)] min-h-[var(--touch-target)] w-16 px-1 text-xs"
-            value={sessionFrameCap}
-            onChange={(event) => {
-              const next = Number(event.target.value) || DEFAULT_PLAY_FRAME_CAP;
-              setSessionFrameCap(next);
-              sessionRef.current?.setFrameCap(next);
-            }}
-          />
-        </label>
         <span data-testid="play-script-ms">
           <SelectableText>script {scriptMs.toFixed(2)} ms</SelectableText>
         </span>

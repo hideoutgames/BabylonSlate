@@ -31,7 +31,7 @@ Sustained I/O into a file provider needs `NSFileCoordinator`, process-lifetime s
 
 ## Two storage tiers (Homepage)
 
-1. **Default (iPad):** app Documents — Create Project writes here with no prompt; cold reopen needs no picker.
+1. **Default (iPad):** app Documents — Create Project writes here with no prompt; cold reopen needs no picker. The Create Project dialog prefills `MyGame` (`TestProject` in `/?test=1` / `VITE_TEST_MODE`). Native **Choose folder…** is optional and picks then scaffolds; web location is read-only OPFS.
 2. **Opt-in external:** iCloud / Working Copy / any folder via picker; bookmarks persist in app settings.
 3. **Web:** OPFS only; Export Project to get bytes out.
 
