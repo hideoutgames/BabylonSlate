@@ -56,8 +56,10 @@ export class AddActorCommand implements EditCommand<SerializedScene> {
 }
 
 /**
- * Removing an actor keeps a subtree snapshot so the inverse can restore it;
- * `byteSize` reports that capture to the stack's byte budget (engineplan §7.3).
+ * Removing an actor keeps a snapshot of that actor so the inverse can restore
+ * it; `byteSize` reports that capture to the stack's byte budget (engineplan §7.3).
+ * Callers that delete a hierarchy must emit one RemoveActorCommand per actor
+ * (or remove leaves first) so children are not left with dangling parentIds.
  */
 export class RemoveActorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.removeActor";
@@ -435,6 +437,25 @@ export class SetViewportModeCommand implements EditCommand<SerializedScene> {
   }
 }
 
+export class SetSceneNameCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.setSceneName";
+  readonly from: string;
+  readonly to: string;
+
+  constructor(from: string, to: string) {
+    this.from = from;
+    this.to = to;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return { ...doc, name: this.to };
+  }
+
+  invert(): SetSceneNameCommand {
+    return new SetSceneNameCommand(this.to, this.from);
+  }
+}
+
 export type SceneEditCommand =
   | AddActorCommand
   | RemoveActorCommand
@@ -448,7 +469,8 @@ export type SceneEditCommand =
   | ReorderComponentCommand
   | SetComponentPropertyCommand
   | SetSceneSettingCommand
-  | SetViewportModeCommand;
+  | SetViewportModeCommand
+  | SetSceneNameCommand;
 
 export const SCENE_COMMAND_TYPES = [
   "scene.addActor",
@@ -464,6 +486,7 @@ export const SCENE_COMMAND_TYPES = [
   "scene.setComponentProperty",
   "scene.setSceneSetting",
   "scene.setViewportMode",
+  "scene.setSceneName",
 ] as const;
 
 export function createAddActorCommandFromJson(
@@ -594,4 +617,10 @@ export function createSetViewportModeCommandFromJson(
     payload.from as ViewportMode,
     payload.to as ViewportMode,
   );
+}
+
+export function createSetSceneNameCommandFromJson(
+  payload: Record<string, unknown>,
+): SetSceneNameCommand {
+  return new SetSceneNameCommand(String(payload.from), String(payload.to));
 }

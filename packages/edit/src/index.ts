@@ -29,6 +29,7 @@ export {
   SetActorFlagsCommand,
   SetActorTransformCommand,
   SetComponentPropertyCommand,
+  SetSceneNameCommand,
   SetSceneSettingCommand,
   SetViewportModeCommand,
   SCENE_COMMAND_TYPES,
