@@ -220,7 +220,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     >
       <div className="flex h-full min-h-0 flex-col gap-2 p-2">
         <Input
-          className="min-h-[var(--touch-target,44px)] shrink-0"
+          className="min-h-[var(--chrome-row,28px)] shrink-0"
           placeholder="Search actors"
           aria-label="Search actors"
           value={search}
@@ -235,7 +235,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                 <>
                   <Toggle
                     variant="default"
-                    size="touch"
+                    size="sm"
                     aria-label={`Toggle visibility of ${node.label}`}
                     pressed={!node.muted}
                     onPressedChange={() => toggleFlag(node.id, "visible")}
@@ -245,7 +245,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                   </Toggle>
                   <Toggle
                     variant="default"
-                    size="touch"
+                    size="sm"
                     aria-label={`Toggle lock of ${node.label}`}
                     pressed={lockedIds.has(node.id)}
                     onPressedChange={() => toggleFlag(node.id, "locked")}

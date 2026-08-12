@@ -113,7 +113,7 @@ export function CatalogDialog({
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className="min-h-[var(--touch-target,44px)]"
+            className="min-h-[var(--chrome-row,28px)]"
             data-testid={testId ? `${testId}-search` : undefined}
             data-autofocus-search={autoFocusSearch ? "true" : undefined}
             autoFocus={autoFocusSearch}
@@ -140,7 +140,7 @@ export function CatalogDialog({
                     <Button
                       key={category.id}
                       type="button"
-                      size="touch"
+                      size="sm"
                       variant={active ? "secondary" : "ghost"}
                       className={cn(
                         "justify-between rounded-md border-l-2",

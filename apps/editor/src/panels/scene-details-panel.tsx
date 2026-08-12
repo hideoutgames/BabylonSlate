@@ -8,7 +8,9 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   createDefaultSceneSettings,
+  eulerDegreesToQuaternion,
   findActor,
+  quaternionToEulerDegrees,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
@@ -321,6 +323,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       label: "Position",
       value: actor.transform.position,
       defaultValue: [0, 0, 0],
+      axes: scene.viewportMode === "2d" ? ["X", "Y"] : ["X", "Y", "Z"],
       onChange: (position) =>
         updateActor((entry) => ({
           ...entry,
@@ -328,82 +331,23 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         })),
     },
     {
-      kind: "number",
-      id: "actor-rotation-x",
-      label: "Rotation X",
-      value: actor.transform.rotation[0],
-      defaultValue: 0,
-      onChange: (rx) =>
+      kind: "vector3",
+      id: "actor-rotation",
+      label: "Rotation",
+      value:
+        scene.viewportMode === "2d"
+          ? [quaternionToEulerDegrees(actor.transform.rotation)[2], 0, 0]
+          : quaternionToEulerDegrees(actor.transform.rotation),
+      defaultValue: [0, 0, 0],
+      axes: scene.viewportMode === "2d" ? ["Z"] : ["X", "Y", "Z"],
+      onChange: (next) =>
         updateActor((entry) => ({
           ...entry,
           transform: {
             ...entry.transform,
-            rotation: [
-              rx,
-              entry.transform.rotation[1],
-              entry.transform.rotation[2],
-              entry.transform.rotation[3],
-            ],
-          },
-        })),
-    },
-    {
-      kind: "number",
-      id: "actor-rotation-y",
-      label: "Rotation Y",
-      value: actor.transform.rotation[1],
-      defaultValue: 0,
-      onChange: (ry) =>
-        updateActor((entry) => ({
-          ...entry,
-          transform: {
-            ...entry.transform,
-            rotation: [
-              entry.transform.rotation[0],
-              ry,
-              entry.transform.rotation[2],
-              entry.transform.rotation[3],
-            ],
-          },
-        })),
-    },
-    {
-      kind: "number",
-      id: "actor-rotation-z",
-      label: "Rotation Z",
-      value: actor.transform.rotation[2],
-      defaultValue: 0,
-      onChange: (rz) =>
-        updateActor((entry) => ({
-          ...entry,
-          transform: {
-            ...entry.transform,
-            rotation: [
-              entry.transform.rotation[0],
-              entry.transform.rotation[1],
-              rz,
-              entry.transform.rotation[3],
-            ],
-          },
-        })),
-    },
-    {
-      kind: "number",
-      id: "actor-rotation-w",
-      label: "Rotation W",
-      value: actor.transform.rotation[3],
-      defaultValue: 1,
-      onChange: (rw) =>
-        updateActor((entry) => ({
-          ...entry,
-          transform: {
-            ...entry.transform,
-            rotation: [
-              entry.transform.rotation[0],
-              entry.transform.rotation[1],
-              entry.transform.rotation[2],
-              rw,
-            ],
+            rotation: eulerDegreesToQuaternion(
+              scene.viewportMode === "2d" ? [0, 0, next[0]] : next,
+            ),
           },
         })),
     },
@@ -413,6 +357,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       label: "Scale",
       value: actor.transform.scale,
       defaultValue: [1, 1, 1],
+      axes: scene.viewportMode === "2d" ? ["X", "Y"] : ["X", "Y", "Z"],
       onChange: (scale) =>
         updateActor((entry) => ({
           ...entry,

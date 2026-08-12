@@ -288,7 +288,7 @@ export function EditorChromeBar({
               <DropdownMenuTrigger
                 render={
                   <Button
-                    size="touch"
+                    size="sm"
                     variant="ghost"
                     data-testid="document-tab-add"
                     className="chrome-action-button shrink-0"
@@ -373,7 +373,7 @@ export function EditorChromeBar({
         <div className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
             <Button
-              size="touch"
+              size="sm"
               variant="ghost"
               data-testid="play-preview"
               className="chrome-action-button chrome-play-button relative"
@@ -407,7 +407,7 @@ export function EditorChromeBar({
               <DropdownMenuTrigger
                 render={
                   <Button
-                    size="touch"
+                    size="sm"
                     variant="ghost"
                     data-testid="debug-menu"
                     className="chrome-action-button"
@@ -473,7 +473,7 @@ export function EditorChromeBar({
             <DropdownMenuTrigger
               render={
                 <Button
-                  size="touch"
+                  size="sm"
                   variant="outline"
                   data-testid="settings-menu"
                   className="chrome-action-button"

@@ -179,8 +179,8 @@ test.describe("P6 first-playable scene editing", () => {
     ]) {
       const box = await page.getByTestId(testId).boundingBox();
       expect(box, testId).not.toBeNull();
-      expect(box!.height, testId).toBeGreaterThanOrEqual(44);
-      expect(box!.width, testId).toBeGreaterThanOrEqual(44);
+      expect(box!.height, testId).toBeGreaterThanOrEqual(28);
+      expect(box!.width, testId).toBeGreaterThanOrEqual(28);
     }
   });
 });

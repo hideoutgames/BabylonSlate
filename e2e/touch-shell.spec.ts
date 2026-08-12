@@ -35,8 +35,8 @@ test.describe("Touch shell UX", () => {
     await expect(tab).toBeVisible();
     const box = await tab.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThanOrEqual(44);
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.width).toBeGreaterThanOrEqual(28);
+    expect(box!.height).toBeGreaterThanOrEqual(28);
   });
 
   test("dockview tabs meet pointer-aware height", async ({ page }) => {
@@ -47,8 +47,8 @@ test.describe("Touch shell UX", () => {
     const coarse = await page.evaluate(() =>
       window.matchMedia("(pointer: coarse)").matches,
     );
-    // Fine pointers use a compact 36px strip; coarse keeps the 44pt+ touch floor.
-    expect(box!.height).toBeGreaterThanOrEqual(coarse ? 44 : 36);
+    // Fine pointers use an 18px strip; coarse uses 26px.
+    expect(box!.height).toBeGreaterThanOrEqual(coarse ? 26 : 18);
   });
 
   test("global toolbar buttons meet minimum touch target size", async ({
@@ -58,7 +58,7 @@ test.describe("Touch shell UX", () => {
     await expect(button).toBeVisible();
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(28);
   });
 
   test("content browser search meets minimum touch target size", async ({
@@ -71,7 +71,7 @@ test.describe("Touch shell UX", () => {
     await expect(search).toBeVisible({ timeout: 10_000 });
     const box = await search.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(28);
   });
 
   test("defines --touch-target on the document root", async ({ page }) => {

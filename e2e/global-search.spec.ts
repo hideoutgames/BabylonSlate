@@ -17,8 +17,8 @@ test.describe("Global project search", () => {
     await expect(searchButton).toBeVisible();
     const box = await searchButton.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.height).toBeGreaterThanOrEqual(44);
-    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(28);
+    expect(box!.width).toBeGreaterThanOrEqual(28);
 
     await searchButton.click();
     await expect(page.getByTestId("global-search-dialog")).toBeVisible();

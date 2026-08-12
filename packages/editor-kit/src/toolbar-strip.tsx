@@ -11,7 +11,7 @@ export function ToolbarStrip({
 }) {
   return (
     <div
-      className={`flex min-h-[var(--touch-target,44px)] flex-wrap items-center gap-1 border-b border-border bg-card px-2 ${className ?? ""}`}
+      className={`flex min-h-[var(--chrome-row,28px)] flex-wrap items-center gap-1 border-b border-border bg-card px-2 ${className ?? ""}`}
       data-testid={testId}
     >
       {children}

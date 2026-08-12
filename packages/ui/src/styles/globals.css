@@ -140,6 +140,7 @@
     --axis-z: var(--primary);
     --chrome-tab-active: var(--card);
     --chrome-tab-accent: var(--primary);
+    --chrome-row: 28px;
     --touch-target: 44px;
     --graph-pin-size: 16px;
     --graph-edge-exec: 5px;
@@ -216,6 +217,7 @@
     --axis-z: var(--primary);
     --chrome-tab-active: var(--card);
     --chrome-tab-accent: var(--primary);
+    --chrome-row: 28px;
     --touch-target: 44px;
     --graph-pin-size: 16px;
     --graph-edge-exec: 5px;

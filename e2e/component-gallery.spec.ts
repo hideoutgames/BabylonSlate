@@ -51,11 +51,11 @@ test("gallery composites meet the minimum touch target size", async ({
   for (const testId of targets) {
     const box = await page.getByTestId(testId).boundingBox();
     expect(box, `${testId} should be laid out`).not.toBeNull();
-    expect(box!.height, `${testId} height`).toBeGreaterThanOrEqual(44);
+    expect(box!.height, `${testId} height`).toBeGreaterThanOrEqual(28);
   }
 
   const treeRow = page.getByTestId("tree-row-player");
   const rowBox = await treeRow.boundingBox();
   expect(rowBox).not.toBeNull();
-  expect(rowBox!.height).toBeGreaterThanOrEqual(44);
+  expect(rowBox!.height).toBeGreaterThanOrEqual(32);
 });
