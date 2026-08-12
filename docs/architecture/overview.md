@@ -12,7 +12,7 @@ packages/assets/      Containers, asset registry, importers, encode queue
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
 packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
-packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader
+packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader, script host
 packages/input/       Raw tick-stamped input ring (action/axis mappings land in P6)
 packages/render/      Snapshot sync, render-on-demand, resource cache, KTX2 transcoder
 packages/scripting/   Graph IR, pin types, validator, JS codegen + anchors (P5)
@@ -47,7 +47,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Object model**: `@babylonslate/object-model` owns headless World, class registry, and deterministic tick.
 - **Bridge / runtime**: `@babylonslate/bridge` + `@babylonslate/runtime` own Play transports, fixed-step worker, and diagnostics.
 - **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
-- **Visual scripting (P5)**: `@babylonslate/scripting` compiles logic graphs to JS modules with anchor tables; `@babylonslate/scripting-nodes` supplies the catalog; `runtime.loadCompiledModule` + Preview report already consume anchors (see [scripting.md](scripting.md)).
+- **Visual scripting (P5)**: `@babylonslate/scripting` compiles logic graphs to JS modules with anchor tables; `@babylonslate/scripting-nodes` supplies the catalog; `runtime.ScriptHost` loads those modules and binds Begin Play / Tick entry points to actor lifecycle hooks, and Preview ships compiled project graphs to the worker (see [scripting.md](scripting.md)).
 - **Viewport**: App-lifetime `Engine`; editor and Play scenes via `registerView`; dirty-driven render-on-demand.
 
 ## Package rules
