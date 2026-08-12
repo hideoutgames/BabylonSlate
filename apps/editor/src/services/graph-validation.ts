@@ -16,13 +16,6 @@ export function materializeLogicGraph(
   graphId: string,
 ): LogicGraph {
   if (isLogicGraphPayload(content)) return content;
-  // Prefer pins embedded in node data from scripting serialize.
-  const nodes = content.nodes.map((n) => {
-    const pins = (n.data as { __pins?: LogicGraph["nodes"][0]["pins"] }).__pins;
-    if (!pins) return n;
-    return n;
-  });
-  void nodes;
   const logic = fromSerializedGraph(content, graphId);
   // Overlay __pins when present.
   for (let i = 0; i < logic.nodes.length; i++) {

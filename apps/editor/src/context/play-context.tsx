@@ -11,7 +11,9 @@ import {
 import type { Engine } from "@babylonjs/core";
 import { createAppEngine } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { PlayOverlay } from "../components/play-overlay";
+import { useDocuments } from "./document-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
@@ -72,6 +74,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [lastRuntimeMode, setLastRuntimeMode] = useState<
     "worker" | "in-process" | null
   >(null);
+  const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
+  const { collectScriptBundles } = useDocuments();
 
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
@@ -147,9 +151,21 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       }
       setEncodeQueuePauseReason("play", true);
       setInjectThrow(Boolean(options?.injectFixtureThrow));
-      setPlaying(true);
+      // Preview always runs freshly compiled graphs, including unsaved edits.
+      void collectScriptBundles()
+        .then((bundles) => {
+          setScripts(bundles);
+          setPlaying(true);
+        })
+        .catch((error) => {
+          appendLog(
+            `Script compile failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setScripts([]);
+          setPlaying(true);
+        });
     },
-    [appendLog, ensureEngine],
+    [appendLog, collectScriptBundles, ensureEngine],
   );
 
   const handleClose = useCallback(
@@ -212,6 +228,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           <PlayOverlay
             sharedEngine={engineRef.current}
             injectFixtureThrow={injectThrow}
+            scripts={scripts}
             onClose={handleClose}
           />
         ) : null}

@@ -29,6 +29,7 @@ function mockCtx(): CodegenContext {
     hoist: (s) => {
       hoists.push(s);
     },
+    requestAsync: () => {},
   };
 }
 

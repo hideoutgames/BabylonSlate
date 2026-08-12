@@ -21,6 +21,7 @@ import {
   type RuntimeDiagnostic,
 } from "./diagnostics";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
+import { ScriptHost, type CompiledScript } from "./script-host";
 
 export type TransportMode = "in-process" | "sab" | "transferable";
 
@@ -30,6 +31,8 @@ export interface RuntimeDriverOptions {
   maxActors?: number;
   maxCatchUpSteps?: number;
   onCommand?: (command: CommandMessage) => void;
+  /** Demo actors exist so an empty project still shows motion in Preview. */
+  seedDemoActors?: boolean;
 }
 
 export interface RuntimeDriver {
@@ -48,6 +51,13 @@ export interface RuntimeDriver {
   getDiagnostics(): SessionDiagnosticAggregator;
   registerAnchors(assetGuid: string, anchors: readonly AnchorEntry[]): void;
   reportError(error: unknown, frameId?: number): RuntimeDiagnostic | null;
+  /** Load compiled graph modules and register their source anchors. */
+  loadScripts(scripts: readonly CompiledScript[]): Promise<void>;
+  /** Spawn an actor whose lifecycle hooks run its class's compiled graphs. */
+  spawnScriptedActor(options: {
+    classId: string;
+    variables?: Record<string, unknown>;
+  }): Actor | null;
   readonly transportMode: TransportMode;
 }
 
@@ -76,6 +86,7 @@ class InProcessRuntime implements RuntimeDriver {
   private nextSlot = 0;
   private lastScriptMs = 0;
   private lastPhysicsMs = 0;
+  private readonly scriptHost: ScriptHost;
 
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
     this.transportMode = mode;
@@ -122,7 +133,87 @@ class InProcessRuntime implements RuntimeDriver {
       }),
     );
 
-    this.seedDefaultActors();
+    this.scriptHost = new ScriptHost({
+      log: (severity, category, message) => {
+        this.logs.push({
+          severity,
+          category,
+          message,
+          frameId: this.frameId,
+          tickIndex: this.world.clock.tickIndex,
+        });
+        this.emit({
+          type: "log",
+          severity,
+          category,
+          message,
+          frameId: this.frameId,
+        });
+      },
+      print: (message, key, duration, color) => {
+        this.emit({
+          type: "print",
+          message,
+          key,
+          duration,
+          color,
+          frameId: this.frameId,
+        });
+      },
+      destroyActor: (actor) => {
+        if (actor) this.world.destroyActor(actor.guid);
+      },
+      executeConsoleCommand: (command) => ({
+        success: false,
+        output: `unknown command: ${command}`,
+      }),
+      delay: (seconds) =>
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, Math.max(0, seconds) * 1000);
+        }),
+      reportError: (error) => {
+        this.reportError(error);
+      },
+    });
+
+    if (options.seedDemoActors !== false) this.seedDefaultActors();
+  }
+
+  async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
+    for (const script of scripts) {
+      await this.scriptHost.load(script);
+      if (script.anchors.length > 0) {
+        this.registerAnchors(script.assetGuid, script.anchors);
+      }
+    }
+  }
+
+  spawnScriptedActor(options: {
+    classId: string;
+    variables?: Record<string, unknown>;
+  }): Actor | null {
+    const hooks = this.scriptHost.hooksFor(options.classId);
+    if (!hooks) return null;
+    const actor = this.world.createActor({
+      classId: options.classId,
+      variables: options.variables,
+      hooks: {
+        onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+        onTick: (self, ctx) =>
+          this.guardScript(() => hooks.onTick?.(self, ctx)),
+      },
+    });
+    this.world.spawnActorNow(actor);
+    this.assignSlot(actor);
+    return actor;
+  }
+
+  private guardScript(run: () => void): void {
+    try {
+      run();
+    } catch (error) {
+      this.reportError(error);
+    }
   }
 
   private seedDefaultActors(): void {

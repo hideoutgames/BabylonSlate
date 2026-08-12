@@ -321,6 +321,12 @@ importers:
         specifier: workspace:*
         version: link:../object-model
     devDependencies:
+      '@babylonslate/scripting':
+        specifier: workspace:*
+        version: link:../scripting
+      '@babylonslate/scripting-nodes':
+        specifier: workspace:*
+        version: link:../scripting-nodes
       typescript:
         specifier: ~5.8.2
         version: 5.8.3
