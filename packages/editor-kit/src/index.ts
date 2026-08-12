@@ -8,6 +8,7 @@ export {
   type CatalogDialogProps,
 } from "./catalog-dialog";
 export { SearchInput, type SearchInputProps } from "./search-input";
+export { PanelFrame } from "./panel-frame";
 export { ToolbarStrip } from "./toolbar-strip";
 export { SelectableText } from "./selectable-text";
 export { ContextMenuOverlay } from "./context-menu-overlay";

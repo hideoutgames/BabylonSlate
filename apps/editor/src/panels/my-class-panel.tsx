@@ -6,6 +6,12 @@ import {
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
+import { useDocuments } from "../context/document-context";
+import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useValidation } from "../context/validation-context";
+import { addClassMember } from "../lib/class-members";
+import { defaultNodeRegistry } from "../services/graph-validation";
+import { classIdForGraphPath } from "../services/script-compiler";
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
