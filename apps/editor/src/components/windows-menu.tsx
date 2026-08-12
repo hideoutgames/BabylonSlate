@@ -57,7 +57,7 @@ export function WindowsMenu() {
               key={entry.id}
               data-testid={`windows-menu-${entry.id}`}
               checked={open}
-              disabled={open && openDockWindowCount <= 1}
+              disabled={open && openDockWindowCount === 1}
               onCheckedChange={() => toggleDockWindow(entry.id)}
             >
               {entry.title}
@@ -82,7 +82,7 @@ export function WindowsMenu() {
                     key={entry.id}
                     data-testid={`windows-menu-${entry.id}`}
                     checked={open}
-                    disabled={open && openDockWindowCount <= 1}
+                    disabled={open && openDockWindowCount === 1}
                     onCheckedChange={() => toggleDockWindow(entry.id)}
                   >
                     {entry.title}

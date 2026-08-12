@@ -1104,6 +1104,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       api.onDidLayoutChange(rememberPlacements),
     ]);
     rememberPlacements();
+    bump();
   }, [bump, disposeDockSubscriptions, documentService]);
 
   const activateDockPanel = useCallback((panelId: string) => {
