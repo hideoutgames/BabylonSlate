@@ -1,8 +1,10 @@
 import type { SerializedGraph } from "@babylonslate/core";
 import {
   AddEdgeCommand,
+  AddNodeCommand,
   MoveNodeCommand,
   RemoveEdgeCommand,
+  RemoveNodeCommand,
   SetNodeDataCommand,
 } from "./graph";
 
@@ -33,10 +35,20 @@ export function diffGraphCommands(
   before: SerializedGraph,
   after: SerializedGraph,
 ): Array<
-  MoveNodeCommand | AddEdgeCommand | RemoveEdgeCommand | SetNodeDataCommand
+  | MoveNodeCommand
+  | AddEdgeCommand
+  | RemoveEdgeCommand
+  | SetNodeDataCommand
+  | AddNodeCommand
+  | RemoveNodeCommand
 > {
   const commands: Array<
-    MoveNodeCommand | AddEdgeCommand | RemoveEdgeCommand | SetNodeDataCommand
+    | MoveNodeCommand
+    | AddEdgeCommand
+    | RemoveEdgeCommand
+    | SetNodeDataCommand
+    | AddNodeCommand
+    | RemoveNodeCommand
   > = [];
 
   const beforeNodes = new Map(before.nodes.map((node) => [node.id, node]));
@@ -45,6 +57,7 @@ export function diffGraphCommands(
   for (const [nodeId, afterNode] of afterNodes) {
     const beforeNode = beforeNodes.get(nodeId);
     if (!beforeNode) {
+      commands.push(new AddNodeCommand(afterNode));
       continue;
     }
     if (!positionsEqual(beforeNode.position, afterNode.position)) {
@@ -56,6 +69,12 @@ export function diffGraphCommands(
       commands.push(
         new SetNodeDataCommand(nodeId, beforeNode.data, afterNode.data),
       );
+    }
+  }
+
+  for (const [nodeId, beforeNode] of beforeNodes) {
+    if (!afterNodes.has(nodeId)) {
+      commands.push(new RemoveNodeCommand(beforeNode));
     }
   }
 

@@ -3,10 +3,13 @@ import fc from "fast-check";
 import type { SerializedGraph } from "@babylonslate/core";
 import {
   AddEdgeCommand,
+  AddNodeCommand,
   MoveNodeCommand,
   RemoveEdgeCommand,
+  RemoveNodeCommand,
   SetNodeDataCommand,
 } from "../commands/graph";
+
 
 const positionArb = fc.record({
   x: fc.integer({ min: -1000, max: 1000 }),
@@ -84,6 +87,32 @@ describe("graph commands", () => {
           expect(restored).toEqual(doc);
         },
       ),
+    );
+  });
+
+  it("AddNodeCommand apply-then-invert restores the document", () => {
+    fc.assert(
+      fc.property(nodeArb, (node) => {
+        const doc: SerializedGraph = { nodes: [], edges: [] };
+        const command = new AddNodeCommand(node);
+        const afterApply = command.apply(doc);
+        expect(afterApply.nodes).toEqual([node]);
+        const restored = command.invert().apply(afterApply);
+        expect(restored).toEqual(doc);
+      }),
+    );
+  });
+
+  it("RemoveNodeCommand apply-then-invert restores the document", () => {
+    fc.assert(
+      fc.property(nodeArb, (node) => {
+        const doc = graphWithNode(node);
+        const command = new RemoveNodeCommand(node);
+        const afterApply = command.apply(doc);
+        expect(afterApply.nodes).toEqual([]);
+        const restored = command.invert().apply(afterApply);
+        expect(restored).toEqual(doc);
+      }),
     );
   });
 });

@@ -3,13 +3,109 @@ import {
   fromSerializedGraph,
   validateGraphs,
   hasBlockingErrors,
+  toSerializedGraph as logicToSerializedGraph,
   type Diagnostic,
   isLogicGraphPayload,
   type LogicGraph,
+  type NodeRegistry,
+  type GraphPin,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 
 const registry = createDefaultNodeRegistry();
+
+function hasNonEmptyPins(data: Record<string, unknown>): boolean {
+  return Array.isArray(data.__pins) && data.__pins.length > 0;
+}
+
+/**
+ * Injects `data.__pins` from the node registry for canvas rendering.
+ * Compile/validate already materialize pins separately; this keeps the UI in sync.
+ */
+export function hydrateSerializedGraphForEditor(
+  graph: SerializedGraph,
+  nodeRegistry: NodeRegistry = registry,
+): SerializedGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const rawData = { ...(node.data as Record<string, unknown>) };
+      if (hasNonEmptyPins(rawData)) {
+        return { ...node, data: rawData };
+      }
+
+      let typeId =
+        typeof rawData.__nodeType === "string"
+          ? rawData.__nodeType
+          : node.type;
+      const properties = { ...rawData };
+      delete properties.__pins;
+      delete properties.__nodeType;
+      delete properties.title;
+
+      if (typeId === "logMessage") {
+        typeId = "debug.log";
+        if (properties.message === undefined) {
+          properties.message = "";
+        }
+        if (properties.severity === undefined) {
+          properties.severity = "log";
+        }
+        if (properties.category === undefined) {
+          properties.category = "Script";
+        }
+      }
+
+      const def = nodeRegistry.get(typeId);
+      const pins: GraphPin[] = def ? def.pins(properties) : [];
+
+      return {
+        ...node,
+        type: typeId,
+        data: {
+          ...properties,
+          ...(def ? { title: def.title } : {}),
+          __pins: pins,
+        },
+      };
+    }),
+  };
+}
+
+/** New graphs seed Event Begin Play + Event Tick with registry pins. */
+export function createDefaultLogicGraphSerialized(
+  nodeRegistry: NodeRegistry = registry,
+): SerializedGraph {
+  const beginDef = nodeRegistry.get("flow.event.beginPlay");
+  const tickDef = nodeRegistry.get("flow.event.tick");
+  if (!beginDef || !tickDef) {
+    throw new Error("Default event nodes missing from node registry");
+  }
+
+  const logic: LogicGraph = {
+    id: "main",
+    kind: "event",
+    nodes: [
+      {
+        id: "event-begin-play",
+        typeId: beginDef.id,
+        position: { x: 80, y: 80 },
+        pins: beginDef.pins({}),
+        properties: {},
+      },
+      {
+        id: "event-tick",
+        typeId: tickDef.id,
+        position: { x: 80, y: 220 },
+        pins: tickDef.pins({}),
+        properties: {},
+      },
+    ],
+    edges: [],
+  };
+
+  return logicToSerializedGraph(logic);
+}
 
 export function materializeLogicGraph(
   content: SerializedGraph | LogicGraph,

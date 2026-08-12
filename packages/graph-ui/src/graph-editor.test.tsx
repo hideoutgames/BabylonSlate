@@ -154,4 +154,34 @@ describe("GraphEditor", () => {
     expect(lastGraph.nodes[0]?.type).toBe("debug.log");
     expect(lastGraph.nodes[0]?.data.title).toBe("Log");
   });
+
+  it("embeds palette pins into added nodes so handles appear", () => {
+    const onChange = vi.fn();
+    const { getByRole, getByText, container } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={[
+          {
+            id: "debug.log",
+            title: "Log",
+            category: "Debug",
+            pins: debugLogPins,
+            defaultData: { message: "", severity: "log", category: "Script" },
+          },
+        ]}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(getByRole("button", { name: "Add node" }));
+    fireEvent.click(getByText("Log"));
+
+    expect(container.querySelectorAll(".react-flow__handle").length).toBeGreaterThan(
+      0,
+    );
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.nodes[0]?.data.__pins).toEqual(debugLogPins);
+    expect(lastGraph.nodes[0]?.data.message).toBe("");
+  });
 });
+

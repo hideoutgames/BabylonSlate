@@ -1,12 +1,16 @@
 import type { EditCommand } from "./command";
 import {
   AddEdgeCommand,
+  AddNodeCommand,
   MoveNodeCommand,
   RemoveEdgeCommand,
+  RemoveNodeCommand,
   SetNodeDataCommand,
   createAddEdgeCommandFromJson,
+  createAddNodeCommandFromJson,
   createMoveNodeCommandFromJson,
   createRemoveEdgeCommandFromJson,
+  createRemoveNodeCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
 import {
@@ -120,6 +124,20 @@ export function commandToJournalPayload(
         mergeKey: setData.mergeKey,
       };
     }
+    case "graph.addNode": {
+      const add = command as AddNodeCommand;
+      return {
+        type: add.type,
+        node: add.node,
+      };
+    }
+    case "graph.removeNode": {
+      const remove = command as RemoveNodeCommand;
+      return {
+        type: remove.type,
+        node: remove.node,
+      };
+    }
     default: {
       if (command.type.startsWith("scene.")) {
         // Scene commands keep every payload field as an own property, so a
@@ -150,6 +168,8 @@ export function registerGraphCommandRevivers(): void {
   registerCommandReviver("graph.addEdge", createAddEdgeCommandFromJson);
   registerCommandReviver("graph.removeEdge", createRemoveEdgeCommandFromJson);
   registerCommandReviver("graph.setNodeData", createSetNodeDataCommandFromJson);
+  registerCommandReviver("graph.addNode", createAddNodeCommandFromJson);
+  registerCommandReviver("graph.removeNode", createRemoveNodeCommandFromJson);
 }
 
 export function registerSceneCommandRevivers(): void {
