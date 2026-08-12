@@ -64,6 +64,7 @@ import { validateSerializedGraph } from "../services/graph-validation";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
+import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { displayProjectName } from "../lib/display-project-name";
 import "../shell/editor-chrome.css";
 
@@ -347,29 +348,35 @@ export function EditorChromeBar({
             <Redo2Icon />
           </IconActionButton>
           {activeKind === "graph" ? (
-            <IconActionButton
-              label="Compile"
-              data-testid="compile-graph"
-              className="chrome-icon-button"
-              disabled={!projectName}
-              onClick={() => {
-                const graphs = openDocuments.filter(
-                  (doc) => doc.ref.kind === "graph" && doc.content,
-                );
-                setDiagnostics(
-                  graphs.flatMap((doc) =>
-                    validateSerializedGraph(doc.content as SerializedGraph, {
-                      assetGuid: doc.ref.path,
-                      graphId: doc.id,
-                    }),
-                  ),
-                );
-                void collectScriptBundles();
-                activateDockPanel("compiler-results");
-              }}
-            >
-              <HammerIcon />
-            </IconActionButton>
+            <>
+              <IconActionButton
+                label="Compile"
+                data-testid="compile-graph"
+                className="chrome-icon-button"
+                disabled={!projectName}
+                onClick={() => {
+                  const graphs = openDocuments.filter(
+                    (doc) => doc.ref.kind === "graph" && doc.content,
+                  );
+                  setDiagnostics(
+                    graphs.flatMap((doc) =>
+                      validateSerializedGraph(doc.content as SerializedGraph, {
+                        assetGuid: doc.ref.path,
+                        graphId: doc.id,
+                      }),
+                    ),
+                  );
+                  void collectScriptBundles();
+                  activateDockPanel("compiler-results");
+                }}
+              >
+                <HammerIcon />
+              </IconActionButton>
+              <CompilationErrorIndicator
+                errorCount={errorCount}
+                onOpenResults={() => activateDockPanel("compiler-results")}
+              />
+            </>
           ) : null}
         </div>
 

@@ -201,6 +201,7 @@ Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node 
 - Debounced edit-time pass → Compiler Results + inline node/pin markers.
 - Content Browser compile-error overlay (same iconography as missing ref).
 - Play button error-count badge.
+- Global toolbar **Compilation Error** status next to Compile on graph documents (tap opens Compiler Results).
 - Pre-Preview project sweep → blocking dialog with Play Anyway.
 - Headless CI over golden fixture projects (`packages/scripting/fixtures/` — one broken graph per diagnostic code).
 

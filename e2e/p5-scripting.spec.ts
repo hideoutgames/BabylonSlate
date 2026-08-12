@@ -51,6 +51,10 @@ test.describe("P5 visual scripting acceptance", () => {
     }, SCRIPTED_GRAPH);
     expect(installed).toBe(true);
 
+    await page.locator('[data-asset-path="assets/main.graph.babasset"]').dblclick();
+    await expect(page.getByTestId("compile-graph")).toBeVisible();
+    await expect(page.getByTestId("compilation-error")).toHaveCount(0);
+
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
 
@@ -116,6 +120,10 @@ test.describe("P5 visual scripting acceptance", () => {
       timeout: 15_000,
     });
     await expect(page.getByTestId("play-error-badge")).toBeVisible();
+    await expect(page.getByTestId("compilation-error")).toBeVisible();
+    await expect(page.getByTestId("compilation-error")).toHaveText(
+      "Compilation Error",
+    );
 
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-blocked-dialog")).toBeVisible();
