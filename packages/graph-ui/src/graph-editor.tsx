@@ -1,81 +1,280 @@
 import {
   Background,
   Controls,
-  applyNodeChanges,
-  type Node,
-  type NodeChange,
-  type NodeProps,
   ReactFlow,
-  useNodesState,
+  ReactFlowProvider,
+  applyEdgeChanges,
+  applyNodeChanges,
+  useReactFlow,
+  type Edge,
+  type EdgeChange,
+  type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback } from "react";
-import type { SerializedGraph } from "@babylonslate/core";
-import { toSerializedGraph } from "./graph-model";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { GraphDocument } from "./graph-types";
+import type {
+  GraphDiagnostic,
+  NavigateRequest,
+  PaletteNode,
+} from "./graph-types";
+import { GraphEditorProvider } from "./graph-editor-context";
+import { createEdgeId, toSerializedGraph } from "./graph-model";
+import {
+  type CanvasNode,
+  graphNodeTypes,
+  resolveNodeType,
+} from "./graph-nodes";
+import { NodePalette } from "./node-palette";
 
-type LogNodeData = {
-  message: string;
-};
-
-type CanvasNode = Node<Record<string, unknown>>;
-
-function LogMessageNode({ data }: NodeProps<Node<LogNodeData>>) {
-  return (
-    <div className="flex min-h-11 min-w-44 flex-col gap-2 rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm">
-      <div className="text-xs font-medium text-muted-foreground">Log Message</div>
-      <div className="text-sm">{data.message}</div>
-    </div>
-  );
-}
-
-const nodeTypes = {
-  logMessage: LogMessageNode,
-};
+export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
+export type { SerializedPin } from "./graph-types";
 
 export interface GraphEditorProps {
-  initialGraph: SerializedGraph;
-  onChange?: (graph: SerializedGraph) => void;
+  initialGraph: GraphDocument;
+  onChange?: (graph: GraphDocument) => void;
+  focusedNodeId?: string;
+  diagnostics?: GraphDiagnostic[];
+  onNavigateRequest?: (request: NavigateRequest) => void;
+  paletteNodes?: PaletteNode[];
 }
 
-export function GraphEditor({ initialGraph, onChange }: GraphEditorProps) {
-  const [nodes, setNodes] = useNodesState<CanvasNode>(
-    initialGraph.nodes.map((node) => ({
-      id: node.id,
-      type: node.type,
-      position: node.position,
-      data: node.data,
-    })),
+function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
+  return edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+  }));
+}
+
+function toCanvasNodes(nodes: GraphDocument["nodes"]): CanvasNode[] {
+  return nodes.map((node) => ({
+    id: node.id,
+    type: resolveNodeType(node.type, node.data),
+    position: node.position,
+    data: { ...node.data, __nodeType: node.type },
+  }));
+}
+
+function FocusedNodeSync({ focusedNodeId }: { focusedNodeId?: string }) {
+  const { fitView, getNode, setNodes } = useReactFlow();
+
+  useEffect(() => {
+    if (!focusedNodeId) return;
+    const node = getNode(focusedNodeId);
+    if (!node) return;
+
+    setNodes((current) =>
+      current.map((entry) => ({
+        ...entry,
+        selected: entry.id === focusedNodeId,
+      })),
+    );
+
+    void fitView({
+      nodes: [{ id: focusedNodeId }],
+      padding: 0.35,
+      duration: 250,
+      maxZoom: 1.2,
+    });
+  }, [fitView, focusedNodeId, getNode, setNodes]);
+
+  return null;
+}
+
+function GraphEditorCanvas({
+  initialGraph,
+  onChange,
+  focusedNodeId,
+  diagnostics,
+  onNavigateRequest,
+  paletteNodes,
+}: GraphEditorProps) {
+  const [nodes, setNodes] = useState<CanvasNode[]>(() =>
+    toCanvasNodes(initialGraph.nodes),
+  );
+  const [edges, setEdges] = useState<Edge[]>(() =>
+    toFlowEdges(initialGraph.edges),
+  );
+  const [pendingPin, setPendingPin] = useState<{
+    nodeId: string;
+    pinId: string;
+  } | null>(null);
+  const { screenToFlowPosition } = useReactFlow();
+  const graphStateRef = useRef({ nodes, edges });
+  graphStateRef.current = { nodes, edges };
+
+  const errorDiagnostics = useMemo(
+    () =>
+      (diagnostics ?? []).filter(
+        (entry) => entry.severity === "error" || entry.severity === "Error",
+      ),
+    [diagnostics],
+  );
+
+  const nodeErrorCount = useCallback(
+    (nodeId: string) =>
+      errorDiagnostics.filter((entry) => entry.nodeId === nodeId).length,
+    [errorDiagnostics],
+  );
+
+  const pinHasError = useCallback(
+    (nodeId: string, pinId: string) =>
+      errorDiagnostics.some(
+        (entry) => entry.nodeId === nodeId && entry.pinId === pinId,
+      ),
+    [errorDiagnostics],
+  );
+
+  const emitChange = useCallback(
+    (nextNodes: CanvasNode[], nextEdges: Edge[]) => {
+      onChange?.(
+        toSerializedGraph(
+          nextNodes,
+          nextEdges.map((edge) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle ?? undefined,
+            targetHandle: edge.targetHandle ?? undefined,
+          })),
+        ),
+      );
+    },
+    [onChange],
   );
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
-      // Apply changes locally before notifying the parent — calling onChange with
-      // the pre-update `nodes` closure would overwrite external edits (and journal
-      // recovery) with stale positions.
       setNodes((current) => {
         const next = applyNodeChanges(changes, current);
-        onChange?.(toSerializedGraph(next, initialGraph.edges));
+        emitChange(next, graphStateRef.current.edges);
         return next;
       });
     },
-    [initialGraph.edges, onChange, setNodes],
+    [emitChange],
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      setEdges((current) => {
+        const next = applyEdgeChanges(changes, current);
+        emitChange(graphStateRef.current.nodes, next);
+        return next;
+      });
+    },
+    [emitChange],
+  );
+
+  const addEdge = useCallback(
+    (
+      source: string,
+      sourceHandle: string,
+      target: string,
+      targetHandle: string,
+    ) => {
+      const id = createEdgeId(source, sourceHandle, target, targetHandle);
+      setEdges((current) => {
+        if (current.some((edge) => edge.id === id)) {
+          return current;
+        }
+        const next: Edge[] = [
+          ...current,
+          { id, source, target, sourceHandle, targetHandle },
+        ];
+        emitChange(graphStateRef.current.nodes, next);
+        return next;
+      });
+    },
+    [emitChange],
+  );
+
+  const onPinTap = useCallback(
+    (nodeId: string, pinId: string, direction: "in" | "out") => {
+      if (direction === "out") {
+        setPendingPin({ nodeId, pinId });
+        return;
+      }
+
+      if (!pendingPin) return;
+      if (pendingPin.nodeId === nodeId) {
+        setPendingPin(null);
+        return;
+      }
+
+      addEdge(pendingPin.nodeId, pendingPin.pinId, nodeId, pinId);
+      setPendingPin(null);
+    },
+    [addEdge, pendingPin],
+  );
+
+  const handleAddPaletteNode = useCallback(
+    (paletteNode: PaletteNode) => {
+      const position = screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      });
+      const id = `${paletteNode.id}-${Date.now()}`;
+      const nextNode: CanvasNode = {
+        id,
+        type: "pinNode",
+        position,
+        data: { title: paletteNode.title, __nodeType: paletteNode.id },
+      };
+
+      setNodes((current) => {
+        const next = [...current, nextNode];
+        emitChange(next, graphStateRef.current.edges);
+        return next;
+      });
+    },
+    [emitChange, screenToFlowPosition],
+  );
+
+  const contextValue = useMemo(
+    () => ({
+      pendingPin,
+      onPinTap,
+      nodeErrorCount,
+      pinHasError,
+      onNavigateRequest,
+    }),
+    [nodeErrorCount, onNavigateRequest, onPinTap, pendingPin, pinHasError],
   );
 
   return (
-    <div className="h-full w-full touch-manipulation">
-      <ReactFlow
-        nodes={nodes}
-        edges={initialGraph.edges}
-        nodeTypes={nodeTypes}
-        onNodesChange={handleNodesChange}
-        fitView
-        minZoom={0.4}
-        maxZoom={1.5}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background gap={16} />
-        <Controls showInteractive={false} />
-      </ReactFlow>
-    </div>
+    <GraphEditorProvider value={contextValue}>
+      <div className="relative h-full w-full touch-manipulation">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={graphNodeTypes}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
+          fitView
+          minZoom={0.4}
+          maxZoom={1.5}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={16} />
+          <Controls showInteractive={false} />
+          <FocusedNodeSync focusedNodeId={focusedNodeId} />
+        </ReactFlow>
+        <NodePalette
+          paletteNodes={paletteNodes}
+          onAddNode={handleAddPaletteNode}
+        />
+      </div>
+    </GraphEditorProvider>
+  );
+}
+
+export function GraphEditor(props: GraphEditorProps) {
+  return (
+    <ReactFlowProvider>
+      <GraphEditorCanvas {...props} />
+    </ReactFlowProvider>
   );
 }

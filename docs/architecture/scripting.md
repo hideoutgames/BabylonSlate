@@ -180,13 +180,14 @@ AI / navigation categories wait for P11.
 
 ### `graph-ui` rework
 
-Touch-first React Flow 12 shell:
+Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 
-- Tap-to-connect **and** drag-to-connect (gestures.md).
-- Node palette as bottom `Sheet`.
-- Compose from `@babylonslate/ui` only for chrome (`Card`, `Sheet`, `ScrollArea`, `AlertDialog`) — no ad-hoc styled containers.
+- **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + bottom-sheet **Add node** affordance.
+- **`GraphDocument`**: local extension of core `SerializedGraph`; edges may carry optional `sourceHandle` / `targetHandle` for pin-aware wiring.
+- **Nodes**: legacy `logMessage` without `data.__pins` uses the existing card; scripting nodes with `data.__pins` render exec (gray) and data handles; tap output pin → tap input pin to connect.
+- Tap-to-connect **and** drag-to-connect (gestures.md) — drag deferred; palette uses semantic Tailwind chrome (`rounded-lg border bg-card`) until `@babylonslate/ui` Sheet is wired.
 - Pin/type colors via semantic tokens (`text-vector`, plus new type tokens in `globals.css` / theming.md as they ship).
-- Blocking Preview dialog uses `AlertDialog`.
+- Blocking Preview dialog uses `AlertDialog` (editor host).
 
 Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node types, validation binder) injectable; do not hardcode scripting-only assumptions into the canvas host.
 
