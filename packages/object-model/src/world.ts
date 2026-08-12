@@ -9,6 +9,17 @@ import type { InterfaceRegistry } from "./interfaces";
 import { Actor, ActorComponent, GameInstance, type TickContext } from "./objects";
 import { TICK_PHASES, TickClock, type PhaseHook, type TickPhase } from "./tick";
 
+export type WorldInputProvider = Pick<
+  TickContext,
+  | "isActionHeld"
+  | "wasActionPressed"
+  | "wasActionReleased"
+  | "getAxis"
+  | "getAxis2D"
+  | "setGamepadRumble"
+  | "gamepadConnections"
+>;
+
 export interface WorldOptions {
   seed: number;
   dt: number;
@@ -18,6 +29,8 @@ export interface WorldOptions {
   onPhase?: PhaseHook;
   /** Optional post-physics fixup callback. */
   onPostPhysics?: (ctx: TickContext) => void;
+  /** Resolved input for this world; filled by the runtime driver each tick. */
+  input?: WorldInputProvider;
 }
 
 export class World {
@@ -28,6 +41,7 @@ export class World {
   private readonly guidFactory?: GuidFactory;
   private readonly onPhase?: PhaseHook;
   private readonly onPostPhysics?: (ctx: TickContext) => void;
+  private inputProvider: WorldInputProvider | null;
 
   gameInstance: GameInstance | null = null;
   /** Actors in spawn order — never iterate a Map for tick/snapshot. */
@@ -46,6 +60,11 @@ export class World {
     this.guidFactory = options.guidFactory;
     this.onPhase = options.onPhase;
     this.onPostPhysics = options.onPostPhysics;
+    this.inputProvider = options.input ?? null;
+  }
+
+  setInputProvider(provider: WorldInputProvider | null): void {
+    this.inputProvider = provider;
   }
 
   rngNextFloat(): number {
@@ -141,7 +160,12 @@ export class World {
   }
 
   private phaseContext(tickIndex: number): TickContext {
-    return { dt: this.clock.dt, tickIndex, world: this };
+    return {
+      dt: this.clock.dt,
+      tickIndex,
+      world: this,
+      ...(this.inputProvider ?? {}),
+    };
   }
 
   private runPhase(phase: TickPhase, tickIndex: number): void {

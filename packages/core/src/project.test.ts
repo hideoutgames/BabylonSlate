@@ -21,6 +21,9 @@ describe("project schema", () => {
     expect(project.settings.twoD.sortingLayers).toEqual([
       ...DEFAULT_SORTING_LAYERS,
     ]);
+    expect(project.settings.input.actions.some((a) => a.name === "Jump")).toBe(
+      true,
+    );
   });
 
   it("creates default scene and graph structures", () => {

@@ -41,10 +41,28 @@ export interface TwoDProjectSettings {
   sortingLayers: string[];
 }
 
+/**
+ * Action / axis mappings authored in Project Settings. The structural shape
+ * matches `@babylonslate/input`'s `InputMappings`; normalisation lives there so
+ * `core` stays free of an input dependency.
+ */
+export interface ProjectInputSettings {
+  actions: Array<{
+    name: string;
+    bindings: Array<Record<string, unknown>>;
+  }>;
+  axes: Array<{
+    name: string;
+    kind?: "1d" | "2d";
+    bindings: Array<Record<string, unknown>>;
+  }>;
+}
+
 export interface ProjectSettings {
   touchMinTargetPx: number;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
+  input: ProjectInputSettings;
 }
 
 export interface ProjectDocument {
@@ -105,6 +123,66 @@ function normalizeSortingLayers(value: unknown): string[] {
   return layers.length > 0 ? layers : [...DEFAULT_SORTING_LAYERS];
 }
 
+export const DEFAULT_PROJECT_INPUT_SETTINGS: ProjectInputSettings = {
+  actions: [
+    {
+      name: "Jump",
+      bindings: [
+        { device: "key", code: "Space" },
+        { device: "gamepadButton", code: "0:0" },
+      ],
+    },
+    {
+      name: "Confirm",
+      bindings: [
+        { device: "key", code: "Enter" },
+        { device: "gamepadButton", code: "0:0" },
+      ],
+    },
+  ],
+  axes: [
+    {
+      name: "Move",
+      kind: "2d",
+      bindings: [
+        { device: "key", code: "KeyA", component: "x", digitalValue: -1 },
+        { device: "key", code: "KeyD", component: "x", digitalValue: 1 },
+        { device: "key", code: "KeyS", component: "y", digitalValue: -1 },
+        { device: "key", code: "KeyW", component: "y", digitalValue: 1 },
+        { device: "gamepadAxis", code: "0:0", component: "x", deadZone: 0.15 },
+        {
+          device: "gamepadAxis",
+          code: "0:1",
+          component: "y",
+          deadZone: 0.15,
+          invert: true,
+        },
+      ],
+    },
+    {
+      name: "Look",
+      kind: "1d",
+      bindings: [{ device: "gamepadAxis", code: "0:2", deadZone: 0.15 }],
+    },
+  ],
+};
+
+function normalizeProjectInput(value: unknown): ProjectInputSettings {
+  const source = (value ?? {}) as Record<string, unknown>;
+  const hasActions = Array.isArray(source.actions) && source.actions.length > 0;
+  const hasAxes = Array.isArray(source.axes) && source.axes.length > 0;
+  if (!hasActions && !hasAxes) {
+    return structuredClone(DEFAULT_PROJECT_INPUT_SETTINGS);
+  }
+  // Full validation (device enums, dead zones) runs in `@babylonslate/input`.
+  return {
+    actions: hasActions
+      ? (source.actions as ProjectInputSettings["actions"])
+      : [],
+    axes: hasAxes ? (source.axes as ProjectInputSettings["axes"]) : [],
+  };
+}
+
 export function normalizeProjectSettings(
   settings: Partial<ProjectSettings> | undefined,
 ): ProjectSettings {
@@ -128,6 +206,7 @@ export function normalizeProjectSettings(
         settings?.textures?.autoRequeueUncompressed ??
         DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
     },
+    input: normalizeProjectInput(settings?.input),
   };
 }
 

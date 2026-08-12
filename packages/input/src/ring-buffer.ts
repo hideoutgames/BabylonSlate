@@ -31,9 +31,29 @@ export type RawInputEvent =
       gamepadIndex: number;
       axes: number[];
       buttons: number[];
+    }
+  | {
+      kind: "gamepadConnection";
+      tick: number;
+      gamepadIndex: number;
+      connected: boolean;
+    }
+  | {
+      /** Touch control (joystick / button) contributing a normalised axis. */
+      kind: "touchAxis";
+      tick: number;
+      controlId: string;
+      value: number;
     };
 
-const KIND = { pointer: 1, key: 2, mouse: 3, gamepad: 4 } as const;
+const KIND = {
+  pointer: 1,
+  key: 2,
+  mouse: 3,
+  gamepad: 4,
+  gamepadConnection: 5,
+  touchAxis: 6,
+} as const;
 const PHASE = { down: 1, move: 2, up: 3, cancel: 4 } as const;
 const PHASE_NAME = ["", "down", "move", "up", "cancel"] as const;
 
@@ -85,7 +105,7 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
       view.setUint8(o, PHASE[event.phase]);
       o += 1;
       o += writeString(view, o, event.code);
-    } else {
+    } else if (event.kind === "gamepad") {
       view.setUint8(o, event.gamepadIndex);
       o += 1;
       view.setUint8(o, event.axes.length);
@@ -100,6 +120,15 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
         view.setFloat32(o, button, true);
         o += 4;
       }
+    } else if (event.kind === "gamepadConnection") {
+      view.setUint8(o, event.gamepadIndex);
+      o += 1;
+      view.setUint8(o, event.connected ? 1 : 0);
+      o += 1;
+    } else {
+      o += writeString(view, o, event.controlId);
+      view.setFloat32(o, event.value, true);
+      o += 4;
     }
   }
   return scratch.slice(0, o);
@@ -167,6 +196,23 @@ export function decodeInputEvents(
         o += 4;
       }
       events.push({ kind: "gamepad", tick, gamepadIndex, axes, buttons });
+    } else if (kindByte === KIND.gamepadConnection) {
+      const gamepadIndex = view.getUint8(o);
+      o += 1;
+      const connected = view.getUint8(o) === 1;
+      o += 1;
+      events.push({ kind: "gamepadConnection", tick, gamepadIndex, connected });
+    } else if (kindByte === KIND.touchAxis) {
+      const controlId = readString(view, o);
+      o += controlId.size;
+      const value = view.getFloat32(o, true);
+      o += 4;
+      events.push({
+        kind: "touchAxis",
+        tick,
+        controlId: controlId.value,
+        value,
+      });
     } else {
       throw new Error(`Unknown input event kind ${kindByte}`);
     }

@@ -12,8 +12,13 @@ import {
 } from "@babylonslate/object-model";
 import {
   InputRingBuffer,
+  InputResolver,
+  createDefaultInputMappings,
+  normalizeInputMappings,
   decodeInputEvents,
+  type InputMappings,
   type RawInputEvent,
+  type ResolvedInputTick,
 } from "@babylonslate/input";
 import { LogRingBuffer } from "./log-ring";
 import {
@@ -30,6 +35,8 @@ export interface RuntimeDriverOptions {
   maxActors?: number;
   maxCatchUpSteps?: number;
   onCommand?: (command: CommandMessage) => void;
+  /** Project Settings input mappings; defaults when omitted. */
+  inputMappings?: InputMappings;
 }
 
 export interface RuntimeDriver {
@@ -42,6 +49,9 @@ export interface RuntimeDriver {
   advance(elapsedSeconds: number): void;
   pushInput(events: readonly RawInputEvent[]): void;
   pushInputBuffer(buffer: ArrayBuffer): void;
+  setInputMappings(mappings: InputMappings): void;
+  /** Most recent resolved input tick (empty before the first tick). */
+  getResolvedInput(): ResolvedInputTick;
   copySnapshot(out: Float32Array): boolean;
   getWorld(): World;
   getLogRing(): LogRingBuffer;
@@ -62,6 +72,13 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly world: World;
   private readonly snapshots: SeqLockSnapshotPair;
   private readonly input = new InputRingBuffer(512);
+  private readonly resolver: InputResolver;
+  private resolvedInput: ResolvedInputTick = {
+    actions: {},
+    axes: {},
+    axes2D: {},
+    gamepadConnections: [],
+  };
   private readonly logs = new LogRingBuffer(512);
   private readonly diagnostics = new SessionDiagnosticAggregator();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
@@ -94,7 +111,13 @@ class InProcessRuntime implements RuntimeDriver {
       implementedInterfaces: [],
     });
 
+    const mappings = normalizeInputMappings(
+      options.inputMappings ?? createDefaultInputMappings(),
+    );
+    this.resolver = new InputResolver(mappings);
+
     let guidSeq = 0;
+    const self = this;
     this.world = new World({
       seed: options.seed,
       dt: this.dt,
@@ -103,6 +126,29 @@ class InProcessRuntime implements RuntimeDriver {
       onPhase: (phase) => {
         // Timing hooks measure script vs physics phases.
         void phase;
+      },
+      input: {
+        isActionHeld: (action) =>
+          self.resolvedInput.actions[action]?.held ?? false,
+        wasActionPressed: (action) =>
+          self.resolvedInput.actions[action]?.pressed ?? false,
+        wasActionReleased: (action) =>
+          self.resolvedInput.actions[action]?.released ?? false,
+        getAxis: (axis) => self.resolvedInput.axes[axis] ?? 0,
+        getAxis2D: (axis) =>
+          self.resolvedInput.axes2D[axis] ?? { x: 0, y: 0 },
+        get gamepadConnections() {
+          return self.resolvedInput.gamepadConnections;
+        },
+        setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
+          self.emit({
+            type: "log",
+            severity: "log",
+            category: "input",
+            message: `rumble pad=${gamepadIndex} intensity=${intensity} ms=${durationMs}`,
+            frameId: self.frameId,
+          });
+        },
       },
     });
 
@@ -201,12 +247,31 @@ class InProcessRuntime implements RuntimeDriver {
     this.pushInput(decodeInputEvents(buffer));
   }
 
+  setInputMappings(mappings: InputMappings): void {
+    this.resolver.setMappings(normalizeInputMappings(mappings));
+  }
+
+  getResolvedInput(): ResolvedInputTick {
+    return this.resolvedInput;
+  }
+
   tick(): void {
     if (!this.running || this.paused) return;
     // Consume input stamped for this tick (and earlier).
     const tickIndex = this.world.clock.tickIndex;
     const pending = this.input.drain().filter((e) => e.tick <= tickIndex + 1);
-    void pending;
+    this.resolvedInput = this.resolver.resolve(pending);
+    for (const connection of this.resolvedInput.gamepadConnections) {
+      this.emit({
+        type: "log",
+        severity: "log",
+        category: "input",
+        message: connection.connected
+          ? `gamepad ${connection.gamepadIndex} connected`
+          : `gamepad ${connection.gamepadIndex} disconnected`,
+        frameId: this.frameId,
+      });
+    }
 
     const scriptStart = nowMs();
     this.world.tick();

@@ -6,6 +6,7 @@ import {
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { Textarea } from "@babylonslate/ui/components/textarea";
 import { Separator } from "@babylonslate/ui/components/separator";
 import {
   Sheet,
@@ -63,6 +64,7 @@ export function ProjectSettingsSheet({
         <Tabs defaultValue="general" className="px-4 pb-4">
           <TabsList className="w-full flex-wrap h-auto">
             <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="input">Input</TabsTrigger>
             <TabsTrigger value="twoD">2D</TabsTrigger>
             <TabsTrigger value="textures">Textures</TabsTrigger>
             <TabsTrigger value="export">Export</TabsTrigger>
@@ -85,6 +87,66 @@ export function ProjectSettingsSheet({
                 <FieldDescription>
                   Matches shell <code>--touch-target</code> on this device.
                 </FieldDescription>
+              </Field>
+            </FieldGroup>
+          </TabsContent>
+          <TabsContent value="input" className="flex flex-col gap-4 pt-4">
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Actions</FieldLabel>
+                <FieldDescription>
+                  Named actions resolve through the input mapping model. Edit
+                  the JSON below; each binding needs a device and code.
+                </FieldDescription>
+                <Textarea
+                  className="min-h-32 font-mono text-xs"
+                  value={JSON.stringify(
+                    projectDocument.settings.input.actions,
+                    null,
+                    2,
+                  )}
+                  onChange={(event) => {
+                    try {
+                      const actions = JSON.parse(event.target.value) as unknown;
+                      if (!Array.isArray(actions)) return;
+                      updateProjectSettings({
+                        input: {
+                          ...projectDocument.settings.input,
+                          actions: actions as typeof projectDocument.settings.input.actions,
+                        },
+                      });
+                    } catch {
+                      // Keep typing until the JSON is valid again.
+                    }
+                  }}
+                  data-testid="settings-input-actions"
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Axes</FieldLabel>
+                <Textarea
+                  className="min-h-32 font-mono text-xs"
+                  value={JSON.stringify(
+                    projectDocument.settings.input.axes,
+                    null,
+                    2,
+                  )}
+                  onChange={(event) => {
+                    try {
+                      const axes = JSON.parse(event.target.value) as unknown;
+                      if (!Array.isArray(axes)) return;
+                      updateProjectSettings({
+                        input: {
+                          ...projectDocument.settings.input,
+                          axes: axes as typeof projectDocument.settings.input.axes,
+                        },
+                      });
+                    } catch {
+                      // Keep typing until the JSON is valid again.
+                    }
+                  }}
+                  data-testid="settings-input-axes"
+                />
               </Field>
             </FieldGroup>
           </TabsContent>

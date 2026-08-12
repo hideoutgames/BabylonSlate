@@ -612,6 +612,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               ...current.settings.twoD,
               ...settings.twoD,
             },
+            input: settings.input
+              ? settings.input
+              : current.settings.input,
           }),
           metadata: {
             ...current.metadata,
