@@ -1,4 +1,12 @@
 import { useMemo, useState } from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@babylonslate/ui/components/sheet";
+import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+import { Button } from "@babylonslate/ui/components/button";
 import type { PaletteNode } from "./graph-types";
 
 export interface NodePaletteProps {
@@ -23,67 +31,47 @@ export function NodePalette({ paletteNodes, onAddNode }: NodePaletteProps) {
 
   return (
     <>
-      <button
+      <Button
         type="button"
-        className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-card-foreground shadow-sm touch-manipulation"
+        size="sm"
+        className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 touch-manipulation"
         onClick={() => setOpen(true)}
       >
         Add node
-      </button>
+      </Button>
 
-      {open ? (
-        <div
-          className="absolute inset-0 z-20 bg-background/60"
-          role="presentation"
-          onClick={() => setOpen(false)}
-        />
-      ) : null}
-
-      <div
-        className={`absolute inset-x-0 bottom-0 z-30 max-h-[min(70vh,28rem)] transform rounded-t-xl border border-border bg-card shadow-lg transition-transform duration-200 ${
-          open ? "translate-y-0" : "translate-y-full pointer-events-none"
-        }`}
-        role="dialog"
-        aria-label="Node palette"
-        aria-hidden={!open}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-card-foreground">
-            Node palette
-          </h2>
-          <button
-            type="button"
-            className="rounded-md px-2 py-1 text-sm text-muted-foreground touch-manipulation"
-            onClick={() => setOpen(false)}
-          >
-            Close
-          </button>
-        </div>
-        <div className="overflow-y-auto p-4">
-          {grouped.map(([category, nodes]) => (
-            <section key={category} className="mb-4 last:mb-0">
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {category}
-              </h3>
-              <div className="flex flex-col gap-2">
-                {nodes.map((node) => (
-                  <button
-                    key={node.id}
-                    type="button"
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-left text-sm text-foreground touch-manipulation hover:bg-accent"
-                    onClick={() => {
-                      onAddNode(node);
-                      setOpen(false);
-                    }}
-                  >
-                    {node.title}
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      </div>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent side="bottom" className="max-h-[min(70vh,28rem)]">
+          <SheetHeader>
+            <SheetTitle>Node palette</SheetTitle>
+          </SheetHeader>
+          <ScrollArea className="max-h-[min(55vh,22rem)] pr-2">
+            {grouped.map(([category, nodes]) => (
+              <section key={category} className="mb-4 last:mb-0">
+                <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {category}
+                </h3>
+                <div className="flex flex-col gap-2">
+                  {nodes.map((node) => (
+                    <Button
+                      key={node.id}
+                      type="button"
+                      variant="outline"
+                      className="h-auto min-h-11 justify-start touch-manipulation"
+                      onClick={() => {
+                        onAddNode(node);
+                        setOpen(false);
+                      }}
+                    >
+                      {node.title}
+                    </Button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

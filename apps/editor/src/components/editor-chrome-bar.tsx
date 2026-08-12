@@ -45,6 +45,8 @@ import {
 } from "@babylonslate/ui/components/dropdown-menu";
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
+import { useValidation } from "../context/validation-context";
+import { PlayBlockedDialog } from "./play-blocked-dialog";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectSettingsSheet } from "./project-settings-sheet";
 import "../shell/editor-chrome.css";
@@ -182,7 +184,9 @@ export function EditorChromeBar({
 
   const { startPlay, playing, alwaysRender, setAlwaysRender, renderStats } =
     usePlay();
+  const { diagnostics, errorCount, setFocusDiagnostic } = useValidation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
 
   const contentBrowserDoc = openDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
@@ -303,7 +307,7 @@ export function EditorChromeBar({
             size="sm"
             variant="ghost"
             data-testid="play-preview"
-            className="chrome-action-button"
+            className="chrome-action-button relative"
             aria-label="Play"
             disabled={!projectName || playing}
             onClick={() => {
@@ -312,12 +316,37 @@ export function EditorChromeBar({
                 new URLSearchParams(window.location.search).get(
                   "previewThrow",
                 ) === "1";
+              if (errorCount > 0 && !inject) {
+                setPlayBlockedOpen(true);
+                return;
+              }
               startPlay({ injectFixtureThrow: inject });
             }}
           >
             <PlayIcon data-icon="inline-start" />
             Play
+            {errorCount > 0 ? (
+              <span
+                className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
+                data-testid="play-error-badge"
+              >
+                {errorCount > 9 ? "9+" : errorCount}
+              </span>
+            ) : null}
           </Button>
+          <PlayBlockedDialog
+            open={playBlockedOpen}
+            diagnostics={diagnostics}
+            onOpenChange={setPlayBlockedOpen}
+            onNavigate={(d) => {
+              setFocusDiagnostic(d);
+              setPlayBlockedOpen(false);
+            }}
+            onPlayAnyway={() => {
+              setPlayBlockedOpen(false);
+              startPlay();
+            }}
+          />
           {isTestModeEnabled() || import.meta.env.DEV ? (
             <Button
               size="sm"

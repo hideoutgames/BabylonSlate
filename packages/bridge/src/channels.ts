@@ -51,6 +51,14 @@ export type CommandMessage =
       scriptMs: number;
       physicsMs: number;
       fps?: number;
+    }
+  | {
+      type: "print";
+      message: string;
+      key: string;
+      duration: number;
+      color: { x: number; y: number; z: number; w: number };
+      frameId: number;
     };
 
 export type BridgeHostMessage =

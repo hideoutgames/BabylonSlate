@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@babylonslate/core": "workspace:*",
+    "@babylonslate/ui": "workspace:*",
     "@xyflow/react": "^12.11.2",
-    "react": "^19.0.0"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.10",

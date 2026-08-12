@@ -27,6 +27,7 @@ export const ENGINE_BASE_CLASSES = [
   "Actor",
   "ActorComponent",
   "GameInstance",
+  "FunctionLibrary",
 ] as const;
 
 /** Asset types creatable from the Content Browser New Asset flow. */
@@ -39,6 +40,9 @@ export const CREATABLE_ASSET_TYPES = [
   "Audio",
   "Font",
   "Class",
+  "Enum",
+  "Structure",
+  "ScriptInterface",
 ] as const;
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
@@ -186,6 +190,32 @@ export function buildNewAssetResult(options: {
     const payload = createDefaultGraph() as unknown as Record<string, unknown>;
     return {
       type: "Graph",
+      name,
+      guid,
+      version: 1,
+      dependencies: [],
+      parentClass: null,
+      payload,
+      chunks: [
+        {
+          id: DOCUMENT_CHUNK_ID,
+          kind: "document",
+          mime: "application/json",
+          data: new TextEncoder().encode(JSON.stringify(payload)),
+        },
+      ],
+    };
+  }
+
+  if (type === "Enum" || type === "Structure" || type === "ScriptInterface") {
+    const payload: Record<string, unknown> =
+      type === "Enum"
+        ? { kind: "enum", guid, name, members: [{ name: "None", value: 0 }] }
+        : type === "Structure"
+          ? { kind: "structure", guid, name, fields: [] }
+          : { kind: "scriptInterface", guid, name, methods: [] };
+    return {
+      type,
       name,
       guid,
       version: 1,

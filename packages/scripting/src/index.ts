@@ -7,3 +7,5 @@ export * from "./node-registry";
 export * from "./compile";
 export * from "./wildcard";
 export * from "./serialize";
+
+export * from "./type-assets";

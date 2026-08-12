@@ -19,3 +19,5 @@ export {
   type UseContextMenuOptions,
   type UseContextMenuResult,
 } from "./use-context-menu";
+
+export { ParameterListEditor, type ParameterRow, type ParameterListEditorProps } from "./parameter-list-editor";

@@ -1,0 +1,31 @@
+{
+  "id": "js-parse",
+  "kind": "function",
+  "nodes": [
+    {
+      "id": "js",
+      "typeId": "debug.executeJavaScript",
+      "position": { "x": 0, "y": 0 },
+      "pins": [
+        {
+          "id": "execIn",
+          "name": "exec",
+          "kind": "exec",
+          "direction": "in",
+          "type": { "kind": "exec" }
+        },
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": { "kind": "exec" }
+        }
+      ],
+      "properties": {
+        "body": "function broken( {"
+      }
+    }
+  ],
+  "edges": []
+}

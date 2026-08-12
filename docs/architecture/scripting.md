@@ -245,7 +245,11 @@ See [issue-tracker P5 slice ownership](../agents/issue-tracker.md#p5-slice-owner
 6. **`p5-graph-ui`** + **`p5-types`** — parallel once IR serialisation is stable.
 7. **`p5-graph-validation`** — editor gates and CI fixtures last, consuming Compiler Results from graph-ui.
 
-## Risks (from §19, P5-relevant)
+## Implementation status (landed)
+
+Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tree. Editor wires validation (Compiler Results, Play badge + Play Anyway `AlertDialog`), graph-ui tap-to-connect + Sheet palette, My Class panel, CodeMirror ExecuteJavaScript body editor, Enum/Structure/ScriptInterface creatable assets, `FunctionLibrary` engine base, `formatValue`, and validator fixtures.
+
+**Follow-ups (non-blocking polish):** full row editors for Enum/Structure/Interface documents; project-wide pre-Preview sweep beyond the active graph; export-time Print strip preset; debounce timer (currently validates on graph change).
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design My Class UX against `ClassRegistry.reparent` from the start.
