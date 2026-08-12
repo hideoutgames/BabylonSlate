@@ -30,4 +30,47 @@ test.describe("P4 Play overlay and session report", () => {
       "throw-node",
     );
   });
+
+  test("clean Play skips the save-and-compile dialog", async ({ page }) => {
+    await openTestProject(page);
+
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect(page.getByTestId("play-prepare-dialog")).toHaveCount(0);
+
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("dirty graph Play shows the prepare dialog, then saves", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+
+    const nudged = await page.evaluate(async () => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: {
+          ensureMainGraphOpen: () => Promise<boolean>;
+          nudgeActiveGraphNode: () => Promise<boolean>;
+          cancelDebouncedSave: () => void;
+        };
+      };
+      if (!host.__babylonslateTest) return false;
+      await host.__babylonslateTest.ensureMainGraphOpen();
+      const ok = await host.__babylonslateTest.nudgeActiveGraphNode();
+      host.__babylonslateTest.cancelDebouncedSave();
+      return ok;
+    });
+    expect(nudged).toBe(true);
+
+    await expect(page.getByTestId("save-all-project")).toBeEnabled();
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-prepare-dialog")).toBeVisible();
+    await expect(page.getByTestId("play-overlay")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("play-prepare-dialog")).toHaveCount(0);
+
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("save-all-project")).toBeDisabled();
+  });
 });

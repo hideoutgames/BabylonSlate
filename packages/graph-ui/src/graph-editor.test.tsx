@@ -1,7 +1,7 @@
 import { fireEvent, render, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
-import { GraphEditor } from "./graph-editor";
+import { GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 
 afterEach(cleanup);
@@ -58,6 +58,11 @@ function openPalette(container: HTMLElement) {
 }
 
 describe("GraphEditor", () => {
+  it("lets authors zoom the canvas out to 10 percent", () => {
+    expect(GRAPH_MIN_ZOOM).toBeLessThan(0.4);
+    expect(GRAPH_MIN_ZOOM).toBe(0.1);
+  });
+
   it("renders a node for each node in the graph", () => {
     const graph = createDefaultGraph();
     const { container } = render(<GraphEditor initialGraph={graph} />);
@@ -295,6 +300,51 @@ describe("GraphEditor", () => {
     expect(messageHandle).not.toBeNull();
   });
 
+  it("renders array pins with a list icon and scalar pins as circles", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "length",
+          type: "array.length",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Array Length",
+            __nodeType: "array.length",
+            __category: "array",
+            __pure: true,
+            __pins: [
+              {
+                id: "array",
+                name: "array",
+                kind: "data",
+                direction: "in",
+                type: { kind: "array", element: { kind: "float" } },
+              },
+              {
+                id: "out",
+                name: "out",
+                kind: "data",
+                direction: "out",
+                type: { kind: "int" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+
+    const arrayHandle = container.querySelector('[data-pin-type="array"]');
+    expect(arrayHandle).not.toBeNull();
+    expect(arrayHandle?.querySelector('[data-pin-shape="list"]')).not.toBeNull();
+
+    const intHandle = container.querySelector('[data-pin-type="int"]');
+    expect(intHandle).not.toBeNull();
+    expect(intHandle?.querySelector('[data-pin-shape="circle"]')).not.toBeNull();
+  });
+
   it("uses the host colorMode on the canvas", () => {
     const { container } = render(
       <GraphEditor
@@ -324,6 +374,74 @@ describe("GraphEditor", () => {
     expect(queryByRole("button", { name: "Add node" })).toBeNull();
     expect(getByTestId("graph-toolbar")).toBeTruthy();
     expect(getByTestId("graph-format")).toHaveProperty("disabled", true);
+  });
+
+  it("recolors a boxed wildcard pin when a concrete type is wired in", () => {
+    const onChange = vi.fn();
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "src",
+          type: "math.const",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Float",
+            __pins: [
+              {
+                id: "out",
+                name: "out",
+                kind: "data",
+                direction: "out",
+                type: { kind: "float" },
+              },
+            ],
+          },
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 280, y: 0 },
+          data: {
+            title: "Print",
+            __pins: [
+              {
+                id: "value",
+                name: "value",
+                kind: "data",
+                direction: "in",
+                type: { kind: "boxedWildcard" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+    const source = container.querySelector(
+      '[data-handleid="out"][data-handlepos="right"]',
+    );
+    const target = container.querySelector(
+      '[data-handleid="value"][data-handlepos="left"]',
+    );
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    fireEvent.click(source!);
+    fireEvent.click(target!);
+
+    const visual = target?.querySelector(".graph-pin-visual") as HTMLElement | null;
+    expect(visual?.style.background).toBe("var(--pin-float)");
+
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    const persisted = lastGraph.nodes.find((node) => node.id === "print")?.data
+      .__pins as Array<{ id: string; type: { kind: string } }>;
+    expect(persisted.find((pin) => pin.id === "value")?.type.kind).toBe(
+      "boxedWildcard",
+    );
   });
 
   it("titles event nodes Event … when data.title is missing", () => {

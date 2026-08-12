@@ -13,8 +13,12 @@ import { DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
 import { createAppEngine } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { Diagnostic } from "@babylonslate/scripting";
 import { PlayOverlay } from "../components/play-overlay";
+import { PlayPrepareDialog } from "../components/play-prepare-dialog";
+import { PlayBlockedDialog } from "../components/play-blocked-dialog";
 import { useDocuments } from "./document-context";
+import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
@@ -25,10 +29,20 @@ import {
   EditorSchedulerRegistry,
   type EditorLoopHandle,
 } from "../lib/editor-scheduler-registry";
+import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
+import { projectHasBlockingErrors } from "../services/graph-validation";
+import type { PlayPreparePhase } from "../components/play-prepare-dialog";
+
+type PlayOptions = { injectFixtureThrow?: boolean };
 
 interface PlayContextValue {
   playing: boolean;
-  startPlay: (options?: { injectFixtureThrow?: boolean }) => void;
+  preparing: boolean;
+  playAwaitingMigration: boolean;
+  requestPlay: (options?: PlayOptions) => Promise<void>;
+  launchPlay: (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => void;
+  resumePlayAfterMigration: () => Promise<void>;
+  cancelPlayMigration: () => void;
   stopPlay: () => void;
   registerSharedEngine: (engine: Engine | null) => void;
   registerScheduler: (scheduler: EditorLoopHandle) => () => void;
@@ -49,7 +63,18 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const ownedEngineRef = useRef<Engine | null>(null);
   const ownedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const schedulerRegistryRef = useRef(new EditorSchedulerRegistry());
+  const preparingRef = useRef(false);
+  const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
+  const pendingScriptsRef = useRef<ScriptBundleEntry[] | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
+  const [prepareState, setPrepareState] = useState<{
+    phase: PlayPreparePhase;
+    dirtyNames: string[];
+  } | null>(null);
+  const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
+  const [blockedDiagnostics, setBlockedDiagnostics] = useState<Diagnostic[]>([]);
   const [injectThrow, setInjectThrow] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportEntries, setReportEntries] = useState<SessionReportEntry[]>([]);
@@ -65,8 +90,17 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     "worker" | "in-process" | null
   >(null);
   const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
-  const { collectScriptBundles, openDocuments, activeDocumentId, projectDocument } =
-    useDocuments();
+  const {
+    collectPlayPreviewScripts,
+    openDocuments,
+    activeDocumentId,
+    projectDocument,
+    dirtyDocuments,
+    scriptsStale,
+    migrationPending,
+    saveAll,
+  } = useDocuments();
+  const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const playPhysics = playPhysicsFromOpenDocuments(
     openDocuments,
     activeDocumentId,
@@ -113,6 +147,18 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  useEffect(() => {
+    if (projectDocument) return;
+    setScripts([]);
+    setPlaying(false);
+    setPrepareState(null);
+    setPlayBlockedOpen(false);
+    setBlockedDiagnostics([]);
+    setPlayAwaitingMigration(false);
+    pendingScriptsRef.current = null;
+    pendingPlayOptionsRef.current = undefined;
+  }, [projectDocument]);
+
   const ensureEngine = useCallback((): Engine | null => {
     if (engineRef.current) return engineRef.current;
     const canvas = document.createElement("canvas");
@@ -127,30 +173,120 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     return engine;
   }, []);
 
-  const startPlay = useCallback(
-    (options?: { injectFixtureThrow?: boolean }) => {
+  const launchPlay = useCallback(
+    (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => {
       if (!ensureEngine()) {
         appendLog("Play failed: could not create Engine.");
         return;
       }
       setEncodeQueuePauseReason("play", true);
       setInjectThrow(Boolean(options?.injectFixtureThrow));
-      // Preview always runs freshly compiled graphs, including unsaved edits.
-      void collectScriptBundles()
-        .then((bundles) => {
-          setScripts(bundles);
-          setPlaying(true);
-        })
-        .catch((error) => {
-          appendLog(
-            `Script compile failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setScripts([]);
-          setPlaying(true);
-        });
+      if (options?.scripts) {
+        setScripts(options.scripts);
+      }
+      setPlaying(true);
     },
-    [appendLog, collectScriptBundles, ensureEngine],
+    [appendLog, ensureEngine],
   );
+
+  const requestPlay = useCallback(
+    async (options?: PlayOptions) => {
+      if (playing || preparingRef.current) return;
+      pendingPlayOptionsRef.current = options;
+      const inject = Boolean(options?.injectFixtureThrow);
+      const plan = planPlayPreviewPrepare({
+        dirtyDocuments: dirtyDocuments.map((doc) => ({ label: doc.ref.label })),
+        scriptsStale,
+        migrationPending: migrationPending.length > 0,
+      });
+
+      if (plan.action === "migrate") {
+        setPlayAwaitingMigration(true);
+        return;
+      }
+
+      preparingRef.current = true;
+      setPreparing(true);
+      try {
+        if (plan.action === "prepare") {
+          setPrepareState({
+            phase: plan.needsSave ? "saving" : "compiling",
+            dirtyNames: plan.dirtyNames,
+          });
+          if (plan.needsSave) {
+            const saved = await saveAll();
+            if (!saved) {
+              setPrepareState(null);
+              setPlayAwaitingMigration(true);
+              return;
+            }
+          }
+          setPrepareState({
+            phase: "compiling",
+            dirtyNames: plan.dirtyNames,
+          });
+        }
+
+        const shouldCompile =
+          scriptsStale ||
+          scripts.length === 0 ||
+          (plan.action === "prepare" && plan.needsCompile);
+        let nextScripts = scripts;
+        let nextDiagnostics = diagnostics;
+        if (shouldCompile) {
+          const result = await collectPlayPreviewScripts();
+          nextScripts = result.bundles;
+          nextDiagnostics = result.diagnostics;
+          setScripts(nextScripts);
+          setDiagnostics(nextDiagnostics);
+        }
+
+        setPrepareState(null);
+
+        if (!inject && projectHasBlockingErrors(nextDiagnostics)) {
+          pendingScriptsRef.current = nextScripts;
+          setBlockedDiagnostics(nextDiagnostics);
+          setPlayBlockedOpen(true);
+          return;
+        }
+
+        launchPlay({ injectFixtureThrow: inject, scripts: nextScripts });
+      } catch (error) {
+        appendLog(
+          `Script compile failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        setPrepareState(null);
+        setScripts([]);
+        launchPlay({ injectFixtureThrow: inject, scripts: [] });
+      } finally {
+        preparingRef.current = false;
+        setPreparing(false);
+      }
+    },
+    [
+      appendLog,
+      collectPlayPreviewScripts,
+      diagnostics,
+      dirtyDocuments,
+      launchPlay,
+      migrationPending.length,
+      playing,
+      saveAll,
+      scripts,
+      scriptsStale,
+      setDiagnostics,
+    ],
+  );
+
+  const resumePlayAfterMigration = useCallback(async () => {
+    setPlayAwaitingMigration(false);
+    await requestPlay(pendingPlayOptionsRef.current);
+  }, [requestPlay]);
+
+  const cancelPlayMigration = useCallback(() => {
+    setPlayAwaitingMigration(false);
+    pendingPlayOptionsRef.current = undefined;
+  }, []);
 
   const handleClose = useCallback(
     (result: PlaySessionResult) => {
@@ -178,7 +314,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const value = useMemo<PlayContextValue>(
     () => ({
       playing,
-      startPlay,
+      preparing,
+      playAwaitingMigration,
+      requestPlay,
+      launchPlay,
+      resumePlayAfterMigration,
+      cancelPlayMigration,
       stopPlay: () => setPlaying(false),
       registerSharedEngine,
       registerScheduler,
@@ -192,7 +333,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     }),
     [
       playing,
-      startPlay,
+      preparing,
+      playAwaitingMigration,
+      requestPlay,
+      launchPlay,
+      resumePlayAfterMigration,
+      cancelPlayMigration,
       registerSharedEngine,
       registerScheduler,
       focusedNodeId,
@@ -208,6 +354,29 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     <PlayContext.Provider value={value}>
       <OutputLogContext.Provider value={{ lines: logLines }}>
         {children}
+        {prepareState ? (
+          <PlayPrepareDialog
+            open
+            phase={prepareState.phase}
+            dirtyNames={prepareState.dirtyNames}
+          />
+        ) : null}
+        <PlayBlockedDialog
+          open={playBlockedOpen}
+          diagnostics={blockedDiagnostics}
+          onOpenChange={setPlayBlockedOpen}
+          onNavigate={(d) => {
+            setFocusDiagnostic(d);
+            setPlayBlockedOpen(false);
+          }}
+          onPlayAnyway={() => {
+            setPlayBlockedOpen(false);
+            launchPlay({
+              injectFixtureThrow: pendingPlayOptionsRef.current?.injectFixtureThrow,
+              scripts: pendingScriptsRef.current ?? scripts,
+            });
+          }}
+        />
         {playing && engineRef.current ? (
           <PlayOverlay
             sharedEngine={engineRef.current}

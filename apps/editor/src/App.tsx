@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   usePreventDocumentOverscroll,
   useSuppressIosEditingGestures,
@@ -24,7 +24,7 @@ import { DocumentWorkspace } from "./components/document-workspace";
 import { Homepage } from "./components/homepage";
 import { DocumentProvider, useDocuments } from "./context/document-context";
 import { EditorThemeProvider } from "./context/theme-context";
-import { PlayProvider } from "./context/play-context";
+import { PlayProvider, usePlay } from "./context/play-context";
 import { ProjectSearchProvider } from "./context/project-search-context";
 import { ValidationProvider } from "./context/validation-context";
 
@@ -159,8 +159,17 @@ function EditorLayout() {
     migrationPending,
     approveMigrationsAndSave,
   } = useDocuments();
+  const {
+    playAwaitingMigration,
+    resumePlayAfterMigration,
+    cancelPlayMigration,
+  } = usePlay();
   const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
   const [showMigrate, setShowMigrate] = useState(false);
+
+  useEffect(() => {
+    if (playAwaitingMigration) setShowMigrate(true);
+  }, [playAwaitingMigration]);
 
   const requestClose = async () => {
     const result = await closeProject();
@@ -206,10 +215,18 @@ function EditorLayout() {
       <MigrationPrompt
         paths={migrationPending.map((p) => p.path)}
         open={showMigrate}
-        onCancel={() => setShowMigrate(false)}
+        onCancel={() => {
+          setShowMigrate(false);
+          cancelPlayMigration();
+        }}
         onApprove={() => {
           setShowMigrate(false);
-          void approveMigrationsAndSave();
+          void (async () => {
+            await approveMigrationsAndSave();
+            if (playAwaitingMigration) {
+              await resumePlayAfterMigration();
+            }
+          })();
         }}
       />
       <span className="sr-only" data-testid="dirty-count">
@@ -282,13 +299,13 @@ export default function App() {
     <TooltipProvider>
       <EditorThemeProvider>
         <DocumentProvider>
-          <PlayProvider>
-            <ValidationProvider>
+          <ValidationProvider>
+            <PlayProvider>
               <ProjectSearchProvider>
                 <AppRoutes />
               </ProjectSearchProvider>
-            </ValidationProvider>
-          </PlayProvider>
+            </PlayProvider>
+          </ValidationProvider>
         </DocumentProvider>
       </EditorThemeProvider>
     </TooltipProvider>

@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphNode, LogicGraph } from "./ir";
+import type { GraphNode, LogicGraph } from "./ir";
 import { findNode, findPin } from "./ir";
 import { diagnostic, type Diagnostic } from "./diagnostics";
 import {
@@ -6,7 +6,11 @@ import {
   type TypeContext,
   type ValidateOptions,
 } from "./type-context";
-import { isAssignable, type PinType } from "./types";
+import { isAssignable } from "./types";
+import {
+  pinTypeKey,
+  resolveWildcardPinTypes,
+} from "./wildcard-resolve";
 
 function pinById(node: GraphNode, pinId: string) {
   return findPin(node, pinId);
@@ -63,19 +67,6 @@ function hasCycle(adj: Map<string, string[]>): string | null {
     if (hit) return hit;
   }
   return null;
-}
-
-function resolveWildcards(
-  graph: LogicGraph,
-  edge: GraphEdge,
-): { from: PinType; to: PinType } | null {
-  const source = findNode(graph, edge.sourceNodeId);
-  const target = findNode(graph, edge.targetNodeId);
-  if (!source || !target) return null;
-  const sp = pinById(source, edge.sourcePinId);
-  const tp = pinById(target, edge.targetPinId);
-  if (!sp || !tp) return null;
-  return { from: sp.type, to: tp.type };
 }
 
 function validateStructural(
@@ -156,6 +147,21 @@ function validatePinTyping(
   ctx: TypeContext,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
+  const wildcards = resolveWildcardPinTypes(graph);
+  for (const conflict of wildcards.conflicts) {
+    out.push(
+      diagnostic({
+        code: "type.wildcard_group",
+        message: conflict.message,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId: conflict.nodeId,
+        pinId: conflict.pinId,
+        relatedNodeId: conflict.relatedNodeId,
+      }),
+    );
+  }
+
   for (const edge of graph.edges) {
     const source = findNode(graph, edge.sourceNodeId);
     const target = findNode(graph, edge.targetNodeId);
@@ -216,17 +222,18 @@ function validatePinTyping(
       continue;
     }
     if (sp.kind === "data") {
-      const resolved = resolveWildcards(graph, edge);
+      const from =
+        wildcards.resolved.get(pinTypeKey(source.id, sp.id)) ?? sp.type;
+      const to = wildcards.resolved.get(pinTypeKey(target.id, tp.id)) ?? tp.type;
       if (
-        resolved &&
-        !isAssignable(resolved.from, resolved.to, {
+        !isAssignable(from, to, {
           hierarchy: ctx.hierarchy,
         })
       ) {
         out.push(
           diagnostic({
             code: "type.mismatch",
-            message: `Type mismatch: ${resolved.from.kind} is not assignable to ${resolved.to.kind}`,
+            message: `Type mismatch: ${from.kind} is not assignable to ${to.kind}`,
             assetGuid: ctx.assetGuid,
             graphId: graph.id,
             nodeId: target.id,
