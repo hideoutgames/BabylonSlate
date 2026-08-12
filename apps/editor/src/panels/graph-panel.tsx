@@ -1,16 +1,21 @@
 import { useEffect, useMemo } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { GraphEditor } from "@babylonslate/graph-ui";
+import type { PaletteNode } from "@babylonslate/graph-ui";
 import { PanelFrame } from "@babylonslate/editor-kit";
-import { createDefaultGraph, type SerializedGraph } from "@babylonslate/core";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
-import { validateSerializedGraph } from "../services/graph-validation";
+import {
+  createDefaultLogicGraphSerialized,
+  hydrateSerializedGraphForEditor,
+  validateSerializedGraph,
+  defaultNodeRegistry,
+} from "../services/graph-validation";
 
-const registry = createDefaultNodeRegistry();
+const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
 
 export function GraphPanel(_props: IDockviewPanelProps) {
@@ -26,10 +31,13 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   } = useValidation();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
-  const graph =
-    doc?.ref.kind === "graph"
-      ? (doc.content as SerializedGraph)
-      : createDefaultGraph();
+  const graph = useMemo(() => {
+    const raw =
+      doc?.ref.kind === "graph" && doc.content
+        ? (doc.content as SerializedGraph)
+        : createDefaultLogicGraphSerialized(registry);
+    return hydrateSerializedGraphForEditor(raw, registry);
+  }, [doc]);
 
   const assetGuid = doc?.ref.path ?? documentId;
 
@@ -44,15 +52,24 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     return () => window.clearTimeout(handle);
   }, [graph, assetGuid, documentId, setDiagnostics]);
 
-  const paletteNodes = useMemo(
-    () =>
-      registry.list().map((d) => ({
+  const paletteNodes = useMemo((): PaletteNode[] => {
+    return registry.list().map((d) => {
+      const defaultData: Record<string, unknown> = {};
+      if (d.id === "debug.log") {
+        defaultData.message = "";
+        defaultData.severity = "log";
+        defaultData.category = "Script";
+      }
+      return {
         id: d.id,
         title: d.title,
         category: d.category,
-      })),
-    [],
-  );
+        pins: d.pins(defaultData),
+        defaultData:
+          Object.keys(defaultData).length > 0 ? defaultData : undefined,
+      };
+    });
+  }, []);
 
   const focusId = focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined;
   const graphDiagnostics = useMemo(

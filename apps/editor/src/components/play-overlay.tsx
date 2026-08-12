@@ -11,11 +11,13 @@ import {
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { PlayPhysicsSettings } from "../services/play-physics";
 
 export interface PlayOverlayProps {
   sharedEngine: Engine;
   injectFixtureThrow?: boolean;
   scripts?: readonly ScriptBundleEntry[];
+  physics?: PlayPhysicsSettings;
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -34,6 +36,7 @@ export function PlayOverlay({
   sharedEngine,
   injectFixtureThrow,
   scripts,
+  physics,
   onClose,
 }: PlayOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,6 +51,8 @@ export function PlayOverlay({
   printRef.current = print;
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
+  const physicsRef = useRef(physics);
+  physicsRef.current = physics;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,6 +62,7 @@ export function PlayOverlay({
       sharedEngine,
       injectFixtureThrow,
       scripts: scriptsRef.current,
+      physics: physicsRef.current,
       onStats: (stats) => {
         setFps(stats.fps);
         setScriptMs(stats.scriptMs);

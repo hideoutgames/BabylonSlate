@@ -19,6 +19,7 @@
     "@babylonslate/editor-kit": "workspace:*",
     "@babylonslate/graph-ui": "workspace:*",
     "@babylonslate/input": "workspace:*",
+    "@babylonslate/physics": "workspace:*",
     "@babylonslate/render": "workspace:*",
     "@babylonslate/runtime": "workspace:*",
     "@babylonslate/scripting": "workspace:*",

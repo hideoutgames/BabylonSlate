@@ -120,17 +120,67 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
   }
 }
 
+export class AddNodeCommand implements EditCommand<SerializedGraph> {
+  readonly type = "graph.addNode";
+  readonly node: SerializedGraph["nodes"][number];
+
+  constructor(node: SerializedGraph["nodes"][number]) {
+    this.node = node;
+  }
+
+  apply(doc: SerializedGraph): SerializedGraph {
+    if (doc.nodes.some((entry) => entry.id === this.node.id)) {
+      return doc;
+    }
+    return {
+      ...doc,
+      nodes: [...doc.nodes, this.node],
+    };
+  }
+
+  invert(): RemoveNodeCommand {
+    return new RemoveNodeCommand(this.node);
+  }
+}
+
+export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
+  readonly type = "graph.removeNode";
+  readonly node: SerializedGraph["nodes"][number];
+
+  constructor(node: SerializedGraph["nodes"][number]) {
+    this.node = node;
+  }
+
+  apply(doc: SerializedGraph): SerializedGraph {
+    return {
+      ...doc,
+      nodes: doc.nodes.filter((entry) => entry.id !== this.node.id),
+      edges: doc.edges.filter(
+        (edge) => edge.source !== this.node.id && edge.target !== this.node.id,
+      ),
+    };
+  }
+
+  invert(): AddNodeCommand {
+    return new AddNodeCommand(this.node);
+  }
+}
+
 export type GraphEditCommand =
   | MoveNodeCommand
   | AddEdgeCommand
   | RemoveEdgeCommand
-  | SetNodeDataCommand;
+  | SetNodeDataCommand
+  | AddNodeCommand
+  | RemoveNodeCommand;
 
 export const GRAPH_COMMAND_TYPES = [
   "graph.moveNode",
   "graph.addEdge",
   "graph.removeEdge",
   "graph.setNodeData",
+  "graph.addNode",
+  "graph.removeNode",
 ] as const;
 
 export function createMoveNodeCommandFromJson(
@@ -161,5 +211,19 @@ export function createSetNodeDataCommandFromJson(
     payload.from as Record<string, unknown>,
     payload.to as Record<string, unknown>,
     payload.mergeKey ? String(payload.mergeKey) : undefined,
+  );
+}
+
+export function createAddNodeCommandFromJson(
+  payload: Record<string, unknown>,
+): AddNodeCommand {
+  return new AddNodeCommand(payload.node as SerializedGraph["nodes"][number]);
+}
+
+export function createRemoveNodeCommandFromJson(
+  payload: Record<string, unknown>,
+): RemoveNodeCommand {
+  return new RemoveNodeCommand(
+    payload.node as SerializedGraph["nodes"][number],
   );
 }

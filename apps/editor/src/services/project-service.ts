@@ -6,7 +6,6 @@ import type {
   SerializedScene,
 } from "@babylonslate/core";
 import {
-  createDefaultGraph,
   createDefaultScene,
   createEmptyLayouts,
   createEmptyProject,
@@ -49,6 +48,7 @@ import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
+import { createDefaultLogicGraphSerialized } from "./graph-validation";
 
 export interface ProjectLoadResult {
   document: ProjectDocument;
@@ -390,7 +390,11 @@ export class ProjectService {
       scenes.push(MAIN_SCENE_FILE);
     }
     if (!graphs.length) {
-      await this.saveDocument("graph", MAIN_GRAPH_FILE, createDefaultGraph());
+      await this.saveDocument(
+        "graph",
+        MAIN_GRAPH_FILE,
+        createDefaultLogicGraphSerialized(),
+      );
       graphs.push(MAIN_GRAPH_FILE);
     }
     await this.mountAssetRegistry();
@@ -486,7 +490,7 @@ export class ProjectService {
     const document = createEmptyProject(name);
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
-    const graph = createDefaultGraph();
+    const graph = createDefaultLogicGraphSerialized();
     const scene = createDefaultScene();
     await this.storage.mkdir("assets/.blobs", true);
     await this.storage.mkdir("plugins", true);

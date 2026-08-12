@@ -11,6 +11,7 @@ import {
   defaultPrefabComponents,
   previewSceneFor,
 } from "../lib/prefab-preview";
+import { defaultPropertiesFor } from "../panels/add-component-catalog";
 
 interface PrefabEditingContextValue {
   components: SerializedComponent[];
@@ -36,10 +37,7 @@ export function PrefabEditingProvider({ children }: { children: ReactNode }) {
       {
         id: `prefab-component-${current.length + 1}`,
         classId,
-        properties:
-          classId === "MeshComponent"
-            ? { meshKind: "box", assetGuid: null }
-            : {},
+        properties: defaultPropertiesFor(classId),
       },
     ]);
   }, []);

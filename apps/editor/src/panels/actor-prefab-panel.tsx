@@ -10,13 +10,7 @@ import { PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { IconActionButton } from "../components/icon-action-button";
-
-const COMPONENT_CLASSES = [
-  { id: "MeshComponent", label: "Mesh", description: "Renderable primitive" },
-  { id: "SpriteComponent", label: "Sprite", description: "2D sprite" },
-  { id: "CameraComponent", label: "Camera", description: "Scene camera" },
-  { id: "LightComponent", label: "Light", description: "Scene light" },
-];
+import { ADDABLE_COMPONENT_CLASSES } from "./add-component-catalog";
 
 /**
  * Actor component tree for class documents. The 3D preview lives in the
@@ -94,7 +88,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         open={addOpen}
         onOpenChange={setAddOpen}
         title="Add component"
-        items={COMPONENT_CLASSES.map((entry) => ({
+        items={ADDABLE_COMPONENT_CLASSES.map((entry) => ({
           id: entry.id,
           label: entry.label,
           description: entry.description,

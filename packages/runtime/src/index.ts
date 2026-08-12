@@ -4,6 +4,10 @@ export {
   type RuntimeDriverOptions,
   type TransportMode,
 } from "./driver";
+export {
+  createRuntimeFromLoad,
+  runtimeOptionsFromLoadControl,
+} from "./play-load";
 export { PhysicsWorldSync } from "./physics-sync";
 export { LogRingBuffer, type LogEntry, type LogSeverity } from "./log-ring";
 export {

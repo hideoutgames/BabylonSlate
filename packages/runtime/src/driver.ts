@@ -51,6 +51,8 @@ export interface RuntimeDriverOptions {
   /** Scene physics world kind (defaults to 3d). */
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
+  /** Worker-resolvable URL for HavokPhysics.wasm (3d Play). */
+  havokWasmUrl?: string;
   /** Skip wasm backends (tests / CI without wasm). */
   preferSoftwarePhysics?: boolean;
 }
@@ -119,6 +121,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly dt: number;
   private readonly physicsWorldKind: PhysicsWorldKind;
   private readonly gravity: [number, number, number];
+  private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
   private paused = false;
@@ -148,6 +151,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.onCommand = options.onCommand;
     this.physicsWorldKind = options.physicsWorld ?? "3d";
     this.gravity = options.gravity ?? [0, -9.81, 0];
+    this.havokWasmUrl = options.havokWasmUrl;
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
@@ -297,6 +301,7 @@ class InProcessRuntime implements RuntimeDriver {
         y: this.gravity[1],
         z: this.gravity[2],
       },
+      havokWasmUrl: this.havokWasmUrl,
     });
     this.physicsSync.dispose();
     this.physicsSync = new PhysicsWorldSync(backend);

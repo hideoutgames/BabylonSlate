@@ -17,6 +17,7 @@ import { useDocuments } from "./document-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
+import { playPhysicsFromOpenDocuments } from "../services/play-physics";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 
@@ -75,7 +76,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     "worker" | "in-process" | null
   >(null);
   const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
-  const { collectScriptBundles } = useDocuments();
+  const { collectScriptBundles, openDocuments, activeDocumentId } = useDocuments();
+  const playPhysics = playPhysicsFromOpenDocuments(
+    openDocuments,
+    activeDocumentId,
+  );
 
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
@@ -229,6 +234,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             sharedEngine={engineRef.current}
             injectFixtureThrow={injectThrow}
             scripts={scripts}
+            physics={playPhysics}
             onClose={handleClose}
           />
         ) : null}

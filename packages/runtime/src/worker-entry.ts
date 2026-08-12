@@ -5,34 +5,44 @@
 import {
   TransferablePingPong,
   type BridgeHostMessage,
+  type CommandMessage,
   type ControlMessage,
 } from "@babylonslate/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
+import { createRuntimeFromLoad } from "./play-load";
 
 let runtime: RuntimeDriver | null = null;
 // Recycled via the host's `recycleSnapshot` message so the per-frame
 // snapshot transfer never allocates a fresh ArrayBuffer once warmed up.
 const snapshotPing = new TransferablePingPong(256);
 
+function onCommand(command: CommandMessage): void {
+  postMessage({ channel: "command", payload: command });
+}
+
 function ensureRuntime(seed = 1): RuntimeDriver {
   if (!runtime) {
     runtime = createInProcessRuntime({
       seed,
-      onCommand: (command) => {
-        postMessage({ channel: "command", payload: command });
-      },
+      onCommand,
     });
   }
   return runtime;
 }
 
 function handleControl(msg: ControlMessage): void {
-  const rt = ensureRuntime();
   switch (msg.type) {
-    case "load":
-      rt.getWorld().loadScene(msg.sceneAssetGuid);
-      break;
+    case "load": {
+      if (runtime) {
+        runtime.stop();
+        runtime = null;
+      }
+      runtime = createRuntimeFromLoad(msg, onCommand);
+      runtime.getWorld().loadScene(msg.sceneAssetGuid);
+      return;
+    }
     case "loadScripts": {
+      const rt = ensureRuntime();
       const spawn = msg.spawn ?? msg.scripts.map((s) => ({ classId: s.classId }));
       void rt
         .loadScripts(msg.scripts)
@@ -40,30 +50,34 @@ function handleControl(msg: ControlMessage): void {
           for (const entry of spawn) rt.spawnScriptedActor(entry);
         })
         .catch((error) => rt.reportError(error));
-      break;
+      return;
     }
-    case "play":
+    case "play": {
+      const rt = ensureRuntime();
       void rt.loadPhysics().finally(() => {
         rt.start();
         rt.resume();
         if (lastTick === 0) requestAnimationFrame(pump);
       });
-      break;
+      return;
+    }
     case "pause":
-      rt.pause();
-      break;
-    case "step":
+      ensureRuntime().pause();
+      return;
+    case "step": {
+      const rt = ensureRuntime();
       rt.resume();
       rt.tick();
       rt.pause();
-      break;
+      return;
+    }
     case "stop":
-      rt.stop();
-      break;
+      ensureRuntime().stop();
+      return;
     case "setPaused":
-      if (msg.paused) rt.pause();
-      else rt.resume();
-      break;
+      if (msg.paused) ensureRuntime().pause();
+      else ensureRuntime().resume();
+      return;
   }
 }
 

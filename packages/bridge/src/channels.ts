@@ -24,7 +24,16 @@ export type ScriptBundleEntry = {
 };
 
 export type ControlMessage =
-  | { type: "load"; sceneAssetGuid: string; seed?: number }
+  | {
+      type: "load";
+      sceneAssetGuid: string;
+      seed?: number;
+      /** Scene physics world; defaults to 3d when omitted. */
+      physicsWorld?: "3d" | "2d";
+      gravity?: [number, number, number];
+      /** Worker-resolvable URL for HavokPhysics.wasm (3d Play). */
+      havokWasmUrl?: string;
+    }
   | {
       type: "loadScripts";
       scripts: ScriptBundleEntry[];

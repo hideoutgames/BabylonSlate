@@ -127,13 +127,13 @@ Design notes: [scripting.md](../architecture/scripting.md).
 
 **Parallelism:** after `p5-scripting-core` lands its types and a failing/passing golden harness, catalog categories may run as separate PRs (one package ownership set per agent). Do not start `p5-graph-ui` and `p5-scripting-core` against competing IR shapes — core owns the IR contract first.
 
-**P5 status:** all checklist slices (`p5-*`) are landed. Visual script node UI (touch-first graph-ui), core catalog, and node runtime wiring are not a missing phase — residual work is polish and phase-owned stubs below. Do **not** reopen a parallel "build visual scripting" phase ahead of P8; schedule polish opportunistically or after the debugger console lands.
+**P5 status:** all checklist slices (`p5-*`) are landed. Canvas pin hydration, palette pin embedding, Begin Play/Tick defaults, and Add/Remove node undo commands are landed (authoring loop fix). Residual work is polish and phase-owned stubs below. Do **not** reopen a parallel "build visual scripting" phase ahead of P8; schedule polish opportunistically or after the debugger console lands.
 
 ### P5 follow-ups / open deferrals
 
 | Item | Owner | Notes |
 | --- | --- | --- |
-| Drag-to-connect (in addition to tap-to-connect) | later polish (`graph-ui`) | Gestures.md allows both; drag deferred when `p5-graph-ui` shipped |
+| Drag-to-connect (in addition to tap-to-connect) | later polish (`graph-ui`) | Gestures.md allows both; tap-to-connect is the shipped mobile path |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
 | Full Enum / Structure / ScriptInterface row editors | later polish (`apps/editor`, `editor-kit`) | Creatable assets exist; richer field editors incomplete |
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Active-graph pass works; full project sweep beyond open docs deferred |
@@ -143,6 +143,8 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export | Print works; export strip preset + HUD polish deferred |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio / UI node runtime helpers beyond stubs | P9 | Catalog nodes exist; runtime helpers are inert stubs until content systems |
+
+**Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`.
 
 ## P6 slice ownership
 
@@ -174,12 +176,14 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 
 ## P7 slice ownership
 
+Backends and Play physics options have landed (`p7-physics`, `p7-2d-physics`). Remaining named follow-ups live in [engineplan.md](../engineplan.md) Appendix A.
+
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | Design notes | — | `docs/architecture/physics.md` | P6 complete |
-| Physics package + Havok | `p7-physics` | `physics`, `core` (scene `physicsWorld`), `object-model`, `runtime`, `scripting-nodes`, `bridge` (timing already present), `test-kit`, thin `apps/editor` (Play overlay ms) | Design notes |
-| Rapier 2D | `p7-2d-physics` | `physics`, `scripting-nodes`, `test-kit` | `p7-physics` interface + scene world field |
+| Physics package + Havok V2 | `p7-physics` (done) | `physics`, `core` (scene `physicsWorld`), `object-model`, `runtime`, `scripting-nodes`, `bridge`, `test-kit`, `apps/editor` (Play overlay ms, Add Component, vendored wasm) | Design notes |
+| Rapier 2D | `p7-2d-physics` (done; CC scripting is `p7-character-controller`) | `physics`, `scripting-nodes`, `test-kit` | `p7-physics` interface + scene world field |
+| Play loads `SerializedScene` | `p7-play-scene-load` | `runtime`, `apps/editor` | P6 scene docs + P7 backends |
+| Character-controller scripting | `p7-character-controller` | `scripting-nodes`, `runtime` | Play scene load |
 
 Design notes: [physics.md](../architecture/physics.md).
-
-**Parallelism:** land the backend interface and failing harness first; Havok and Rapier must not invent competing ports. Rapier starts only after `PhysicsBackend` + scene `physicsWorld` are stable.

@@ -1,10 +1,10 @@
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import { DOCUMENT_CHUNK_ID } from "@babylonslate/assets";
 import {
-  createDefaultGraph,
   createDefaultScene,
   SCENE_SCHEMA_VERSION,
 } from "@babylonslate/core";
+import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
 
 export const ASSET_DRAG_MIME = "application/x-babylonslate-asset";
 
@@ -188,7 +188,10 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Graph") {
-    const payload = createDefaultGraph() as unknown as Record<string, unknown>;
+    const payload = createDefaultLogicGraphSerialized() as unknown as Record<
+      string,
+      unknown
+    >;
     return {
       type: "Graph",
       name,

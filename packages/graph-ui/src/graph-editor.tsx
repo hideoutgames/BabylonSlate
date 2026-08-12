@@ -223,11 +223,19 @@ function GraphEditorCanvas({
         y: window.innerHeight / 2,
       });
       const id = `${paletteNode.id}-${Date.now()}`;
+      const data: Record<string, unknown> = {
+        ...(paletteNode.defaultData ?? {}),
+        title: paletteNode.title,
+        __nodeType: paletteNode.id,
+      };
+      if (paletteNode.pins && paletteNode.pins.length > 0) {
+        data.__pins = paletteNode.pins;
+      }
       const nextNode: CanvasNode = {
         id,
-        type: "pinNode",
+        type: resolveNodeType(paletteNode.id, data),
         position,
-        data: { title: paletteNode.title, __nodeType: paletteNode.id },
+        data,
       };
 
       setNodes((current) => {

@@ -15,7 +15,7 @@ Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / qua
 
 Each **component**: `id`, `classId`, `properties` (typed per class in the object-model registry).
 
-**Scene settings** include `physicsWorld` (`"3d"` \| `"2d"`, defaults from `viewportMode`), `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`) and `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay. A scene never mixes physics worlds — see [physics.md](physics.md).
+**Scene settings** include `physicsWorld` (`"3d"` \| `"2d"`, defaults from `viewportMode`), `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`) and `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay. A scene never mixes physics worlds — see [physics.md](physics.md). Details and Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent` (defaults from `parseRigidBodyProperties` / `parseColliderProperties`).
 
 ## Selection model
 

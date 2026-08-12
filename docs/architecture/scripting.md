@@ -184,8 +184,11 @@ Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 
 - **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + centered **Add node** catalog modal.
 - **`GraphDocument`**: local extension of core `SerializedGraph`; edges may carry optional `sourceHandle` / `targetHandle` for pin-aware wiring.
-- **Nodes**: legacy `logMessage` without `data.__pins` uses the existing card; scripting nodes with `data.__pins` render exec (gray) and data handles; tap output pin → tap input pin to connect.
-- Tap-to-connect **and** drag-to-connect (gestures.md) — drag deferred; palette uses the shared Dialog catalog shell (`@babylonslate/ui` Dialog + ScrollArea).
+- **Nodes**: scripting nodes render via `PinNode` when `data.__pins` is present (exec gray + data handles); tap output pin → tap input pin to connect. Legacy `logMessage` without pins still uses the message card until the host hydrates.
+- **Host pin hydration** (`hydrateSerializedGraphForEditor` in the editor): injects `__pins` from `@babylonslate/scripting-nodes` on load; palette entries carry `pins` + `defaultData` so Add node creates connectable handles. `graph-ui` stays free of the catalog package.
+- **New graphs** seed `flow.event.beginPlay` + `flow.event.tick` via `createDefaultLogicGraphSerialized` (project scaffold + Content Browser create). Existing `logMessage` graphs hydrate to `debug.log` pins without auto-injecting events.
+- **Undo**: `AddNodeCommand` / `RemoveNodeCommand` in `@babylonslate/edit` so palette adds persist through `diffGraphCommands`.
+- Tap-to-connect shipped; drag-to-connect remains deferred polish. Palette uses the shared Dialog catalog shell (`@babylonslate/ui` Dialog + ScrollArea).
 - Pin/type colors via semantic tokens (`text-vector`, plus new type tokens in `globals.css` / theming.md as they ship).
 - Blocking Preview dialog uses `AlertDialog` (editor host).
 
@@ -248,7 +251,7 @@ An actor scripted in the editor compiles and runs in the worker; a type mismatch
 
 | Item | Owner |
 | --- | --- |
-| Full physics / input node behaviour | Done (P7 / P6) |
+| Full physics / input node behaviour | Queries + impulse done (P7); `physics.moveCharacter` is `p7-character-controller` |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 (P5 may stub) |
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export |
 | Behaviour-tree validation rules | P11 |
@@ -273,7 +276,7 @@ Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tr
 
 Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers both acceptance claims (a scripted actor running in Preview; a type mismatch blocking Preview with tap-to-navigate).
 
-**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (drag-to-connect, pin flash, type-asset row editors, project-wide validation sweep, class-owned graphs, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Do not treat these as a reason to reopen P5 as a phase — P8 is next.
+**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (drag-to-connect, pin flash, type-asset row editors, project-wide validation sweep, class-owned graphs, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, and AddNode undo persistence are landed — do not reopen those as P5 gaps.
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design My Class UX against `ClassRegistry.reparent` from the start.
