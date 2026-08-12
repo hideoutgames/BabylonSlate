@@ -13,7 +13,7 @@ alwaysApply: false
 ## Gestures
 
 - **Dockview**: long-press on tab/header chrome to drag panels. Panel content is a gesture-safe zone.
-- **Viewport (Babylon)**: two-finger orbit/pinch on canvas; canvas has `touch-none` for UI chrome separation.
+- **Viewport (Babylon)**: one-finger look (3D) / marquee (2D), pinch zoom, three-finger pan; canvas has `touch-none` for UI chrome separation.
 - **Graph (React Flow)**: one-finger pan/zoom inside graph panel only.
 - Use long-press for context menus — never assume right-click.
 

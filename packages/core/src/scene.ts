@@ -6,7 +6,8 @@
  * Z looking toward +Z because Babylon is left-handed.
  *
  * v3 adds `settings.physicsWorld` (`"3d"` | `"2d"`). Older documents default
- * from `viewportMode` on normalize.
+ * from `viewportMode` on normalize. `editorJoystickEnabled` is additive on v3
+ * (missing keys normalize to false).
  */
 
 export type ViewportMode = "3d" | "2d";
