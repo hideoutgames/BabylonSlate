@@ -16,6 +16,7 @@ export interface SearchSheetItem {
   /** Secondary line, also matched by the filter. */
   description?: string;
   group?: string;
+  leading?: ReactNode;
   trailing?: ReactNode;
 }
 
@@ -105,13 +106,16 @@ export function SearchSheet({
                   }}
                   data-testid={`search-item-${item.id}`}
                 >
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate">{item.label}</span>
-                    {item.description ? (
-                      <span className="truncate text-xs text-muted-foreground">
-                        {item.description}
-                      </span>
-                    ) : null}
+                  <span className="flex min-w-0 items-center gap-2">
+                    {item.leading}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate">{item.label}</span>
+                      {item.description ? (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {item.description}
+                        </span>
+                      ) : null}
+                    </span>
                   </span>
                   {item.trailing}
                 </Button>

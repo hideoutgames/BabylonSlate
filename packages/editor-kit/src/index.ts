@@ -74,3 +74,14 @@ export {
   type AssetPickerEntry,
   type AssetPickerProps,
 } from "./asset-picker";
+export {
+  ASSET_COLOR_TOKENS,
+  TypeVisualIcon,
+  engineParentOf,
+  resolveActorTypeVisual,
+  resolveTypeVisual,
+  walkAncestry,
+  type AssetVisualFamily,
+  type TypeVisual,
+  type TypeVisualQuery,
+} from "./type-visuals";

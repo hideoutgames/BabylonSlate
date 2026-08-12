@@ -8,7 +8,6 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  FileIcon,
   FolderIcon,
   FolderPlusIcon,
   ListFilterIcon,
@@ -26,6 +25,8 @@ import {
   SearchInput,
   SelectableText,
   TreeView,
+  TypeVisualIcon,
+  resolveTypeVisual,
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import { documentId, labelFromPath } from "@babylonslate/core";
@@ -107,6 +108,8 @@ import {
   newAssetFileName,
   textureCompressionState,
   uniqueAssetTypes,
+  classParentLookup,
+  visualForIndexedAsset,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
 import { revealAssetFromTarget } from "../lib/search-navigation";
@@ -234,6 +237,7 @@ function AssetTile({
   onDropAsset,
   thumbnailUrl,
   hasCompileError = false,
+  typeVisual,
 }: {
   asset: IndexedAsset;
   selected: boolean;
@@ -244,6 +248,7 @@ function AssetTile({
   onDropAsset: (guid: string, folderPath: string) => void;
   thumbnailUrl: string | null;
   hasCompileError?: boolean;
+  typeVisual: ReturnType<typeof visualForIndexedAsset>;
 }) {
   const pressRef = useRef<TilePressState | null>(null);
   const compression = textureCompressionState(asset);
@@ -383,7 +388,11 @@ function AssetTile({
               className="size-full object-cover"
             />
           ) : (
-            <FileIcon className="size-full p-4 text-muted-foreground" />
+            <TypeVisualIcon
+              visual={typeVisual}
+              className="size-full p-4"
+              data-testid={`content-item-type-icon-${asset.header.guid}`}
+            />
           )}
         </div>
         <CardHeader className="gap-0.5 p-1.5">
@@ -502,6 +511,10 @@ export function ContentBrowserWorkspace() {
   const allAssets = useMemo(
     () => assetRegistry?.list({ rootId: PROJECT_ROOT_ID }) ?? [],
     [assetRegistry],
+  );
+  const classParentOf = useMemo(
+    () => classParentLookup(allAssets),
+    [allAssets],
   );
 
   const folderGuids = useMemo(() => {
@@ -1115,6 +1128,10 @@ export function ContentBrowserWorkspace() {
                     );
                   }}
                 >
+                  <TypeVisualIcon
+                    visual={resolveTypeVisual({ assetType: type })}
+                    className="size-4"
+                  />
                   {type}
                 </DropdownMenuCheckboxItem>
               ))}
@@ -1204,6 +1221,7 @@ export function ContentBrowserWorkspace() {
                 asset={asset}
                 selected={selectedGuids.has(asset.header.guid)}
                 thumbnailUrl={thumbnailUrls[asset.header.guid] ?? null}
+                typeVisual={visualForIndexedAsset(asset, classParentOf)}
                 hasCompileError={
                   compileErrorGuids.has(asset.header.guid) ||
                   compileErrorGuids.has(asset.path)
@@ -1263,7 +1281,13 @@ export function ContentBrowserWorkspace() {
                       value={type}
                       data-testid={`new-asset-type-${type}`}
                     >
-                      {type}
+                      <span className="flex items-center gap-2">
+                        <TypeVisualIcon
+                          visual={resolveTypeVisual({ assetType: type })}
+                          className="size-4"
+                        />
+                        {type}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1295,7 +1319,16 @@ export function ContentBrowserWorkspace() {
                   <SelectContent>
                     {ENGINE_BASE_CLASSES.map((base) => (
                       <SelectItem key={base} value={base}>
-                        {base}
+                        <span className="flex items-center gap-2">
+                          <TypeVisualIcon
+                            visual={resolveTypeVisual({
+                              classId: base,
+                              family: "class",
+                            })}
+                            className="size-4"
+                          />
+                          {base}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>

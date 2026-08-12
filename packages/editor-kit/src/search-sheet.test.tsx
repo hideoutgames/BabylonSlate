@@ -50,6 +50,20 @@ describe("SearchSheet", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("renders a leading node on each row", () => {
+    render(
+      <SearchSheet
+        open
+        onOpenChange={() => {}}
+        title="Pick"
+        items={[{ ...items[0]!, leading: <span data-testid="lead">*</span> }]}
+        onSelect={() => {}}
+        data-testid="sheet"
+      />,
+    );
+    expect(screen.getByTestId("lead")).toBeTruthy();
+  });
+
   it("shows the empty label when nothing matches", () => {
     render(
       <SearchSheet

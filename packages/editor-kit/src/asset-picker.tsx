@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { SearchSheet, type SearchSheetItem } from "./search-sheet";
+import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 
 export interface AssetPickerEntry {
   guid: string;
@@ -44,6 +45,9 @@ export function AssetPicker({
       label: asset.name,
       description: asset.path ?? asset.type,
       group: asset.type,
+      leading: (
+        <TypeVisualIcon visual={resolveTypeVisual({ assetType: asset.type })} />
+      ),
     }));
     return allowNone
       ? [{ id: NONE_ID, label: "None", description: "Clear reference" }, ...rows]

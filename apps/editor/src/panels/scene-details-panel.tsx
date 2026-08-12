@@ -3,6 +3,8 @@ import { useCallback, useState } from "react";
 import {
   PanelFrame,
   PropertyGrid,
+  TypeVisualIcon,
+  resolveTypeVisual,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -422,7 +424,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             data-testid={`component-card-${component.id}`}
           >
             <div className="flex items-center justify-between gap-2 border-b border-border bg-secondary px-2 py-1">
-              <span className="truncate text-sm font-medium">
+              <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
+                <TypeVisualIcon
+                  visual={resolveTypeVisual({ classId: component.classId })}
+                  data-testid={`component-type-icon-${component.id}`}
+                />
                 {component.classId}
               </span>
               <div className="flex shrink-0 items-center gap-1">

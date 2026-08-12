@@ -10,7 +10,10 @@ import {
   isNewAssetNameTaken,
   matchesAssetSearch,
   textureCompressionState,
+  visualForIndexedAsset,
+  classParentLookup,
 } from "./content-browser-helpers";
+import { resolveTypeVisual } from "@babylonslate/editor-kit";
 
 function asset(
   overrides: Partial<IndexedAsset["header"]> & {
@@ -31,7 +34,7 @@ function asset(
       version: 1,
       mode: "thin",
       dependencies: [],
-      parentClass: null,
+      parentClass: overrides.parentClass ?? null,
       payload: overrides.payload ?? {},
       chunks: [],
     },
@@ -198,5 +201,20 @@ describe("content-browser-helpers", () => {
     expect(isFolderNameTaken(folders, "assets", "textures")).toBe(true);
     expect(isFolderNameTaken(folders, "assets", "audio")).toBe(false);
     expect(isFolderNameTaken(folders, "assets/textures", "ui")).toBe(false);
+  });
+
+  it("resolves Class tiles to the parent engine icon", () => {
+    const hero = asset({
+      type: "Class",
+      name: "MyHero",
+      guid: "c1",
+      path: "assets/my-hero.babasset",
+      parentClass: "Actor",
+    });
+    const parentOf = classParentLookup([hero]);
+    const visual = visualForIndexedAsset(hero, parentOf);
+    expect(visual.colorVar).toBe("var(--asset-class)");
+    expect(visual.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
+    expect(visual.icon).not.toBe(resolveTypeVisual({ classId: "BObject" }).icon);
   });
 });

@@ -4,6 +4,12 @@ import {
   createDefaultScene,
   SCENE_SCHEMA_VERSION,
 } from "@babylonslate/core";
+import {
+  engineParentOf,
+  resolveTypeVisual,
+  walkAncestry,
+  type TypeVisual,
+} from "@babylonslate/editor-kit";
 import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
 
 export const ASSET_DRAG_MIME = "application/x-babylonslate-asset";
@@ -194,6 +200,35 @@ export function flattenFolderTree(
 
 export function uniqueAssetTypes(assets: IndexedAsset[]): string[] {
   return [...new Set(assets.map((asset) => asset.header.type))].sort();
+}
+
+export function classParentLookup(
+  assets: Array<{
+    header: { type: string; name: string; parentClass?: string | null };
+  }>,
+): (id: string) => string | null {
+  const map = new Map<string, string | null>();
+  for (const asset of assets) {
+    if (asset.header.type === "Class") {
+      map.set(asset.header.name, asset.header.parentClass ?? "BObject");
+    }
+  }
+  return (id) => map.get(id) ?? engineParentOf(id) ?? null;
+}
+
+export function visualForIndexedAsset(
+  asset: IndexedAsset,
+  parentOf: (id: string) => string | null,
+): TypeVisual {
+  if (asset.header.type === "Class") {
+    const start = asset.header.parentClass ?? "BObject";
+    return resolveTypeVisual({
+      assetType: "Class",
+      parentClass: asset.header.parentClass,
+      ancestry: walkAncestry(start, parentOf),
+    });
+  }
+  return resolveTypeVisual({ assetType: asset.header.type });
 }
 
 export function defaultParentClassForType(

@@ -5,6 +5,10 @@ import {
   PanelFrame,
   SearchInput,
   TreeView,
+  TypeVisualIcon,
+  engineParentOf,
+  resolveActorTypeVisual,
+  walkAncestry,
   useContextMenu,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
@@ -15,7 +19,7 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { Toggle } from "@babylonslate/ui/components/toggle";
-import { EyeIcon, EyeOffIcon, LockIcon, PlusIcon, BoxIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, LockIcon, PlusIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
@@ -27,6 +31,7 @@ import {
   spawnPlacedActor,
   type PlaceActorItem,
 } from "../lib/place-actors";
+import { classParentLookup } from "../lib/content-browser-helpers";
 
 /** Depth-first walk so children follow their parent in the flattened list. */
 export function flattenActors(
@@ -34,8 +39,21 @@ export function flattenActors(
   options: {
     collapsed: ReadonlySet<string>;
     search: string;
+    parentOf?: (id: string) => string | null;
   },
 ): TreeViewNode[] {
+  const parentOf =
+    options.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  const actorIcon = (actor: SerializedActor) => (
+    <TypeVisualIcon
+      visual={resolveActorTypeVisual({
+        classId: actor.classId,
+        components: actor.components,
+        ancestry: walkAncestry(actor.classId, parentOf),
+      })}
+      data-testid={`outliner-type-icon-${actor.id}`}
+    />
+  );
   const needle = options.search.trim().toLowerCase();
   const childrenOf = new Map<string | null, SerializedActor[]>();
   for (const actor of scene.actors) {
@@ -55,7 +73,7 @@ export function flattenActors(
         hasChildren: false,
         expanded: false,
         muted: !actor.visible,
-        icon: <BoxIcon />,
+        icon: actorIcon(actor),
       }));
   }
 
@@ -71,7 +89,7 @@ export function flattenActors(
         hasChildren: children.length > 0,
         expanded,
         muted: !actor.visible,
-        icon: <BoxIcon />,
+        icon: actorIcon(actor),
       });
       if (expanded) {
         walk(actor.id, depth + 1);
@@ -97,9 +115,15 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const scene =
     doc?.ref.kind === "scene" ? (doc.content as SerializedScene) : null;
 
+  const parentOf = useMemo(
+    () => classParentLookup(assetRegistry?.list() ?? []),
+    [assetRegistry],
+  );
+
   const nodes = useMemo(
-    () => (scene ? flattenActors(scene, { collapsed, search }) : []),
-    [collapsed, scene, search],
+    () =>
+      scene ? flattenActors(scene, { collapsed, search, parentOf }) : [],
+    [collapsed, parentOf, scene, search],
   );
   const lockedIds = useMemo(() => {
     const ids = new Set<string>();

@@ -31,6 +31,20 @@ const PIN_TOKENS = [
   "--pin-delegate",
 ] as const;
 
+const ASSET_TOKENS = [
+  "--asset-scene",
+  "--asset-graph",
+  "--asset-texture",
+  "--asset-material",
+  "--asset-model",
+  "--asset-audio",
+  "--asset-font",
+  "--asset-animation",
+  "--asset-class",
+  "--asset-script-type",
+  "--asset-component",
+] as const;
+
 const NODE_TOKENS = [
   "--node-event",
   "--node-function",
@@ -127,6 +141,13 @@ describe("Minimal Neutral theme tokens", () => {
     for (const name of PIN_TOKENS) {
       expect(tokenValue(dark, name), name).not.toBe("");
       expect(tokenValue(root, name), name).not.toBe("");
+    }
+  });
+
+  it("defines asset type tokens", () => {
+    for (const name of ASSET_TOKENS) {
+      expect(tokenValue(root, name), name).not.toBe("");
+      expect(tokenValue(dark, name), name).not.toBe("");
     }
   });
 
