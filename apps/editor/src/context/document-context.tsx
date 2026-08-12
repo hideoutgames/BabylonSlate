@@ -47,6 +47,7 @@ import {
   isTestModeEnabled,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   DocumentService,
   type OpenDocument,
@@ -1044,7 +1045,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
     preFocusLayoutsRef.current.set(
       activeDocumentId,
-      api.toJSON() as Record<string, unknown>,
+      api.toJSON() as unknown as Record<string, unknown>,
     );
     applyFocusLayout(doc.ref.kind, api);
     setFocusedLayoutIds((current) => {
