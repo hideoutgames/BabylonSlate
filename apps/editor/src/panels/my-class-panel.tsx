@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import {
   PanelFrame,
   TreeView,
+  formatEventTitle,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
@@ -32,10 +33,19 @@ export const BLUEPRINT_SECTIONS = [
 
 function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
   const title = node.data.title;
-  if (typeof title === "string" && title.trim()) return title;
+  if (typeof title === "string" && title.trim()) {
+    return formatEventTitle(title);
+  }
   const named = node.data.name;
-  if (typeof named === "string" && named.trim()) return `Event ${named}`;
-  return defaultNodeRegistry.get(node.type)?.title ?? node.type;
+  if (typeof named === "string" && named.trim()) {
+    return formatEventTitle(named);
+  }
+  const catalog = defaultNodeRegistry.get(node.type)?.title;
+  if (catalog) return formatEventTitle(catalog);
+  const typeName = node.type.startsWith("flow.event.")
+    ? node.type.slice("flow.event.".length)
+    : node.type;
+  return formatEventTitle(typeName);
 }
 
 /**

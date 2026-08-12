@@ -683,7 +683,7 @@ export function ContentBrowserWorkspace() {
       },
       {
         id: "copy",
-        label: "Copy to folder…",
+        label: "Copy to Folder…",
         onSelect: () => {
           void (async () => {
             if (!assetRegistry) return;
@@ -717,7 +717,7 @@ export function ContentBrowserWorkspace() {
       },
       {
         id: "retry-encoding",
-        label: "Retry encoding",
+        label: "Retry Encoding",
         onSelect: () => {
           void (async () => {
             if (!assetRegistry) return;

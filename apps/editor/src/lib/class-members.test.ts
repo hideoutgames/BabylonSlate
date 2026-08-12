@@ -34,6 +34,24 @@ describe("addClassMember", () => {
     expect(graph.nodes[0]?.data.name).toBe("On Hit");
   });
 
+  it("Title Cases typed event names and prefixes Event on the node", () => {
+    const graph = addClassMember(emptyGraph(), "event", "on hit", () => "id");
+    expect(graph.members?.[0]?.name).toBe("On Hit");
+    expect(graph.nodes[0]?.data.name).toBe("On Hit");
+    expect(graph.nodes[0]?.data.title).toBe("Event On Hit");
+  });
+
+  it("does not double-prefix Event when the typed name already has it", () => {
+    const graph = addClassMember(
+      emptyGraph(),
+      "event",
+      "Event beginPlay",
+      () => "id",
+    );
+    expect(graph.members?.[0]?.name).toBe("Begin Play");
+    expect(graph.nodes[0]?.data.title).toBe("Event Begin Play");
+  });
+
   it("drops a Get Variable node when adding a variable", () => {
     const graph = addClassMember(emptyGraph(), "variable", "Health", () => "id");
     expect(graph.members?.[0]).toEqual({

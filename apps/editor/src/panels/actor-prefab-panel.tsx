@@ -32,7 +32,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     () => [
       {
         id: PREFAB_ROOT_ID,
-        label: "Prefab root",
+        label: "Prefab Root",
         depth: 0,
         hasChildren: components.length > 0,
         expanded: true,

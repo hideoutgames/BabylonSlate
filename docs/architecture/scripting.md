@@ -173,7 +173,7 @@ AI / navigation categories wait for P11.
 ### Class document
 
 - **Graph** canvas (event + per-function graphs). **Double-tap empty pane** opens the unfiltered Add Node catalog (`Dialog` with categories + search; search is **not** autofocused). Drag-to-connect and tap-to-connect both persist.
-- **Class**: compact collapsible tree (Functions, Variables, Events, Interfaces — no Graphs section) stacked *under* Components, about 50% of the left stack. Inline **+** prompts for a name and writes `SerializedGraph.members` (normalized). Events also insert `flow.event.custom`; variables can drop a Get node. Clicking an event focuses that graph node. Class-owned documents remain a later follow-up.
+- **Class**: compact collapsible tree (Functions, Variables, Events, Interfaces — no Graphs section) stacked *under* Components, about 50% of the left stack. Inline **+** prompts for a name and writes `SerializedGraph.members` (normalized). Event names are Title Cased (`On Hit`; node title `Event On Hit`). Events also insert `flow.event.custom`; variables can drop a Get node. Clicking an event focuses that graph node. Class-owned documents remain a later follow-up.
 - **Details**: selected node / variable / component; ExecuteJavaScript pin lists + body.
 - **Compiler Results**: diagnostics grouped by graph; tap → select node, pan canvas, flash pin (or scroll CodeMirror to `bodyLine`).
 - **Prefab** (Actor): full-size center tab; 3D preview + gizmos; component tree reorder is session-local until P7 class persistence.
