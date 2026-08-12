@@ -1,7 +1,7 @@
 import { fireEvent, render, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
-import { GraphEditor } from "./graph-editor";
+import { GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 
 afterEach(cleanup);
@@ -58,6 +58,11 @@ function openPalette(container: HTMLElement) {
 }
 
 describe("GraphEditor", () => {
+  it("lets authors zoom the canvas out to 10 percent", () => {
+    expect(GRAPH_MIN_ZOOM).toBeLessThan(0.4);
+    expect(GRAPH_MIN_ZOOM).toBe(0.1);
+  });
+
   it("renders a node for each node in the graph", () => {
     const graph = createDefaultGraph();
     const { container } = render(<GraphEditor initialGraph={graph} />);
@@ -293,6 +298,51 @@ describe("GraphEditor", () => {
       '[data-handleid="message"][data-pin-type="string"]',
     );
     expect(messageHandle).not.toBeNull();
+  });
+
+  it("renders array pins with a list icon and scalar pins as circles", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "length",
+          type: "array.length",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Array Length",
+            __nodeType: "array.length",
+            __category: "array",
+            __pure: true,
+            __pins: [
+              {
+                id: "array",
+                name: "array",
+                kind: "data",
+                direction: "in",
+                type: { kind: "array", element: { kind: "float" } },
+              },
+              {
+                id: "out",
+                name: "out",
+                kind: "data",
+                direction: "out",
+                type: { kind: "int" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+
+    const arrayHandle = container.querySelector('[data-pin-type="array"]');
+    expect(arrayHandle).not.toBeNull();
+    expect(arrayHandle?.querySelector('[data-pin-shape="list"]')).not.toBeNull();
+
+    const intHandle = container.querySelector('[data-pin-type="int"]');
+    expect(intHandle).not.toBeNull();
+    expect(intHandle?.querySelector('[data-pin-shape="circle"]')).not.toBeNull();
   });
 
   it("uses the host colorMode on the canvas", () => {

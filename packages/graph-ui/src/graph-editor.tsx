@@ -64,6 +64,11 @@ export interface GraphEditorProps {
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 
+/** React Flow zoom-out floor. Wheel, pinch, and Controls all stop here. */
+export const GRAPH_MIN_ZOOM = 0.1;
+/** React Flow zoom-in ceiling. */
+export const GRAPH_MAX_ZOOM = 1.5;
+
 function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
   return edges.map((edge) => ({
     id: edge.id,
@@ -674,8 +679,8 @@ function GraphEditorCanvas({
           connectionLineStyle={connectionLineStyle}
           defaultEdgeOptions={{ type: "default" }}
           fitView
-          minZoom={0.4}
-          maxZoom={1.5}
+          minZoom={GRAPH_MIN_ZOOM}
+          maxZoom={GRAPH_MAX_ZOOM}
           proOptions={{ hideAttribution: true }}
         >
           <Background
