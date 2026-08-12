@@ -23,6 +23,7 @@ import { DocumentWorkspace } from "./components/document-workspace";
 import { Homepage } from "./components/homepage";
 import { DocumentProvider, useDocuments } from "./context/document-context";
 import { PlayProvider } from "./context/play-context";
+import { ProjectSearchProvider } from "./context/project-search-context";
 import { ValidationProvider } from "./context/validation-context";
 
 function DirtyCloseDialog({
@@ -275,7 +276,9 @@ export default function App() {
       <DocumentProvider>
         <PlayProvider>
           <ValidationProvider>
-            <AppRoutes />
+            <ProjectSearchProvider>
+              <AppRoutes />
+            </ProjectSearchProvider>
           </ValidationProvider>
         </PlayProvider>
       </DocumentProvider>

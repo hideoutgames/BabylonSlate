@@ -2,9 +2,35 @@ import { CONTENT_BROWSER_ID, type SerializedScene } from "@babylonslate/core";
 import { useEffect, useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
-import { SceneEditingProvider } from "../context/scene-editing-context";
+import { useProjectSearch } from "../context/project-search-context";
+import {
+  SceneEditingProvider,
+  useSceneEditing,
+} from "../context/scene-editing-context";
+import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { DockviewShell } from "../shell/dockview-shell";
+
+function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
+  const { pendingTarget, clearPendingTarget } = useProjectSearch();
+  const { selectActor } = useSceneEditing();
+
+  useEffect(() => {
+    const actorId = pendingTarget ? sceneFocusActorId(pendingTarget) : null;
+    if (!pendingTarget || !actorId) return;
+    if (
+      pendingTarget.kind !== "scene-actor" &&
+      pendingTarget.kind !== "scene-component"
+    ) {
+      return;
+    }
+    if (pendingTarget.scenePath !== scenePath) return;
+    selectActor(actorId);
+    clearPendingTarget();
+  }, [clearPendingTarget, pendingTarget, scenePath, selectActor]);
+
+  return null;
+}
 
 export function DocumentWorkspace() {
   const {
@@ -87,6 +113,9 @@ export function DocumentWorkspace() {
               documentViewportMode={sceneContent?.viewportMode}
               documentSnapEnabled={sceneContent?.settings.grid.snapEnabled}
             >
+              {doc.ref.kind === "scene" ? (
+                <PendingSceneSearchFocus scenePath={doc.ref.path} />
+              ) : null}
               <div
                 className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
                 data-testid={`document-workspace-${doc.ref.kind}`}
