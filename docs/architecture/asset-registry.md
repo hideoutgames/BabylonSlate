@@ -4,7 +4,7 @@ Shared surface for P2 Content Browser, import, thumbnails, and texture compressi
 
 ## Invariants
 
-1. **Header-only indexing.** Scan and browse use `readBabassetHeader` only — never allocate chunk payloads to build the guid index, folder tree, dependency graph, or Show References.
+1. **Header-only indexing.** Scan and browse use `readBabassetHeader` only — never allocate chunk payloads to build the guid index, folder tree, dependency graph, or Show References. Project-wide **text** search is a separate `ProjectSearchIndex` that may read Scene/Graph document chunks only ([global-search.md](global-search.md)).
 2. **Content-root-aware from day one.** Roots are first-class; plugin roots must not be a retrofit (P13 mounts them; P2 tests a second synthetic root).
 3. **Payloads on demand.** Chunk bytes load through an accounted accessor. Full LRU resource cache is P4; P2 ships a thin byte-accounted loader so open stays near-zero payload bytes.
 4. **File create/delete outside undo.** Registry owns asset files; `packages/edit` owns in-document edits ([command-layer.md](command-layer.md)).

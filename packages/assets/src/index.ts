@@ -13,6 +13,7 @@ export * from "./migrate-on-load";
 export * from "./migration";
 export * from "./payload-loader";
 export * from "./registry";
+export * from "./search-index";
 export * from "./templates";
 export * from "./texture-compression";
 export * from "./texture-loader";
