@@ -12,7 +12,7 @@ Tailwind v4 detects sources relative to the CSS entry, which here lives in `pack
 
 Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000h04l1gu419ckw)): achromatic surfaces and ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not re-import a tweakcn preset over those editor-function tokens.
 
-`apps/editor/src/shell/design-tokens.test.ts` asserts ink `--primary`, Neutral backgrounds, `--chrome-tab-accent: var(--foreground)`, a chromatic `--axis-z` that is not `var(--primary)`, and a darker light-mode `--pin-exec`.
+`apps/editor/src/shell/design-tokens.test.ts` asserts ink `--primary`, Neutral backgrounds, `--chrome-tab-accent: var(--foreground)`, a chromatic `--axis-z` that is not `var(--primary)`, a darker light-mode `--pin-exec`, dark `--secondary`/`--muted` distinct from `--popover`, and Dockview tab colors plus 1px group outlines.
 
 ## Design philosophy
 
@@ -30,7 +30,7 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 | Viewport / graph canvas (always dark) | `--background` (dark) | n/a — canvases ignore light chrome | `oklch(0.145 0 0)` ≈ `#242424` |
 | Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` |
 | Chrome / raised cards | `--card` | `oklch(1 0 0)` | `oklch(0.205 0 0)` |
-| Headers / category bars | `--secondary` / `--muted` | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
+| Headers / category bars | `--secondary` / `--muted` | `oklch(0.97 0 0)` | `oklch(0.32 0 0)` |
 | Menus / viewport overlay | `--popover` | `oklch(1 0 0)` | `oklch(0.269 0 0)` |
 | Hover / selection wash | `--accent` | `oklch(0.97 0 0)` | `oklch(0.371 0 0)` |
 
@@ -95,7 +95,7 @@ Title-bar fills for Blueprint-like nodes:
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 
-Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tree rows are 32px.
+Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-groupview` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel bounds stay visible in both schemes. Tree rows are 32px.
 
 ## Axis colors
 
