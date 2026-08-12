@@ -28,6 +28,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Physics", link: "/architecture/physics" },
       { text: "Debugger", link: "/architecture/debugger" },
       { text: "Theming", link: "/architecture/theming" },
+      { text: "Components", link: "/architecture/components" },
       { text: "Testing", link: "/architecture/testing" },
     ],
   },
