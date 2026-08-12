@@ -48,6 +48,14 @@ const NAV_TO_ADD: Record<AdjacentNav, DockWindowDirection> = {
 
 const PRIMARY_SURFACES = ["viewport", "graph"] as const;
 
+/** Scan from a reference panel → addPanel direction for the found neighbor. */
+const NAV_FROM_REFERENCE: Record<AdjacentNav, DockWindowDirection> = {
+  left: "left",
+  right: "right",
+  up: "above",
+  down: "below",
+};
+
 function invertDockDirection(
   direction: DockWindowDirection,
 ): DockWindowDirection {
@@ -90,6 +98,33 @@ function catalogPlacement(
     direction: fallback.direction,
     ...size,
   };
+}
+
+function placementFromCatalogReference(
+  api: DockWindowApi,
+  panel: DockWindowPanel,
+  def: DockWindowDefinition | undefined,
+  size: Pick<PanelPlacement, "width" | "height">,
+): PanelPlacement | null {
+  const catalogId = def?.defaultPosition?.referencePanelId;
+  if (!catalogId || catalogId === panel.id) return null;
+  const catalog = api.getPanel(catalogId);
+  if (!catalog?.group || !panel.group || !api.adjacentGroupInDirection) {
+    return null;
+  }
+  for (const nav of Object.keys(NAV_FROM_REFERENCE) as AdjacentNav[]) {
+    const adjacent = api.adjacentGroupInDirection(catalog.group, nav);
+    const inGroup =
+      adjacent?.id === panel.group.id ||
+      adjacent?.panels?.some((entry) => entry.id === panel.id);
+    if (!inGroup) continue;
+    return {
+      referencePanelId: catalogId,
+      direction: NAV_FROM_REFERENCE[nav],
+      ...size,
+    };
+  }
+  return null;
 }
 
 function collectAdjacentPlacements(
@@ -152,6 +187,9 @@ export function capturePanelPlacement(
       ...size,
     };
   }
+
+  const fromCatalog = placementFromCatalogReference(api, panel, def, size);
+  if (fromCatalog) return fromCatalog;
 
   const adjacent = pickAdjacentPlacement(
     collectAdjacentPlacements(api, panel, size),

@@ -378,6 +378,49 @@ describe("capturePanelPlacement", () => {
       height: 400,
     });
   });
+
+  it("keeps Output Log below Viewport when a full-height side panel is nearer upward", () => {
+    const api = createFakeApi([
+      {
+        id: "scene-outliner",
+        groupId: "left",
+        box: { x: 0, y: 0, width: 200, height: 960 },
+        width: 200,
+        height: 960,
+      },
+      {
+        id: "viewport",
+        groupId: "center",
+        box: { x: 200, y: 0, width: 400, height: 720 },
+        width: 400,
+        height: 720,
+      },
+      {
+        id: "scene-details",
+        groupId: "right",
+        box: { x: 600, y: 0, width: 168, height: 960 },
+        width: 168,
+        height: 960,
+      },
+      {
+        id: "output-log",
+        groupId: "bottom",
+        box: { x: 200, y: 720, width: 400, height: 240 },
+        width: 400,
+        height: 240,
+      },
+    ]);
+    expect(
+      capturePanelPlacement(
+        api,
+        "output-log",
+        findDockWindow("scene", "output-log"),
+      ),
+    ).toMatchObject({
+      referencePanelId: "viewport",
+      direction: "below",
+    });
+  });
 });
 
 describe("openDockWindow", () => {
