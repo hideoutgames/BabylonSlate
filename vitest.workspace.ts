@@ -15,6 +15,7 @@ export default defineConfig({
             "packages/physics/**/*.test.ts",
             "packages/bridge/**/*.test.ts",
             "packages/runtime/**/*.test.ts",
+            "packages/debugger/**/*.test.ts",
             "packages/input/**/*.test.ts",
             "packages/scripting/**/*.test.ts",
             "packages/scripting-nodes/**/*.test.ts",
@@ -141,6 +142,12 @@ export default defineConfig({
           statements: 60,
         },
         "packages/runtime/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/debugger/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,

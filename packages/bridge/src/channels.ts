@@ -1,5 +1,7 @@
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
+import type { SerializedScene } from "@babylonslate/core";
+
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
   line: number;
@@ -27,6 +29,8 @@ export type ControlMessage =
   | {
       type: "load";
       sceneAssetGuid: string;
+      /** Authored scene document. When present, Play instantiates these actors. */
+      scene?: SerializedScene;
       seed?: number;
       /** Scene physics world; defaults to 3d when omitted. */
       physicsWorld?: "3d" | "2d";
@@ -58,6 +62,8 @@ export type CommandMessage =
       type: "assignMesh";
       slotId: number;
       meshAssetGuid: string | null;
+      /** Primitive mesh kind from MeshComponent (`box`, `sphere`, …). */
+      meshKind?: string | null;
     }
   | {
       type: "assignMaterial";

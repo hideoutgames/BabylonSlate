@@ -39,6 +39,11 @@ export {
 } from "./tick";
 export { World, type WorldOptions, type WorldInputProvider } from "./world";
 export {
+  createActorsFromSerializedScene,
+  runtimeTransformFromSerialized,
+  type SceneActorHooks,
+} from "./instantiate-scene";
+export {
   createWorldSnapshot,
   stringifyWorldSnapshot,
   type WorldSnapshot,

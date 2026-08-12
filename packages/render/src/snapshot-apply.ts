@@ -1,13 +1,13 @@
 import {
   Matrix,
   Mesh,
-  MeshBuilder,
   Quaternion,
   Scene,
   Vector3,
 } from "@babylonjs/core";
-import type { ActorSlot } from "@babylonslate/bridge";
+import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import type { SampledSnapshot } from "./snapshot-sync";
+import { createPrimitiveMesh } from "./scene-loader";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -19,10 +19,39 @@ export interface SnapshotSceneBinding {
   meshes: Map<number, Mesh>;
   /** Reused each apply — no per-frame Set allocation. */
   liveSlots: Set<number>;
+  /** meshKind from assignMesh, keyed by slotId. */
+  meshKinds: Map<number, string | null>;
 }
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
-  return { meshes: new Map(), liveSlots: new Set() };
+  return { meshes: new Map(), liveSlots: new Set(), meshKinds: new Map() };
+}
+
+export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
+
+/** Remember (and rebuild) the Play mesh for a slot from an assignMesh command. */
+export function applyAssignMesh(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+  command: AssignMeshCommand,
+): void {
+  const meshKind = command.meshKind ?? null;
+  binding.meshKinds.set(command.slotId, meshKind);
+  const existing = binding.meshes.get(command.slotId);
+  if (!existing) return;
+  existing.dispose();
+  binding.meshes.set(
+    command.slotId,
+    createPlayMesh(scene, command.slotId, meshKind),
+  );
+}
+
+function createPlayMesh(
+  scene: Scene,
+  slotId: number,
+  meshKind: string | null | undefined,
+): Mesh {
+  return createPrimitiveMesh(scene, `actor-${slotId}`, meshKind);
 }
 
 /**
@@ -46,7 +75,11 @@ export function applySnapshotToScene(
       live.add(actor.slotId);
       let mesh = binding.meshes.get(actor.slotId);
       if (!mesh) {
-        mesh = MeshBuilder.CreateBox(`actor-${actor.slotId}`, { size: 1 }, scene);
+        mesh = createPlayMesh(
+          scene,
+          actor.slotId,
+          binding.meshKinds.get(actor.slotId),
+        );
         binding.meshes.set(actor.slotId, mesh);
       }
       writeActorTransform(mesh, actor);
@@ -56,6 +89,7 @@ export function applySnapshotToScene(
       if (!live.has(slotId)) {
         mesh.dispose();
         binding.meshes.delete(slotId);
+        binding.meshKinds.delete(slotId);
       }
     }
   } finally {
@@ -69,6 +103,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
     mesh.dispose();
   }
   binding.meshes.clear();
+  binding.meshKinds.clear();
 }
 
 function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {

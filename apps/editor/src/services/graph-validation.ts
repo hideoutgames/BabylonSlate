@@ -11,6 +11,7 @@ import {
   type GraphPin,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { warnDebugTierConsoleCommands } from "@babylonslate/debugger";
 
 const registry = createDefaultNodeRegistry();
 
@@ -194,7 +195,10 @@ export function validateSerializedGraph(
   options: { assetGuid: string; graphId: string },
 ): Diagnostic[] {
   const graph = materializeLogicGraph(content, options.graphId);
-  return validateGraphs([graph], { assetGuid: options.assetGuid });
+  return [
+    ...validateGraphs([graph], { assetGuid: options.assetGuid }),
+    ...warnDebugTierConsoleCommands([graph], { assetGuid: options.assetGuid }),
+  ];
 }
 
 export function projectHasBlockingErrors(

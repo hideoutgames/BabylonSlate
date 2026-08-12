@@ -50,9 +50,9 @@ Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** 
 
 Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, then `RuntimeDriver.loadPhysics()` swaps in Havok or Rapier and re-syncs already-spawned bodies. `preferSoftwarePhysics` skips the swap (unit tests / wasm-free CI).
 
-The Play `load` control message carries `physicsWorld`, `gravity`, and `havokWasmUrl`. The editor vendors `HavokPhysics.wasm` at `/havok/HavokPhysics.wasm` (same self-host pattern as the KTX2 transcoder) so browser Play does not silently keep the AABB backend. Details / Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent`.
+The Play `load` control message carries `sceneAssetGuid`, optional authored `scene` (`SerializedScene`), `physicsWorld`, `gravity`, and `havokWasmUrl`. The editor vendors `HavokPhysics.wasm` at `/havok/HavokPhysics.wasm` (same self-host pattern as the KTX2 transcoder) so browser Play does not silently keep the AABB backend. Details / Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent`.
 
-Play still does **not** instantiate the open `SerializedScene` (dummy `play-scene` + demo actors + script spawn). Authored physics components therefore do not simulate until `p7-play-scene-load`.
+Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld()` (after scripts load so Begin Play binds on spawn). Demo actors are not seeded when a scene payload is present. `PhysicsWorldSync` then creates bodies for authored `RigidBodyComponent` / `ColliderComponent`. Graph-only spawns skip class ids that already exist as scene actors.
 
 ## Components
 
@@ -82,7 +82,6 @@ Harness scenarios run on each backend where shapes overlap. Within-backend repro
 
 | Item | Owner |
 | --- | --- |
-| Play loads the active `SerializedScene` into the worker | `p7-play-scene-load` |
 | `physics.moveCharacter` scripting (backend CC exists) | `p7-character-controller` |
 | Mixed 2D/3D collider diagnostic | P7 polish |
 | Rapier `shapeSweep` ≈ lineTrace; Havok `sphereOverlap` uses AABB | P7 polish / as needed by gameplay |

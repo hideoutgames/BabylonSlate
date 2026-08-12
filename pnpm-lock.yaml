@@ -98,6 +98,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@babylonslate/debugger':
+        specifier: workspace:*
+        version: link:../../packages/debugger
       '@babylonslate/edit':
         specifier: workspace:*
         version: link:../../packages/edit
@@ -246,6 +249,12 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/debugger:
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/edit:
     dependencies:
       '@babylonslate/core':
@@ -369,6 +378,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
+      '@babylonslate/debugger':
+        specifier: workspace:*
+        version: link:../debugger
       '@babylonslate/input':
         specifier: workspace:*
         version: link:../input

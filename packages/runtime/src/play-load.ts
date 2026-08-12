@@ -15,13 +15,22 @@ export function runtimeOptionsFromLoadControl(
   msg: PlayLoadControl,
 ): Pick<
   RuntimeDriverOptions,
-  "seed" | "physicsWorld" | "gravity" | "havokWasmUrl"
+  | "seed"
+  | "physicsWorld"
+  | "gravity"
+  | "havokWasmUrl"
+  | "playScene"
+  | "playSceneGuid"
+  | "seedDemoActors"
 > {
   return {
     seed: msg.seed ?? 1,
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",
     gravity: msg.gravity ?? [0, -9.81, 0],
     havokWasmUrl: msg.havokWasmUrl,
+    playScene: msg.scene,
+    playSceneGuid: msg.sceneAssetGuid,
+    seedDemoActors: msg.scene ? false : true,
   };
 }
 
@@ -34,4 +43,12 @@ export function createRuntimeFromLoad(
     ...runtimeOptionsFromLoadControl(msg),
     onCommand,
   });
+}
+
+/** Skip graph-only spawns whose class already exists as a scene actor. */
+export function unmatchedScriptSpawns<T extends { classId: string }>(
+  spawn: readonly T[],
+  sceneClassIds: ReadonlySet<string>,
+): T[] {
+  return spawn.filter((entry) => !sceneClassIds.has(entry.classId));
 }
