@@ -74,3 +74,10 @@ export function createEdgeId(
 ): string {
   return `e:${source}:${sourceHandle ?? ""}:${target}:${targetHandle ?? ""}`;
 }
+
+/** Selection is canvas chrome, not graph IR — skip `onChange` for select-only diffs. */
+export function nodeChangesMutateGraph(
+  changes: ReadonlyArray<{ type: string }>,
+): boolean {
+  return changes.some((change) => change.type !== "select");
+}

@@ -27,7 +27,12 @@ import {
   type SerializedPin,
 } from "./graph-types";
 import { GraphEditorProvider } from "./graph-editor-context";
-import { createEdgeId, nodesMissingFromLocal, toSerializedGraph } from "./graph-model";
+import {
+  createEdgeId,
+  nodeChangesMutateGraph,
+  nodesMissingFromLocal,
+  toSerializedGraph,
+} from "./graph-model";
 import {
   type CanvasNode,
   graphNodeTypes,
@@ -47,6 +52,8 @@ export type { SerializedPin } from "./graph-types";
 export interface GraphEditorProps {
   initialGraph: GraphDocument;
   onChange?: (graph: GraphDocument) => void;
+  /** Selected canvas node ids; not part of the serialized graph. */
+  onSelectionChange?: (nodeIds: string[]) => void;
   focusedNodeId?: string;
   diagnostics?: GraphDiagnostic[];
   onNavigateRequest?: (request: NavigateRequest) => void;
@@ -142,6 +149,7 @@ function FocusedNodeSync({ focusedNodeId }: { focusedNodeId?: string }) {
 function GraphEditorCanvas({
   initialGraph,
   onChange,
+  onSelectionChange,
   focusedNodeId,
   diagnostics,
   onNavigateRequest,
@@ -233,7 +241,9 @@ function GraphEditorCanvas({
     (changes: NodeChange<CanvasNode>[]) => {
       setNodes((current) => {
         const next = applyNodeChanges(changes, current);
-        emitChange(next, graphStateRef.current.edges);
+        if (nodeChangesMutateGraph(changes)) {
+          emitChange(next, graphStateRef.current.edges);
+        }
         return next;
       });
     },
@@ -433,6 +443,15 @@ function GraphEditorCanvas({
     () => nodes.filter((node) => node.selected),
     [nodes],
   );
+
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
+  const selectionKey = selectedNodes.map((node) => node.id).join("\0");
+  useEffect(() => {
+    onSelectionChangeRef.current?.(
+      selectionKey === "" ? [] : selectionKey.split("\0"),
+    );
+  }, [selectionKey]);
 
   const copySelection = useCallback(() => {
     const selected = new Set(selectedNodes.map((node) => node.id));
