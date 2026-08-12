@@ -63,8 +63,8 @@ export default defineConfig({
         "**/create-engine.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.
         "**/worker-entry.ts",
-        // Physics wasm backends: exercised by dedicated load tests; coverage
-        // of the embind/wasm surface is environment-dependent.
+        // Physics wasm backends: HavokPlugin path is asserted in havok-v2.test.ts;
+        // coverage of the Babylon/Havok wasm surface is environment-dependent.
         "**/havok-backend.ts",
         "**/havok-loader.ts",
         "**/rapier-backend.ts",

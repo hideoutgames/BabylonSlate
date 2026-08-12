@@ -19,18 +19,20 @@ Shared surface for simulation in the game worker (engineplan §2.1, §2.3, §13.
 | `createPhysicsBackend` | Lazy factory; dynamic-imports only the needed engine |
 | Shape / body / hit types | Shared descriptors shaped primarily around Havok |
 
-Depends on `@babylonslate/core` only at the type layer. No React, no Babylon scene APIs. Havok and Rapier are optional runtime deps loaded by kind.
+Depends on `@babylonslate/core` at the type layer plus `@babylonjs/core` Physics V2 and `@babylonjs/havok` for 3D. No React, no Capacitor, no editor Babylon packages (gui/loaders/inspector). `@babylonslate/runtime` still must not import Babylon.
 
 ## Backends
 
 | Kind | Engine | When loaded |
 | --- | --- | --- |
-| `3d` | `@babylonjs/havok` via `HavokPhysics({ locateFile })` | Scene `physicsWorld === "3d"` |
-| `2d` | `@dimforge/rapier2d` | Scene `physicsWorld === "2d"` |
+| `3d` | Babylon Physics V2: `HavokPlugin` + `PhysicsAggregate` on a worker-local `NullEngine` Scene | Scene `physicsWorld === "3d"` |
+| `2d` | `@dimforge/rapier2d-compat` | Scene `physicsWorld === "2d"` |
+| either | `SoftwarePhysicsBackend` (AABB) | `preferSoftware`, tests, or wasm load failure |
 
-- Havok is the **primary** backend; the interface is shaped around it.
+- Havok is the **primary** 3D backend; the interface is shaped around it.
 - A 3D-only play/export must not download Rapier (and vice versa).
-- Babylon `HavokPlugin` / `PhysicsAggregate` / `scene.enablePhysics` are **not** used (no `Scene` in the worker).
+- The physics Scene is **not** the editor/render Scene. It is never drawn; the worker steps with `getPhysicsEngine()!._step(dt)`. Queries use `PhysicsEngine.raycast` and `HavokPlugin.shapeCast`.
+- `SoftwarePhysicsBackend` is not a stand-in for 3D Play — it is the deterministic test/fallback path.
 
 Rejected alternative for 2D: constraining Havok (companion anchor + 6DOF per body + inertia zeroing that distorts impulses). See engineplan §13.4.
 
@@ -45,6 +47,8 @@ Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** 
 1. Script phases may call sync queries on the live backend.
 2. `physics` phase: `backend.step(dt)`, then write body transforms back to Actors.
 3. `RuntimeDriver` times script phases and the physics phase separately into snapshot/`stats` `scriptMs` and `physicsMs`.
+
+Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, then `RuntimeDriver.loadPhysics()` swaps in Havok or Rapier and re-syncs already-spawned bodies. `preferSoftwarePhysics` skips the swap (unit tests / wasm-free CI).
 
 ## Components
 

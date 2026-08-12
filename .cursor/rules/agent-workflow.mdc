@@ -24,6 +24,7 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 | Package | May not import |
 | --- | --- |
 | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/scripting`, `packages/scripting-nodes`, `packages/bridge`, `packages/runtime`, `packages/input`, `packages/test-kit` | React, Babylon, Capacitor |
+| `packages/physics` | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok`. |
 | `packages/vfs` | React, Babylon |
 | `packages/render` | React, Capacitor |
 | `packages/ui`, `packages/editor-kit`, `packages/graph-ui` | Babylon, Capacitor |

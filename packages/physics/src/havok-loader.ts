@@ -21,7 +21,10 @@ export function loadHavokModule(havokWasmUrl?: string): Promise<HavokModule> {
         locateFile: (path: string) => havokWasmUrl ?? path,
         wasmBinary,
       })) as unknown as HavokModule;
-    })();
+    })().catch((error) => {
+      cached = null;
+      throw error;
+    });
   }
   return cached;
 }
@@ -49,11 +52,15 @@ async function resolveWasmBinary(havokWasmUrl?: string): Promise<Uint8Array> {
     process?: { versions?: { node?: string } };
   };
   if (g.process?.versions?.node) {
-    const dynImport = new Function("s", "return import(s)") as (
-      s: string,
-    ) => Promise<Record<string, unknown>>;
-    const nodeModule = await dynImport("node:module");
-    const nodeFs = await dynImport("node:fs");
+    // Non-literal specifiers so apps/editor typecheck (types: vite/client)
+    // does not resolve `node:*`. Native `import()` works in Vitest; `new
+    // Function("return import(s)")` does not (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING).
+    const nodePrefix = "node:";
+    const nodeModule = (await import(nodePrefix + "module")) as Record<
+      string,
+      unknown
+    >;
+    const nodeFs = (await import(nodePrefix + "fs")) as Record<string, unknown>;
     const createRequire = nodeModule.createRequire as
       | ((url: string | URL) => {
           (id: string): string;

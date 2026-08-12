@@ -60,7 +60,8 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `edit`, `object-model`, `physics` (Havok wasm only — no Scene APIs), `bridge`, `runtime`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon Scene APIs, Capacitor |
+| `core`, `edit`, `object-model`, `bridge`, `runtime`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
+| `physics` | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok` on a worker-local NullEngine Scene. |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |

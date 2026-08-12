@@ -77,4 +77,54 @@ describe("runtime physics phase", () => {
     expect(hit.hit).toBe(true);
     runtime.stop();
   });
+
+  it("loadPhysics upgrades to Havok and keeps already-spawned bodies", async () => {
+    const runtime = createInProcessRuntime({
+      seed: 3,
+      maxActors: 8,
+      physicsWorld: "3d",
+      seedDemoActors: false,
+    });
+    const world = runtime.getWorld();
+    const ground = world.createActor({
+      classId: "Actor",
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    ground.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        variables: { motionType: "static", mass: 0, gravityScale: 0 },
+      }),
+    );
+    ground.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        variables: {
+          shape: { kind: "box", halfExtents: { x: 5, y: 0.5, z: 5 } },
+        },
+      }),
+    );
+    world.spawnActorNow(ground);
+
+    runtime.start();
+    runtime.tick();
+    expect(runtime.getPhysicsSync()!.getBackend().constructor.name).toBe(
+      "SoftwarePhysicsBackend",
+    );
+
+    await runtime.loadPhysics();
+    expect(runtime.getPhysicsSync()!.getBackend().constructor.name).toBe(
+      "HavokPhysicsBackend",
+    );
+    const hit = runtime.getPhysicsSync()!.lineTrace(
+      { x: 0, y: 10, z: 0 },
+      { x: 0, y: -1, z: 0 },
+    );
+    expect(hit.hit).toBe(true);
+    runtime.stop();
+  });
 });
