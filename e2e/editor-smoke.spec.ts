@@ -40,7 +40,7 @@ test.describe("BabylonSlate editor smoke", () => {
 
     await page.locator('[data-asset-path="assets/main.scene.babasset"]').click();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
-    await expect(page.getByText("Viewport")).toBeVisible();
+    await expect(page.getByTestId("viewport-panel")).toBeVisible();
 
     await page
       .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
@@ -48,11 +48,7 @@ test.describe("BabylonSlate editor smoke", () => {
       .click();
     await page.locator('[data-asset-path="assets/main.graph.babasset"]').click();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
-    await expect(
-      page.getByTestId("document-workspace-graph").getByText("Graph", {
-        exact: true,
-      }),
-    ).toBeVisible();
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
 
     await page.getByTestId("save-project").click();
 
