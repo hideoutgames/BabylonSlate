@@ -25,7 +25,7 @@ alwaysApply: false
 
 ## When to add vs update
 
-- **New feature or subsystem** → add or extend the relevant doc under `docs/`.
+- **New feature or subsystem** → add or extend the relevant doc under `docs/`. A **new** `docs/**/*.md` file must also get a VitePress sidebar entry in the same change — see [docs-site.mdc](docs-site.mdc).
 - **Changed behavior or API** → update the affected doc in the same change.
 - **Removed feature** → remove or strike-through obsolete sections; do not leave stale docs.
 
