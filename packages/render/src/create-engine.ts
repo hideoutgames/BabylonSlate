@@ -99,7 +99,6 @@ export function createEngine(
 
   const resize = () => engine.resize();
 
-  let lastFrame = performance.now();
   let interpAlpha = 1;
   engine.runRenderLoop(() => {
     if (!scheduler.shouldRender()) {
@@ -109,11 +108,14 @@ export function createEngine(
     if (sampled) {
       applySnapshotToScene(scene, binding, sampled);
     }
+    // Measure render cost only, not wall-clock gap since the previous
+    // rendered frame — render-on-demand can idle for seconds between
+    // frames, and feeding that gap to the scaling valve would read as a
+    // catastrophic frame time and drop quality for no reason.
+    const renderStart = performance.now();
     scene.render();
     scheduler.noteRendered();
-    const now = performance.now();
-    scaling.noteFrameTime(now - lastFrame);
-    lastFrame = now;
+    scaling.noteFrameTime(performance.now() - renderStart);
   });
 
   const onVisibility = () => {
