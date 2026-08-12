@@ -678,6 +678,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         cancelDebouncedSave: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
         hasRecoveryJournal: () => Promise<boolean>;
+        setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
       };
     };
     host.__babylonslateTest = {
@@ -734,6 +735,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           },
         };
         return applyGraphChange(id, graph);
+      },
+      /** Replace the main graph so Preview compiles a known script. */
+      setMainGraphContent: async (graph: SerializedGraph) => {
+        const path = "assets/main.graph.babasset";
+        const id = `graph:${path}`;
+        if (!documentService.getState().openDocuments.has(id)) {
+          await documentService.openDocument(
+            projectService,
+            { kind: "graph", path, label: "main.graph.babasset" },
+            null,
+            false,
+          );
+        }
+        documentService.updateGraph(id, graph);
+        bump();
+        return true;
       },
     };
     return () => {
