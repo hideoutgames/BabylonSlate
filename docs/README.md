@@ -4,6 +4,8 @@ Live site: **[https://hideoutgames.github.io/BabylonSlate/docs/](https://hideout
 
 Local preview: `pnpm docs:dev`.
 
+When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/sidebar.ts`](../apps/docs/src/sidebar.ts) in the same change (see [`.cursor/rules/docs-site.mdc`](../.cursor/rules/docs-site.mdc)). `docs/README.md` and `docs/index.md` are exempt.
+
 | Document | Purpose |
 | --- | --- |
 | [engineplan.md](engineplan.md) | Authoritative architecture, feature spec, roadmap, and delivery checklist |
