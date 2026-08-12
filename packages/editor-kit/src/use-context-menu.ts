@@ -9,8 +9,31 @@ import {
 /** Matches dockview's own long-press drag timing so the two never disagree. */
 export const CONTEXT_MENU_LONG_PRESS_MS = 500;
 
+/** Hold this long before a pointer-down can become a reorder drag. */
+export const DRAG_ARM_MS = 250;
+
 /** Matches dockview's press tolerance, so arming a panel drag cancels the menu. */
 export const CONTEXT_MENU_MOVE_TOLERANCE_PX = 8;
+
+export type HoldPointerPhase = "pending" | "scroll" | "drag" | "menu";
+
+/** Resolve hold-then-drag vs long-press menu vs early scroll. */
+export function resolveHoldPointerPhase(options: {
+  elapsedMs: number;
+  moved: boolean;
+  dragArmMs?: number;
+  menuMs?: number;
+}): HoldPointerPhase {
+  const dragArmMs = options.dragArmMs ?? DRAG_ARM_MS;
+  const menuMs = options.menuMs ?? CONTEXT_MENU_LONG_PRESS_MS;
+  if (options.elapsedMs < dragArmMs) {
+    return options.moved ? "scroll" : "pending";
+  }
+  if (!options.moved && options.elapsedMs >= menuMs) {
+    return "menu";
+  }
+  return "drag";
+}
 
 export interface ContextMenuItem {
   id: string;

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
-import { Input } from "@babylonslate/ui/components/input";
+import { SearchInput } from "./search-input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import {
   Sheet,
@@ -82,12 +82,12 @@ export function SearchSheet({
           ) : null}
         </SheetHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 pb-4">
-          <Input
+          <SearchInput
             className="min-h-[var(--touch-target,44px)]"
             aria-label={placeholder}
             placeholder={placeholder}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={setQuery}
             data-testid={testId ? `${testId}-query` : undefined}
           />
           <ScrollArea className="min-h-0 flex-1">

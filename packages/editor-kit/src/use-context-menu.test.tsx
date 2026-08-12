@@ -3,6 +3,8 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
+  DRAG_ARM_MS,
+  resolveHoldPointerPhase,
   useContextMenu,
   type ContextMenuItem,
 } from "./use-context-menu";
@@ -192,5 +194,37 @@ describe("useContextMenu", () => {
     const panel = getByTestId("context-menu-panel");
     expect(panel.style.left).toBe("123px");
     expect(panel.style.top).toBe("45px");
+  });
+});
+
+describe("resolveHoldPointerPhase", () => {
+  it("treats early movement as scroll, not drag or menu", () => {
+    expect(
+      resolveHoldPointerPhase({ elapsedMs: 80, moved: true }),
+    ).toBe("scroll");
+  });
+
+  it("arms drag after the hold delay", () => {
+    expect(
+      resolveHoldPointerPhase({ elapsedMs: DRAG_ARM_MS, moved: false }),
+    ).toBe("drag");
+    expect(
+      resolveHoldPointerPhase({ elapsedMs: DRAG_ARM_MS + 40, moved: true }),
+    ).toBe("drag");
+  });
+
+  it("opens the menu only when the pointer stays still until the long-press", () => {
+    expect(
+      resolveHoldPointerPhase({
+        elapsedMs: CONTEXT_MENU_LONG_PRESS_MS,
+        moved: false,
+      }),
+    ).toBe("menu");
+    expect(
+      resolveHoldPointerPhase({
+        elapsedMs: CONTEXT_MENU_LONG_PRESS_MS,
+        moved: true,
+      }),
+    ).toBe("drag");
   });
 });

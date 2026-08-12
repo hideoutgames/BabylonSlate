@@ -7,7 +7,7 @@ export {
   type CatalogCategoryGroup,
   type CatalogDialogProps,
 } from "./catalog-dialog";
-export { PanelFrame } from "./panel-frame";
+export { SearchInput, type SearchInputProps } from "./search-input";
 export { ToolbarStrip } from "./toolbar-strip";
 export { SelectableText } from "./selectable-text";
 export { ContextMenuOverlay } from "./context-menu-overlay";
@@ -23,8 +23,11 @@ export {
   useContextMenu,
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
+  DRAG_ARM_MS,
+  resolveHoldPointerPhase,
   type ContextMenuItem,
   type ContextMenuState,
+  type HoldPointerPhase,
   type UseContextMenuOptions,
   type UseContextMenuResult,
 } from "./use-context-menu";

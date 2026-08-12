@@ -16,7 +16,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { Input } from "@babylonslate/ui/components/input";
+import { SearchInput } from "@babylonslate/editor-kit";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { useProjectSearch } from "../context/project-search-context";
@@ -55,13 +55,13 @@ export function GlobalSearchDialog({
             Find assets, actors, graph nodes, classes, and variables.
           </DialogDescription>
         </DialogHeader>
-        <Input
+        <SearchInput
           autoFocus
           className="min-h-[var(--touch-target,44px)]"
           aria-label="Search project"
           placeholder="Search assets, actors, nodes…"
           value={needle}
-          onChange={(event) => setNeedle(event.target.value)}
+          onChange={setNeedle}
           data-testid="global-search-query"
         />
         <ScrollArea className="min-h-0 flex-1">

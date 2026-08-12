@@ -56,6 +56,10 @@ export function assetDragPayload(asset: IndexedAsset): string {
   });
 }
 
+export function displayAssetTitle(name: string): string {
+  return name.replace(/\.[A-Za-z][A-Za-z0-9]*$/, "");
+}
+
 export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
@@ -70,15 +74,16 @@ export function filterAssets(
   assets: IndexedAsset[],
   options: {
     folderGuids: Set<string> | null;
-    typeFilter: string | null;
+    typeFilters: string[] | null;
     search: string;
   },
 ): IndexedAsset[] {
+  const types = options.typeFilters ?? [];
   return assets.filter((asset) => {
     if (options.folderGuids && !options.folderGuids.has(asset.header.guid)) {
       return false;
     }
-    if (options.typeFilter && asset.header.type !== options.typeFilter) {
+    if (types.length > 0 && !types.includes(asset.header.type)) {
       return false;
     }
     return matchesAssetSearch(asset, options.search);
@@ -122,21 +127,24 @@ interface FolderTreeLike {
 export function collectFolderGuids(
   folderPath: string,
   tree: FolderTreeLike,
+  options: { recursive?: boolean } = {},
 ): Set<string> {
   const guids = new Set<string>();
+  const recursive = options.recursive ?? folderPath === "assets";
 
-  const visit = (node: FolderTreeLike) => {
+  const visit = (node: FolderTreeLike, includeChildren: boolean) => {
     for (const guid of node.assets) {
       guids.add(guid);
     }
+    if (!includeChildren) return;
     for (const child of node.children) {
-      visit(child);
+      visit(child, true);
     }
   };
 
   const find = (node: FolderTreeLike): boolean => {
     if (node.path === folderPath) {
-      visit(node);
+      visit(node, recursive);
       return true;
     }
     for (const child of node.children) {

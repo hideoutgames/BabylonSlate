@@ -42,6 +42,27 @@ describe("CatalogDialog", () => {
     expect(document.activeElement).not.toBe(getByPlaceholderText("Search"));
   });
 
+  it("clears search from the trailing button", () => {
+    const onSearchChange = vi.fn();
+    const { getByTestId } = render(
+      <CatalogDialog
+        open
+        onOpenChange={() => {}}
+        title="Settings"
+        categories={[{ id: "general", label: "General" }]}
+        activeCategoryId="general"
+        onCategoryChange={() => {}}
+        search="mesh"
+        onSearchChange={onSearchChange}
+        data-testid="catalog"
+      >
+        <div>Body</div>
+      </CatalogDialog>,
+    );
+    getByTestId("catalog-search-clear").click();
+    expect(onSearchChange).toHaveBeenCalledWith("");
+  });
+
   it("autofocuses search only when requested", () => {
     const { getByPlaceholderText } = render(
       <CatalogDialog

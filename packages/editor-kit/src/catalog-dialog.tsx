@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
-import { Input } from "@babylonslate/ui/components/input";
+import { SearchInput } from "./search-input";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { cn } from "@babylonslate/ui/lib/utils";
 
@@ -112,10 +112,10 @@ export function CatalogDialog({
           ) : null}
         </DialogHeader>
         <div className="shrink-0 border-b px-4 py-3">
-          <Input
+          <SearchInput
             ref={searchRef}
             value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
+            onChange={onSearchChange}
             placeholder={searchPlaceholder}
             className="min-h-[var(--chrome-row,28px)]"
             data-testid={testId ? `${testId}-search` : undefined}
