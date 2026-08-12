@@ -17,3 +17,5 @@ export * from "./gizmo-host";
 export * from "./selection-outline";
 export * from "./viewport-gestures";
 export * from "./two-d";
+export * from "./sorting";
+export * from "./pixel-perfect";

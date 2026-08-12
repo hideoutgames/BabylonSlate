@@ -24,9 +24,27 @@ export interface TextureProjectSettings {
   autoRequeueUncompressed: boolean;
 }
 
+export interface TwoDProjectSettings {
+  /** Texture pixels per world unit; the 2D authoring scale. */
+  pixelsPerUnit: number;
+  /**
+   * Derive orthographic bounds from the canvas pixel size, sample textures
+   * nearest with mipmaps off and snap the camera to the pixel grid.
+   */
+  pixelPerfect: boolean;
+  /** Restrict zoom to integer pixel scales, which keeps sprites crisp. */
+  integerZoomSteps: boolean;
+  /**
+   * Ordered sorting layers, back to front. The index in this list is the
+   * coarse half of the 2D sort key.
+   */
+  sortingLayers: string[];
+}
+
 export interface ProjectSettings {
   touchMinTargetPx: number;
   textures: TextureProjectSettings;
+  twoD: TwoDProjectSettings;
 }
 
 export interface ProjectDocument {
@@ -58,11 +76,50 @@ export const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
   autoRequeueUncompressed: true,
 };
 
+export const DEFAULT_SORTING_LAYERS = [
+  "Background",
+  "Default",
+  "Foreground",
+  "UI",
+] as const;
+
+export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
+  pixelsPerUnit: 100,
+  pixelPerfect: false,
+  integerZoomSteps: false,
+  sortingLayers: [...DEFAULT_SORTING_LAYERS],
+};
+
+function normalizeSortingLayers(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_SORTING_LAYERS];
+  const seen = new Set<string>();
+  const layers: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const name = entry.trim();
+    // Duplicate names would make a sort key ambiguous.
+    if (name === "" || seen.has(name)) continue;
+    seen.add(name);
+    layers.push(name);
+  }
+  return layers.length > 0 ? layers : [...DEFAULT_SORTING_LAYERS];
+}
+
 export function normalizeProjectSettings(
   settings: Partial<ProjectSettings> | undefined,
 ): ProjectSettings {
+  const twoD = settings?.twoD;
   return {
     touchMinTargetPx: settings?.touchMinTargetPx ?? 44,
+    twoD: {
+      pixelsPerUnit:
+        typeof twoD?.pixelsPerUnit === "number" && twoD.pixelsPerUnit > 0
+          ? twoD.pixelsPerUnit
+          : DEFAULT_TWO_D_PROJECT_SETTINGS.pixelsPerUnit,
+      pixelPerfect: twoD?.pixelPerfect === true,
+      integerZoomSteps: twoD?.integerZoomSteps === true,
+      sortingLayers: normalizeSortingLayers(twoD?.sortingLayers),
+    },
     textures: {
       maxTextureDimension:
         settings?.textures?.maxTextureDimension ??

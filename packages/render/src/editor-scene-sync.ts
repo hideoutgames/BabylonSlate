@@ -6,6 +6,24 @@ import {
   applyActorTransform,
   createActorMesh,
 } from "./scene-loader";
+import { applySortingToMesh, resolveSortingLayer } from "./sorting";
+
+const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
+
+function spriteSortingOf(
+  actor: SerializedActor,
+): { layer: string; orderInLayer: number } | null {
+  const component = actor.components.find(
+    (entry) => entry.classId === "SpriteComponent",
+  );
+  if (!component) return null;
+  const layer = component.properties.sortingLayer;
+  const order = component.properties.orderInLayer;
+  return {
+    layer: typeof layer === "string" ? layer : "Default",
+    orderInLayer: typeof order === "number" ? order : 0,
+  };
+}
 
 function meshKindOf(actor: SerializedActor): string | null {
   const component = actor.components.find(
@@ -28,10 +46,17 @@ export class EditorSceneSync {
 
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
+  private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
 
   constructor(scene: Scene, scheduler?: Pick<RenderScheduler, "invalidate">) {
     this.scene = scene;
     this.scheduler = scheduler;
+  }
+
+  /** Ordered sorting layers from project settings, back to front. */
+  setSortingLayers(layers: readonly string[]): void {
+    this.sortingLayers =
+      layers.length > 0 ? [...layers] : [...DEFAULT_SORTING_LAYERS];
   }
 
   apply(sceneData: SerializedScene): void {
@@ -51,6 +76,18 @@ export class EditorSceneSync {
         this.meshKinds.set(actor.id, kind);
       }
       applyActorTransform(mesh, actor);
+
+      const sorting = spriteSortingOf(actor);
+      if (sorting) {
+        applySortingToMesh(
+          mesh,
+          resolveSortingLayer(
+            this.sortingLayers,
+            sorting.layer,
+            sorting.orderInLayer,
+          ),
+        );
+      }
     }
 
     for (const [actorId, mesh] of this.meshes) {

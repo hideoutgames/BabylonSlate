@@ -15,7 +15,7 @@ import type {
   ProjectDocument,
   ProjectFolderHandle,
 } from "@babylonslate/core";
-import { documentId } from "@babylonslate/core";
+import { documentId, normalizeProjectSettings } from "@babylonslate/core";
 import {
   appendJournalLine,
   hasJournal,
@@ -97,6 +97,8 @@ interface DocumentContextValue {
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
   /** Apply a scene edit through the command layer (marks dirty + undoable). */
   applySceneChange: (id: string, next: SerializedScene) => Promise<boolean>;
+  /** Persist project.json settings (Input, 2D units, textures, …). */
+  updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -136,6 +138,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [projectDocument, setProjectDocument] = useState<ProjectDocument | null>(
     null,
   );
+  const projectDocumentRef = useRef<ProjectDocument | null>(null);
+  projectDocumentRef.current = projectDocument;
   const [listedProjects, setListedProjects] = useState<ProjectFolderHandle[]>(
     [],
   );
@@ -399,7 +403,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [enterEditor, projectService]);
 
   const saveProject = useCallback(async () => {
-    if (!projectDocument) return;
+    const document = projectDocumentRef.current;
+    if (!document) return;
     if (projectService.pendingMigrations.length > 0) {
       setMigrationPending(projectService.pendingMigrations);
       // Caller must use approveMigrationsAndSave — never silently rewrite.
@@ -421,7 +426,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
     const layouts = documentService.buildLayouts();
-    await projectService.saveProject(projectDocument, layouts);
+    await projectService.saveProject(document, layouts);
     documentService.markAllClean();
     setMigrationPending([]);
     const guid = projectService.guid;
@@ -431,14 +436,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setRecoveryAvailable(false);
     }
     bump();
-  }, [
-    bump,
-    captureAllLayouts,
-    documentService,
-    ensureDerived,
-    projectDocument,
-    projectService,
-  ]);
+  }, [bump, captureAllLayouts, documentService, ensureDerived, projectService]);
 
   const scheduleDebouncedSave = useCallback(() => {
     if (saveDebounceRef.current) {
@@ -595,6 +593,36 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump();
     },
     [bump, documentService],
+  );
+
+  const updateProjectSettings = useCallback(
+    (settings: Partial<ProjectDocument["settings"]>) => {
+      setProjectDocument((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          settings: normalizeProjectSettings({
+            ...current.settings,
+            ...settings,
+            textures: {
+              ...current.settings.textures,
+              ...settings.textures,
+            },
+            twoD: {
+              ...current.settings.twoD,
+              ...settings.twoD,
+            },
+          }),
+          metadata: {
+            ...current.metadata,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
+      scheduleDebouncedSave();
+      bump();
+    },
+    [bump, scheduleDebouncedSave],
   );
 
   const applyGraphChange = useCallback(
@@ -887,6 +915,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateGraph,
       applyGraphChange,
       applySceneChange,
+      updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,
       canUndoActiveDocument: (() => {
@@ -950,6 +979,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateGraph,
       applyGraphChange,
       applySceneChange,
+      updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,

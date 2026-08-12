@@ -1,6 +1,12 @@
 import { ArcRotateCamera, Camera, Scene, Vector3 } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
 import type { RenderScheduler } from "./render-scheduler";
+import {
+  pixelPerfectOrthoHalfHeight,
+  quantizeZoom,
+  snapToPixelGrid,
+  type PixelPerfectSettings,
+} from "./pixel-perfect";
 
 export const DEFAULT_CAMERA_RADIUS = 8;
 export const MIN_CAMERA_RADIUS = 0.5;
@@ -29,6 +35,12 @@ export interface EditorCameraController {
   updateOrthoBounds: (aspectRatio: number) => void;
   setOrthoHalfHeight: (halfHeight: number) => void;
   orthoHalfHeight: () => number;
+  /** Pixel-perfect 2D framing; pass null to return to free ortho zoom. */
+  setPixelPerfect: (settings: PixelPerfectSettings | null) => void;
+  /** Canvas height in device pixels, needed to derive pixel-perfect bounds. */
+  setCanvasHeight: (heightPx: number) => void;
+  /** Zoom factor relative to the pixel-perfect 1:1 framing. */
+  pixelZoom: () => number;
   /** Orbit is a no-op in 2D, where the plan allows pan and zoom only. */
   orbit: (deltaAlpha: number, deltaBeta: number) => void;
   pan: (deltaX: number, deltaY: number) => void;
@@ -60,10 +72,27 @@ export function createEditorCamera(
   let mode: ViewportMode = options.mode ?? "3d";
   let orthoHalfHeight = options.orthoHalfHeight ?? DEFAULT_CAMERA_RADIUS / 2;
   let aspect = 1;
+  let pixelPerfect: PixelPerfectSettings | null = null;
+  let canvasHeightPx = 0;
+  let pixelZoom = 1;
 
   const invalidate = () => options.scheduler?.invalidate("camera");
 
+  const applyPixelPerfectFraming = () => {
+    if (!pixelPerfect || mode !== "2d" || canvasHeightPx <= 0) return;
+    orthoHalfHeight = pixelPerfectOrthoHalfHeight(
+      canvasHeightPx,
+      pixelPerfect.pixelsPerUnit,
+      pixelZoom,
+    );
+    // A camera sitting between pixels smears every sprite, so the target is
+    // pinned to the pixel grid whenever pixel-perfect framing is on.
+    camera.target.x = snapToPixelGrid(camera.target.x, pixelPerfect.pixelsPerUnit);
+    camera.target.y = snapToPixelGrid(camera.target.y, pixelPerfect.pixelsPerUnit);
+  };
+
   const applyOrthoBounds = () => {
+    applyPixelPerfectFraming();
     camera.orthoTop = orthoHalfHeight;
     camera.orthoBottom = -orthoHalfHeight;
     camera.orthoLeft = -orthoHalfHeight * aspect;
@@ -127,17 +156,49 @@ export function createEditorCamera(
       );
       invalidate();
     },
+    setPixelPerfect: (settings: PixelPerfectSettings | null) => {
+      pixelPerfect = settings;
+      if (mode === "2d") {
+        applyOrthoBounds();
+        invalidate();
+      }
+    },
+    setCanvasHeight: (heightPx: number) => {
+      canvasHeightPx = Math.max(0, heightPx);
+      if (pixelPerfect && mode === "2d") {
+        applyOrthoBounds();
+        invalidate();
+      }
+    },
+    pixelZoom: () => pixelZoom,
     pan: (deltaX: number, deltaY: number) => {
       const right = camera.getDirection(Vector3.Right());
       const up = camera.getDirection(Vector3.Up());
       camera.target.addInPlace(right.scaleInPlace(deltaX));
       camera.target.addInPlace(up.scaleInPlace(deltaY));
+      if (pixelPerfect && mode === "2d") {
+        camera.target.x = snapToPixelGrid(
+          camera.target.x,
+          pixelPerfect.pixelsPerUnit,
+        );
+        camera.target.y = snapToPixelGrid(
+          camera.target.y,
+          pixelPerfect.pixelsPerUnit,
+        );
+      }
       invalidate();
     },
     zoom: (factor: number) => {
       if (factor <= 0) return;
       if (mode === "2d") {
-        orthoHalfHeight = Math.max(0.01, orthoHalfHeight / factor);
+        if (pixelPerfect) {
+          const next = pixelZoom * factor;
+          pixelZoom = pixelPerfect.integerZoomSteps
+            ? quantizeZoom(next)
+            : Math.max(0.01, next);
+        } else {
+          orthoHalfHeight = Math.max(0.01, orthoHalfHeight / factor);
+        }
         applyOrthoBounds();
       } else {
         camera.radius = Math.min(

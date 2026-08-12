@@ -34,7 +34,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const sceneRef = useRef<SerializedScene | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange } = useDocuments();
+  const { openDocuments, applySceneChange, projectDocument } = useDocuments();
   const {
     selectedActorIds,
     selectActor,
@@ -223,6 +223,21 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       cameraBounds2D: settings.cameraBounds2D,
     });
   }, [scene?.settings, viewportMode]);
+
+  useEffect(() => {
+    const twoD = projectDocument?.settings.twoD;
+    const editor = engineRef.current?.editor;
+    if (!editor || !twoD) return;
+    editor.setSortingLayers(twoD.sortingLayers);
+    editor.setPixelPerfect(
+      viewportMode === "2d" && twoD.pixelPerfect
+        ? {
+            pixelsPerUnit: twoD.pixelsPerUnit,
+            integerZoomSteps: twoD.integerZoomSteps,
+          }
+        : null,
+    );
+  }, [projectDocument?.settings.twoD, viewportMode]);
 
   return (
     <div

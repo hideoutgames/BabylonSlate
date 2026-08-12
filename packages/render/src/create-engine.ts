@@ -81,6 +81,12 @@ export interface EditorTools {
   selection: SelectionOutline;
   sync: EditorSceneSync;
   setViewportMode: (mode: ViewportMode) => void;
+  /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
+  setPixelPerfect: (
+    settings: { pixelsPerUnit: number; integerZoomSteps: boolean } | null,
+  ) => void;
+  /** Ordered sorting layers from project settings, back to front. */
+  setSortingLayers: (layers: readonly string[]) => void;
   /** Tile grid, subdivision and 2D game camera bounds from scene settings. */
   setGridSettings: (settings: {
     tileSize: number;
@@ -201,6 +207,14 @@ export function createEngine(
         grid.setMode(next);
         scheduler.invalidate("camera");
       },
+      setPixelPerfect: (settings) => {
+        cameraController.setCanvasHeight(engine.getRenderHeight());
+        cameraController.setPixelPerfect(settings);
+      },
+      setSortingLayers: (layers) => {
+        editorSync.setSortingLayers(layers);
+        scheduler.invalidate("asset");
+      },
       setGridSettings: (settings) => {
         grid.setSpacing(settings.tileSize);
         grid.setSubdivisions(settings.tileSubdivisions);
@@ -244,6 +258,7 @@ export function createEngine(
     const width = engine.getRenderWidth();
     const height = engine.getRenderHeight();
     if (height > 0) {
+      editor?.camera.setCanvasHeight(height);
       editor?.camera.updateOrthoBounds(width / height);
     }
   };
