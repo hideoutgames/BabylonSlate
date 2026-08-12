@@ -5,6 +5,7 @@ import {
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import {
+  applyEditorClearColor,
   createEngine,
   syncEditorPlayState,
   type EngineHandle,
@@ -18,6 +19,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
+import { useResolvedTheme } from "../context/theme-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { isTestModeEnabled } from "@babylonslate/vfs";
@@ -50,6 +52,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     viewportMode,
   } = useSceneEditing();
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
+  const colorScheme = useResolvedTheme();
   const selectActorRef = useRef(selectActor);
   selectActorRef.current = selectActor;
   const setSelectedActorIdsRef = useRef(setSelectedActorIds);
@@ -125,6 +128,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const handle = createEngine(canvas, {
       editor: true,
       viewportMode,
+      colorScheme,
       onPickActor: (actorId) => selectActorRef.current(actorId),
       onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
       onGizmoDragStart: () => {
@@ -192,6 +196,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     // are pushed to it by the effects below rather than recreating it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commitGizmoTransform, registerSharedEngine, registerScheduler]);
+
+  useEffect(() => {
+    const handle = engineRef.current;
+    if (!handle) return;
+    applyEditorClearColor(handle.scene, colorScheme);
+    handle.scheduler.invalidate("camera");
+  }, [colorScheme]);
 
   useEffect(() => {
     if (engineRef.current) {

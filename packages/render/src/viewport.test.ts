@@ -71,12 +71,21 @@ describe("viewport", () => {
     expect(scene.ambientColor.b).toBe(0);
   });
 
-  it("uses the dark shell background as clearColor (oklch(0.28 0.014 250) ≈ #242a30)", () => {
+  it("uses the dark Neutral background as clearColor (oklch(0.145 0 0) ≈ #242424)", () => {
     const { scene } = createHandle();
 
     expect(scene.clearColor.r).toBeCloseTo(36 / 255);
-    expect(scene.clearColor.g).toBeCloseTo(42 / 255);
-    expect(scene.clearColor.b).toBeCloseTo(48 / 255);
+    expect(scene.clearColor.g).toBeCloseTo(36 / 255);
+    expect(scene.clearColor.b).toBeCloseTo(36 / 255);
     expect(scene.clearColor.a).toBe(1);
+  });
+
+  it("uses white clearColor for the light Neutral canvas", () => {
+    const handle = createTestEngine("light");
+    handles.push(handle);
+
+    expect(handle.scene.clearColor.r).toBe(1);
+    expect(handle.scene.clearColor.g).toBe(1);
+    expect(handle.scene.clearColor.b).toBe(1);
   });
 });

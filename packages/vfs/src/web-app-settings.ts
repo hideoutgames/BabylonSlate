@@ -5,7 +5,8 @@ import {
   type EngineSettings,
 } from "./app-settings";
 
-const KEY = "babylonslate:engine-settings";
+export const ENGINE_SETTINGS_STORAGE_KEY = "babylonslate:engine-settings";
+const KEY = ENGINE_SETTINGS_STORAGE_KEY;
 
 /**
  * Web app-settings backend. Prefers localStorage; falls back to in-memory.

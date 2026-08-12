@@ -260,5 +260,34 @@ describe("GraphEditor", () => {
     );
     expect(messageHandle).not.toBeNull();
   });
+
+  it("uses the host colorMode on the canvas", () => {
+    const { container } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        colorMode="light"
+      />,
+    );
+    const canvas = container.querySelector(".react-flow");
+    expect(canvas?.className).toMatch(/\blight\b/);
+  });
+
+  it("defaults colorMode from the document scheme", () => {
+    document.documentElement.classList.remove("dark");
+    const { container, unmount } = render(
+      <GraphEditor initialGraph={{ nodes: [], edges: [] }} />,
+    );
+    expect(container.querySelector(".react-flow")?.className).toMatch(
+      /\blight\b/,
+    );
+    unmount();
+    document.documentElement.classList.add("dark");
+    const again = render(
+      <GraphEditor initialGraph={{ nodes: [], edges: [] }} />,
+    );
+    expect(again.container.querySelector(".react-flow")?.className).toMatch(
+      /\bdark\b/,
+    );
+  });
 });
 

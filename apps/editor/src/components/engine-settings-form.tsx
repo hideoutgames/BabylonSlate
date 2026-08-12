@@ -60,14 +60,20 @@ export function EngineSettingsForm({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="system">System</SelectItem>
-                <SelectItem value="light">Light</SelectItem>
-                <SelectItem value="dark">Dark</SelectItem>
+                <SelectItem value="system" data-testid="setting-theme-system">
+                  System
+                </SelectItem>
+                <SelectItem value="light" data-testid="setting-theme-light">
+                  Light
+                </SelectItem>
+                <SelectItem value="dark" data-testid="setting-theme-dark">
+                  Dark
+                </SelectItem>
               </SelectContent>
             </Select>
             <FieldDescription>
-              Stored on this machine. A runtime toggle is planned; the editor
-              currently stays on the dark shell.
+              Light, Dark, or match this device. Applies to chrome, the graph
+              canvas, and the viewport background.
             </FieldDescription>
           </Field>
           <Field>
@@ -91,8 +97,9 @@ export function EngineSettingsForm({
               }
             />
             <FieldDescription>
-              Multiplier for touch hit targets on this device. Shell chrome
-              still floors at 44px.
+              Multiplier for touch hit targets on this device. Graph pins and
+              other `--touch-target` controls stay at 44px; chrome uses
+              `--chrome-row`.
             </FieldDescription>
           </Field>
         </FieldSet>

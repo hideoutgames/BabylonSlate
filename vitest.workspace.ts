@@ -30,7 +30,7 @@ export default defineConfig({
             "packages/editor-kit/**/*.test.tsx",
             "packages/graph-ui/**/*.test.{ts,tsx}",
             "packages/vfs/**/*.test.ts",
-            "apps/editor/**/*.test.ts",
+            "apps/editor/**/*.test.{ts,tsx}",
           ],
         },
       },

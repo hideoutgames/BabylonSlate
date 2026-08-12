@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { saveAllIfEnabled } from "./save-all";
 
 async function openTestProject(page: Page) {
   await page.goto("/?test=1");
@@ -99,7 +100,7 @@ test.describe("Editor density and IA", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page.getByTestId("save-project").click();
+    await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
 
@@ -116,5 +117,32 @@ test.describe("Editor density and IA", () => {
     await page.getByTestId("homepage-rename-input").fill("Renamed Game");
     await page.getByTestId("homepage-rename-confirm").click();
     await expect(listed).toContainText("Renamed Game");
+  });
+
+  test("Save All is disabled when clean and shows a dirty dot after an edit", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+
+    const saveAll = page.getByTestId("save-all-project");
+    await expect(saveAll).toBeDisabled();
+    await expect(page.getByTestId("save-all-dirty")).toHaveCount(0);
+
+    await page
+      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("outliner-add-actor").click();
+    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    await page.getByTestId("place-actors-item-shape-box").click();
+
+    await expect(saveAll).toBeEnabled();
+    await expect(page.getByTestId("save-all-dirty")).toBeVisible();
+    await expect(saveAll).toHaveAttribute(
+      "aria-label",
+      "Save All (unsaved changes)",
+    );
   });
 });

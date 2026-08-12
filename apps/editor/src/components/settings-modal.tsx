@@ -168,6 +168,7 @@ export function SettingsModal({
       await store.save(next);
       dispatchEngineSettingsChanged({
         viewportFrameCap: next.viewportFrameCap,
+        theme: next.appearance.theme,
       });
       await onEngineSaved?.();
     },

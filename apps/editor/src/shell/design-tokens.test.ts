@@ -90,22 +90,42 @@ describe("authored shell stylesheets", () => {
   });
 });
 
-describe("Unreal-inspired theme tokens", () => {
+describe("Minimal Neutral theme tokens", () => {
+  const root = cssBlock(globalsCss, ":root");
   const dark = cssBlock(globalsCss, ".dark");
 
-  it("keeps dark background above complete black", () => {
-    const background = tokenValue(dark, "--background");
-    expect(oklchLightness(background)).toBeGreaterThanOrEqual(0.2);
+  it("uses ink primary in both schemes", () => {
+    expect(oklchChroma(tokenValue(root, "--primary"))).toBeLessThan(0.01);
+    expect(oklchChroma(tokenValue(dark, "--primary"))).toBeLessThan(0.01);
   });
 
-  it("uses a chromatic primary instead of ink", () => {
-    const primary = tokenValue(dark, "--primary");
-    expect(oklchChroma(primary)).toBeGreaterThan(0.05);
+  it("uses Neutral light and dark backgrounds", () => {
+    expect(tokenValue(root, "--background")).toBe("oklch(1 0 0)");
+    expect(tokenValue(dark, "--background")).toBe("oklch(0.145 0 0)");
+  });
+
+  it("points the chrome tab accent at foreground", () => {
+    expect(tokenValue(root, "--chrome-tab-accent")).toBe("var(--foreground)");
+    expect(tokenValue(dark, "--chrome-tab-accent")).toBe("var(--foreground)");
+  });
+
+  it("keeps a chromatic Z axis independent of ink primary", () => {
+    expect(tokenValue(root, "--axis-z")).not.toBe("var(--primary)");
+    expect(oklchChroma(tokenValue(root, "--axis-z"))).toBeGreaterThan(0.05);
+    expect(tokenValue(dark, "--axis-z")).not.toBe("var(--primary)");
+    expect(oklchChroma(tokenValue(dark, "--axis-z"))).toBeGreaterThan(0.05);
+  });
+
+  it("uses a darker exec pin in light than in dark", () => {
+    expect(oklchLightness(tokenValue(root, "--pin-exec"))).toBeLessThan(
+      oklchLightness(tokenValue(dark, "--pin-exec")),
+    );
   });
 
   it("defines pin type tokens", () => {
     for (const name of PIN_TOKENS) {
       expect(tokenValue(dark, name), name).not.toBe("");
+      expect(tokenValue(root, name), name).not.toBe("");
     }
   });
 
@@ -121,12 +141,7 @@ describe("Unreal-inspired theme tokens", () => {
     expect(tokenValue(dark, "--graph-edge-data")).toBe("4px");
   });
 
-  it("points the chrome tab accent at primary", () => {
-    expect(tokenValue(dark, "--chrome-tab-accent")).toBe("var(--primary)");
-  });
-
   it("defines a compact chrome row token", () => {
-    const root = cssBlock(globalsCss, ":root");
     expect(tokenValue(root, "--chrome-row")).toBe("28px");
   });
 });

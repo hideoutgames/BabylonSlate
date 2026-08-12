@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -7,6 +7,29 @@
     <title>editor</title>
     <!-- COOP/COEP via coi-serviceworker so SharedArrayBuffer may activate on Pages. -->
     <script src="/coi-serviceworker.js"></script>
+    <script>
+      (function () {
+        var preference = "system";
+        try {
+          var raw = localStorage.getItem("babylonslate:engine-settings");
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            var theme = parsed && parsed.appearance && parsed.appearance.theme;
+            if (theme === "light" || theme === "dark" || theme === "system") {
+              preference = theme;
+            }
+          }
+        } catch (e) {
+          /* ignore */
+        }
+        var prefersDark =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var dark =
+          preference === "dark" || (preference !== "light" && prefersDark);
+        document.documentElement.classList.toggle("dark", dark);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

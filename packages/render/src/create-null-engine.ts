@@ -1,9 +1,14 @@
 import { NullEngine, Scene } from "@babylonjs/core";
-import { EDITOR_CLEAR_COLOR } from "./editor-clear-color";
+import {
+  editorClearColor,
+  type EditorColorScheme,
+} from "./editor-clear-color";
 
-export function createTestEngine(): { engine: NullEngine; scene: Scene } {
+export function createTestEngine(
+  scheme: EditorColorScheme = "dark",
+): { engine: NullEngine; scene: Scene } {
   const engine = new NullEngine();
   const scene = new Scene(engine);
-  scene.clearColor = EDITOR_CLEAR_COLOR.clone();
+  scene.clearColor = editorClearColor(scheme);
   return { engine, scene };
 }

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { saveAllIfEnabled } from "./save-all";
 
 async function openTestProject(page: import("@playwright/test").Page) {
   await page.goto("/?test=1");
@@ -58,7 +59,7 @@ test.describe("BabylonSlate editor smoke", () => {
     expect(prefabBox, "prefab canvas should fill the center tab").not.toBeNull();
     expect(prefabBox!.height).toBeGreaterThan(160);
 
-    await page.getByTestId("save-project").click();
+    await saveAllIfEnabled(page);
 
     await page
       .locator('[data-testid="document-tab"][data-document-kind="scene"]')
@@ -77,7 +78,7 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
     await expect(page.locator("canvas")).toHaveCount(0);
 
-    await page.getByTestId("save-project").click();
+    await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.getByTestId("create-project-empty").click();
@@ -89,7 +90,7 @@ test.describe("BabylonSlate editor smoke", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page.getByTestId("save-project").click();
+    await saveAllIfEnabled(page);
     await expect(page.getByTestId("project-name")).toContainText("TestProject");
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
