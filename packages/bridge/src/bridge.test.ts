@@ -113,6 +113,26 @@ describe("transferable ping-pong", () => {
     const next = ping.beginWrite();
     expect(next.length).toBe(writeBuf.length);
   });
+
+  it("recycles a cancelled write instead of leaking the buffer", () => {
+    const ping = new TransferablePingPong(2);
+    // Drain and return the initial free pool (2 buffers).
+    const bufA = ping.beginWrite();
+    const abA = ping.commitWrite();
+    const bufB = ping.beginWrite();
+    const abB = ping.commitWrite();
+    expect(bufA.length).toBe(bufB.length);
+    ping.recycle(abA);
+    ping.recycle(abB);
+
+    // A write that discovers there is nothing to send this frame must give
+    // its buffer back rather than leaking it — otherwise the free pool
+    // drains to zero and every later frame pays a fresh allocation.
+    const scratchBuffer = ping.beginWrite().buffer;
+    ping.cancelWrite();
+    const reused = ping.beginWrite();
+    expect(reused.buffer).toBe(scratchBuffer);
+  });
 });
 
 describe("typed RPC", () => {

@@ -33,6 +33,14 @@ export class TransferablePingPong {
     return ab;
   }
 
+  /** Abandon a `beginWrite()` that produced nothing worth sending this frame. */
+  cancelWrite(): void {
+    if (!this.writing) return;
+    const ab = this.writing.buffer as ArrayBuffer;
+    this.writing = null;
+    this.recycle(ab);
+  }
+
   recycle(buffer: ArrayBuffer): void {
     if (buffer.byteLength === this.floatCount * 4) {
       this.free.push(buffer);

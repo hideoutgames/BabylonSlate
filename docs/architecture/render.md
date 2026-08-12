@@ -19,6 +19,8 @@ Dirty-driven editor loop: early-return unless invalidated. Continuous-render lea
 
 `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. Pause render loop, game worker, and encode queue on background.
 
+The dynamic resolution valve (`HardwareScalingController.noteFrameTime`) is fed the cost of `scene.render()` itself, timed immediately around that call — never the wall-clock gap since the previous rendered frame. Render-on-demand can leave that gap at seconds while idle; feeding the idle gap in would read as a catastrophic frame time on the next render and drop quality for no reason.
+
 ## Resource cache
 
 LRU with byte ceiling (~512 MB accounted) plus refcounts. Stable blob URL per asset guid for app lifetime; textures resolve only via `ResourceCache.getTexture()` with one canonical sampling-option set so engine-level `InternalTexture` dedupe hits across editor and Play scenes.
