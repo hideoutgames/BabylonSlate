@@ -273,7 +273,7 @@ Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tr
 
 Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers both acceptance claims (a scripted actor running in Preview; a type mismatch blocking Preview with tap-to-navigate).
 
-**Follow-ups (non-blocking polish):** full row editors for Enum/Structure/Interface documents; project-wide pre-Preview sweep beyond the active graph; export-time Print strip preset; graph ownership by a class asset (class ids currently derive from the graph file name); latent nodes resolve as host promises rather than async generator state machines.
+**Follow-ups (non-blocking polish):** full row editors for Enum/Structure/Interface documents; project-wide pre-Preview sweep beyond the active graph; export-time Print strip preset; graph ownership by a class asset (class ids currently derive from the graph file name); latent nodes resolve as host promises rather than async generator state machines; tap-to-navigate selects and fits the node but does not yet flash the offending pin (pins do carry `data-error`).
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design My Class UX against `ClassRegistry.reparent` from the start.
