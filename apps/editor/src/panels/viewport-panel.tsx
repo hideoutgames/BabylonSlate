@@ -48,6 +48,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   selectActorRef.current = selectActor;
   const setSelectedActorIdsRef = useRef(setSelectedActorIds);
   setSelectedActorIdsRef.current = setSelectedActorIds;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -122,6 +124,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         dragStartSceneRef.current = sceneRef.current;
       },
       onGizmoDragEnd: () => commitGizmoTransform(),
+      editorFlyEnabled: () => !playingRef.current,
     });
     engineRef.current = handle;
     registerSharedEngine(handle.engine);

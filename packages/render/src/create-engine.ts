@@ -15,6 +15,7 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
+import { attachViewportFlyKeys } from "./viewport-fly-keys";
 import { configureKtx2Transcoder } from "./ktx2-transcoder";
 import { EDITOR_CLEAR_COLOR } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
@@ -73,6 +74,8 @@ export interface CreateEngineOptions {
   onGizmoDragStart?: () => void;
   onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
+  /** When false, WASD does not fly the editor camera (Play overlay). */
+  editorFlyEnabled?: () => boolean;
 }
 
 export interface EditorTools {
@@ -195,7 +198,17 @@ export function createEngine(
         options.onMarqueeSelect(actorIds);
       },
     });
-    disposeGestures = gestures.dispose;
+    const flyKeys =
+      typeof window === "undefined"
+        ? null
+        : attachViewportFlyKeys(window, cameraController, canvas, {
+            scheduler,
+            isEnabled: options.editorFlyEnabled,
+          });
+    disposeGestures = () => {
+      gestures.dispose();
+      flyKeys?.dispose();
+    };
 
     editor = {
       camera: cameraController,
