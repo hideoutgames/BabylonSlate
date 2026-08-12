@@ -51,6 +51,7 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { useDocuments } from "../context/document-context";
+import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
   ASSET_DRAG_MIME,
@@ -68,6 +69,7 @@ import {
   uniqueAssetTypes,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
+import { revealAssetFromTarget } from "../lib/search-navigation";
 
 const PROJECT_ROOT_ID = "project";
 const ASSETS_ROOT = "assets";
@@ -207,6 +209,7 @@ function AssetTile({
       data-testid={`content-item-${asset.path}`}
       data-asset-path={asset.path}
       data-asset-guid={asset.header.guid}
+      data-selected={selected ? "true" : "false"}
       className={`relative flex min-h-11 flex-col gap-1 rounded-md border p-3 text-left hover:bg-accent ${
         selected ? "border-primary bg-accent/60" : "border-border"
       }`}
@@ -272,6 +275,7 @@ export function ContentBrowserWorkspace() {
     loadAssetThumbnail,
     thumbnailsEnabled,
   } = useDocuments();
+  const { pendingTarget, clearPendingTarget } = useProjectSearch();
   const { diagnostics } = useValidation();
   const compileErrorGuids = useMemo(() => {
     const set = new Set<string>();
@@ -298,6 +302,20 @@ export function ContentBrowserWorkspace() {
   const thumbnailUrlsRef = useRef(thumbnailUrls);
   thumbnailUrlsRef.current = thumbnailUrls;
   const menuTargetGuidsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!pendingTarget) return;
+    const reveal = revealAssetFromTarget(pendingTarget);
+    if (!reveal) return;
+    const folder = reveal.path.includes("/")
+      ? reveal.path.slice(0, reveal.path.lastIndexOf("/"))
+      : ASSETS_ROOT;
+    setSelectedFolderPath(folder || ASSETS_ROOT);
+    setTypeFilter(null);
+    setSearch("");
+    setSelectedGuids(new Set([reveal.guid]));
+    clearPendingTarget();
+  }, [clearPendingTarget, pendingTarget]);
 
   const folderTree = useMemo(
     () => assetRegistry?.folderTree(PROJECT_ROOT_ID) ?? null,
