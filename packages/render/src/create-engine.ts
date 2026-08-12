@@ -82,6 +82,8 @@ export interface CreateEngineOptions {
   editorFlyEnabled?: () => boolean;
   /** Viewport clear color scheme; defaults from `html.dark` when present. */
   colorScheme?: EditorColorScheme;
+  /** Optional fps cap. Play sessions pass project `playFrameCap` (default 60). */
+  frameCap?: number;
 }
 
 export interface EditorTools {
@@ -155,6 +157,9 @@ export function createEngine(
   const scheduler = new RenderScheduler();
   if (options.editor) {
     scheduler.setAlwaysRender(true);
+  }
+  if (options.frameCap !== undefined) {
+    scheduler.setFrameCap(options.frameCap);
   }
   const releasePlayLoop = options.playMode
     ? scheduler.acquireContinuous("play")

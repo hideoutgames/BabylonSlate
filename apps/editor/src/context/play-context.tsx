@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Engine } from "@babylonjs/core";
+import { DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
 import { createAppEngine } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
@@ -64,7 +65,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     "worker" | "in-process" | null
   >(null);
   const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
-  const { collectScriptBundles, openDocuments, activeDocumentId } = useDocuments();
+  const { collectScriptBundles, openDocuments, activeDocumentId, projectDocument } =
+    useDocuments();
   const playPhysics = playPhysicsFromOpenDocuments(
     openDocuments,
     activeDocumentId,
@@ -208,6 +210,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             injectFixtureThrow={injectThrow}
             scripts={scripts}
             physics={playPhysics}
+            frameCap={
+              projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
+            }
             onClose={handleClose}
           />
         ) : null}

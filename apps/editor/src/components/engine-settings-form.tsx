@@ -1,3 +1,4 @@
+import { NumberField } from "@babylonslate/editor-kit";
 import type { EngineSettings } from "@babylonslate/vfs";
 import { Switch } from "@babylonslate/ui/components/switch";
 import {
@@ -79,20 +80,18 @@ export function EngineSettingsForm({
             <FieldLabel htmlFor="setting-pointer-scale">
               Coarse pointer target scale
             </FieldLabel>
-            <Input
+            <NumberField
               id="setting-pointer-scale"
-              type="number"
               min={1}
               step={0.1}
               className="min-h-[var(--touch-target,44px)]"
               data-testid="setting-pointer-scale"
               value={settings.appearance.coarsePointerTargetScale}
-              onChange={(event) =>
+              onChange={(coarsePointerTargetScale) =>
                 void onChange({
                   appearance: {
                     ...settings.appearance,
-                    coarsePointerTargetScale:
-                      Number(event.target.value) || 1,
+                    coarsePointerTargetScale,
                   },
                 })
               }
@@ -113,16 +112,15 @@ export function EngineSettingsForm({
             <FieldLabel htmlFor="setting-undo-length">
               Undo history length
             </FieldLabel>
-            <Input
+            <NumberField
               id="setting-undo-length"
-              type="number"
+              min={1}
+              step={1}
               className="min-h-[var(--touch-target,44px)]"
               data-testid="setting-undo-length"
               value={settings.undoHistoryLength}
-              onChange={(event) =>
-                void onChange({
-                  undoHistoryLength: Number(event.target.value) || 50,
-                })
+              onChange={(undoHistoryLength) =>
+                void onChange({ undoHistoryLength })
               }
             />
             <FieldDescription>
@@ -139,16 +137,14 @@ export function EngineSettingsForm({
             <FieldLabel htmlFor="setting-frame-cap">
               Viewport frame cap
             </FieldLabel>
-            <Input
+            <NumberField
               id="setting-frame-cap"
-              type="number"
+              min={1}
               className="min-h-[var(--touch-target,44px)]"
               data-testid="setting-frame-cap"
               value={settings.viewportFrameCap}
-              onChange={(event) =>
-                void onChange({
-                  viewportFrameCap: Number(event.target.value) || 60,
-                })
+              onChange={(viewportFrameCap) =>
+                void onChange({ viewportFrameCap })
               }
             />
             <FieldDescription>
@@ -160,18 +156,15 @@ export function EngineSettingsForm({
             <FieldLabel htmlFor="setting-hardware-scale">
               Hardware scaling level
             </FieldLabel>
-            <Input
+            <NumberField
               id="setting-hardware-scale"
-              type="number"
               min={0.25}
               step={0.25}
               className="min-h-[var(--touch-target,44px)]"
               data-testid="setting-hardware-scale"
               value={settings.hardwareScalingLevel}
-              onChange={(event) =>
-                void onChange({
-                  hardwareScalingLevel: Number(event.target.value) || 1,
-                })
+              onChange={(hardwareScalingLevel) =>
+                void onChange({ hardwareScalingLevel })
               }
             />
             <FieldDescription>

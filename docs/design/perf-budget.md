@@ -6,7 +6,7 @@ Target device: **11-inch A16 iPad**, 6 GB RAM, WebGL2, WKWebView. Desktop builds
 
 | Metric | Budget | Notes |
 | --- | --- | --- |
-| Play / interaction | 60 fps native refresh | Dynamic resolution scaling before frame drops |
+| Play / interaction | project `playFrameCap` (default 60) | Caps Play/Preview; overlay can override for the session |
 | Visible editor viewport | Engine Settings frame cap (default 60) | Scene + Prefab Preview while on screen |
 | Hidden / modal / Play / background | **0 rendered frames** | Freeze the editor loop (§2.4) |
 | Game tick (combined) | &lt; 8 ms | ~5 ms scripts + ~3 ms physics in one worker |
@@ -29,6 +29,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Shadow maps default 1024; post-processing off by default.
 - Pause render loop, game worker, and encode queue on `visibilitychange` / app background.
 - Visible editor viewports render at `viewportFrameCap`; freeze when hidden, obstructed, or a modal is open. Dirty-driven idle is the Always Render-off path; continuous-render leases stay refcounted.
+- Play/Preview renders at project `playFrameCap` (default 60), not the editor viewport cap.
 - Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags).
 - No per-actor per-frame allocation in snapshot apply (reuse scratch math objects).
 

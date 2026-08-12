@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
-import { diagnosticFromCommand } from "./play-session";
+import { diagnosticFromCommand, resolvePlayFrameCap } from "./play-session";
 
 describe("diagnosticFromCommand", () => {
   it("maps a worker diagnostic command into a RuntimeDiagnostic", () => {
@@ -66,5 +66,17 @@ describe("diagnosticFromCommand", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.count).toBe(3);
     expect(entries[0]!.nodeId).toBe("node-1");
+  });
+});
+
+describe("resolvePlayFrameCap", () => {
+  it("defaults omitted or invalid caps to 60 so Play is not Infinity", () => {
+    expect(resolvePlayFrameCap()).toBe(60);
+    expect(resolvePlayFrameCap(0)).toBe(60);
+    expect(resolvePlayFrameCap(-1)).toBe(60);
+  });
+
+  it("keeps a positive session cap", () => {
+    expect(resolvePlayFrameCap(30)).toBe(30);
   });
 });

@@ -33,6 +33,7 @@ describe("project schema", () => {
     expect(jumpPad).toBe("0:0");
     expect(confirmPad).toBe("0:1");
     expect(jumpPad).not.toBe(confirmPad);
+    expect(project.settings.playFrameCap).toBe(60);
   });
 
   it("creates default scene and graph structures", () => {
@@ -54,5 +55,12 @@ describe("project schema", () => {
     expect(settings.twoD.pixelsPerUnit).toBe(100);
     expect(settings.twoD.pixelPerfect).toBe(true);
     expect(settings.twoD.sortingLayers).toEqual(["Default", "UI"]);
+  });
+
+  it("defaults playFrameCap to 60 and keeps a positive override", () => {
+    expect(normalizeProjectSettings(undefined).playFrameCap).toBe(60);
+    expect(normalizeProjectSettings({}).playFrameCap).toBe(60);
+    expect(normalizeProjectSettings({ playFrameCap: 0 }).playFrameCap).toBe(60);
+    expect(normalizeProjectSettings({ playFrameCap: 30 }).playFrameCap).toBe(30);
   });
 });

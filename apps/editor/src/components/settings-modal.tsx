@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CatalogDialog,
+  NumberField,
   type CatalogCategory,
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
@@ -57,6 +58,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords: "pixels per unit pixel perfect integer zoom sorting layers",
   },
   {
+    id: "rendering",
+    label: "Rendering",
+    keywords: "frame cap fps play preview",
+  },
+  {
     id: "textures",
     label: "Textures",
     keywords: "max dimension encoding retry compression",
@@ -74,7 +80,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Project", ids: ["general", "input", "twoD", "textures", "export"] },
+  { label: "Project", ids: ["general", "input", "twoD", "rendering", "textures", "export"] },
   { label: "Session", ids: ["project"] },
 ];
 
@@ -327,18 +333,17 @@ export function SettingsModal({
             <FieldLegend>2D</FieldLegend>
             <Field>
               <FieldLabel htmlFor="pixels-per-unit">Pixels per unit</FieldLabel>
-              <Input
+              <NumberField
                 id="pixels-per-unit"
-                type="number"
                 min={1}
                 step={1}
                 className="min-h-[var(--touch-target,44px)]"
                 value={twoD.pixelsPerUnit}
-                onChange={(event) =>
+                onChange={(pixelsPerUnit) =>
                   updateProjectSettings({
                     twoD: {
                       ...twoD,
-                      pixelsPerUnit: Number(event.target.value) || 100,
+                      pixelsPerUnit,
                     },
                   })
                 }
@@ -404,6 +409,37 @@ export function SettingsModal({
               <FieldDescription>
                 Comma-separated, back to front. Compiles to one alphaIndex sort
                 key per sprite.
+              </FieldDescription>
+            </Field>
+          </FieldSet>
+        </FieldGroup>
+      ) : null}
+
+      {showProjectBody && projectDocument && activeCategoryId === "rendering" ? (
+        <FieldGroup className="gap-4">
+          <FieldSet>
+            <FieldLegend>Rendering</FieldLegend>
+            <Field>
+              <FieldLabel htmlFor="setting-play-frame-cap">
+                Play frame cap
+              </FieldLabel>
+              <Input
+                id="setting-play-frame-cap"
+                type="number"
+                min={1}
+                step={1}
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid="setting-play-frame-cap"
+                value={projectDocument.settings.playFrameCap}
+                onChange={(event) =>
+                  updateProjectSettings({
+                    playFrameCap: Number(event.target.value) || 60,
+                  })
+                }
+              />
+              <FieldDescription>
+                Caps Play and Preview. The editor viewport cap lives in Engine
+                Settings.
               </FieldDescription>
             </Field>
           </FieldSet>

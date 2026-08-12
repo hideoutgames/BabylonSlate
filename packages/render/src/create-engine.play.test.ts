@@ -104,6 +104,19 @@ describe("Play createEngine view", () => {
     expect(handle.scheduler.shouldRender()).toBe(true);
   });
 
+  it("honors an explicit Play frame cap", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      frameCap: 30,
+    });
+    handles.push(handle);
+    handle.scheduler.noteRendered(0);
+    expect(handle.scheduler.shouldRender(20)).toBe(false);
+    expect(handle.scheduler.shouldRender(34)).toBe(true);
+  });
+
   it("syncEditorPlayState unpauses, resizes, and invalidates when Play ends", () => {
     const engine = sharedEngine();
     const resize = vi.spyOn(engine, "resize");
