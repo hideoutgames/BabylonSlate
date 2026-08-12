@@ -301,6 +301,29 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/scripting:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
+  packages/scripting-nodes:
+    dependencies:
+      '@babylonslate/scripting':
+        specifier: workspace:*
+        version: link:../scripting
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/test-kit:
     dependencies:
       '@babylonslate/bridge':

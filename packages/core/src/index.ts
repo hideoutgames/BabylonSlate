@@ -4,3 +4,4 @@ export * from "./project";
 export * from "./document";
 export * from "./guid-result";
 export * from "./math-rng";
+export * from "./format-value";
