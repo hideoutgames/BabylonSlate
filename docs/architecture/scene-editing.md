@@ -53,6 +53,8 @@ Both systems are **mode-parametric** via `ViewportMode` from `@babylonslate/core
 
 **2D convention** (fixed, left-handed Babylon): content on the **XY plane**, **+Y up**, **+X right**, editor camera at **−Z** looking toward **+Z**. `scene.useRightHandedSystem` stays `false`.
 
+**Per-mode pose memory** (in-session, not serialized): `setMode` snapshots the live camera before switching and restores the destination mode's last pose. 3D stores target / alpha / beta / radius; 2D stores target / ortho half-height / pixel zoom. The first visit to a mode keeps the live target (so 3D→2D still looks at the same place) and applies that mode's defaults. Poses live on the editor camera controller, so they do not dirty the scene document or the undo stack. Save/reopen still uses the default camera.
+
 Implementation: `editor-camera.ts`, `gizmo-host.ts` in `@babylonslate/render`. Gizmos stay Babylon `PositionGizmo` / `RotationGizmo` / `ScaleGizmo` on a utility layer. Restyle (not a custom mesh engine): unlit `disableLighting` + emissive axis `Color3`s (`GIZMO_AXIS_COLORS`, paired with chrome `--axis-x/y/z` in [theming.md](theming.md)), `GIZMO_SHAFT_THICKNESS` 0.45, rotation tessellation 64, planar translate squares at idle alpha ~0.16 / hover ~0.42, hover brightens the active axis. Uniform scale uses a small center cube. Keep `gizmoAxisEnabledFlags` (2D hides unused axes), snap, drag leases / undo coalesce, and `hitTest` blocking camera look. Prefab shares the same host. Selection outline in `selection-outline.ts` stays a cheap mesh outline (color ~`(0.42, 0.78, 1)`, width `0.022`) — not a HighlightLayer.
 
 ## EditorSceneSync

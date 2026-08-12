@@ -53,7 +53,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 
 | Module | Role |
 | --- | --- |
-| `editor-camera` | Mode-parametric ArcRotate controller; 3D look-in-place + fly, 2D ortho pan/zoom, pixel-perfect framing |
+| `editor-camera` | Mode-parametric ArcRotate controller; 3D look-in-place + fly, 2D ortho pan/zoom, pixel-perfect framing. `setMode` snapshots the current pose and restores the other mode's last in-session framing (not written to the scene document). |
 | `gizmo-host` | Translate / rotate / scale on a utility layer; unlit axis materials (`GIZMO_AXIS_COLORS`), thinner shafts, planar handles, hover; axis set filtered by `ViewportMode`; `hitTest` / `isDragging` block camera look |
 | `editor-grid` | 3D XZ or 2D XY grid; tile spacing + subdivisions; `cameraBounds2D` overlay |
 | `selection-outline` | Highlight mesh(es) for selected actors |
