@@ -24,6 +24,7 @@ import {
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
+  SoftwarePhysicsBackend,
   type PhysicsWorldKind,
 } from "@babylonslate/physics";
 import { LogRingBuffer } from "./log-ring";
@@ -286,6 +287,9 @@ class InProcessRuntime implements RuntimeDriver {
 
   async loadPhysics(): Promise<void> {
     if (this.preferSoftwarePhysics) return;
+    if (!(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
+      return;
+    }
     const backend = await createPhysicsBackend({
       kind: this.physicsWorldKind,
       gravity: {
@@ -296,6 +300,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
     this.physicsSync.dispose();
     this.physicsSync = new PhysicsWorldSync(backend);
+    this.physicsSync.syncFromWorld(this.world);
   }
 
   getPhysicsSync(): PhysicsWorldSync | null {

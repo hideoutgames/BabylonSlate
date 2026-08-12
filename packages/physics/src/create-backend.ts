@@ -35,8 +35,9 @@ export async function createPhysicsBackend(
   if (options.kind === "3d") {
     try {
       const { HavokPhysicsBackend } = await import("./havok-backend");
+      const backend = await HavokPhysicsBackend.create(options);
       loadedBackendModules.havok = true;
-      return await HavokPhysicsBackend.create(options);
+      return backend;
     } catch (error) {
       console.warn(
         "[physics] Havok failed to load; falling back to software backend",
@@ -48,8 +49,9 @@ export async function createPhysicsBackend(
 
   try {
     const { Rapier2DPhysicsBackend } = await import("./rapier-backend");
+    const backend = await Rapier2DPhysicsBackend.create(options);
     loadedBackendModules.rapier = true;
-    return await Rapier2DPhysicsBackend.create(options);
+    return backend;
   } catch (error) {
     console.warn(
       "[physics] Rapier2D failed to load; falling back to software backend",
