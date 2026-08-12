@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { closeProjectViaSettings } from "./close-project";
 
 async function openTestProject(page: Page) {
   await page.goto("/?test=1");
@@ -110,22 +111,32 @@ test.describe("P6 first-playable scene editing", () => {
 
     await page.getByTestId("save-project").click();
 
-    await page.getByTestId("viewport-mode-toggle").click();
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+    await page.getByTestId("viewport-mode-2d").click();
+    await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await page.getByTestId("undo-document").click();
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("3D");
-    await page.getByTestId("viewport-mode-toggle").click();
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+    await expect(page.getByTestId("viewport-mode-3d")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.getByTestId("viewport-mode-2d").click();
+    await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await page.getByTestId("save-project").click();
 
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-project").click();
-    await page.getByTestId("close-project").click();
+    await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.getByTestId("open-listed-project-TestProject.babproject").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openMainScene(page);
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+    await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
     await page.getByTestId("play-preview").click();
@@ -144,8 +155,11 @@ test.describe("P6 first-playable scene editing", () => {
     await page.getByTestId("play-overlay-close").click();
     await injectGamepad(page, null);
 
-    await page.getByTestId("viewport-mode-toggle").click();
-    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("3D");
+    await page.getByTestId("viewport-mode-3d").click();
+    await expect(page.getByTestId("viewport-mode-3d")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await page.getByTestId("play-overlay-close").click();

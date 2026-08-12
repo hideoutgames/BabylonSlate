@@ -9,6 +9,7 @@ import { SceneOutlinerPanel } from "../panels/scene-outliner-panel";
 import { SceneDetailsPanel } from "../panels/scene-details-panel";
 import { MiniAssetBrowserPanel } from "../panels/mini-asset-browser-panel";
 import { ActorPrefabPanel } from "../panels/actor-prefab-panel";
+import { PrefabViewportPanel } from "../panels/prefab-viewport-panel";
 
 export const panelComponents = {
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
@@ -29,4 +30,7 @@ export const panelComponents = {
     <MiniAssetBrowserPanel {...props} />
   ),
   "actor-prefab": (props: IDockviewPanelProps) => <ActorPrefabPanel {...props} />,
+  "prefab-viewport": (props: IDockviewPanelProps) => (
+    <PrefabViewportPanel {...props} />
+  ),
 };

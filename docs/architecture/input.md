@@ -60,7 +60,7 @@ Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolv
 
 ## Project Settings
 
-**Input** tab in Project Settings (`apps/editor/src/components/project-settings-sheet.tsx`): actions and axes authored as JSON, persisted in `project.json` under `settings.input`. Shape matches `ProjectInputSettings` in `@babylonslate/core`; normalisation in `@babylonslate/input`.
+**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): actions and axes authored as JSON, persisted in `project.json` under `settings.input`. Shape matches `ProjectInputSettings` in `@babylonslate/core`; normalisation in `@babylonslate/input`. Engine Settings is a separate modal and does not include input mappings.
 
 Runtime receives mappings via `RuntimeDriverOptions.inputMappings` / `setInputMappings`.
 

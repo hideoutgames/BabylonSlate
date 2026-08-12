@@ -15,11 +15,13 @@ import {
   type SerializedActor,
   type SerializedScene,
 } from "@babylonslate/core";
-import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
+import { Toggle } from "@babylonslate/ui/components/toggle";
+import { EyeIcon, EyeOffIcon, LockIcon, PlusIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
+import { IconActionButton } from "../components/icon-action-button";
 
 /** Depth-first walk so children follow their parent in the flattened list. */
 export function flattenActors(
@@ -98,6 +100,13 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     () => (scene ? flattenActors(scene, { collapsed, search }) : []),
     [collapsed, scene, search],
   );
+  const lockedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const actor of scene?.actors ?? []) {
+      if (actor.locked) ids.add(actor.id);
+    }
+    return ids;
+  }, [scene]);
 
   const mutate = useCallback(
     (next: SerializedScene) => {
@@ -195,24 +204,21 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   return (
     <PanelFrame
-      title="Scene Outliner"
       data-testid="scene-outliner-panel"
       toolbar={
-        <Button
-          size="sm"
-          variant="ghost"
-          className="min-h-11 min-w-11"
+        <IconActionButton
+          label="Add actor"
           onClick={addActor}
           disabled={!scene}
           data-testid="outliner-add-actor"
         >
-          Add
-        </Button>
+          <PlusIcon />
+        </IconActionButton>
       }
     >
       <div className="flex h-full min-h-0 flex-col gap-2 p-2">
         <Input
-          className="min-h-11 shrink-0"
+          className="min-h-[var(--touch-target,44px)] shrink-0"
           placeholder="Search actors"
           aria-label="Search actors"
           value={search}
@@ -225,26 +231,26 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               ...node,
               trailing: (
                 <>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="min-h-11 min-w-11 text-xs"
+                  <Toggle
+                    variant="outline"
+                    size="touch"
                     aria-label={`Toggle visibility of ${node.label}`}
-                    onClick={() => toggleFlag(node.id, "visible")}
+                    pressed={!node.muted}
+                    onPressedChange={() => toggleFlag(node.id, "visible")}
                     data-testid={`outliner-visibility-${node.id}`}
                   >
-                    {node.muted ? "Hidden" : "Shown"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="min-h-11 min-w-11 text-xs"
+                    {node.muted ? <EyeOffIcon /> : <EyeIcon />}
+                  </Toggle>
+                  <Toggle
+                    variant="outline"
+                    size="touch"
                     aria-label={`Toggle lock of ${node.label}`}
-                    onClick={() => toggleFlag(node.id, "locked")}
+                    pressed={lockedIds.has(node.id)}
+                    onPressedChange={() => toggleFlag(node.id, "locked")}
                     data-testid={`outliner-lock-${node.id}`}
                   >
-                    Lock
-                  </Button>
+                    <LockIcon />
+                  </Toggle>
                 </>
               ),
             }))}

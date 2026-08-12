@@ -3,6 +3,7 @@ export {
   useCatalogFilter,
   useCatalogSearchState,
   type CatalogCategory,
+  type CatalogCategoryGroup,
   type CatalogDialogProps,
 } from "./catalog-dialog";
 export { PanelFrame } from "./panel-frame";

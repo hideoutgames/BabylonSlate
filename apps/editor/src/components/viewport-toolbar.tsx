@@ -1,4 +1,13 @@
-import { Button } from "@babylonslate/ui/components/button";
+import { Toggle } from "@babylonslate/ui/components/toggle";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@babylonslate/ui/components/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@babylonslate/ui/components/tooltip";
 import type { SerializedScene } from "@babylonslate/core";
 import type { GizmoTool } from "@babylonslate/render";
 import {
@@ -21,7 +30,11 @@ const TOOLS: Array<{
   { id: "scale", label: "Scale", icon: ScalingIcon },
 ];
 
-export function ViewportToolbar() {
+export function ViewportToolbar({
+  testIdPrefix = "",
+}: {
+  testIdPrefix?: string;
+}) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
   const {
@@ -37,24 +50,21 @@ export function ViewportToolbar() {
   const scene =
     doc?.ref.kind === "scene" ? (doc.content as SerializedScene) : null;
 
-  const toggleMode = () => {
-    const next = viewportMode === "3d" ? "2d" : "3d";
+  const setMode = (next: "2d" | "3d") => {
     setViewportMode(next);
-    // The toggle is always available; it also updates the scene's default.
     if (scene && scene.viewportMode !== next) {
       void applySceneChange(documentId, { ...scene, viewportMode: next });
     }
   };
 
-  const toggleSnap = () => {
-    const next = !snapEnabled;
-    setSnapEnabled(next);
-    if (scene && scene.settings.grid.snapEnabled !== next) {
+  const toggleSnap = (enabled: boolean) => {
+    setSnapEnabled(enabled);
+    if (scene && scene.settings.grid.snapEnabled !== enabled) {
       void applySceneChange(documentId, {
         ...scene,
         settings: {
           ...scene.settings,
-          grid: { ...scene.settings.grid, snapEnabled: next },
+          grid: { ...scene.settings.grid, snapEnabled: enabled },
         },
       });
     }
@@ -62,47 +72,78 @@ export function ViewportToolbar() {
 
   return (
     <div
-      className="flex flex-wrap items-center gap-1"
-      data-testid="viewport-toolbar"
+      className="flex flex-wrap items-center gap-2"
+      data-testid={`${testIdPrefix}viewport-toolbar`}
     >
-      {TOOLS.map((tool) => {
-        const Icon = tool.icon;
-        return (
-          <Button
-            key={tool.id}
-            size="sm"
-            variant={gizmoTool === tool.id ? "secondary" : "ghost"}
-            className="min-h-11 min-w-11"
-            aria-label={tool.label}
-            aria-pressed={gizmoTool === tool.id}
-            onClick={() => setGizmoTool(tool.id)}
-            data-testid={`gizmo-tool-${tool.id}`}
-          >
-            <Icon />
-          </Button>
-        );
-      })}
-      <Button
-        size="sm"
-        variant={snapEnabled ? "secondary" : "ghost"}
-        className="min-h-11 min-w-11"
-        aria-label="Snap"
-        aria-pressed={snapEnabled}
-        onClick={toggleSnap}
-        data-testid="gizmo-snap-toggle"
-      >
-        <MagnetIcon />
-      </Button>
-      <Button
-        size="sm"
+      <ToggleGroup
         variant="outline"
-        className="min-h-11 min-w-11"
-        aria-label={viewportMode === "3d" ? "3D viewport" : "2D viewport"}
-        onClick={toggleMode}
-        data-testid="viewport-mode-toggle"
+        size="touch"
+        spacing={1}
+        value={[gizmoTool]}
+        onValueChange={(value) => {
+          const next = value[0] as GizmoTool | undefined;
+          if (next) setGizmoTool(next);
+        }}
+        aria-label="Gizmo tool"
       >
-        {viewportMode === "3d" ? "3D" : "2D"}
-      </Button>
+        {TOOLS.map((tool) => {
+          const Icon = tool.icon;
+          return (
+            <ToggleGroupItem
+              key={tool.id}
+              value={tool.id}
+              aria-label={tool.label}
+              data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
+            >
+              <Icon />
+            </ToggleGroupItem>
+          );
+        })}
+      </ToggleGroup>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toggle
+              variant="outline"
+              size="touch"
+              aria-label="Snap"
+              pressed={snapEnabled}
+              onPressedChange={toggleSnap}
+              data-testid={`${testIdPrefix}gizmo-snap-toggle`}
+            />
+          }
+        >
+          <MagnetIcon />
+        </TooltipTrigger>
+        <TooltipContent>Snap</TooltipContent>
+      </Tooltip>
+      <ToggleGroup
+        variant="outline"
+        size="touch"
+        spacing={1}
+        value={[viewportMode]}
+        onValueChange={(value) => {
+          const next = value[0];
+          if (next === "2d" || next === "3d") setMode(next);
+        }}
+        aria-label="Viewport mode"
+        data-testid={`${testIdPrefix}viewport-mode-toggle`}
+      >
+        <ToggleGroupItem
+          value="3d"
+          aria-label="3D viewport"
+          data-testid={`${testIdPrefix}viewport-mode-3d`}
+        >
+          3D
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="2d"
+          aria-label="2D viewport"
+          data-testid={`${testIdPrefix}viewport-mode-2d`}
+        >
+          2D
+        </ToggleGroupItem>
+      </ToggleGroup>
     </div>
   );
 }

@@ -55,6 +55,7 @@ import { PlayBlockedDialog } from "./play-blocked-dialog";
 import type { OpenDocument } from "../services/document-service";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
+import { IconActionButton } from "./icon-action-button";
 import "../shell/editor-chrome.css";
 
 function kindIcon(kind: DocumentKind) {
@@ -191,7 +192,9 @@ export function EditorChromeBar({
   const { startPlay, playing, alwaysRender, setAlwaysRender, renderStats } =
     usePlay();
   const { diagnostics, errorCount, setFocusDiagnostic } = useValidation();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsScope, setSettingsScope] = useState<"project" | "engine" | null>(
+    null,
+  );
   const [searchOpen, setSearchOpen] = useState(false);
   const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
 
@@ -285,7 +288,7 @@ export function EditorChromeBar({
               <DropdownMenuTrigger
                 render={
                   <Button
-                    size="sm"
+                    size="touch"
                     variant="ghost"
                     data-testid="document-tab-add"
                     className="chrome-action-button shrink-0"
@@ -323,64 +326,54 @@ export function EditorChromeBar({
         data-testid="editor-global-toolbar"
       >
         <div className="editor-global-toolbar-start">
-          <Button
-            size="sm"
-            variant="ghost"
+          <IconActionButton
+            label="Save All"
             data-testid="save-all-project"
-            className="chrome-action-button"
+            className="chrome-icon-button"
             disabled={!projectName}
             onClick={() => {
               if (onSaveProject) onSaveProject();
               else void saveAll();
             }}
           >
-            <SaveAllIcon data-icon="inline-start" />
-            Save All
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
+            <SaveAllIcon />
+          </IconActionButton>
+          <IconActionButton
+            label="Save"
             data-testid="save-project"
-            className="chrome-action-button"
+            className="chrome-icon-button"
             disabled={!projectName}
             onClick={() => {
               if (onSaveProject) onSaveProject();
               else void saveProject();
             }}
           >
-            <SaveIcon data-icon="inline-start" />
-            Save
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
+            <SaveIcon />
+          </IconActionButton>
+          <IconActionButton
+            label="Undo"
             data-testid="undo-document"
-            className="chrome-action-button"
-            aria-label="Undo"
+            className="chrome-icon-button"
             disabled={!canUndoActiveDocument}
             onClick={() => undoActiveDocument()}
           >
-            <Undo2Icon data-icon="inline-start" />
-            Undo
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
+            <Undo2Icon />
+          </IconActionButton>
+          <IconActionButton
+            label="Redo"
             data-testid="redo-document"
-            className="chrome-action-button"
-            aria-label="Redo"
+            className="chrome-icon-button"
             disabled={!canRedoActiveDocument}
             onClick={() => redoActiveDocument()}
           >
-            <Redo2Icon data-icon="inline-start" />
-            Redo
-          </Button>
+            <Redo2Icon />
+          </IconActionButton>
         </div>
 
         <div className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
             <Button
-              size="sm"
+              size="touch"
               variant="ghost"
               data-testid="play-preview"
               className="chrome-action-button chrome-play-button relative"
@@ -414,7 +407,7 @@ export function EditorChromeBar({
               <DropdownMenuTrigger
                 render={
                   <Button
-                    size="sm"
+                    size="touch"
                     variant="ghost"
                     data-testid="debug-menu"
                     className="chrome-action-button"
@@ -467,39 +460,65 @@ export function EditorChromeBar({
         </div>
 
         <div className="editor-global-toolbar-end">
-          <Button
-            size="icon-sm"
-            variant="ghost"
+          <IconActionButton
+            label="Search project"
             data-testid="global-search"
             className="chrome-icon-button"
-            aria-label="Search project"
             disabled={!projectName}
             onClick={() => setSearchOpen(true)}
           >
             <SearchIcon />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="project-settings"
-            className="chrome-action-button"
-            aria-label="Project settings"
-            disabled={!projectName}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <SettingsIcon data-icon="inline-start" />
-            Project Settings
-          </Button>
+          </IconActionButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  size="touch"
+                  variant="outline"
+                  data-testid="settings-menu"
+                  className="chrome-action-button"
+                  aria-label="Settings"
+                  disabled={!projectName}
+                />
+              }
+            >
+              <SettingsIcon data-icon="inline-start" />
+              Settings
+              <ChevronDownIcon data-icon="inline-end" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                data-testid="project-settings"
+                onClick={() => setSettingsScope("project")}
+              >
+                Project Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-testid="engine-settings"
+                onClick={() => setSettingsScope("engine")}
+              >
+                Engine Settings
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       <SettingsModal
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        initialScope="project"
-        allowEngine
+        open={settingsScope === "project"}
+        onOpenChange={(open) => {
+          if (!open) setSettingsScope(null);
+        }}
+        scope="project"
         onCloseProject={onCloseProject}
+      />
+      <SettingsModal
+        open={settingsScope === "engine"}
+        onOpenChange={(open) => {
+          if (!open) setSettingsScope(null);
+        }}
+        scope="engine"
       />
     </div>
   );

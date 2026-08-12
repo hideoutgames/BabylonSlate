@@ -78,6 +78,7 @@ export function Homepage({
         </div>
         <Button
           variant="outline"
+          size="touch"
           data-testid="engine-settings"
           onClick={() => setSettingsOpen(true)}
         >
@@ -235,8 +236,7 @@ export function Homepage({
       <SettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        initialScope="engine"
-        allowEngine
+        scope="engine"
         onEngineSaved={onSettingsChanged}
         data-testid="engine-settings-modal"
       />

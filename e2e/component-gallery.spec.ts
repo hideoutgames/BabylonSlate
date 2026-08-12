@@ -8,6 +8,19 @@ test("component gallery renders shadcn primitives in test mode", async ({
   await expect(page.getByTestId("gallery-panel-frame")).toBeVisible();
   await expect(page.getByTestId("gallery-toolbar-strip")).toBeVisible();
   await expect(page.getByText("Primary")).toBeVisible();
+  await expect(page.getByTestId("gallery-touch-button")).toBeVisible();
+  await expect(page.getByTestId("gallery-toggle-group")).toBeVisible();
+  await expect(page.getByTestId("gallery-prefab-tab-note")).toBeVisible();
+});
+
+test("gallery catalog dialog does not autofocus search", async ({ page }) => {
+  await page.goto("/?test=1&gallery=1");
+  await page.getByTestId("gallery-open-catalog").click();
+  await expect(page.getByTestId("gallery-catalog")).toBeVisible();
+  await expect(page.getByTestId("gallery-catalog").getByText("Rendering")).toBeVisible();
+  await expect(page.getByTestId("gallery-catalog-search")).not.toHaveAttribute(
+    "data-autofocus-search",
+  );
 });
 
 test("component gallery renders every editor-kit composite", async ({

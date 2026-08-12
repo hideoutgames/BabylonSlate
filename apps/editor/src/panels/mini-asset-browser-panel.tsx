@@ -8,6 +8,10 @@ import {
 } from "@babylonslate/core";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@babylonslate/ui/components/toggle-group";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
@@ -84,31 +88,33 @@ export function MiniAssetBrowserPanel(_props: IDockviewPanelProps) {
   );
 
   return (
-    <PanelFrame title="Assets" data-testid="mini-asset-browser-panel">
+    <PanelFrame data-testid="mini-asset-browser-panel">
       <div className="flex flex-col gap-3 p-2">
-        <div className="flex flex-wrap gap-1">
-          <Button
-            size="sm"
-            variant={typeFilter === null ? "secondary" : "ghost"}
-            className="min-h-11"
-            onClick={() => setTypeFilter(null)}
-            data-testid="mini-asset-filter-all"
-          >
+        <ToggleGroup
+          variant="outline"
+          size="touch"
+          spacing={1}
+          className="flex-wrap"
+          value={[typeFilter ?? "all"]}
+          onValueChange={(value) => {
+            const next = value[0];
+            setTypeFilter(!next || next === "all" ? null : next);
+          }}
+          aria-label="Asset type filter"
+        >
+          <ToggleGroupItem value="all" data-testid="mini-asset-filter-all">
             All
-          </Button>
+          </ToggleGroupItem>
           {types.map((type) => (
-            <Button
+            <ToggleGroupItem
               key={type}
-              size="sm"
-              variant={typeFilter === type ? "secondary" : "ghost"}
-              className="min-h-11"
-              onClick={() => setTypeFilter(type)}
+              value={type}
               data-testid={`mini-asset-filter-${type}`}
             >
               {type}
-            </Button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         <div className="flex flex-col gap-1">
           <span className="px-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -118,9 +124,9 @@ export function MiniAssetBrowserPanel(_props: IDockviewPanelProps) {
             {PRIMITIVES.map((kind) => (
               <Button
                 key={kind}
-                size="sm"
+                size="touch"
                 variant="outline"
-                className="min-h-11 touch-none"
+                className="touch-none"
                 onPointerDown={(event) => {
                   dragRef.current = {
                     pointerId: event.pointerId,
@@ -150,9 +156,9 @@ export function MiniAssetBrowserPanel(_props: IDockviewPanelProps) {
           {visibleAssets.map((asset) => (
             <Button
               key={asset.header.guid}
-              size="sm"
-              variant="ghost"
-              className="min-h-11 touch-none justify-between"
+              size="touch"
+              variant="outline"
+              className="touch-none justify-between"
               onPointerDown={(event) => {
                 dragRef.current = {
                   pointerId: event.pointerId,

@@ -28,7 +28,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
 
   if (!graph || !selectedNode) {
     return (
-      <PanelFrame title="Inspector" data-testid="inspector-panel">
+      <PanelFrame data-testid="inspector-panel">
         <p className="p-4 text-sm text-muted-foreground">
           Select a graph node to edit properties.
         </p>
@@ -54,7 +54,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   };
 
   return (
-    <PanelFrame title="Inspector" data-testid="inspector-panel">
+    <PanelFrame data-testid="inspector-panel">
       <div className="flex flex-col gap-3 p-3">
         <div className="text-sm font-medium">{selectedNode.type}</div>
         {isExecJs ? (

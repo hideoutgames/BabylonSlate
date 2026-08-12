@@ -1,6 +1,8 @@
+import { SaveIcon } from "lucide-react";
 import { useState } from "react";
 import {
   AssetPicker,
+  CatalogDialog,
   NumericDragField,
   PanelFrame,
   PropertyGrid,
@@ -14,6 +16,10 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@babylonslate/ui/components/toggle-group";
 import {
   Card,
   CardContent,
@@ -162,6 +168,90 @@ function GalleryComposites() {
   );
 }
 
+function GalleryTouchControls() {
+  const [tool, setTool] = useState("translate");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [category, setCategory] = useState("appearance");
+  const [search, setSearch] = useState("");
+
+  return (
+    <>
+      <section className="flex flex-col gap-4">
+        <h2 className="text-lg font-medium">Touch actions</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="touch" variant="outline" data-testid="gallery-touch-button">
+            Outline action
+          </Button>
+          <Button size="touch-icon" variant="outline" aria-label="Save">
+            <SaveIcon />
+          </Button>
+          <ToggleGroup
+            variant="outline"
+            size="touch"
+            spacing={1}
+            value={[tool]}
+            onValueChange={(value) => {
+              if (value[0]) setTool(value[0]);
+            }}
+            aria-label="Gizmo tool"
+            data-testid="gallery-toggle-group"
+          >
+            <ToggleGroupItem value="translate">Move</ToggleGroupItem>
+            <ToggleGroupItem value="rotate">Rotate</ToggleGroupItem>
+            <ToggleGroupItem value="scale">Scale</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Outline marks an action. Toggle fill (`aria-pressed`) marks the active tool.
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="text-lg font-medium">Settings catalog</h2>
+        <Button
+          size="touch"
+          variant="outline"
+          data-testid="gallery-open-catalog"
+          onClick={() => setCatalogOpen(true)}
+        >
+          Open grouped catalog
+        </Button>
+        <CatalogDialog
+          open={catalogOpen}
+          onOpenChange={setCatalogOpen}
+          title="Engine Settings"
+          description="Search is not autofocused so iPad does not raise the keyboard."
+          categories={[
+            { id: "appearance", label: "Appearance" },
+            { id: "viewport", label: "Viewport" },
+            { id: "templates", label: "Templates" },
+          ]}
+          groups={[
+            { label: "Rendering", ids: ["appearance", "viewport"] },
+            { label: "Project", ids: ["templates"] },
+          ]}
+          activeCategoryId={category}
+          onCategoryChange={setCategory}
+          search={search}
+          onSearchChange={setSearch}
+          data-testid="gallery-catalog"
+        >
+          <p className="text-sm text-muted-foreground">
+            Project Settings and Engine Settings are separate catalog modals.
+          </p>
+        </CatalogDialog>
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="gallery-prefab-tab-note"
+        >
+          Class documents show Prefab as a full-size center-group tab beside Graph,
+          not a 160px sidebar strip. The Components tree stays in the left dock.
+        </p>
+      </section>
+    </>
+  );
+}
+
 export function ComponentGallery() {
   return (
     <div
@@ -191,6 +281,8 @@ export function ComponentGallery() {
               <Button variant="destructive">Destructive</Button>
             </div>
           </section>
+
+          <GalleryTouchControls />
 
           <section className="flex flex-col gap-4">
             <h2 className="text-lg font-medium">Feedback</h2>
@@ -270,8 +362,12 @@ export function ComponentGallery() {
             <h2 className="text-lg font-medium">editor-kit composites</h2>
             <div className="overflow-hidden rounded-lg border border-border">
               <ToolbarStrip data-testid="gallery-toolbar-strip">
-                <Button size="sm" variant="ghost">
-                  Tool
+                <Button size="touch-icon" variant="outline" aria-label="Move">
+                  Move
+                </Button>
+                <Separator orientation="vertical" className="h-8" />
+                <Button size="touch" variant="outline">
+                  Snap
                 </Button>
               </ToolbarStrip>
               <PanelFrame title="Panel frame" data-testid="gallery-panel-frame">

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { closeProjectViaSettings } from "./close-project";
 
 const fixtures = path.join(process.cwd(), "e2e/fixtures");
 
@@ -38,9 +39,7 @@ test.describe("P2 acceptance proofs", () => {
     ).toBeVisible();
 
     await page.getByTestId("save-project").click();
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-project").click();
-    await page.getByTestId("close-project").click();
+    await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
 
     await page.reload();

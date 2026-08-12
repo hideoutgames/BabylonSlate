@@ -2,7 +2,6 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useRef } from "react";
 import {
   ContextMenuOverlay,
-  PanelFrame,
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import { createEngine, type EngineHandle } from "@babylonslate/render";
@@ -288,13 +287,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       data-testid="viewport-panel"
       {...bind}
     >
-      <PanelFrame
-        title="Viewport"
-        toolbar={<ViewportToolbar />}
-        data-testid="viewport-panel-frame"
-      >
-        <canvas ref={canvasRef} className="h-full w-full touch-none" />
-      </PanelFrame>
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        <div
+          className="pointer-events-auto rounded-md border border-border bg-card/90 p-1"
+          data-testid="viewport-panel-frame"
+        >
+          <ViewportToolbar />
+        </div>
+      </div>
+      <canvas ref={canvasRef} className="h-full w-full flex-1 touch-none" />
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
     </div>
   );

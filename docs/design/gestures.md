@@ -42,6 +42,10 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 - Content browser — folder tree and asset grid
 - Graph panel — React Flow pan/zoom (unchanged)
 
+## Virtual keyboard
+
+Focusing a text field on iPad raises the keyboard and can cover a centered modal. Settings catalog search is **not** autofocused on open (`CatalogDialog` `autoFocusSearch` defaults to false). Add Node and Global Search may autofocus because they are search-first UIs.
+
 ## Dockview
 
 - Dockview 8's `dndStrategy` defaults to `'auto'`: HTML5 drag for mouse, pointer events for touch and pen. Touch panel drag therefore needs no extra configuration.
@@ -63,7 +67,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 - One-finger pan/zoom inside graph panel only.
 - **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`).
 - **Drag-to-connect:** allowed by the gesture contract; deferred as polish (see issue-tracker P5 follow-ups).
-- Node palette is a bottom sheet; long-press / secondary click for node context menus when enabled.
+- Node palette is a centered `CatalogDialog` (search autofocused); long-press / secondary click for node context menus when enabled.
 
 ## Document tabs (chrome bar)
 

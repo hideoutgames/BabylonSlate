@@ -1,58 +1,37 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   PanelFrame,
   SearchSheet,
   TreeView,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
-import {
-  createActor,
-  createDefaultScene,
-  createMeshComponent,
-  type SerializedComponent,
-  type SerializedScene,
-} from "@babylonslate/core";
-import { createEngine, type EngineHandle } from "@babylonslate/render";
-import { Button } from "@babylonslate/ui/components/button";
-import {
-  ADDABLE_COMPONENT_CLASSES,
-  defaultPropertiesFor,
-} from "./add-component-catalog";
-
-/** Preview scene holding the prefab's components on a single actor. */
-export function previewSceneFor(
-  components: SerializedComponent[],
-): SerializedScene {
-  return {
-    ...createDefaultScene(),
-    name: "Prefab preview",
-    actors: [createActor("prefab-root", "Prefab", { components })],
-  };
-}
+import { PlusIcon, Trash2Icon } from "lucide-react";
+import { usePrefabEditing } from "../context/prefab-editing-context";
+import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import { IconActionButton } from "../components/icon-action-button";
+import { ADDABLE_COMPONENT_CLASSES } from "./add-component-catalog";
 
 /**
- * Actor Prefab tab for class documents: the component tree the class spawns
- * with, plus a minimal 3D preview of the same components.
- *
- * Persistence of this tree onto the class document is deferred (see
- * docs/agents/issue-tracker.md — P6 prefab persistence). Edits here are
- * preview-only for the session.
+ * Actor component tree for class documents. The 3D preview lives in the
+ * sibling Prefab viewport tab. Persistence onto the class document is
+ * deferred (docs/agents/issue-tracker.md — P6 prefab persistence).
  */
 export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   void _props;
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const engineRef = useRef<EngineHandle | null>(null);
-  const [components, setComponents] = useState<SerializedComponent[]>(() => [
-    createMeshComponent("prefab-mesh", "box"),
-  ]);
+  const {
+    components,
+    selectedId,
+    setSelectedId,
+    addComponent,
+    removeSelected,
+  } = usePrefabEditing();
   const [addOpen, setAddOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>("prefab-mesh");
 
   const nodes = useMemo<TreeViewNode[]>(
     () => [
       {
-        id: "prefab-root",
+        id: PREFAB_ROOT_ID,
         label: "Prefab root",
         depth: 0,
         hasChildren: components.length > 0,
@@ -69,78 +48,42 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     [components],
   );
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const handle = createEngine(canvas, { editor: true });
-    engineRef.current = handle;
-    return () => {
-      handle.dispose();
-      engineRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    engineRef.current?.loadScene(previewSceneFor(components));
-    engineRef.current?.resize();
-  }, [components]);
-
   return (
     <PanelFrame
-      title="Prefab"
       data-testid="actor-prefab-panel"
       toolbar={
         <>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="min-h-11 min-w-11"
+          <IconActionButton
+            label="Add component"
             onClick={() => setAddOpen(true)}
             data-testid="prefab-add-component"
           >
-            Add
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="min-h-11 min-w-11"
-            disabled={!selectedId || selectedId === "prefab-root"}
-            onClick={() =>
-              setComponents((current) =>
-                current.filter((component) => component.id !== selectedId),
-              )
-            }
+            <PlusIcon />
+          </IconActionButton>
+          <IconActionButton
+            label="Remove component"
+            disabled={!selectedId || selectedId === PREFAB_ROOT_ID}
+            onClick={removeSelected}
             data-testid="prefab-remove-component"
           >
-            Remove
-          </Button>
+            <Trash2Icon />
+          </IconActionButton>
         </>
       }
     >
-      <div className="flex h-full min-h-0 flex-col">
-        <p
-          className="border-b border-border px-3 py-2 text-xs text-muted-foreground"
-          data-testid="prefab-preview-only-note"
-        >
-          Preview only — component edits are not saved to the class document yet.
-        </p>
-        <div className="min-h-32 flex-1">
-          <TreeView
-            nodes={nodes}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            emptyLabel="No components"
-            data-testid="prefab-tree"
-          />
-        </div>
-        <div className="h-40 shrink-0 border-t border-border">
-          <canvas
-            ref={canvasRef}
-            className="h-full w-full touch-none"
-            data-testid="prefab-preview-canvas"
-          />
-        </div>
-      </div>
+      <p
+        className="border-b border-border px-3 py-2 text-xs text-muted-foreground"
+        data-testid="prefab-preview-only-note"
+      >
+        Preview only — component edits are not saved to the class document yet.
+      </p>
+      <TreeView
+        nodes={nodes}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        emptyLabel="No components"
+        data-testid="prefab-tree"
+      />
       <SearchSheet
         open={addOpen}
         onOpenChange={setAddOpen}
@@ -150,16 +93,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           label: entry.label,
           description: entry.description,
         }))}
-        onSelect={(classId) =>
-          setComponents((current) => [
-            ...current,
-            {
-              id: `prefab-component-${current.length + 1}`,
-              classId,
-              properties: defaultPropertiesFor(classId),
-            },
-          ])
-        }
+        onSelect={addComponent}
         data-testid="prefab-add-component-sheet"
       />
     </PanelFrame>

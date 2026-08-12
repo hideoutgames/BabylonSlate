@@ -63,6 +63,16 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
     title: "Graph",
   });
 
+  api.addPanel({
+    id: "prefab-viewport",
+    component: "prefab-viewport",
+    title: "Prefab",
+    position: {
+      referencePanel: graph,
+      direction: "within",
+    },
+  });
+
   const myClass = api.addPanel({
     id: "my-class",
     component: "my-class",
@@ -74,11 +84,10 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
     initialWidth: 260,
   });
 
-  // The prefab tab shares the class sidebar group with My Class.
   api.addPanel({
     id: "actor-prefab",
     component: "actor-prefab",
-    title: "Prefab",
+    title: "Components",
     position: {
       referencePanel: myClass,
       direction: "within",

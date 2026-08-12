@@ -49,16 +49,18 @@ export function MyClassPanel(_props: MyClassPanelProps) {
 
   return (
     <PanelFrame
-      title={className ?? "My Class"}
       data-testid="my-class-panel"
       toolbar={
-        <Button type="button" size="sm" variant="outline" disabled>
+        <Button type="button" size="touch" variant="outline" disabled>
           Add
         </Button>
       }
     >
       <ScrollArea className="min-h-0 flex-1 p-2">
         <div className="flex flex-col gap-1 pr-2">
+          {className ? (
+            <p className="px-1 text-xs text-muted-foreground">{className}</p>
+          ) : null}
           {members.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No events yet. Add an Event Begin Play or Event Tick node.
@@ -67,7 +69,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
             members.map((m) => (
               <Card
                 key={`${m.kind}-${m.name}-${m.detail ?? ""}`}
-                className="flex min-h-11 flex-row items-center justify-between gap-2 p-3"
+                className="flex min-h-[var(--touch-target,44px)] flex-row items-center justify-between gap-2 p-3"
                 data-testid="my-class-member"
               >
                 <div className="flex flex-col">
