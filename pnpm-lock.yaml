@@ -231,6 +231,9 @@ importers:
 
   packages/editor-kit:
     dependencies:
+      '@babylonslate/ui':
+        specifier: workspace:*
+        version: link:../ui
       react:
         specifier: ^19.2.8
         version: 19.2.8

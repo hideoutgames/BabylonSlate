@@ -12,6 +12,7 @@
     "test": "vitest run --config ../../vitest.workspace.ts --project jsdom packages/editor-kit"
   },
   "dependencies": {
+    "@babylonslate/ui": "workspace:*",
     "react": "^19.2.8"
   },
   "devDependencies": {

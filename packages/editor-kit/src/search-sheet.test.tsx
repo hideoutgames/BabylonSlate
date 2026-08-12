@@ -1,0 +1,115 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { filterSearchItems, SearchSheet } from "./search-sheet";
+import { AssetPicker } from "./asset-picker";
+
+const items = [
+  { id: "a", label: "Alpha", description: "first" },
+  { id: "b", label: "Beta", description: "second" },
+];
+
+describe("filterSearchItems", () => {
+  it("returns everything for an empty query", () => {
+    expect(filterSearchItems(items, "  ")).toHaveLength(2);
+  });
+
+  it("matches label, description and group case-insensitively", () => {
+    expect(filterSearchItems(items, "SECOND").map((item) => item.id)).toEqual([
+      "b",
+    ]);
+    expect(filterSearchItems(items, "alp").map((item) => item.id)).toEqual(["a"]);
+  });
+});
+
+describe("SearchSheet", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("filters rows as the query changes and reports the selection", () => {
+    const onSelect = vi.fn();
+    const onOpenChange = vi.fn();
+    render(
+      <SearchSheet
+        open
+        onOpenChange={onOpenChange}
+        title="Add component"
+        items={items}
+        onSelect={onSelect}
+        data-testid="sheet"
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("sheet-query"), {
+      target: { value: "beta" },
+    });
+    expect(screen.queryByTestId("search-item-a")).toBeNull();
+
+    screen.getByTestId("search-item-b").click();
+    expect(onSelect).toHaveBeenCalledWith("b");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("shows the empty label when nothing matches", () => {
+    render(
+      <SearchSheet
+        open
+        onOpenChange={() => {}}
+        title="Add component"
+        items={items}
+        emptyLabel="No matches"
+        onSelect={() => {}}
+        data-testid="sheet"
+      />,
+    );
+    fireEvent.change(screen.getByTestId("sheet-query"), {
+      target: { value: "zzz" },
+    });
+    expect(screen.getByText("No matches")).toBeTruthy();
+  });
+});
+
+describe("AssetPicker", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const assets = [
+    { guid: "g1", name: "Rock", type: "Mesh", path: "assets/rock" },
+    { guid: "g2", name: "Grass", type: "Texture", path: "assets/grass" },
+  ];
+
+  it("restricts the list to allowed types and can clear the reference", () => {
+    const onPick = vi.fn();
+    render(
+      <AssetPicker
+        open
+        onOpenChange={() => {}}
+        assets={assets}
+        allowedTypes={["Texture"]}
+        onPick={onPick}
+      />,
+    );
+
+    expect(screen.queryByTestId("search-item-g1")).toBeNull();
+    expect(screen.getByTestId("search-item-g2")).toBeTruthy();
+
+    screen.getByTestId("search-item-__none__").click();
+    expect(onPick).toHaveBeenCalledWith(null);
+  });
+
+  it("passes the picked guid through", () => {
+    const onPick = vi.fn();
+    render(
+      <AssetPicker
+        open
+        onOpenChange={() => {}}
+        assets={assets}
+        allowNone={false}
+        onPick={onPick}
+      />,
+    );
+    screen.getByTestId("search-item-g1").click();
+    expect(onPick).toHaveBeenCalledWith("g1");
+  });
+});

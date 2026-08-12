@@ -9,3 +9,40 @@ test("component gallery renders shadcn primitives in test mode", async ({
   await expect(page.getByTestId("gallery-toolbar-strip")).toBeVisible();
   await expect(page.getByText("Primary")).toBeVisible();
 });
+
+test("component gallery renders every editor-kit composite", async ({
+  page,
+}) => {
+  await page.goto("/?test=1&gallery=1");
+  await expect(page.getByTestId("gallery-property-grid")).toBeVisible();
+  await expect(page.getByTestId("gallery-tree-view")).toBeVisible();
+  await expect(page.getByTestId("gallery-tree")).toBeVisible();
+  await expect(page.getByTestId("property-gallery-position-x")).toBeVisible();
+  await expect(page.getByTestId("gallery-numeric-drag")).toBeVisible();
+
+  await page.getByRole("button", { name: "Open search sheet" }).click();
+  await expect(page.getByTestId("gallery-search-sheet")).toBeVisible();
+});
+
+test("gallery composites meet the minimum touch target size", async ({
+  page,
+}) => {
+  await page.goto("/?test=1&gallery=1");
+  const targets = [
+    "property-gallery-position-x",
+    "property-gallery-speed",
+    "property-gallery-mesh",
+    "gallery-numeric-drag",
+  ];
+
+  for (const testId of targets) {
+    const box = await page.getByTestId(testId).boundingBox();
+    expect(box, `${testId} should be laid out`).not.toBeNull();
+    expect(box!.height, `${testId} height`).toBeGreaterThanOrEqual(44);
+  }
+
+  const treeRow = page.getByTestId("tree-row-player");
+  const rowBox = await treeRow.boundingBox();
+  expect(rowBox).not.toBeNull();
+  expect(rowBox!.height).toBeGreaterThanOrEqual(44);
+});

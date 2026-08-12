@@ -1,4 +1,16 @@
-import { SelectableText, PanelFrame, ToolbarStrip } from "@babylonslate/editor-kit";
+import { useState } from "react";
+import {
+  AssetPicker,
+  NumericDragField,
+  PanelFrame,
+  PropertyGrid,
+  SearchSheet,
+  SelectableText,
+  ToolbarStrip,
+  TreeView,
+  type PropertyRow,
+  type TreeViewNode,
+} from "@babylonslate/editor-kit";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
@@ -32,6 +44,123 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@babylonslate/ui/components/tooltip";
+
+const GALLERY_TREE_NODES: TreeViewNode[] = [
+  { id: "root", label: "Scene root", depth: 0, hasChildren: true, expanded: true },
+  { id: "player", label: "Player", depth: 1, hasChildren: false, expanded: false },
+  { id: "ground", label: "Ground", depth: 1, hasChildren: false, expanded: false },
+];
+
+function GalleryComposites() {
+  const [position, setPosition] = useState<[number, number, number]>([0, 1, 0]);
+  const [speed, setSpeed] = useState(4);
+  const [visible, setVisible] = useState(true);
+  const [selectedId, setSelectedId] = useState("player");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const rows: PropertyRow[] = [
+    {
+      kind: "vector3",
+      id: "gallery-position",
+      label: "Position",
+      value: position,
+      defaultValue: [0, 0, 0],
+      onChange: setPosition,
+    },
+    {
+      kind: "number",
+      id: "gallery-speed",
+      label: "Speed",
+      value: speed,
+      defaultValue: 4,
+      sensitivity: 0.05,
+      onChange: setSpeed,
+    },
+    {
+      kind: "boolean",
+      id: "gallery-visible",
+      label: "Visible",
+      value: visible,
+      defaultValue: true,
+      onChange: setVisible,
+    },
+    {
+      kind: "enum",
+      id: "gallery-mode",
+      label: "Viewport mode",
+      value: "3d",
+      options: [
+        { value: "3d", label: "3D" },
+        { value: "2d", label: "2D" },
+      ],
+      onChange: () => {},
+    },
+    {
+      kind: "asset",
+      id: "gallery-mesh",
+      label: "Mesh",
+      value: null,
+      placeholder: "None",
+      onPick: () => setPickerOpen(true),
+      onChange: () => {},
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-lg border border-border">
+        <PanelFrame title="Property grid" data-testid="gallery-property-grid">
+          <PropertyGrid rows={rows} />
+        </PanelFrame>
+      </div>
+      <div className="h-40 overflow-hidden rounded-lg border border-border">
+        <PanelFrame title="Tree view" data-testid="gallery-tree-view">
+          <TreeView
+            nodes={GALLERY_TREE_NODES}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            data-testid="gallery-tree"
+          />
+        </PanelFrame>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-40">
+          <NumericDragField
+            label="Drag"
+            value={speed}
+            onChange={setSpeed}
+            data-testid="gallery-numeric-drag"
+          />
+        </div>
+        <Button variant="outline" onClick={() => setSearchOpen(true)}>
+          Open search sheet
+        </Button>
+        <Button variant="outline" onClick={() => setPickerOpen(true)}>
+          Open asset picker
+        </Button>
+      </div>
+      <SearchSheet
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        title="Add component"
+        items={[
+          { id: "mesh", label: "MeshComponent", description: "Renderable mesh" },
+          { id: "camera", label: "CameraComponent", description: "Scene camera" },
+        ]}
+        onSelect={() => {}}
+        data-testid="gallery-search-sheet"
+      />
+      <AssetPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        assets={[{ guid: "gallery-asset", name: "Rock", type: "Mesh" }]}
+        onPick={() => {}}
+        data-testid="gallery-asset-picker"
+      />
+    </div>
+  );
+}
 
 export function ComponentGallery() {
   return (
@@ -151,6 +280,7 @@ export function ComponentGallery() {
                 </p>
               </PanelFrame>
             </div>
+            <GalleryComposites />
           </section>
 
           <Separator />
