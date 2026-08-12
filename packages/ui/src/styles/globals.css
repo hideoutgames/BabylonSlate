@@ -265,6 +265,7 @@
     }
   body {
     @apply bg-background text-foreground;
+    position: relative;
     height: 100%;
     min-height: 100%;
     min-height: -webkit-fill-available;
@@ -272,6 +273,7 @@
     overscroll-behavior: none;
     }
   #root {
+    isolation: isolate;
     height: 100%;
     min-height: 100%;
     min-height: -webkit-fill-available;
