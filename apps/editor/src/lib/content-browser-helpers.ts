@@ -7,6 +7,8 @@ import {
 import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
 
 export const ASSET_DRAG_MIME = "application/x-babylonslate-asset";
+export const FOLDER_DRAG_MIME = "application/x-babylonslate-folder";
+export const ASSETS_ROOT = "assets";
 
 export type TextureCompressionState =
   | "pending"
@@ -54,6 +56,41 @@ export function assetDragPayload(asset: IndexedAsset): string {
     type: asset.header.type,
     path: asset.path,
   });
+}
+
+export function guidFromAssetDragData(raw: string): string | null {
+  if (!raw) return null;
+  try {
+    const payload = JSON.parse(raw) as { guid?: string };
+    if (payload.guid) return payload.guid;
+  } catch {
+    return raw;
+  }
+  return raw;
+}
+
+export function isFolderTreeRoot(
+  path: string,
+  rootPath: string = ASSETS_ROOT,
+): boolean {
+  return path === rootPath;
+}
+
+export function folderDropTargetFromElement(
+  target: EventTarget | null,
+): string | null {
+  if (!(target instanceof Element)) return null;
+  return (
+    target.closest("[data-folder-path]")?.getAttribute("data-folder-path") ??
+    target.closest("[data-asset-folder]")?.getAttribute("data-asset-folder")
+  );
+}
+
+export function folderDropTargetFromPoint(
+  clientX: number,
+  clientY: number,
+): string | null {
+  return folderDropTargetFromElement(document.elementFromPoint(clientX, clientY));
 }
 
 export function displayAssetTitle(name: string): string {

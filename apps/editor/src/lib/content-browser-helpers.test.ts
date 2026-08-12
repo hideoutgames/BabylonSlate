@@ -6,7 +6,10 @@ import {
   displayAssetTitle,
   filterAssets,
   flattenFolderTree,
+  folderDropTargetFromElement,
+  guidFromAssetDragData,
   isFolderNameTaken,
+  isFolderTreeRoot,
   isNewAssetNameTaken,
   matchesAssetSearch,
   textureCompressionState,
@@ -198,5 +201,30 @@ describe("content-browser-helpers", () => {
     expect(isFolderNameTaken(folders, "assets", "textures")).toBe(true);
     expect(isFolderNameTaken(folders, "assets", "audio")).toBe(false);
     expect(isFolderNameTaken(folders, "assets/textures", "ui")).toBe(false);
+  });
+
+  it("treats the registry tree root as immovable", () => {
+    expect(isFolderTreeRoot("assets")).toBe(true);
+    expect(isFolderTreeRoot("assets/textures")).toBe(false);
+    expect(isFolderTreeRoot("content", "content")).toBe(true);
+  });
+
+  it("reads a drop folder from folder-path or asset-folder attributes", () => {
+    const tree = document.createElement("div");
+    tree.innerHTML = `<button data-folder-path="assets"><span>assets</span></button>`;
+    const span = tree.querySelector("span");
+    expect(folderDropTargetFromElement(span)).toBe("assets");
+
+    const tile = document.createElement("div");
+    tile.setAttribute("data-asset-folder", "assets/fx");
+    const inner = document.createElement("button");
+    tile.appendChild(inner);
+    expect(folderDropTargetFromElement(inner)).toBe("assets/fx");
+  });
+
+  it("parses HTML5 asset drag payloads, including raw guids", () => {
+    expect(guidFromAssetDragData(JSON.stringify({ guid: "abc" }))).toBe("abc");
+    expect(guidFromAssetDragData("plain-guid")).toBe("plain-guid");
+    expect(guidFromAssetDragData("")).toBeNull();
   });
 });
