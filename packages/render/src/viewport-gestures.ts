@@ -12,9 +12,15 @@ export interface ViewportGestureOptions {
     height: number;
   }) => void;
   scheduler?: Pick<RenderScheduler, "acquireContinuous">;
-  /** World units panned per pixel of two-finger drag. */
+  /** World units panned per pixel of three-finger drag. */
   panScale?: number;
+  /** Radians of look per pixel of one-finger / left-button drag. */
   orbitScale?: number;
+  /**
+   * When true at pointer-down (gizmo handle hit or an active gizmo drag),
+   * a one-finger drag does not look the camera.
+   */
+  blockLook?: (canvasX: number, canvasY: number) => boolean;
 }
 
 export interface ViewportGestureHandle {
@@ -44,9 +50,9 @@ function spread(points: PointerSample[]): number {
 }
 
 /**
- * Gesture contract from docs/design/gestures.md: one finger manipulates
- * content (tap to select, drag to marquee in 2D), two fingers orbit and pan,
- * pinch zooms. Orbit is suppressed in 2D by the camera controller.
+ * Gesture contract from docs/design/gestures.md: one-finger tap picks;
+ * one-finger drag looks in 3D and marquees in 2D; pinch zooms; three fingers
+ * pan. Two-finger translation does not orbit or pan.
  */
 export function attachViewportGestures(
   canvas: HTMLCanvasElement,
@@ -57,8 +63,10 @@ export function attachViewportGestures(
   const pointers = new Map<number, PointerSample>();
   let lastMid: PointerSample | null = null;
   let lastSpread = 0;
+  let lastPoint: PointerSample | null = null;
   let downPoint: PointerSample | null = null;
   let moved = false;
+  let skipLook = false;
   let releaseLease: (() => void) | null = null;
 
   const acquireLease = () => {
@@ -78,15 +86,19 @@ export function attachViewportGestures(
   };
 
   const onPointerDown = (event: PointerEvent) => {
-    pointers.set(event.pointerId, toCanvas(event));
+    const point = toCanvas(event);
+    pointers.set(event.pointerId, point);
     canvas.setPointerCapture?.(event.pointerId);
     if (pointers.size === 1) {
-      downPoint = toCanvas(event);
+      downPoint = point;
+      lastPoint = point;
       moved = false;
+      skipLook = options.blockLook?.(point.x, point.y) === true;
     } else {
       const samples = [...pointers.values()];
       lastMid = midpoint(samples);
       lastSpread = spread(samples);
+      lastPoint = null;
       acquireLease();
     }
   };
@@ -105,23 +117,31 @@ export function attachViewportGestures(
       ) {
         moved = true;
       }
+      if (
+        controller.mode === "3d" &&
+        moved &&
+        !skipLook &&
+        lastPoint
+      ) {
+        const dx = point.x - lastPoint.x;
+        const dy = point.y - lastPoint.y;
+        if (dx !== 0 || dy !== 0) {
+          acquireLease();
+          controller.look(-dx * orbitScale, -dy * orbitScale);
+        }
+      }
+      lastPoint = point;
       return;
     }
 
     const mid = midpoint(samples);
     const currentSpread = spread(samples);
-    if (lastMid) {
+    if (samples.length >= 3 && lastMid) {
       const dx = mid.x - lastMid.x;
       const dy = mid.y - lastMid.y;
-      if (controller.mode === "3d" && samples.length === 2 && currentSpread > 0) {
-        // Two-finger drag orbits in 3D; panning uses the same drag in 2D where
-        // orbit does not exist.
-        controller.orbit(-dx * orbitScale, -dy * orbitScale);
-      } else {
-        controller.pan(-dx * panScale, dy * panScale);
-      }
+      controller.pan(-dx * panScale, dy * panScale);
     }
-    if (lastSpread > 0 && currentSpread > 0) {
+    if (samples.length === 2 && lastSpread > 0 && currentSpread > 0) {
       const factor = currentSpread / lastSpread;
       if (Math.abs(factor - 1) > 0.001) {
         controller.zoom(factor);
@@ -134,13 +154,26 @@ export function attachViewportGestures(
   const endPointer = (event: PointerEvent) => {
     const point = pointers.get(event.pointerId);
     pointers.delete(event.pointerId);
-    if (pointers.size < 2) {
+    if (pointers.size === 1) {
+      lastPoint = [...pointers.values()][0]!;
       lastMid = null;
       lastSpread = 0;
       dropLease();
+    } else if (pointers.size === 0) {
+      lastMid = null;
+      lastSpread = 0;
+      lastPoint = null;
+      dropLease();
+    } else {
+      const samples = [...pointers.values()];
+      lastMid = midpoint(samples);
+      lastSpread = spread(samples);
     }
     if (pointers.size > 0 || !point || !downPoint) {
-      if (pointers.size === 0) downPoint = null;
+      if (pointers.size === 0) {
+        downPoint = null;
+        skipLook = false;
+      }
       return;
     }
     if (!moved) {
@@ -155,6 +188,7 @@ export function attachViewportGestures(
     }
     downPoint = null;
     moved = false;
+    skipLook = false;
   };
 
   const onWheel = (event: WheelEvent) => {

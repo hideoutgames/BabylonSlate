@@ -56,8 +56,11 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 ## Viewport (Babylon)
 
-- **One finger** manipulates content: tap to pick/select; in **2D mode**, drag to **marquee** (actors whose origin falls inside the rect). Single-finger drag has no meaning in 3D.
-- **Two fingers** orbit (3D), pan, and pinch-zoom on canvas; 2D mode is pan + zoom only (no orbit).
+- **One finger**: tap to pick/select. In **3D**, drag looks in place (yaw/pitch; camera position stays put). In **2D**, drag **marquees** (actors whose origin falls inside the rect). Gizmo handle hits skip look so transform drags still win.
+- **Pinch** (two fingers, spread change) zooms / dollies. Two-finger translation does not orbit or pan.
+- **Three fingers** pan (move the camera).
+- **WASD** flies in 3D (look-relative) and pans on XY in 2D. Ignored while typing, while Play is open, or when the canvas is hidden.
+- **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Not the P9 game `TouchJoystick`.
 - **Gizmo drag** coalesces to one undo step via `mergeKey` on `SetActorTransformCommand` (`transform:{actorId}`).
 - Canvas uses `touch-none` so UI chrome does not steal gestures.
 - Selection on explicit tap pick, not hover.

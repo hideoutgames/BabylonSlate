@@ -8,14 +8,14 @@ Shared-surface design note for viewport, outliner, details, and the edit layer. 
 | --- | --- |
 | `name` | Scene display name |
 | `viewportMode` | `"3d"` \| `"2d"` — per-scene default; toolbar toggle always available |
-| `settings` | Environment, gravity, timestep, `gameInstanceClass`, grid, `cameraBounds2D` |
+| `settings` | Environment, gravity, timestep, `gameInstanceClass`, grid, `cameraBounds2D`, `editorJoystickEnabled` |
 | `actors` | Flat list with `parentId`; hierarchy resolved at apply time |
 
 Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / quaternion rotation / scale), `visible`, `locked`, `components[]`.
 
 Each **component**: `id`, `classId`, `properties` (typed per class in the object-model registry).
 
-**Scene settings** include `physicsWorld` (`"3d"` \| `"2d"`, defaults from `viewportMode`), `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`) and `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay. A scene never mixes physics worlds — see [physics.md](physics.md). Details and Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent` (defaults from `parseRigidBodyProperties` / `parseColliderProperties`).
+**Scene settings** include `physicsWorld` (`"3d"` \| `"2d"`, defaults from `viewportMode`), `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`), `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay, and `editorJoystickEnabled` (optional on-screen stick that flies/pans the **editor** camera). A scene never mixes physics worlds — see [physics.md](physics.md). Details and Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent` (defaults from `parseRigidBodyProperties` / `parseColliderProperties`).
 
 ## Selection model
 
@@ -48,8 +48,8 @@ Both systems are **mode-parametric** via `ViewportMode` from `@babylonslate/core
 
 | Mode | Camera | Gizmo |
 | --- | --- | --- |
-| `3d` | ArcRotate orbit/pan/zoom | Full translate / rotate / scale |
-| `2d` | Orthographic; pan + pinch zoom only (orbit no-op) | XY translate, Z rotate, XY scale; unused axes hidden |
+| `3d` | Fly/look: WASD + one-finger (or LMB) look-in-place, pinch/wheel zoom, three-finger pan | Full translate / rotate / scale |
+| `2d` | Orthographic; WASD/joystick XY pan, one-finger marquee, pinch zoom, three-finger pan (look is a no-op) | XY translate, Z rotate, XY scale; unused axes hidden |
 
 **2D convention** (fixed, left-handed Babylon): content on the **XY plane**, **+Y up**, **+X right**, editor camera at **−Z** looking toward **+Z**. `scene.useRightHandedSystem` stays `false`.
 
@@ -81,7 +81,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 ## 2D specifics
 
-- **Marquee**: one-finger drag in 2D selects actors whose origin falls inside the rect (`viewport-gestures.ts`, `two-d.ts`); 3D single-finger drag has no marquee.
+- **Marquee**: one-finger drag in 2D selects actors whose origin falls inside the rect (`viewport-gestures.ts`, `two-d.ts`); 3D one-finger drag looks the camera instead.
 - **Tile grid**: major lines at `settings.grid.tileSize`; minor lines at `tileSubdivisions` between majors (`editor-grid.ts`).
 - **`cameraBounds2D`**: rectangle drawn in the viewport for the game camera frame.
 - **`pixelsPerUnit`**: project setting (default 100); drives pixel-perfect ortho bounds and grid snapping.
@@ -99,6 +99,6 @@ Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`
 | Left | **My Class** and **Components** (the actor component tree). |
 | Right / bottom | Inspector, Compiler Results |
 
-The Prefab viewport reuses `ViewportToolbar` + `createEngine` (touch gizmos, two-finger camera). The canvas is full-size, not a 160px sidebar strip. Component add/remove updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
+The Prefab viewport reuses `ViewportToolbar` + `createEngine` (touch gizmos, fly/look camera). The canvas is full-size, not a 160px sidebar strip. Component add/remove updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
 
 See [command-layer.md](command-layer.md) for undo/journal and [gestures.md](../design/gestures.md) for touch contracts.

@@ -17,6 +17,7 @@ export * from "./editor-scene-sync";
 export * from "./gizmo-host";
 export * from "./selection-outline";
 export * from "./viewport-gestures";
+export * from "./viewport-fly-keys";
 export * from "./two-d";
 export * from "./sorting";
 export * from "./pixel-perfect";

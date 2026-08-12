@@ -196,6 +196,18 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           mutate({ ...scene, settings: { ...scene.settings, fogEnabled } }),
       },
       {
+        kind: "boolean",
+        id: "scene-editor-joystick",
+        label: "Editor camera joystick",
+        value: scene.settings.editorJoystickEnabled,
+        defaultValue: defaults.editorJoystickEnabled,
+        onChange: (editorJoystickEnabled) =>
+          mutate({
+            ...scene,
+            settings: { ...scene.settings, editorJoystickEnabled },
+          }),
+      },
+      {
         kind: "vector3",
         id: "scene-gravity",
         label: "Gravity",
