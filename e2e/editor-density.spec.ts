@@ -88,6 +88,33 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("place-actors-catalog-body")).toBeVisible();
   });
 
+  test("Class Focus hides Inspector and Class, keeping Graph", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.graph.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("graph-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("inspector-panel")).toBeVisible();
+    await expect(page.getByTestId("my-class-panel")).toBeVisible();
+
+    const focus = page.getByTestId("focus-layout");
+    await expect(focus).toBeEnabled();
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await expect(page.getByTestId("inspector-panel")).not.toBeVisible();
+    await expect(page.getByTestId("my-class-panel")).not.toBeVisible();
+
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("inspector-panel")).toBeVisible();
+    await expect(page.getByTestId("my-class-panel")).toBeVisible();
+  });
+
   test("Add Node catalog does not focus search", async ({ page }) => {
     await openTestProject(page);
     await page

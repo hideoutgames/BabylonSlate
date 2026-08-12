@@ -1049,7 +1049,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     dockviewApisRef.current.get(activeDocumentId)?.getPanel(panelId)?.api.setActive();
   }, [documentService]);
 
-  const toggleLayoutFocus = useCallback(() => {
+  const toggleLayoutFocus = useCallback(async () => {
     const { activeDocumentId } = documentService.getState();
     if (!activeDocumentId) return;
     const doc = documentService
@@ -1075,17 +1075,28 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const settings = await settingsStore.load();
+    if (preFocusLayoutsRef.current.has(activeDocumentId)) {
+      return;
+    }
+    const dock = dockviewApisRef.current.get(activeDocumentId);
+    if (!dock) return;
+
     preFocusLayoutsRef.current.set(
       activeDocumentId,
-      api.toJSON() as unknown as Record<string, unknown>,
+      dock.toJSON() as unknown as Record<string, unknown>,
     );
-    applyFocusLayout(doc.ref.kind, api);
+    applyFocusLayout(
+      doc.ref.kind,
+      dock,
+      settings.focusKeepPanels[doc.ref.kind],
+    );
     setFocusedLayoutIds((current) => {
       const next = new Set(current);
       next.add(activeDocumentId);
       return next;
     });
-  }, [documentService]);
+  }, [documentService, settingsStore]);
 
   const captureActiveLayout = useCallback(() => {
     const { activeDocumentId } = documentService.getState();

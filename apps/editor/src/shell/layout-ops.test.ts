@@ -1,60 +1,109 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyFocusLayout,
-  GRAPH_FOCUS_HIDE,
+  focusKeepCandidates,
   migrateRestoredLayout,
-  SCENE_FOCUS_HIDE,
+  resolveFocusKeepPanelIds,
 } from "./layout-ops";
 
 function fakeApi(ids: string[]) {
-  const panels = new Map(
+  const panelMap = new Map(
     ids.map((id) => [
       id,
       {
+        id,
         api: {
           maximize: vi.fn(),
           close: vi.fn(),
+          addPanel: vi.fn(),
         },
       },
     ]),
   );
   return {
-    getPanel: (id: string) => panels.get(id),
-    panels,
+    getPanel: (id: string) => panelMap.get(id),
+    panels: ids.map((id) => panelMap.get(id)!),
+    addPanel: vi.fn(),
   };
 }
 
+describe("focusKeepCandidates", () => {
+  it("lists scene dock tabs that Focus can keep", () => {
+    expect(focusKeepCandidates("scene").map((panel) => panel.id)).toEqual([
+      "viewport",
+      "scene-outliner",
+      "scene-details",
+      "output-log",
+    ]);
+  });
+
+  it("lists class dock tabs that Focus can keep", () => {
+    expect(focusKeepCandidates("graph").map((panel) => panel.id)).toEqual([
+      "graph",
+      "prefab-viewport",
+      "actor-prefab",
+      "my-class",
+      "inspector",
+      "compiler-results",
+    ]);
+  });
+});
+
+describe("resolveFocusKeepPanelIds", () => {
+  it("uses the primary surface when the keep list is empty", () => {
+    expect(resolveFocusKeepPanelIds("scene", [])).toEqual(["viewport"]);
+    expect(resolveFocusKeepPanelIds("graph", undefined)).toEqual(["graph"]);
+  });
+
+  it("keeps an explicit list as-is", () => {
+    expect(
+      resolveFocusKeepPanelIds("graph", ["graph", "inspector"]),
+    ).toEqual(["graph", "inspector"]);
+  });
+});
+
 describe("applyFocusLayout", () => {
-  it("maximizes the scene viewport when the API exists", () => {
-    const api = fakeApi(["viewport", "scene-outliner", "scene-details"]);
-    applyFocusLayout("scene", api);
-    expect(api.getPanel("viewport")!.api.maximize).toHaveBeenCalled();
-    expect(api.getPanel("scene-outliner")!.api.close).not.toHaveBeenCalled();
-  });
-
-  it("closes non-viewport scene panels when maximize is missing", () => {
-    const api = fakeApi(["viewport", ...SCENE_FOCUS_HIDE]);
-    api.getPanel("viewport")!.api.maximize = undefined as never;
-    applyFocusLayout("scene", api);
-    for (const id of SCENE_FOCUS_HIDE) {
-      expect(api.getPanel(id)!.api.close).toHaveBeenCalled();
-    }
-  });
-
-  it("hides prefab and compiler results on a graph document", () => {
+  it("closes every open class panel except Graph when keep is graph only", () => {
     const api = fakeApi([
       "graph",
       "inspector",
       "my-class",
       "actor-prefab",
-      ...GRAPH_FOCUS_HIDE,
+      "prefab-viewport",
+      "compiler-results",
     ]);
-    applyFocusLayout("graph", api);
-    for (const id of GRAPH_FOCUS_HIDE) {
-      expect(api.getPanel(id)!.api.close).toHaveBeenCalled();
-    }
+    applyFocusLayout("graph", api, ["graph"]);
     expect(api.getPanel("graph")!.api.close).not.toHaveBeenCalled();
-    expect(api.getPanel("inspector")!.api.close).not.toHaveBeenCalled();
+    expect(api.getPanel("inspector")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("my-class")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("actor-prefab")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("prefab-viewport")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("compiler-results")!.api.close).toHaveBeenCalled();
+    expect(api.addPanel).not.toHaveBeenCalled();
+  });
+
+  it("does not open a keep-listed panel that is not already in the dock", () => {
+    const api = fakeApi(["graph", "my-class"]);
+    applyFocusLayout("graph", api, ["graph", "inspector"]);
+    expect(api.getPanel("graph")!.api.close).not.toHaveBeenCalled();
+    expect(api.getPanel("my-class")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("inspector")).toBeUndefined();
+    expect(api.addPanel).not.toHaveBeenCalled();
+  });
+
+  it("keeps already-open scene panels that are on the keep list", () => {
+    const api = fakeApi([
+      "viewport",
+      "scene-outliner",
+      "scene-details",
+      "output-log",
+    ]);
+    applyFocusLayout("scene", api, ["viewport", "scene-outliner"]);
+    expect(api.getPanel("viewport")!.api.close).not.toHaveBeenCalled();
+    expect(api.getPanel("viewport")!.api.maximize).not.toHaveBeenCalled();
+    expect(api.getPanel("scene-outliner")!.api.close).not.toHaveBeenCalled();
+    expect(api.getPanel("scene-details")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("output-log")!.api.close).toHaveBeenCalled();
   });
 });
 
