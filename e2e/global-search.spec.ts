@@ -1,11 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-
-async function openTestProject(page: Page) {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("create-project-empty").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-}
+import { expect, test } from "@playwright/test";
+import { openTestProject } from "./open-test-project";
 
 test.describe("Global project search", () => {
   test("toolbar search opens a dialog and focuses a scene actor", async ({

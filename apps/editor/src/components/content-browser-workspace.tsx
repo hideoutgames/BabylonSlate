@@ -29,7 +29,7 @@ import {
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import { documentId, labelFromPath } from "@babylonslate/core";
-import { pickImportFiles } from "@babylonslate/vfs";
+import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -50,10 +50,16 @@ import {
 } from "@babylonslate/ui/components/card";
 import {
   Field,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import {
+  Progress,
+  ProgressLabel,
+  ProgressValue,
+} from "@babylonslate/ui/components/progress";
 import {
   Select,
   SelectContent,
@@ -95,6 +101,9 @@ import {
   filterAssets,
   flattenFolderTree,
   folderRelativePath,
+  isFolderNameTaken,
+  isNewAssetNameTaken,
+  isRenameNameTaken,
   newAssetFileName,
   textureCompressionState,
   uniqueAssetTypes,
@@ -330,10 +339,14 @@ function AssetTile({
         data-asset-guid={asset.header.guid}
         data-selected={selected ? "true" : "false"}
         className="flex w-full flex-col text-left hover:bg-accent/50"
-        onClick={onSelect}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect();
+        }}
         onDoubleClick={onOpen}
         onContextMenu={(event) => {
           event.preventDefault();
+          event.stopPropagation();
           onSelect();
           onLongPressMenu(event.clientX, event.clientY);
         }}
@@ -456,6 +469,13 @@ export function ContentBrowserWorkspace() {
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
   );
+  const [importProgress, setImportProgress] = useState<{
+    total: number;
+    done: number;
+    currentName: string;
+  } | null>(null);
+  const [importErrors, setImportErrors] = useState<string[] | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const thumbnailUrlsRef = useRef(thumbnailUrls);
   thumbnailUrlsRef.current = thumbnailUrls;
   const menuTargetGuidsRef = useRef<string[]>([]);
@@ -498,6 +518,36 @@ export function ContentBrowserWorkspace() {
       }),
     [allAssets, folderGuids, search, typeFilters],
   );
+
+  const existingAssetPaths = useMemo(
+    () => allAssets.map((asset) => asset.path),
+    [allAssets],
+  );
+  const existingFolderPaths = useMemo(
+    () =>
+      folderTree ? flattenFolderTree(folderTree).map((row) => row.path) : [],
+    [folderTree],
+  );
+  const newAssetNameTaken = isNewAssetNameTaken(
+    existingAssetPaths,
+    selectedFolderPath,
+    newAssetType,
+    newAssetName,
+  );
+  const nameDialogTaken =
+    nameDialog?.kind === "folder"
+      ? isFolderNameTaken(
+          existingFolderPaths,
+          selectedFolderPath,
+          nameDialog.value,
+        )
+      : nameDialog?.kind === "rename" && assetRegistry
+        ? isRenameNameTaken(
+            existingAssetPaths,
+            assetRegistry.getByGuid(nameDialog.guid)?.path ?? "",
+            nameDialog.value,
+          )
+        : false;
 
   useEffect(() => {
     if (!thumbnailsEnabled) return;
@@ -764,20 +814,45 @@ export function ContentBrowserWorkspace() {
   const importPickedFiles = useCallback(
     async (files: Array<{ name: string; bytes: Uint8Array }>) => {
       if (!assetRegistry || !files.length) return;
+      const errors: string[] = [];
       setBusy(true);
+      setImportProgress({
+        total: files.length,
+        done: 0,
+        currentName: files[0]!.name,
+      });
       try {
         const folder = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
-        for (const file of files) {
-          await assetRegistry.importFile(
-            PROJECT_ROOT_ID,
-            folder,
-            file.name,
-            file.bytes,
-          );
+        for (let index = 0; index < files.length; index += 1) {
+          const file = files[index]!;
+          setImportProgress({
+            total: files.length,
+            done: index,
+            currentName: file.name,
+          });
+          try {
+            await assetRegistry.importFile(
+              PROJECT_ROOT_ID,
+              folder,
+              file.name,
+              file.bytes,
+            );
+          } catch (err) {
+            errors.push(
+              `${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+          setImportProgress({
+            total: files.length,
+            done: index + 1,
+            currentName: file.name,
+          });
         }
         await refreshAssetRegistry();
       } finally {
+        setImportProgress(null);
         setBusy(false);
+        if (errors.length) setImportErrors(errors);
       }
     },
     [assetRegistry, refreshAssetRegistry, selectedFolderPath],
@@ -885,8 +960,18 @@ export function ContentBrowserWorkspace() {
   );
 
   const handleImport = useCallback(async () => {
-    const files = await pickImportFiles({ multiple: true });
-    await importPickedFiles(files);
+    if (isMobilePlatform()) {
+      try {
+        const files = await pickImportFiles({ multiple: true });
+        await importPickedFiles(files);
+      } catch (err) {
+        setImportErrors([
+          err instanceof Error ? err.message : String(err),
+        ]);
+      }
+      return;
+    }
+    importInputRef.current?.click();
   }, [importPickedFiles]);
 
   const handleImportInputChange = useCallback(
@@ -905,7 +990,7 @@ export function ContentBrowserWorkspace() {
   );
 
   const handleCreateAsset = useCallback(async () => {
-    if (!assetRegistry) return;
+    if (!assetRegistry || newAssetNameTaken) return;
     setBusy(true);
     try {
       const type = newAssetType;
@@ -934,6 +1019,7 @@ export function ContentBrowserWorkspace() {
   }, [
     assetRegistry,
     newAssetName,
+    newAssetNameTaken,
     newAssetParent,
     newAssetType,
     refreshAssetRegistry,
@@ -1049,6 +1135,7 @@ export function ContentBrowserWorkspace() {
           </Button>
         ) : null}
         <input
+          ref={importInputRef}
           type="file"
           multiple
           className="hidden"
@@ -1109,6 +1196,7 @@ export function ContentBrowserWorkspace() {
           <div
             className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,7rem)] content-start gap-2 overflow-y-auto overscroll-y-contain p-3"
             data-testid="content-browser-asset-grid"
+            onClick={() => setSelectedGuids(new Set())}
           >
             {visibleAssets.map((asset) => (
               <AssetTile
@@ -1161,26 +1249,41 @@ export function ContentBrowserWorkspace() {
                   setNewAssetType(value as CreatableAssetType)
                 }
               >
-                <SelectTrigger id="new-asset-type" className="min-h-[var(--touch-target,44px)] w-full">
+                <SelectTrigger
+                  id="new-asset-type"
+                  data-testid="new-asset-type"
+                  className="min-h-[var(--touch-target,44px)] w-full"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {CREATABLE_ASSET_TYPES.map((type) => (
-                    <SelectItem key={type} value={type}>
+                    <SelectItem
+                      key={type}
+                      value={type}
+                      data-testid={`new-asset-type-${type}`}
+                    >
                       {type}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
-            <Field>
+            <Field data-invalid={newAssetNameTaken || undefined}>
               <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
               <Input
                 id="new-asset-name"
+                data-testid="new-asset-name"
                 className="min-h-[var(--touch-target,44px)]"
                 value={newAssetName}
+                aria-invalid={newAssetNameTaken || undefined}
                 onChange={(event) => setNewAssetName(event.target.value)}
               />
+              {newAssetNameTaken ? (
+                <FieldError data-testid="new-asset-name-taken">
+                  An asset with this name already exists in the folder.
+                </FieldError>
+              ) : null}
             </Field>
             {newAssetType === "Class" ? (
               <Field>
@@ -1203,7 +1306,8 @@ export function ContentBrowserWorkspace() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={busy}
+              disabled={busy || newAssetNameTaken || !newAssetName.trim()}
+              data-testid="content-browser-new-asset-create"
               onClick={(event) => {
                 event.preventDefault();
                 void handleCreateAsset();
@@ -1294,6 +1398,7 @@ export function ContentBrowserWorkspace() {
           <Input
             className="min-h-[var(--touch-target,44px)]"
             data-testid="content-browser-name-input"
+            aria-invalid={nameDialogTaken || undefined}
             value={nameDialog?.value ?? ""}
             onChange={(event) =>
               setNameDialog((current) =>
@@ -1301,10 +1406,18 @@ export function ContentBrowserWorkspace() {
               )
             }
           />
+          {nameDialogTaken ? (
+            <p
+              className="text-sm text-destructive"
+              data-testid="content-browser-name-taken"
+            >
+              That name is already used in this folder.
+            </p>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={busy}
+              disabled={busy || nameDialogTaken || !nameDialog?.value.trim()}
               data-testid="content-browser-name-confirm"
               onClick={(event) => {
                 event.preventDefault();
@@ -1404,6 +1517,75 @@ export function ContentBrowserWorkspace() {
           </div>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => setRefsSummary(null)}>
+              Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={importProgress !== null}>
+        <DialogContent
+          showCloseButton={false}
+          data-testid="importing-overlay"
+        >
+          <DialogHeader>
+            <DialogTitle>Importing</DialogTitle>
+            <DialogDescription>
+              Writing assets into the project. Texture compression continues in
+              the background after this finishes.
+            </DialogDescription>
+          </DialogHeader>
+          {importProgress ? (
+            <div className="flex flex-col gap-2">
+              <p data-testid="importing-file" className="truncate text-sm">
+                {importProgress.currentName}
+              </p>
+              <p
+                data-testid="importing-count"
+                className="text-sm text-muted-foreground tabular-nums"
+              >
+                {importProgress.done} / {importProgress.total}
+              </p>
+              <Progress
+                value={Math.round(
+                  (100 * importProgress.done) /
+                    Math.max(importProgress.total, 1),
+                )}
+                data-testid="importing-progress"
+              >
+                <ProgressLabel>Importing</ProgressLabel>
+                <ProgressValue />
+              </Progress>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={importErrors !== null}
+        onOpenChange={(open) => {
+          if (!open) setImportErrors(null);
+        }}
+      >
+        <AlertDialogContent data-testid="import-errors-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Import failed</AlertDialogTitle>
+            <AlertDialogDescription>
+              Some files could not be imported.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+            {importErrors?.map((message) => (
+              <li key={message}>
+                <SelectableText>{message}</SelectableText>
+              </li>
+            ))}
+          </ul>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              data-testid="import-errors-dismiss"
+              onClick={() => setImportErrors(null)}
+            >
               Close
             </AlertDialogAction>
           </AlertDialogFooter>

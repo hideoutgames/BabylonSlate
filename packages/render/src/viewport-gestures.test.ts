@@ -93,7 +93,7 @@ describe("attachViewportGestures", () => {
     expect(canvas.capturedPointers).toEqual([1]);
   });
 
-  it("treats a moved single finger as a marquee in 2D and not a tap", () => {
+  it("pans on a moved single finger in 2D and does not marquee", () => {
     const taps: Array<[number, number]> = [];
     const marquees: Array<{
       x: number;
@@ -101,17 +101,53 @@ describe("attachViewportGestures", () => {
       width: number;
       height: number;
     }> = [];
-    attach("2d", {
+    const { controller } = attach("2d", {
       onTap: (x, y) => taps.push([x, y]),
       onMarquee: (rect) => marquees.push(rect),
     });
+    const targetBefore = controller.camera.target.clone();
 
     canvas.emit("pointerdown", pointer(1, 100, 100));
     canvas.emit("pointermove", pointer(1, 60, 140));
     canvas.emit("pointerup", pointer(1, 60, 140));
 
     expect(taps).toHaveLength(0);
+    expect(marquees).toHaveLength(0);
+    expect(controller.camera.target.equals(targetBefore)).toBe(false);
+  });
+
+  it("marquees in 2D after a 250ms hold then move", () => {
+    vi.useFakeTimers();
+    const marquees: Array<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }> = [];
+    const { controller } = attach("2d", {
+      onMarquee: (rect) => marquees.push(rect),
+    });
+    const targetBefore = controller.camera.target.clone();
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    vi.advanceTimersByTime(250);
+    canvas.emit("pointermove", pointer(1, 60, 140));
+    canvas.emit("pointerup", pointer(1, 60, 140));
+
     expect(marquees).toEqual([{ x: 60, y: 100, width: 40, height: 40 }]);
+    expect(controller.camera.target.equals(targetBefore)).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("does not pan in 2D when blockLook reports a gizmo hit", () => {
+    const { controller } = attach("2d", { blockLook: () => true });
+    const targetBefore = controller.camera.target.clone();
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 60, 140));
+    canvas.emit("pointerup", pointer(1, 60, 140));
+
+    expect(controller.camera.target.equals(targetBefore)).toBe(true);
   });
 
   it("does not marquee in 3D, where a single-finger drag looks instead", () => {

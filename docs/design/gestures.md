@@ -70,7 +70,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 ## Viewport (Babylon)
 
-- **One finger**: tap to pick/select. In **3D**, drag looks in place (yaw/pitch; camera position stays put). In **2D**, drag **marquees** (actors whose origin falls inside the rect). Gizmo handle hits skip look so transform drags still win.
+- **One finger**: tap to pick/select. In **3D**, drag looks in place (yaw/pitch; camera position stays put). In **2D**, drag **pans** (same scale/axes as three-finger pan). **Hold ~250ms then move** marquees (actors whose origin falls inside the rect). Gizmo handle hits skip look/pan so transform drags still win.
 - **Pinch** (two fingers, spread change) zooms / dollies. Two-finger translation does not orbit or pan.
 - **Three fingers** pan (move the camera).
 - **WASD** flies in 3D (look-relative) and pans on XY in 2D. Ignored while typing, while Play is open, or when the canvas is hidden.
@@ -102,6 +102,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | Gesture | Action |
 | --- | --- |
 | Tap / click a tile | Select (replace selection) |
+| Tap / click empty grid (padding, gaps — not a tile) | Clear selection |
 | Double-tap / double-click a Scene or Graph | Open the document (`openOrFocusDocument`) |
 | Move before ~250ms | Scroll / ignore (do not open menu or start reorder) |
 | Hold ~250ms, then move | Drag-reorder (drop on a folder or among siblings); HTML5 `ASSET_DRAG_MIME` once armed |

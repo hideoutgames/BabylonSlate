@@ -4,7 +4,7 @@ import type { RenderScheduler } from "./render-scheduler";
 export interface ViewportGestureOptions {
   /** Called for a stationary single-finger tap (selection pick). */
   onTap?: (canvasX: number, canvasY: number) => void;
-  /** Single-finger drag in 2D mode: marquee select. */
+  /** Hold ~250ms then drag in 2D mode: marquee select. Immediate drag pans. */
   onMarquee?: (rect: {
     x: number;
     y: number;
@@ -33,6 +33,8 @@ interface PointerSample {
 }
 
 const TAP_TOLERANCE_PX = 8;
+/** Hold before a 2D one-finger drag becomes a marquee (matches editor-kit DRAG_ARM_MS). */
+const MARQUEE_ARM_MS = 250;
 
 function midpoint(points: PointerSample[]): PointerSample {
   let x = 0;
@@ -51,8 +53,8 @@ function spread(points: PointerSample[]): number {
 
 /**
  * Gesture contract from docs/design/gestures.md: one-finger tap picks;
- * one-finger drag looks in 3D and marquees in 2D; pinch zooms; three fingers
- * pan. Two-finger translation does not orbit or pan.
+ * one-finger drag looks in 3D and pans in 2D; hold then move marquees in 2D;
+ * pinch zooms; three fingers pan. Two-finger translation does not orbit or pan.
  */
 export function attachViewportGestures(
   canvas: HTMLCanvasElement,
@@ -67,6 +69,8 @@ export function attachViewportGestures(
   let downPoint: PointerSample | null = null;
   let moved = false;
   let skipLook = false;
+  let marqueeArmed = false;
+  let marqueeTimer: ReturnType<typeof setTimeout> | null = null;
   let releaseLease: (() => void) | null = null;
 
   const acquireLease = () => {
@@ -78,6 +82,13 @@ export function attachViewportGestures(
   const dropLease = () => {
     releaseLease?.();
     releaseLease = null;
+  };
+
+  const clearMarqueeTimer = () => {
+    if (marqueeTimer !== null) {
+      clearTimeout(marqueeTimer);
+      marqueeTimer = null;
+    }
   };
 
   const toCanvas = (event: PointerEvent): PointerSample => {
@@ -94,6 +105,13 @@ export function attachViewportGestures(
       lastPoint = point;
       moved = false;
       skipLook = options.blockLook?.(point.x, point.y) === true;
+      marqueeArmed = false;
+      clearMarqueeTimer();
+      if (controller.mode === "2d" && !skipLook) {
+        marqueeTimer = setTimeout(() => {
+          marqueeArmed = true;
+        }, MARQUEE_ARM_MS);
+      }
     } else {
       const samples = [...pointers.values()];
       lastMid = midpoint(samples);
@@ -128,6 +146,20 @@ export function attachViewportGestures(
         if (dx !== 0 || dy !== 0) {
           acquireLease();
           controller.look(-dx * orbitScale, -dy * orbitScale);
+        }
+      } else if (
+        controller.mode === "2d" &&
+        moved &&
+        !skipLook &&
+        !marqueeArmed &&
+        lastPoint
+      ) {
+        const dx = point.x - lastPoint.x;
+        const dy = point.y - lastPoint.y;
+        if (dx !== 0 || dy !== 0) {
+          acquireLease();
+          controller.pan(-dx * panScale, dy * panScale);
+          clearMarqueeTimer();
         }
       }
       lastPoint = point;
@@ -173,12 +205,20 @@ export function attachViewportGestures(
       if (pointers.size === 0) {
         downPoint = null;
         skipLook = false;
+        marqueeArmed = false;
+        clearMarqueeTimer();
       }
       return;
     }
+    clearMarqueeTimer();
     if (!moved) {
       options.onTap?.(point.x, point.y);
-    } else if (controller.mode === "2d" && options.onMarquee) {
+    } else if (
+      controller.mode === "2d" &&
+      marqueeArmed &&
+      !skipLook &&
+      options.onMarquee
+    ) {
       options.onMarquee({
         x: Math.min(downPoint.x, point.x),
         y: Math.min(downPoint.y, point.y),
@@ -189,6 +229,7 @@ export function attachViewportGestures(
     downPoint = null;
     moved = false;
     skipLook = false;
+    marqueeArmed = false;
   };
 
   const onWheel = (event: WheelEvent) => {
@@ -217,6 +258,7 @@ export function attachViewportGestures(
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("touchstart", onTouch);
       canvas.removeEventListener("touchmove", onTouch);
+      clearMarqueeTimer();
       dropLease();
       pointers.clear();
     },

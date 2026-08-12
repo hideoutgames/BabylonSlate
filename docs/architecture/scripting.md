@@ -21,7 +21,7 @@ Add `scripting` / `scripting-nodes` to the ESLint pure-package allowlist beside 
 
 ## Graph IR
 
-Replace today's placeholder `SerializedGraph` (untyped nodes + edges without pin ends) with a typed IR stored in the owning class / function asset payload.
+Replace today's placeholder `SerializedGraph` (untyped nodes + edges without pin ends) with a typed IR stored in the owning class / function asset payload. Today's Content Browser `type: "Graph"` / `.graph.babasset` is an **in-editor Actor UI preview document** (Graph + Prefab + Components + Class), not the long-term catalog type. Import does not create Graph assets; migrating ownership onto Class documents is a P5 follow-up.
 
 ```ts
 type PinKind = "exec" | "data";

@@ -21,7 +21,7 @@ Play takes a `acquireContinuous("play")` lease for the session so every overlay 
 
 ## Render-on-demand
 
-Visible editor canvases (scene viewport and Prefab Preview) render at Engine Settings `viewportFrameCap` (Always Render default on). Freeze — skip `scene.render()` — when the canvas is zero-size or fully off-screen, a dialog/alert/sheet overlay is open, Play is up, or the app is backgrounded. IntersectionObserver is the fast path; if it reports not intersecting, a window-overlap `getBoundingClientRect` check still keeps an on-screen canvas visible (iOS standalone IO is unreliable under Dockview CSS transforms). Dirty-driven invalidation and refcounted continuous-render leases remain the Always Render-off path and still honor the same frame cap. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`, and they use the project `playFrameCap` (default 60) rather than the editor viewport cap. The cap is applied when Play starts; the overlay control changes it for that session only (does not write `project.json`). HUD exposes rendered-fps vs invalidations/sec.
+Visible editor canvases (scene viewport and Prefab Preview) render at Engine Settings `viewportFrameCap` (Always Render default on). Freeze — skip `scene.render()` — when the canvas is zero-size or fully off-screen, a dialog/alert/sheet overlay is open, Play is up, or the app is backgrounded. IntersectionObserver is the fast path; if it reports not intersecting, a window-overlap `getBoundingClientRect` check still keeps an on-screen canvas visible (iOS standalone IO is unreliable under Dockview CSS transforms). Dirty-driven invalidation and refcounted continuous-render leases remain the Always Render-off path and still honor the same frame cap. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`, and they use the project `playFrameCap` (default 60) rather than the editor viewport cap. The cap is applied when Play starts from Project Settings `playFrameCap`. The overlay HUD shows FPS / script / physics and does not change the cap live. HUD exposes rendered-fps vs invalidations/sec.
 
 `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. Pause render loop, game worker, and encode queue on background.
 
@@ -58,7 +58,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | `editor-grid` | 3D XZ or 2D XY grid; tile spacing + subdivisions; `cameraBounds2D` overlay |
 | `selection-outline` | Highlight mesh(es) for selected actors |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
-| `viewport-gestures` | 3D one-finger look, pinch zoom, three-finger pan; 2D one-finger marquee; tap pick |
+| `viewport-gestures` | 3D one-finger look, 2D one-finger pan (hold-then-move marquee), pinch zoom, three-finger pan; tap pick |
 | `viewport-fly-keys` | WASD fly/pan with rAF + continuous-render lease |
 | `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds, pixel-grid snap, and `applyPixelArtSamplingToScene` when pixel-perfect is on |
 

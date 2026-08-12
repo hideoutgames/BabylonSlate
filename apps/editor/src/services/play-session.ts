@@ -107,7 +107,7 @@ export function startPlaySession(options: {
     duration: number;
     color: string;
   }) => void;
-  /** Project `playFrameCap`; omitted or invalid → 60. Live overlay tweaks use `setFrameCap`. */
+  /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
 }): PlaySession {
   const { canvas, sharedEngine } = options;

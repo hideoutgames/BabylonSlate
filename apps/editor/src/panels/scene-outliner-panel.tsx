@@ -18,7 +18,7 @@ import { Toggle } from "@babylonslate/ui/components/toggle";
 import { EyeIcon, EyeOffIcon, LockIcon, PlusIcon, BoxIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { useSceneEditing } from "../context/scene-editing-context";
+import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
@@ -86,7 +86,8 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange, assetRegistry } = useDocuments();
-  const { selectedActorIds, selectActor, frameActor } = useSceneEditing();
+  const { selectedActorIds, selectActor, setSelectedActorIds, frameActor } =
+    useSceneEditing();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [menuActorId, setMenuActorId] = useState<string | null>(null);
@@ -152,14 +153,22 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const toggleFlag = useCallback(
     (actorId: string, flag: "visible" | "locked") => {
       if (!scene) return;
+      const current = scene.actors.find((actor) => actor.id === actorId);
+      if (!current) return;
+      const nextValue = !current[flag];
       mutate({
         ...scene,
         actors: scene.actors.map((actor) =>
-          actor.id === actorId ? { ...actor, [flag]: !actor[flag] } : actor,
+          actor.id === actorId ? { ...actor, [flag]: nextValue } : actor,
         ),
       });
+      if (flag === "locked") {
+        setSelectedActorIds(
+          selectionAfterLockChange(selectedActorIds, actorId, nextValue),
+        );
+      }
     },
-    [mutate, scene],
+    [mutate, scene, selectedActorIds, setSelectedActorIds],
   );
 
   const reparent = useCallback(

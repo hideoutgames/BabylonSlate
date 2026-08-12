@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { openTestProject } from "./open-test-project";
 
 test.describe("Touch shell UX", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/?test=1");
-    await page.getByTestId("create-project-empty").click();
+    await openTestProject(page);
     await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
     await expect(page.getByTestId("viewport-panel")).toBeVisible({
       timeout: 15_000,

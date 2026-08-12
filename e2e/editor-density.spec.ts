@@ -1,13 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
-
-async function openTestProject(page: Page) {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("create-project-empty").click();
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-}
 
 test.describe("Editor density and IA", () => {
   test("chrome is compact, has no Add tab, and Focus is disabled on Content Browser", async ({
@@ -186,5 +180,50 @@ test.describe("Editor density and IA", () => {
     await expect(joystick).toHaveAttribute("aria-pressed", "false");
     await joystick.click();
     await expect(joystick).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("tapping empty Content Browser grid clears the tile selection", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await sceneTile.click();
+    await expect(sceneTile).toHaveAttribute("data-selected", "true");
+    await expect(page.getByTestId("content-browser-delete-selected")).toBeVisible();
+
+    const grid = page.getByTestId("content-browser-asset-grid");
+    const box = await grid.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.click(box!.x + 4, box!.y + 4);
+
+    await expect(sceneTile).toHaveAttribute("data-selected", "false");
+    await expect(page.getByTestId("content-browser-delete-selected")).toHaveCount(
+      0,
+    );
+  });
+
+  test("New Asset refuses a name that already exists; Duplicate uses stem_N", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page.getByTestId("content-browser-new-asset").click();
+    await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+    await page.getByTestId("new-asset-type").click();
+    await page.getByTestId("new-asset-type-Scene").click();
+    await page.getByTestId("new-asset-name").fill("main");
+    await expect(page.getByTestId("new-asset-name-taken")).toBeVisible();
+    await expect(page.getByTestId("content-browser-new-asset-create")).toBeDisabled();
+    await page.getByRole("button", { name: "Cancel" }).click();
+
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await sceneTile.click({ button: "right" });
+    await page.getByTestId("context-menu-item-duplicate").click();
+    await expect(
+      page.locator('[data-asset-path="assets/main_1.scene.babasset"]'),
+    ).toBeVisible();
   });
 });

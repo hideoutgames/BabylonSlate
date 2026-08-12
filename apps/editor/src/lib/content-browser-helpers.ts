@@ -324,3 +324,53 @@ export function folderRelativePath(
     ? selectedFolderPath.slice(assetsRoot.length + 1)
     : "";
 }
+
+export function joinAssetFolderPath(folderPath: string, fileName: string): string {
+  const folder = folderPath.replace(/\/+$/, "");
+  return folder ? `${folder}/${fileName}` : fileName;
+}
+
+export function isNewAssetNameTaken(
+  existingPaths: Iterable<string>,
+  folderPath: string,
+  type: CreatableAssetType,
+  name: string,
+): boolean {
+  const path = joinAssetFolderPath(folderPath, newAssetFileName(type, name));
+  for (const existing of existingPaths) {
+    if (existing === path) return true;
+  }
+  return false;
+}
+
+export function isFolderNameTaken(
+  folderPaths: Iterable<string>,
+  parentPath: string,
+  name: string,
+): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+  const path = joinAssetFolderPath(parentPath, trimmed);
+  for (const existing of folderPaths) {
+    if (existing === path) return true;
+  }
+  return false;
+}
+
+export function isRenameNameTaken(
+  existingPaths: Iterable<string>,
+  currentPath: string,
+  newName: string,
+): boolean {
+  const safe = newName.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
+  if (!safe) return false;
+  const dir = currentPath.includes("/")
+    ? currentPath.slice(0, currentPath.lastIndexOf("/"))
+    : "";
+  const newPath = dir ? `${dir}/${safe}.babasset` : `${safe}.babasset`;
+  if (newPath === currentPath) return false;
+  for (const existing of existingPaths) {
+    if (existing === newPath) return true;
+  }
+  return false;
+}
