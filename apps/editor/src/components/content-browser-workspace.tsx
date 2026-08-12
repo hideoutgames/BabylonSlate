@@ -36,6 +36,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
@@ -1011,25 +1012,27 @@ export function ContentBrowserWorkspace() {
             className="min-w-44"
             data-testid="content-browser-filter-menu"
           >
-            <DropdownMenuLabel>Asset types</DropdownMenuLabel>
-            {typeChips.map((type) => (
-              <DropdownMenuCheckboxItem
-                key={type}
-                checked={typeFilters.includes(type)}
-                data-testid={`content-browser-filter-${type}`}
-                onCheckedChange={(checked) => {
-                  setTypeFilters((current) =>
-                    checked === true
-                      ? current.includes(type)
-                        ? current
-                        : [...current, type]
-                      : current.filter((entry) => entry !== type),
-                  );
-                }}
-              >
-                {type}
-              </DropdownMenuCheckboxItem>
-            ))}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Asset types</DropdownMenuLabel>
+              {typeChips.map((type) => (
+                <DropdownMenuCheckboxItem
+                  key={type}
+                  checked={typeFilters.includes(type)}
+                  data-testid={`content-browser-filter-${type}`}
+                  onCheckedChange={(checked) => {
+                    setTypeFilters((current) =>
+                      checked === true
+                        ? current.includes(type)
+                          ? current
+                          : [...current, type]
+                        : current.filter((entry) => entry !== type),
+                    );
+                  }}
+                >
+                  {type}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
         {selectedGuids.size > 0 ? (
