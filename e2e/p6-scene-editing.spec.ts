@@ -1,0 +1,143 @@
+import { expect, test, type Page } from "@playwright/test";
+
+async function openTestProject(page: Page) {
+  await page.goto("/?test=1");
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await page.getByTestId("create-project-empty").click();
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+}
+
+async function openMainScene(page: Page) {
+  await page.locator('[data-asset-path="assets/main.scene.babasset"]').click();
+  await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
+  await expect(
+    page.getByTestId("document-workspace-scene").locator("canvas"),
+  ).toBeVisible({ timeout: 15_000 });
+}
+
+async function nudgeSceneActor(page: Page): Promise<boolean> {
+  return page.evaluate(() =>
+    (
+      globalThis as {
+        __babylonslateTest: { nudgeActiveSceneActor: () => Promise<boolean> };
+      }
+    ).__babylonslateTest.nudgeActiveSceneActor(),
+  );
+}
+
+async function sceneActorX(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const position = (
+      globalThis as {
+        __babylonslateTest: {
+          activeSceneActorPosition: () => [number, number, number] | null;
+        };
+      }
+    ).__babylonslateTest.activeSceneActorPosition();
+    return position?.[0] ?? null;
+  });
+}
+
+async function injectGamepad(
+  page: Page,
+  pad: { axes: number[]; buttons?: number[] } | null,
+): Promise<void> {
+  await page.evaluate((next) => {
+    (
+      globalThis as {
+        __babylonslateTest: {
+          injectTestGamepad: (
+            pad: {
+              index?: number;
+              axes?: number[];
+              buttons?: number[];
+            } | null,
+          ) => void;
+        };
+      }
+    ).__babylonslateTest.injectTestGamepad(
+      next
+        ? { index: 0, axes: next.axes, buttons: next.buttons ?? [0, 0, 0, 0] }
+        : null,
+    );
+  }, pad);
+}
+
+test.describe("P6 first-playable scene editing", () => {
+  test("build, save, reopen, play in 3D and 2D with gamepad and gizmo undo", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+
+    await expect(page.getByTestId("viewport-toolbar")).toBeVisible();
+    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
+    await expect(page.getByTestId("scene-details-panel")).toBeVisible();
+
+    await page.getByTestId("outliner-add-actor").click();
+
+    const before = await sceneActorX(page);
+    expect(before).not.toBeNull();
+
+    expect(await nudgeSceneActor(page)).toBe(true);
+    await expect.poll(async () => sceneActorX(page)).toBeCloseTo((before ?? 0) + 1.5, 5);
+
+    await page.getByTestId("undo-document").click();
+    await expect.poll(async () => sceneActorX(page)).toBeCloseTo(before ?? 0, 5);
+
+    await page.getByTestId("save-project").click();
+
+    await page.getByTestId("viewport-mode-toggle").click();
+    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+    await page.getByTestId("save-project").click();
+
+    await page.getByTestId("close-project").click();
+    await expect(page.getByTestId("homepage")).toBeVisible();
+    await page.getByTestId("open-listed-project-TestProject.babproject").click();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await openMainScene(page);
+    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
+
+    await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect(page.getByTestId("play-canvas")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const attr = await page
+          .getByTestId("play-move-x")
+          .getAttribute("data-move-x");
+        return Number(attr ?? "0");
+      })
+      .toBeGreaterThan(0.5);
+
+    await page.getByTestId("play-overlay-close").click();
+    await injectGamepad(page, null);
+
+    await page.getByTestId("viewport-mode-toggle").click();
+    await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("3D");
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("scene panels expose touch-sized toolbar controls", async ({ page }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+
+    for (const testId of [
+      "gizmo-tool-translate",
+      "gizmo-tool-rotate",
+      "gizmo-tool-scale",
+      "gizmo-snap-toggle",
+      "viewport-mode-toggle",
+      "viewport-play-toggle",
+      "outliner-add-actor",
+    ]) {
+      const box = await page.getByTestId(testId).boundingBox();
+      expect(box, testId).not.toBeNull();
+      expect(box!.height, testId).toBeGreaterThanOrEqual(44);
+      expect(box!.width, testId).toBeGreaterThanOrEqual(44);
+    }
+  });
+});

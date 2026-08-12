@@ -11,11 +11,13 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 | `EditSession` | Map of `docId → DocumentEditStack`; `apply` / `undo` / `redo` / `dropDocument` |
 | `diffGraphCommands` | Derives graph commands from before/after `SerializedGraph` snapshots |
 | `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand` | Graph document commands |
+| `AddActorCommand`, `RemoveActorCommand`, `SetActorTransformCommand`, `RenameActorCommand`, `ReparentActorCommand`, `ReorderActorCommand`, `SetActorFlagsCommand`, `AddComponentCommand`, `RemoveComponentCommand`, `ReorderComponentCommand`, `SetComponentPropertyCommand`, `SetSceneSettingCommand`, `SetViewportModeCommand` | Scene document commands |
+| `diffSceneCommands` | Derives scene commands from before/after `SerializedScene` snapshots |
 | `serializeJournalLine` / `parseJournalLine` | JSONL journal line codec |
-| `replayJournalLines` | Replay journal onto open graph documents |
+| `replayJournalLines` | Replay journal onto open graph or scene documents |
 | `reviveCommand` / `registerCommandReviver` | Registry to rebuild commands from journal JSON |
 
-Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`; chrome **Undo** / **Redo** act on the active document only. `SetNodeDataCommand` records `byteSize` from its payload so snapshot-style data edits count toward the budget.
+Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`, scene panels call `applySceneChange`; chrome **Undo** / **Redo** act on the active document only. `SetNodeDataCommand` and subtree-capturing scene commands (e.g. `RemoveActorCommand`) record `byteSize` so snapshot-style edits count toward the budget.
 
 ## Ownership
 
@@ -69,13 +71,19 @@ Each line is one JSON object:
 
 - Append after a successful `apply` on an open document (`appendJournalLine` in derived data).
 - Clean **Close Project** and a successful **Save** truncate the journal (recovery is for *unsaved* edits).
-- Recovery banner in the editor shell (`data-testid="recovery-prompt"`) offers **Recover edits** / **Discard journal**. Replay opens any missing journal target graphs, then `replayJournalLines` → `reviveCommand` → `apply`, then truncates. Graph-scoped until scene commands land in P6.
+- Recovery banner in the editor shell (`data-testid="recovery-prompt"`) offers **Recover edits** / **Discard journal**. Replay opens any missing journal target documents (graphs and scenes), then `replayJournalLines` → `reviveCommand` → `apply`, then truncates. One stream keyed by `docId` — not a parallel recovery path per document kind.
 - Schema version `v` allows journal migration without inventing a parallel recovery path.
 
 ## Dirty / debounce saves
 
-Interactive edits mark the document dirty on apply. `applyGraphChange` schedules a **~400ms debounced** `saveProject` (manual Save remains; debounce cancels on explicit Save). Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
+Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, append journal lines, and schedule a **~400ms debounced** `saveProject` (manual Save remains; debounce cancels on explicit Save). Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
+
+## Scene apply path
+
+`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → journal append → debounced save. Undo/redo on scene tabs uses the same per-document stack as graphs.
+
+See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 
 ## Tests
 
-Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery (graph-scoped).
+Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer.

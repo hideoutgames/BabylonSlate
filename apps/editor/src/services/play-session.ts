@@ -31,6 +31,8 @@ export interface PlaySession {
   worker: GameWorkerHost | null;
   runtimeMode: "worker" | "in-process";
   setPaused: (paused: boolean) => void;
+  /** Last resolved Move.x from the in-process runtime; null on the worker path. */
+  lastMoveX: () => number | null;
   stop: () => PlaySessionResult;
 }
 
@@ -156,6 +158,7 @@ export function startPlaySession(options: {
   let fpsWindowStart = last;
   let sessionDiagnostics: SessionReportEntry[] = [];
   let droppedDiagnostics = 0;
+  let lastObservedMoveX: number | null = null;
 
   const pump = () => {
     const now = performance.now();
@@ -167,6 +170,12 @@ export function startPlaySession(options: {
     input.pollGamepads();
     const drained = input.ring.drain();
     if (drained.length > 0) {
+      for (const event of drained) {
+        // Axis 0 is Move.x in the default project mappings; e2e asserts this.
+        if (event.kind === "gamepad" && typeof event.axes[0] === "number") {
+          lastObservedMoveX = event.axes[0]!;
+        }
+      }
       if (worker) worker.pushInput(drained);
       else if (runtime) runtime.pushInputBuffer(encodeInputEvents(drained));
     }
@@ -232,6 +241,12 @@ export function startPlaySession(options: {
         else runtime.resume();
       }
       worker?.postControl({ type: "setPaused", paused });
+    },
+    lastMoveX: () => {
+      if (runtime) {
+        return runtime.getResolvedInput().axes2D.Move?.x ?? lastObservedMoveX;
+      }
+      return lastObservedMoveX;
     },
     stop: () => {
       cancelAnimationFrame(raf);

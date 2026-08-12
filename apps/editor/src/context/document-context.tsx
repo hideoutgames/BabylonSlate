@@ -730,6 +730,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         cancelDebouncedSave: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
         hasRecoveryJournal: () => Promise<boolean>;
+        /** Move the first scene actor by a fixed delta through the command layer. */
+        nudgeActiveSceneActor: () => Promise<boolean>;
+        activeSceneActorPosition: () => [number, number, number] | null;
+        injectTestGamepad: (pad: {
+          index?: number;
+          axes?: number[];
+          buttons?: number[];
+        } | null) => void;
       };
     };
     host.__babylonslateTest = {
@@ -787,11 +795,66 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         };
         return applyGraphChange(id, graph);
       },
+      activeSceneActorPosition: () => {
+        const doc = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "scene" && entry.content,
+        );
+        const scene = doc?.content as SerializedScene | undefined;
+        const position = scene?.actors[0]?.transform.position;
+        return position ? [...position] : null;
+      },
+      nudgeActiveSceneActor: async () => {
+        const openDocuments = documentService.getState().openDocuments;
+        const id = [...openDocuments.values()].find((d) => d.ref.kind === "scene")
+          ?.id;
+        if (!id) return false;
+        const doc = openDocuments.get(id);
+        if (!doc?.content) return false;
+        const scene = structuredClone(doc.content as SerializedScene);
+        const actor = scene.actors[0];
+        if (!actor) return false;
+        const [x, y, z] = actor.transform.position;
+        scene.actors[0] = {
+          ...actor,
+          transform: {
+            ...actor.transform,
+            position: [x + 1.5, y, z],
+          },
+        };
+        return applySceneChange(id, scene);
+      },
+      injectTestGamepad: (pad) => {
+        const globalHost = globalThis as {
+          __babylonslateTestGamepad?: {
+            index: number;
+            axes: number[];
+            buttons: number[];
+          };
+        };
+        if (!pad) {
+          delete globalHost.__babylonslateTestGamepad;
+          return;
+        }
+        globalHost.__babylonslateTestGamepad = {
+          index: pad.index ?? 0,
+          axes: pad.axes ?? [0, 0, 0, 0],
+          buttons: pad.buttons ?? [0, 0, 0, 0],
+        };
+      },
     };
     return () => {
       delete host.__babylonslateTest;
+      delete (globalThis as { __babylonslateTestGamepad?: unknown })
+        .__babylonslateTestGamepad;
     };
-  }, [applyGraphChange, bump, documentService, ensureDerived, projectService]);
+  }, [
+    applyGraphChange,
+    applySceneChange,
+    bump,
+    documentService,
+    ensureDerived,
+    projectService,
+  ]);
 
   const stepActiveDocumentHistory = useCallback(
     (direction: "undo" | "redo") => {

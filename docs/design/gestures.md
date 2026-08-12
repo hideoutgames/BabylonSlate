@@ -52,7 +52,9 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 
 ## Viewport (Babylon)
 
-- Two-finger orbit and pinch on canvas.
+- **One finger** manipulates content: tap to pick/select; in **2D mode**, drag to **marquee** (actors whose origin falls inside the rect). Single-finger drag has no meaning in 3D.
+- **Two fingers** orbit (3D), pan, and pinch-zoom on canvas; 2D mode is pan + zoom only (no orbit).
+- **Gizmo drag** coalesces to one undo step via `mergeKey` on `SetActorTransformCommand` (`transform:{actorId}`).
 - Canvas uses `touch-none` so UI chrome does not steal gestures.
 - Selection on explicit tap pick, not hover.
 

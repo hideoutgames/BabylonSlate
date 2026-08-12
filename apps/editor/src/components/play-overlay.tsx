@@ -36,6 +36,7 @@ export function PlayOverlay({
   const sessionRef = useRef<PlaySession | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
+  const [moveX, setMoveX] = useState<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -44,7 +45,10 @@ export function PlayOverlay({
       canvas,
       sharedEngine,
       injectFixtureThrow,
-      onStats: (stats) => setFps(stats.fps),
+      onStats: (stats) => {
+        setFps(stats.fps);
+        setMoveX(sessionRef.current?.lastMoveX() ?? null);
+      },
       onLog: (message) =>
         setLogs((prev) => [...prev.slice(-200), message]),
     });
@@ -52,7 +56,11 @@ export function PlayOverlay({
     const detachLifecycle = attachLifecyclePause((paused) => {
       sessionRef.current?.setPaused(paused);
     });
+    const movePoll = window.setInterval(() => {
+      setMoveX(sessionRef.current?.lastMoveX() ?? null);
+    }, 100);
     return () => {
+      window.clearInterval(movePoll);
       detachLifecycle();
       if (sessionRef.current) {
         sessionRef.current.stop();
@@ -69,6 +77,15 @@ export function PlayOverlay({
       <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground">
         <span data-testid="play-fps">
           <SelectableText>{fps} fps</SelectableText>
+        </span>
+        <span
+          className="ml-2"
+          data-testid="play-move-x"
+          data-move-x={moveX === null ? "" : String(moveX)}
+        >
+          <SelectableText>
+            move.x={moveX === null ? "—" : moveX.toFixed(2)}
+          </SelectableText>
         </span>
       </div>
       <Button

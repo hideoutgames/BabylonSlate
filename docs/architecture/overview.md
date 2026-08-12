@@ -2,7 +2,7 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
-## Monorepo (P4 complete; P5 packages next)
+## Monorepo (P6 complete; P7 next)
 
 ```
 apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer
@@ -13,17 +13,17 @@ packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
 packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
 packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader
-packages/input/       Raw tick-stamped input ring (action/axis mappings land in P6)
-packages/render/      Snapshot sync, render-on-demand, resource cache, KTX2 transcoder
+packages/input/       Raw input ring + action/axis mapping model and `InputResolver`
+packages/render/      Snapshot sync, render-on-demand, resource cache, editor tools, KTX2 transcoder
 packages/scripting/   Graph IR, pin types, validator, JS codegen + anchors (P5)
 packages/scripting-nodes/ Data-driven node catalog (P5)
 packages/graph-ui/    React Flow graph editor (mutations via edit); P5 touch shell rework
 packages/ui/          shadcn primitives
-packages/editor-kit/  Touch-shell hooks and components (parameter-list editor in P5)
+packages/editor-kit/  Touch-shell hooks, property grid, tree view, panel frame, asset picker, parameter-list editor
 packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md).
 
 ## Threading (P4)
 
@@ -43,7 +43,9 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab.
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
 - **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only).
-- **Edits**: `@babylonslate/edit` owns per-document undo; graph UI routes mutations through commands.
+- **Edits**: `@babylonslate/edit` owns per-document undo; graph and scene panels route mutations through commands (`applyGraphChange` / `applySceneChange`).
+- **Scene editing (P6)**: `SerializedScene` v2 actors/components; shared `SceneEditingProvider` selection; viewport gizmo + 2D mode via `@babylonslate/render` editor tools. See [scene-editing.md](scene-editing.md).
+- **Input mappings (P6)**: Project Settings → `InputResolver` → runtime `TickContext` and scripting input nodes. See [input.md](input.md).
 - **Object model**: `@babylonslate/object-model` owns headless World, class registry, and deterministic tick.
 - **Bridge / runtime**: `@babylonslate/bridge` + `@babylonslate/runtime` own Play transports, fixed-step worker, and diagnostics.
 - **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
