@@ -10,6 +10,7 @@
   --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
   --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-tab-margin: 0 2px;
   --dv-tab-divider-color: var(--border);
   --dv-separator-border: 1px solid
     color-mix(in oklch, var(--foreground) 18%, transparent);
