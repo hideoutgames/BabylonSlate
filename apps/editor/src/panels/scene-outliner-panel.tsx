@@ -234,7 +234,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               trailing: (
                 <>
                   <Toggle
-                    variant="ghost"
+                    variant="default"
                     size="touch"
                     aria-label={`Toggle visibility of ${node.label}`}
                     pressed={!node.muted}
@@ -244,7 +244,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                     {node.muted ? <EyeOffIcon /> : <EyeIcon />}
                   </Toggle>
                   <Toggle
-                    variant="ghost"
+                    variant="default"
                     size="touch"
                     aria-label={`Toggle lock of ${node.label}`}
                     pressed={lockedIds.has(node.id)}
