@@ -2,7 +2,7 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
-## Monorepo (P7 physics in progress)
+## Monorepo
 
 ```
 apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer

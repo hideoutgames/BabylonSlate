@@ -12,9 +12,9 @@ import {
 import { resetHavokModuleCache } from "./havok-loader";
 
 /**
- * Inspection surface the Babylon Physics V2 backend must expose so tests
- * (and only tests) can assert we are driving HavokPlugin, not a custom AABB
- * stepper. Production code will grow these fields; they are absent today.
+ * Inspection surface the Babylon Physics V2 backend exposes so tests can
+ * assert we are driving HavokPlugin, not a custom AABB stepper.
+ * `plugin` and `scene` are public fields on `HavokPhysicsBackend`.
  */
 type HavokV2Surface = {
   plugin?: unknown;
