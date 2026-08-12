@@ -7,6 +7,7 @@ import {
   SceneEditingProvider,
   useSceneEditing,
 } from "../context/scene-editing-context";
+import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { DockviewShell } from "../shell/dockview-shell";
@@ -113,6 +114,7 @@ export function DocumentWorkspace() {
               documentViewportMode={sceneContent?.viewportMode}
               documentSnapEnabled={sceneContent?.settings.grid.snapEnabled}
             >
+              <PrefabEditingProvider>
               {doc.ref.kind === "scene" ? (
                 <PendingSceneSearchFocus scenePath={doc.ref.path} />
               ) : null}
@@ -128,6 +130,7 @@ export function DocumentWorkspace() {
                   />
                 ) : null}
               </div>
+              </PrefabEditingProvider>
             </SceneEditingProvider>
           </DocumentWorkspaceProvider>
         );

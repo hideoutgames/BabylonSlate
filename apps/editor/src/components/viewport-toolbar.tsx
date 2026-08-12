@@ -21,7 +21,11 @@ const TOOLS: Array<{
   { id: "scale", label: "Scale", icon: ScalingIcon },
 ];
 
-export function ViewportToolbar() {
+export function ViewportToolbar({
+  testIdPrefix = "",
+}: {
+  testIdPrefix?: string;
+}) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
   const {
@@ -63,7 +67,7 @@ export function ViewportToolbar() {
   return (
     <div
       className="flex flex-wrap items-center gap-1"
-      data-testid="viewport-toolbar"
+      data-testid={`${testIdPrefix}viewport-toolbar`}
     >
       {TOOLS.map((tool) => {
         const Icon = tool.icon;
@@ -76,7 +80,7 @@ export function ViewportToolbar() {
             aria-label={tool.label}
             aria-pressed={gizmoTool === tool.id}
             onClick={() => setGizmoTool(tool.id)}
-            data-testid={`gizmo-tool-${tool.id}`}
+            data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
           >
             <Icon />
           </Button>
@@ -89,7 +93,7 @@ export function ViewportToolbar() {
         aria-label="Snap"
         aria-pressed={snapEnabled}
         onClick={toggleSnap}
-        data-testid="gizmo-snap-toggle"
+        data-testid={`${testIdPrefix}gizmo-snap-toggle`}
       >
         <MagnetIcon />
       </Button>
@@ -99,7 +103,7 @@ export function ViewportToolbar() {
         className="min-h-11 min-w-11"
         aria-label={viewportMode === "3d" ? "3D viewport" : "2D viewport"}
         onClick={toggleMode}
-        data-testid="viewport-mode-toggle"
+        data-testid={`${testIdPrefix}viewport-mode-toggle`}
       >
         {viewportMode === "3d" ? "3D" : "2D"}
       </Button>
