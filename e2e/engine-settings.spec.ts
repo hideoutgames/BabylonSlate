@@ -17,6 +17,16 @@ test("viewport frame cap can be emptied then retyped", async ({ page }) => {
   await expect(field).toHaveValue("30");
 });
 
+test("graph default zoom shows 0.5", async ({ page }) => {
+  await page.goto("/?test=1");
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await page.getByTestId("engine-settings").click();
+  await page.getByTestId("engine-settings-modal-category-graph").click();
+
+  const field = page.getByTestId("setting-graph-default-zoom");
+  await expect(field).toHaveValue("0.5");
+});
+
 test("Focus keep-list can add a Class tab", async ({ page }) => {
   await page.goto("/?test=1");
   await expect(page.getByTestId("homepage")).toBeVisible();

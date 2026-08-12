@@ -103,6 +103,11 @@ const ENGINE_CATEGORIES: Array<
     keywords: "frame cap hardware scaling",
   },
   {
+    id: "graph",
+    label: "Graph",
+    keywords: "graph default zoom node canvas fit view",
+  },
+  {
     id: "thumbnails",
     label: "Thumbnails",
     keywords: "generate thumbnails",
@@ -120,7 +125,7 @@ const ENGINE_CATEGORIES: Array<
 ];
 
 const ENGINE_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Editor", ids: ["appearance", "undo", "viewport", "thumbnails", "focus"] },
+  { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "thumbnails", "focus"] },
   { label: "Projects", ids: ["templates"] },
 ];
 
@@ -174,6 +179,7 @@ export function SettingsModal({
       dispatchEngineSettingsChanged({
         viewportFrameCap: next.viewportFrameCap,
         theme: next.appearance.theme,
+        graphDefaultZoom: next.graphDefaultZoom,
       });
       await onEngineSaved?.();
     },

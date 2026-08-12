@@ -24,6 +24,10 @@ export const engineSettingsSchema = z.object({
   viewportFrameCap: z.number().positive().default(60),
   hardwareScalingLevel: z.number().positive().default(1),
   thumbnailsEnabled: z.boolean().default(true),
+  graphDefaultZoom: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(1.5, Math.max(0.1, value));
+  }, z.number().min(0.1).max(1.5).default(0.5)),
   debuggerDefaults: z
     .object({
       showFps: z.boolean().default(false),
