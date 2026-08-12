@@ -2,7 +2,7 @@
 
 Canonical tokens live in [`packages/ui/src/styles/globals.css`](../../packages/ui/src/styles/globals.css). Tailwind v4 maps them via `@theme inline`; components use semantic utilities (`bg-background`, `text-primary`, `bg-node-event`, `text-axis-x`, …) — not raw hex in app code.
 
-The editor defaults to dark mode (`<html class="dark">`). A runtime appearance toggle is planned under Engine Settings.
+Engine Settings **Appearance → Theme** (`system` | `light` | `dark`) is live. It toggles `html.dark`, which switches Neutral chrome surfaces. Default is **system**. A boot script in `apps/editor/index.html` reads `localStorage["babylonslate:engine-settings"]` plus `prefers-color-scheme` so the first paint matches on web. Capacitor Preferences hydrates after load (a brief flash is acceptable).
 
 ## Source scanning
 
@@ -10,48 +10,48 @@ Tailwind v4 detects sources relative to the CSS entry, which here lives in `pack
 
 ## Theme source
 
-The shell is an **Unreal-inspired** layered charcoal with a cool blue chroma — not the old Minimal Neutral ink-on-near-black export. Geist remains the UI font. Edit `:root` and `.dark` in `globals.css` directly; do not re-import a tweakcn preset over the pin/node tokens.
+Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000h04l1gu419ckw)): achromatic surfaces and ink `--primary`. Geist remains the UI font. Pin, node, success, and axis tokens stay chromatic so graph and gizmo meaning is independent of chrome. Edit `:root` and `.dark` in `globals.css` directly; do not re-import a tweakcn preset over those editor-function tokens.
 
-Dark `--background` lightness stays at or above `0.20` (no complete black). `apps/editor/src/shell/design-tokens.test.ts` asserts that floor, chromatic `--primary`, and the pin/node token set.
+`apps/editor/src/shell/design-tokens.test.ts` asserts ink `--primary`, Neutral backgrounds, `--chrome-tab-accent: var(--foreground)`, a chromatic `--axis-z` that is not `var(--primary)`, and a darker light-mode `--pin-exec`.
 
 ## Design philosophy
 
-BabylonSlate is a game engine editor: chrome should be quiet, but **selection and types must be obvious**.
+BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
 
-- **Primary is the selection accent** (Unreal-like blue). Focus rings, active tabs (`--chrome-tab-accent`), selected outliner rows, and default buttons use `--primary`.
-- **Layered surfaces** differentiate chrome, side panels, and canvases (`--background` < `--sidebar` < `--card` < `--popover` / `--muted`).
-- **Saturated pin/node colors are type cues** for visual scripting and vector axes — not whole toolbars.
-- **Sparse action accents.** Play uses `--success`. Destructive actions use `--destructive`.
+- **Primary is ink** (achromatic). Buttons, focus rings, and selection bars follow Neutral. Active tabs use `--chrome-tab-accent` → `var(--foreground)`.
+- **Layered surfaces** differentiate chrome, side panels, and canvases.
+- **Saturated pin/node colors are type cues** for visual scripting — not whole toolbars.
+- **Axis and status accents** stay chromatic: X/Y/Z, Play (`--success`), destructive actions.
 
-## Surface ladder (dark default)
+## Surface ladder
 
-| Role | Token | Dark OKLCH | Approx |
+| Role | Token | Light | Dark |
 | --- | --- | --- | --- |
-| Viewport / graph canvas | `--background` | `oklch(0.28 0.014 250)` | `#242a30` |
-| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.32 0.012 250)` | `#2e3339` |
-| Chrome / raised cards | `--card` | `oklch(0.34 0.012 250)` | `#33393e` |
-| Headers / category bars | `--secondary` / `--muted` | `oklch(0.37 0.012 250)` | `#3b4046` |
-| Menus / viewport overlay | `--popover` | `oklch(0.38 0.012 250)` | `#3e4349` |
-| Hover / selection wash | `--accent` | `oklch(0.42 0.02 250)` | `#454e58` |
+| Viewport / graph canvas | `--background` | `oklch(1 0 0)` | `oklch(0.145 0 0)` ≈ `#242424` |
+| Side panels (`PanelFrame`) | `--sidebar` | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` |
+| Chrome / raised cards | `--card` | `oklch(1 0 0)` | `oklch(0.205 0 0)` |
+| Headers / category bars | `--secondary` / `--muted` | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
+| Menus / viewport overlay | `--popover` | `oklch(1 0 0)` | `oklch(0.269 0 0)` |
+| Hover / selection wash | `--accent` | `oklch(0.97 0 0)` | `oklch(0.371 0 0)` |
 
-Light mode uses the same roles with cool off-whites and a darker blue `--primary` for contrast.
+`--primary` is ink in both schemes: light `oklch(0.145 0 0)`, dark `oklch(0.985 0 0)`.
 
 ## Action and status tokens
 
 | Role | Token | Notes |
 | --- | --- | --- |
-| Selection / default actions | `--primary` | Blue accent, not ink |
-| Focus / tab indicator | `--ring`, `--chrome-tab-accent` | `var(--primary)` |
-| Destructive | `--destructive` | Errors and destructive actions |
+| Default actions / ink chrome | `--primary` | Achromatic Neutral ink |
+| Focus / tab indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; tab accent is `var(--foreground)` |
+| Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
 | Success / Play | `--success` | Positive status and the global Play control |
 
 ## Pin type colors
 
-Blueprint-style mapping in `globals.css`. `graph-ui` resolves `pin.type.kind` → `var(--pin-*)` in [`node-theme.ts`](../../packages/graph-ui/src/node-theme.ts). `--vector` aliases `--pin-vector`.
+Blueprint-style mapping in `globals.css`. `graph-ui` resolves `pin.type.kind` → `var(--pin-*)` in [`node-theme.ts`](../../packages/graph-ui/src/node-theme.ts). `--vector` aliases `--pin-vector`. Pins keep `border-card` so they separate from the canvas.
 
 | Token | Kinds |
 | --- | --- |
-| `--pin-exec` | exec (white) |
+| `--pin-exec` | exec — light ink `oklch(0.145 0 0)`, dark near-white `oklch(0.95 0 0)` |
 | `--pin-bool` | bool (red) |
 | `--pin-int` | int (cyan) |
 | `--pin-float` | float (green) |
@@ -67,7 +67,7 @@ Blueprint-style mapping in `globals.css`. `graph-ui` resolves `pin.type.kind` �
 | `--pin-wildcard` | resolvingWildcard / boxedWildcard / unknown |
 | `--pin-delegate` | delegate |
 
-Arrays use the element color; maps use the value color.
+Arrays use the element color; maps use the value color. Other pin/node values are shared across schemes (colored node title bars already contrast on both chromes).
 
 ## Node role colors
 
@@ -99,7 +99,7 @@ Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/sh
 
 ## Axis colors
 
-Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`, `--axis-z` → `--primary` (`text-axis-x` / `y` / `z`).
+Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`, `--axis-z` is an independent blue (`oklch(0.50 0.14 250)` light / `oklch(0.62 0.14 250)` dark) — not `var(--primary)`, because primary is ink (`text-axis-x` / `y` / `z`).
 
 ## Other extension tokens
 
@@ -107,11 +107,13 @@ Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`,
 | --- | --- |
 | `--chrome-row` | Compact chrome / panel header height (28px) |
 | `--chrome-tab-active` | Active document tab fill (`var(--card)`) |
-| `--chrome-tab-accent` | Tab indicator (`var(--primary)`) |
+| `--chrome-tab-accent` | Tab indicator (`var(--foreground)`) |
 
-## Viewport
+## Viewport and graph canvas
 
-`packages/render` sets Babylon `scene.clearColor` from `EDITOR_CLEAR_COLOR` to match dark `--background` (`oklch(0.28 0.014 250)` ≈ `#242a30`).
+`packages/render` sets Babylon `scene.clearColor` from `editorClearColor("light" | "dark")` to match Neutral `--background` (white / `#242424`). Editor and Prefab viewports update the live scene and invalidate when the resolved scheme changes.
+
+`GraphEditor` takes `colorMode` (`"light" | "dark"`), defaulting from `html.dark`. The graph panel passes the resolved scheme from `EditorThemeProvider`. XYFlow chrome uses `--background` / `--border`.
 
 Toolbar `DropdownMenu`s (Debug, Settings, Add) default to `modal={false}` so they do not paint a full-viewport `position: fixed` backdrop over the Babylon canvas. On iPad WKWebView that overlay composites as a full black page. Dialog / Sheet / AlertDialog stay modal.
 
@@ -127,13 +129,13 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 
 | Treatment | Use |
 | --- | --- |
-| `Button variant="outline"` | Visible actions (chrome Save/Undo, panel Add/Remove, catalog primary controls) |
+| `Button variant="outline"` | Visible actions (chrome Save All / Undo, panel Add/Remove, catalog primary controls) |
 | `Button variant="ghost"` | Tabs, menu items, icon-only close |
 | `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses secondary fill + `aria-pressed` |
 | Catalog / folder / outliner selected | `variant="secondary"` (where applicable) plus a 2px start-edge **primary** bar (`border-l-2 border-l-primary`) |
 
 **Touch sizes** on `Button` / `Toggle`: `touch` and `touch-icon` map to `min-h/min-w: var(--touch-target, 44px)`. Prefer these over repeating `min-h-11` at call sites. Docked panels omit `PanelFrame` titles when Dockview already shows the tab name; keep a toolbar-only row when actions are present. `PanelFrame` uses `--sidebar`; headers use `--card`.
 
-Icon-only controls always have `aria-label`; tooltips are secondary and must not be the only way to discover the action.
+Icon-only controls always have `aria-label`; tooltips are secondary and must not be the only way to discover the action. Chrome **Save All** is disabled when the project is clean; a `bg-destructive` dot (`data-testid="save-all-dirty"`) marks unsaved documents.
 
 Dev-only **Component Gallery**: `/?test=1&gallery=1` renders every installed primitive for on-device visual checks.

@@ -9,7 +9,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 | Project | Environment | Covers |
 | --- | --- | --- |
 | `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/input`, `packages/test-kit` — no DOM |
-| `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` |
+| `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` (`.test.ts` and `.test.tsx`) |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
 Run one project with `pnpm exec vitest run --config vitest.workspace.ts --project <name>`.
