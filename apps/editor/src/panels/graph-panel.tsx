@@ -5,7 +5,6 @@ import type { PaletteNode } from "@babylonslate/graph-ui";
 import { PanelFrame } from "@babylonslate/editor-kit";
 import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
-import { useResolvedTheme } from "../context/theme-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
@@ -23,7 +22,6 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange } = useDocuments();
-  const colorMode = useResolvedTheme();
   const { focusedNodeId } = usePlay();
   const {
     diagnostics,
@@ -92,7 +90,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       <GraphEditor
         key={documentId}
         initialGraph={graph}
-        colorMode={colorMode}
+        colorMode="dark"
         focusedNodeId={focusId}
         diagnostics={graphDiagnostics}
         paletteNodes={paletteNodes}

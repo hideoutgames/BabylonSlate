@@ -136,7 +136,7 @@ describe("Minimal Neutral theme tokens", () => {
   });
 
   it("defines touch-sized graph pin and edge tokens", () => {
-    expect(tokenValue(dark, "--graph-pin-size")).toBe("16px");
+    expect(tokenValue(dark, "--graph-pin-size")).toBe("22px");
     expect(tokenValue(dark, "--graph-edge-exec")).toBe("5px");
     expect(tokenValue(dark, "--graph-edge-data")).toBe("4px");
   });

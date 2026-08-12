@@ -7,6 +7,7 @@ export interface SearchInputProps
   extends Omit<ComponentProps<"input">, "onChange" | "value"> {
   value: string;
   onChange: (value: string) => void;
+  "data-testid"?: string;
 }
 
 /** Text field with a trailing clear control when the query is non-empty. */

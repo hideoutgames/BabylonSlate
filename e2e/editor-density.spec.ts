@@ -90,7 +90,9 @@ test.describe("Editor density and IA", () => {
       timeout: 15_000,
     });
 
-    await page.getByTestId("add-node-button").click();
+    const pane = page.locator(".react-flow__pane");
+    await pane.click();
+    await pane.click();
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await expect(page.getByTestId("node-palette-search")).not.toBeFocused();
     await expect(page.getByTestId("node-palette-body")).toBeVisible();
