@@ -76,7 +76,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 ## Outliner and Details visuals
 
 - **Outliner** (`TreeView`): 32px rows, type icon, selected row `bg-primary/20` + `border-l-primary`. Visibility/lock toggles are compact `sm` controls. **+** opens a **Place Actors** `CatalogDialog` (Shapes, Lights, Camera, Empty, Project assets). Spawned lights are outliner/details-complete; the viewport still uses its default hemispheric light.
-- **Details** (`PropertyGrid`): Unreal-style **label | value** rows at `--chrome-row` (32px). Category headers use `--secondary`. Vector axes use `--axis-x/y/z` on one nowrap row. Checkboxes are compact (`size-4`) inside the row. **Add Component** uses the same catalog chrome, grouped Rendering / Camera / Physics.
+- **Details** (`PropertyGrid`): Unreal-style **label | value** rows at `--chrome-row` (32px). Category headers use `--secondary`. Vector axes use `--axis-x/y/z` on one nowrap row. Checkboxes are compact (`size-4`) inside the row. **Add Component** uses the same catalog chrome, grouped Rendering / Camera / Physics. Numeric rows (`NumericDragField`) keep an empty typed draft; emptying does not commit `0` — blur restores the last committed number.
 - **Viewport overlay**: toolbar island on `--popover` with a shadow so it separates from the 3D view.
 
 ## 2D specifics
