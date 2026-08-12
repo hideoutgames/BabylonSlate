@@ -27,7 +27,7 @@ Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache,
 ## Lifecycle
 
 - **Rebuild** on project open and `remountRegistry`.
-- **Upsert** one asset after `saveDocument`, and from in-memory Scene/Graph content after `applySceneChange` / `applyGraphChange` so unsaved edits are searchable before the debounce write.
+- **Upsert** one asset after `saveDocument`, and from in-memory Scene/Graph content after `applySceneChange` / `applyGraphChange` so unsaved edits are searchable before the autosave write.
 - **Remove** when an asset is deleted.
 - **Clear** on Close Project.
 

@@ -10,7 +10,7 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 | `DocumentEditStack` | Per-document undo/redo stack with entry + byte budgets |
 | `EditSession` | Map of `docId → DocumentEditStack`; `apply` / `undo` / `redo` / `dropDocument` |
 | `diffGraphCommands` | Derives graph commands from before/after `SerializedGraph` snapshots |
-| `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand` | Graph document commands |
+| `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand`, `SetGraphMembersCommand` | Graph document commands |
 | `AddActorCommand`, `RemoveActorCommand`, `SetActorTransformCommand`, `RenameActorCommand`, `ReparentActorCommand`, `ReorderActorCommand`, `SetActorFlagsCommand`, `AddComponentCommand`, `RemoveComponentCommand`, `ReorderComponentCommand`, `SetComponentPropertyCommand`, `SetSceneSettingCommand`, `SetViewportModeCommand` | Scene document commands |
 | `diffSceneCommands` | Derives scene commands from before/after `SerializedScene` snapshots |
 | `serializeJournalLine` / `parseJournalLine` | JSONL journal line codec |
@@ -25,7 +25,7 @@ Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT
 | --- | --- |
 | In-document mutations (graph, scene, properties) | `packages/edit` command stream |
 | Asset **file** create / delete / folder ops | Asset registry (`packages/assets`) — **outside** undo |
-| Persisting dirty documents | Editor services, triggered after command apply (debounced) |
+| Persisting dirty documents | Editor services, triggered after command apply (`autoSaveIntervalMs`) |
 | Journal (crash recovery) | Derived-data JSONL of the **same** command stream |
 
 The undo boundary is exactly the asset-file boundary. Editing surfaces must not mutate document models directly.
@@ -74,13 +74,13 @@ Each line is one JSON object:
 - Recovery banner in the editor shell (`data-testid="recovery-prompt"`) offers **Recover edits** / **Discard journal**. Replay opens any missing journal target documents (graphs and scenes), then `replayJournalLines` → `reviveCommand` → `apply`, then truncates. One stream keyed by `docId` — not a parallel recovery path per document kind.
 - Schema version `v` allows journal migration without inventing a parallel recovery path.
 
-## Dirty / debounce saves
+## Dirty / autosave
 
-Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, append journal lines, and schedule a **~400ms debounced** `saveProject` (manual Save remains; debounce cancels on explicit Save). Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
+Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, append journal lines, and schedule `saveProject` after `ProjectSettings.autoSaveIntervalMs` (default **120000**). A second edit does **not** reset an already-running timer. **Save All** writes immediately and cancels the pending timer. When a save runs and `compileOnSave` is on (default **true**), open graphs compile. Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
 
 ## Scene apply path
 
-`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → journal append → debounced save. Undo/redo on scene tabs uses the same per-document stack as graphs.
+`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → journal append → scheduled save. Undo/redo on scene tabs uses the same per-document stack as graphs.
 
 See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 

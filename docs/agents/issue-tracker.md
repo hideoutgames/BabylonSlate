@@ -133,7 +133,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 
 | Item | Owner | Notes |
 | --- | --- | --- |
-| Drag-to-connect (in addition to tap-to-connect) | later polish (`graph-ui`) | Gestures.md allows both; tap-to-connect is the shipped mobile path |
+| Format graph (layout selection / tidy exec-data chain to the right) | later polish (`graph-ui`) | Overlay **Format** button is a visible disabled stub; algorithm in engineplan §7.4 |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
 | Full Enum / Structure / ScriptInterface row editors | later polish (`apps/editor`, `editor-kit`) | Creatable assets exist; richer field editors incomplete |
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Active-graph pass works; full project sweep beyond open docs deferred |
@@ -144,7 +144,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio / UI node runtime helpers beyond stubs | P9 | Catalog nodes exist; runtime helpers are inert stubs until content systems |
 
-**Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`.
+**Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect.
 
 ## P6 slice ownership
 

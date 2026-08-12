@@ -125,8 +125,8 @@ function PinHandle({
           pin.kind === "exec" ? "rotate-45 rounded-sm" : "rounded-full",
         )}
         style={{
-          width: "var(--graph-pin-size, 16px)",
-          height: "var(--graph-pin-size, 16px)",
+          width: "var(--graph-pin-size, 22px)",
+          height: "var(--graph-pin-size, 22px)",
           background: pinCssVar(pin.type),
         }}
         aria-hidden="true"
