@@ -40,10 +40,15 @@ import {
 } from "./graph-nodes";
 import { edgeStyleForPin } from "./node-theme";
 import { NodePalette } from "./node-palette";
+import { GraphConnectionLine } from "./connection-line";
 import {
+  collectSafeConnectPins,
   firstCompatiblePin,
-  isNearSourcePin,
+  isClientPointOverGraphNode,
+  nodePinLists,
   pinsAreCompatible,
+  screenCentersForSafePins,
+  shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
 import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
 import type { PinDisplayLookup } from "./wildcard-display";
@@ -388,13 +393,30 @@ function GraphEditorCanvas({
       if (!fromHandle?.id || !fromNode) return;
       const point = clientPoint(event);
       if (!point) return;
-      if (isNearSourcePin(state.from, state.to)) return;
       const pin = pinOnNode(
         graphStateRef.current.nodes,
         fromNode.id,
         fromHandle.id,
       );
       if (!pin) return;
+      const root = document;
+      if (
+        !shouldOpenAddNodeOnConnectEnd({
+          hasTargetHandle: false,
+          pointerOverNode: isClientPointOverGraphNode(point, root),
+          pointer: point,
+          safePins: screenCentersForSafePins(
+            root,
+            collectSafeConnectPins(
+              nodePinLists(graphStateRef.current.nodes),
+              fromNode.id,
+              pin,
+            ),
+          ),
+        })
+      ) {
+        return;
+      }
       const position = screenToFlowPosition(point);
       setPendingConnect({ pin, nodeId: fromNode.id, position });
       setPaletteOpen(true);
@@ -725,6 +747,7 @@ function GraphEditorCanvas({
           selectionOnDrag={selectionDrag}
           panOnDrag={!selectionDrag}
           connectionLineStyle={connectionLineStyle}
+          connectionLineComponent={GraphConnectionLine}
           defaultEdgeOptions={{ type: "default" }}
           fitView
           fitViewOptions={graphViewport.fitViewOptions}
