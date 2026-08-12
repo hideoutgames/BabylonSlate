@@ -4,6 +4,7 @@ export {
   type RuntimeDriverOptions,
   type TransportMode,
 } from "./driver";
+export { PhysicsWorldSync } from "./physics-sync";
 export { LogRingBuffer, type LogEntry, type LogSeverity } from "./log-ring";
 export {
   SessionDiagnosticAggregator,

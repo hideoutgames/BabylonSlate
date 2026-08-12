@@ -28,6 +28,7 @@ describe("scene schema", () => {
   it("creates a default scene with one actor carrying a mesh component", () => {
     const scene = createDefaultScene();
     expect(scene.viewportMode).toBe("3d");
+    expect(scene.settings.physicsWorld).toBe("3d");
     expect(scene.actors).toHaveLength(1);
     expect(scene.actors[0]?.components[0]?.classId).toBe("MeshComponent");
   });

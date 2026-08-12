@@ -12,7 +12,7 @@ export type PhaseHook = (phase: TickPhase, dt: number, tickIndex: number) => voi
 
 export interface TickSchedulerOptions {
   dt: number;
-  /** Optional per-phase hooks (physics stays empty until P7). */
+  /** Optional per-phase hooks. */
   onPhase?: PhaseHook;
 }
 

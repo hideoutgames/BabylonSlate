@@ -45,11 +45,11 @@ The world owns a seeded PRNG from `createSeededRng` in `@babylonslate/core`. Sim
 
 ## Engine components
 
-Registered as typed stubs (asset refs + lifecycle hooks) from day one:
+Registered as typed stubs (asset refs + lifecycle hooks) from day one; physics components gain behaviour in P7:
 
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
 
-Behaviour is filled by later phases (render sync, physics, UI, AI).
+See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
 
 ## ScriptInterface dispatch
 

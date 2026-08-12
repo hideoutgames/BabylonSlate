@@ -176,7 +176,9 @@ export function startPlaySession(options: {
         nodeId: FIXTURE_NODE,
       },
     ]);
-    runtime.start();
+    void runtime.loadPhysics().finally(() => {
+      runtime?.start();
+    });
     if (scripts.length > 0) {
       const inProcess = runtime;
       void inProcess

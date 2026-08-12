@@ -1,0 +1,21 @@
+{
+  "name": "@babylonslate/physics",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node"
+  },
+  "dependencies": {
+    "@babylonslate/core": "workspace:*",
+    "@babylonjs/havok": "1.3.14",
+    "@dimforge/rapier2d-compat": "^0.14.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  }
+}

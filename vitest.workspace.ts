@@ -12,6 +12,7 @@ export default defineConfig({
             "packages/assets/**/*.test.ts",
             "packages/edit/**/*.test.ts",
             "packages/object-model/**/*.test.ts",
+            "packages/physics/**/*.test.ts",
             "packages/bridge/**/*.test.ts",
             "packages/runtime/**/*.test.ts",
             "packages/input/**/*.test.ts",
@@ -120,6 +121,12 @@ export default defineConfig({
           functions: 60,
           branches: 60,
           statements: 60,
+        },
+        "packages/physics/src/**": {
+          lines: 50,
+          functions: 50,
+          branches: 45,
+          statements: 50,
         },
         "packages/bridge/src/**": {
           lines: 60,

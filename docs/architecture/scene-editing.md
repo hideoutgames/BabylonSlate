@@ -1,6 +1,6 @@
 # Scene editing (P6)
 
-Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 2`).
+Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 3`).
 
 ## SerializedScene v2
 
@@ -15,7 +15,7 @@ Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / qua
 
 Each **component**: `id`, `classId`, `properties` (typed per class in the object-model registry).
 
-**Scene settings** include `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`) and `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay.
+**Scene settings** include `physicsWorld` (`"3d"` \| `"2d"`, defaults from `viewportMode`), `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`) and `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay. A scene never mixes physics worlds — see [physics.md](physics.md).
 
 ## Selection model
 

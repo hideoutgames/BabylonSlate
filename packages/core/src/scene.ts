@@ -1,12 +1,19 @@
 /**
- * Scene document schema (v2): actors, components and scene settings.
+ * Scene document schema (v3): actors, components and scene settings.
  *
  * The 2D convention is fixed here and assumed by every consumer: 2D lives on
  * the XY plane with +Y up and +X right, and the editor camera sits at negative
  * Z looking toward +Z because Babylon is left-handed.
+ *
+ * v3 adds `settings.physicsWorld` (`"3d"` | `"2d"`). Older documents default
+ * from `viewportMode` on normalize.
  */
 
 export type ViewportMode = "3d" | "2d";
+
+/** Which physics backend a scene uses — never both (engineplan §13.4). */
+export type PhysicsWorldKind = "3d" | "2d";
+
 
 export interface SerializedTransform {
   position: [number, number, number];
@@ -59,6 +66,11 @@ export interface SceneSettings {
   fixedTimestepMs: number;
   /** GameInstance class override for this scene, null to use the project default. */
   gameInstanceClass: string | null;
+  /**
+   * Physics backend for this scene. Defaults from `viewportMode` on create;
+   * a scene never mixes 2D and 3D physics worlds.
+   */
+  physicsWorld: PhysicsWorldKind;
   grid: SceneGridSettings;
   cameraBounds2D: SceneCameraBounds2D;
 }
@@ -71,7 +83,7 @@ export interface SerializedScene {
   actors: SerializedActor[];
 }
 
-export const SCENE_SCHEMA_VERSION = 2;
+export const SCENE_SCHEMA_VERSION = 3;
 
 export function identitySerializedTransform(): SerializedTransform {
   return {
@@ -81,13 +93,16 @@ export function identitySerializedTransform(): SerializedTransform {
   };
 }
 
-export function createDefaultSceneSettings(): SceneSettings {
+export function createDefaultSceneSettings(
+  viewportMode: ViewportMode = "3d",
+): SceneSettings {
   return {
     environmentColor: [0.06, 0.07, 0.09],
     fogEnabled: false,
     gravity: [0, -9.81, 0],
     fixedTimestepMs: 16.6667,
     gameInstanceClass: null,
+    physicsWorld: viewportMode === "2d" ? "2d" : "3d",
     grid: {
       snapEnabled: false,
       snapTranslate: 1,
@@ -192,11 +207,18 @@ function normalizeActor(value: unknown, index: number): SerializedActor {
   };
 }
 
-export function normalizeSceneSettings(value: unknown): SceneSettings {
-  const defaults = createDefaultSceneSettings();
+export function normalizeSceneSettings(
+  value: unknown,
+  viewportMode: ViewportMode = "3d",
+): SceneSettings {
+  const defaults = createDefaultSceneSettings(viewportMode);
   const source = (value ?? {}) as Record<string, unknown>;
   const grid = (source.grid ?? {}) as Record<string, unknown>;
   const bounds = (source.cameraBounds2D ?? {}) as Record<string, unknown>;
+  const physicsWorld: PhysicsWorldKind =
+    source.physicsWorld === "2d" || source.physicsWorld === "3d"
+      ? source.physicsWorld
+      : defaults.physicsWorld;
   return {
     environmentColor: asNumberTuple3(
       source.environmentColor,
@@ -212,6 +234,7 @@ export function normalizeSceneSettings(value: unknown): SceneSettings {
       typeof source.gameInstanceClass === "string"
         ? source.gameInstanceClass
         : null,
+    physicsWorld,
     grid: {
       snapEnabled: grid.snapEnabled === true,
       snapTranslate:
@@ -249,10 +272,12 @@ export function normalizeSceneSettings(value: unknown): SceneSettings {
 /** Coerce an unknown payload into a structurally valid scene document. */
 export function normalizeScene(value: unknown): SerializedScene {
   const source = (value ?? {}) as Record<string, unknown>;
+  const viewportMode: ViewportMode =
+    source.viewportMode === "2d" ? "2d" : "3d";
   return {
     name: typeof source.name === "string" ? source.name : "Untitled",
-    viewportMode: source.viewportMode === "2d" ? "2d" : "3d",
-    settings: normalizeSceneSettings(source.settings),
+    viewportMode,
+    settings: normalizeSceneSettings(source.settings, viewportMode),
     actors: Array.isArray(source.actors)
       ? source.actors.map(normalizeActor)
       : [],
