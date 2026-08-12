@@ -20,7 +20,7 @@ export function loadHavokModule(havokWasmUrl?: string): Promise<HavokModule> {
       return (await HavokPhysics({
         locateFile: (path: string) => havokWasmUrl ?? path,
         wasmBinary,
-      })) as HavokModule;
+      })) as unknown as HavokModule;
     })();
   }
   return cached;

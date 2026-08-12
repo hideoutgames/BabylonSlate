@@ -10,13 +10,93 @@ import type {
   Vec3,
 } from "./types";
 
-type RapierModule = typeof import("@dimforge/rapier2d-compat");
-type RapierWorld = InstanceType<RapierModule["World"]>;
-type RapierRigidBody = InstanceType<RapierModule["RigidBody"]>;
-type RapierCollider = InstanceType<RapierModule["Collider"]>;
-type RapierCharacterController = InstanceType<
-  RapierModule["KinematicCharacterController"]
->;
+type RapierApi = {
+  init(): Promise<void>;
+  World: new (gravity: { x: number; y: number }) => {
+    gravity: { x: number; y: number };
+    timestep: number;
+    step(): void;
+    free(): void;
+    createRigidBody(desc: unknown): RapierRigidBody;
+    removeRigidBody(body: RapierRigidBody): void;
+    createCollider(desc: unknown, body: RapierRigidBody): RapierCollider;
+    removeCollider(collider: RapierCollider, wakeUp: boolean): void;
+    createCharacterController(offset: number): RapierCharacterController;
+    removeCharacterController(controller: RapierCharacterController): void;
+    castRay(
+      ray: unknown,
+      maxToi: number,
+      solid: boolean,
+    ): { timeOfImpact: number; collider: RapierCollider } | null;
+    intersectionsWithPoint(
+      point: { x: number; y: number },
+      callback: (collider: RapierCollider) => boolean,
+    ): void;
+    intersectionsWithShape(
+      position: { x: number; y: number },
+      rotation: number,
+      shape: unknown,
+      callback: (collider: RapierCollider) => boolean,
+    ): void;
+  };
+  RigidBodyDesc: {
+    fixed(): RapierBodyDesc;
+    kinematicPositionBased(): RapierBodyDesc;
+    dynamic(): RapierBodyDesc;
+  };
+  RigidBodyType: {
+    Fixed: number;
+    KinematicPositionBased: number;
+    Dynamic: number;
+  };
+  ColliderDesc: {
+    cuboid(hx: number, hy: number): RapierColliderDesc;
+    ball(radius: number): RapierColliderDesc;
+    capsule(halfHeight: number, radius: number): RapierColliderDesc;
+    convexHull(points: Float32Array): RapierColliderDesc | null;
+    polyline(points: Float32Array): RapierColliderDesc;
+  };
+  Ray: new (
+    origin: { x: number; y: number },
+    dir: { x: number; y: number },
+  ) => { pointAt(toi: number): { x: number; y: number } };
+  Ball: new (radius: number) => unknown;
+};
+
+type RapierBodyDesc = {
+  setTranslation(x: number, y: number): RapierBodyDesc;
+  setLinearDamping(v: number): RapierBodyDesc;
+  setAngularDamping(v: number): RapierBodyDesc;
+  setGravityScale(v: number): RapierBodyDesc;
+  setAdditionalMass(v: number): RapierBodyDesc;
+};
+
+type RapierColliderDesc = {
+  setFriction(v: number): RapierColliderDesc;
+  setRestitution(v: number): RapierColliderDesc;
+  setSensor(v: boolean): RapierColliderDesc;
+};
+
+type RapierRigidBody = {
+  handle: number;
+  translation(): { x: number; y: number };
+  setTranslation(t: { x: number; y: number }, wakeUp: boolean): void;
+  setBodyType(type: number, wakeUp: boolean): void;
+  applyImpulse(impulse: { x: number; y: number }, wakeUp: boolean): void;
+  setNextKinematicTranslation(t: { x: number; y: number }): void;
+};
+
+type RapierCollider = {
+  parent(): RapierRigidBody | null;
+};
+
+type RapierCharacterController = {
+  computeColliderMovement(
+    collider: RapierCollider,
+    desired: { x: number; y: number },
+  ): void;
+  computedMovement(): { x: number; y: number };
+};
 
 type BodyRecord = {
   desc: RigidBodyDesc;
@@ -53,15 +133,15 @@ function identityRotation(): PhysicsTransform["rotation"] {
  */
 export class Rapier2DPhysicsBackend implements PhysicsBackend {
   readonly kind = "2d" as const;
-  private readonly RAPIER: RapierModule;
-  private readonly world: RapierWorld;
+  private readonly RAPIER: RapierApi;
+  private readonly world: InstanceType<RapierApi["World"]>;
   private readonly bodies = new Map<string, BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
   private readonly characters = new Map<string, CharacterRecord>();
   private readonly bodyIdByHandle = new Map<number, string>();
   private disposed = false;
 
-  private constructor(RAPIER: RapierModule, gravity: Vec3) {
+  private constructor(RAPIER: RapierApi, gravity: Vec3) {
     this.RAPIER = RAPIER;
     this.world = new RAPIER.World({ x: gravity.x, y: gravity.y });
   }
@@ -69,9 +149,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   static async create(
     options: PhysicsBackendOptions,
   ): Promise<Rapier2DPhysicsBackend> {
-    const RAPIER = await import("@dimforge/rapier2d-compat");
-    await RAPIER.default.init();
-    return new Rapier2DPhysicsBackend(RAPIER.default, options.gravity);
+    const mod = await import("@dimforge/rapier2d-compat");
+    const RAPIER = (mod.default ?? mod) as unknown as RapierApi;
+    await RAPIER.init();
+    return new Rapier2DPhysicsBackend(RAPIER, options.gravity);
   }
 
   dispose(): void {
