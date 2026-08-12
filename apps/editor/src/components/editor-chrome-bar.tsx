@@ -58,7 +58,6 @@ import {
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
-import { PlayBlockedDialog } from "./play-blocked-dialog";
 import type { OpenDocument } from "../services/document-service";
 import { validateSerializedGraph } from "../services/graph-validation";
 import { SettingsModal } from "./settings-modal";
@@ -200,15 +199,14 @@ export function EditorChromeBar({
     activateDockPanel,
   } = useDocuments();
 
-  const { startPlay, playing, alwaysRender, setAlwaysRender, renderStats } =
+  const { requestPlay, playing, preparing, alwaysRender, setAlwaysRender, renderStats } =
     usePlay();
-  const { diagnostics, errorCount, setFocusDiagnostic, setDiagnostics } =
+  const { errorCount, setDiagnostics } =
     useValidation();
   const [settingsScope, setSettingsScope] = useState<"project" | "engine" | null>(
     null,
   );
   const [searchOpen, setSearchOpen] = useState(false);
-  const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
 
   const contentBrowserDoc = openDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
@@ -381,18 +379,14 @@ export function EditorChromeBar({
               data-testid="play-preview"
               className="chrome-action-button chrome-play-button relative"
               aria-label="Play"
-              disabled={!projectName || playing}
+              disabled={!projectName || playing || preparing}
               onClick={() => {
                 const inject =
                   typeof window !== "undefined" &&
                   new URLSearchParams(window.location.search).get(
                     "previewThrow",
                   ) === "1";
-                if (errorCount > 0 && !inject) {
-                  setPlayBlockedOpen(true);
-                  return;
-                }
-                startPlay({ injectFixtureThrow: inject });
+                void requestPlay({ injectFixtureThrow: inject });
               }}
             >
               <PlayIcon data-icon="inline-start" />
@@ -449,19 +443,6 @@ export function EditorChromeBar({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <PlayBlockedDialog
-            open={playBlockedOpen}
-            diagnostics={diagnostics}
-            onOpenChange={setPlayBlockedOpen}
-            onNavigate={(d) => {
-              setFocusDiagnostic(d);
-              setPlayBlockedOpen(false);
-            }}
-            onPlayAnyway={() => {
-              setPlayBlockedOpen(false);
-              startPlay();
-            }}
-          />
         </div>
 
         <div className="editor-global-toolbar-end">

@@ -120,7 +120,7 @@ type Diagnostic = {
 | --- | --- |
 | Edit (≈300ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
-| Pre-Preview | Startup map, GameInstance, classes referenced by open scene, enabled plugin EUOs |
+| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`); startup map / GameInstance / plugin EUO sweep still later polish |
 | Export | Hard gate + export-only rules (Print strip, debug-tier commands) |
 | CI | Golden fixture projects |
 
@@ -242,7 +242,9 @@ The `ctx` handed to compiled code carries `self`, `deltaSeconds`, `formatValue`,
 
 ### Editor Play wiring
 
-`collectScriptBundles()` (document context) compiles every graph in `ProjectDocument.graphs`, preferring in-memory documents so unsaved edits run. `startPlaySession({ scripts })` ships them to the worker, or loads them into the in-process runtime when no worker is available. Class ownership of graphs is not modelled yet, so a graph's class id is derived from its file name.
+Play (`requestPlay`) saves dirty documents and compiles project graphs **before** the overlay launches. If anything still needs saving or compiling, a non-dismissible progress dialog (`play-prepare-dialog`) lists dirty names and the current phase (`Saving…` / `Compiling…`). A clean project with a current compile skips the dialog. After compile, blocking diagnostics open the existing Play Anyway dialog; Play Anyway launches with the bundles just produced and does not skip save/compile. Schema migrations abort prepare and reuse the migrate-on-save dialog; Play resumes after approval.
+
+`collectPlayPreviewScripts()` (document context) loads every graph in `ProjectDocument.graphs` (open in-memory documents first, else disk), validates that set, and compiles to `ScriptBundleEntry[]`. `startPlaySession({ scripts })` ships them to the worker, or loads them into the in-process runtime when no worker is available. Class ownership of graphs is not modelled yet, so a graph's class id is derived from its file name.
 
 ## Acceptance (phase)
 
