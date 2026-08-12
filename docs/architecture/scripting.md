@@ -38,7 +38,7 @@ type GraphNode = {
   typeId: string; // catalog id, e.g. "flow.branch"
   position: { x: number; y: number };
   pins: GraphPin[];
-  properties: Record<string, unknown>; // node-local (severity, body, async, …)
+  properties: Record<string, unknown>; // node-local (severity, body, async, default:pinName, …)
 };
 type GraphEdge = {
   id: string;
@@ -174,7 +174,7 @@ AI / navigation categories wait for P11.
 
 - **Graph** canvas (event + per-function graphs). **Double-tap empty pane** opens the unfiltered Add Node catalog (`Dialog` with categories + search; search is **not** autofocused). Drag-to-connect and tap-to-connect both persist.
 - **Class**: compact collapsible tree (Functions, Variables, Events, Interfaces — no Graphs section) stacked *under* Components, about 50% of the left stack. Inline **+** prompts for a name and writes `SerializedGraph.members` (normalized). Event names are Title Cased (`On Hit`; node title `Event On Hit`). Events also insert `flow.event.custom`; variables can drop a Get node. Clicking an event focuses that graph node. Class-owned documents remain a later follow-up.
-- **Details**: selected node / variable / component; ExecuteJavaScript pin lists + body.
+- **Details** (dock title Inspector): canvas selection drives the target (first selected node; Compiler Results / Play focus as fallback). Empty selection shows an empty state — no ExecuteJavaScript fallback. Unconnected applicable data pins get literal defaults; ExecuteJavaScript still has pin lists + body; Log has severity / category.
 - **Compiler Results**: diagnostics grouped by graph; tap → select node, pan canvas, flash pin (or scroll CodeMirror to `bodyLine`).
 - **Prefab** (Actor): full-size center tab; 3D preview + gizmos; component tree reorder is session-local until P7 class persistence.
 - **Components**: actor component tree in the left dock; Add Component uses the Place Actors catalog chrome.
@@ -183,7 +183,7 @@ AI / navigation categories wait for P11.
 
 Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 
-- **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + centered **Add node** catalog modal (opened by double-tap pane or connect-end, not a floating button).
+- **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `onSelectionChange` (selected node ids; select-only changes do not call `onChange`), `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + centered **Add node** catalog modal (opened by double-tap pane or connect-end, not a floating button).
 - **`GraphDocument`**: local extension of core `SerializedGraph`; edges may carry optional `sourceHandle` / `targetHandle` for pin-aware wiring. Optional `members` round-trip Class panel rows.
 - **Nodes**: scripting nodes render via `PinNode` when `data.__pins` is present. Chrome is Blueprint-like: role-colored title bar (`--node-*`), two-column pin rows, exec diamonds and data circles. Each pin row is `--touch-target` (44px) tall; the visual pin is `--graph-pin-size` (22px). Titles wrap; `flow.event.*` without `data.title` formats as **Event …**. Tap output pin → tap input pin to connect. Legacy `logMessage` without pins still uses the same shell until the host hydrates.
 - **Host pin hydration** (`hydrateSerializedGraphForEditor` in the editor): injects `__pins` plus `__category` / `__pure` / `__latent` from `@babylonslate/scripting-nodes` on load; palette entries carry `pins`, `pure`, `latent`, and `defaultData` so Add node creates connectable, colored handles. `graph-ui` stays free of the catalog package (`node-theme.ts` maps type/category strings only).
@@ -194,6 +194,16 @@ Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 - Blocking Preview dialog uses `AlertDialog` (editor host).
 
 Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node types, validation binder) injectable; do not hardcode scripting-only assumptions into the canvas host.
+
+### Pin defaults (Inspector)
+
+Unconnected data inputs can store a literal used at compile time when no wire is present (`pinExpr` reads `properties["default:"+name]` then `properties[name]`, else the type-table default). The Inspector edits `default:${name}` so pin defaults do not collide with node properties (`severity`, `body`, `count`, …). Connected pins hide the default field.
+
+| Editable | Not in v1 |
+| --- | --- |
+| `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `rotator`, `color` (RGB; preserve `w`) | `exec`, refs, enum, delegate, wildcards, `array`, `map`, `vec4`, `transform` |
+
+Authored defaults also clear `pin.missing_input`.
 
 ### Validation UX (`p5-graph-validation`)
 

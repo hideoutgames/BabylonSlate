@@ -1,5 +1,9 @@
 import { useMemo } from "react";
-import { PanelFrame, ParameterListEditor } from "@babylonslate/editor-kit";
+import {
+  PanelFrame,
+  ParameterListEditor,
+  PropertyGrid,
+} from "@babylonslate/editor-kit";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
@@ -12,6 +16,11 @@ import {
 } from "../context/graph-editing-context";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
+import {
+  inspectorLiteralPinDefaults,
+  logNodePropertyRows,
+  pinDefaultPropertyRows,
+} from "../lib/graph-inspector";
 
 export function InspectorPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -47,9 +56,14 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   }
 
   const isExecJs = selectedNode.type === "debug.executeJavaScript";
+  const isLog = selectedNode.type === "debug.log";
   const inputs = Array.isArray(selectedNode.data.inputs)
     ? (selectedNode.data.inputs as Array<{ name: string; type?: unknown }>)
     : [];
+  const title =
+    typeof selectedNode.data.title === "string" && selectedNode.data.title
+      ? selectedNode.data.title
+      : selectedNode.type;
 
   const updateNodeData = (patch: Record<string, unknown>) => {
     const next: SerializedGraph = {
@@ -63,10 +77,28 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     void applyGraphChange(documentId, next);
   };
 
+  const pinDefaultRows = pinDefaultPropertyRows(
+    inspectorLiteralPinDefaults(selectedNode, graph.edges),
+    updateNodeData,
+  );
+  const logRows = isLog
+    ? logNodePropertyRows(selectedNode.data, updateNodeData)
+    : [];
+
   return (
     <PanelFrame data-testid="inspector-panel">
       <div className="flex flex-col gap-3 p-3">
-        <div className="text-sm font-medium">{selectedNode.type}</div>
+        <div className="text-sm font-medium">{title}</div>
+        {logRows.length > 0 ? (
+          <PropertyGrid rows={logRows} data-testid="inspector-log-properties" />
+        ) : null}
+        {pinDefaultRows.length > 0 ? (
+          <PropertyGrid
+            title="Defaults"
+            rows={pinDefaultRows}
+            data-testid="inspector-pin-defaults"
+          />
+        ) : null}
         {isExecJs ? (
           <>
             <ParameterListEditor
@@ -95,11 +127,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               onChange={(body) => updateNodeData({ body })}
             />
           </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Node properties for {selectedNode.id}.
-          </p>
-        )}
+        ) : null}
       </div>
     </PanelFrame>
   );

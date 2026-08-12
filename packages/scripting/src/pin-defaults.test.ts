@@ -21,8 +21,15 @@ import {
   defaultJsValue,
   listUnconnectedLiteralPinDefaults,
   pinAcceptsLiteralDefault,
+  pinDefaultAsBoolean,
+  pinDefaultAsNumber,
+  pinDefaultAsString,
+  pinDefaultAsVec3Tuple,
+  pinDefaultColorRgb,
   pinDefaultPropertyKey,
   readPinDefault,
+  colorRgbToPinDefault,
+  vec3TupleToObject,
 } from "./pin-defaults";
 
 describe("pinAcceptsLiteralDefault", () => {
@@ -100,5 +107,60 @@ describe("listUnconnectedLiteralPinDefaults", () => {
       new Set(["a"]),
     );
     expect(listed.map((entry) => entry.pinId)).toEqual(["b"]);
+  });
+});
+
+describe("pin default editor conversions", () => {
+  it("coerces scalars used by the property grid", () => {
+    expect(pinDefaultAsBoolean(true)).toBe(true);
+    expect(pinDefaultAsBoolean("nope")).toBe(false);
+    expect(pinDefaultAsNumber(3.5)).toBe(3.5);
+    expect(pinDefaultAsNumber("8")).toBe(8);
+    expect(pinDefaultAsNumber("nope")).toBe(0);
+    expect(pinDefaultAsString("hi")).toBe("hi");
+    expect(pinDefaultAsString(12)).toBe("12");
+  });
+
+  it("round-trips vec2, vec3, and rotator objects through XYZ tuples", () => {
+    expect(pinDefaultAsVec3Tuple({ x: 1, y: 2 }, ["x", "y"])).toEqual([1, 2, 0]);
+    expect(vec3TupleToObject([1, 2, 9], ["x", "y"])).toEqual({ x: 1, y: 2 });
+    expect(pinDefaultAsVec3Tuple({ x: 1, y: 2, z: 3 }, ["x", "y", "z"])).toEqual([
+      1, 2, 3,
+    ]);
+    expect(vec3TupleToObject([4, 5, 6], ["x", "y", "z"])).toEqual({
+      x: 4,
+      y: 5,
+      z: 6,
+    });
+    expect(
+      pinDefaultAsVec3Tuple({ pitch: 10, yaw: 20, roll: 30 }, [
+        "pitch",
+        "yaw",
+        "roll",
+      ]),
+    ).toEqual([10, 20, 30]);
+    expect(vec3TupleToObject([10, 20, 30], ["pitch", "yaw", "roll"])).toEqual({
+      pitch: 10,
+      yaw: 20,
+      roll: 30,
+    });
+  });
+
+  it("maps color RGB in the grid while preserving authored alpha", () => {
+    expect(pinDefaultColorRgb({ x: 1, y: 0.5, z: 0, w: 0.25 })).toEqual([
+      1, 0.5, 0,
+    ]);
+    expect(colorRgbToPinDefault([0.2, 0.4, 0.6], { w: 0.8 })).toEqual({
+      x: 0.2,
+      y: 0.4,
+      z: 0.6,
+      w: 0.8,
+    });
+    expect(colorRgbToPinDefault([1, 1, 1], undefined)).toEqual({
+      x: 1,
+      y: 1,
+      z: 1,
+      w: 0,
+    });
   });
 });

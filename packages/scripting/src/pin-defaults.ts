@@ -79,3 +79,74 @@ export function listUnconnectedLiteralPinDefaults(
   }
   return listed;
 }
+
+export type Vec3Tuple = [number, number, number];
+
+export function pinDefaultAsBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+export function pinDefaultAsNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+export function pinDefaultAsString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  return String(value);
+}
+
+function recordOf(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "object" && value !== null) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+export function pinDefaultAsVec3Tuple(
+  value: unknown,
+  keys: readonly [string, string] | readonly [string, string, string],
+): Vec3Tuple {
+  const record = recordOf(value);
+  return [
+    pinDefaultAsNumber(record?.[keys[0]]),
+    pinDefaultAsNumber(record?.[keys[1]]),
+    keys.length === 3 ? pinDefaultAsNumber(record?.[keys[2]]) : 0,
+  ];
+}
+
+export function vec3TupleToObject(
+  tuple: Vec3Tuple,
+  keys: readonly [string, string] | readonly [string, string, string],
+): Record<string, number> {
+  const result: Record<string, number> = {
+    [keys[0]]: tuple[0],
+    [keys[1]]: tuple[1],
+  };
+  if (keys.length === 3) {
+    result[keys[2]] = tuple[2];
+  }
+  return result;
+}
+
+export function pinDefaultColorRgb(value: unknown): Vec3Tuple {
+  return pinDefaultAsVec3Tuple(value, ["x", "y", "z"]);
+}
+
+export function colorRgbToPinDefault(
+  rgb: Vec3Tuple,
+  previous: unknown,
+): { x: number; y: number; z: number; w: number } {
+  const record = recordOf(previous);
+  return {
+    x: rgb[0],
+    y: rgb[1],
+    z: rgb[2],
+    w: pinDefaultAsNumber(record?.w),
+  };
+}
