@@ -1,23 +1,20 @@
+import {
+  formatEventTitle,
+  humanizePropertyLabel,
+} from "@babylonslate/editor-kit";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 
 /** Drop closer than this to the source pin cancels Add Node. */
 export const CONNECT_END_CANCEL_PX = 48;
 
 export function displayNodeTitle(nodeType: string, title?: string): string {
-  if (title && title.trim().length > 0) return title;
   if (nodeType.startsWith("flow.event.")) {
-    const rest = nodeType.slice("flow.event.".length);
-    return `Event ${prettyIdentifier(rest)}`;
+    return formatEventTitle(
+      title?.trim() || nodeType.slice("flow.event.".length),
+    );
   }
-  return nodeType.replace(/\./g, " ");
-}
-
-function prettyIdentifier(value: string): string {
-  const spaced = value
-    .replace(/[._-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .trim();
-  return spaced.replace(/\b\w/g, (char) => char.toUpperCase());
+  if (title && title.trim().length > 0) return title;
+  return humanizePropertyLabel(nodeType.replace(/\./g, " "));
 }
 
 export function pinsAreCompatible(

@@ -4,7 +4,7 @@ export const SEARCH_RESULT_GROUPS: Array<{ kind: SearchEntryKind; label: string 
   { kind: "asset", label: "Assets" },
   { kind: "actor", label: "Actors" },
   { kind: "component", label: "Components" },
-  { kind: "graph-node", label: "Graph nodes" },
+  { kind: "graph-node", label: "Graph Nodes" },
   { kind: "class", label: "Classes" },
   { kind: "variable", label: "Variables" },
 ];

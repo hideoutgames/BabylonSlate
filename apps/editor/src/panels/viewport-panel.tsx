@@ -65,7 +65,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     items: [
       {
         id: "reload-scene",
-        label: "Reload scene",
+        label: "Reload Scene",
         onSelect: () => {
           const current = sceneRef.current;
           if (current && engineRef.current) {
@@ -75,7 +75,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       },
       {
         id: "frame-selection",
-        label: "Frame selection",
+        label: "Frame Selection",
         onSelect: () => {
           const actorId = selectedActorIds[0];
           if (actorId) {

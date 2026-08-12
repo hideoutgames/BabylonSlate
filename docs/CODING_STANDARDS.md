@@ -28,6 +28,14 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 - Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`.
 - Use radius tokens (`rounded-md`, `rounded-lg`) — no hardcoded `border-radius` literals in editor CSS except token definitions.
 
+## Display names
+
+User-facing Event names, Details labels, node titles, pin labels, and enum options are **Title Case** with preserved acronyms (`2D Camera Width`, `Event Begin Play`, `Mesh Kind`). Do not sentence-case labels and do not split `2D`/`3D` into `2 d`.
+
+- Format with `humanizePropertyLabel`, `formatEventMemberName`, and `formatEventTitle` in `@babylonslate/editor-kit`.
+- Code identifiers stay unchanged (`flow.event.beginPlay`, `meshKind`, `onBeginPlay`, pin `id`s).
+- Agent rule: [`.cursor/rules/display-names.mdc`](../.cursor/rules/display-names.mdc).
+
 ## Performance (iPad baseline)
 
 See [design/perf-budget.md](design/perf-budget.md). In particular:

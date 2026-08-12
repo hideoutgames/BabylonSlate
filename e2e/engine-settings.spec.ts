@@ -16,3 +16,16 @@ test("viewport frame cap can be emptied then retyped", async ({ page }) => {
   await field.pressSequentially("30");
   await expect(field).toHaveValue("30");
 });
+
+test("Focus keep-list can add a Class tab", async ({ page }) => {
+  await page.goto("/?test=1");
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await page.getByTestId("engine-settings").click();
+  await page.getByTestId("engine-settings-modal-category-focus").click();
+
+  await expect(page.getByTestId("focus-keep-graph-graph")).toBeVisible();
+  await expect(page.getByTestId("focus-keep-scene-viewport")).toBeVisible();
+  await page.getByTestId("focus-keep-graph-add").click();
+  await page.getByTestId("focus-keep-graph-add-inspector").click();
+  await expect(page.getByTestId("focus-keep-graph-inspector")).toBeVisible();
+});

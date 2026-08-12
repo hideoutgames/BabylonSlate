@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { PropertyGrid, humanizePropertyLabel, type PropertyRow } from "./property-grid";
+import { PropertyGrid, type PropertyRow } from "./property-grid";
+import {
+  formatEventMemberName,
+  formatEventTitle,
+  humanizePropertyLabel,
+} from "./humanize-property-label";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 describe("PropertyGrid", () => {
@@ -138,10 +143,30 @@ describe("PropertyGrid", () => {
     expect(onPick).toHaveBeenCalled();
   });
 
-  it("humanizes camelCase property keys", () => {
-    expect(humanizePropertyLabel("meshKind")).toBe("Mesh kind");
-    expect(humanizePropertyLabel("fixedTimestepMs")).toBe("Fixed timestep ms");
+  it("humanizes camelCase property keys as Title Case", () => {
+    expect(humanizePropertyLabel("meshKind")).toBe("Mesh Kind");
+    expect(humanizePropertyLabel("fixedTimestepMs")).toBe("Fixed Timestep MS");
     expect(humanizePropertyLabel("Name")).toBe("Name");
+  });
+
+  it("keeps 2D/3D acronyms and Title Cases Details labels", () => {
+    expect(humanizePropertyLabel("2D camera width")).toBe("2D Camera Width");
+    expect(humanizePropertyLabel("2 d camera width")).toBe("2D Camera Width");
+    expect(humanizePropertyLabel("2dCameraWidth")).toBe("2D Camera Width");
+    expect(humanizePropertyLabel("2DCameraWidth")).toBe("2D Camera Width");
+    expect(humanizePropertyLabel("cameraBounds2D")).toBe("Camera Bounds 2D");
+    expect(humanizePropertyLabel("3D (Havok)")).toBe("3D (Havok)");
+    expect(humanizePropertyLabel("Execute JavaScript")).toBe("Execute JavaScript");
+  });
+
+  it("formats Event member names and node titles", () => {
+    expect(formatEventMemberName("on hit")).toBe("On Hit");
+    expect(formatEventMemberName("beginPlay")).toBe("Begin Play");
+    expect(formatEventMemberName("Event beginPlay")).toBe("Begin Play");
+    expect(formatEventMemberName("eventBeginPlay")).toBe("Begin Play");
+    expect(formatEventTitle("on hit")).toBe("Event On Hit");
+    expect(formatEventTitle("Event Begin Play")).toBe("Event Begin Play");
+    expect(formatEventTitle("camera2D")).toBe("Event Camera 2D");
   });
 
   it("uses a compact icon reset instead of the word Reset", () => {

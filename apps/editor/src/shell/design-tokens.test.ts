@@ -168,6 +168,11 @@ describe("compact dock tab strips", () => {
     expect(dockviewCss).not.toMatch(/min-height:\s*36px/);
     expect(dockviewCss).not.toMatch(/min-height:\s*52px/);
   });
+
+  it("gives dockview tabs slight horizontal margins without changing height", () => {
+    const theme = cssBlock(dockviewCss, ".dockview-theme-babylonslate");
+    expect(tokenValue(theme, "--dv-tab-margin")).toBe("0 2px");
+  });
 });
 
 describe("dockview theme contrast", () => {
