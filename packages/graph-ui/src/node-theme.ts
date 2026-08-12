@@ -45,6 +45,8 @@ const ROLE_CLASS: Record<NodeVisualRole, string> = {
   debug: "bg-node-debug",
 };
 
+export type PinVisualShape = "diamond" | "circle" | "list";
+
 export function pinCssVar(type: PinTypeRef): string {
   if (type.kind === "array" && isPinTypeRef(type.element)) {
     return pinCssVar(type.element);
@@ -53,6 +55,12 @@ export function pinCssVar(type: PinTypeRef): string {
     return pinCssVar(type.value);
   }
   return PIN_VAR[type.kind] ?? "var(--pin-wildcard)";
+}
+
+export function pinVisualShape(type: PinTypeRef): PinVisualShape {
+  if (type.kind === "exec") return "diamond";
+  if (type.kind === "array") return "list";
+  return "circle";
 }
 
 function isPinTypeRef(value: unknown): value is PinTypeRef {
