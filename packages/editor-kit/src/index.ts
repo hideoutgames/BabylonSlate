@@ -12,6 +12,12 @@ export { ToolbarStrip } from "./toolbar-strip";
 export { SelectableText } from "./selectable-text";
 export { ContextMenuOverlay } from "./context-menu-overlay";
 export { useSuppressNativeContextMenu } from "./use-suppress-native-context-menu";
+export { useSuppressIosEditingGestures } from "./use-suppress-ios-editing-gestures";
+export {
+  keepsNativeEditing,
+  shouldSuppressIosEditingGesture,
+  shouldSuppressIosHistoryInput,
+} from "./ios-editing-gestures";
 export { usePreventDocumentOverscroll } from "./use-prevent-document-overscroll";
 export {
   canScrollInDirection,
