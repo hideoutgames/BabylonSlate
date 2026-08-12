@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
-import { MoveNodeCommand } from "./graph";
+import {
+  AddNodeCommand,
+  MoveNodeCommand,
+  RemoveNodeCommand,
+} from "./graph";
 import { diffGraphCommands } from "./graph-diff";
 
 describe("diffGraphCommands", () => {
@@ -23,4 +27,29 @@ describe("diffGraphCommands", () => {
     const graph = createDefaultGraph();
     expect(diffGraphCommands(graph, graph)).toEqual([]);
   });
+
+  it("emits AddNodeCommand when a node appears in after", () => {
+    const before = createDefaultGraph();
+    const added = {
+      id: "branch-1",
+      type: "flow.branch",
+      position: { x: 40, y: 80 },
+      data: { title: "Branch" },
+    };
+    const after = { ...before, nodes: [...before.nodes, added] };
+
+    const commands = diffGraphCommands(before, after);
+    expect(commands.some((c) => c instanceof AddNodeCommand)).toBe(true);
+    const add = commands.find((c) => c instanceof AddNodeCommand) as AddNodeCommand;
+    expect(add.node).toEqual(added);
+  });
+
+  it("emits RemoveNodeCommand when a node disappears from after", () => {
+    const before = createDefaultGraph();
+    const after = { ...before, nodes: [] };
+
+    const commands = diffGraphCommands(before, after);
+    expect(commands.some((c) => c instanceof RemoveNodeCommand)).toBe(true);
+  });
 });
+

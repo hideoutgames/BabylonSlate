@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  createDefaultGraph,
   createDefaultScene,
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
@@ -10,6 +9,7 @@ import {
 import { readAssetDocumentHeader } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
+import { createDefaultLogicGraphSerialized } from "./graph-validation";
 
 async function scaffolded() {
   const storage = new MemoryStorageAdapter("documents");
@@ -45,7 +45,7 @@ describe("project documents as .babasset", () => {
     const scene = await service.loadDocument("scene", MAIN_SCENE_FILE);
     const graph = await service.loadDocument("graph", MAIN_GRAPH_FILE);
     expect(scene).toEqual(createDefaultScene());
-    expect(graph).toEqual(createDefaultGraph());
+    expect(graph).toEqual(createDefaultLogicGraphSerialized());
   });
 
   it("keeps an asset guid stable across saves", async () => {

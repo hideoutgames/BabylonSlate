@@ -7,14 +7,18 @@ export {
 export { EditSession, DEFAULT_EDIT_BYTE_BUDGET } from "./session";
 export {
   AddEdgeCommand,
+  AddNodeCommand,
   MoveNodeCommand,
   RemoveEdgeCommand,
+  RemoveNodeCommand,
   SetNodeDataCommand,
   type GraphEditCommand,
   createMoveNodeCommandFromJson,
   createAddEdgeCommandFromJson,
   createRemoveEdgeCommandFromJson,
   createSetNodeDataCommandFromJson,
+  createAddNodeCommandFromJson,
+  createRemoveNodeCommandFromJson,
 } from "./commands/graph";
 export { diffGraphCommands } from "./commands/graph-diff";
 export {

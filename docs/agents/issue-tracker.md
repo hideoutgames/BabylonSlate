@@ -127,13 +127,13 @@ Design notes: [scripting.md](../architecture/scripting.md).
 
 **Parallelism:** after `p5-scripting-core` lands its types and a failing/passing golden harness, catalog categories may run as separate PRs (one package ownership set per agent). Do not start `p5-graph-ui` and `p5-scripting-core` against competing IR shapes — core owns the IR contract first.
 
-**P5 status:** all checklist slices (`p5-*`) are landed. Visual script node UI (touch-first graph-ui), core catalog, and node runtime wiring are not a missing phase — residual work is polish and phase-owned stubs below. Do **not** reopen a parallel "build visual scripting" phase ahead of P8; schedule polish opportunistically or after the debugger console lands.
+**P5 status:** all checklist slices (`p5-*`) are landed. Canvas pin hydration, palette pin embedding, Begin Play/Tick defaults, and Add/Remove node undo commands are landed (authoring loop fix). Residual work is polish and phase-owned stubs below. Do **not** reopen a parallel "build visual scripting" phase ahead of P8; schedule polish opportunistically or after the debugger console lands.
 
 ### P5 follow-ups / open deferrals
 
 | Item | Owner | Notes |
 | --- | --- | --- |
-| Drag-to-connect (in addition to tap-to-connect) | later polish (`graph-ui`) | Gestures.md allows both; drag deferred when `p5-graph-ui` shipped |
+| Drag-to-connect (in addition to tap-to-connect) | later polish (`graph-ui`) | Gestures.md allows both; tap-to-connect is the shipped mobile path |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
 | Full Enum / Structure / ScriptInterface row editors | later polish (`apps/editor`, `editor-kit`) | Creatable assets exist; richer field editors incomplete |
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Active-graph pass works; full project sweep beyond open docs deferred |
@@ -143,6 +143,8 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export | Print works; export strip preset + HUD polish deferred |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio / UI node runtime helpers beyond stubs | P9 | Catalog nodes exist; runtime helpers are inert stubs until content systems |
+
+**Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`.
 
 ## P6 slice ownership
 
