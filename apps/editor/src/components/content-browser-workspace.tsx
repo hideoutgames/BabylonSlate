@@ -4,25 +4,18 @@ import {
   useMemo,
   useRef,
   useState,
-  type DragEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  FileIcon,
-  FolderIcon,
   FolderPlusIcon,
   ListFilterIcon,
   PlusIcon,
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
-import type { FolderNode, IndexedAsset } from "@babylonslate/assets";
+import type { IndexedAsset } from "@babylonslate/assets";
 import { newAssetGuid } from "@babylonslate/assets";
 import {
   ContextMenuOverlay,
-  CONTEXT_MENU_LONG_PRESS_MS,
-  CONTEXT_MENU_MOVE_TOLERANCE_PX,
-  DRAG_ARM_MS,
   SearchInput,
   SelectableText,
   TreeView,
@@ -30,7 +23,6 @@ import {
 } from "@babylonslate/editor-kit";
 import { documentId, labelFromPath } from "@babylonslate/core";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
@@ -40,14 +32,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
-import { cn } from "@babylonslate/ui/lib/utils";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@babylonslate/ui/components/card";
 import {
   Field,
   FieldError,
@@ -89,15 +73,12 @@ import { useDocuments } from "../context/document-context";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
-  ASSET_DRAG_MIME,
+  ASSETS_ROOT,
   CREATABLE_ASSET_TYPES,
   ENGINE_BASE_CLASSES,
-  assetDragPayload,
   buildNewAssetResult,
   collectFolderGuids,
-  compressionBadgeLabel,
   defaultParentClassForType,
-  displayAssetTitle,
   filterAssets,
   flattenFolderTree,
   folderRelativePath,
@@ -105,316 +86,18 @@ import {
   isNewAssetNameTaken,
   isRenameNameTaken,
   newAssetFileName,
-  textureCompressionState,
   uniqueAssetTypes,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
 import { revealAssetFromTarget } from "../lib/search-navigation";
+import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
+import { ContentBrowserFolderTree } from "./content-browser-folder-tree";
 
 const PROJECT_ROOT_ID = "project";
-const ASSETS_ROOT = "assets";
-const FOLDER_DRAG_MIME = "application/x-babylonslate-folder";
 
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
   | { kind: "folder"; path: string; guids: string[] };
-
-interface TilePressState {
-  pointerId: number;
-  guid: string;
-  startX: number;
-  startY: number;
-  startedAt: number;
-  menuTimerId: ReturnType<typeof setTimeout>;
-  dragTimerId: ReturnType<typeof setTimeout>;
-  armed: boolean;
-}
-
-function FolderTreeNode({
-  node,
-  selectedPath,
-  dropPath,
-  onSelect,
-  onRequestDelete,
-  onDropAsset,
-  onDropFolder,
-  onFolderDragStart,
-  depth,
-}: {
-  node: FolderNode;
-  selectedPath: string;
-  dropPath: string | null;
-  onSelect: (path: string) => void;
-  onRequestDelete: (path: string) => void;
-  onDropAsset: (guid: string, folderPath: string) => void;
-  onDropFolder: (fromPath: string, toPath: string) => void;
-  onFolderDragStart: (path: string, event: DragEvent) => void;
-  depth: number;
-}) {
-  const selected = node.path === selectedPath;
-  const dropTarget = dropPath === node.path;
-
-  const acceptDrop = (event: DragEvent) => {
-    if (
-      event.dataTransfer.types.includes(ASSET_DRAG_MIME) ||
-      event.dataTransfer.types.includes(FOLDER_DRAG_MIME)
-    ) {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-    }
-  };
-
-  return (
-    <div className="flex flex-col">
-      <Button
-        type="button"
-        variant={selected ? "secondary" : "ghost"}
-        size="sm"
-        draggable={node.path !== ASSETS_ROOT}
-        data-testid={`folder-node-${node.path}`}
-        data-folder-path={node.path}
-        className={cn(
-          "w-full justify-start rounded-md border-l-2 px-2 text-left",
-          selected ? "border-l-primary" : "border-l-transparent",
-          dropTarget && "bg-accent",
-        )}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        onClick={() => onSelect(node.path)}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onSelect(node.path);
-          onRequestDelete(node.path);
-        }}
-        onDragStart={(event) => onFolderDragStart(node.path, event)}
-        onDragOver={acceptDrop}
-        onDrop={(event) => {
-          event.preventDefault();
-          const assetGuid = event.dataTransfer.getData(ASSET_DRAG_MIME);
-          if (assetGuid) {
-            try {
-              const payload = JSON.parse(assetGuid) as { guid?: string };
-              if (payload.guid) onDropAsset(payload.guid, node.path);
-            } catch {
-              onDropAsset(assetGuid, node.path);
-            }
-            return;
-          }
-          const fromPath = event.dataTransfer.getData(FOLDER_DRAG_MIME);
-          if (fromPath) onDropFolder(fromPath, node.path);
-        }}
-      >
-        <FolderIcon data-icon="inline-start" />
-        <SelectableText className="truncate">{node.name}</SelectableText>
-      </Button>
-      {node.children.map((child) => (
-        <FolderTreeNode
-          key={child.path}
-          node={child}
-          selectedPath={selectedPath}
-          dropPath={dropPath}
-          onSelect={onSelect}
-          onRequestDelete={onRequestDelete}
-          onDropAsset={onDropAsset}
-          onDropFolder={onDropFolder}
-          onFolderDragStart={onFolderDragStart}
-          depth={depth + 1}
-        />
-      ))}
-    </div>
-  );
-}
-
-function AssetTile({
-  asset,
-  selected,
-  onOpen,
-  onSelect,
-  onLongPressMenu,
-  onArmedDrag,
-  onDropAsset,
-  thumbnailUrl,
-  hasCompileError = false,
-}: {
-  asset: IndexedAsset;
-  selected: boolean;
-  onOpen: () => void;
-  onSelect: () => void;
-  onLongPressMenu: (clientX: number, clientY: number) => void;
-  onArmedDrag: (guid: string) => void;
-  onDropAsset: (guid: string, folderPath: string) => void;
-  thumbnailUrl: string | null;
-  hasCompileError?: boolean;
-}) {
-  const pressRef = useRef<TilePressState | null>(null);
-  const compression = textureCompressionState(asset);
-  const folderPath = asset.path.includes("/")
-    ? asset.path.slice(0, asset.path.lastIndexOf("/"))
-    : ASSETS_ROOT;
-
-  const clearPress = () => {
-    const press = pressRef.current;
-    if (press) {
-      clearTimeout(press.menuTimerId);
-      clearTimeout(press.dragTimerId);
-      pressRef.current = null;
-    }
-  };
-
-  const onPointerDown = (event: ReactPointerEvent) => {
-    if (event.pointerType === "mouse") return;
-    clearPress();
-    const dragTimerId = setTimeout(() => {
-      const press = pressRef.current;
-      if (!press) return;
-      press.armed = true;
-      onArmedDrag(asset.header.guid);
-    }, DRAG_ARM_MS);
-    const menuTimerId = setTimeout(() => {
-      const press = pressRef.current;
-      if (!press || press.armed) return;
-      pressRef.current = null;
-      onSelect();
-      onLongPressMenu(event.clientX, event.clientY);
-    }, CONTEXT_MENU_LONG_PRESS_MS);
-    pressRef.current = {
-      pointerId: event.pointerId,
-      guid: asset.header.guid,
-      startX: event.clientX,
-      startY: event.clientY,
-      startedAt: Date.now(),
-      menuTimerId,
-      dragTimerId,
-      armed: false,
-    };
-  };
-
-  const onPointerMove = (event: ReactPointerEvent) => {
-    const press = pressRef.current;
-    if (!press || press.pointerId !== event.pointerId) return;
-    const distance = Math.hypot(
-      press.startX - event.clientX,
-      press.startY - event.clientY,
-    );
-    if (distance <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
-    if (!press.armed) {
-      clearPress();
-      return;
-    }
-    clearTimeout(press.menuTimerId);
-  };
-
-  const onPointerUp = (event: ReactPointerEvent) => {
-    const press = pressRef.current;
-    if (press && press.pointerId === event.pointerId) {
-      if (press.armed) {
-        const target = document.elementFromPoint(event.clientX, event.clientY);
-        const dropFolder =
-          target?.closest("[data-folder-path]")?.getAttribute("data-folder-path") ??
-          target?.closest("[data-asset-folder]")?.getAttribute("data-asset-folder");
-        if (dropFolder) onDropAsset(asset.header.guid, dropFolder);
-      }
-      clearPress();
-    }
-  };
-
-  const onDragStart = (event: DragEvent) => {
-    event.dataTransfer.setData(ASSET_DRAG_MIME, assetDragPayload(asset));
-    event.dataTransfer.effectAllowed = "copyMove";
-  };
-
-  return (
-    <Card
-      size="sm"
-      className={cn(
-        "relative w-full gap-0 overflow-hidden py-0",
-        selected ? "border-primary ring-1 ring-primary" : "",
-      )}
-      data-asset-folder={folderPath}
-    >
-      <button
-        type="button"
-        draggable
-        data-testid={`content-item-${asset.path}`}
-        data-asset-path={asset.path}
-        data-asset-guid={asset.header.guid}
-        data-selected={selected ? "true" : "false"}
-        className="flex w-full flex-col text-left hover:bg-accent/50"
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect();
-        }}
-        onDoubleClick={onOpen}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onSelect();
-          onLongPressMenu(event.clientX, event.clientY);
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onDragStart={onDragStart}
-        onDragOver={(event) => {
-          if (event.dataTransfer.types.includes(ASSET_DRAG_MIME)) {
-            event.preventDefault();
-          }
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          const raw = event.dataTransfer.getData(ASSET_DRAG_MIME);
-          if (!raw) return;
-          try {
-            const payload = JSON.parse(raw) as { guid?: string };
-            if (payload.guid && payload.guid !== asset.header.guid) {
-              onDropAsset(payload.guid, folderPath);
-            }
-          } catch {
-            /* ignore malformed payloads */
-          }
-        }}
-      >
-        <div className="aspect-square w-full bg-muted">
-          {thumbnailUrl ? (
-            <img
-              src={thumbnailUrl}
-              alt=""
-              data-testid={`content-item-thumb-${asset.header.guid}`}
-              className="size-full object-cover"
-            />
-          ) : (
-            <FileIcon className="size-full p-4 text-muted-foreground" />
-          )}
-        </div>
-        <CardHeader className="gap-0.5 p-1.5">
-          <CardTitle className="truncate text-xs font-medium">
-            <SelectableText>{displayAssetTitle(asset.header.name)}</SelectableText>
-          </CardTitle>
-          <CardDescription className="truncate text-[10px]">
-            {asset.header.type}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-1 px-1.5 pb-1.5">
-          {compression ? (
-            <Badge variant="secondary" className="w-fit text-[10px]">
-              {compressionBadgeLabel(compression)}
-            </Badge>
-          ) : null}
-          {hasCompileError ? (
-            <Badge
-              variant="destructive"
-              className="w-fit text-[10px]"
-              data-testid={`compile-error-overlay-${asset.header.guid}`}
-            >
-              Compile error
-            </Badge>
-          ) : null}
-          <span data-lock-slot className="hidden" aria-hidden />
-        </CardContent>
-      </button>
-    </Card>
-  );
-}
 
 export function ContentBrowserWorkspace() {
   const {
@@ -439,6 +122,7 @@ export function ContentBrowserWorkspace() {
   }, [diagnostics]);
 
   const [selectedFolderPath, setSelectedFolderPath] = useState(ASSETS_ROOT);
+  const [dropPath, setDropPath] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [selectedGuids, setSelectedGuids] = useState<Set<string>>(new Set());
@@ -742,7 +426,7 @@ export function ContentBrowserWorkspace() {
     ],
   );
 
-  const { menu, closeMenu, openMenuAt, bind } = useContextMenu({
+  const { menu, closeMenu, openMenuAt } = useContextMenu({
     items: contextItems,
   });
 
@@ -1046,7 +730,7 @@ export function ContentBrowserWorkspace() {
     <div
       className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
       data-testid="content-browser-workspace"
-      {...bind}
+      onDragEnd={() => setDropPath(null)}
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <Button
@@ -1167,10 +851,10 @@ export function ContentBrowserWorkspace() {
             New Folder
           </Button>
           {folderTree ? (
-            <FolderTreeNode
+            <ContentBrowserFolderTree
               node={folderTree}
               selectedPath={selectedFolderPath}
-              dropPath={null}
+              dropPath={dropPath}
               onSelect={setSelectedFolderPath}
               onRequestDelete={requestDeleteFolder}
               onDropAsset={(guid, folderPath) => {
@@ -1179,15 +863,7 @@ export function ContentBrowserWorkspace() {
               onDropFolder={(fromPath, toPath) => {
                 void dropFolderOnFolder(fromPath, toPath);
               }}
-              onFolderDragStart={(path, event) => {
-                if (path === ASSETS_ROOT) {
-                  event.preventDefault();
-                  return;
-                }
-                event.dataTransfer.setData(FOLDER_DRAG_MIME, path);
-                event.dataTransfer.effectAllowed = "move";
-              }}
-              depth={0}
+              onDropPathChange={setDropPath}
             />
           ) : null}
         </aside>
@@ -1199,7 +875,7 @@ export function ContentBrowserWorkspace() {
             onClick={() => setSelectedGuids(new Set())}
           >
             {visibleAssets.map((asset) => (
-              <AssetTile
+              <ContentBrowserAssetTile
                 key={asset.header.guid}
                 asset={asset}
                 selected={selectedGuids.has(asset.header.guid)}
@@ -1219,6 +895,7 @@ export function ContentBrowserWorkspace() {
                 onDropAsset={(guid, folderPath) => {
                   void dropAssetOnFolder(guid, folderPath);
                 }}
+                onDropPathChange={setDropPath}
               />
             ))}
             {visibleAssets.length === 0 ? (
