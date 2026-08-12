@@ -17,7 +17,6 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { SearchInput } from "@babylonslate/editor-kit";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { useProjectSearch } from "../context/project-search-context";
 import { groupSearchEntries } from "../lib/search-navigation";
@@ -46,25 +45,30 @@ export function GlobalSearchDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[min(80svh,40rem)] w-full flex-col gap-3 sm:max-w-2xl"
+        className="flex h-[min(90svh,52rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
         data-testid="global-search-dialog"
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0 border-b px-4 py-3 pr-12">
           <DialogTitle>Search project</DialogTitle>
           <DialogDescription>
             Find assets, actors, graph nodes, classes, and variables.
           </DialogDescription>
         </DialogHeader>
-        <SearchInput
-          autoFocus
-          className="min-h-[var(--touch-target,44px)]"
-          aria-label="Search project"
-          placeholder="Search assets, actors, nodes…"
-          value={needle}
-          onChange={setNeedle}
-          data-testid="global-search-query"
-        />
-        <ScrollArea className="min-h-0 flex-1">
+        <div className="shrink-0 border-b px-4 py-3">
+          <SearchInput
+            autoFocus
+            className="min-h-[var(--touch-target,44px)]"
+            aria-label="Search project"
+            placeholder="Search assets, actors, nodes…"
+            value={needle}
+            onChange={setNeedle}
+            data-testid="global-search-query"
+          />
+        </div>
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          data-testid="global-search-results"
+        >
           {!hasQuery ? (
             <Empty className="border-0 py-8" data-testid="global-search-empty">
               <EmptyHeader>
@@ -87,7 +91,7 @@ export function GlobalSearchDialog({
               </EmptyHeader>
             </Empty>
           ) : (
-            <div className="flex flex-col gap-3 pr-2">
+            <div className="flex flex-col gap-3 p-4">
               {grouped.map((group, index) => (
                 <div
                   key={group.kind}
@@ -124,7 +128,7 @@ export function GlobalSearchDialog({
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );

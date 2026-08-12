@@ -46,4 +46,40 @@ test.describe("Global project search", () => {
       page.locator('.react-flow__node.selected[data-id="event-begin-play"]'),
     ).toBeVisible({ timeout: 10_000 });
   });
+
+  test("dialog stays a fixed tall height and results scroll when they overflow", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page.getByTestId("global-search").click();
+
+    const dialog = page.getByTestId("global-search-dialog");
+    await expect(dialog).toBeVisible();
+    const viewport = page.viewportSize();
+    expect(viewport).not.toBeNull();
+    const box = await dialog.boundingBox();
+    expect(box).not.toBeNull();
+    const expectedHeight = Math.min(viewport!.height * 0.9, 52 * 16);
+    expect(box!.height).toBeGreaterThan(expectedHeight * 0.85);
+    expect(box!.height).toBeLessThanOrEqual(expectedHeight + 16);
+
+    await page.getByTestId("global-search-query").fill("a");
+    const results = page.getByTestId("global-search-results");
+    await expect(results.locator('[data-testid^="global-search-item-"]').first()).toBeVisible();
+
+    const metrics = await results.evaluate((el) => ({
+      itemCount: el.querySelectorAll('[data-testid^="global-search-item-"]').length,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      overflowY: getComputedStyle(el).overflowY,
+    }));
+    expect(metrics.overflowY).toBe("auto");
+    expect(metrics.itemCount).toBeGreaterThan(10);
+    expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+
+    await results.evaluate((el) => {
+      el.scrollTop = 240;
+    });
+    expect(await results.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  });
 });
