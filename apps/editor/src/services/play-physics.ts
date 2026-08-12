@@ -9,17 +9,6 @@ export type PlayPhysicsSettings = {
   gravity: [number, number, number];
 };
 
-export type PlaySceneDocument = {
-  id: string;
-  ref: { kind: string };
-  content: {
-    settings?: {
-      physicsWorld?: string;
-      gravity?: [number, number, number];
-    };
-  } | null;
-};
-
 export function editorHavokWasmUrl(): string {
   const origin =
     typeof globalThis.location?.origin === "string"
@@ -29,6 +18,29 @@ export function editorHavokWasmUrl(): string {
     return new URL(EDITOR_HAVOK_WASM_PATH, origin).href;
   }
   return EDITOR_HAVOK_WASM_PATH;
+}
+
+export type PlaySceneDocument = {
+  id: string;
+  ref: { kind: string };
+  content: unknown;
+};
+
+function settingsFromContent(content: unknown): {
+  physicsWorld?: string;
+  gravity?: [number, number, number];
+} | undefined {
+  if (!content || typeof content !== "object") return undefined;
+  const settings = (content as { settings?: unknown }).settings;
+  if (!settings || typeof settings !== "object") return undefined;
+  const record = settings as {
+    physicsWorld?: string;
+    gravity?: [number, number, number];
+  };
+  return {
+    physicsWorld: record.physicsWorld,
+    gravity: record.gravity,
+  };
 }
 
 export function playPhysicsFromSceneSettings(
@@ -56,7 +68,7 @@ export function playPhysicsFromOpenDocuments(
     active?.ref.kind === "scene"
       ? active
       : documents.find((entry) => entry.ref.kind === "scene");
-  return playPhysicsFromSceneSettings(scene?.content?.settings);
+  return playPhysicsFromSceneSettings(settingsFromContent(scene?.content));
 }
 
 export function playLoadControl(options: {

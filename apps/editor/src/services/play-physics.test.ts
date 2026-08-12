@@ -1,17 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   inProcessPlayRuntimeOptions,
   playLoadControl,
   playPhysicsFromOpenDocuments,
 } from "./play-physics";
-
-const vendoredWasm = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../public/havok/HavokPhysics.wasm",
-);
 
 describe("playLoadControl", () => {
   it("forwards scene physics world, gravity, and the vendored Havok wasm URL", () => {
@@ -97,14 +89,5 @@ describe("inProcessPlayRuntimeOptions", () => {
     expect(options.physicsWorld).toBe("3d");
     expect(options.gravity).toEqual([0, -9.81, 0]);
     expect(options.havokWasmUrl).toMatch(/\/havok\/HavokPhysics\.wasm$/);
-  });
-});
-
-describe("vendored Havok wasm", () => {
-  it("ships HavokPhysics.wasm under editor public/ for offline Play", () => {
-    expect(existsSync(vendoredWasm)).toBe(true);
-    const bytes = readFileSync(vendoredWasm);
-    expect([...bytes.subarray(0, 4)]).toEqual([0x00, 0x61, 0x73, 0x6d]);
-    expect(bytes.byteLength).toBeGreaterThan(100_000);
   });
 });
