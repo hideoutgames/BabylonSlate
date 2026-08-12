@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cn } from "@babylonslate/ui/lib/utils";
 
 export interface PanelFrameProps {
   title?: string;
@@ -18,14 +19,15 @@ export function PanelFrame({
   const showHeader = Boolean(title || toolbar);
   return (
     <section
-      className={`flex h-full min-h-0 flex-col bg-background ${className ?? ""}`}
+      className={cn("flex h-full min-h-0 flex-col bg-sidebar", className)}
       data-testid={testId}
     >
       {showHeader ? (
         <header
-          className={`flex min-h-[var(--touch-target,44px)] shrink-0 items-center gap-2 border-b border-border px-3 ${
-            title ? "justify-between" : "justify-end"
-          }`}
+          className={cn(
+            "flex min-h-[var(--touch-target,44px)] shrink-0 items-center gap-2 border-b border-border bg-card px-3",
+            title ? "justify-between" : "justify-end",
+          )}
         >
           {title ? (
             <h2 className="truncate text-sm font-medium">{title}</h2>

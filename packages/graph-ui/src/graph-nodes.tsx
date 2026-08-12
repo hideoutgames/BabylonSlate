@@ -4,9 +4,16 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { useCallback, type MouseEvent } from "react";
+import { useCallback, type MouseEvent, type ReactNode } from "react";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
+import {
+  nodeRoleClass,
+  nodeVisualRole,
+  pinCssVar,
+  type NodeVisualRole,
+} from "./node-theme";
 
 type LogNodeData = {
   message: string;
@@ -14,58 +21,172 @@ type LogNodeData = {
 
 export type CanvasNode = Node<Record<string, unknown>>;
 
-function pinHandleClass(pin: SerializedPin, selected: boolean): string {
-  const base =
-    "h-3! w-3! min-h-3 min-w-3 border-2 border-background touch-manipulation";
-  const selectedRing = selected ? " ring-2 ring-primary ring-offset-1" : "";
-  if (pin.kind === "exec") {
-    return `${base} rounded-sm bg-muted-foreground${selectedRing}`;
-  }
-  return `${base} rounded-full bg-primary${selectedRing}`;
+function visualFromData(
+  data: Record<string, unknown>,
+  type: string | undefined,
+): {
+  title: string;
+  role: NodeVisualRole;
+} {
+  const nodeType =
+    typeof data.__nodeType === "string" ? data.__nodeType : (type ?? "Node");
+  const title =
+    typeof data.title === "string"
+      ? data.title
+      : nodeType.replace(/\./g, " ");
+  return {
+    title,
+    role: nodeVisualRole({
+      nodeType,
+      title,
+      category:
+        typeof data.__category === "string" ? data.__category : undefined,
+      pure: data.__pure === true,
+      latent: data.__latent === true,
+    }),
+  };
 }
 
-function PinHandles({
+function zipPinRows(
+  pins: SerializedPin[],
+): Array<{ in?: SerializedPin; out?: SerializedPin }> {
+  const execIn = pins.filter(
+    (pin) => pin.kind === "exec" && pin.direction === "in",
+  );
+  const execOut = pins.filter(
+    (pin) => pin.kind === "exec" && pin.direction === "out",
+  );
+  const dataIn = pins.filter(
+    (pin) => pin.kind !== "exec" && pin.direction === "in",
+  );
+  const dataOut = pins.filter(
+    (pin) => pin.kind !== "exec" && pin.direction === "out",
+  );
+  const rows: Array<{ in?: SerializedPin; out?: SerializedPin }> = [];
+  const execCount = Math.max(execIn.length, execOut.length);
+  for (let i = 0; i < execCount; i++) {
+    rows.push({ in: execIn[i], out: execOut[i] });
+  }
+  const dataCount = Math.max(dataIn.length, dataOut.length);
+  for (let i = 0; i < dataCount; i++) {
+    rows.push({ in: dataIn[i], out: dataOut[i] });
+  }
+  return rows;
+}
+
+function PinHandle({
   nodeId,
-  pins,
+  pin,
+  pending,
+  hasError,
 }: {
   nodeId: string;
-  pins: SerializedPin[];
+  pin: SerializedPin;
+  pending: boolean;
+  hasError: boolean;
 }) {
-  const { pendingPin, onPinTap, pinHasError } = useGraphEditorContext();
-
-  const inPins = pins.filter((pin) => pin.direction === "in");
-  const outPins = pins.filter((pin) => pin.direction === "out");
-
-  const renderHandle = (pin: SerializedPin, index: number, total: number) => {
-    const isSource = pin.direction === "out";
-    const topPct = total <= 1 ? 50 : ((index + 1) / (total + 1)) * 100;
-    const isPending =
-      pendingPin?.nodeId === nodeId && pendingPin.pinId === pin.id;
-    const hasError = pinHasError(nodeId, pin.id);
-
-    return (
-      <Handle
-        key={pin.id}
-        id={pin.id}
-        type={isSource ? "source" : "target"}
-        position={isSource ? Position.Right : Position.Left}
-        className={pinHandleClass(pin, isPending)}
-        style={{ top: `${topPct}%` }}
-        aria-label={pin.name}
-        onClick={(event) => {
-          event.stopPropagation();
-          onPinTap(nodeId, pin.id, pin.direction);
-        }}
-        data-error={hasError ? "true" : undefined}
-      />
-    );
-  };
+  const { onPinTap } = useGraphEditorContext();
+  const isSource = pin.direction === "out";
 
   return (
-    <>
-      {inPins.map((pin, index) => renderHandle(pin, index, inPins.length))}
-      {outPins.map((pin, index) => renderHandle(pin, index, outPins.length))}
-    </>
+    <Handle
+      id={pin.id}
+      type={isSource ? "source" : "target"}
+      position={isSource ? Position.Right : Position.Left}
+      aria-label={pin.name}
+      data-pin-type={pin.type.kind}
+      data-error={hasError ? "true" : undefined}
+      className={cn(
+        "!relative !top-auto !right-auto !left-auto !translate-x-0 !translate-y-0",
+        "!pointer-events-auto flex !size-11 !min-h-11 !min-w-11 items-center justify-center",
+        "!border-0 !bg-transparent touch-manipulation",
+        pending && "ring-2 ring-primary ring-offset-1 ring-offset-card",
+      )}
+      style={{
+        position: "relative",
+        top: "auto",
+        left: "auto",
+        right: "auto",
+        transform: "none",
+        width: "var(--touch-target, 44px)",
+        height: "var(--touch-target, 44px)",
+        background: "transparent",
+        border: "none",
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPinTap(nodeId, pin.id, pin.direction);
+      }}
+    >
+      <span
+        className={cn(
+          "graph-pin-visual block border-2 border-card",
+          pin.kind === "exec" ? "rotate-45 rounded-sm" : "rounded-full",
+        )}
+        style={{
+          width: "var(--graph-pin-size, 16px)",
+          height: "var(--graph-pin-size, 16px)",
+          background: pinCssVar(pin.type),
+        }}
+        aria-hidden="true"
+      />
+    </Handle>
+  );
+}
+
+function PinRow({
+  nodeId,
+  incoming,
+  outgoing,
+}: {
+  nodeId: string;
+  incoming?: SerializedPin;
+  outgoing?: SerializedPin;
+}) {
+  const { pendingPin, pinHasError } = useGraphEditorContext();
+
+  const isPending = (pin: SerializedPin | undefined) =>
+    Boolean(
+      pin && pendingPin?.nodeId === nodeId && pendingPin.pinId === pin.id,
+    );
+
+  return (
+    <div className="flex min-h-[var(--touch-target,44px)] items-center justify-between gap-2">
+      <div className="flex min-w-0 flex-1 items-center">
+        {incoming ? (
+          <>
+            <PinHandle
+              nodeId={nodeId}
+              pin={incoming}
+              pending={isPending(incoming)}
+              hasError={pinHasError(nodeId, incoming.id)}
+            />
+            <span className="truncate text-sm text-foreground">
+              {incoming.name}
+            </span>
+          </>
+        ) : (
+          <span className="size-11 shrink-0" />
+        )}
+      </div>
+      <div className="flex min-w-0 flex-1 items-center justify-end">
+        {outgoing ? (
+          <>
+            <span className="truncate text-right text-sm text-foreground">
+              {outgoing.name}
+            </span>
+            <PinHandle
+              nodeId={nodeId}
+              pin={outgoing}
+              pending={isPending(outgoing)}
+              hasError={pinHasError(nodeId, outgoing.id)}
+            />
+          </>
+        ) : (
+          <span className="size-11 shrink-0" />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -91,65 +212,94 @@ function NodeErrorBadge({
   return (
     <button
       type="button"
-      className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground"
+      className="absolute -right-2 -top-2 z-10 flex size-11 items-center justify-center"
       aria-label={`${count} error${count === 1 ? "" : "s"}`}
       onClick={handleClick}
     >
-      {count > 9 ? "9+" : count}
+      <span className="flex size-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+        {count > 9 ? "9+" : count}
+      </span>
     </button>
   );
 }
 
-export function PinNode({ id, data, type }: NodeProps<CanvasNode>) {
-  const pins = hasSerializedPins(data) ? data.__pins : [];
+function BlueprintNodeShell({
+  nodeId,
+  title,
+  role,
+  selected,
+  children,
+}: {
+  nodeId: string;
+  title: string;
+  role: NodeVisualRole;
+  selected?: boolean;
+  children: ReactNode;
+}) {
   const { nodeErrorCount } = useGraphEditorContext();
-  const title =
-    typeof data.title === "string"
-      ? data.title
-      : String(data.__nodeType ?? type ?? "Node").replace(/\./g, " ");
 
   return (
-    <div className="relative min-w-44 rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm">
-      <NodeErrorBadge nodeId={id} count={nodeErrorCount(id)} />
-      <div className="mb-2 text-xs font-medium text-muted-foreground">
+    <div
+      data-node-role={role}
+      className={cn(
+        "relative min-w-64 overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
+        selected && "ring-2 ring-primary",
+      )}
+    >
+      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} />
+      <div
+        className={cn(
+          "px-3 py-2 text-sm font-semibold text-node-title",
+          nodeRoleClass(role),
+        )}
+      >
         {title}
       </div>
-      <div className="flex flex-col gap-1">
-        {pins
-          .filter((pin) => pin.direction === "in")
-          .map((pin) => (
-            <div
-              key={pin.id}
-              className="pl-3 text-xs text-muted-foreground"
-            >
-              {pin.name}
-            </div>
-          ))}
-        {pins
-          .filter((pin) => pin.direction === "out")
-          .map((pin) => (
-            <div
-              key={pin.id}
-              className="pr-3 text-right text-xs text-muted-foreground"
-            >
-              {pin.name}
-            </div>
-          ))}
-      </div>
-      <PinHandles nodeId={id} pins={pins} />
+      {children}
     </div>
   );
 }
 
-export function LogMessageNode({ id, data }: NodeProps<Node<LogNodeData>>) {
-  const { nodeErrorCount } = useGraphEditorContext();
+export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
+  const pins = hasSerializedPins(data) ? data.__pins : [];
+  const { title, role } = visualFromData(data, type);
+  const rows = zipPinRows(pins);
 
   return (
-    <div className="relative flex min-h-11 min-w-44 flex-col gap-2 rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm">
-      <NodeErrorBadge nodeId={id} count={nodeErrorCount(id)} />
-      <div className="text-xs font-medium text-muted-foreground">Log Message</div>
-      <div className="text-sm">{data.message}</div>
-    </div>
+    <BlueprintNodeShell
+      nodeId={id}
+      title={title}
+      role={role}
+      selected={selected}
+    >
+      <div className="flex flex-col py-1">
+        {rows.map((row, index) => (
+          <PinRow
+            key={row.in?.id ?? row.out?.id ?? `row-${index}`}
+            nodeId={id}
+            incoming={row.in}
+            outgoing={row.out}
+          />
+        ))}
+      </div>
+    </BlueprintNodeShell>
+  );
+}
+
+export function LogMessageNode({
+  id,
+  data,
+  selected,
+}: NodeProps<Node<LogNodeData>>) {
+  return (
+    <BlueprintNodeShell
+      nodeId={id}
+      title="Log Message"
+      role="debug"
+      selected={selected}
+    >
+      <div className="px-3 py-2 text-sm">{data.message}</div>
+    </BlueprintNodeShell>
   );
 }
 

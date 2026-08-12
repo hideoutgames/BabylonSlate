@@ -1,5 +1,6 @@
 import {
   Background,
+  BackgroundVariant,
   Controls,
   ReactFlow,
   ReactFlowProvider,
@@ -11,12 +12,14 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import "./graph-editor.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GraphDocument } from "./graph-types";
-import type {
-  GraphDiagnostic,
-  NavigateRequest,
-  PaletteNode,
+import {
+  hasSerializedPins,
+  type GraphDiagnostic,
+  type GraphDocument,
+  type NavigateRequest,
+  type PaletteNode,
 } from "./graph-types";
 import { GraphEditorProvider } from "./graph-editor-context";
 import { createEdgeId, toSerializedGraph } from "./graph-model";
@@ -25,6 +28,7 @@ import {
   graphNodeTypes,
   resolveNodeType,
 } from "./graph-nodes";
+import { edgeStyleForPin } from "./node-theme";
 import { NodePalette } from "./node-palette";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
@@ -47,6 +51,18 @@ function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
   }));
+}
+
+function styleFlowEdges(edges: Edge[], nodes: CanvasNode[]): Edge[] {
+  return edges.map((edge) => {
+    const source = nodes.find((node) => node.id === edge.source);
+    const pins = hasSerializedPins(source?.data) ? source.data.__pins : [];
+    const pin = pins.find((entry) => entry.id === edge.sourceHandle);
+    return {
+      ...edge,
+      style: edgeStyleForPin(pin?.type),
+    };
+  });
 }
 
 function toCanvasNodes(nodes: GraphDocument["nodes"]): CanvasNode[] {
@@ -227,6 +243,9 @@ function GraphEditorCanvas({
         ...(paletteNode.defaultData ?? {}),
         title: paletteNode.title,
         __nodeType: paletteNode.id,
+        __category: paletteNode.category,
+        __pure: paletteNode.pure ?? false,
+        __latent: paletteNode.latent ?? false,
       };
       if (paletteNode.pins && paletteNode.pins.length > 0) {
         data.__pins = paletteNode.pins;
@@ -247,6 +266,21 @@ function GraphEditorCanvas({
     [emitChange, screenToFlowPosition],
   );
 
+  const styledEdges = useMemo(
+    () => styleFlowEdges(edges, nodes),
+    [edges, nodes],
+  );
+
+  const connectionLineStyle = useMemo(() => {
+    if (!pendingPin) {
+      return edgeStyleForPin({ kind: "exec" });
+    }
+    const source = nodes.find((node) => node.id === pendingPin.nodeId);
+    const pins = hasSerializedPins(source?.data) ? source.data.__pins : [];
+    const pin = pins.find((entry) => entry.id === pendingPin.pinId);
+    return edgeStyleForPin(pin?.type);
+  }, [nodes, pendingPin]);
+
   const contextValue = useMemo(
     () => ({
       pendingPin,
@@ -262,17 +296,27 @@ function GraphEditorCanvas({
     <GraphEditorProvider value={contextValue}>
       <div className="relative h-full w-full touch-manipulation">
         <ReactFlow
+          className="graph-editor-canvas"
+          colorMode="dark"
           nodes={nodes}
-          edges={edges}
+          edges={styledEdges}
           nodeTypes={graphNodeTypes}
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
+          connectionLineStyle={connectionLineStyle}
+          defaultEdgeOptions={{ type: "default" }}
           fitView
           minZoom={0.4}
           maxZoom={1.5}
           proOptions={{ hideAttribution: true }}
         >
-          <Background gap={16} />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1}
+            color="var(--border)"
+            bgColor="var(--background)"
+          />
           <Controls showInteractive={false} />
           <FocusedNodeSync focusedNodeId={focusedNodeId} />
         </ReactFlow>

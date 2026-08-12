@@ -183,5 +183,67 @@ describe("GraphEditor", () => {
     expect(lastGraph.nodes[0]?.data.__pins).toEqual(debugLogPins);
     expect(lastGraph.nodes[0]?.data.message).toBe("");
   });
+
+  it("renders Blueprint chrome with type-colored pins and wide exec wires", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Event Begin Play",
+            __nodeType: "flow.event.beginPlay",
+            __category: "flow",
+            __pure: true,
+            __pins: [
+              {
+                id: "execOut",
+                name: "then",
+                kind: "exec",
+                direction: "out",
+                type: { kind: "exec" },
+              },
+            ],
+          },
+        },
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 280, y: 0 },
+          data: {
+            title: "Log",
+            __nodeType: "debug.log",
+            __category: "debug",
+            __pins: debugLogPins,
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e:begin:execOut:log:execIn",
+          source: "begin",
+          target: "log",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+      ],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const eventNode = container.querySelector('[data-node-role="event"]');
+    expect(eventNode).not.toBeNull();
+
+    const execHandle = container.querySelector(
+      '[data-handleid="execOut"][data-pin-type="exec"]',
+    );
+    expect(execHandle).not.toBeNull();
+    expect(execHandle?.className).toMatch(/min-h-11|size-11/);
+
+    const messageHandle = container.querySelector(
+      '[data-handleid="message"][data-pin-type="string"]',
+    );
+    expect(messageHandle).not.toBeNull();
+  });
 });
 

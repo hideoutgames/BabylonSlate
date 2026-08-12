@@ -1,0 +1,32 @@
+.graph-editor-canvas {
+  background: var(--background);
+  --xy-background-color: var(--background);
+  --xy-background-pattern-color: var(--border);
+  --xy-background-pattern-dots-color: var(--border);
+  --xy-edge-stroke: var(--pin-exec);
+  --xy-edge-stroke-width: var(--graph-edge-data);
+  --xy-edge-stroke-selected: var(--primary);
+  --xy-connectionline-stroke: var(--pin-exec);
+  --xy-connectionline-stroke-width: var(--graph-edge-exec);
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-node-border: var(--border);
+  --xy-node-background-color: var(--card);
+}
+
+.graph-editor-canvas .react-flow__controls-button {
+  min-width: var(--touch-target, 44px);
+  min-height: var(--touch-target, 44px);
+  width: var(--touch-target, 44px);
+  height: var(--touch-target, 44px);
+}
+
+.graph-editor-canvas .react-flow__handle {
+  pointer-events: all;
+}
+
+.graph-editor-canvas .react-flow__handle[data-error="true"] .graph-pin-visual {
+  box-shadow: 0 0 0 2px var(--destructive);
+}

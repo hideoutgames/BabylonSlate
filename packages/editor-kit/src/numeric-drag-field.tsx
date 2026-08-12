@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type PointerEvent } from "react";
+import { cn } from "@babylonslate/ui/lib/utils";
 
 export interface NumericDragFieldProps {
   label: string;
@@ -14,6 +15,8 @@ export interface NumericDragFieldProps {
   onChange: (value: number) => void;
   /** Fired once when a scrub ends, so callers can close the undo entry. */
   onDragEnd?: (value: number) => void;
+  /** Axis color token: X red, Y green, Z blue. */
+  accent?: "x" | "y" | "z";
   "data-testid"?: string;
 }
 
@@ -39,6 +42,7 @@ export function NumericDragField({
   onDragBegin,
   onChange,
   onDragEnd,
+  accent,
   "data-testid": testId,
 }: NumericDragFieldProps) {
   const dragRef = useRef<{
@@ -92,9 +96,14 @@ export function NumericDragField({
   return (
     <label className="flex min-h-[var(--touch-target,44px)] items-center gap-2">
       <span
-        className={`min-w-8 shrink-0 cursor-ew-resize touch-none select-none text-xs font-medium text-muted-foreground ${
-          dragging ? "text-foreground" : ""
-        }`}
+        className={cn(
+          "min-w-8 shrink-0 cursor-ew-resize touch-none select-none text-xs font-semibold",
+          accent === "x" && "text-axis-x",
+          accent === "y" && "text-axis-y",
+          accent === "z" && "text-axis-z",
+          !accent && "text-muted-foreground",
+          dragging && !accent && "text-foreground",
+        )}
         data-testid={testId ? `${testId}-scrub` : undefined}
         aria-hidden="true"
         onPointerDown={onPointerDown}

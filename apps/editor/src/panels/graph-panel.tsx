@@ -65,6 +65,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         title: d.title,
         category: d.category,
         pins: d.pins(defaultData),
+        pure: d.pure,
+        latent: d.latent,
         defaultData:
           Object.keys(defaultData).length > 0 ? defaultData : undefined,
       };

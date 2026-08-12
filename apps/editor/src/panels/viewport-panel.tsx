@@ -289,7 +289,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
         <div
-          className="pointer-events-auto rounded-md border border-border bg-card/90 p-1"
+          className="pointer-events-auto rounded-lg border border-border bg-popover p-1 shadow-md"
           data-testid="viewport-panel-frame"
         >
           <ViewportToolbar />

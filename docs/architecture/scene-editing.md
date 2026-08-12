@@ -73,6 +73,12 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 | `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker |
 | `apps/editor` | Viewport, Outliner, Details, Mini Asset Browser, Actor prefab tab; `applySceneChange` |
 
+## Outliner and Details visuals
+
+- **Outliner** (`TreeView`): 44px rows, type icon, selected row `bg-primary/20` + `border-l-primary`. Visibility/lock toggles are ghost `touch` controls so the name stays readable in the 260px default column.
+- **Details** (`PropertyGrid`): Unreal-style **label | value** rows at `--touch-target` height. Category headers use `--secondary`. Vector axes use `--axis-x/y/z`. Checkboxes and select items are 44px.
+- **Viewport overlay**: toolbar island on `--popover` with a shadow so it separates from the 3D view.
+
 ## 2D specifics
 
 - **Marquee**: one-finger drag in 2D selects actors whose origin falls inside the rect (`viewport-gestures.ts`, `two-d.ts`); 3D single-finger drag has no marquee.

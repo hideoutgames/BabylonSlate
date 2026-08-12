@@ -18,7 +18,7 @@ packages/input/       Raw input ring + action/axis mapping model and `InputResol
 packages/render/      Snapshot sync, render-on-demand, resource cache, editor tools, KTX2 transcoder
 packages/scripting/   Graph IR, pin types, validator, JS codegen + anchors (P5)
 packages/scripting-nodes/ Data-driven node catalog (P5)
-packages/graph-ui/    React Flow graph editor (mutations via edit); P5 touch shell rework
+packages/graph-ui/    React Flow graph editor with Blueprint node chrome (mutations via edit)
 packages/ui/          shadcn primitives
 packages/editor-kit/  Touch-shell hooks, property grid, tree view, panel frame, asset picker, parameter-list editor
 packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness

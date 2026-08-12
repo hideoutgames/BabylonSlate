@@ -99,4 +99,26 @@ describe("TreeView", () => {
     render(<TreeView nodes={[]} emptyLabel="No actors" data-testid="tree" />);
     expect(screen.getByText("No actors")).toBeTruthy();
   });
+
+  it("marks the selected row with a primary edge", () => {
+    render(<TreeView nodes={nodes} selectedId="child" data-testid="tree" />);
+    expect(screen.getByTestId("tree-row-child").className).toContain(
+      "border-l-primary",
+    );
+  });
+
+  it("renders an optional leading icon", () => {
+    render(
+      <TreeView
+        nodes={[
+          {
+            ...nodes[2]!,
+            icon: <span data-testid="row-icon">icon</span>,
+          },
+        ]}
+        data-testid="tree"
+      />,
+    );
+    expect(screen.getByTestId("row-icon")).toBeTruthy();
+  });
 });

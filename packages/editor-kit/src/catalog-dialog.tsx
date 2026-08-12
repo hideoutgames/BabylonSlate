@@ -144,7 +144,7 @@ export function CatalogDialog({
                       variant={active ? "secondary" : "ghost"}
                       className={cn(
                         "justify-between rounded-md border-l-2",
-                        active ? "border-l-foreground" : "border-l-transparent",
+                        active ? "border-l-primary" : "border-l-transparent",
                       )}
                       onClick={() => onCategoryChange(category.id)}
                       data-testid={

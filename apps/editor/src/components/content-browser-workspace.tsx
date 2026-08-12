@@ -122,7 +122,7 @@ function FolderTreeNode({
         data-testid={`folder-node-${node.path}`}
         className={cn(
           "w-full justify-start rounded-md border-l-2 px-2 text-left",
-          selected ? "border-l-foreground" : "border-l-transparent",
+          selected ? "border-l-primary" : "border-l-transparent",
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={() => onSelect(node.path)}

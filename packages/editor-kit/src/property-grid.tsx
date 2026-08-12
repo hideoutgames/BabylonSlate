@@ -165,6 +165,7 @@ function RowControl({ row }: { row: PropertyRow }) {
               <NumericDragField
                 label={axis}
                 value={row.value[index] ?? 0}
+                accent={axis.toLowerCase() as "x" | "y" | "z"}
                 sensitivity={row.sensitivity}
                 disabled={row.disabled}
                 onChange={(next) => {
@@ -184,6 +185,7 @@ function RowControl({ row }: { row: PropertyRow }) {
       return (
         <Checkbox
           id={`property-${row.id}`}
+          className="size-[var(--touch-target,44px)]"
           checked={row.value}
           disabled={row.disabled}
           onCheckedChange={(checked) => row.onChange(checked === true)}
@@ -258,26 +260,33 @@ export function PropertyGrid({
   "data-testid": testId,
 }: PropertyGridProps) {
   return (
-    <div className="flex flex-col gap-2 p-2" data-testid={testId}>
+    <div className="flex flex-col gap-0" data-testid={testId}>
       {title ? (
-        <h3 className="px-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        <h3 className="bg-secondary px-3 py-2 text-sm font-semibold text-foreground">
           {title}
         </h3>
       ) : null}
       {rows.map((row) => (
-        <div key={row.id} className="flex flex-col gap-1 rounded-md px-1 py-1">
-          <div className="flex items-center justify-between gap-2">
-            <label
-              className="text-xs font-medium text-muted-foreground"
-              htmlFor={`property-${row.id}`}
-            >
-              {row.label}
-            </label>
+        <div
+          key={row.id}
+          data-testid={`property-row-${row.id}`}
+          className="grid min-h-[var(--touch-target,44px)] grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] items-center gap-2 border-b border-border/60 px-3 py-1"
+        >
+          <label
+            className="truncate text-sm font-medium text-foreground"
+            htmlFor={`property-${row.id}`}
+          >
+            {row.label}
+          </label>
+          <div className="flex min-w-0 items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <RowControl row={row} />
+            </div>
             {hasDefault(row) ? (
               <Button
                 variant="ghost"
-                size="sm"
-                className="min-h-[var(--touch-target,44px)] min-w-[var(--touch-target,44px)] text-xs"
+                size="touch-icon"
+                className="text-xs"
                 disabled={isAtDefault(row)}
                 aria-label={`Reset ${row.label}`}
                 onClick={() => resetRow(row)}
@@ -287,7 +296,6 @@ export function PropertyGrid({
               </Button>
             ) : null}
           </div>
-          <RowControl row={row} />
         </div>
       ))}
     </div>

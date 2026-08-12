@@ -71,13 +71,12 @@ describe("viewport", () => {
     expect(scene.ambientColor.b).toBe(0);
   });
 
-  it("uses the dark shell background as clearColor (Minimal Neutral oklch(0.145 0 0))", () => {
+  it("uses the dark shell background as clearColor (oklch(0.28 0.014 250) ≈ #242a30)", () => {
     const { scene } = createHandle();
-    const channel = 37 / 255;
 
-    expect(scene.clearColor.r).toBeCloseTo(channel);
-    expect(scene.clearColor.g).toBeCloseTo(channel);
-    expect(scene.clearColor.b).toBeCloseTo(channel);
+    expect(scene.clearColor.r).toBeCloseTo(36 / 255);
+    expect(scene.clearColor.g).toBeCloseTo(42 / 255);
+    expect(scene.clearColor.b).toBeCloseTo(48 / 255);
     expect(scene.clearColor.a).toBe(1);
   });
 });

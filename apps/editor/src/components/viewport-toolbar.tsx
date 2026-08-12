@@ -110,11 +110,11 @@ export function ViewportToolbar({
               pressed={snapEnabled}
               onPressedChange={toggleSnap}
               data-testid={`${testIdPrefix}gizmo-snap-toggle`}
-            />
+            >
+              <MagnetIcon />
+            </Toggle>
           }
-        >
-          <MagnetIcon />
-        </TooltipTrigger>
+        />
         <TooltipContent>Snap</TooltipContent>
       </Tooltip>
       <ToggleGroup

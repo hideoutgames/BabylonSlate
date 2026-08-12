@@ -92,7 +92,7 @@ describe("CatalogDialog", () => {
     expect(getByTestId("catalog-category-general")).toBeTruthy();
     expect(getByTestId("catalog-category-close")).toBeTruthy();
     expect(getByTestId("catalog-category-general").className).toContain(
-      "border-l-foreground",
+      "border-l-primary",
     );
     expect(getByTestId("catalog-category-input").className).toContain(
       "border-l-transparent",
