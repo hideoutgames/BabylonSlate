@@ -1,7 +1,7 @@
 import { fireEvent, render, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
-import { GraphEditor } from "./graph-editor";
+import { GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 
 afterEach(cleanup);
@@ -58,6 +58,11 @@ function openPalette(container: HTMLElement) {
 }
 
 describe("GraphEditor", () => {
+  it("lets authors zoom the canvas out to 10 percent", () => {
+    expect(GRAPH_MIN_ZOOM).toBeLessThan(0.4);
+    expect(GRAPH_MIN_ZOOM).toBe(0.1);
+  });
+
   it("renders a node for each node in the graph", () => {
     const graph = createDefaultGraph();
     const { container } = render(<GraphEditor initialGraph={graph} />);
