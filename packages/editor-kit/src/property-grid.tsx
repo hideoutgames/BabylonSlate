@@ -14,19 +14,9 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import { NumericDragField } from "./numeric-drag-field";
+import { humanizePropertyLabel } from "./humanize-property-label";
 
 export type Vector3Value = [number, number, number];
-
-/** Sentence-case a camelCase or snake_case property key. */
-export function humanizePropertyLabel(key: string): string {
-  const spaced = key
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[._-]+/g, " ")
-    .trim();
-  if (!spaced) return key;
-  const lower = spaced.toLowerCase();
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-}
 
 interface PropertyRowBase {
   id: string;
@@ -239,7 +229,7 @@ function RowControl({ row }: { row: PropertyRow }) {
           <SelectContent>
             {row.options.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.label}
+                {humanizePropertyLabel(option.label)}
               </SelectItem>
             ))}
           </SelectContent>

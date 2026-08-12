@@ -7,6 +7,23 @@ import {
 } from "./my-class-panel";
 
 describe("My Class members", () => {
+  it("Title Cases poorly cased event titles in the Class tree", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "hit",
+          type: "flow.event.custom",
+          position: { x: 0, y: 0 },
+          data: { title: "event on hit", name: "on hit" },
+        },
+      ],
+      edges: [],
+    };
+    expect(membersForGraph(graph)).toEqual([
+      { kind: "event", name: "Event On Hit", detail: "hit" },
+    ]);
+  });
+
   it("lists the event nodes a graph declares", () => {
     const graph: SerializedGraph = {
       nodes: [

@@ -3,6 +3,10 @@ import type {
   GraphClassMemberKind,
   SerializedGraph,
 } from "@babylonslate/core";
+import {
+  formatEventMemberName,
+  formatEventTitle,
+} from "@babylonslate/editor-kit";
 
 export type { GraphClassMember, GraphClassMemberKind };
 
@@ -19,10 +23,13 @@ export function addClassMember(
 ): SerializedGraph {
   const trimmed = name.trim();
   if (!trimmed) return graph;
+  const displayName =
+    kind === "event" ? formatEventMemberName(trimmed) : trimmed;
+  if (!displayName) return graph;
   const member: GraphClassMember = {
     id: nextId(idFactory),
     kind,
-    name: trimmed,
+    name: displayName,
   };
   const members = [...(graph.members ?? []), member];
   if (kind === "event") {
@@ -40,8 +47,8 @@ export function addClassMember(
             y: 80 + graph.nodes.length * 80,
           },
           data: {
-            title: `Event ${trimmed}`,
-            name: trimmed,
+            title: formatEventTitle(trimmed),
+            name: displayName,
             __nodeType: "flow.event.custom",
           },
         },

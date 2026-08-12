@@ -47,8 +47,12 @@ export {
 export { NumberField, type NumberFieldProps } from "./number-field";
 export { parseNumberInput } from "./parse-number-input";
 export {
-  PropertyGrid,
+  formatEventMemberName,
+  formatEventTitle,
   humanizePropertyLabel,
+} from "./humanize-property-label";
+export {
+  PropertyGrid,
   type PropertyGridProps,
   type PropertyRow,
   type Vector3Value,

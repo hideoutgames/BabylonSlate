@@ -156,7 +156,7 @@ export function ViewportToolbar({
           const next = value[0];
           if (next === "2d" || next === "3d") setMode(next);
         }}
-        aria-label="Viewport mode"
+        aria-label="Viewport Mode"
         data-testid={`${testIdPrefix}viewport-mode-toggle`}
       >
         <ToggleGroupItem

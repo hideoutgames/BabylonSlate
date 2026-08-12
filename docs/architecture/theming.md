@@ -95,7 +95,7 @@ Title-bar fills for Blueprint-like nodes:
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 
-Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-groupview` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel bounds stay visible in both schemes. Tree rows are 32px.
+Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-groupview` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel bounds stay visible in both schemes. Tree rows are 32px.
 
 ## Axis colors
 

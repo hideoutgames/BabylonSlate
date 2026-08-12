@@ -132,7 +132,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "text",
         id: "scene-game-instance-class",
-        label: "Game instance",
+        label: "Game Instance",
         value: scene.settings.gameInstanceClass ?? "",
         onChange: (gameInstanceClass) =>
           mutate({
@@ -158,7 +158,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "enum",
         id: "scene-physics-world",
-        label: "Physics world",
+        label: "Physics World",
         value: scene.settings.physicsWorld,
         options: [
           { value: "3d", label: "3D (Havok)" },
@@ -230,7 +230,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "number",
         id: "scene-snap-translate",
-        label: "Snap step",
+        label: "Snap Step",
         value: scene.settings.grid.snapTranslate,
         defaultValue: defaults.grid.snapTranslate,
         onChange: (snapTranslate) =>
@@ -245,7 +245,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "number",
         id: "scene-tile-size",
-        label: "Tile size",
+        label: "Tile Size",
         value: scene.settings.grid.tileSize,
         defaultValue: defaults.grid.tileSize,
         onChange: (tileSize) =>
@@ -260,7 +260,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "number",
         id: "scene-tile-subdivisions",
-        label: "Tile subdivisions",
+        label: "Tile Subdivisions",
         value: scene.settings.grid.tileSubdivisions,
         defaultValue: defaults.grid.tileSubdivisions,
         onChange: (tileSubdivisions) =>
@@ -278,7 +278,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "number",
         id: "scene-camera-bounds-width",
-        label: "2D camera width",
+        label: "2D Camera Width",
         value: scene.settings.cameraBounds2D.width,
         defaultValue: defaults.cameraBounds2D.width,
         onChange: (width) =>
@@ -293,7 +293,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       {
         kind: "number",
         id: "scene-camera-bounds-height",
-        label: "2D camera height",
+        label: "2D Camera Height",
         value: scene.settings.cameraBounds2D.height,
         defaultValue: defaults.cameraBounds2D.height,
         onChange: (height) =>
