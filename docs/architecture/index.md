@@ -19,6 +19,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Physics](physics.md) | Havok 3D and Rapier 2D |
 | [Debugger](debugger.md) | Command registry, console, stats HUD |
 | [Theming](theming.md) | UI color palette and semantic tokens |
+| [Components](components.md) | Reusable Editor UI primitives and composites |
 | [Testing](testing.md) | Vitest projects, coverage gates, Playwright |
 
 `docs/` markdown is the source of truth for GitHub and the VitePress site.

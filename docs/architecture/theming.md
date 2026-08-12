@@ -145,7 +145,7 @@ Toolbar `DropdownMenu`s (Debug, Settings, Add) default to `modal={false}` so the
 
 ## UI composition
 
-Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylonslate/editor-kit` (panel frame, toolbar strip). Do not add raw styled `<input>`, `<select>`, or `<button>` in `apps/editor/src` — use Field + shadcn primitives.
+Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylonslate/editor-kit` (panel frame, toolbar strip). Do not add raw styled `<input>`, `<select>`, or `<button>` in `apps/editor/src` — use Field + shadcn primitives. Inventory: [components.md](components.md).
 
 **Action vs pressed:**
 

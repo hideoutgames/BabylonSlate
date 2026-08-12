@@ -28,6 +28,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/physics.md](architecture/physics.md) | Havok 3D and Rapier 2D |
 | [architecture/debugger.md](architecture/debugger.md) | Command registry, console, stats HUD |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
+| [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |
 | [agents/issue-tracker.md](agents/issue-tracker.md) | Issue and spec workflow for agents |
 
