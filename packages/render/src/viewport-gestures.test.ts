@@ -1,5 +1,5 @@
 import { NullEngine, Scene } from "@babylonjs/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEditorCamera } from "./editor-camera";
 import { RenderScheduler } from "./render-scheduler";
 import { attachViewportGestures } from "./viewport-gestures";
@@ -216,6 +216,17 @@ describe("attachViewportGestures", () => {
     canvas.emit("pointermove", pointer(2, 250, 100));
 
     expect(controller.orthoHalfHeight()).toBeLessThan(halfHeightBefore);
+  });
+
+  it("prevents default on touchstart and touchmove so iOS does not delay pointer events", () => {
+    attach("3d");
+    const start = { preventDefault: vi.fn(), touches: [{ identifier: 1 }] };
+    canvas.emit("touchstart", start);
+    expect(start.preventDefault).toHaveBeenCalled();
+
+    const move = { preventDefault: vi.fn(), touches: [{ identifier: 1 }, { identifier: 2 }] };
+    canvas.emit("touchmove", move);
+    expect(move.preventDefault).toHaveBeenCalled();
   });
 
   it("zooms on wheel and releases every listener on dispose", () => {
