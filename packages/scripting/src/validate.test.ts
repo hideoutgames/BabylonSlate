@@ -7,7 +7,14 @@ import {
 import { validateGraphs } from "./validate";
 import { createEmptyLogicGraph, type LogicGraph } from "./ir";
 import { pin } from "./node-registry";
-import { EXEC, INT, STRING } from "./types";
+import {
+  EXEC,
+  FLOAT,
+  INT,
+  RESOLVING_WILDCARD,
+  STRING,
+  arrayOf,
+} from "./types";
 import { diagnostic } from "./diagnostics";
 
 function typedMismatchGraph(): LogicGraph {
@@ -146,5 +153,110 @@ describe("validateGraphs", () => {
     };
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.filter((d) => d.code === "pin.missing_input")).toHaveLength(2);
+  });
+
+  it("flags incompatible wildcard resolution groups", () => {
+    const T = RESOLVING_WILDCARD;
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "itemSrc",
+          typeId: "const.float",
+          position: { x: 0, y: 0 },
+          pins: [pin("out", "out", "out", FLOAT)],
+          properties: {},
+        },
+        {
+          id: "arraySrc",
+          typeId: "const.array",
+          position: { x: 0, y: 80 },
+          pins: [pin("out", "out", "out", arrayOf(STRING))],
+          properties: {},
+        },
+        {
+          id: "append",
+          typeId: "array.append",
+          position: { x: 200, y: 40 },
+          pins: [
+            pin("array", "array", "in", arrayOf(T)),
+            pin("item", "item", "in", T),
+            pin("out", "out", "out", arrayOf(T)),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "itemSrc",
+          sourcePinId: "out",
+          targetNodeId: "append",
+          targetPinId: "item",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "arraySrc",
+          sourcePinId: "out",
+          targetNodeId: "append",
+          targetPinId: "array",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "asset-1" });
+    expect(diags.some((d) => d.code === "type.wildcard_group")).toBe(true);
+  });
+
+  it("flags a mismatch after resolving a wildcard to a concrete type", () => {
+    const T = RESOLVING_WILDCARD;
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "src",
+          typeId: "const.array",
+          position: { x: 0, y: 0 },
+          pins: [pin("out", "out", "out", arrayOf(FLOAT))],
+          properties: {},
+        },
+        {
+          id: "get",
+          typeId: "array.get",
+          position: { x: 160, y: 0 },
+          pins: [
+            pin("array", "array", "in", arrayOf(T)),
+            pin("out", "out", "out", T),
+          ],
+          properties: {},
+        },
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 320, y: 0 },
+          pins: [pin("message", "message", "in", STRING, "data", true)],
+          properties: { message: "" },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "src",
+          sourcePinId: "out",
+          targetNodeId: "get",
+          targetPinId: "array",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "get",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "asset-1" });
+    expect(diags.some((d) => d.code === "type.mismatch")).toBe(true);
   });
 });

@@ -12,7 +12,7 @@ export type PrimitivePinType =
   | { kind: "rotator" }
   | { kind: "transform" }
   | { kind: "color" }
-  | { kind: "resolvingWildcard" }
+  | { kind: "resolvingWildcard"; group?: string }
   | { kind: "boxedWildcard" };
 
 export type PinType =
@@ -92,6 +92,8 @@ export function pinTypeEquals(a: PinType, b: PinType): boolean {
         a.outputs.every((t, i) => pinTypeEquals(t, other.outputs[i]!))
       );
     }
+    case "resolvingWildcard":
+      return (a.group ?? "T") === ((b as typeof a).group ?? "T");
     default:
       return true;
   }

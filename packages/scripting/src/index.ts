@@ -6,6 +6,7 @@ export * from "./validate";
 export * from "./node-registry";
 export * from "./compile";
 export * from "./wildcard";
+export * from "./wildcard-resolve";
 export * from "./serialize";
 export * from "./pin-defaults";
 

@@ -47,7 +47,7 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 ## Pin type colors
 
-Blueprint-style mapping in `globals.css`. `graph-ui` resolves `pin.type.kind` â†’ `var(--pin-*)` in [`node-theme.ts`](../../packages/graph-ui/src/node-theme.ts). `--vector` aliases `--pin-vector`. Pins keep `border-card` so they separate from the canvas.
+Blueprint-style mapping in `globals.css`. `graph-ui` paints from the **display** pin type (`resolveWildcardPinTypes`) via [`node-theme.ts`](../../packages/graph-ui/src/node-theme.ts). `--vector` aliases `--pin-vector`. Pins keep `border-card` so they separate from the canvas.
 
 | Token | Kinds |
 | --- | --- |
@@ -64,10 +64,10 @@ Blueprint-style mapping in `globals.css`. `graph-ui` resolves `pin.type.kind` â†
 | `--pin-actor` | actorRef |
 | `--pin-struct` | structRef |
 | `--pin-enum` | enumRef |
-| `--pin-wildcard` | resolvingWildcard / boxedWildcard / unknown |
+| `--pin-wildcard` | unbound resolvingWildcard / boxedWildcard / unknown |
 | `--pin-delegate` | delegate |
 
-Arrays use the element color; maps use the value color. Other pin/node values are shared across schemes (colored node title bars already contrast on both chromes).
+Arrays use the element color; maps use the value color. Wildcard pins recolor when a concrete type is wired in: resolving groups adopt that type for display (Array Get `out` turns float-green when `array<float>` lands on `array`), and boxed pins (Print) keep `boxedWildcard` in `__pins` but paint from the connected peer. Disconnecting with no remaining constraint restores `--pin-wildcard`. Other pin/node values are shared across schemes (colored node title bars already contrast on both chromes).
 
 ## Node role colors
 

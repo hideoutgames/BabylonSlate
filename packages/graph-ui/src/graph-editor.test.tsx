@@ -428,6 +428,74 @@ describe("GraphEditor", () => {
     });
   });
 
+  it("recolors a boxed wildcard pin when a concrete type is wired in", () => {
+    const onChange = vi.fn();
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "src",
+          type: "math.const",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Float",
+            __pins: [
+              {
+                id: "out",
+                name: "out",
+                kind: "data",
+                direction: "out",
+                type: { kind: "float" },
+              },
+            ],
+          },
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 280, y: 0 },
+          data: {
+            title: "Print",
+            __pins: [
+              {
+                id: "value",
+                name: "value",
+                kind: "data",
+                direction: "in",
+                type: { kind: "boxedWildcard" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+    const source = container.querySelector(
+      '[data-handleid="out"][data-handlepos="right"]',
+    );
+    const target = container.querySelector(
+      '[data-handleid="value"][data-handlepos="left"]',
+    );
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    fireEvent.click(source!);
+    fireEvent.click(target!);
+
+    const visual = target?.querySelector(".graph-pin-visual") as HTMLElement | null;
+    expect(visual?.style.background).toBe("var(--pin-float)");
+
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    const persisted = lastGraph.nodes.find((node) => node.id === "print")?.data
+      .__pins as Array<{ id: string; type: { kind: string } }>;
+    expect(persisted.find((pin) => pin.id === "value")?.type.kind).toBe(
+      "boxedWildcard",
+    );
+  });
+
   it("titles event nodes Event … when data.title is missing", () => {
     const { getByText } = render(
       <GraphEditor
