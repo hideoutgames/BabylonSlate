@@ -281,7 +281,6 @@ function validateExecuteJavaScript(
     const body = String(node.properties.body ?? "");
     try {
       // Parse as a function body.
-      // eslint-disable-next-line no-new-func
       new Function(body);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

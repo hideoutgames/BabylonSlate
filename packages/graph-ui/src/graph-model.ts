@@ -24,7 +24,8 @@ function serializedNodeData(data: unknown): Record<string, unknown> {
   if (!(NODE_TYPE_KEY in raw)) {
     return raw;
   }
-  const { [NODE_TYPE_KEY]: _type, ...rest } = raw;
+  const rest = { ...raw };
+  delete rest[NODE_TYPE_KEY];
   return rest;
 }
 
