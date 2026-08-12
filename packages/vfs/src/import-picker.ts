@@ -75,7 +75,6 @@ function pickImportFilesViaDom(
     const finish = (picked: PickedImportFile[]) => {
       if (settled) return;
       settled = true;
-      window.removeEventListener("focus", onFocus);
       cleanup();
       resolve(picked);
     };
@@ -98,17 +97,9 @@ function pickImportFilesViaDom(
       })();
     });
 
-    // Cancelled picker yields no change event on some browsers; resolve empty
-    // on window focus after a tick if still attached with no files.
-    const onFocus = () => {
-      window.setTimeout(() => {
-        if (!input.isConnected || settled) return;
-        if (!input.files?.length) {
-          finish([]);
-        }
-      }, 300);
-    };
-    window.addEventListener("focus", onFocus, { once: true });
+    input.addEventListener("cancel", () => {
+      finish([]);
+    });
 
     document.body.appendChild(input);
     input.click();

@@ -18,6 +18,11 @@ import {
 } from "./importers";
 import { AccountedPayloadLoader } from "./payload-loader";
 import {
+  assetFileSuffix,
+  nextCopyName,
+  stripAssetFileSuffix,
+} from "./unique-names";
+import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   encodeSettingsHash,
   ktx2ChunkId,
@@ -209,6 +214,9 @@ export class AssetRegistry {
   ): Promise<IndexedAsset> {
     const root = this.getRootOrThrow(rootId);
     const path = joinRootPath(root, relativePath);
+    if (this.byPath.has(path) || (await this.storage.exists(path))) {
+      throw new Error(`Asset already exists: ${path}`);
+    }
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     if (dir) {
       await this.storage.mkdir(dir, true);
@@ -262,6 +270,12 @@ export class AssetRegistry {
     const folderPath = joinRootPath(root, relativeFolder);
     if (!relativeFolder.replace(/^\/+|\/+$/g, "")) {
       throw new Error("Cannot create the assets root folder");
+    }
+    if (
+      this.knownFolders.has(folderPath) ||
+      (await this.storage.exists(folderPath))
+    ) {
+      throw new Error(`Folder already exists: ${folderPath}`);
     }
     await this.storage.mkdir(folderPath, true);
     await this.storage.writeText(
@@ -390,25 +404,36 @@ export class AssetRegistry {
       }
     }
     const newGuid = newAssetGuid();
-    const baseName = sanitizeFileName(decoded.header.name || "asset");
-    let relativePath = joinRelative(
-      targetFolderRelative,
-      `${baseName}.babasset`,
+    const fileName = asset.path.includes("/")
+      ? asset.path.slice(asset.path.lastIndexOf("/") + 1)
+      : asset.path;
+    const suffix = assetFileSuffix(fileName);
+    const stemSource = sanitizeFileName(
+      stripAssetFileSuffix(fileName) || decoded.header.name || "asset",
     );
-    let candidate = joinRootPath(root, relativePath);
-    let suffix = 1;
-    while (this.byPath.has(candidate) || (await this.storage.exists(candidate))) {
-      relativePath = joinRelative(
-        targetFolderRelative,
-        `${baseName}_${suffix}.babasset`,
-      );
-      candidate = joinRootPath(root, relativePath);
-      suffix += 1;
+    const targetFolderPath = joinRootPath(root, targetFolderRelative);
+    const siblingStems: string[] = [];
+    for (const other of this.byPath.values()) {
+      if (other.rootId !== rootId) continue;
+      const parent = other.path.includes("/")
+        ? other.path.slice(0, other.path.lastIndexOf("/"))
+        : "";
+      if (parent !== targetFolderPath) continue;
+      const otherFile = other.path.includes("/")
+        ? other.path.slice(other.path.lastIndexOf("/") + 1)
+        : other.path;
+      siblingStems.push(stripAssetFileSuffix(otherFile));
     }
+    const uniqueName = nextCopyName(stemSource, siblingStems);
+    const relativePath = joinRelative(
+      targetFolderRelative,
+      `${uniqueName}${suffix}`,
+    );
+    const candidate = joinRootPath(root, relativePath);
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
     const encoded = await encodeBabasset({
-      header: { ...headerRest, guid: newGuid },
+      header: { ...headerRest, guid: newGuid, name: uniqueName },
       chunks: [...chunksById.values()],
       writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
     });

@@ -18,4 +18,5 @@ export * from "./templates";
 export * from "./texture-compression";
 export * from "./texture-loader";
 export * from "./thumbnails";
+export * from "./unique-names";
 export * from "./worker-encode";

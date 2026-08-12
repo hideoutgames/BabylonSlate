@@ -314,6 +314,84 @@ describe("AssetRegistry", () => {
     expect(copy.path).toBe("assets/copies/tex.babasset");
     expect(registry.getByGuid("tex-1")).toBeDefined();
     expect(registry.getByGuid(copy.header.guid)).toBeDefined();
+    expect(copy.header.name).toBe("tex");
+  });
+
+  it("duplicates in the same folder using stem_N and writes header.name", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/Duplicate_1.babasset", {
+      guid: "dup-1",
+      type: "Texture",
+      name: "Duplicate_1",
+    });
+    await writeAsset(storage, "assets/Duplicate_2.babasset", {
+      guid: "dup-2",
+      type: "Texture",
+      name: "Duplicate_2",
+    });
+    await writeAsset(storage, "assets/Duplicate.babasset", {
+      guid: "dup-0",
+      type: "Texture",
+      name: "Duplicate",
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const copy = await registry.duplicateAsset("dup-1", "project", "");
+    expect(copy.path).toBe("assets/Duplicate_3.babasset");
+    expect(copy.header.name).toBe("Duplicate_3");
+    expect(copy.header.guid).not.toBe("dup-1");
+  });
+
+  it("preserves .scene.babasset when duplicating a scene", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/main.scene.babasset", {
+      guid: "scene-1",
+      type: "Scene",
+      name: "main",
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const copy = await registry.duplicateAsset("scene-1", "project", "");
+    expect(copy.path).toBe("assets/main_1.scene.babasset");
+    expect(copy.header.name).toBe("main_1");
+  });
+
+  it("refuses to overwrite an existing asset path", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/tex.babasset", {
+      guid: "tex-1",
+      type: "Texture",
+      name: "tex",
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await expect(
+      registry.createAsset("project", "tex.babasset", {
+        type: "Texture",
+        name: "tex",
+        guid: "tex-2",
+        version: 1,
+        dependencies: [],
+        parentClass: null,
+        payload: {},
+        chunks: [],
+      }),
+    ).rejects.toThrow(/already exists/i);
+    expect(registry.getByGuid("tex-1")?.header.guid).toBe("tex-1");
+  });
+
+  it("refuses to create a folder that already exists", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.createFolder("project", "fx");
+    await expect(registry.createFolder("project", "fx")).rejects.toThrow(
+      /already exists/i,
+    );
   });
 
   it("renames an asset path while keeping the guid", async () => {
