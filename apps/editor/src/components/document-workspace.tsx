@@ -1,5 +1,6 @@
 import { CONTENT_BROWSER_ID, type SerializedScene } from "@babylonslate/core";
-import { useEffect, useState } from "react";
+import type { DockviewApi } from "dockview-react";
+import { useCallback, useEffect, useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { useProjectSearch } from "../context/project-search-context";
@@ -34,13 +35,38 @@ function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
   return null;
 }
 
+function RegisteredDockviewShell({
+  id,
+  documentKind,
+  initialLayout,
+}: {
+  id: string;
+  documentKind: "scene" | "graph";
+  initialLayout: Record<string, unknown> | null;
+}) {
+  const { registerDockviewApi } = useDocuments();
+  const onReady = useCallback(
+    (api: DockviewApi) => {
+      registerDockviewApi(id, api);
+    },
+    [id, registerDockviewApi],
+  );
+
+  return (
+    <DockviewShell
+      documentKind={documentKind}
+      initialLayout={initialLayout}
+      onReady={onReady}
+    />
+  );
+}
+
 export function DocumentWorkspace() {
   const {
     tabOrder,
     activeDocumentId,
     openDocuments,
     projectDocument,
-    registerDockviewApi,
   } = useDocuments();
 
   const [mountedIds, setMountedIds] = useState<Set<string>>(() => new Set());
@@ -128,10 +154,10 @@ export function DocumentWorkspace() {
                 data-testid={`document-workspace-${doc.ref.kind}`}
               >
                 {shouldMount ? (
-                  <DockviewShell
+                  <RegisteredDockviewShell
+                    id={id}
                     documentKind={doc.ref.kind}
                     initialLayout={doc.layout}
-                    onReady={(api) => registerDockviewApi(id, api)}
                   />
                 ) : null}
               </div>

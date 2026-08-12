@@ -32,10 +32,21 @@ export function isClosableDocumentKind(kind: DocumentKind): boolean {
   return kind !== "content-browser";
 }
 
+export type DockWindowDirection = "left" | "right" | "above" | "below" | "within";
+
+/** Last dock location of a closed panel, keyed later by document id then panel id. */
+export interface PanelPlacement {
+  referencePanelId: string;
+  direction: DockWindowDirection;
+  width?: number;
+  height?: number;
+}
+
 export interface ProjectLayouts {
   documents: Record<string, Record<string, unknown>>;
   tabOrder: string[];
   activeDocumentId?: string | null;
+  panelPlacements?: Record<string, Record<string, PanelPlacement>>;
 }
 
 export function createEmptyLayouts(): ProjectLayouts {

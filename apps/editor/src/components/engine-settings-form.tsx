@@ -37,7 +37,8 @@ export type EngineSettingsCategoryId =
   | "viewport"
   | "thumbnails"
   | "templates"
-  | "focus";
+  | "focus"
+  | "graph";
 
 export function EngineSettingsForm({
   settings,
@@ -204,6 +205,33 @@ export function EngineSettingsForm({
                 void onChange({ thumbnailsEnabled: checked === true })
               }
             />
+          </Field>
+        </FieldSet>
+      ) : null}
+
+      {categoryId === "graph" ? (
+        <FieldSet>
+          <FieldLegend>Graph</FieldLegend>
+          <Field>
+            <FieldLabel htmlFor="setting-graph-default-zoom">
+              Graph default zoom
+            </FieldLabel>
+            <NumberField
+              id="setting-graph-default-zoom"
+              min={0.1}
+              max={1.5}
+              step={0.05}
+              className="min-h-[var(--touch-target,44px)]"
+              data-testid="setting-graph-default-zoom"
+              value={settings.graphDefaultZoom}
+              onChange={(graphDefaultZoom) =>
+                void onChange({ graphDefaultZoom })
+              }
+            />
+            <FieldDescription>
+              Opening zoom for node graphs. Fit-view will not zoom in past this
+              value. Applies when a graph panel opens.
+            </FieldDescription>
           </Field>
         </FieldSet>
       ) : null}

@@ -16,6 +16,23 @@ describe("app settings", () => {
       scene: ["viewport"],
       graph: ["graph"],
     });
+    expect(settings.graphDefaultZoom).toBe(0.5);
+  });
+
+  it("fills graph default zoom when saved JSON omits the field", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.graphDefaultZoom).toBe(0.5);
+  });
+
+  it("clamps graph default zoom to 0.1–1.5", () => {
+    expect(engineSettingsSchema.parse({ graphDefaultZoom: 0.05 }).graphDefaultZoom).toBe(
+      0.1,
+    );
+    expect(engineSettingsSchema.parse({ graphDefaultZoom: 3 }).graphDefaultZoom).toBe(
+      1.5,
+    );
   });
 
   it("fills focus keep-panel defaults when saved JSON omits the field", () => {
@@ -50,9 +67,11 @@ describe("app settings", () => {
     const store = new WebAppSettingsStore();
     const settings = defaultEngineSettings();
     settings.viewportFrameCap = 30;
+    settings.graphDefaultZoom = 0.8;
     await store.save(settings);
     const reloaded = new WebAppSettingsStore();
     expect((await reloaded.load()).viewportFrameCap).toBe(30);
+    expect((await reloaded.load()).graphDefaultZoom).toBe(0.8);
   });
 
   it("falls back to defaults when localStorage holds invalid JSON", async () => {

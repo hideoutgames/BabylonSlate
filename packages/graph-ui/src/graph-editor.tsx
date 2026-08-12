@@ -47,9 +47,18 @@ import {
 } from "./graph-connect";
 import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
 import type { PinDisplayLookup } from "./wildcard-display";
+import {
+  GRAPH_DEFAULT_ZOOM,
+  resolveGraphViewport,
+} from "./graph-viewport";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
+export {
+  GRAPH_DEFAULT_ZOOM,
+  GRAPH_MAX_ZOOM,
+  GRAPH_MIN_ZOOM,
+} from "./graph-viewport";
 
 export interface GraphEditorProps {
   initialGraph: GraphDocument;
@@ -61,15 +70,11 @@ export interface GraphEditorProps {
   onNavigateRequest?: (request: NavigateRequest) => void;
   paletteNodes?: PaletteNode[];
   colorMode?: "light" | "dark";
+  defaultZoom?: number;
 }
 
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
-
-/** React Flow zoom-out floor. Wheel, pinch, and Controls all stop here. */
-export const GRAPH_MIN_ZOOM = 0.1;
-/** React Flow zoom-in ceiling. */
-export const GRAPH_MAX_ZOOM = 1.5;
 
 function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
   return edges.map((edge) => ({
@@ -170,7 +175,12 @@ function GraphEditorCanvas({
   onNavigateRequest,
   paletteNodes,
   colorMode = "dark",
+  defaultZoom = GRAPH_DEFAULT_ZOOM,
 }: GraphEditorProps) {
+  const graphViewport = useMemo(
+    () => resolveGraphViewport(defaultZoom),
+    [defaultZoom],
+  );
   const [nodes, setNodes] = useState<CanvasNode[]>(() =>
     toCanvasNodes(initialGraph.nodes),
   );
@@ -717,8 +727,10 @@ function GraphEditorCanvas({
           connectionLineStyle={connectionLineStyle}
           defaultEdgeOptions={{ type: "default" }}
           fitView
-          minZoom={GRAPH_MIN_ZOOM}
-          maxZoom={GRAPH_MAX_ZOOM}
+          fitViewOptions={graphViewport.fitViewOptions}
+          defaultViewport={graphViewport.defaultViewport}
+          minZoom={graphViewport.minZoom}
+          maxZoom={graphViewport.maxZoom}
           proOptions={{ hideAttribution: true }}
         >
           <Background

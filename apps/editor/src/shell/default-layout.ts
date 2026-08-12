@@ -1,125 +1,55 @@
 import type { DockviewApi } from "dockview-react";
+import {
+  CLASS_PANEL_INITIAL_HEIGHT,
+  CLASS_PANEL_TITLE,
+  listDockWindows,
+  type DockviewDocumentKind,
+} from "./window-catalog";
 
-export type DockviewDocumentKind = "scene" | "graph";
+export type { DockviewDocumentKind };
+export { CLASS_PANEL_INITIAL_HEIGHT, CLASS_PANEL_TITLE };
 
-export function createSceneDefaultLayout(api: DockviewApi): void {
-  const viewport = api.addPanel({
-    id: "viewport",
-    component: "viewport",
-    title: "Viewport",
-  });
-
-  api.addPanel({
-    id: "scene-outliner",
-    component: "scene-outliner",
-    title: "Outliner",
-    position: {
-      referencePanel: viewport,
-      direction: "left",
-    },
-    initialWidth: 260,
-  });
-
-  api.addPanel({
-    id: "scene-details",
-    component: "scene-details",
-    title: "Details",
-    position: {
-      referencePanel: viewport,
-      direction: "right",
-    },
-    initialWidth: 300,
-  });
-
-  api.addPanel({
-    id: "output-log",
-    component: "output-log",
-    title: "Output Log",
-    position: {
-      referencePanel: viewport,
-      direction: "below",
-    },
-    initialHeight: 160,
-  });
-
-  viewport.api.setActive();
+function applyCatalogLayout(
+  api: DockviewApi,
+  kind: DockviewDocumentKind,
+): void {
+  const windows = listDockWindows(kind);
+  let primary: ReturnType<DockviewApi["addPanel"]> | undefined;
+  for (const def of windows) {
+    const reference = def.defaultPosition
+      ? api.getPanel(def.defaultPosition.referencePanelId)
+      : undefined;
+    const panel = api.addPanel({
+      id: def.id,
+      component: def.component,
+      title: def.title,
+      ...(reference && def.defaultPosition
+        ? {
+            position: {
+              referencePanel: reference,
+              direction: def.defaultPosition.direction,
+            },
+            initialWidth: def.defaultPosition.initialWidth,
+            initialHeight: def.defaultPosition.initialHeight,
+          }
+        : {}),
+    });
+    if (!primary) primary = panel;
+  }
+  primary?.api.setActive();
 }
 
-export const CLASS_PANEL_TITLE = "Class";
-/** About half the left stack so Class is not a 180px stub under Components. */
-export const CLASS_PANEL_INITIAL_HEIGHT = 400;
+export function createSceneDefaultLayout(api: DockviewApi): void {
+  applyCatalogLayout(api, "scene");
+}
 
 export function createGraphDefaultLayout(api: DockviewApi): void {
-  const graph = api.addPanel({
-    id: "graph",
-    component: "graph",
-    title: "Graph",
-  });
-
-  api.addPanel({
-    id: "prefab-viewport",
-    component: "prefab-viewport",
-    title: "Prefab",
-    position: {
-      referencePanel: graph,
-      direction: "within",
-    },
-  });
-
-  const components = api.addPanel({
-    id: "actor-prefab",
-    component: "actor-prefab",
-    title: "Components",
-    position: {
-      referencePanel: graph,
-      direction: "left",
-    },
-    initialWidth: 260,
-  });
-
-  api.addPanel({
-    id: "my-class",
-    component: "my-class",
-    title: CLASS_PANEL_TITLE,
-    position: {
-      referencePanel: components,
-      direction: "below",
-    },
-    initialHeight: CLASS_PANEL_INITIAL_HEIGHT,
-  });
-
-  api.addPanel({
-    id: "inspector",
-    component: "inspector",
-    title: "Inspector",
-    position: {
-      referencePanel: graph,
-      direction: "right",
-    },
-    initialWidth: 280,
-  });
-
-  api.addPanel({
-    id: "compiler-results",
-    component: "compiler-results",
-    title: "Compiler Results",
-    position: {
-      referencePanel: graph,
-      direction: "below",
-    },
-    initialHeight: 160,
-  });
-
-  graph.api.setActive();
+  applyCatalogLayout(api, "graph");
 }
 
 export function createDefaultLayoutForKind(
   api: DockviewApi,
   kind: DockviewDocumentKind,
 ): void {
-  if (kind === "scene") {
-    createSceneDefaultLayout(api);
-  } else {
-    createGraphDefaultLayout(api);
-  }
+  applyCatalogLayout(api, kind);
 }
