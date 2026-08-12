@@ -62,6 +62,10 @@ export interface ProjectSettings {
   touchMinTargetPx: number;
   /** Play/Preview render cap in fps. Editor viewports use Engine Settings. */
   playFrameCap: number;
+  /** Recompile open graphs whenever the project is saved. */
+  compileOnSave: boolean;
+  /** Idle interval before dirty documents are written. */
+  autoSaveIntervalMs: number;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
   input: ProjectInputSettings;
@@ -92,6 +96,7 @@ export interface SerializedGraph {
 
 
 export const DEFAULT_PLAY_FRAME_CAP = 60;
+export const DEFAULT_AUTO_SAVE_INTERVAL_MS = 120_000;
 
 export const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
   maxTextureDimension: 2048,
@@ -198,6 +203,12 @@ export function normalizeProjectSettings(
       typeof settings?.playFrameCap === "number" && settings.playFrameCap > 0
         ? settings.playFrameCap
         : DEFAULT_PLAY_FRAME_CAP,
+    compileOnSave: settings?.compileOnSave !== false,
+    autoSaveIntervalMs:
+      typeof settings?.autoSaveIntervalMs === "number" &&
+      settings.autoSaveIntervalMs > 0
+        ? settings.autoSaveIntervalMs
+        : DEFAULT_AUTO_SAVE_INTERVAL_MS,
     twoD: {
       pixelsPerUnit:
         typeof twoD?.pixelsPerUnit === "number" && twoD.pixelsPerUnit > 0

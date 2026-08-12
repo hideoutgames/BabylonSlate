@@ -63,4 +63,17 @@ describe("project schema", () => {
     expect(normalizeProjectSettings({ playFrameCap: 0 }).playFrameCap).toBe(60);
     expect(normalizeProjectSettings({ playFrameCap: 30 }).playFrameCap).toBe(30);
   });
+
+  it("defaults compile on save and a two-minute autosave interval", () => {
+    const defaults = normalizeProjectSettings(undefined);
+    expect(defaults.compileOnSave).toBe(true);
+    expect(defaults.autoSaveIntervalMs).toBe(120_000);
+    expect(
+      normalizeProjectSettings({ compileOnSave: false, autoSaveIntervalMs: 5000 })
+        .compileOnSave,
+    ).toBe(false);
+    expect(
+      normalizeProjectSettings({ autoSaveIntervalMs: 0 }).autoSaveIntervalMs,
+    ).toBe(120_000);
+  });
 });

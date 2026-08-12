@@ -17,6 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   ChevronDownIcon,
   FileJsonIcon,
+  HammerIcon,
   LayersIcon,
   LayoutGridIcon,
   PlayIcon,
@@ -34,6 +35,7 @@ import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   type DocumentKind,
+  type SerializedGraph,
 } from "@babylonslate/core";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
@@ -58,6 +60,7 @@ import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import { PlayBlockedDialog } from "./play-blocked-dialog";
 import type { OpenDocument } from "../services/document-service";
+import { validateSerializedGraph } from "../services/graph-validation";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
@@ -193,11 +196,14 @@ export function EditorChromeBar({
     canRedoActiveDocument,
     isLayoutFocused,
     toggleLayoutFocus,
+    collectScriptBundles,
+    activateDockPanel,
   } = useDocuments();
 
   const { startPlay, playing, alwaysRender, setAlwaysRender, renderStats } =
     usePlay();
-  const { diagnostics, errorCount, setFocusDiagnostic } = useValidation();
+  const { diagnostics, errorCount, setFocusDiagnostic, setDiagnostics } =
+    useValidation();
   const [settingsScope, setSettingsScope] = useState<"project" | "engine" | null>(
     null,
   );
@@ -340,6 +346,31 @@ export function EditorChromeBar({
           >
             <Redo2Icon />
           </IconActionButton>
+          {activeKind === "graph" ? (
+            <IconActionButton
+              label="Compile"
+              data-testid="compile-graph"
+              className="chrome-icon-button"
+              disabled={!projectName}
+              onClick={() => {
+                const graphs = openDocuments.filter(
+                  (doc) => doc.ref.kind === "graph" && doc.content,
+                );
+                setDiagnostics(
+                  graphs.flatMap((doc) =>
+                    validateSerializedGraph(doc.content as SerializedGraph, {
+                      assetGuid: doc.ref.path,
+                      graphId: doc.id,
+                    }),
+                  ),
+                );
+                void collectScriptBundles();
+                activateDockPanel("compiler-results");
+              }}
+            >
+              <HammerIcon />
+            </IconActionButton>
+          ) : null}
         </div>
 
         <div className="editor-global-toolbar-center">

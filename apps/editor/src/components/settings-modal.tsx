@@ -258,6 +258,41 @@ export function SettingsModal({
                 Matches shell <code>--touch-target</code> on this device.
               </FieldDescription>
             </Field>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="settings-compile-on-save">
+                Compile on save
+              </FieldLabel>
+              <Switch
+                id="settings-compile-on-save"
+                checked={projectDocument.settings.compileOnSave}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({ compileOnSave: checked === true })
+                }
+                data-testid="settings-compile-on-save"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-autosave-interval">
+                Auto-save interval (seconds)
+              </FieldLabel>
+              <Input
+                id="settings-autosave-interval"
+                type="number"
+                min={1}
+                className="min-h-[var(--chrome-row,28px)]"
+                value={Math.round(
+                  projectDocument.settings.autoSaveIntervalMs / 1000,
+                )}
+                onChange={(event) => {
+                  const seconds = Number(event.target.value);
+                  if (!Number.isFinite(seconds) || seconds <= 0) return;
+                  updateProjectSettings({
+                    autoSaveIntervalMs: Math.round(seconds * 1000),
+                  });
+                }}
+                data-testid="settings-autosave-interval"
+              />
+            </Field>
           </FieldSet>
         </FieldGroup>
       ) : null}
