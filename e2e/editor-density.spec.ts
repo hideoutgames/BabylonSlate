@@ -24,15 +24,6 @@ test.describe("Editor density and IA", () => {
     const undoBox = await undo.boundingBox();
     expect(undoBox).not.toBeNull();
     expect(undoBox!.height).toBeGreaterThanOrEqual(28);
-
-    const dockTab = page.locator(".dockview-theme-babylonslate .dv-tab").first();
-    await expect(dockTab).toBeVisible();
-    const dockBox = await dockTab.boundingBox();
-    expect(dockBox).not.toBeNull();
-    const coarse = await page.evaluate(() =>
-      window.matchMedia("(pointer: coarse)").matches,
-    );
-    expect(dockBox!.height).toBeGreaterThanOrEqual(coarse ? 26 : 18);
   });
 
   test("Content Browser click selects and double-click opens a scene", async ({
@@ -63,6 +54,15 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
       timeout: 15_000,
     });
+
+    const dockTab = page.locator(".dockview-theme-babylonslate .dv-tab").first();
+    await expect(dockTab).toBeVisible();
+    const dockBox = await dockTab.boundingBox();
+    expect(dockBox).not.toBeNull();
+    const coarse = await page.evaluate(() =>
+      window.matchMedia("(pointer: coarse)").matches,
+    );
+    expect(dockBox!.height).toBeGreaterThanOrEqual(coarse ? 26 : 18);
 
     const focus = page.getByTestId("focus-layout");
     await expect(focus).toBeEnabled();
