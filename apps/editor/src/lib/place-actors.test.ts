@@ -4,6 +4,7 @@ import {
   ENGINE_PLACE_ACTORS,
   nextActorId,
   spawnPlacedActor,
+  visualForPlaceActor,
   type PlaceActorItem,
 } from "./place-actors";
 
@@ -13,6 +14,23 @@ describe("ENGINE_PLACE_ACTORS", () => {
     expect(categories).toEqual(
       new Set(["Shapes", "Lights", "Camera", "Empty"]),
     );
+  });
+
+  it("uses Actor color with distinct component icons", () => {
+    const shape = visualForPlaceActor(
+      ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-box")!,
+    );
+    const light = visualForPlaceActor(
+      ENGINE_PLACE_ACTORS.find((entry) => entry.id === "light-point")!,
+    );
+    const empty = visualForPlaceActor(
+      ENGINE_PLACE_ACTORS.find((entry) => entry.id === "empty")!,
+    );
+    expect(shape.colorVar).toBe("var(--asset-class)");
+    expect(light.colorVar).toBe(shape.colorVar);
+    expect(empty.iconKey).toBe("Actor");
+    expect(shape.iconKey).toBe("MeshComponent");
+    expect(light.iconKey).toBe("LightComponent");
   });
 });
 

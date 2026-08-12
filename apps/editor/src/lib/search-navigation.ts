@@ -1,4 +1,11 @@
 import type { SearchEntry, SearchEntryKind, SearchOpenTarget } from "@babylonslate/assets";
+import {
+  engineParentOf,
+  resolveActorTypeVisual,
+  resolveTypeVisual,
+  walkAncestry,
+  type TypeVisual,
+} from "@babylonslate/editor-kit";
 
 export const SEARCH_RESULT_GROUPS: Array<{ kind: SearchEntryKind; label: string }> = [
   { kind: "asset", label: "Assets" },
@@ -68,4 +75,35 @@ export function sceneFocusActorId(target: SearchOpenTarget): string | null {
     return target.actorId;
   }
   return null;
+}
+
+export function visualForSearchEntry(entry: SearchEntry): TypeVisual {
+  const { target } = entry;
+  if (target.kind === "asset") {
+    return resolveTypeVisual({ assetType: target.assetType });
+  }
+  if (target.kind === "class") {
+    const parent = entry.description?.startsWith("extends ")
+      ? entry.description.slice("extends ".length)
+      : null;
+    return resolveTypeVisual({
+      assetType: "Class",
+      classId: target.classId,
+      parentClass: parent,
+      ancestry: parent
+        ? walkAncestry(parent, (id) => engineParentOf(id) ?? null)
+        : undefined,
+    });
+  }
+  if (entry.kind === "actor") {
+    const classId = entry.description?.split(" · ")[0];
+    return resolveActorTypeVisual({ classId });
+  }
+  if (entry.kind === "component") {
+    return resolveTypeVisual({ classId: entry.label });
+  }
+  if (entry.kind === "graph-node" || entry.kind === "variable") {
+    return resolveTypeVisual({ assetType: "Graph" });
+  }
+  return resolveTypeVisual({});
 }

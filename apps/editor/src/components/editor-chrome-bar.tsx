@@ -16,9 +16,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   ChevronDownIcon,
-  FileJsonIcon,
   HammerIcon,
-  LayersIcon,
   LayoutGridIcon,
   PlayIcon,
   Redo2Icon,
@@ -37,6 +35,7 @@ import {
   type DocumentKind,
   type SerializedGraph,
 } from "@babylonslate/core";
+import { TypeVisualIcon, resolveTypeVisual } from "@babylonslate/editor-kit";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -72,11 +71,10 @@ function kindIcon(kind: DocumentKind) {
   if (kind === "content-browser") {
     return <LayoutGridIcon className="size-4 shrink-0" />;
   }
-  return kind === "scene" ? (
-    <LayersIcon className="size-4 shrink-0" />
-  ) : (
-    <FileJsonIcon className="size-4 shrink-0" />
-  );
+  const visual = resolveTypeVisual({
+    assetType: kind === "scene" ? "Scene" : "Graph",
+  });
+  return <TypeVisualIcon visual={visual} className="size-4 shrink-0" />;
 }
 
 interface SortableTabProps {

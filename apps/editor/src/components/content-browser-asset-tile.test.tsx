@@ -4,6 +4,7 @@ import type { IndexedAsset } from "@babylonslate/assets";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
   DRAG_ARM_MS,
+  resolveTypeVisual,
 } from "@babylonslate/editor-kit";
 import { ASSET_DRAG_MIME } from "../lib/content-browser-helpers";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
@@ -73,6 +74,7 @@ function renderTile(
         asset={item}
         selected={false}
         thumbnailUrl={null}
+        typeVisual={resolveTypeVisual({ assetType: item.header.type })}
         onOpen={onOpen}
         onSelect={onSelect}
         onLongPressMenu={onLongPressMenu}
@@ -178,5 +180,12 @@ describe("ContentBrowserAssetTile", () => {
       ASSET_DRAG_MIME,
       expect.stringContaining("hero-1"),
     );
+  });
+
+  it("renders a type-colored glyph when there is no thumbnail", () => {
+    renderTile();
+    const glyph = screen.getByTestId("content-item-type-icon-hero-1");
+    expect(glyph.getAttribute("data-type-icon")).toBe("Texture");
+    expect(glyph.style.color).toBe("var(--asset-texture)");
   });
 });

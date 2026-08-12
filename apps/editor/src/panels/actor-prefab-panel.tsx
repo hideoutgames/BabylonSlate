@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import {
   PanelFrame,
   TreeView,
+  TypeVisualIcon,
+  resolveTypeVisual,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import { PlusIcon, Trash2Icon } from "lucide-react";
@@ -43,6 +45,11 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         depth: 1,
         hasChildren: false,
         expanded: false,
+        icon: (
+          <TypeVisualIcon
+            visual={resolveTypeVisual({ classId: component.classId })}
+          />
+        ),
       })),
     ],
     [components],

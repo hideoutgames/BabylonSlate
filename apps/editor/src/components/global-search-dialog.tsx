@@ -16,10 +16,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { SearchInput } from "@babylonslate/editor-kit";
+import { SearchInput, TypeVisualIcon } from "@babylonslate/editor-kit";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { useProjectSearch } from "../context/project-search-context";
-import { groupSearchEntries } from "../lib/search-navigation";
+import { groupSearchEntries, visualForSearchEntry } from "../lib/search-navigation";
 
 export function GlobalSearchDialog({
   open,
@@ -113,13 +113,16 @@ export function GlobalSearchDialog({
                       }}
                       data-testid={`global-search-item-${entry.id}`}
                     >
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate">{entry.label}</span>
-                        {entry.description ? (
-                          <span className="truncate text-xs text-muted-foreground">
-                            {entry.description}
-                          </span>
-                        ) : null}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <TypeVisualIcon visual={visualForSearchEntry(entry)} />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{entry.label}</span>
+                          {entry.description ? (
+                            <span className="truncate text-xs text-muted-foreground">
+                              {entry.description}
+                            </span>
+                          ) : null}
+                        </span>
                       </span>
                       <Badge variant="outline">{group.label}</Badge>
                     </Button>

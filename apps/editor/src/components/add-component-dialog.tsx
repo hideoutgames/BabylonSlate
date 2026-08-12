@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import {
   CatalogDialog,
   CatalogItemButton,
+  TypeVisualIcon,
+  resolveTypeVisual,
   useCatalogFilter,
 } from "@babylonslate/editor-kit";
 import { ADDABLE_COMPONENT_CLASSES } from "../panels/add-component-catalog";
@@ -78,6 +80,9 @@ export function AddComponentDialog({
                 onOpenChange(false);
               }}
             >
+              <TypeVisualIcon
+                visual={resolveTypeVisual({ classId: item.id })}
+              />
               <span className="flex min-w-0 flex-col items-start gap-0.5">
                 <span className="truncate">{item.label}</span>
                 <span className="text-xs text-muted-foreground">

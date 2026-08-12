@@ -1,7 +1,11 @@
 import type { DragEvent } from "react";
-import { FileIcon } from "lucide-react";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { SelectableText, useHoldDragMenu } from "@babylonslate/editor-kit";
+import {
+  SelectableText,
+  TypeVisualIcon,
+  useHoldDragMenu,
+  type TypeVisual,
+} from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
 import {
   Card,
@@ -33,6 +37,7 @@ export interface ContentBrowserAssetTileProps {
   onDropPathChange?: (path: string | null) => void;
   thumbnailUrl: string | null;
   hasCompileError?: boolean;
+  typeVisual: TypeVisual;
 }
 
 export function ContentBrowserAssetTile({
@@ -46,6 +51,7 @@ export function ContentBrowserAssetTile({
   onDropPathChange,
   thumbnailUrl,
   hasCompileError = false,
+  typeVisual,
 }: ContentBrowserAssetTileProps) {
   const compression = textureCompressionState(asset);
   const folderPath = asset.path.includes("/")
@@ -125,7 +131,11 @@ export function ContentBrowserAssetTile({
               className="size-full object-cover"
             />
           ) : (
-            <FileIcon className="size-full p-4 text-muted-foreground" />
+            <TypeVisualIcon
+              visual={typeVisual}
+              className="size-full p-4"
+              data-testid={`content-item-type-icon-${asset.header.guid}`}
+            />
           )}
         </div>
         <CardHeader className="gap-0.5 p-1.5">

@@ -38,7 +38,7 @@ In-memory only, keyed by the open project. Query is case-insensitive substring; 
 - Toolbar icon left of Settings (`data-testid="global-search"`), disabled with no project.
 - Centered `Dialog` (`data-testid="global-search-dialog"`), larger than default (`sm:max-w-2xl`), fixed height `h-[min(90svh,52rem)]` with `overflow-hidden` (same cap as catalog dialogs).
 - Results live in a native scroller (`data-testid="global-search-results"`, `min-h-0 flex-1 overflow-y-auto`) so long hit lists scroll instead of growing the popup.
-- Results grouped by kind. `Ctrl/Cmd+K` toggles on desktop.
+- Results grouped by kind, each hit showing the same type icon/color as the Content Browser. `Ctrl/Cmd+K` toggles on desktop.
 
 ## Navigation
 

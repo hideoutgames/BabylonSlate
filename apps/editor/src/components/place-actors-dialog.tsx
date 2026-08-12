@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import {
   CatalogDialog,
   CatalogItemButton,
+  TypeVisualIcon,
   useCatalogFilter,
 } from "@babylonslate/editor-kit";
 import {
   ENGINE_PLACE_ACTORS,
+  visualForPlaceActor,
   type PlaceActorItem,
 } from "../lib/place-actors";
 
@@ -81,6 +83,7 @@ export function PlaceActorsDialog({
               data-testid={`place-actors-item-${item.id}`}
               onClick={() => onSelect(item)}
             >
+              <TypeVisualIcon visual={visualForPlaceActor(item)} />
               <span className="truncate">{item.title}</span>
             </CatalogItemButton>
           ))}

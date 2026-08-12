@@ -20,7 +20,7 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 - **Primary is ink** (achromatic). Buttons, focus rings, and selection bars follow Neutral. Active tabs use `--chrome-tab-accent` → `var(--foreground)`.
 - **Layered surfaces** differentiate chrome, side panels, and canvases.
-- **Saturated pin/node colors are type cues** for visual scripting — not whole toolbars.
+- **Saturated pin/node and `--asset-*` colors are type cues** — not whole toolbars.
 - **Axis and status accents** stay chromatic: X/Y/Z, Play (`--success`), destructive actions.
 
 ## Surface ladder
@@ -84,6 +84,26 @@ Title-bar fills for Blueprint-like nodes:
 | `--node-latent` | timers / `latent` |
 | `--node-debug` | debug category |
 | `--node-title-foreground` | title text on those bars |
+
+## Asset type colors
+
+Content Browser, Outliner, catalogs, search, and document tabs resolve type chrome through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent). Graph pin/node tokens are unchanged.
+
+| Token | Kind | Distinct icons |
+| --- | --- | --- |
+| `--asset-scene` | Scene | Scene |
+| `--asset-graph` | Graph | Graph |
+| `--asset-texture` | Texture | Texture |
+| `--asset-material` | Material | Material |
+| `--asset-model` | Model | Model |
+| `--asset-audio` | Audio | Audio |
+| `--asset-font` | Font | Font |
+| `--asset-animation` | Animation | Animation |
+| `--asset-class` | Class assets; Object / Actor / Widget identities | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
+| `--asset-script-type` | Enum, Structure, ScriptInterface | one icon each |
+| `--asset-component` | Engine components in Details / Add Component | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
+
+Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-class` (they spawn as Actors). Unknown types fall back to a file glyph and `--muted-foreground`.
 
 ## Graph sizing tokens
 

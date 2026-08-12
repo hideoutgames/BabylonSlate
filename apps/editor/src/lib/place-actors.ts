@@ -4,6 +4,11 @@ import {
   type SerializedActor,
   type SerializedScene,
 } from "@babylonslate/core";
+import {
+  resolveActorTypeVisual,
+  resolveTypeVisual,
+  type TypeVisual,
+} from "@babylonslate/editor-kit";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 
 export type PlaceActorKind =
@@ -11,7 +16,7 @@ export type PlaceActorKind =
   | { type: "light"; lightKind: string }
   | { type: "camera" }
   | { type: "empty" }
-  | { type: "asset"; name: string; guid: string };
+  | { type: "asset"; name: string; guid: string; assetType?: string };
 
 export type PlaceActorItem = {
   id: string;
@@ -51,7 +56,7 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
 ];
 
 export function projectPlaceActors(
-  assets: Array<{ header: { guid: string; name: string } }>,
+  assets: Array<{ header: { guid: string; name: string; type?: string } }>,
 ): PlaceActorItem[] {
   return assets.map((asset) => ({
     id: `asset-${asset.header.guid}`,
@@ -61,8 +66,26 @@ export function projectPlaceActors(
       type: "asset",
       name: asset.header.name,
       guid: asset.header.guid,
+      assetType: asset.header.type,
     },
   }));
+}
+
+export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
+  const kind = item.kind;
+  if (kind.type === "shape") {
+    return resolveTypeVisual({ classId: "MeshComponent", family: "class" });
+  }
+  if (kind.type === "light") {
+    return resolveTypeVisual({ classId: "LightComponent", family: "class" });
+  }
+  if (kind.type === "camera") {
+    return resolveTypeVisual({ classId: "CameraComponent", family: "class" });
+  }
+  if (kind.type === "asset") {
+    return resolveTypeVisual({ assetType: kind.assetType });
+  }
+  return resolveActorTypeVisual({ classId: "Actor" });
 }
 
 export function nextActorId(scene: SerializedScene): string {
