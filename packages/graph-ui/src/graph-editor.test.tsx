@@ -268,6 +268,51 @@ describe("GraphEditor", () => {
     expect(messageHandle).not.toBeNull();
   });
 
+  it("renders array pins with a list icon and scalar pins as circles", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "length",
+          type: "array.length",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Array Length",
+            __nodeType: "array.length",
+            __category: "array",
+            __pure: true,
+            __pins: [
+              {
+                id: "array",
+                name: "array",
+                kind: "data",
+                direction: "in",
+                type: { kind: "array", element: { kind: "float" } },
+              },
+              {
+                id: "out",
+                name: "out",
+                kind: "data",
+                direction: "out",
+                type: { kind: "int" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+
+    const arrayHandle = container.querySelector('[data-pin-type="array"]');
+    expect(arrayHandle).not.toBeNull();
+    expect(arrayHandle?.querySelector('[data-pin-shape="list"]')).not.toBeNull();
+
+    const intHandle = container.querySelector('[data-pin-type="int"]');
+    expect(intHandle).not.toBeNull();
+    expect(intHandle?.querySelector('[data-pin-shape="circle"]')).not.toBeNull();
+  });
+
   it("uses the host colorMode on the canvas", () => {
     const { container } = render(
       <GraphEditor

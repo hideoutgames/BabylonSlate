@@ -13,7 +13,9 @@ import {
   nodeRoleClass,
   nodeVisualRole,
   pinCssVar,
+  pinVisualShape,
   type NodeVisualRole,
+  type PinTypeRef,
 } from "./node-theme";
 
 type LogNodeData = {
@@ -75,6 +77,54 @@ function zipPinRows(
   return rows;
 }
 
+function PinVisual({ type }: { type: PinTypeRef }) {
+  const shape = pinVisualShape(type);
+  const color = pinCssVar(type);
+  const size = "var(--graph-pin-size, 22px)";
+
+  if (shape === "list") {
+    return (
+      <svg
+        className="graph-pin-visual block"
+        data-pin-shape="list"
+        viewBox="0 0 22 22"
+        aria-hidden="true"
+        style={{ width: size, height: size, color }}
+      >
+        {[3, 9, 15].map((y) => (
+          <rect
+            key={y}
+            x="2"
+            y={y}
+            width="18"
+            height="4"
+            rx="1"
+            fill="currentColor"
+            stroke="var(--card)"
+            strokeWidth="2"
+          />
+        ))}
+      </svg>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        "graph-pin-visual block border-2 border-card",
+        shape === "diamond" ? "rotate-45 rounded-sm" : "rounded-full",
+      )}
+      data-pin-shape={shape}
+      style={{
+        width: size,
+        height: size,
+        background: color,
+      }}
+      aria-hidden="true"
+    />
+  );
+}
+
 function PinHandle({
   nodeId,
   pin,
@@ -119,18 +169,7 @@ function PinHandle({
         onPinTap(nodeId, pin.id, pin.direction);
       }}
     >
-      <span
-        className={cn(
-          "graph-pin-visual block border-2 border-card",
-          pin.kind === "exec" ? "rotate-45 rounded-sm" : "rounded-full",
-        )}
-        style={{
-          width: "var(--graph-pin-size, 22px)",
-          height: "var(--graph-pin-size, 22px)",
-          background: pinCssVar(pin.type),
-        }}
-        aria-hidden="true"
-      />
+      <PinVisual type={pin.type} />
     </Handle>
   );
 }
