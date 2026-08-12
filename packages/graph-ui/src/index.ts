@@ -5,4 +5,6 @@ export * from "./graph-model";
 export * from "./graph-types";
 export * from "./graph-serialization";
 export * from "./graph-execution";
+export * from "./graph-format";
+export * from "./graph-marquee";
 export * from "./node-theme";
