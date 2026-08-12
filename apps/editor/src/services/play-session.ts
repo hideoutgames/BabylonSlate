@@ -1,5 +1,7 @@
 import {
   createInProcessRuntime,
+  SessionDiagnosticAggregator,
+  type RuntimeDiagnostic,
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@babylonslate/runtime";
@@ -8,9 +10,37 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
-import { snapshotFloatCount } from "@babylonslate/bridge";
+import {
+  snapshotFloatCount,
+  type CommandMessage,
+  type ScriptBundleEntry,
+} from "@babylonslate/bridge";
+import { spawnListForScripts } from "./script-compiler";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
+
+/**
+ * Extract a `RuntimeDiagnostic` from a worker `diagnostic` command so it can
+ * feed the same `SessionDiagnosticAggregator` the in-process driver uses.
+ * The dedicated Worker path never runs `RuntimeDriver.reportError` on the
+ * main thread, so without this the Preview session report would stay empty
+ * for real script errors that occur while Play uses the Worker transport.
+ */
+export function diagnosticFromCommand(
+  command: CommandMessage,
+): RuntimeDiagnostic | null {
+  if (command.type !== "diagnostic") return null;
+  return {
+    code: command.code,
+    message: command.message,
+    severity: command.severity,
+    assetGuid: command.assetGuid,
+    graphId: command.graphId,
+    nodeId: command.nodeId,
+    stack: command.stack,
+    frameId: command.frameId,
+  };
+}
 
 export interface PlaySessionResult {
   diagnostics: SessionReportEntry[];
@@ -47,6 +77,8 @@ export function startPlaySession(options: {
   canvas: HTMLCanvasElement;
   sharedEngine: EngineHandle["engine"];
   injectFixtureThrow?: boolean;
+  /** Compiled project graphs to run for this session. */
+  scripts?: readonly ScriptBundleEntry[];
   onStats?: (stats: {
     fps: number;
     scriptMs: number;
@@ -54,6 +86,12 @@ export function startPlaySession(options: {
     frameId: number;
   }) => void;
   onLog?: (message: string, severity: string) => void;
+  onPrint?: (entry: {
+    message: string;
+    key: string;
+    duration: number;
+    color: string;
+  }) => void;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
@@ -73,20 +111,21 @@ export function startPlaySession(options: {
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   let runtimeMode: "worker" | "in-process" = "in-process";
+  // Aggregates diagnostics received over the command channel (Worker mode).
+  // The in-process path already aggregates via `runtime.getDiagnostics()`.
+  const workerDiagnostics = new SessionDiagnosticAggregator();
 
-  const onCommand = (
-    command: {
-      type: string;
-      message?: string;
-      severity?: string;
-      fps?: number;
-      scriptMs?: number;
-      physicsMs?: number;
-      frameId?: number;
-    },
-  ) => {
-    if (command.type === "log" && command.message) {
+  const onCommand = (command: CommandMessage) => {
+    if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");
+    }
+    if (command.type === "print" && command.message) {
+      options.onPrint?.({
+        message: command.message,
+        key: command.key ?? "",
+        duration: command.duration ?? 2,
+        color: cssColor(command.color),
+      });
     }
     if (command.type === "stats") {
       options.onStats?.({
@@ -96,10 +135,15 @@ export function startPlaySession(options: {
         frameId: command.frameId ?? 0,
       });
     }
-    if (command.type === "diagnostic" && command.message) {
+    if (command.type === "diagnostic") {
       options.onLog?.(command.message, command.severity ?? "error");
+      const diagnostic = diagnosticFromCommand(command);
+      if (diagnostic) workerDiagnostics.push(diagnostic);
     }
   };
+
+  const scripts = options.scripts ?? [];
+  const spawn = spawnListForScripts(scripts);
 
   try {
     worker = createGameWorkerHost();
@@ -107,6 +151,13 @@ export function startPlaySession(options: {
     worker.onCommand((cmd) => onCommand(cmd));
     worker.onSnapshot((buffer) => handle.pushSnapshot(buffer));
     worker.postControl({ type: "load", sceneAssetGuid: "play-scene" });
+    if (scripts.length > 0) {
+      worker.postControl({
+        type: "loadScripts",
+        scripts: [...scripts],
+        spawn,
+      });
+    }
     worker.postControl({ type: "play" });
   } catch (err) {
     worker = null;
@@ -126,6 +177,15 @@ export function startPlaySession(options: {
       },
     ]);
     runtime.start();
+    if (scripts.length > 0) {
+      const inProcess = runtime;
+      void inProcess
+        .loadScripts(scripts)
+        .then(() => {
+          for (const entry of spawn) inProcess.spawnScriptedActor(entry);
+        })
+        .catch((error) => inProcess.reportError(error));
+    }
     options.onLog?.(
       `Play worker unavailable (${err instanceof Error ? err.message : String(err)}); using in-process.`,
       "warning",
@@ -208,21 +268,17 @@ export function startPlaySession(options: {
         err.stack = `Error: Preview fixture throw\n    at run (babylonslate:///${FIXTURE_ASSET}.js:1:1)`;
         runtime.reportError(err);
       } else if (worker) {
-        // Worker path: synthesize a diagnostic command locally for the report.
-        sessionDiagnostics = [
-          {
-            code: "runtime.uncaught",
-            message: "Preview fixture throw",
-            severity: "error",
-            assetGuid: FIXTURE_ASSET,
-            graphId: "event-graph",
-            nodeId: FIXTURE_NODE,
-            frameId: 1,
-            count: 1,
-            firstFrameId: 1,
-            lastFrameId: 1,
-          },
-        ];
+        // Worker path: route through the same aggregator a real worker
+        // `diagnostic` command would use, rather than a report shortcut.
+        workerDiagnostics.push({
+          code: "runtime.uncaught",
+          message: "Preview fixture throw",
+          severity: "error",
+          assetGuid: FIXTURE_ASSET,
+          graphId: "event-graph",
+          nodeId: FIXTURE_NODE,
+          frameId: 1,
+        });
         options.onLog?.("Preview fixture throw", "error");
       }
     });
@@ -256,6 +312,9 @@ export function startPlaySession(options: {
         runtime.stop();
         sessionDiagnostics = runtime.getDiagnostics().entries();
         droppedDiagnostics = runtime.getDiagnostics().droppedCount();
+      } else {
+        sessionDiagnostics = workerDiagnostics.entries();
+        droppedDiagnostics = workerDiagnostics.droppedCount();
       }
       worker?.postControl({ type: "stop" });
       worker?.terminate();
@@ -279,6 +338,21 @@ export function startPlaySession(options: {
       };
     },
   };
+}
+
+/** Print colors arrive as linear 0..1 RGBA vectors from the graph. */
+function cssColor(color?: {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}): string {
+  if (!color) return "#ffffff";
+  const channel = (v: number) =>
+    Math.max(0, Math.min(255, Math.round((Number(v) || 0) * 255)));
+  return `rgba(${channel(color.x)}, ${channel(color.y)}, ${channel(color.z)}, ${
+    color.w ?? 1
+  })`;
 }
 
 export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;

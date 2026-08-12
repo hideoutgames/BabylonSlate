@@ -29,14 +29,17 @@ export function PlayBlockedDialog({
   const errors = diagnostics.filter((d) => d.severity === "error");
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent data-testid="play-blocked-dialog">
+      <AlertDialogContent
+        className="max-h-[85svh] overflow-hidden"
+        data-testid="play-blocked-dialog"
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>Compile errors</AlertDialogTitle>
           <AlertDialogDescription>
             Fix errors before Preview, or play anyway. Tap a row to navigate.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="flex max-h-60 flex-col gap-1 overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           {errors.map((d, i) => (
             <button
               key={`${d.code}-${i}`}

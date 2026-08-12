@@ -27,6 +27,8 @@ export {
   type BridgeWorkerMessage,
   type CommandMessage,
   type ControlMessage,
+  type ScriptAnchorPayload,
+  type ScriptBundleEntry,
 } from "./channels";
 export {
   createRpcHost,

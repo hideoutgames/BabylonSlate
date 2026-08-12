@@ -155,15 +155,16 @@ export const debugNodes: NodeDefinition[] = [
         `${asyncKw}function ${fnName}(${params}) {\n${outDecls}\n  // --- user body ---\n${body}\n  // --- end user body ---\n  return ${outReturn};\n}`,
       );
       const args = inputs.map((i) => ctx.input(i.name)).join(", ");
+      if (isAsync) ctx.requestAsync();
       const call = isAsync ? `await ${fnName}(${args})` : `${fnName}(${args})`;
       if (outputs.length === 0) {
         ctx.emit(`${call};`);
         return;
       }
-      const assigns = outputs
-        .map((o) => `${ctx.output(o.name)} = __r.${o.name};`)
-        .join(" ");
-      ctx.emit(`const __r = ${call}; ${assigns}`);
+      const bindings = outputs
+        .map((o) => `${o.name}: ${ctx.output(o.name)}`)
+        .join(", ");
+      ctx.emit(`({ ${bindings} } = ${call});`);
     },
   },
   {

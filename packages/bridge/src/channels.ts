@@ -1,7 +1,36 @@
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
+/** Source anchor mapping a generated line back to a graph node. */
+export type ScriptAnchorPayload = {
+  line: number;
+  column: number;
+  assetGuid: string;
+  graphId: string;
+  nodeId: string;
+  bodyLine?: number;
+};
+
+/** One compiled graph asset shipped to the runtime for a class. */
+export type ScriptBundleEntry = {
+  assetGuid: string;
+  classId: string;
+  source: string;
+  anchors: ScriptAnchorPayload[];
+  entryPoints: Array<{
+    name: string;
+    event?: "onBeginPlay" | "onTick";
+    isAsync: boolean;
+  }>;
+};
+
 export type ControlMessage =
   | { type: "load"; sceneAssetGuid: string; seed?: number }
+  | {
+      type: "loadScripts";
+      scripts: ScriptBundleEntry[];
+      /** Actors to spawn once the scripts are loaded. */
+      spawn?: Array<{ classId: string; variables?: Record<string, unknown> }>;
+    }
   | { type: "play" }
   | { type: "pause" }
   | { type: "step" }
@@ -64,7 +93,9 @@ export type CommandMessage =
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }
   | { channel: "input"; payload: ArrayBuffer | SharedArrayBuffer }
-  | { channel: "rpc"; payload: unknown };
+  | { channel: "rpc"; payload: unknown }
+  /** Hands a consumed transferable snapshot buffer back for reuse (no per-frame alloc). */
+  | { channel: "recycleSnapshot"; payload: ArrayBuffer };
 
 export type BridgeWorkerMessage =
   | { channel: "command"; payload: CommandMessage }

@@ -1,0 +1,70 @@
+import { describe, expect, it } from "vitest";
+import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
+import { diagnosticFromCommand } from "./play-session";
+
+describe("diagnosticFromCommand", () => {
+  it("maps a worker diagnostic command into a RuntimeDiagnostic", () => {
+    const diagnostic = diagnosticFromCommand({
+      type: "diagnostic",
+      code: "runtime.uncaught",
+      message: "boom",
+      assetGuid: "asset-1",
+      graphId: "graph-1",
+      nodeId: "node-1",
+      stack: "Error: boom",
+      frameId: 7,
+      severity: "error",
+    });
+    expect(diagnostic).toEqual({
+      code: "runtime.uncaught",
+      message: "boom",
+      severity: "error",
+      assetGuid: "asset-1",
+      graphId: "graph-1",
+      nodeId: "node-1",
+      stack: "Error: boom",
+      frameId: 7,
+    });
+  });
+
+  it("returns null for non-diagnostic commands", () => {
+    expect(
+      diagnosticFromCommand({
+        type: "stats",
+        frameId: 1,
+        tickIndex: 1,
+        scriptMs: 0,
+        physicsMs: 0,
+      }),
+    ).toBeNull();
+    expect(
+      diagnosticFromCommand({
+        type: "log",
+        severity: "error",
+        category: "Script",
+        message: "not a diagnostic",
+        frameId: 1,
+      }),
+    ).toBeNull();
+  });
+
+  it("feeds a SessionDiagnosticAggregator the way the Worker Play path does", () => {
+    const aggregator = new SessionDiagnosticAggregator();
+    for (let i = 0; i < 3; i++) {
+      const diagnostic = diagnosticFromCommand({
+        type: "diagnostic",
+        code: "runtime.uncaught",
+        message: `boom ${i}`,
+        assetGuid: "asset-1",
+        nodeId: "node-1",
+        frameId: i,
+        severity: "error",
+      });
+      if (diagnostic) aggregator.push(diagnostic);
+    }
+    const entries = aggregator.entries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.count).toBe(3);
+    expect(entries[0]!.nodeId).toBe("node-1");
+  });
+});

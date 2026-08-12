@@ -216,7 +216,29 @@ Compiled class graphs bind to object-model lifecycle without changing dispatch s
 - ScriptInterface method graphs → `interfaceHandlers` map already supported by `dispatchInterface`
 - FunctionLibrary → imported static module
 
-Play path: compile dirty graphs into derived data → worker `loadCompiledModule` → `registerAnchors` → tick.
+Play path: compile project graphs → worker `loadScripts` control message → `loadCompiledModule` → `registerAnchors` → spawn scripted actors → tick.
+
+### Entry points
+
+`Event Begin Play` (`flow.event.beginPlay`) and `Event Tick` (`flow.event.tick`) are entry nodes. The compiler emits one exported function per entry node, named after its event, so a single graph module can export both `onBeginPlay` and `onTick`. A graph whose only entry is `flow.entry` exports `run` and binds to nothing.
+
+`CompileResult.entryPoints` reports `{ name, event, nodeId, isAsync }` per export. An entry point is async when it contains a latent node (`Delay`, async `ExecuteJavaScript`); `ScriptHost` skips a latent entry point that is still pending so a per-tick event cannot stack one run per frame.
+
+### `ScriptHost` (`@babylonslate/runtime`)
+
+`ScriptHost.load(script)` loads a compiled module and `hooksFor(classId)` returns `LifecycleHooks` that run its entry points. `RuntimeDriver.loadScripts()` registers modules plus their anchors, and `spawnScriptedActor({ classId })` creates an actor driven by them. Throws inside a script become runtime diagnostics mapped back to the graph node through the anchor table.
+
+The `ctx` handed to compiled code carries `self`, `deltaSeconds`, `formatValue`, `log`, `print`, variable access, transform writes, `delay`, and interface dispatch. Node families owned by later phases (physics traces, input axes, audio, UI, components) resolve to inert stubs so a graph that references them still runs instead of throwing.
+
+### Codegen invariants
+
+- Impure node output slots are declared once at the top of each entry point, never inside a branch body — a node reachable from two `Sequence` outputs or both `Branch` arms must not redeclare them, and downstream reads must stay in scope.
+- A node that emits `await` must call `ctx.requestAsync()` (or declare `latent: true`) so the entry point is emitted `async`.
+- Statements must not introduce fixed-name temporaries; assign into `ctx.output(pin)` slots instead, since a node can be emitted more than once per function.
+
+### Editor Play wiring
+
+`collectScriptBundles()` (document context) compiles every graph in `ProjectDocument.graphs`, preferring in-memory documents so unsaved edits run. `startPlaySession({ scripts })` ships them to the worker, or loads them into the in-process runtime when no worker is available. Class ownership of graphs is not modelled yet, so a graph's class id is derived from its file name.
 
 ## Acceptance (phase)
 
@@ -249,7 +271,9 @@ See [issue-tracker P5 slice ownership](../agents/issue-tracker.md#p5-slice-owner
 
 Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tree. Editor wires validation (Compiler Results, Play badge + Play Anyway `AlertDialog`), graph-ui tap-to-connect + Sheet palette, My Class panel, CodeMirror ExecuteJavaScript body editor, Enum/Structure/ScriptInterface creatable assets, `FunctionLibrary` engine base, `formatValue`, and validator fixtures.
 
-**Follow-ups (non-blocking polish):** full row editors for Enum/Structure/Interface documents; project-wide pre-Preview sweep beyond the active graph; export-time Print strip preset; debounce timer (currently validates on graph change).
+Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers both acceptance claims (a scripted actor running in Preview; a type mismatch blocking Preview with tap-to-navigate).
+
+**Follow-ups (non-blocking polish):** full row editors for Enum/Structure/Interface documents; project-wide pre-Preview sweep beyond the active graph; export-time Print strip preset; graph ownership by a class asset (class ids currently derive from the graph file name); latent nodes resolve as host promises rather than async generator state machines; tap-to-navigate selects and fits the node but does not yet flash the offending pin (pins do carry `data-error`).
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design My Class UX against `ClassRegistry.reparent` from the start.

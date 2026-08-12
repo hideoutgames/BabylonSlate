@@ -3,6 +3,16 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
+/*
+ * Automatic source detection starts at this file's directory, which misses the
+ * workspace packages that render UI. Utilities used only by them (dialog
+ * centering, for example) are not generated without these.
+ */
+@source "../../../ui/src";
+@source "../../../editor-kit/src";
+@source "../../../graph-ui/src";
+@source "../../../../apps/editor/src";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

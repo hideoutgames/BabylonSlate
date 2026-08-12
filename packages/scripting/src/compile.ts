@@ -12,10 +12,33 @@ export type CompileAnchor = {
   bodyLine?: number;
 };
 
+/** Lifecycle events an entry node can bind to at runtime. */
+export type ScriptEventName = "onBeginPlay" | "onTick";
+
+export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
+  "flow.event.beginPlay": "onBeginPlay",
+  "flow.event.tick": "onTick",
+};
+
+export type CompiledEntryPoint = {
+  /** Exported function name. */
+  name: string;
+  /** Lifecycle event when the entry node is an event node. */
+  event?: ScriptEventName;
+  /** Entry node id, for diagnostics. */
+  nodeId?: string;
+  /** True when the entry point awaits a latent node and must be awaited. */
+  isAsync: boolean;
+};
+
 export type CompileResult = {
   source: string;
   anchors: CompileAnchor[];
+  /** Name of the first exported entry point. */
   exportName: string;
+  /** True when any entry point is async. */
+  isAsync: boolean;
+  entryPoints: CompiledEntryPoint[];
 };
 
 export type CompileOptions = {
@@ -103,6 +126,13 @@ export function compileGraph(
   type BodyLine = { text: string; anchor?: Omit<CompileAnchor, "line"> };
   const body: BodyLine[] = [];
   const exprCache = new Map<string, string>();
+  /**
+   * Impure output slots are declared once at the top of the entry point so a
+   * node emitted under several exec branches neither redeclares them nor
+   * traps its results inside a block scope.
+   */
+  const outputDecls = new Map<string, string>();
+  let isAsync = false;
 
   const emitBody = (text: string, anchor?: Omit<CompileAnchor, "line">) => {
     body.push({ text, anchor });
@@ -163,7 +193,10 @@ export function compileGraph(
         });
       },
       hoist(source) {
-        hoisted.push(source);
+        if (!hoisted.includes(source)) hoisted.push(source);
+      },
+      requestAsync() {
+        isAsync = true;
       },
     };
   }
@@ -292,15 +325,14 @@ export function compileGraph(
         ensurePure(node);
       } else {
         const ctx = makeCtx(node);
+        if (def.latent) isAsync = true;
         for (const p of node.pins) {
           if (p.kind === "data" && p.direction === "out") {
             const name = ctx.output(p.name);
-            emitBody(`  let ${name} = ${defaultValueLiteral(p.type)};`, {
-              column: 1,
-              assetGuid: options.assetGuid,
-              graphId: graph.id,
-              nodeId: node.id,
-            });
+            outputDecls.set(
+              name,
+              `  let ${name} = ${defaultValueLiteral(p.type)};`,
+            );
           }
         }
         def.codegen(ctx);
@@ -319,31 +351,78 @@ export function compileGraph(
     }
   }
 
-  for (const node of graph.nodes) {
-    if (options.registry.get(node.typeId)?.pure) ensurePure(node);
-  }
-
-  emitBody(`export function ${exportName}(ctx) {`);
   const entries = entryNodes(graph);
-  if (entries.length === 0) {
-    emitBody(`  // empty graph`);
-  } else {
-    for (const entry of entries) emitExecChain(entry.id);
+  const compiledEntries: Array<{
+    entry: CompiledEntryPoint;
+    declLines: string[];
+    bodyLines: BodyLine[];
+  }> = [];
+  const usedNames = new Set<string>();
+
+  for (const entry of entries.length > 0 ? entries : [null]) {
+    body.length = 0;
+    outputDecls.clear();
+    exprCache.clear();
+    isAsync = false;
+
+    for (const node of graph.nodes) {
+      if (options.registry.get(node.typeId)?.pure) ensurePure(node);
+    }
+
+    if (entry) emitExecChain(entry.id);
+    else emitBody(`  // empty graph`);
+
+    const name = uniqueName(
+      entry ? entryExportName(entry, exportName) : exportName,
+      usedNames,
+    );
+    compiledEntries.push({
+      entry: {
+        name,
+        event: entry ? EVENT_BY_TYPE_ID[entry.typeId] : undefined,
+        nodeId: entry?.id,
+        isAsync,
+      },
+      declLines: [...outputDecls.values()],
+      bodyLines: [...body],
+    });
   }
-  emitBody(`}`);
 
   const hoistLines = hoisted.flatMap((h) => h.split("\n"));
-  const finalLines = [...preamble, ...hoistLines, ...body.map((b) => b.text)];
+  const finalLines = [...preamble, ...hoistLines];
   const anchors: CompileAnchor[] = [];
-  const bodyStart = preamble.length + hoistLines.length;
-  for (let i = 0; i < body.length; i++) {
-    const a = body[i]!.anchor;
-    if (a) anchors.push({ ...a, line: bodyStart + i + 1 });
+
+  for (const compiled of compiledEntries) {
+    finalLines.push(
+      `export ${compiled.entry.isAsync ? "async " : ""}function ${compiled.entry.name}(ctx) {`,
+    );
+    finalLines.push(...compiled.declLines);
+    for (const line of compiled.bodyLines) {
+      finalLines.push(line.text);
+      if (line.anchor) {
+        anchors.push({ ...line.anchor, line: finalLines.length });
+      }
+    }
+    finalLines.push(`}`);
   }
 
   return {
     source: finalLines.join("\n") + "\n",
     anchors,
-    exportName,
+    exportName: compiledEntries[0]?.entry.name ?? exportName,
+    isAsync: compiledEntries.some((c) => c.entry.isAsync),
+    entryPoints: compiledEntries.map((c) => c.entry),
   };
+}
+
+function uniqueName(base: string, used: Set<string>): string {
+  let name = base;
+  let index = 2;
+  while (used.has(name)) name = `${base}_${index++}`;
+  used.add(name);
+  return name;
+}
+
+function entryExportName(entry: GraphNode, fallback: string): string {
+  return EVENT_BY_TYPE_ID[entry.typeId] ?? fallback;
 }
