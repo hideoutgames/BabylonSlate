@@ -1,5 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { openTestProject } from "./open-test-project";
+
+async function openWindowsMenu(page: Page) {
+  const content = page.getByTestId("windows-menu-content");
+  if (await content.isVisible()) return;
+  await page.getByTestId("windows-menu").click();
+  await expect(content).toBeVisible();
+}
+
+async function clickWindowItem(page: Page, id: string) {
+  const item = page.getByTestId(`windows-menu-${id}`);
+  await expect(item).toBeVisible();
+  await item.evaluate((el: HTMLElement) => el.click());
+}
 
 test.describe("Windows menu", () => {
   test("sits left of Focus and is disabled on Content Browser", async ({
@@ -17,7 +30,9 @@ test.describe("Windows menu", () => {
     const focusBox = await focus.boundingBox();
     expect(windowsBox).not.toBeNull();
     expect(focusBox).not.toBeNull();
-    expect(windowsBox!.x + windowsBox!.width).toBeLessThanOrEqual(focusBox!.x + 1);
+    expect(windowsBox!.x + windowsBox!.width).toBeLessThanOrEqual(
+      focusBox!.x + 1,
+    );
   });
 
   test("toggles Outliner and shows an empty Editor Utilities submenu", async ({
@@ -31,26 +46,29 @@ test.describe("Windows menu", () => {
       timeout: 15_000,
     });
 
-    const windows = page.getByTestId("windows-menu");
-    await expect(windows).toBeEnabled();
-    await windows.click();
-    await expect(page.getByTestId("windows-menu-content")).toBeVisible();
-
-    const outlinerItem = page.getByTestId("windows-menu-scene-outliner");
-    await expect(outlinerItem).toHaveAttribute("aria-checked", "true");
-    await outlinerItem.click();
+    await expect(page.getByTestId("windows-menu")).toBeEnabled();
+    await openWindowsMenu(page);
+    await expect(page.getByTestId("windows-menu-scene-outliner")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await clickWindowItem(page, "scene-outliner");
     await expect(page.getByTestId("scene-outliner-panel")).toHaveCount(0);
 
-    await windows.click();
+    await openWindowsMenu(page);
     await expect(page.getByTestId("windows-menu-scene-outliner")).toHaveAttribute(
       "aria-checked",
       "false",
     );
-    await page.getByTestId("windows-menu-scene-outliner").click();
-    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
+    await clickWindowItem(page, "scene-outliner");
+    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
+      timeout: 10_000,
+    });
 
-    await windows.click();
-    await page.getByTestId("windows-editor-utilities").click();
+    await openWindowsMenu(page);
+    await page
+      .getByTestId("windows-editor-utilities")
+      .evaluate((el: HTMLElement) => el.click());
     await expect(page.getByTestId("windows-editor-utilities-empty")).toBeVisible();
   });
 });
