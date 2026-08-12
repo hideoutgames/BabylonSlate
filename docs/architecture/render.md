@@ -4,7 +4,13 @@ Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.
 
 ## App-lifetime Engine
 
-One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its canvas with `registerView` / `unRegisterView` — never a second `Engine` (WebGL context caps).
+One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its overlay canvas with `registerView(canvas, undefined, true)` / `unRegisterView` — never a second `Engine` (WebGL context caps).
+
+`registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine.
+
+Play does **not** seed `createDefaultScene()` (the default Cube). The Play scene is camera + light only; snapshot apply then creates proxy boxes for runtime actors. Stacking the default Cube under those proxies at the origin z-fights and looks like a double draw. Authored `SerializedScene` load in Play is still `p7-play-scene-load`.
+
+Play takes a `acquireContinuous("play")` lease for the session so every overlay blit is preceded by `scene.render()`. The editor stays dirty-driven; `syncEditorPlayState(handle, playing)` pauses it while Play is open and on close resizes (undoing Play’s `setSize`) and invalidates so the docked viewport redraws.
 
 ## Snapshot apply
 
@@ -15,7 +21,7 @@ One `Engine` for the editor process. Editor viewport and Play each own a `Scene`
 
 ## Render-on-demand
 
-Dirty-driven editor loop: early-return unless invalidated. Continuous-render leases are refcounted. Invalidation sources: snapshot arrival, camera, selection, asset reload, Play. Dev Always Render toggle; HUD exposes rendered-fps vs invalidations/sec.
+Dirty-driven editor loop: early-return unless invalidated. Continuous-render leases are refcounted. Invalidation sources: snapshot arrival, camera, selection, asset reload, Play. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`. Dev Always Render toggle; HUD exposes rendered-fps vs invalidations/sec.
 
 `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. Pause render loop, game worker, and encode queue on background.
 
