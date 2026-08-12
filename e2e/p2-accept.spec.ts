@@ -38,6 +38,7 @@ test.describe("P2 acceptance proofs", () => {
     ).toBeVisible();
 
     await page.getByTestId("save-project").click();
+    await page.getByTestId("project-settings").click();
     await page.getByTestId("close-project").click();
     await expect(page.getByTestId("homepage")).toBeVisible();
 

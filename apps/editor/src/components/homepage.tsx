@@ -1,11 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { FolderOpenIcon, LayoutTemplateIcon } from "lucide-react";
 import type { ProjectFolderHandle } from "@babylonslate/core";
-import {
-  createAppSettingsStore,
-  defaultEngineSettings,
-  type EngineSettings,
-} from "@babylonslate/vfs";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -22,14 +17,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@babylonslate/ui/components/sheet";
-import { EngineSettingsForm } from "./engine-settings-form";
+import { SettingsModal } from "./settings-modal";
 
 interface HomepageProps {
   projects: ProjectFolderHandle[];
@@ -244,50 +232,15 @@ export function Homepage({
         ) : null}
       </main>
 
-      <EngineSettingsSheet
+      <SettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        onSaved={onSettingsChanged}
+        initialScope="engine"
+        allowEngine
+        onEngineSaved={onSettingsChanged}
+        data-testid="engine-settings-modal"
       />
     </div>
   );
 }
 
-function EngineSettingsSheet({
-  open,
-  onOpenChange,
-  onSaved,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSaved: () => Promise<void>;
-}) {
-  const store = useMemo(() => createAppSettingsStore(), []);
-  const [settings, setSettings] = useState<EngineSettings>(defaultEngineSettings());
-
-  useEffect(() => {
-    if (!open) return;
-    void store.load().then(setSettings);
-  }, [open, store]);
-
-  const save = async (patch: Partial<EngineSettings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    await store.save(next);
-    await onSaved();
-  };
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right">
-        <SheetHeader>
-          <SheetTitle>Engine Settings</SheetTitle>
-          <SheetDescription>
-            Global editor preferences stored outside any project
-          </SheetDescription>
-        </SheetHeader>
-        <EngineSettingsForm settings={settings} onChange={save} />
-      </SheetContent>
-    </Sheet>
-  );
-}

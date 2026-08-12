@@ -15,14 +15,15 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  ChevronDownIcon,
   FileJsonIcon,
   LayersIcon,
   LayoutGridIcon,
-  LogOutIcon,
   PlayIcon,
   PlusIcon,
   Redo2Icon,
   SaveIcon,
+  SaveAllIcon,
   SettingsIcon,
   Undo2Icon,
   XIcon,
@@ -39,8 +40,11 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { useDocuments } from "../context/document-context";
@@ -48,7 +52,7 @@ import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import { PlayBlockedDialog } from "./play-blocked-dialog";
 import type { OpenDocument } from "../services/document-service";
-import { ProjectSettingsSheet } from "./project-settings-sheet";
+import { SettingsModal } from "./settings-modal";
 import "../shell/editor-chrome.css";
 
 function kindIcon(kind: DocumentKind) {
@@ -302,67 +306,35 @@ export function EditorChromeBar({
         className="editor-global-toolbar"
         data-testid="editor-global-toolbar"
       >
-        <div className="editor-global-toolbar-actions">
+        <div className="editor-global-toolbar-start">
           <Button
             size="sm"
             variant="ghost"
-            data-testid="play-preview"
-            className="chrome-action-button relative"
-            aria-label="Play"
-            disabled={!projectName || playing}
+            data-testid="save-all-project"
+            className="chrome-action-button"
+            disabled={!projectName}
             onClick={() => {
-              const inject =
-                typeof window !== "undefined" &&
-                new URLSearchParams(window.location.search).get(
-                  "previewThrow",
-                ) === "1";
-              if (errorCount > 0 && !inject) {
-                setPlayBlockedOpen(true);
-                return;
-              }
-              startPlay({ injectFixtureThrow: inject });
+              if (onSaveProject) onSaveProject();
+              else void saveAll();
             }}
           >
-            <PlayIcon data-icon="inline-start" />
-            Play
-            {errorCount > 0 ? (
-              <span
-                className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
-                data-testid="play-error-badge"
-              >
-                {errorCount > 9 ? "9+" : errorCount}
-              </span>
-            ) : null}
+            <SaveAllIcon data-icon="inline-start" />
+            Save All
           </Button>
-          <PlayBlockedDialog
-            open={playBlockedOpen}
-            diagnostics={diagnostics}
-            onOpenChange={setPlayBlockedOpen}
-            onNavigate={(d) => {
-              setFocusDiagnostic(d);
-              setPlayBlockedOpen(false);
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="save-project"
+            className="chrome-action-button"
+            disabled={!projectName}
+            onClick={() => {
+              if (onSaveProject) onSaveProject();
+              else void saveProject();
             }}
-            onPlayAnyway={() => {
-              setPlayBlockedOpen(false);
-              startPlay();
-            }}
-          />
-          {isTestModeEnabled() || import.meta.env.DEV ? (
-            <Button
-              size="sm"
-              variant={alwaysRender ? "secondary" : "ghost"}
-              data-testid="always-render-toggle"
-              className="chrome-action-button"
-              aria-label="Always Render"
-              onClick={() => setAlwaysRender(!alwaysRender)}
-            >
-              <BugIcon data-icon="inline-start" />
-              Always Render
-              {renderStats
-                ? ` (${renderStats.renderedFps}/${renderStats.invalidationsPerSecond})`
-                : ""}
-            </Button>
-          ) : null}
+          >
+            <SaveIcon data-icon="inline-start" />
+            Save
+          </Button>
           <Button
             size="sm"
             variant="ghost"
@@ -387,61 +359,120 @@ export function EditorChromeBar({
             <Redo2Icon data-icon="inline-start" />
             Redo
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="save-project"
-            className="chrome-action-button"
-            disabled={!projectName}
-            onClick={() => {
-              if (onSaveProject) onSaveProject();
-              else void saveProject();
-            }}
-          >
-            <SaveIcon data-icon="inline-start" />
-            Save
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="save-all-project"
-            className="chrome-action-button"
-            disabled={!projectName}
-            onClick={() => {
-              if (onSaveProject) onSaveProject();
-              else void saveAll();
-            }}
-          >
-            <SaveIcon data-icon="inline-start" />
-            Save All
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="close-project"
-            className="chrome-action-button"
-            disabled={!projectName}
-            onClick={() => onCloseProject?.()}
-          >
-            <LogOutIcon data-icon="inline-start" />
-            Close
-          </Button>
         </div>
 
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          data-testid="project-settings"
-          className="chrome-icon-button"
-          aria-label="Project settings"
-          disabled={!projectName}
-          onClick={() => setSettingsOpen(true)}
-        >
-          <SettingsIcon />
-        </Button>
+        <div className="editor-global-toolbar-center">
+          <div className="editor-play-island" data-testid="play-debug-island">
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="play-preview"
+              className="chrome-action-button chrome-play-button relative"
+              aria-label="Play"
+              disabled={!projectName || playing}
+              onClick={() => {
+                const inject =
+                  typeof window !== "undefined" &&
+                  new URLSearchParams(window.location.search).get(
+                    "previewThrow",
+                  ) === "1";
+                if (errorCount > 0 && !inject) {
+                  setPlayBlockedOpen(true);
+                  return;
+                }
+                startPlay({ injectFixtureThrow: inject });
+              }}
+            >
+              <PlayIcon data-icon="inline-start" />
+              Play
+              {errorCount > 0 ? (
+                <span
+                  className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"
+                  data-testid="play-error-badge"
+                >
+                  {errorCount > 9 ? "9+" : errorCount}
+                </span>
+              ) : null}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid="debug-menu"
+                    className="chrome-action-button"
+                    aria-label="Debug"
+                    disabled={!projectName}
+                  />
+                }
+              >
+                <BugIcon data-icon="inline-start" />
+                Debug
+                <ChevronDownIcon data-icon="inline-end" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center">
+                <DropdownMenuLabel>Preview debug</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {isTestModeEnabled() || import.meta.env.DEV ? (
+                  <DropdownMenuCheckboxItem
+                    data-testid="always-render-toggle"
+                    checked={alwaysRender}
+                    onCheckedChange={(checked) =>
+                      setAlwaysRender(checked === true)
+                    }
+                  >
+                    Always Render
+                    {renderStats
+                      ? ` (${renderStats.renderedFps}/${renderStats.invalidationsPerSecond})`
+                      : ""}
+                  </DropdownMenuCheckboxItem>
+                ) : (
+                  <DropdownMenuItem disabled>
+                    No debug options in this build
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <PlayBlockedDialog
+            open={playBlockedOpen}
+            diagnostics={diagnostics}
+            onOpenChange={setPlayBlockedOpen}
+            onNavigate={(d) => {
+              setFocusDiagnostic(d);
+              setPlayBlockedOpen(false);
+            }}
+            onPlayAnyway={() => {
+              setPlayBlockedOpen(false);
+              startPlay();
+            }}
+          />
+        </div>
+
+        <div className="editor-global-toolbar-end">
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="project-settings"
+            className="chrome-action-button"
+            aria-label="Project settings"
+            disabled={!projectName}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <SettingsIcon data-icon="inline-start" />
+            Project Settings
+          </Button>
+        </div>
       </div>
 
-      <ProjectSettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsModal
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialScope="project"
+        allowEngine
+        onCloseProject={onCloseProject}
+      />
     </div>
   );
 }
