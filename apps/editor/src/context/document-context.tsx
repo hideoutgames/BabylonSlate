@@ -58,7 +58,7 @@ import { loadTemplateCards } from "../services/template-service";
 import {
   compileGraphDocuments,
   graphCompileSignature,
-  graphsNeedCompile,
+  graphsNeedCompile as compileSignatureIsStale,
 } from "../services/script-compiler";
 import { validateSerializedGraph } from "../services/graph-validation";
 import { applyFocusLayout } from "../shell/layout-ops";
@@ -167,8 +167,10 @@ interface DocumentContextValue {
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }>;
-  /** True when open graphs differ from the last compile (positions ignored). */
+  /** True when a compiled graph changed since the last successful compile (positions ignored). */
   scriptsStale: boolean;
+  /** True when Compile should run: never compiled this session, or open graphs changed. */
+  graphsNeedCompile: boolean;
   markScriptsCurrent: () => void;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
@@ -1396,10 +1398,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
-      scriptsStale: graphsNeedCompile(
+      graphsNeedCompile: compileSignatureIsStale(
         currentGraphSignature,
         lastCompiledSignature,
       ),
+      scriptsStale:
+        lastCompiledSignature !== null &&
+        compileSignatureIsStale(currentGraphSignature, lastCompiledSignature),
       markScriptsCurrent,
       searchIndex: projectService.searchIndex,
     };

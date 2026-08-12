@@ -198,7 +198,7 @@ export function EditorChromeBar({
     isLayoutFocused,
     toggleLayoutFocus,
     collectScriptBundles,
-    scriptsStale,
+    graphsNeedCompile,
     activateDockPanel,
   } = useDocuments();
 
@@ -355,7 +355,7 @@ export function EditorChromeBar({
                 data-testid="compile-graph"
                 className="chrome-action-button"
                 aria-label="Compile"
-                disabled={!projectName || !scriptsStale}
+                disabled={!projectName || !graphsNeedCompile}
                 onClick={() => {
                   const graphs = openDocuments.filter(
                     (doc) => doc.ref.kind === "graph" && doc.content,
