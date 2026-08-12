@@ -140,6 +140,9 @@ export function createEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  if (options.editor) {
+    scheduler.setAlwaysRender(true);
+  }
   const resourceCache = new ResourceCache();
   const scaling = new HardwareScalingController(engine);
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
