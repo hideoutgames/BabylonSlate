@@ -4,7 +4,11 @@ import {
   ContextMenuOverlay,
   useContextMenu,
 } from "@babylonslate/editor-kit";
-import { createEngine, type EngineHandle } from "@babylonslate/render";
+import {
+  createEngine,
+  syncEditorPlayState,
+  type EngineHandle,
+} from "@babylonslate/render";
 import {
   engineCommandBus,
   findActor,
@@ -177,7 +181,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [commitGizmoTransform, registerSharedEngine, registerScheduler]);
 
   useEffect(() => {
-    engineRef.current?.setPaused(playing);
+    if (engineRef.current) {
+      syncEditorPlayState(engineRef.current, playing);
+    }
   }, [playing]);
 
   useEffect(() => {
