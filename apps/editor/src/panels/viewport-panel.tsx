@@ -15,6 +15,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
+import { ViewportJoystick } from "../components/viewport-joystick";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 
 function resizeCanvasIfSized(
@@ -50,6 +51,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   setSelectedActorIdsRef.current = setSelectedActorIds;
   const playingRef = useRef(playing);
   playingRef.current = playing;
+  const joystickLeaseRef = useRef<(() => void) | null>(null);
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -169,6 +171,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       unsubscribe();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
+      joystickLeaseRef.current?.();
+      joystickLeaseRef.current = null;
       registerScheduler(null);
       registerSharedEngine(null);
       handle.dispose();
@@ -299,6 +303,29 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         </div>
       </div>
       <canvas ref={canvasRef} className="h-full w-full flex-1 touch-none" />
+      {scene?.settings.editorJoystickEnabled ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
+          <div className="pointer-events-auto">
+            <ViewportJoystick
+              onFly={(forward, right) => {
+                engineRef.current?.editor?.camera.fly(forward, right);
+              }}
+              onActiveChange={(active) => {
+                const scheduler = engineRef.current?.scheduler;
+                if (!scheduler) return;
+                if (active) {
+                  joystickLeaseRef.current ??= scheduler.acquireContinuous(
+                    "viewport-joystick",
+                  );
+                } else {
+                  joystickLeaseRef.current?.();
+                  joystickLeaseRef.current = null;
+                }
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
     </div>
   );

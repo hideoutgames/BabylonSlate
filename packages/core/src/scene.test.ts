@@ -50,6 +50,18 @@ describe("scene schema", () => {
     expect(scene.settings.grid.tileSize).toBe(1);
     expect(scene.settings.grid.tileSubdivisions).toBe(4);
     expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
+    expect(scene.settings.editorJoystickEnabled).toBe(false);
+  });
+
+  it("normalizes editorJoystickEnabled only when explicitly true", () => {
+    expect(
+      normalizeScene({ settings: { editorJoystickEnabled: true } }).settings
+        .editorJoystickEnabled,
+    ).toBe(true);
+    expect(
+      normalizeScene({ settings: { editorJoystickEnabled: "yes" } }).settings
+        .editorJoystickEnabled,
+    ).toBe(false);
   });
 
   it("rejects non-positive 2D camera bounds and fractional subdivisions", () => {

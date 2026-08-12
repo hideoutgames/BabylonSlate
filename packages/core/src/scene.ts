@@ -73,6 +73,8 @@ export interface SceneSettings {
   physicsWorld: PhysicsWorldKind;
   grid: SceneGridSettings;
   cameraBounds2D: SceneCameraBounds2D;
+  /** Editor viewport on-screen stick for flying/panning the camera. */
+  editorJoystickEnabled: boolean;
 }
 
 export interface SerializedScene {
@@ -112,6 +114,7 @@ export function createDefaultSceneSettings(
       tileSubdivisions: 4,
     },
     cameraBounds2D: { width: 16, height: 9 },
+    editorJoystickEnabled: false,
   };
 }
 
@@ -266,6 +269,7 @@ export function normalizeSceneSettings(
           ? bounds.height
           : defaults.cameraBounds2D.height,
     },
+    editorJoystickEnabled: source.editorJoystickEnabled === true,
   };
 }
 
