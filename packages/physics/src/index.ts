@@ -27,6 +27,7 @@ export {
   type CreatePhysicsBackendOptions,
 } from "./create-backend";
 export { HavokPhysicsBackend } from "./havok-backend";
+export { resetHavokModuleCache } from "./havok-loader";
 export { Rapier2DPhysicsBackend } from "./rapier-backend";
 export {
   parseRigidBodyProperties,
