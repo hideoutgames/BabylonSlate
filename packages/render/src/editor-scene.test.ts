@@ -83,6 +83,56 @@ describe("editor camera controller", () => {
     expect(controller.camera.target.x).not.toBe(0);
   });
 
+  it("looks in place in 3D without moving the camera position", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.camera.getViewMatrix();
+    const positionBefore = controller.camera.position.clone();
+    const alphaBefore = controller.camera.alpha;
+
+    controller.look(0.3, 0.1);
+    controller.camera.getViewMatrix();
+
+    expect(controller.camera.alpha).not.toBeCloseTo(alphaBefore, 5);
+    expect(controller.camera.position.x).toBeCloseTo(positionBefore.x, 5);
+    expect(controller.camera.position.y).toBeCloseTo(positionBefore.y, 5);
+    expect(controller.camera.position.z).toBeCloseTo(positionBefore.z, 5);
+  });
+
+  it("refuses to look in 2D", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "2d" });
+    controller.look(1, 1);
+    expect(controller.camera.alpha).toBeCloseTo(TWO_D_ALPHA);
+    expect(controller.camera.beta).toBeCloseTo(TWO_D_BETA);
+  });
+
+  it("flies forward along the look direction in 3D", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.camera.getViewMatrix();
+    const positionBefore = controller.camera.position.clone();
+    const forward = controller.camera.getDirection(Vector3.Forward()).normalize();
+
+    controller.fly(2, 0);
+    controller.camera.getViewMatrix();
+
+    const moved = controller.camera.position.subtract(positionBefore);
+    expect(moved.length()).toBeCloseTo(2, 4);
+    expect(moved.normalize().dot(forward)).toBeCloseTo(1, 4);
+  });
+
+  it("flies as XY pan in 2D", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "2d" });
+    const targetBefore = controller.camera.target.clone();
+
+    controller.fly(3, 2);
+
+    expect(controller.camera.target.x).toBeCloseTo(targetBefore.x + 2, 5);
+    expect(controller.camera.target.y).toBeCloseTo(targetBefore.y + 3, 5);
+  });
+
   it("keeps orthographic bounds aspect correct", () => {
     const { scene } = createHandle();
     const controller = createEditorCamera(scene, {
