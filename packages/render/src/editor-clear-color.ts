@@ -2,6 +2,9 @@ import { Color4 } from "@babylonjs/core";
 
 export type EditorColorScheme = "light" | "dark";
 
+/** Scene, Prefab, and graph canvases stay dark regardless of chrome theme. */
+export const EDITOR_CANVAS_COLOR_SCHEME: EditorColorScheme = "dark";
+
 /** Neutral `--background`: light `oklch(1 0 0)`, dark `oklch(0.145 0 0)` ≈ `#242424`. */
 export function editorClearColor(scheme: EditorColorScheme): Color4 {
   if (scheme === "light") {

@@ -113,6 +113,9 @@ export function DocumentWorkspace() {
               initialViewportMode={sceneContent?.viewportMode ?? "3d"}
               documentViewportMode={sceneContent?.viewportMode}
               documentSnapEnabled={sceneContent?.settings.grid.snapEnabled}
+              documentJoystickEnabled={
+                sceneContent?.settings.editorJoystickEnabled
+              }
             >
               <PrefabEditingProvider>
               {doc.ref.kind === "scene" ? (

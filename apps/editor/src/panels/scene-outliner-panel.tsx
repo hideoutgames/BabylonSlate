@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   ContextMenuOverlay,
   PanelFrame,
+  SearchInput,
   TreeView,
   useContextMenu,
   type TreeViewNode,
@@ -13,7 +14,6 @@ import {
   type SerializedActor,
   type SerializedScene,
 } from "@babylonslate/core";
-import { Input } from "@babylonslate/ui/components/input";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import { EyeIcon, EyeOffIcon, LockIcon, PlusIcon, BoxIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
@@ -86,7 +86,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange, assetRegistry } = useDocuments();
-  const { selectedActorIds, selectActor } = useSceneEditing();
+  const { selectedActorIds, selectActor, frameActor } = useSceneEditing();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [menuActorId, setMenuActorId] = useState<string | null>(null);
@@ -207,28 +207,26 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   });
 
   return (
-    <PanelFrame
-      data-testid="scene-outliner-panel"
-      toolbar={
-        <IconActionButton
-          label="Add actor"
-          onClick={() => setPlaceOpen(true)}
-          disabled={!scene}
-          data-testid="outliner-add-actor"
-        >
-          <PlusIcon />
-        </IconActionButton>
-      }
-    >
+    <PanelFrame data-testid="scene-outliner-panel">
       <div className="flex h-full min-h-0 flex-col gap-2 p-2">
-        <Input
-          className="min-h-[var(--chrome-row,28px)] shrink-0"
-          placeholder="Search actors"
-          aria-label="Search actors"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          data-testid="outliner-search"
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <SearchInput
+            className="min-h-[var(--chrome-row,28px)]"
+            placeholder="Search actors"
+            aria-label="Search actors"
+            value={search}
+            onChange={setSearch}
+            data-testid="outliner-search"
+          />
+          <IconActionButton
+            label="Add actor"
+            onClick={() => setPlaceOpen(true)}
+            disabled={!scene}
+            data-testid="outliner-add-actor"
+          >
+            <PlusIcon />
+          </IconActionButton>
+        </div>
         <div className="min-h-0 flex-1">
           <TreeView
             nodes={nodes.map((node) => ({
@@ -260,6 +258,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             }))}
             selectedId={selectedActorIds[0] ?? null}
             onSelect={(id) => selectActor(id)}
+            onActivate={(id) => frameActor(id)}
             onToggleExpanded={(id) =>
               setCollapsed((current) => {
                 const next = new Set(current);

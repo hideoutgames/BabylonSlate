@@ -12,6 +12,17 @@ import { NumericDragField } from "./numeric-drag-field";
 
 export type Vector3Value = [number, number, number];
 
+/** Sentence-case a camelCase or snake_case property key. */
+export function humanizePropertyLabel(key: string): string {
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .trim();
+  if (!spaced) return key;
+  const lower = spaced.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
 interface PropertyRowBase {
   id: string;
   label: string;
@@ -273,13 +284,13 @@ export function PropertyGrid({
         <div
           key={row.id}
           data-testid={`property-row-${row.id}`}
-          className="grid min-h-[var(--chrome-row,28px)] grid-cols-[minmax(0,5.5rem)_minmax(0,1fr)] items-center gap-1 border-b border-border/60 px-2 py-0.5"
+          className="grid min-h-[var(--chrome-row,28px)] grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-center gap-1 border-b border-border/60 px-2 py-0.5"
         >
           <label
             className="truncate text-sm font-medium text-foreground"
             htmlFor={`property-${row.id}`}
           >
-            {row.label}
+            {humanizePropertyLabel(row.label)}
           </label>
           <div className="flex min-w-0 items-center gap-1">
             <div className="min-w-0 flex-1">
@@ -289,13 +300,13 @@ export function PropertyGrid({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="text-xs"
+                className="text-muted-foreground"
                 disabled={isAtDefault(row)}
-                aria-label={`Reset ${row.label}`}
+                aria-label={`Reset ${humanizePropertyLabel(row.label)}`}
                 onClick={() => resetRow(row)}
                 data-testid={`property-${row.id}-reset`}
               >
-                Reset
+                <span aria-hidden="true">↺</span>
               </Button>
             ) : null}
           </div>

@@ -5,8 +5,8 @@ import {
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import {
-  applyEditorClearColor,
   createEngine,
+  EDITOR_CANVAS_COLOR_SCHEME,
   syncEditorPlayState,
   type EngineHandle,
 } from "@babylonslate/render";
@@ -19,7 +19,6 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
-import { useResolvedTheme } from "../context/theme-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { isTestModeEnabled } from "@babylonslate/vfs";
@@ -50,9 +49,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     gizmoTool,
     snapEnabled,
     viewportMode,
+    joystickEnabled,
+    setFrameActorHandler,
   } = useSceneEditing();
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
-  const colorScheme = useResolvedTheme();
   const selectActorRef = useRef(selectActor);
   selectActorRef.current = selectActor;
   const setSelectedActorIdsRef = useRef(setSelectedActorIds);
@@ -128,7 +128,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const handle = createEngine(canvas, {
       editor: true,
       viewportMode,
-      colorScheme,
+      colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       onPickActor: (actorId) => selectActorRef.current(actorId),
       onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
       onGizmoDragStart: () => {
@@ -198,11 +198,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [commitGizmoTransform, registerSharedEngine, registerScheduler]);
 
   useEffect(() => {
-    const handle = engineRef.current;
-    if (!handle) return;
-    applyEditorClearColor(handle.scene, colorScheme);
-    handle.scheduler.invalidate("camera");
-  }, [colorScheme]);
+    setFrameActorHandler((actorId) => {
+      engineRef.current?.editor?.frameActor(actorId);
+    });
+    return () => setFrameActorHandler(null);
+  }, [setFrameActorHandler]);
 
   useEffect(() => {
     if (engineRef.current) {
@@ -326,7 +326,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         </div>
       </div>
       <canvas ref={canvasRef} className="h-full w-full flex-1 touch-none" />
-      {scene?.settings.editorJoystickEnabled ? (
+      {joystickEnabled ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
           <div className="pointer-events-auto">
             <ViewportJoystick
