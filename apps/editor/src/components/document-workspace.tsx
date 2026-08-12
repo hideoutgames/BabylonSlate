@@ -1,7 +1,8 @@
-import { CONTENT_BROWSER_ID } from "@babylonslate/core";
+import { CONTENT_BROWSER_ID, type SerializedScene } from "@babylonslate/core";
 import { useEffect, useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
+import { SceneEditingProvider } from "../context/scene-editing-context";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { DockviewShell } from "../shell/dockview-shell";
 
@@ -76,18 +77,26 @@ export function DocumentWorkspace() {
 
         return (
           <DocumentWorkspaceProvider key={id} documentId={id}>
-            <div
-              className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-              data-testid={`document-workspace-${doc.ref.kind}`}
+            <SceneEditingProvider
+              initialViewportMode={
+                doc.ref.kind === "scene"
+                  ? ((doc.content as SerializedScene | null)?.viewportMode ?? "3d")
+                  : "3d"
+              }
             >
-              {shouldMount ? (
-                <DockviewShell
-                  documentKind={doc.ref.kind}
-                  initialLayout={doc.layout}
-                  onReady={(api) => registerDockviewApi(id, api)}
-                />
-              ) : null}
-            </div>
+              <div
+                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                data-testid={`document-workspace-${doc.ref.kind}`}
+              >
+                {shouldMount ? (
+                  <DockviewShell
+                    documentKind={doc.ref.kind}
+                    initialLayout={doc.layout}
+                    onReady={(api) => registerDockviewApi(id, api)}
+                  />
+                ) : null}
+              </div>
+            </SceneEditingProvider>
           </DocumentWorkspaceProvider>
         );
       })}

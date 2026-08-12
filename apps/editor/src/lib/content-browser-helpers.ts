@@ -3,6 +3,7 @@ import { DOCUMENT_CHUNK_ID } from "@babylonslate/assets";
 import {
   createDefaultGraph,
   createDefaultScene,
+  SCENE_SCHEMA_VERSION,
 } from "@babylonslate/core";
 
 export const ASSET_DRAG_MIME = "application/x-babylonslate-asset";
@@ -171,7 +172,7 @@ export function buildNewAssetResult(options: {
       type: "Scene",
       name,
       guid,
-      version: 1,
+      version: SCENE_SCHEMA_VERSION,
       dependencies: [],
       parentClass: null,
       payload,
