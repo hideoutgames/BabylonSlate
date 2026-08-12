@@ -36,14 +36,27 @@ export interface DockWindowApi {
   ) => { id: string; panels?: Array<{ id: string }> } | undefined;
 }
 
-const ADJACENT_TO_DOCK: Array<
-  ["left" | "right" | "up" | "down", DockWindowDirection]
-> = [
-  ["left", "left"],
-  ["right", "right"],
-  ["up", "above"],
-  ["down", "below"],
-];
+type AdjacentNav = "left" | "right" | "up" | "down";
+
+/** Scan direction from this panel → addPanel direction relative to the neighbor. */
+const NAV_TO_ADD: Record<AdjacentNav, DockWindowDirection> = {
+  left: "right",
+  right: "left",
+  up: "below",
+  down: "above",
+};
+
+const PRIMARY_SURFACES = ["viewport", "graph"] as const;
+
+function invertDockDirection(
+  direction: DockWindowDirection,
+): DockWindowDirection {
+  if (direction === "left") return "right";
+  if (direction === "right") return "left";
+  if (direction === "above") return "below";
+  if (direction === "below") return "above";
+  return "within";
+}
 
 export function listDockPanels(api: DockWindowApi): DockWindowPanel[] {
   const panels = api.panels;
@@ -55,20 +68,74 @@ export function isDockWindowOpen(api: DockWindowApi, id: string): boolean {
   return api.getPanel(id) !== undefined;
 }
 
+function panelSize(panel: DockWindowPanel): Pick<PanelPlacement, "width" | "height"> {
+  const width = panel.api.width;
+  const height = panel.api.height;
+  return {
+    ...(typeof width === "number" ? { width } : {}),
+    ...(typeof height === "number" ? { height } : {}),
+  };
+}
+
+function catalogPlacement(
+  api: DockWindowApi,
+  def: DockWindowDefinition | undefined,
+  size: Pick<PanelPlacement, "width" | "height">,
+): PanelPlacement | null {
+  const fallback = def?.defaultPosition;
+  if (!fallback) return null;
+  if (!api.getPanel(fallback.referencePanelId)) return null;
+  return {
+    referencePanelId: fallback.referencePanelId,
+    direction: fallback.direction,
+    ...size,
+  };
+}
+
+function collectAdjacentPlacements(
+  api: DockWindowApi,
+  panel: DockWindowPanel,
+  size: Pick<PanelPlacement, "width" | "height">,
+): PanelPlacement[] {
+  if (!panel.group || !api.adjacentGroupInDirection) return [];
+  const found: PanelPlacement[] = [];
+  for (const nav of Object.keys(NAV_TO_ADD) as AdjacentNav[]) {
+    const adjacent = api.adjacentGroupInDirection(panel.group, nav);
+    const reference = adjacent?.panels?.[0];
+    if (!reference) continue;
+    found.push({
+      referencePanelId: reference.id,
+      direction: NAV_TO_ADD[nav],
+      ...size,
+    });
+  }
+  return found;
+}
+
+function pickAdjacentPlacement(
+  adjacents: PanelPlacement[],
+  def?: DockWindowDefinition,
+): PanelPlacement | undefined {
+  const preferredIds = [
+    def?.defaultPosition?.referencePanelId,
+    ...PRIMARY_SURFACES,
+  ].filter((id): id is string => Boolean(id));
+  for (const id of preferredIds) {
+    const match = adjacents.find((entry) => entry.referencePanelId === id);
+    if (match) return match;
+  }
+  return adjacents[0];
+}
+
 export function capturePanelPlacement(
   api: DockWindowApi,
   id: string,
+  def?: DockWindowDefinition,
 ): PanelPlacement | null {
   const panel = api.getPanel(id);
   if (!panel) return null;
 
-  const width = panel.api.width;
-  const height = panel.api.height;
-  const size = {
-    ...(typeof width === "number" ? { width } : {}),
-    ...(typeof height === "number" ? { height } : {}),
-  };
-
+  const size = panelSize(panel);
   const others = listDockPanels(api).filter((entry) => entry.id !== id);
   const sibling = others.find(
     (entry) =>
@@ -86,21 +153,29 @@ export function capturePanelPlacement(
     };
   }
 
-  if (panel.group && api.adjacentGroupInDirection) {
-    for (const [nav, direction] of ADJACENT_TO_DOCK) {
-      const adjacent = api.adjacentGroupInDirection(panel.group, nav);
-      const reference = adjacent?.panels?.[0];
-      if (reference) {
-        return { referencePanelId: reference.id, direction, ...size };
-      }
-    }
-  }
+  const adjacent = pickAdjacentPlacement(
+    collectAdjacentPlacements(api, panel, size),
+    def,
+  );
+  if (adjacent) return adjacent;
 
-  if (others[0]) {
-    return { referencePanelId: others[0].id, direction: "within", ...size };
-  }
+  return catalogPlacement(api, def, size);
+}
 
-  return null;
+function isStaleRememberedPlacement(
+  placement: PanelPlacement,
+  def: DockWindowDefinition,
+): boolean {
+  const catalog = def.defaultPosition;
+  if (!catalog) return false;
+  if (placement.referencePanelId !== catalog.referencePanelId) return false;
+  if (placement.direction === "within" && catalog.direction !== "within") {
+    return true;
+  }
+  return (
+    catalog.direction !== "within" &&
+    placement.direction === invertDockDirection(catalog.direction)
+  );
 }
 
 function resolveOpenTarget(
@@ -113,7 +188,7 @@ function resolveOpenTarget(
   initialWidth?: number;
   initialHeight?: number;
 } {
-  if (placement) {
+  if (placement && !isStaleRememberedPlacement(placement, def)) {
     const remembered = api.getPanel(placement.referencePanelId);
     if (remembered) {
       return {
@@ -180,10 +255,11 @@ export function openDockWindow(
 export function closeDockWindow(
   api: DockWindowApi,
   id: string,
+  def?: DockWindowDefinition,
 ): PanelPlacement | null {
   if (!isDockWindowOpen(api, id)) return null;
   if (listDockPanels(api).length <= 1) return null;
-  const placement = capturePanelPlacement(api, id);
+  const placement = capturePanelPlacement(api, id, def);
   api.getPanel(id)?.api.close();
   return placement;
 }
@@ -195,9 +271,9 @@ export function toggleDockWindow(
 ): { open: boolean; placement: PanelPlacement | null } {
   if (isDockWindowOpen(api, def.id)) {
     if (listDockPanels(api).length <= 1) {
-      return { open: true, placement: capturePanelPlacement(api, def.id) };
+      return { open: true, placement: capturePanelPlacement(api, def.id, def) };
     }
-    const placement = closeDockWindow(api, def.id);
+    const placement = closeDockWindow(api, def.id, def);
     return { open: false, placement };
   }
   openDockWindow(api, def, rememberedPlacement);

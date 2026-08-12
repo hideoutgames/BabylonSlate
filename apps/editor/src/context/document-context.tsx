@@ -1145,8 +1145,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const rememberPlacements = () => {
       if (preFocusLayoutsRef.current.has(id)) return;
       const dock = asDockWindowApi(api);
+      const kind = documentService.getDocument(id)?.ref.kind;
       for (const panel of listDockPanels(dock)) {
-        const placement = capturePanelPlacement(dock, panel.id);
+        const def =
+          kind === "scene" || kind === "graph"
+            ? findWindowDefinition(kind, panel.id)
+            : undefined;
+        const placement = capturePanelPlacement(dock, panel.id, def);
         if (placement) {
           documentService.setPanelPlacement(id, panel.id, placement);
         }

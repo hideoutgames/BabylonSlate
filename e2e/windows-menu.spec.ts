@@ -29,7 +29,7 @@ test.describe("Windows menu", () => {
     );
   });
 
-  test("toggles Outliner and shows an empty Editor Utilities submenu", async ({
+  test("restores Outliner and Output Log to their default dock positions", async ({
     page,
   }) => {
     test.setTimeout(60_000);
@@ -53,7 +53,30 @@ test.describe("Windows menu", () => {
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
       timeout: 10_000,
     });
+    const outlinerBox = await page.getByTestId("scene-outliner-panel").boundingBox();
+    const viewportBox = await page.getByTestId("viewport-panel").boundingBox();
+    expect(outlinerBox).not.toBeNull();
+    expect(viewportBox).not.toBeNull();
+    expect(outlinerBox!.x + outlinerBox!.width).toBeLessThanOrEqual(
+      viewportBox!.x + 8,
+    );
     await expect(page.getByTestId("windows-menu-content")).toBeVisible();
+
+    const outputItem = page.getByTestId("windows-menu-output-log");
+    await expect(outputItem).toHaveAttribute("aria-checked", "true");
+    await outputItem.click({ force: true });
+    await expect(page.getByTestId("output-log-panel")).toHaveCount(0);
+    await outputItem.click({ force: true });
+    await expect(page.getByTestId("output-log-panel")).toBeVisible({
+      timeout: 10_000,
+    });
+    const outputBox = await page.getByTestId("output-log-panel").boundingBox();
+    const viewportAfter = await page.getByTestId("viewport-panel").boundingBox();
+    expect(outputBox).not.toBeNull();
+    expect(viewportAfter).not.toBeNull();
+    expect(outputBox!.y).toBeGreaterThanOrEqual(
+      viewportAfter!.y + viewportAfter!.height - 8,
+    );
 
     await page.getByTestId("windows-editor-utilities").click({ force: true });
     await expect(page.getByTestId("windows-editor-utilities-empty")).toBeVisible();
