@@ -45,7 +45,7 @@ Global Engine Settings stored **outside** any project:
 | localStorage | Web |
 | Electron userData bridge | Desktop — settings only until the P14 host lands |
 
-Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap, hardware scaling, thumbnail toggle, debugger defaults.
+Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap (visible scene + Prefab Preview; freeze when hidden or a modal is open), hardware scaling, thumbnail toggle, debugger defaults.
 
 `createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. With no bridge the Electron store keeps settings in memory, so desktop never silently loses them to a missing backend.
 

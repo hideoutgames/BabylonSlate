@@ -10,7 +10,7 @@
 | [architecture/containers.md](architecture/containers.md) | `.babasset` / `.babproject` wire formats |
 | [architecture/vfs.md](architecture/vfs.md) | Binary VFS, storage tiers, app settings |
 | [architecture/bridge.md](architecture/bridge.md) | Bridge transports, snapshot layout, channels |
-| [architecture/render.md](architecture/render.md) | Snapshot sync, render-on-demand, resource cache |
+| [architecture/render.md](architecture/render.md) | Snapshot sync, visibility-gated editor loop, resource cache |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [agents/issue-tracker.md](agents/issue-tracker.md) | Issue and spec workflow for agents |
 

@@ -23,6 +23,7 @@ import {
 } from "@babylonslate/vfs";
 import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
+import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
 import {
   EngineSettingsForm,
   type EngineSettingsCategoryId,
@@ -159,6 +160,9 @@ export function SettingsModal({
       const next = { ...engineSettings, ...patch };
       setEngineSettings(next);
       await store.save(next);
+      dispatchEngineSettingsChanged({
+        viewportFrameCap: next.viewportFrameCap,
+      });
       await onEngineSaved?.();
     },
     [engineSettings, onEngineSaved, store],

@@ -144,6 +144,10 @@ export function EngineSettingsForm({
                 })
               }
             />
+            <FieldDescription>
+              Caps scene and Prefab Preview while they are visible. Hidden
+              tabs and open modals freeze rendering.
+            </FieldDescription>
           </Field>
           <Field>
             <FieldLabel htmlFor="setting-hardware-scale">

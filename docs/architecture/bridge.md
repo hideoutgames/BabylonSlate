@@ -90,5 +90,5 @@ The Worker's per-frame snapshot is produced by `TransferablePingPong` (`packages
 ## Related docs
 
 - [object-model.md](object-model.md) — JSON harness snapshot vs this layout
-- [design/perf-budget.md](../design/perf-budget.md) — idle editor / Play budgets
+- [design/perf-budget.md](../design/perf-budget.md) — editor viewport / Play budgets
 - [render.md](render.md) — snapshot apply + resource cache (P4)
