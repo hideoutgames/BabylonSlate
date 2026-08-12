@@ -154,3 +154,15 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | later polish | Project Settings Input tab is a JSON textarea |
 | Multi-select gizmo (transform all selected) | later polish | Outline covers all; gizmo attaches to first pickable |
+
+## P7 slice ownership
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/physics.md` | P6 complete |
+| Physics package + Havok | `p7-physics` | `physics`, `core` (scene `physicsWorld`), `object-model`, `runtime`, `scripting-nodes`, `bridge` (timing already present), `test-kit`, thin `apps/editor` (Play overlay ms) | Design notes |
+| Rapier 2D | `p7-2d-physics` | `physics`, `scripting-nodes`, `test-kit` | `p7-physics` interface + scene world field |
+
+Design notes: [physics.md](../architecture/physics.md).
+
+**Parallelism:** land the backend interface and failing harness first; Havok and Rapier must not invent competing ports. Rapier starts only after `PhysicsBackend` + scene `physicsWorld` are stable.

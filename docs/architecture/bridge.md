@@ -29,7 +29,7 @@ Double-buffered `Float32Array`. Views are little-endian; header and per-actor sl
 | 3 | `tickIndex` | Last completed simulation tick |
 | 4 | `actorCount` | Occupied slots |
 | 5 | `scriptMs` | Script phase time for last tick |
-| 6 | `physicsMs` | Physics phase time (0 until P7) |
+| 6 | `physicsMs` | Physics phase time (filled by P7; separate from `scriptMs`) |
 | 7 | `seq` | Seq-lock sequence (even = stable) for SAB |
 | 8–15 | reserved | Zero |
 

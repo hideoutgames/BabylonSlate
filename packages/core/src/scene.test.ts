@@ -28,6 +28,7 @@ describe("scene schema", () => {
   it("creates a default scene with one actor carrying a mesh component", () => {
     const scene = createDefaultScene();
     expect(scene.viewportMode).toBe("3d");
+    expect(scene.settings.physicsWorld).toBe("3d");
     expect(scene.actors).toHaveLength(1);
     expect(scene.actors[0]?.components[0]?.classId).toBe("MeshComponent");
   });
@@ -65,6 +66,12 @@ describe("scene schema", () => {
   it("normalizes an empty payload to a 3d scene with no actors", () => {
     const scene = normalizeScene(undefined);
     expect(scene).toMatchObject({ viewportMode: "3d", actors: [] });
+    expect(scene.settings.physicsWorld).toBe("3d");
+  });
+
+  it("defaults physicsWorld from viewportMode when omitted", () => {
+    const scene = normalizeScene({ viewportMode: "2d", settings: {} });
+    expect(scene.settings.physicsWorld).toBe("2d");
   });
 
   it("normalizes malformed transforms to identity", () => {

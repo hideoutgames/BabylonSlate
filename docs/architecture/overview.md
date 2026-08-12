@@ -2,7 +2,7 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
-## Monorepo (P6 complete; P7 next)
+## Monorepo (P7 physics in progress)
 
 ```
 apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer
@@ -11,6 +11,7 @@ packages/vfs/         Storage adapters, platform detection, app settings
 packages/assets/      Containers, asset registry, importers, encode queue
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
+packages/physics/     Body/shape protocol; Havok 3D + Rapier 2D backends (P7)
 packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
 packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader, script host
 packages/input/       Raw input ring + action/axis mapping model and `InputResolver`
@@ -23,7 +24,7 @@ packages/editor-kit/  Touch-shell hooks, property grid, tree view, panel frame, 
 packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md).
 
 ## Threading (P4)
 
@@ -58,7 +59,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `edit`, `object-model`, `bridge`, `runtime`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
+| `core`, `edit`, `object-model`, `physics` (Havok wasm only — no Scene APIs), `bridge`, `runtime`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon Scene APIs, Capacitor |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |

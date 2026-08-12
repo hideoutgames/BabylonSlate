@@ -9,6 +9,7 @@ import {
   GameInstance,
   World,
   type Actor,
+  type TickPhase,
 } from "@babylonslate/object-model";
 import {
   InputRingBuffer,
@@ -20,6 +21,11 @@ import {
   type RawInputEvent,
   type ResolvedInputTick,
 } from "@babylonslate/input";
+import {
+  createPhysicsBackend,
+  createSoftwarePhysicsBackend,
+  type PhysicsWorldKind,
+} from "@babylonslate/physics";
 import { LogRingBuffer } from "./log-ring";
 import {
   SessionDiagnosticAggregator,
@@ -27,6 +33,7 @@ import {
 } from "./diagnostics";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
 import { ScriptHost, type CompiledScript } from "./script-host";
+import { PhysicsWorldSync } from "./physics-sync";
 
 export type TransportMode = "in-process" | "sab" | "transferable";
 
@@ -40,6 +47,11 @@ export interface RuntimeDriverOptions {
   inputMappings?: InputMappings;
   /** Demo actors exist so an empty project still shows motion in Preview. */
   seedDemoActors?: boolean;
+  /** Scene physics world kind (defaults to 3d). */
+  physicsWorld?: PhysicsWorldKind;
+  gravity?: [number, number, number];
+  /** Skip wasm backends (tests / CI without wasm). */
+  preferSoftwarePhysics?: boolean;
 }
 
 export interface RuntimeDriver {
@@ -68,7 +80,12 @@ export interface RuntimeDriver {
     classId: string;
     variables?: Record<string, unknown>;
   }): Actor | null;
+  /** Upgrade from software to Havok/Rapier when available. */
+  loadPhysics(): Promise<void>;
+  getPhysicsSync(): PhysicsWorldSync | null;
   readonly transportMode: TransportMode;
+  readonly lastScriptMs: number;
+  readonly lastPhysicsMs: number;
 }
 
 export function createInProcessRuntime(
@@ -99,21 +116,38 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly onCommand?: (command: CommandMessage) => void;
   private readonly maxCatchUp: number;
   private readonly dt: number;
+  private readonly physicsWorldKind: PhysicsWorldKind;
+  private readonly gravity: [number, number, number];
+  private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
   private paused = false;
   private running = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
   private nextSlot = 0;
-  private lastScriptMs = 0;
-  private lastPhysicsMs = 0;
+  private _lastScriptMs = 0;
+  private _lastPhysicsMs = 0;
+  private phaseScriptMs = 0;
+  private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
+  private physicsSync: PhysicsWorldSync;
+
+  get lastScriptMs(): number {
+    return this._lastScriptMs;
+  }
+
+  get lastPhysicsMs(): number {
+    return this._lastPhysicsMs;
+  }
 
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
     this.transportMode = mode;
     this.dt = options.dt ?? 1 / 60;
     this.maxCatchUp = options.maxCatchUpSteps ?? 4;
     this.onCommand = options.onCommand;
+    this.physicsWorldKind = options.physicsWorld ?? "3d";
+    this.gravity = options.gravity ?? [0, -9.81, 0];
+    this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
 
@@ -131,15 +165,23 @@ class InProcessRuntime implements RuntimeDriver {
     );
     this.resolver = new InputResolver(mappings);
 
+    this.physicsSync = new PhysicsWorldSync(
+      createSoftwarePhysicsBackend(this.physicsWorldKind, {
+        x: this.gravity[0],
+        y: this.gravity[1],
+        z: this.gravity[2],
+      }),
+    );
+
     let guidSeq = 0;
     this.world = new World({
       seed: options.seed,
       dt: this.dt,
       classRegistry: registry,
       guidFactory: () => `rt-${++guidSeq}`,
-      onPhase: (phase) => {
-        // Timing hooks measure script vs physics phases.
-        void phase;
+      onPhase: (phase) => this.markPhase(phase),
+      onPhysics: (ctx) => {
+        this.physicsSync.step(ctx.dt, this.world);
       },
     });
     const resolved = () => this.resolvedInput;
@@ -223,9 +265,41 @@ class InProcessRuntime implements RuntimeDriver {
       reportError: (error) => {
         this.reportError(error);
       },
+      lineTrace: (start, end) => this.physicsSync.lineTrace(start, end),
+      sphereOverlap: (center, radius) =>
+        this.physicsSync.sphereOverlap(center, radius),
+      shapeSweep: (shape, start, end) =>
+        this.physicsSync.shapeSweep(shape, start, end),
+      addImpulse: (actor, impulse, strength) => {
+        const target = actor;
+        if (!target) return;
+        this.physicsSync.addImpulse(
+          target.guid,
+          impulse,
+          strength,
+        );
+      },
     });
 
     if (options.seedDemoActors !== false) this.seedDefaultActors();
+  }
+
+  async loadPhysics(): Promise<void> {
+    if (this.preferSoftwarePhysics) return;
+    const backend = await createPhysicsBackend({
+      kind: this.physicsWorldKind,
+      gravity: {
+        x: this.gravity[0],
+        y: this.gravity[1],
+        z: this.gravity[2],
+      },
+    });
+    this.physicsSync.dispose();
+    this.physicsSync = new PhysicsWorldSync(backend);
+  }
+
+  getPhysicsSync(): PhysicsWorldSync | null {
+    return this.physicsSync;
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
@@ -295,6 +369,36 @@ class InProcessRuntime implements RuntimeDriver {
     this.assignSlot(second);
   }
 
+  private phaseMark = 0;
+  private currentTimingPhase: TickPhase | null = null;
+
+  private markPhase(phase: TickPhase): void {
+    const now = nowMs();
+    if (this.currentTimingPhase !== null) {
+      const elapsed = now - this.phaseMark;
+      if (this.currentTimingPhase === "physics") {
+        this.phasePhysicsMs += elapsed;
+      } else {
+        this.phaseScriptMs += elapsed;
+      }
+    }
+    this.currentTimingPhase = phase;
+    this.phaseMark = now;
+  }
+
+  private closePhaseTiming(): void {
+    const now = nowMs();
+    if (this.currentTimingPhase !== null) {
+      const elapsed = now - this.phaseMark;
+      if (this.currentTimingPhase === "physics") {
+        this.phasePhysicsMs += elapsed;
+      } else {
+        this.phaseScriptMs += elapsed;
+      }
+    }
+    this.currentTimingPhase = null;
+  }
+
   private assignSlot(actor: Actor): number {
     const slotId = this.nextSlot++;
     this.slotByGuid.set(actor.guid, slotId);
@@ -307,12 +411,7 @@ class InProcessRuntime implements RuntimeDriver {
     return slotId;
   }
 
-  private emit(command: CommandMessage): void {
-    this.onCommand?.(command);
-  }
-
   start(): void {
-    if (this.running) return;
     this.running = true;
     this.paused = false;
     this.world.start();
@@ -321,6 +420,7 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     this.running = false;
     this.world.end();
+    this.physicsSync.dispose();
   }
 
   pause(): void {
@@ -351,7 +451,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   tick(): void {
     if (!this.running || this.paused) return;
-    // Consume input stamped for this tick (and earlier).
     const tickIndex = this.world.clock.tickIndex;
     const pending = this.input.drain().filter((e) => e.tick <= tickIndex + 1);
     this.resolvedInput = this.resolver.resolve(pending);
@@ -368,11 +467,16 @@ class InProcessRuntime implements RuntimeDriver {
       });
     }
 
-    const scriptStart = nowMs();
+    this.phaseScriptMs = 0;
+    this.phasePhysicsMs = 0;
+    this.currentTimingPhase = null;
+    this.phaseMark = nowMs();
+
     this.world.tick();
-    this.lastScriptMs = nowMs() - scriptStart;
-    // Physics phase is reserved; measured separately once P7 fills it.
-    this.lastPhysicsMs = 0;
+    this.closePhaseTiming();
+
+    this._lastScriptMs = this.phaseScriptMs;
+    this._lastPhysicsMs = this.phasePhysicsMs;
 
     this.frameId += 1;
     this.publishSnapshot();
@@ -380,8 +484,8 @@ class InProcessRuntime implements RuntimeDriver {
       type: "stats",
       frameId: this.frameId,
       tickIndex: this.world.clock.tickIndex,
-      scriptMs: this.lastScriptMs,
-      physicsMs: this.lastPhysicsMs,
+      scriptMs: this._lastScriptMs,
+      physicsMs: this._lastPhysicsMs,
     });
   }
 
@@ -478,13 +582,19 @@ class InProcessRuntime implements RuntimeDriver {
       frameId: this.frameId,
       tickIndex: this.world.clock.tickIndex,
       actorCount: count,
-      scriptMs: this.lastScriptMs,
-      physicsMs: this.lastPhysicsMs,
+      scriptMs: this._lastScriptMs,
+      physicsMs: this._lastPhysicsMs,
     });
     this.snapshots.publish();
+  }
+
+  private emit(command: CommandMessage): void {
+    this.onCommand?.(command);
   }
 }
 
 function nowMs(): number {
-  return typeof performance !== "undefined" ? performance.now() : Date.now();
+  return typeof performance !== "undefined" && performance.now
+    ? performance.now()
+    : Date.now();
 }
