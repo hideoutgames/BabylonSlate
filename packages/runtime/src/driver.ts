@@ -79,6 +79,10 @@ class InProcessRuntime implements RuntimeDriver {
     axes2D: {},
     gamepadConnections: [],
   };
+  /** Mutable box so TickContext can read connections without aliasing `this`. */
+  private readonly connectionBox: {
+    current: ResolvedInputTick["gamepadConnections"];
+  } = { current: [] };
   private readonly logs = new LogRingBuffer(512);
   private readonly diagnostics = new SessionDiagnosticAggregator();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
@@ -117,7 +121,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.resolver = new InputResolver(mappings);
 
     let guidSeq = 0;
-    const self = this;
     this.world = new World({
       seed: options.seed,
       dt: this.dt,
@@ -127,28 +130,28 @@ class InProcessRuntime implements RuntimeDriver {
         // Timing hooks measure script vs physics phases.
         void phase;
       },
-      input: {
-        isActionHeld: (action) =>
-          self.resolvedInput.actions[action]?.held ?? false,
-        wasActionPressed: (action) =>
-          self.resolvedInput.actions[action]?.pressed ?? false,
-        wasActionReleased: (action) =>
-          self.resolvedInput.actions[action]?.released ?? false,
-        getAxis: (axis) => self.resolvedInput.axes[axis] ?? 0,
-        getAxis2D: (axis) =>
-          self.resolvedInput.axes2D[axis] ?? { x: 0, y: 0 },
-        get gamepadConnections() {
-          return self.resolvedInput.gamepadConnections;
-        },
-        setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
-          self.emit({
-            type: "log",
-            severity: "log",
-            category: "input",
-            message: `rumble pad=${gamepadIndex} intensity=${intensity} ms=${durationMs}`,
-            frameId: self.frameId,
-          });
-        },
+    });
+    const resolved = () => this.resolvedInput;
+    const connections = this.connectionBox;
+    this.world.setInputProvider({
+      isActionHeld: (action) => resolved().actions[action]?.held ?? false,
+      wasActionPressed: (action) =>
+        resolved().actions[action]?.pressed ?? false,
+      wasActionReleased: (action) =>
+        resolved().actions[action]?.released ?? false,
+      getAxis: (axis) => resolved().axes[axis] ?? 0,
+      getAxis2D: (axis) => resolved().axes2D[axis] ?? { x: 0, y: 0 },
+      get gamepadConnections() {
+        return connections.current;
+      },
+      setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
+        this.emit({
+          type: "log",
+          severity: "log",
+          category: "input",
+          message: `rumble pad=${gamepadIndex} intensity=${intensity} ms=${durationMs}`,
+          frameId: this.frameId,
+        });
       },
     });
 
@@ -261,6 +264,7 @@ class InProcessRuntime implements RuntimeDriver {
     const tickIndex = this.world.clock.tickIndex;
     const pending = this.input.drain().filter((e) => e.tick <= tickIndex + 1);
     this.resolvedInput = this.resolver.resolve(pending);
+    this.connectionBox.current = this.resolvedInput.gamepadConnections;
     for (const connection of this.resolvedInput.gamepadConnections) {
       this.emit({
         type: "log",
