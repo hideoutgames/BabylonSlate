@@ -8,6 +8,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
+import { useGraphEditing } from "../context/graph-editing-context";
 import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
@@ -23,6 +24,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange } = useDocuments();
   const { focusedNodeId } = usePlay();
+  const { setSelectedNodeIds } = useGraphEditing();
   const {
     diagnostics,
     setDiagnostics,
@@ -95,6 +97,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         diagnostics={graphDiagnostics}
         paletteNodes={paletteNodes}
         onNavigateRequest={() => setFocusDiagnostic(null)}
+        onSelectionChange={setSelectedNodeIds}
         onChange={(next) => {
           const current =
             doc?.ref.kind === "graph"

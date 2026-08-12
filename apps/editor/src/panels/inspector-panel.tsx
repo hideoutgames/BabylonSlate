@@ -5,6 +5,11 @@ import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
+import { usePlay } from "../context/play-context";
+import {
+  resolveInspectorNodeId,
+  useGraphEditing,
+} from "../context/graph-editing-context";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 
@@ -13,6 +18,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange } = useDocuments();
   const { focusDiagnostic } = useValidation();
+  const { focusedNodeId } = usePlay();
+  const { selectedNodeIds } = useGraphEditing();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
@@ -20,11 +27,14 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
 
   const selectedNode = useMemo(() => {
     if (!graph) return null;
-    const id =
-      focusDiagnostic?.nodeId ??
-      graph.nodes.find((n) => n.type === "debug.executeJavaScript")?.id;
+    const id = resolveInspectorNodeId(
+      selectedNodeIds,
+      focusDiagnostic?.nodeId,
+      focusedNodeId,
+    );
+    if (!id) return null;
     return graph.nodes.find((n) => n.id === id) ?? null;
-  }, [graph, focusDiagnostic]);
+  }, [graph, selectedNodeIds, focusDiagnostic, focusedNodeId]);
 
   if (!graph || !selectedNode) {
     return (
