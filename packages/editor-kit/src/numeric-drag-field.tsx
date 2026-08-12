@@ -3,7 +3,9 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import { parseNumberInput } from "./parse-number-input";
 
 export interface NumericDragFieldProps {
-  label: string;
+  /** Visual scrub-handle text (axis letter). Omit for a compact unlabeled handle. */
+  label?: string;
+  id?: string;
   value: number;
   /** World units (or degrees) per pixel of horizontal drag. */
   sensitivity?: number;
@@ -34,6 +36,7 @@ function clamp(value: number, min?: number, max?: number): number {
  */
 export function NumericDragField({
   label,
+  id,
   value,
   sensitivity = 0.01,
   step = 0.001,
@@ -95,7 +98,7 @@ export function NumericDragField({
   );
 
   return (
-    <label className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1">
+    <div className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1">
       <span
         className={cn(
           "w-3 shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold",
@@ -116,8 +119,9 @@ export function NumericDragField({
       </span>
       <input
         type="number"
+        id={id}
         className="h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-background px-1 text-xs"
-        aria-label={label}
+        aria-label={label || undefined}
         data-testid={testId}
         disabled={disabled}
         step={step}
@@ -133,6 +137,6 @@ export function NumericDragField({
           onDragEnd?.(value);
         }}
       />
-    </label>
+    </div>
   );
 }
