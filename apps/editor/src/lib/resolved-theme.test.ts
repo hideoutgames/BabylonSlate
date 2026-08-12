@@ -100,3 +100,12 @@ describe("theme boot script", () => {
     expect(indexHtml).not.toMatch(/<html[^>]*class="dark"/);
   });
 });
+
+describe("standalone chrome", () => {
+  it("declares viewport-fit cover and web-app capable so Add to Home Screen is fullscreen", () => {
+    expect(indexHtml).toContain("viewport-fit=cover");
+    expect(indexHtml).toContain('name="apple-mobile-web-app-capable"');
+    expect(indexHtml).toContain('content="yes"');
+    expect(indexHtml).toContain('name="mobile-web-app-capable"');
+  });
+});
