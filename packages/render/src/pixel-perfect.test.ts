@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NullEngine, Scene, Texture } from "@babylonjs/core";
 import {
   applyPixelArtSampling,
+  applyPixelArtSamplingToScene,
   pixelPerfectOrthoHalfHeight,
   quantizeZoom,
   snapPointToPixelGrid,
@@ -78,6 +79,22 @@ describe("applyPixelArtSampling", () => {
     expect(texture.wrapV).toBe(Texture.CLAMP_ADDRESSMODE);
     expect(texture.anisotropicFilteringLevel).toBe(1);
     texture.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("applies nearest sampling to every texture on a scene", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const a = new Texture(null, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE);
+    const b = new Texture(null, scene, true, false, Texture.BILINEAR_SAMPLINGMODE);
+    applyPixelArtSamplingToScene(scene);
+    expect(a.anisotropicFilteringLevel).toBe(1);
+    expect(b.anisotropicFilteringLevel).toBe(1);
+    expect(a.wrapU).toBe(Texture.CLAMP_ADDRESSMODE);
+    expect(b.wrapV).toBe(Texture.CLAMP_ADDRESSMODE);
+    a.dispose();
+    b.dispose();
     scene.dispose();
     engine.dispose();
   });

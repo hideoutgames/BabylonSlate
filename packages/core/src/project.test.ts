@@ -24,6 +24,15 @@ describe("project schema", () => {
     expect(project.settings.input.actions.some((a) => a.name === "Jump")).toBe(
       true,
     );
+    const jumpPad = project.settings.input.actions
+      .find((a) => a.name === "Jump")
+      ?.bindings.find((b) => b.device === "gamepadButton")?.code;
+    const confirmPad = project.settings.input.actions
+      .find((a) => a.name === "Confirm")
+      ?.bindings.find((b) => b.device === "gamepadButton")?.code;
+    expect(jumpPad).toBe("0:0");
+    expect(confirmPad).toBe("0:1");
+    expect(jumpPad).not.toBe(confirmPad);
   });
 
   it("creates default scene and graph structures", () => {

@@ -51,7 +51,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | `selection-outline` | Highlight mesh(es) for selected actors |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
 | `viewport-gestures` | Two-finger orbit/pan/zoom; 2D one-finger marquee; tap pick |
-| `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds and pixel-grid snap |
+| `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds, pixel-grid snap, and `applyPixelArtSamplingToScene` when pixel-perfect is on |
 
 **Invalidation wiring**: `RenderScheduler.invalidate(reason)` — editor tools call `"camera"`, `"gizmo"`, and `"selection"`; scene sync uses `"asset"`. Gizmo drags acquire a continuous-render lease (`acquireContinuous("gizmo")`). See [scene-editing.md](scene-editing.md).
 

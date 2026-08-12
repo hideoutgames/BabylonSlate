@@ -11,10 +11,12 @@ import {
   RemoveComponentCommand,
   RenameActorCommand,
   ReorderActorCommand,
+  ReorderComponentCommand,
   ReparentActorCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
   SetComponentPropertyCommand,
+  SetSceneNameCommand,
   SetSceneSettingCommand,
   SetViewportModeCommand,
   type SceneEditCommand,
@@ -87,6 +89,30 @@ function diffComponents(
       );
     }
   }
+
+  // Detect pure reorders among components that exist in both versions.
+  if (
+    before.components.length === after.components.length &&
+    before.components.every((component) => afterComponents.has(component.id))
+  ) {
+    const beforeOrder = before.components.map((component) => component.id);
+    const afterOrder = after.components.map((component) => component.id);
+    if (beforeOrder.some((id, index) => id !== afterOrder[index])) {
+      // Emit one reorder per moved id so replaying reconstructs `after`
+      // without depending on intermediate map iteration order.
+      for (let to = 0; to < afterOrder.length; to++) {
+        const id = afterOrder[to]!;
+        const from = beforeOrder.indexOf(id);
+        if (from !== to) {
+          commands.push(new ReorderComponentCommand(actorId, id, from, to));
+          // Simulate the move on beforeOrder so subsequent deltas are relative
+          // to the partially-applied order (matches command.apply semantics).
+          const [moved] = beforeOrder.splice(from, 1);
+          beforeOrder.splice(to, 0, moved!);
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -98,6 +124,10 @@ export function diffSceneCommands(
   after: SerializedScene,
 ): SceneEditCommand[] {
   const commands: SceneEditCommand[] = [];
+
+  if (before.name !== after.name) {
+    commands.push(new SetSceneNameCommand(before.name, after.name));
+  }
 
   if (before.viewportMode !== after.viewportMode) {
     commands.push(

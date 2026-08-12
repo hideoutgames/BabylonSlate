@@ -136,7 +136,8 @@ export const DEFAULT_PROJECT_INPUT_SETTINGS: ProjectInputSettings = {
       name: "Confirm",
       bindings: [
         { device: "key", code: "Enter" },
-        { device: "gamepadButton", code: "0:0" },
+        // Face button B (index 1) — Jump already owns A (0:0).
+        { device: "gamepadButton", code: "0:1" },
       ],
     },
   ],

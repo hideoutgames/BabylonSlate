@@ -21,6 +21,7 @@ import {
   createSetActorFlagsCommandFromJson,
   createSetActorTransformCommandFromJson,
   createSetComponentPropertyCommandFromJson,
+  createSetSceneNameCommandFromJson,
   createSetSceneSettingCommandFromJson,
   createSetViewportModeCommandFromJson,
 } from "./commands/scene";
@@ -194,6 +195,10 @@ export function registerSceneCommandRevivers(): void {
   registerCommandReviver(
     "scene.setViewportMode",
     createSetViewportModeCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.setSceneName",
+    createSetSceneNameCommandFromJson,
   );
 }
 

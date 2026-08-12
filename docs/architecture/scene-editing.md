@@ -23,10 +23,24 @@ Each **component**: `id`, `classId`, `properties` (typed per class in the object
 
 - `selectedActorIds`, `selectActor` (single or additive), `setSelectedActorIds`, `isSelected`
 - `gizmoTool` / `setGizmoTool` (`translate` \| `rotate` \| `scale` \| `none`)
-- `snapEnabled` / `setSnapEnabled`
-- `viewportMode` / `setViewportMode` (live mode; scene doc holds the persisted default via `SetViewportModeCommand`)
+- `snapEnabled` / `setSnapEnabled` — live toolbar state; persisted on the scene via `settings.grid.snapEnabled` (`SetSceneSettingCommand`)
+- `viewportMode` / `setViewportMode` — live mode synced from `documentViewportMode` so undo/redo of `SetViewportModeCommand` restores the camera, not only the serialized field
 
 Panels never mutate selection independently — they consume `useSceneEditing()`.
+
+## Command layer
+
+Every scene Details / outliner / viewport mutation routes through `applySceneChange` → `diffSceneCommands` → the undo stack. Notable command types:
+
+| Command | Diff trigger |
+| --- | --- |
+| `SetSceneNameCommand` | `scene.name` |
+| `SetViewportModeCommand` | `scene.viewportMode` |
+| `SetSceneSettingCommand` | any `settings.*` field (including `grid.snapEnabled`, `gameInstanceClass`) |
+| `ReorderComponentCommand` | component list order change with the same ids |
+| `SetActorTransformCommand` | gizmo drag / Details transform (merge key `transform:{actorId}`) |
+
+`RemoveActorCommand` stores a single-actor snapshot (not a full subtree). UI deletes that remove a hierarchy emit one remove per actor.
 
 ## Gizmo + camera contracts
 
@@ -65,6 +79,12 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 - **Tile grid**: major lines at `settings.grid.tileSize`; minor lines at `tileSubdivisions` between majors (`editor-grid.ts`).
 - **`cameraBounds2D`**: rectangle drawn in the viewport for the game camera frame.
 - **`pixelsPerUnit`**: project setting (default 100); drives pixel-perfect ortho bounds and grid snapping.
+- **Pixel-perfect sampling**: when `twoD.pixelPerfect` is on in 2D mode, `setPixelPerfect` also runs `applyPixelArtSamplingToScene` (nearest sampling, clamp wrap, anisotropy 1) on every texture currently on the Babylon scene.
 - **Sorting layers**: ordered list in project settings; `(sortingLayer, orderInLayer)` compiled to one `alphaIndex` sort key; rendering groups reserved for coarse background / world / foreground / UI separation (`sorting.ts`).
+- **Locked actors**: `isPickable = false` and the viewport gizmo attaches only to pickable meshes, so a locked selection cannot be transformed.
+
+## Actor Prefab tab
+
+The Prefab panel on class documents is **preview-only** in P6: component add/remove updates a local tree and 3D preview, but does not write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
 
 See [command-layer.md](command-layer.md) for undo/journal and [gestures.md](../design/gestures.md) for touch contracts.

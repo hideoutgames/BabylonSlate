@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -26,18 +27,47 @@ export interface SceneEditingContextValue {
 
 const SceneEditingContext = createContext<SceneEditingContextValue | null>(null);
 
+/**
+ * Keep live viewport mode aligned with the scene document so undo/redo of
+ * SetViewportModeCommand restores the camera, not only the serialized field.
+ */
+export function resolveDocumentViewportMode(
+  mode: ViewportMode | undefined | null,
+): ViewportMode {
+  return mode === "2d" ? "2d" : "3d";
+}
+
 export function SceneEditingProvider({
   children,
   initialViewportMode = "3d",
+  documentViewportMode,
+  documentSnapEnabled,
 }: {
   children: ReactNode;
   initialViewportMode?: ViewportMode;
+  /** When the scene document's viewportMode changes (undo/redo/load), sync live mode. */
+  documentViewportMode?: ViewportMode;
+  /** When the scene document's grid.snapEnabled changes, sync the toolbar toggle. */
+  documentSnapEnabled?: boolean;
 }) {
   const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
   const [gizmoTool, setGizmoTool] = useState<GizmoTool>("translate");
-  const [snapEnabled, setSnapEnabled] = useState(false);
-  const [viewportMode, setViewportMode] =
-    useState<ViewportMode>(initialViewportMode);
+  const [snapEnabled, setSnapEnabled] = useState(
+    documentSnapEnabled ?? false,
+  );
+  const [viewportMode, setViewportMode] = useState<ViewportMode>(
+    resolveDocumentViewportMode(documentViewportMode ?? initialViewportMode),
+  );
+
+  useEffect(() => {
+    if (documentViewportMode === undefined) return;
+    setViewportMode(resolveDocumentViewportMode(documentViewportMode));
+  }, [documentViewportMode]);
+
+  useEffect(() => {
+    if (documentSnapEnabled === undefined) return;
+    setSnapEnabled(documentSnapEnabled);
+  }, [documentSnapEnabled]);
 
   const selectActor = useCallback(
     (actorId: string | null, additive = false) => {

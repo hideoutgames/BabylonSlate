@@ -17,6 +17,7 @@ import {
   SetActorFlagsCommand,
   SetActorTransformCommand,
   SetComponentPropertyCommand,
+  SetSceneNameCommand,
   SetSceneSettingCommand,
   SetViewportModeCommand,
 } from "./commands/scene";
@@ -108,6 +109,7 @@ describe("journal", () => {
       ),
       new SetSceneSettingCommand("fogEnabled", false, true),
       new SetViewportModeCommand("3d", "2d"),
+      new SetSceneNameCommand("Main", "Level 1"),
     ];
 
     for (const command of commands) {

@@ -143,3 +143,14 @@ Design notes: [scripting.md](../architecture/scripting.md).
 Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](../architecture/input.md).
 
 **Closed deferrals:** P2 "scene document commands on the edit layer → P6" (`p6-scene-editing`); P4 "action mappings deferred to P6" (`p6-input-mappings`).
+
+### P6 follow-ups / open deferrals
+
+| Item | Owner | Notes |
+| --- | --- | --- |
+| Actor Prefab tab → class document persistence | P7/P9 content systems | Preview-only UI shipped in P6; edits are session-local |
+| Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | Details can add components; editor mesh proxy only for MeshComponent |
+| Mini Asset Browser drop raycast placement | later polish | Drop spawns at default origin today |
+| Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
+| Structured Input mappings editor (vs raw JSON) | later polish | Project Settings Input tab is a JSON textarea |
+| Multi-select gizmo (transform all selected) | later polish | Outline covers all; gizmo attaches to first pickable |

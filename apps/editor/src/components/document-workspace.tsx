@@ -75,14 +75,17 @@ export function DocumentWorkspace() {
           );
         }
 
+        const sceneContent =
+          doc.ref.kind === "scene"
+            ? (doc.content as SerializedScene | null)
+            : null;
+
         return (
           <DocumentWorkspaceProvider key={id} documentId={id}>
             <SceneEditingProvider
-              initialViewportMode={
-                doc.ref.kind === "scene"
-                  ? ((doc.content as SerializedScene | null)?.viewportMode ?? "3d")
-                  : "3d"
-              }
+              initialViewportMode={sceneContent?.viewportMode ?? "3d"}
+              documentViewportMode={sceneContent?.viewportMode}
+              documentSnapEnabled={sceneContent?.settings.grid.snapEnabled}
             >
               <div
                 className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}

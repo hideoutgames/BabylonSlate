@@ -19,6 +19,7 @@ import {
   SetActorFlagsCommand,
   SetActorTransformCommand,
   SetComponentPropertyCommand,
+  SetSceneNameCommand,
   SetSceneSettingCommand,
   SetViewportModeCommand,
   type SceneEditCommand,
@@ -192,6 +193,11 @@ describe("scene commands", () => {
     const scene = baseScene();
     expectRoundTrip(scene, new SetViewportModeCommand("3d", "2d"));
   });
+
+  it("SetSceneNameCommand apply-then-invert restores the document", () => {
+    const scene = baseScene();
+    expectRoundTrip(scene, new SetSceneNameCommand("Test", "Level 1"));
+  });
 });
 
 describe("diffSceneCommands", () => {
@@ -257,11 +263,41 @@ describe("diffSceneCommands", () => {
     expect(types).toEqual(["scene.setViewportMode", "scene.setSceneSetting"]);
   });
 
+  it("derives a scene name change", () => {
+    const before = baseScene();
+    const after = { ...before, name: "Level 1" };
+    const commands = diffSceneCommands(before, after);
+    expect(commands.map((command) => command.type)).toEqual([
+      "scene.setSceneName",
+    ]);
+    expect(commands[0]!.apply(before).name).toBe("Level 1");
+  });
+
+  it("derives component reorder when only order changes", () => {
+    const before = baseScene();
+    before.actors[0]!.components.push(createMeshComponent("c2", "sphere"));
+    const after = structuredClone(before);
+    after.actors[0]!.components = [
+      after.actors[0]!.components[1]!,
+      after.actors[0]!.components[0]!,
+    ];
+    const commands = diffSceneCommands(before, after);
+    expect(commands.map((command) => command.type)).toEqual([
+      "scene.reorderComponent",
+    ]);
+  });
+
   it("replaying derived commands reproduces the after document", () => {
     const before = baseScene();
     const after = structuredClone(before);
+    after.name = "Renamed Scene";
     after.actors[0]!.name = "Renamed";
     after.actors[0]!.transform.position = [3, 4, 5];
+    after.actors[0]!.components.push(createMeshComponent("c2", "sphere"));
+    after.actors[0]!.components = [
+      after.actors[0]!.components[1]!,
+      after.actors[0]!.components[0]!,
+    ];
     after.actors.push(createActor("c", "C"));
 
     let doc = before;
