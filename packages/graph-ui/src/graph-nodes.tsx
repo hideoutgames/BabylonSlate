@@ -280,23 +280,25 @@ function BlueprintNodeShell({
   const { nodeErrorCount } = useGraphEditorContext();
 
   return (
-    <div
-      data-node-role={role}
-      className={cn(
-        "relative min-w-72 rounded-lg border border-border bg-card text-card-foreground shadow-md",
-        selected && "ring-2 ring-primary",
-      )}
-    >
+    <div className="relative">
       <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} />
       <div
+        data-node-role={role}
         className={cn(
-          "px-3 py-2 text-sm font-semibold leading-snug break-words text-node-title",
-          nodeRoleClass(role),
+          "min-w-72 overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
+          selected && "ring-2 ring-primary",
         )}
       >
-        {title}
+        <div
+          className={cn(
+            "rounded-t-lg px-3 py-2 text-sm font-semibold leading-snug break-words text-node-title",
+            nodeRoleClass(role),
+          )}
+        >
+          {title}
+        </div>
+        {children}
       </div>
-      {children}
     </div>
   );
 }
