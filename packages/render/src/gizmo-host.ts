@@ -1,4 +1,5 @@
 import {
+  AxisScaleGizmo,
   Color3,
   MeshBuilder,
   PositionGizmo,
@@ -186,7 +187,7 @@ function styleEditorGizmos(
     { size: 0.14 },
     scale.uniformScaleGizmo.gizmoLayer.utilityLayerScene,
   );
-  scale.uniformScaleGizmo.setCustomMesh(cube, true);
+  (scale.uniformScaleGizmo as AxisScaleGizmo).setCustomMesh(cube, true);
   const uniform = new Color3(0.82, 0.84, 0.88);
   styleUnlitAxis(
     scale.uniformScaleGizmo.coloredMaterial,
