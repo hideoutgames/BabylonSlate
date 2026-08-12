@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 import {
   CONNECT_END_CANCEL_PX,
+  collectSafeConnectPins,
   displayNodeTitle,
   filterPaletteForPin,
   isNearSourcePin,
   pinsAreCompatible,
+  shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
 
 const execOut: SerializedPin = {
@@ -111,5 +113,124 @@ describe("isNearSourcePin", () => {
     expect(
       isNearSourcePin({ x: 10, y: 10 }, { x: 200, y: 80 }, CONNECT_END_CANCEL_PX),
     ).toBe(false);
+  });
+});
+
+describe("CONNECT_END_CANCEL_PX", () => {
+  it("is 96 screen pixels so a short slip off a pin does not open Add Node", () => {
+    expect(CONNECT_END_CANCEL_PX).toBe(96);
+  });
+});
+
+describe("collectSafeConnectPins", () => {
+  const nodes = [
+    { id: "source", pins: [execOut, stringOut] },
+    { id: "log", pins: [execIn, execOut, stringIn, floatIn] },
+  ];
+
+  it("includes the dragged source pin and compatible opposite pins", () => {
+    expect(collectSafeConnectPins(nodes, "source", execOut)).toEqual([
+      { nodeId: "source", pinId: "execOut" },
+      { nodeId: "log", pinId: "execIn" },
+    ]);
+  });
+
+  it("excludes incompatible pins", () => {
+    const refs = collectSafeConnectPins(nodes, "source", stringOut);
+    expect(refs).toEqual([
+      { nodeId: "source", pinId: "value" },
+      { nodeId: "log", pinId: "message" },
+    ]);
+    expect(refs.some((ref) => ref.pinId === "a")).toBe(false);
+    expect(refs.some((ref) => ref.pinId === "execIn")).toBe(false);
+  });
+});
+
+describe("shouldOpenAddNodeOnConnectEnd", () => {
+  const source = { x: 0, y: 0 };
+
+  it("cancels when the pointer is near the source pin", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 40, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("opens Add Node when the pointer is far from every safe pin", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 200, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(true);
+  });
+
+  it("cancels when the pointer is near a compatible pin even if far from the source", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 250, y: 0 },
+        safePins: [source, { x: 200, y: 0 }],
+      }),
+    ).toBe(false);
+  });
+
+  it("opens Add Node when the pointer is near an incompatible pin only", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 200, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(true);
+  });
+
+  it("cancels when React Flow already snapped to a target handle", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: true,
+        pointerOverNode: false,
+        pointer: { x: 200, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("cancels when the pointer is over a node body", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: true,
+        pointer: { x: 200, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("cancels strictly inside the threshold and opens at the boundary", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 95, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 96, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(true);
   });
 });

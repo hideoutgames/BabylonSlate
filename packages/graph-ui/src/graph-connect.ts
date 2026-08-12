@@ -4,8 +4,21 @@ import {
 } from "@babylonslate/editor-kit";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 
-/** Drop closer than this to the source pin cancels Add Node. */
-export const CONNECT_END_CANCEL_PX = 48;
+/** Drop closer than this (screen px) to a safe pin cancels Add Node. */
+export const CONNECT_END_CANCEL_PX = 96;
+
+export type SafeConnectPinRef = {
+  nodeId: string;
+  pinId: string;
+};
+
+export type ConnectEndDecision = {
+  hasTargetHandle: boolean;
+  pointerOverNode: boolean;
+  pointer: { x: number; y: number };
+  safePins: Array<{ x: number; y: number }>;
+  thresholdPx?: number;
+};
 
 export function displayNodeTitle(nodeType: string, title?: string): string {
   if (nodeType.startsWith("flow.event.")) {
@@ -53,4 +66,34 @@ export function isNearSourcePin(
   thresholdPx = CONNECT_END_CANCEL_PX,
 ): boolean {
   return Math.hypot(to.x - from.x, to.y - from.y) < thresholdPx;
+}
+
+export function collectSafeConnectPins(
+  nodes: Array<{ id: string; pins?: SerializedPin[] }>,
+  draggedNodeId: string,
+  draggedPin: SerializedPin,
+): SafeConnectPinRef[] {
+  const refs: SafeConnectPinRef[] = [
+    { nodeId: draggedNodeId, pinId: draggedPin.id },
+  ];
+  for (const node of nodes) {
+    for (const pin of node.pins ?? []) {
+      if (node.id === draggedNodeId && pin.id === draggedPin.id) continue;
+      if (pinsAreCompatible(draggedPin, pin)) {
+        refs.push({ nodeId: node.id, pinId: pin.id });
+      }
+    }
+  }
+  return refs;
+}
+
+export function shouldOpenAddNodeOnConnectEnd({
+  hasTargetHandle,
+  pointerOverNode,
+  pointer,
+  safePins,
+  thresholdPx = CONNECT_END_CANCEL_PX,
+}: ConnectEndDecision): boolean {
+  if (hasTargetHandle || pointerOverNode) return false;
+  return !safePins.some((pin) => isNearSourcePin(pin, pointer, thresholdPx));
 }
