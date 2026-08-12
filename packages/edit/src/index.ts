@@ -18,6 +18,25 @@ export {
 } from "./commands/graph";
 export { diffGraphCommands } from "./commands/graph-diff";
 export {
+  AddActorCommand,
+  AddComponentCommand,
+  RemoveActorCommand,
+  RemoveComponentCommand,
+  RenameActorCommand,
+  ReorderActorCommand,
+  ReorderComponentCommand,
+  ReparentActorCommand,
+  SetActorFlagsCommand,
+  SetActorTransformCommand,
+  SetComponentPropertyCommand,
+  SetSceneSettingCommand,
+  SetViewportModeCommand,
+  SCENE_COMMAND_TYPES,
+  type ActorFlags,
+  type SceneEditCommand,
+} from "./commands/scene";
+export { diffSceneCommands } from "./commands/scene-diff";
+export {
   type JournalLine,
   parseJournalLine,
   registerCommandReviver,
@@ -27,5 +46,10 @@ export {
   serializeCommand,
   commandToJournalPayload,
   registerGraphCommandRevivers,
+  registerSceneCommandRevivers,
 } from "./journal";
-export { replayJournalLines, type JournalReplayResult } from "./journal-replay";
+export {
+  replayJournalLines,
+  type JournalReplayResult,
+  type ReplayableDocument,
+} from "./journal-replay";

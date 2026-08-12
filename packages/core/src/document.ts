@@ -1,4 +1,5 @@
-import type { SerializedGraph, SerializedScene } from "./project";
+import type { SerializedGraph } from "./project";
+import type { SerializedScene } from "./scene";
 
 export type DocumentKind = "content-browser" | "scene" | "graph";
 

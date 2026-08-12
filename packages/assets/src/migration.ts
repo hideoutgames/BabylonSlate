@@ -1,3 +1,8 @@
+import {
+  createDefaultSceneSettings,
+  identitySerializedTransform,
+} from "@babylonslate/core";
+
 export type MigrationFn = (
   payload: Record<string, unknown>,
 ) => Record<string, unknown>;
@@ -46,6 +51,58 @@ export class MigrationRegistry {
   }
 }
 
+/**
+ * Scene v1 → v2: the placeholder `meshes[]` list becomes actors carrying a
+ * MeshComponent, plus scene settings and a viewport mode default.
+ */
+function migrateSceneMeshesToActors(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const { meshes, ...rest } = payload;
+  const legacyMeshes = Array.isArray(meshes) ? meshes : [];
+  const actors = legacyMeshes.map((entry, index) => {
+    const mesh = (entry ?? {}) as Record<string, unknown>;
+    const id = typeof mesh.id === "string" ? mesh.id : `actor-${index + 1}`;
+    const position = Array.isArray(mesh.position)
+      ? (mesh.position as number[]).slice(0, 3)
+      : [0, 0, 0];
+    const transform = identitySerializedTransform();
+    return {
+      id,
+      name: id,
+      classId: "Actor",
+      parentId: null,
+      transform: {
+        ...transform,
+        position: [
+          Number(position[0]) || 0,
+          Number(position[1]) || 0,
+          Number(position[2]) || 0,
+        ],
+      },
+      visible: true,
+      locked: false,
+      components: [
+        {
+          id: `${id}-mesh`,
+          classId: "MeshComponent",
+          properties: {
+            meshKind: typeof mesh.type === "string" ? mesh.type : "box",
+            assetGuid: null,
+          },
+        },
+      ],
+    };
+  });
+
+  return {
+    ...rest,
+    viewportMode: rest.viewportMode === "2d" ? "2d" : "3d",
+    settings: rest.settings ?? createDefaultSceneSettings(),
+    actors: Array.isArray(rest.actors) ? rest.actors : actors,
+  };
+}
+
 /** Default registry with a placeholder Graph type at v1 (one migration from v0). */
 export function createDefaultMigrationRegistry(): MigrationRegistry {
   const registry = new MigrationRegistry();
@@ -66,6 +123,7 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
         ...payload,
         meshes: Array.isArray(payload.meshes) ? payload.meshes : [],
       }),
+      migrateSceneMeshesToActors,
     ],
   });
   registry.register({

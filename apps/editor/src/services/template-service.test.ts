@@ -104,7 +104,7 @@ describe("Homepage template cards", () => {
     expect(document.scenes).toHaveLength(1);
     expect(await destination.exists(document.scenes[0]!)).toBe(true);
     expect(await service.loadDocument("scene", document.scenes[0]!)).toEqual(
-      expect.objectContaining({ meshes: expect.any(Array) }),
+      expect.objectContaining({ actors: expect.any(Array) }),
     );
   });
 
@@ -138,6 +138,6 @@ describe("Homepage template cards", () => {
     expect(document.scenes).toEqual(["assets/level1.scene.babasset"]);
     expect(
       await service.loadDocument("scene", "assets/level1.scene.babasset"),
-    ).toEqual({ name: "Level 1", meshes: [] });
+    ).toMatchObject({ name: "Level 1", actors: [], viewportMode: "3d" });
   });
 });

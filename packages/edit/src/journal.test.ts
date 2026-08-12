@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
+import {
+  createActor,
+  createDefaultScene,
+  createMeshComponent,
+} from "@babylonslate/core";
 import { MoveNodeCommand } from "./commands/graph";
+import {
+  AddActorCommand,
+  AddComponentCommand,
+  RemoveActorCommand,
+  RemoveComponentCommand,
+  RenameActorCommand,
+  ReorderActorCommand,
+  ReorderComponentCommand,
+  ReparentActorCommand,
+  SetActorFlagsCommand,
+  SetActorTransformCommand,
+  SetComponentPropertyCommand,
+  SetSceneSettingCommand,
+  SetViewportModeCommand,
+} from "./commands/scene";
 import {
   commandToJournalPayload,
   parseJournalLine,
@@ -50,5 +70,54 @@ describe("journal", () => {
     };
     const next = revived!.apply(graph) as typeof graph;
     expect(next.nodes[0]?.position).toEqual({ x: 5, y: 5 });
+  });
+
+  it("round-trips every scene command type through the journal", () => {
+    const scene = createDefaultScene();
+    const actorId = scene.actors[0]!.id;
+    const componentId = scene.actors[0]!.components[0]!.id;
+    const commands = [
+      new AddActorCommand(createActor("added", "Added"), 1),
+      new RemoveActorCommand(scene.actors[0]!, 0),
+      new SetActorTransformCommand(
+        actorId,
+        scene.actors[0]!.transform,
+        { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      ),
+      new RenameActorCommand(actorId, "Cube", "Renamed"),
+      new ReparentActorCommand(actorId, null, null),
+      new ReorderActorCommand(actorId, 0, 0),
+      new SetActorFlagsCommand(
+        actorId,
+        { visible: true, locked: false },
+        { visible: false, locked: true },
+      ),
+      new AddComponentCommand(actorId, createMeshComponent("c9", "sphere")),
+      new RemoveComponentCommand(
+        actorId,
+        scene.actors[0]!.components[0]!,
+        0,
+      ),
+      new ReorderComponentCommand(actorId, componentId, 0, 0),
+      new SetComponentPropertyCommand(
+        actorId,
+        componentId,
+        "meshKind",
+        "box",
+        "sphere",
+      ),
+      new SetSceneSettingCommand("fogEnabled", false, true),
+      new SetViewportModeCommand("3d", "2d"),
+    ];
+
+    for (const command of commands) {
+      const payload = commandToJournalPayload(command);
+      const revived = reviveCommand(payload);
+      expect(revived, `no reviver for ${command.type}`).not.toBeNull();
+      expect(revived!.type).toBe(command.type);
+      expect(revived!.apply(createDefaultScene())).toEqual(
+        command.apply(createDefaultScene()),
+      );
+    }
   });
 });

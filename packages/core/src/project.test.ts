@@ -18,7 +18,7 @@ describe("project schema", () => {
   });
 
   it("creates default scene and graph structures", () => {
-    expect(createDefaultScene().meshes.length).toBeGreaterThan(0);
+    expect(createDefaultScene().actors.length).toBeGreaterThan(0);
     expect(createDefaultGraph().nodes.length).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   CONTENT_BROWSER_ID,
+  createDefaultScene,
   createEmptyProject,
   createEmptyLayouts,
   documentId,
@@ -20,7 +21,7 @@ function createMockProjectService(
     loadDocument:
       overrides.loadDocument ??
       vi.fn(async (kind: string) => {
-        if (kind === "scene") return { name: "Main", meshes: [] };
+        if (kind === "scene") return createDefaultScene();
         return { nodes: [], edges: [] };
       }),
   } as unknown as ProjectService;

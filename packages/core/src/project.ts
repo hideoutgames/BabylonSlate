@@ -1,3 +1,10 @@
+import {
+  createActor,
+  createDefaultSceneSettings,
+  createMeshComponent,
+  type SerializedScene,
+} from "./scene";
+
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
 export const MAIN_GRAPH_FILE = "assets/main.graph.babasset";
@@ -45,14 +52,6 @@ export interface SerializedGraph {
   }>;
 }
 
-export interface SerializedScene {
-  name: string;
-  meshes: Array<{
-    id: string;
-    type: string;
-    position: [number, number, number];
-  }>;
-}
 
 export const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
   maxTextureDimension: 2048,
@@ -93,12 +92,12 @@ export function createEmptyProject(name: string): ProjectDocument {
 export function createDefaultScene(): SerializedScene {
   return {
     name: "Main",
-    meshes: [
-      {
-        id: "cube",
-        type: "box",
-        position: [0, 0, 0],
-      },
+    viewportMode: "3d",
+    settings: createDefaultSceneSettings(),
+    actors: [
+      createActor("actor-1", "Cube", {
+        components: [createMeshComponent("component-1", "box")],
+      }),
     ],
   };
 }

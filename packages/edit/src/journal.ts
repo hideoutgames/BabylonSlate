@@ -9,6 +9,21 @@ import {
   createRemoveEdgeCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
+import {
+  createAddActorCommandFromJson,
+  createAddComponentCommandFromJson,
+  createRemoveActorCommandFromJson,
+  createRemoveComponentCommandFromJson,
+  createRenameActorCommandFromJson,
+  createReorderActorCommandFromJson,
+  createReorderComponentCommandFromJson,
+  createReparentActorCommandFromJson,
+  createSetActorFlagsCommandFromJson,
+  createSetActorTransformCommandFromJson,
+  createSetComponentPropertyCommandFromJson,
+  createSetSceneSettingCommandFromJson,
+  createSetViewportModeCommandFromJson,
+} from "./commands/scene";
 
 export interface JournalLine {
   v: 1;
@@ -104,8 +119,15 @@ export function commandToJournalPayload(
         mergeKey: setData.mergeKey,
       };
     }
-    default:
+    default: {
+      if (command.type.startsWith("scene.")) {
+        // Scene commands keep every payload field as an own property, so a
+        // shallow copy is the full journal payload; revivers ignore the
+        // derived mergeKey and byteSize fields.
+        return { ...(command as object) } as { type: string };
+      }
       return { type: command.type };
+    }
   }
 }
 
@@ -129,4 +151,51 @@ export function registerGraphCommandRevivers(): void {
   registerCommandReviver("graph.setNodeData", createSetNodeDataCommandFromJson);
 }
 
+export function registerSceneCommandRevivers(): void {
+  registerCommandReviver("scene.addActor", createAddActorCommandFromJson);
+  registerCommandReviver("scene.removeActor", createRemoveActorCommandFromJson);
+  registerCommandReviver(
+    "scene.setActorTransform",
+    createSetActorTransformCommandFromJson,
+  );
+  registerCommandReviver("scene.renameActor", createRenameActorCommandFromJson);
+  registerCommandReviver(
+    "scene.reparentActor",
+    createReparentActorCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.reorderActor",
+    createReorderActorCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.setActorFlags",
+    createSetActorFlagsCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.addComponent",
+    createAddComponentCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.removeComponent",
+    createRemoveComponentCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.reorderComponent",
+    createReorderComponentCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.setComponentProperty",
+    createSetComponentPropertyCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.setSceneSetting",
+    createSetSceneSettingCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.setViewportMode",
+    createSetViewportModeCommandFromJson,
+  );
+}
+
 registerGraphCommandRevivers();
+registerSceneCommandRevivers();

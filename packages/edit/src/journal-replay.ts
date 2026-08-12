@@ -1,4 +1,4 @@
-import type { SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
 import type { EditCommand } from "./command";
 import {
   parseJournalLine,
@@ -6,22 +6,26 @@ import {
   type JournalLine,
 } from "./journal";
 
-export interface JournalReplayResult {
-  /** Updated graph documents keyed by doc id. */
-  documents: Map<string, SerializedGraph>;
+/** Any document kind the command layer can replay onto. */
+export type ReplayableDocument = SerializedGraph | SerializedScene;
+
+export interface JournalReplayResult<TDoc = ReplayableDocument> {
+  /** Updated documents keyed by doc id. */
+  documents: Map<string, TDoc>;
   /** Lines skipped because the target document was not open or the command was unknown. */
   skipped: JournalLine[];
 }
 
 /**
- * Replay journal lines onto open graph documents using the same apply path as
- * live editing (revive → command.apply).
+ * Replay journal lines onto open documents using the same apply path as live
+ * editing (revive → command.apply). Graph and scene documents share one stream,
+ * keyed by doc id, so recovery is not a second serialisation path.
  */
-export function replayJournalLines(
+export function replayJournalLines<TDoc extends ReplayableDocument>(
   lines: string[],
-  openGraphs: Map<string, SerializedGraph>,
-): JournalReplayResult {
-  const documents = new Map(openGraphs);
+  openDocuments: Map<string, TDoc>,
+): JournalReplayResult<TDoc> {
+  const documents = new Map(openDocuments);
   const skipped: JournalLine[] = [];
 
   for (const raw of lines) {
@@ -44,10 +48,7 @@ export function replayJournalLines(
       continue;
     }
 
-    documents.set(
-      line.docId,
-      (command as EditCommand<SerializedGraph>).apply(doc),
-    );
+    documents.set(line.docId, (command as EditCommand<TDoc>).apply(doc));
   }
 
   return { documents, skipped };

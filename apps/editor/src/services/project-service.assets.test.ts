@@ -35,7 +35,7 @@ describe("project documents as .babasset", () => {
       await storage.readBinary(MAIN_SCENE_FILE),
     );
     expect(header.type).toBe("Scene");
-    expect(header.version).toBe(1);
+    expect(header.version).toBe(2);
     expect(header.guid).toBeTruthy();
     expect(header.chunks[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -89,9 +89,12 @@ describe("project documents as .babasset", () => {
     )) as SerializedScene;
     expect(scene.name).toBe("Legacy");
 
+    // The legacy payload is a schema version behind, so saving it back needs
+    // the same explicit migrate-on-save approval as any other stale asset.
+    service.approveMigrateOnSave();
     await service.saveDocument("scene", "scenes/main.scene.json", scene);
     expect(
       JSON.parse(await storage.readText("scenes/main.scene.json")).version,
-    ).toBe(1);
+    ).toBe(2);
   });
 });
