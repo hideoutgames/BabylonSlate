@@ -18,6 +18,8 @@
     "@babylonslate/object-model": "workspace:*"
   },
   "devDependencies": {
+    "@babylonslate/scripting": "workspace:*",
+    "@babylonslate/scripting-nodes": "workspace:*",
     "typescript": "~5.8.2"
   }
 }

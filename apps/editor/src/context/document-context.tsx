@@ -51,6 +51,8 @@ import {
 } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { loadTemplateCards } from "../services/template-service";
+import { compileGraphDocuments } from "../services/script-compiler";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 
 export type AppRoute = "home" | "editor";
 
@@ -108,6 +110,8 @@ interface DocumentContextValue {
   /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
   loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
   thumbnailsEnabled: boolean;
+  /** Compile every project graph into runtime script bundles for Preview. */
+  collectScriptBundles: () => Promise<ScriptBundleEntry[]>;
 }
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
@@ -624,6 +628,32 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
 
+  const collectScriptBundles = useCallback(async (): Promise<
+    ScriptBundleEntry[]
+  > => {
+    const paths = projectDocument?.graphs ?? [];
+    const open = documentService.getState().openDocuments;
+    const documents: Array<{ path: string; content: SerializedGraph }> = [];
+    for (const path of paths) {
+      const openDoc = open.get(documentId({ kind: "graph", path }));
+      // Unsaved edits must run in Preview, so prefer the in-memory document.
+      if (openDoc?.content) {
+        documents.push({ path, content: openDoc.content as SerializedGraph });
+        continue;
+      }
+      try {
+        const content = (await projectService.loadDocument(
+          "graph",
+          path,
+        )) as SerializedGraph;
+        documents.push({ path, content });
+      } catch (error) {
+        console.error(`[play] failed to load graph ${path}`, error);
+      }
+    }
+    return compileGraphDocuments(documents);
+  }, [documentService, projectDocument, projectService]);
+
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
       if (!thumbnailsEnabledRef.current) return null;
@@ -648,6 +678,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         cancelDebouncedSave: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
         hasRecoveryJournal: () => Promise<boolean>;
+        setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
       };
     };
     host.__babylonslateTest = {
@@ -704,6 +735,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           },
         };
         return applyGraphChange(id, graph);
+      },
+      /** Replace the main graph so Preview compiles a known script. */
+      setMainGraphContent: async (graph: SerializedGraph) => {
+        const path = "assets/main.graph.babasset";
+        const id = `graph:${path}`;
+        if (!documentService.getState().openDocuments.has(id)) {
+          await documentService.openDocument(
+            projectService,
+            { kind: "graph", path, label: "main.graph.babasset" },
+            null,
+            false,
+          );
+        }
+        documentService.updateGraph(id, graph);
+        bump();
+        return true;
       },
     };
     return () => {
@@ -844,6 +891,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       retryFailedTextureEncoding,
       loadAssetThumbnail,
       thumbnailsEnabled,
+      collectScriptBundles,
     };
     },
     [
@@ -856,6 +904,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       retryFailedTextureEncoding,
       loadAssetThumbnail,
       thumbnailsEnabled,
+      collectScriptBundles,
       listedProjects,
       needsReconnect,
       recoveryAvailable,

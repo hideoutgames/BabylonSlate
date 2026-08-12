@@ -3,9 +3,31 @@ import {
   type NodeDefinition,
   EXEC,
   BOOL,
+  FLOAT,
 } from "@babylonslate/scripting";
 
 export const flowNodes: NodeDefinition[] = [
+  {
+    id: "flow.event.beginPlay",
+    title: "Event Begin Play",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.tick",
+    title: "Event Tick",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("deltaSeconds", "deltaSeconds", "out", FLOAT),
+    ],
+    codegen: () => ({ deltaSeconds: "ctx.deltaSeconds" }),
+  },
   {
     id: "flow.entry",
     title: "Entry",

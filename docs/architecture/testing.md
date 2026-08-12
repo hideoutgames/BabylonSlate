@@ -52,6 +52,8 @@ Projects: `desktop-chrome`, `ipad-landscape`, `ipad-portrait` (the iPad projects
 
 `e2e/touch-shell.spec.ts` holds the touch-UX audits required by engineplan §2.4: minimum 44px touch targets, `user-select: none` by default, app-wide native context-menu suppression with `SelectableText` as the opt-out, the widened dock sash hit area, and radii resolving to values on the `--radius-*` scale.
 
+`e2e/p5-scripting.spec.ts` holds the P5 acceptance proofs: a graph scripted in the editor compiles, loads, and ticks in Preview (its `Print` reaches the on-screen overlay), and a type mismatch raises the blocking dialog whose rows navigate to the offending node.
+
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
 
 ## Golden files

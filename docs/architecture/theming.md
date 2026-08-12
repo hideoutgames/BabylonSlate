@@ -4,6 +4,10 @@ Canonical tokens live in [`packages/ui/src/styles/globals.css`](../../packages/u
 
 The editor defaults to dark mode (`<html class="dark">`). A runtime appearance toggle is planned under Engine Settings.
 
+## Source scanning
+
+Tailwind v4 detects sources relative to the CSS entry, which here lives in `packages/ui/src/styles`. Every workspace package that renders UI is therefore listed with `@source` in `globals.css`. Without those entries, a utility used *only* by a workspace component (dialog centering, for example) is never generated, and the failure is silent — the class is on the element with no rule behind it. Add an `@source` line when a new package starts rendering components.
+
 ## Theme source: Minimal Neutral (tweakcn)
 
 The shadcn theme foundation is **[Minimal Neutral](https://tweakcn.com/themes/cmho4nr9l000h04l1gu419ckw)** exported as Tailwind v4 OKLCH variables. Geist remains the UI font; tweakcn’s system font stack is not used.

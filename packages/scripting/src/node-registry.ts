@@ -12,6 +12,11 @@ export type CodegenContext = {
   emit(statement: string, anchorNodeId?: string): void;
   /** Hoist a module-scope function (ExecuteJavaScript). */
   hoist(source: string): void;
+  /**
+   * Mark the entry point `async`. Required before emitting `await`; latent
+   * definitions are marked automatically.
+   */
+  requestAsync(): void;
   indent: string;
 };
 

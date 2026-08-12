@@ -9,10 +9,13 @@ import {
   type PlaySessionResult,
 } from "../services/play-session";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { PrintOverlay, usePrintRegistry } from "./print-overlay";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 
 export interface PlayOverlayProps {
   sharedEngine: Engine;
   injectFixtureThrow?: boolean;
+  scripts?: readonly ScriptBundleEntry[];
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -30,12 +33,18 @@ function emptyPlayResult(): PlaySessionResult {
 export function PlayOverlay({
   sharedEngine,
   injectFixtureThrow,
+  scripts,
   onClose,
 }: PlayOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
+  const { entries: printEntries, print } = usePrintRegistry();
+  const printRef = useRef(print);
+  printRef.current = print;
+  const scriptsRef = useRef(scripts);
+  scriptsRef.current = scripts;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -44,9 +53,11 @@ export function PlayOverlay({
       canvas,
       sharedEngine,
       injectFixtureThrow,
+      scripts: scriptsRef.current,
       onStats: (stats) => setFps(stats.fps),
       onLog: (message) =>
         setLogs((prev) => [...prev.slice(-200), message]),
+      onPrint: (entry) => printRef.current(entry),
     });
     sessionRef.current = session;
     const detachLifecycle = attachLifecyclePause((paused) => {
@@ -90,6 +101,7 @@ export function PlayOverlay({
         className="h-full w-full touch-none"
         data-testid="play-canvas"
       />
+      <PrintOverlay entries={printEntries} />
       <div
         className="pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden rounded-md bg-background/80 p-2 text-xs"
         data-testid="play-log-tail"

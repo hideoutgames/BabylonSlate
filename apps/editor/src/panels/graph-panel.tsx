@@ -10,6 +10,7 @@ import { useValidation } from "../context/validation-context";
 import { validateSerializedGraph } from "../services/graph-validation";
 
 const registry = createDefaultNodeRegistry();
+const VALIDATION_DEBOUNCE_MS = 250;
 
 export function GraphPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -31,12 +32,15 @@ export function GraphPanel(_props: IDockviewPanelProps) {
 
   const assetGuid = doc?.ref.path ?? documentId;
 
+  // Edit-time validation is debounced so typing in a node does not re-run the
+  // whole pass on every keystroke; save and pre-Preview sweeps are immediate.
   useEffect(() => {
-    const diags = validateSerializedGraph(graph, {
-      assetGuid,
-      graphId: documentId,
-    });
-    setDiagnostics(diags);
+    const handle = window.setTimeout(() => {
+      setDiagnostics(
+        validateSerializedGraph(graph, { assetGuid, graphId: documentId }),
+      );
+    }, VALIDATION_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
   }, [graph, assetGuid, documentId, setDiagnostics]);
 
   const paletteNodes = useMemo(

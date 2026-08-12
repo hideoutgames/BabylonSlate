@@ -32,6 +32,16 @@ function handleControl(msg: ControlMessage): void {
     case "load":
       rt.getWorld().loadScene(msg.sceneAssetGuid);
       break;
+    case "loadScripts": {
+      const spawn = msg.spawn ?? msg.scripts.map((s) => ({ classId: s.classId }));
+      void rt
+        .loadScripts(msg.scripts)
+        .then(() => {
+          for (const entry of spawn) rt.spawnScriptedActor(entry);
+        })
+        .catch((error) => rt.reportError(error));
+      break;
+    }
     case "play":
       rt.start();
       rt.resume();

@@ -19,3 +19,9 @@ export {
   type StackFrame,
 } from "./stack-map";
 export { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
+export {
+  ScriptHost,
+  type CompiledScript,
+  type ScriptContext,
+  type ScriptHostServices,
+} from "./script-host";
