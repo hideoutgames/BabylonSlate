@@ -38,6 +38,10 @@ export interface GizmoHost {
   setSnap: (snap: GizmoSnapSettings) => void;
   attachTo: (mesh: AbstractMesh | null) => void;
   attachedMesh: () => AbstractMesh | null;
+  /** True while a gizmo handle drag is in progress. */
+  isDragging: () => boolean;
+  /** True when a gizmo handle sits under the canvas point. */
+  hitTest: (canvasX: number, canvasY: number) => boolean;
   dispose: () => void;
 }
 
@@ -103,13 +107,16 @@ export function createGizmoHost(
   let mode: ViewportMode = options.mode ?? "3d";
   let attached: AbstractMesh | null = null;
   let releaseLease: (() => void) | null = null;
+  let dragging = false;
 
   const startDrag = () => {
+    dragging = true;
     releaseLease ??= options.scheduler?.acquireContinuous("gizmo") ?? null;
     options.onDragStart?.();
   };
 
   const endDrag = () => {
+    dragging = false;
     releaseLease?.();
     releaseLease = null;
     options.scheduler?.invalidate("gizmo");
@@ -125,12 +132,16 @@ export function createGizmoHost(
     position.xGizmo,
     position.yGizmo,
     position.zGizmo,
+    position.xPlaneGizmo,
+    position.yPlaneGizmo,
+    position.zPlaneGizmo,
     rotation.xGizmo,
     rotation.yGizmo,
     rotation.zGizmo,
     scale.xGizmo,
     scale.yGizmo,
     scale.zGizmo,
+    scale.uniformScaleGizmo,
   ]) {
     axis.dragBehavior.onDragStartObservable.add(startDrag);
     axis.dragBehavior.onDragObservable.add(drag);
@@ -190,6 +201,11 @@ export function createGizmoHost(
       applyAttachment();
     },
     attachedMesh: () => attached,
+    isDragging: () => dragging,
+    hitTest: (canvasX: number, canvasY: number) => {
+      const pick = layer.utilityLayerScene.pick(canvasX, canvasY);
+      return pick?.hit === true;
+    },
     dispose: () => {
       releaseLease?.();
       releaseLease = null;

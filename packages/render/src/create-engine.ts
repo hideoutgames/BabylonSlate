@@ -175,6 +175,7 @@ export function createEngine(
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
+      blockLook: (x, y) => gizmos.isDragging() || gizmos.hitTest(x, y),
       onTap: (x, y) => {
         const hit = pickAtCanvas(scene, x, y);
         const actorId = hit ? editorSync.actorForMesh(hit.meshName) : null;

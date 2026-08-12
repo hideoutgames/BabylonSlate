@@ -417,6 +417,14 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
+  it("reports isDragging as false until a handle drag starts", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    expect(host.isDragging()).toBe(false);
+    expect(host.hitTest(0, 0)).toBe(false);
+    host.dispose();
+  });
+
   it("converts snap settings to gizmo distances", () => {
     const { scene } = createHandle();
     const host = createGizmoHost(scene);
