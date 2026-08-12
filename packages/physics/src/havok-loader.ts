@@ -1,0 +1,85 @@
+/**
+ * Loads `@babylonjs/havok` with an explicit wasm binary so Node workers and
+ * browsers both succeed. `locateFile` is always supplied (engineplan §2.1).
+ */
+
+export type HavokModule = {
+  HP_World_Create: () => unknown;
+  HP_World_Release: (world: unknown) => void;
+  HP_World_SetGravity: (world: unknown, gravity: number[]) => void;
+  HP_World_Step: (world: unknown, dt: number) => void;
+};
+
+let cached: Promise<HavokModule> | null = null;
+
+export function loadHavokModule(havokWasmUrl?: string): Promise<HavokModule> {
+  if (!cached) {
+    cached = (async () => {
+      const HavokPhysics = (await import("@babylonjs/havok")).default;
+      const wasmBinary = await resolveWasmBinary(havokWasmUrl);
+      return (await HavokPhysics({
+        locateFile: (path: string) => havokWasmUrl ?? path,
+        wasmBinary,
+      })) as unknown as HavokModule;
+    })().catch((error) => {
+      cached = null;
+      throw error;
+    });
+  }
+  return cached;
+}
+
+/** Test helper: clear the module cache between suites. */
+export function resetHavokModuleCache(): void {
+  cached = null;
+}
+
+async function resolveWasmBinary(havokWasmUrl?: string): Promise<Uint8Array> {
+  if (havokWasmUrl && typeof fetch === "function") {
+    try {
+      const response = await fetch(havokWasmUrl);
+      if (response.ok) {
+        return new Uint8Array(await response.arrayBuffer());
+      }
+    } catch {
+      // fall through to filesystem resolve
+    }
+  }
+
+  // Node / Vitest: resolve the package wasm without static `node:*` imports so
+  // apps/editor typecheck (DOM-only libs) does not require @types/node.
+  const g = globalThis as {
+    process?: { versions?: { node?: string } };
+  };
+  if (g.process?.versions?.node) {
+    // Non-literal specifiers so apps/editor typecheck (types: vite/client)
+    // does not resolve `node:*`. Native `import()` works in Vitest; `new
+    // Function("return import(s)")` does not (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING).
+    const nodePrefix = "node:";
+    const nodeModule = (await import(nodePrefix + "module")) as Record<
+      string,
+      unknown
+    >;
+    const nodeFs = (await import(nodePrefix + "fs")) as Record<string, unknown>;
+    const createRequire = nodeModule.createRequire as
+      | ((url: string | URL) => {
+          (id: string): string;
+          resolve(id: string): string;
+        })
+      | undefined;
+    const readFileSync = nodeFs.readFileSync as
+      | ((path: string) => Uint8Array)
+      | undefined;
+    if (createRequire && readFileSync) {
+      const require = createRequire(import.meta.url);
+      const wasmPath = require.resolve(
+        "@babylonjs/havok/lib/esm/HavokPhysics.wasm",
+      );
+      return new Uint8Array(readFileSync(wasmPath));
+    }
+  }
+
+  throw new Error(
+    "Havok wasm not found: pass PhysicsBackendOptions.havokWasmUrl",
+  );
+}

@@ -12,7 +12,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `GameInstance` | Session singleton: `onGameStart` / `onTick` / `onGameEnd` / `onSceneLoaded` |
 | `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot |
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components |
-| `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases including empty `physics` slot for P7 |
+| `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` (P7) |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` | Stable string ids for engine types |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
@@ -26,7 +26,7 @@ Order is fixed and named from the first commit:
 1. `gameInstance` — GameInstance `onTick`
 2. `actors` — Actors in **spawn order**
 3. `components` — Each actor’s components in **attach order**
-4. `physics` — Named slot; no-op until P7 fills it
+4. `physics` — Backend `step(dt)` + transform write-back (see [physics.md](physics.md))
 5. `postPhysics` — Post-physics fixups
 
 Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable arrays.
@@ -45,11 +45,11 @@ The world owns a seeded PRNG from `createSeededRng` in `@babylonslate/core`. Sim
 
 ## Engine components
 
-Registered as typed stubs (asset refs + lifecycle hooks) from day one:
+Registered as typed stubs (asset refs + lifecycle hooks) from day one; physics components gain behaviour in P7:
 
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
 
-Behaviour is filled by later phases (render sync, physics, UI, AI).
+See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
 
 ## ScriptInterface dispatch
 

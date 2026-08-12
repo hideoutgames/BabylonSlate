@@ -1,0 +1,288 @@
+import { describe, expect, it } from "vitest";
+import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { encodeAssetDocument } from "./asset-document";
+import { encodeBabasset } from "./babasset";
+import { projectContentRoot } from "./content-root";
+import { AssetRegistry } from "./registry";
+import { ProjectSearchIndex } from "./search-index";
+
+async function createStorage(): Promise<MemoryStorageAdapter> {
+  const storage = new MemoryStorageAdapter("documents");
+  await storage.openDocumentsProject("search.babproject");
+  return storage;
+}
+
+async function writeDocument(
+  storage: MemoryStorageAdapter,
+  path: string,
+  document: {
+    guid: string;
+    type: string;
+    name: string;
+    payload: Record<string, unknown>;
+    parentClass?: string | null;
+  },
+): Promise<void> {
+  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  if (dir) await storage.mkdir(dir, true);
+  const bytes = await encodeAssetDocument({
+    type: document.type,
+    name: document.name,
+    guid: document.guid,
+    version: 1,
+    payload: document.payload,
+  });
+  await storage.writeBinary(path, bytes);
+}
+
+async function writeTexture(
+  storage: MemoryStorageAdapter,
+  path: string,
+  options: { guid: string; name: string; payloadBytes: Uint8Array },
+): Promise<void> {
+  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  if (dir) await storage.mkdir(dir, true);
+  const bytes = await encodeBabasset({
+    header: {
+      guid: options.guid,
+      type: "Texture",
+      name: options.name,
+      engineVersion: "0.0.0",
+      version: 1,
+      mode: "thin",
+      dependencies: [],
+      parentClass: null,
+      payload: {},
+    },
+    chunks: [
+      {
+        id: "payload",
+        kind: "payload",
+        mime: "application/octet-stream",
+        data: options.payloadBytes,
+      },
+    ],
+  });
+  await storage.writeBinary(path, bytes);
+}
+
+describe("ProjectSearchIndex", () => {
+  it("returns no rows for an empty query", async () => {
+    const storage = await createStorage();
+    await writeDocument(storage, "assets/main.scene.babasset", {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Main",
+      payload: {
+        name: "Main",
+        viewportMode: "3d",
+        actors: [{ id: "actor-1", name: "Cube", classId: "Actor", components: [] }],
+      },
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage);
+    await index.rebuild(registry);
+
+    expect(index.query("")).toEqual([]);
+    expect(index.query("   ")).toEqual([]);
+  });
+
+  it("indexes asset headers and scene actors without loading texture payloads", async () => {
+    const storage = await createStorage();
+    await writeTexture(storage, "assets/hero.babasset", {
+      guid: "tex-1",
+      name: "HeroTex",
+      payloadBytes: new Uint8Array(512).fill(9),
+    });
+    await writeDocument(storage, "assets/main.scene.babasset", {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Main",
+      payload: {
+        name: "Main",
+        viewportMode: "3d",
+        actors: [
+          {
+            id: "actor-1",
+            name: "Cube",
+            classId: "Actor",
+            components: [
+              {
+                id: "component-1",
+                classId: "MeshComponent",
+                properties: { meshKind: "box" },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.accountedPayloadBytes).toBe(0);
+
+    const index = new ProjectSearchIndex(storage);
+    await index.rebuild(registry);
+
+    expect(registry.accountedPayloadBytes).toBe(0);
+
+    const texHits = index.query("herotex");
+    expect(texHits.some((hit) => hit.kind === "asset" && hit.label === "HeroTex")).toBe(
+      true,
+    );
+
+    const actorHits = index.query("cube");
+    expect(actorHits.some((hit) => hit.kind === "actor" && hit.label === "Cube")).toBe(
+      true,
+    );
+    const actor = actorHits.find((hit) => hit.kind === "actor");
+    expect(actor?.target).toEqual({
+      kind: "scene-actor",
+      scenePath: "assets/main.scene.babasset",
+      actorId: "actor-1",
+    });
+
+    const componentHits = index.query("meshcomponent");
+    expect(
+      componentHits.some(
+        (hit) => hit.kind === "component" && hit.target.kind === "scene-component",
+      ),
+    ).toBe(true);
+  });
+
+  it("indexes graph nodes, variable names, and skips ExecuteJavaScript bodies", async () => {
+    const storage = await createStorage();
+    await writeDocument(storage, "assets/main.graph.babasset", {
+      guid: "graph-1",
+      type: "Graph",
+      name: "MainGraph",
+      payload: {
+        nodes: [
+          {
+            id: "log-1",
+            type: "logMessage",
+            data: { message: "Hello from BabylonSlate" },
+          },
+          {
+            id: "var-1",
+            type: "variables.get",
+            data: { name: "health" },
+          },
+          {
+            id: "js-1",
+            type: "debug.executeJavaScript",
+            data: { body: "uniqueBodyTokenShouldNotMatch" },
+          },
+        ],
+        edges: [],
+      },
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage, {
+      nodeTitles: {
+        logMessage: "Log",
+        "variables.get": "Get Variable",
+        "debug.executeJavaScript": "Execute JavaScript",
+      },
+    });
+    await index.rebuild(registry);
+
+    const hello = index.query("hello from");
+    expect(hello.some((hit) => hit.kind === "graph-node" && hit.target.kind === "graph-node")).toBe(
+      true,
+    );
+    expect(
+      hello.find((hit) => hit.kind === "graph-node")?.target,
+    ).toMatchObject({
+      kind: "graph-node",
+      graphPath: "assets/main.graph.babasset",
+      nodeId: "log-1",
+    });
+
+    const variables = index.query("health");
+    expect(variables.some((hit) => hit.kind === "variable" && hit.label === "health")).toBe(
+      true,
+    );
+
+    expect(index.query("uniqueBodyTokenShouldNotMatch")).toEqual([]);
+  });
+
+  it("indexes catalog class ids and Class asset headers", async () => {
+    const storage = await createStorage();
+    await writeDocument(storage, "assets/my-hero.babasset", {
+      guid: "class-1",
+      type: "Class",
+      name: "MyHero",
+      payload: {},
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage, {
+      catalogClassIds: ["Actor", "MeshComponent"],
+    });
+    await index.rebuild(registry);
+
+    expect(index.query("actor").some((hit) => hit.kind === "class")).toBe(true);
+    expect(
+      index.query("myhero").some(
+        (hit) =>
+          hit.kind === "class" &&
+          hit.target.kind === "class" &&
+          hit.target.path === "assets/my-hero.babasset",
+      ),
+    ).toBe(true);
+  });
+
+  it("upserts in-memory document content and removes deleted assets", async () => {
+    const storage = await createStorage();
+    await writeDocument(storage, "assets/main.scene.babasset", {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Main",
+      payload: {
+        actors: [{ id: "actor-1", name: "Cube", classId: "Actor", components: [] }],
+      },
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage);
+    await index.rebuild(registry);
+
+    const asset = registry.getByGuid("scene-1")!;
+    index.upsertDocument(asset, {
+      actors: [{ id: "actor-2", name: "SphereHero", classId: "Actor", components: [] }],
+    });
+
+    expect(index.query("cube")).toEqual([]);
+    expect(index.query("spherehero").some((hit) => hit.kind === "actor")).toBe(true);
+
+    index.removeAsset("assets/main.scene.babasset");
+    expect(index.query("spherehero")).toEqual([]);
+    expect(index.query("main").every((hit) => hit.kind !== "asset")).toBe(true);
+  });
+
+  it("caps result count and prefers label prefix matches", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    for (let i = 0; i < 12; i++) {
+      await writeDocument(storage, `assets/n${i}.babasset`, {
+        guid: `g-${i}`,
+        type: "Enum",
+        name: i === 0 ? "Needle" : `OtherNeedle${i}`,
+        payload: {},
+      });
+    }
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage, { limit: 5 });
+    await index.rebuild(registry);
+
+    const hits = index.query("needle");
+    expect(hits).toHaveLength(5);
+    expect(hits[0]?.label).toBe("Needle");
+  });
+});

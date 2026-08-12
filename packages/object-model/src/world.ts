@@ -27,6 +27,8 @@ export interface WorldOptions {
   interfaceRegistry?: InterfaceRegistry;
   guidFactory?: GuidFactory;
   onPhase?: PhaseHook;
+  /** Optional physics step (P7). Called during the named `physics` phase. */
+  onPhysics?: (ctx: TickContext) => void;
   /** Optional post-physics fixup callback. */
   onPostPhysics?: (ctx: TickContext) => void;
   /** Resolved input for this world; filled by the runtime driver each tick. */
@@ -40,6 +42,7 @@ export class World {
   readonly rng: Rng;
   private readonly guidFactory?: GuidFactory;
   private readonly onPhase?: PhaseHook;
+  private readonly onPhysics?: (ctx: TickContext) => void;
   private readonly onPostPhysics?: (ctx: TickContext) => void;
   private inputProvider: WorldInputProvider | null;
 
@@ -59,6 +62,7 @@ export class World {
     this.rng = createSeededRng(options.seed);
     this.guidFactory = options.guidFactory;
     this.onPhase = options.onPhase;
+    this.onPhysics = options.onPhysics;
     this.onPostPhysics = options.onPostPhysics;
     this.inputProvider = options.input ?? null;
   }
@@ -192,7 +196,7 @@ export class World {
           }
           break;
         case "physics":
-          // Reserved for P7 — must remain a named no-op slot.
+          this.onPhysics?.(ctx);
           break;
         case "postPhysics":
           this.onPostPhysics?.(ctx);

@@ -38,12 +38,17 @@ import {
   readAssetDocumentHeader,
   readProjectTree,
   writeThumbnail,
+  ProjectSearchIndex,
   type BlobStore,
   type EncodeFn,
   type MigrationPending,
   type ProjectTreeFile,
 } from "@babylonslate/assets";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
+import {
+  SEARCH_CATALOG_CLASS_IDS,
+  SEARCH_NODE_TITLES,
+} from "../lib/search-catalog";
 
 export interface ProjectLoadResult {
   document: ProjectDocument;
@@ -74,6 +79,7 @@ export class ProjectService {
   private readonly migrations = defaultRegistry();
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
+  private projectSearchIndex: ProjectSearchIndex | null = null;
   private readonly encodeQueue: EncodeQueue;
   private readonly workerEncode:
     | (EncodeFn & { dispose: () => void; recycleCount: () => number })
@@ -193,6 +199,22 @@ export class ProjectService {
     return this.assetRegistry;
   }
 
+  get searchIndex(): ProjectSearchIndex | null {
+    return this.projectSearchIndex;
+  }
+
+  indexOpenDocument(
+    path: string,
+    content: SerializedScene | SerializedGraph,
+  ): void {
+    const indexed = this.assetRegistry?.list().find((asset) => asset.path === path);
+    if (!indexed || !this.projectSearchIndex) return;
+    this.projectSearchIndex.upsertDocument(
+      indexed,
+      content as unknown as Record<string, unknown>,
+    );
+  }
+
   get guid(): string | null {
     return this.projectGuid;
   }
@@ -260,6 +282,8 @@ export class ProjectService {
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
     this.assetRegistry = null;
+    this.projectSearchIndex?.clear();
+    this.projectSearchIndex = null;
   }
 
   async exportZip(): Promise<Uint8Array> {
@@ -389,6 +413,12 @@ export class ProjectService {
     });
     await registry.mountRoot(projectContentRoot());
     this.assetRegistry = registry;
+    this.projectSearchIndex = new ProjectSearchIndex(this.storage, {
+      blobs: this.blobs,
+      catalogClassIds: SEARCH_CATALOG_CLASS_IDS,
+      nodeTitles: SEARCH_NODE_TITLES,
+    });
+    await this.projectSearchIndex.rebuild(registry);
     this.bindThumbnailWriter();
     const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
     if (auto) {
@@ -578,6 +608,17 @@ export class ProjectService {
       );
     }
     this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
+    if (this.projectSearchIndex && this.assetRegistry) {
+      const indexed = this.assetRegistry.list().find((asset) => asset.path === path);
+      if (indexed) {
+        this.projectSearchIndex.upsertDocument(
+          indexed,
+          content as unknown as Record<string, unknown>,
+        );
+      } else {
+        await this.projectSearchIndex.upsertAsset(this.assetRegistry, path);
+      }
+    }
   }
 
   private async guidForAsset(path: string): Promise<string> {

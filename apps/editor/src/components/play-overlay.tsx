@@ -39,6 +39,8 @@ export function PlayOverlay({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
   const [fps, setFps] = useState(0);
+  const [scriptMs, setScriptMs] = useState(0);
+  const [physicsMs, setPhysicsMs] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [moveX, setMoveX] = useState<number | null>(null);
   const { entries: printEntries, print } = usePrintRegistry();
@@ -57,6 +59,8 @@ export function PlayOverlay({
       scripts: scriptsRef.current,
       onStats: (stats) => {
         setFps(stats.fps);
+        setScriptMs(stats.scriptMs);
+        setPhysicsMs(stats.physicsMs);
         setMoveX(sessionRef.current?.lastMoveX() ?? null);
       },
       onLog: (message) =>
@@ -88,6 +92,12 @@ export function PlayOverlay({
       <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground">
         <span data-testid="play-fps">
           <SelectableText>{fps} fps</SelectableText>
+        </span>
+        <span className="ml-2" data-testid="play-script-ms">
+          <SelectableText>script {scriptMs.toFixed(2)} ms</SelectableText>
+        </span>
+        <span className="ml-2" data-testid="play-physics-ms">
+          <SelectableText>physics {physicsMs.toFixed(2)} ms</SelectableText>
         </span>
         <span
           className="ml-2"

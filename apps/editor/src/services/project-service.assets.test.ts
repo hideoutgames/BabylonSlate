@@ -97,4 +97,31 @@ describe("project documents as .babasset", () => {
       JSON.parse(await storage.readText("scenes/main.scene.json")).version,
     ).toBe(2);
   });
+
+  it("rebuilds a search index that finds the default Cube actor", async () => {
+    const { service } = await scaffolded();
+    expect(service.searchIndex).toBeTruthy();
+    const hits = service.searchIndex!.query("cube");
+    expect(hits.some((hit) => hit.kind === "actor" && hit.label === "Cube")).toBe(
+      true,
+    );
+  });
+
+  it("updates search hits after saving a renamed actor", async () => {
+    const { service } = await scaffolded();
+    const scene = (await service.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+    await service.saveDocument("scene", MAIN_SCENE_FILE, {
+      ...scene,
+      actors: scene.actors.map((actor) =>
+        actor.id === "actor-1" ? { ...actor, name: "RenamedHero" } : actor,
+      ),
+    });
+    expect(service.searchIndex!.query("cube")).toEqual([]);
+    expect(
+      service.searchIndex!.query("renamedhero").some((hit) => hit.kind === "actor"),
+    ).toBe(true);
+  });
 });

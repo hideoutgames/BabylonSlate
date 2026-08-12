@@ -12,6 +12,7 @@ export default defineConfig({
             "packages/assets/**/*.test.ts",
             "packages/edit/**/*.test.ts",
             "packages/object-model/**/*.test.ts",
+            "packages/physics/**/*.test.ts",
             "packages/bridge/**/*.test.ts",
             "packages/runtime/**/*.test.ts",
             "packages/input/**/*.test.ts",
@@ -62,6 +63,11 @@ export default defineConfig({
         "**/create-engine.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.
         "**/worker-entry.ts",
+        // Physics wasm backends: HavokPlugin path is asserted in havok-v2.test.ts;
+        // coverage of the Babylon/Havok wasm surface is environment-dependent.
+        "**/havok-backend.ts",
+        "**/havok-loader.ts",
+        "**/rapier-backend.ts",
         // Browser Worker + OffscreenCanvas encode path; covered by editor wiring
         // and the Node Basis A16 smoke (`node-basis-encode.ts`).
         "**/worker-encode.ts",
@@ -120,6 +126,12 @@ export default defineConfig({
           functions: 60,
           branches: 60,
           statements: 60,
+        },
+        "packages/physics/src/**": {
+          lines: 50,
+          functions: 50,
+          branches: 45,
+          statements: 50,
         },
         "packages/bridge/src/**": {
           lines: 60,

@@ -58,6 +58,42 @@ const pureNoReactNoBabylon = boundary(
   ],
 );
 
+/**
+ * Physics hosts Babylon Physics V2 on a worker-local NullEngine Scene.
+ * It may import `@babylonjs/core` and `@babylonjs/havok`, but not React,
+ * Capacitor, or editor-only Babylon packages (gui/loaders/inspector).
+ */
+const physicsNoReactNoCapacitor = boundary(
+  "boundary/physics",
+  ["packages/physics/**/*.{ts,tsx}"],
+  [
+    {
+      group: REACT_PATTERNS,
+      message: "physics must not import React (engineplan section 2.2).",
+    },
+    {
+      group: [
+        "@babylonjs/gui",
+        "@babylonjs/gui/*",
+        "@babylonjs/loaders",
+        "@babylonjs/loaders/*",
+        "@babylonjs/materials",
+        "@babylonjs/materials/*",
+        "@babylonjs/serializers",
+        "@babylonjs/serializers/*",
+        "@babylonjs/inspector",
+        "@babylonjs/inspector/*",
+      ],
+      message:
+        "physics may import @babylonjs/core Physics V2 and @babylonjs/havok only — not gui/loaders/inspector.",
+    },
+    {
+      group: CAPACITOR_PATTERNS,
+      message: "Only vfs adapters may import Capacitor (engineplan section 2.2).",
+    },
+  ],
+);
+
 const vfsNoReactNoBabylon = boundary(
   "boundary/vfs",
   ["packages/vfs/**/*.{ts,tsx}"],
@@ -173,6 +209,7 @@ export default tseslint.config(
     },
   },
   pureNoReactNoBabylon,
+  physicsNoReactNoCapacitor,
   vfsNoReactNoBabylon,
   renderNoReact,
   renderTextureCacheOnly,

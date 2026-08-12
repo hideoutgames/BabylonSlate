@@ -1,10 +1,15 @@
 import { formatValue } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Actor, LifecycleHooks, TickContext } from "@babylonslate/object-model";
+import type {
+  ColliderShape,
+  HitResult,
+  OverlapResult,
+  PhysicsTransform,
+  Vec3,
+} from "@babylonslate/physics";
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
-
-export type CompiledScript = ScriptBundleEntry;
 
 export type ScriptColor = { x: number; y: number; z: number; w: number };
 
@@ -25,6 +30,18 @@ export interface ScriptHostServices {
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
   reportError(error: unknown): void;
+  lineTrace?(start: Vec3, end: Vec3): HitResult;
+  sphereOverlap?(center: Vec3, radius: number): OverlapResult;
+  shapeSweep?(
+    shape: ColliderShape,
+    start: PhysicsTransform,
+    end: PhysicsTransform,
+  ): HitResult;
+  addImpulse?(
+    actor: Actor | null | undefined,
+    impulse: Vec3,
+    strength?: number,
+  ): void;
 }
 
 /** The `ctx` object bound into every compiled graph invocation. */
@@ -59,12 +76,31 @@ export interface ScriptContext {
   isActionHeld(action: string): boolean;
   getAxis(axis: string): number;
   getAxis2D(axis: string): { x: number; y: number };
-  lineTrace(): { hit: boolean; location: null; actor: null };
-  addImpulse(): void;
+  lineTrace(
+    start: Vec3,
+    end: Vec3,
+  ): {
+    hit: boolean;
+    location: Vec3 | null;
+    actor: string | null;
+  };
+  sphereOverlap(center: Vec3, radius: number): OverlapResult;
+  shapeSweep(
+    shape: ColliderShape,
+    start: PhysicsTransform,
+    end: PhysicsTransform,
+  ): HitResult;
+  addImpulse(
+    actor: Actor | null | undefined,
+    impulse: Vec3,
+    strength?: number,
+  ): void;
   playSound(): void;
   setWidgetVisible(): void;
   changeScene(scene: string): void;
 }
+
+export type CompiledScript = ScriptBundleEntry;
 
 type LoadedScript = {
   script: CompiledScript;
@@ -126,8 +162,6 @@ export class ScriptHost {
         const fn = entry.exports[point.name];
         if (typeof fn !== "function") continue;
         const key = `${entry.script.assetGuid}:${point.name}`;
-        // A latent entry point must finish before it is re-entered, otherwise
-        // a per-tick event would stack one pending run per frame.
         if (point.isAsync && this.isPending(self, key)) continue;
         const ctx = this.createContext(self, deltaSeconds, tickIndex);
         try {
@@ -194,16 +228,44 @@ export class ScriptHost {
         );
         return handler ? handler({}) : undefined;
       },
-      // Subsystems that land with later phases; inert but callable so a graph
-      // referencing them still runs.
       getComponent: (actor, classId) =>
         (actor ?? self)?.components.find((c) => c.classId === classId) ?? null,
       addComponent: () => null,
       isActionHeld: () => false,
       getAxis: () => 0,
       getAxis2D: () => ({ x: 0, y: 0 }),
-      lineTrace: () => ({ hit: false, location: null, actor: null }),
-      addImpulse: () => {},
+      lineTrace: (start, end) => {
+        const hit = services.lineTrace?.(start, end) ?? {
+          hit: false,
+          location: null,
+          actorId: null,
+          normal: null,
+          distance: 0,
+          bodyId: null,
+        };
+        return {
+          hit: hit.hit,
+          location: hit.location,
+          actor: hit.actorId,
+        };
+      },
+      sphereOverlap: (center, radius) =>
+        services.sphereOverlap?.(center, radius) ?? {
+          actorIds: [],
+          bodyIds: [],
+        },
+      shapeSweep: (shape, start, end) =>
+        services.shapeSweep?.(shape, start, end) ?? {
+          hit: false,
+          location: null,
+          normal: null,
+          distance: 0,
+          actorId: null,
+          bodyId: null,
+        },
+      addImpulse: (actor, impulse, strength) => {
+        services.addImpulse?.(actor ?? self, impulse, strength);
+      },
       playSound: () => {},
       setWidgetVisible: () => {},
       changeScene: () => {},

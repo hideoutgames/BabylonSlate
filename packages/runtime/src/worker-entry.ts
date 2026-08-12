@@ -43,8 +43,11 @@ function handleControl(msg: ControlMessage): void {
       break;
     }
     case "play":
-      rt.start();
-      rt.resume();
+      void rt.loadPhysics().finally(() => {
+        rt.start();
+        rt.resume();
+        if (lastTick === 0) requestAnimationFrame(pump);
+      });
       break;
     case "pause":
       rt.pause();
@@ -89,9 +92,6 @@ self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
   const msg = event.data;
   if (msg.channel === "control") {
     handleControl(msg.payload);
-    if (msg.payload.type === "play" && lastTick === 0) {
-      requestAnimationFrame(pump);
-    }
     return;
   }
   if (msg.channel === "input") {

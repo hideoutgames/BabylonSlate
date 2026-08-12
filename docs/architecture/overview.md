@@ -2,15 +2,16 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
-## Monorepo (P6 complete; P7 next)
+## Monorepo (P7 physics in progress)
 
 ```
 apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer
 packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue (P5)
 packages/vfs/         Storage adapters, platform detection, app settings
-packages/assets/      Containers, asset registry, importers, encode queue
+packages/assets/      Containers, asset registry, search index, importers, encode queue
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
+packages/physics/     Body/shape protocol; Havok 3D + Rapier 2D backends (P7)
 packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
 packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader, script host
 packages/input/       Raw input ring + action/axis mapping model and `InputResolver`
@@ -23,7 +24,7 @@ packages/editor-kit/  Touch-shell hooks, property grid, tree view, panel frame, 
 packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [object-model.md](object-model.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [global-search.md](global-search.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md).
 
 ## Threading (P4)
 
@@ -43,6 +44,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab.
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
 - **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only).
+- **Global search**: `ProjectSearchIndex` (same package) may load Scene/Graph document JSON for actors/nodes; it must not load binary payloads. Toolbar Search opens a centered dialog; see [global-search.md](global-search.md).
 - **Edits**: `@babylonslate/edit` owns per-document undo; graph and scene panels route mutations through commands (`applyGraphChange` / `applySceneChange`).
 - **Scene editing (P6)**: `SerializedScene` v2 actors/components; shared `SceneEditingProvider` selection; viewport gizmo + 2D mode via `@babylonslate/render` editor tools. See [scene-editing.md](scene-editing.md).
 - **Input mappings (P6)**: Project Settings → `InputResolver` → runtime `TickContext` and scripting input nodes. See [input.md](input.md).
@@ -59,6 +61,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 | Package | May not import |
 | --- | --- |
 | `core`, `edit`, `object-model`, `bridge`, `runtime`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
+| `physics` | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok` on a worker-local NullEngine Scene. |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |

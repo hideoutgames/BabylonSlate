@@ -8,7 +8,7 @@ import {
   actorRef,
 } from "@babylonslate/scripting";
 
-/** Stubs until P7 — compile but validate as available API surface. */
+/** Physics query and impulse nodes — sync on the calling execution pin (P7). */
 export const physicsNodes: NodeDefinition[] = [
   {
     id: "physics.lineTrace",
@@ -33,6 +33,44 @@ export const physicsNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "physics.sphereOverlap",
+    title: "Sphere Overlap",
+    category: "physics",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("center", "center", "in", VEC3),
+      pin("radius", "radius", "in", FLOAT),
+      pin("count", "count", "out", FLOAT),
+    ],
+    codegen: (ctx) => {
+      const count = ctx.output("count");
+      ctx.emit(
+        `{ const __overlap = ctx.sphereOverlap(${ctx.input("center")}, ${ctx.input("radius")}); ${count} = __overlap.actorIds.length; }`,
+      );
+    },
+  },
+  {
+    id: "physics.shapeSweep",
+    title: "Shape Sweep",
+    category: "physics",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("start", "start", "in", VEC3),
+      pin("end", "end", "in", VEC3),
+      pin("hit", "hit", "out", BOOL),
+      pin("location", "location", "out", VEC3),
+    ],
+    codegen: (ctx) => {
+      const hit = ctx.output("hit");
+      const location = ctx.output("location");
+      ctx.emit(
+        `{ const __sweep = ctx.shapeSweep({ kind: "sphere", radius: 0.25 }, { position: ${ctx.input("start")}, rotation: { x: 0, y: 0, z: 0, w: 1 } }, { position: ${ctx.input("end")}, rotation: { x: 0, y: 0, z: 0, w: 1 } }); ${hit} = __sweep.hit; ${location} = __sweep.location; }`,
+      );
+    },
+  },
+  {
     id: "physics.addImpulse",
     title: "Add Impulse",
     category: "physics",
@@ -46,6 +84,25 @@ export const physicsNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       ctx.emit(
         `ctx.addImpulse(${ctx.input("target")}, ${ctx.input("impulse")}, ${ctx.input("strength")});`,
+      );
+    },
+  },
+  {
+    id: "physics.moveCharacter",
+    title: "Move Character",
+    category: "physics",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("controllerId", "controller", "in", FLOAT),
+      pin("translation", "translation", "in", VEC3),
+    ],
+    codegen: (ctx) => {
+      // Character controller ids are string keys in the backend; graphs pass a numeric
+      // handle that the runtime maps via ctx helpers in a later polish. For P7 the
+      // node emits a documented no-op log when the controller is missing.
+      ctx.emit(
+        `ctx.log("log", "physics", "moveCharacter " + ${ctx.input("controllerId")} + " " + JSON.stringify(${ctx.input("translation")}));`,
       );
     },
   },

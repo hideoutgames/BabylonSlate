@@ -174,6 +174,24 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           mutate({ ...scene, viewportMode: mode === "2d" ? "2d" : "3d" }),
       },
       {
+        kind: "enum",
+        id: "scene-physics-world",
+        label: "Physics world",
+        value: scene.settings.physicsWorld,
+        options: [
+          { value: "3d", label: "3D (Havok)" },
+          { value: "2d", label: "2D (Rapier)" },
+        ],
+        onChange: (world) =>
+          mutate({
+            ...scene,
+            settings: {
+              ...scene.settings,
+              physicsWorld: world === "2d" ? "2d" : "3d",
+            },
+          }),
+      },
+      {
         kind: "color",
         id: "scene-environment-color",
         label: "Environment color",

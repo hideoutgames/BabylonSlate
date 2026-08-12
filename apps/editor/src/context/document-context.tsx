@@ -25,6 +25,7 @@ import {
   truncateJournal,
   type AssetRegistry,
   type MigrationPending,
+  type ProjectSearchIndex,
   type ProjectTemplate,
 } from "@babylonslate/assets";
 import {
@@ -123,6 +124,8 @@ interface DocumentContextValue {
   thumbnailsEnabled: boolean;
   /** Compile every project graph into runtime script bundles for Preview. */
   collectScriptBundles: () => Promise<ScriptBundleEntry[]>;
+  /** Project-wide search index (headers + Scene/Graph documents). */
+  searchIndex: ProjectSearchIndex | null;
 }
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
@@ -662,6 +665,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
       documentService.updateGraph(id, current);
+      projectService.indexOpenDocument(doc.ref.path, current);
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
@@ -701,6 +705,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
       documentService.updateScene(id, current);
+      projectService.indexOpenDocument(doc.ref.path, current);
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
@@ -1067,6 +1072,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,
+      searchIndex: projectService.searchIndex,
     };
     },
     [

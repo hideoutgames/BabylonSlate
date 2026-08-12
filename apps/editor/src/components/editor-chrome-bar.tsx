@@ -24,12 +24,13 @@ import {
   Redo2Icon,
   SaveIcon,
   SaveAllIcon,
+  SearchIcon,
   SettingsIcon,
   Undo2Icon,
   XIcon,
   BugIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   labelFromPath,
   CONTENT_BROWSER_ID,
@@ -53,6 +54,7 @@ import { useValidation } from "../context/validation-context";
 import { PlayBlockedDialog } from "./play-blocked-dialog";
 import type { OpenDocument } from "../services/document-service";
 import { SettingsModal } from "./settings-modal";
+import { GlobalSearchDialog } from "./global-search-dialog";
 import "../shell/editor-chrome.css";
 
 function kindIcon(kind: DocumentKind) {
@@ -190,6 +192,7 @@ export function EditorChromeBar({
     usePlay();
   const { diagnostics, errorCount, setFocusDiagnostic } = useValidation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
 
   const contentBrowserDoc = openDocuments.find(
@@ -220,6 +223,19 @@ export function EditorChromeBar({
 
     reorderClosableTabs(fromIndex, toIndex);
   };
+
+  useEffect(() => {
+    if (!projectName) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") {
+        return;
+      }
+      event.preventDefault();
+      setSearchOpen((current) => !current);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [projectName]);
 
   return (
     <div className="editor-chrome-shell">
@@ -452,6 +468,17 @@ export function EditorChromeBar({
 
         <div className="editor-global-toolbar-end">
           <Button
+            size="icon-sm"
+            variant="ghost"
+            data-testid="global-search"
+            className="chrome-icon-button"
+            aria-label="Search project"
+            disabled={!projectName}
+            onClick={() => setSearchOpen(true)}
+          >
+            <SearchIcon />
+          </Button>
+          <Button
             size="sm"
             variant="ghost"
             data-testid="project-settings"
@@ -466,6 +493,7 @@ export function EditorChromeBar({
         </div>
       </div>
 
+      <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       <SettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
