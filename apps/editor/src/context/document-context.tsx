@@ -54,7 +54,7 @@ import {
 import { ProjectService } from "../services/project-service";
 import { loadTemplateCards } from "../services/template-service";
 import { compileGraphDocuments } from "../services/script-compiler";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import { applyFocusLayout } from "../shell/layout-ops";
 
 export type AppRoute = "home" | "editor";
 
@@ -114,6 +114,8 @@ interface DocumentContextValue {
   canRedoActiveDocument: boolean;
   registerDockviewApi: (id: string, api: DockviewApi) => void;
   captureActiveLayout: () => void;
+  isLayoutFocused: boolean;
+  toggleLayoutFocus: () => void;
   getAvailableDocuments: () => Array<{
     kind: "scene" | "graph";
     path: string;
@@ -143,6 +145,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
+  const preFocusLayoutsRef = useRef(new Map<string, Record<string, unknown>>());
+  const [focusedLayoutIds, setFocusedLayoutIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(64));
   const thumbnailsEnabledRef = useRef(true);
@@ -241,6 +247,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const captureLayoutForId = useCallback(
     (id: string) => {
+      const preFocus = preFocusLayoutsRef.current.get(id);
+      if (preFocus) {
+        documentService.setLayout(id, preFocus);
+        return;
+      }
       const api = dockviewApisRef.current.get(id);
       if (api) {
         documentService.setLayout(id, projectService.captureLayout(api));
@@ -346,6 +357,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pending: MigrationPending[] = [],
     ) => {
       dockviewApisRef.current.clear();
+      preFocusLayoutsRef.current.clear();
+      setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
       await documentService.initializeFromProject(
         projectService,
@@ -505,6 +518,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await projectService.closeProject();
     projectService.setDerivedStorage(null);
     dockviewApisRef.current.clear();
+    preFocusLayoutsRef.current.clear();
+    setFocusedLayoutIds(new Set());
     editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
     setProjectDocument(null);
@@ -564,6 +579,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const closeDocument = useCallback(
     (id: string) => {
       dockviewApisRef.current.delete(id);
+      preFocusLayoutsRef.current.delete(id);
+      setFocusedLayoutIds((current) => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       documentService.closeDocument(id);
       editSessionRef.current.dropDocument(id);
       bump();
@@ -965,6 +987,44 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     dockviewApisRef.current.set(id, api);
   }, []);
 
+  const toggleLayoutFocus = useCallback(() => {
+    const { activeDocumentId } = documentService.getState();
+    if (!activeDocumentId) return;
+    const doc = documentService
+      .getOpenDocumentsOrdered()
+      .find((entry) => entry.id === activeDocumentId);
+    if (!doc || (doc.ref.kind !== "scene" && doc.ref.kind !== "graph")) {
+      return;
+    }
+    const api = dockviewApisRef.current.get(activeDocumentId);
+    if (!api) return;
+
+    if (preFocusLayoutsRef.current.has(activeDocumentId)) {
+      const snapshot = preFocusLayoutsRef.current.get(activeDocumentId);
+      preFocusLayoutsRef.current.delete(activeDocumentId);
+      if (snapshot) {
+        api.fromJSON(snapshot as never);
+      }
+      setFocusedLayoutIds((current) => {
+        const next = new Set(current);
+        next.delete(activeDocumentId);
+        return next;
+      });
+      return;
+    }
+
+    preFocusLayoutsRef.current.set(
+      activeDocumentId,
+      api.toJSON() as Record<string, unknown>,
+    );
+    applyFocusLayout(doc.ref.kind, api);
+    setFocusedLayoutIds((current) => {
+      const next = new Set(current);
+      next.add(activeDocumentId);
+      return next;
+    });
+  }, [documentService]);
+
   const captureActiveLayout = useCallback(() => {
     const { activeDocumentId } = documentService.getState();
     if (activeDocumentId) {
@@ -1064,6 +1124,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       })(),
       registerDockviewApi,
       captureActiveLayout,
+      isLayoutFocused: (() => {
+        const activeId = documentService.getState().activeDocumentId;
+        return activeId ? focusedLayoutIds.has(activeId) : false;
+      })(),
+      toggleLayoutFocus,
       getAvailableDocuments,
       assetRegistry: projectService.registry,
       refreshAssetRegistry,
@@ -1121,6 +1186,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       redoActiveDocument,
       registerDockviewApi,
       captureActiveLayout,
+      toggleLayoutFocus,
+      focusedLayoutIds,
       getAvailableDocuments,
     ],
   );
