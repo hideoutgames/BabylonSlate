@@ -38,30 +38,37 @@ describe("docsBrand", () => {
   });
 });
 
-describe("docs public brand assets", () => {
+describe("public brand assets", () => {
   const files = [
     "SlateLogoDark.png",
     "SlateLogoLight.png",
     "SlateIconDark.png",
     "SlateIconLight.png",
   ];
+  const editorRoot = path.join(repoRoot, "apps/editor");
 
-  it("copies engine-logos into the docs public branding folder", () => {
+  it("copies engine-logos into the docs and editor public branding folders", () => {
     for (const file of files) {
       const source = path.join(repoRoot, "engine-logos", file);
-      const served = path.join(docsRoot, "public/branding", file);
-      expect(existsSync(served), served).toBe(true);
-      expect(readFileSync(served)).toEqual(readFileSync(source));
+      const docsServed = path.join(docsRoot, "public/branding", file);
+      const editorServed = path.join(editorRoot, "public/branding", file);
+      expect(existsSync(docsServed), docsServed).toBe(true);
+      expect(existsSync(editorServed), editorServed).toBe(true);
+      const bytes = readFileSync(source);
+      expect(readFileSync(docsServed)).toEqual(bytes);
+      expect(readFileSync(editorServed)).toEqual(bytes);
     }
   });
 
   it("replaces the default Vite favicon with a theme-aware Slate mark", () => {
-    const svg = readFileSync(path.join(docsRoot, "public/favicon.svg"), "utf8");
-    expect(svg).not.toContain("#863bff");
-    expect(svg).toContain("prefers-color-scheme: dark");
-    expect(existsSync(path.join(docsRoot, "public/apple-touch-icon.png"))).toBe(
-      true,
-    );
-    expect(existsSync(path.join(docsRoot, "public/favicon.ico"))).toBe(true);
+    for (const appRoot of [docsRoot, editorRoot]) {
+      const svg = readFileSync(path.join(appRoot, "public/favicon.svg"), "utf8");
+      expect(svg).not.toContain("#863bff");
+      expect(svg).toContain("prefers-color-scheme: dark");
+      expect(existsSync(path.join(appRoot, "public/apple-touch-icon.png"))).toBe(
+        true,
+      );
+      expect(existsSync(path.join(appRoot, "public/favicon.ico"))).toBe(true);
+    }
   });
 });
