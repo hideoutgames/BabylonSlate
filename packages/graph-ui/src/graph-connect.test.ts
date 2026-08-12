@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 import {
   CONNECT_END_CANCEL_PX,
   collectSafeConnectPins,
+  containerPointerToClient,
   displayNodeTitle,
   filterPaletteForPin,
+  isClientPointOverGraphNode,
   isNearSourcePin,
+  nodePinLists,
   pinsAreCompatible,
+  screenCentersForSafePins,
   shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
 
@@ -232,5 +236,81 @@ describe("shouldOpenAddNodeOnConnectEnd", () => {
         safePins: [source],
       }),
     ).toBe(true);
+  });
+});
+
+function mockRect(
+  el: Element,
+  rect: { left: number; top: number; width: number; height: number },
+) {
+  Object.defineProperty(el, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      x: rect.left,
+      y: rect.top,
+      left: rect.left,
+      top: rect.top,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      width: rect.width,
+      height: rect.height,
+      toJSON() {
+        return {};
+      },
+    }),
+  });
+}
+
+describe("nodePinLists", () => {
+  it("reads __pins from canvas node data", () => {
+    expect(
+      nodePinLists([
+        { id: "a", data: { __pins: [execOut] } },
+        { id: "b", data: { message: "no pins" } },
+      ]),
+    ).toEqual([
+      { id: "a", pins: [execOut] },
+      { id: "b", pins: undefined },
+    ]);
+  });
+});
+
+describe("screen-space connect helpers", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it("returns handle centers for safe pin refs", () => {
+    const handle = document.createElement("div");
+    handle.className = "react-flow__handle";
+    handle.dataset.nodeid = "source";
+    handle.dataset.handleid = "execOut";
+    mockRect(handle, { left: 10, top: 20, width: 44, height: 44 });
+    document.body.append(handle);
+
+    expect(
+      screenCentersForSafePins(document, [
+        { nodeId: "source", pinId: "execOut" },
+      ]),
+    ).toEqual([{ x: 32, y: 42 }]);
+  });
+
+  it("detects a client point over a graph node body", () => {
+    const node = document.createElement("div");
+    node.className = "react-flow__node";
+    mockRect(node, { left: 100, top: 100, width: 180, height: 80 });
+    document.body.append(node);
+
+    expect(isClientPointOverGraphNode({ x: 120, y: 110 }, document)).toBe(true);
+    expect(isClientPointOverGraphNode({ x: 10, y: 10 }, document)).toBe(false);
+  });
+
+  it("converts a container-relative pointer to client coordinates", () => {
+    const pane = document.createElement("div");
+    mockRect(pane, { left: 50, top: 80, width: 400, height: 300 });
+    expect(containerPointerToClient({ x: 10, y: 20 }, pane)).toEqual({
+      x: 60,
+      y: 100,
+    });
   });
 });

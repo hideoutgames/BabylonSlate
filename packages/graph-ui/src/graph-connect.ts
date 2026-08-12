@@ -2,7 +2,11 @@ import {
   formatEventTitle,
   humanizePropertyLabel,
 } from "@babylonslate/editor-kit";
-import type { PaletteNode, SerializedPin } from "./graph-types";
+import {
+  hasSerializedPins,
+  type PaletteNode,
+  type SerializedPin,
+} from "./graph-types";
 
 /** Drop closer than this (screen px) to a safe pin cancels Add Node. */
 export const CONNECT_END_CANCEL_PX = 96;
@@ -96,4 +100,62 @@ export function shouldOpenAddNodeOnConnectEnd({
 }: ConnectEndDecision): boolean {
   if (hasTargetHandle || pointerOverNode) return false;
   return !safePins.some((pin) => isNearSourcePin(pin, pointer, thresholdPx));
+}
+
+export function nodePinLists(
+  nodes: Array<{ id: string; data?: Record<string, unknown> }>,
+): Array<{ id: string; pins?: SerializedPin[] }> {
+  return nodes.map((node) => ({
+    id: node.id,
+    pins: hasSerializedPins(node.data) ? node.data.__pins : undefined,
+  }));
+}
+
+export function screenCentersForSafePins(
+  root: ParentNode,
+  refs: SafeConnectPinRef[],
+): Array<{ x: number; y: number }> {
+  const handles = Array.from(root.querySelectorAll(".react-flow__handle"));
+  const centers: Array<{ x: number; y: number }> = [];
+  for (const ref of refs) {
+    const handle = handles.find(
+      (entry) =>
+        entry.getAttribute("data-nodeid") === ref.nodeId &&
+        entry.getAttribute("data-handleid") === ref.pinId,
+    );
+    if (!handle) continue;
+    const rect = handle.getBoundingClientRect();
+    centers.push({
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    });
+  }
+  return centers;
+}
+
+export function isClientPointOverGraphNode(
+  pointer: { x: number; y: number },
+  root: ParentNode = document,
+): boolean {
+  const nodes = root.querySelectorAll(".react-flow__node");
+  for (const node of nodes) {
+    const rect = node.getBoundingClientRect();
+    if (
+      pointer.x >= rect.left &&
+      pointer.x <= rect.right &&
+      pointer.y >= rect.top &&
+      pointer.y <= rect.bottom
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function containerPointerToClient(
+  pointer: { x: number; y: number },
+  container: Element,
+): { x: number; y: number } {
+  const rect = container.getBoundingClientRect();
+  return { x: rect.left + pointer.x, y: rect.top + pointer.y };
 }
