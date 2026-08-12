@@ -38,6 +38,11 @@ export {
   type UseContextMenuOptions,
   type UseContextMenuResult,
 } from "./use-context-menu";
+export {
+  useHoldDragMenu,
+  type UseHoldDragMenuOptions,
+  type UseHoldDragMenuResult,
+} from "./use-hold-drag-menu";
 
 export { ParameterListEditor, type ParameterRow, type ParameterListEditorProps } from "./parameter-list-editor";
 export {
