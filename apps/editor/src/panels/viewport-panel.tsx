@@ -38,6 +38,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const {
     selectedActorIds,
     selectActor,
+    setSelectedActorIds,
     gizmoTool,
     snapEnabled,
     viewportMode,
@@ -45,6 +46,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
   const selectActorRef = useRef(selectActor);
   selectActorRef.current = selectActor;
+  const setSelectedActorIdsRef = useRef(setSelectedActorIds);
+  setSelectedActorIdsRef.current = setSelectedActorIds;
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -114,6 +117,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editor: true,
       viewportMode,
       onPickActor: (actorId) => selectActorRef.current(actorId),
+      onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
       onGizmoDragStart: () => {
         dragStartSceneRef.current = sceneRef.current;
       },
@@ -199,11 +203,26 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const grid = scene?.settings.grid;
     engineRef.current?.editor?.gizmos.setSnap({
       enabled: snapEnabled,
-      translate: grid?.snapTranslate ?? 1,
+      // 2D translation snaps to the tile the grid actually draws, so dragging
+      // with snap on lands sprites on tile boundaries.
+      translate:
+        viewportMode === "2d"
+          ? (grid?.tileSize ?? 1)
+          : (grid?.snapTranslate ?? 1),
       rotateDeg: grid?.snapRotateDeg ?? 15,
       scale: grid?.snapScale ?? 0.25,
     });
-  }, [scene?.settings.grid, snapEnabled]);
+  }, [scene?.settings.grid, snapEnabled, viewportMode]);
+
+  useEffect(() => {
+    const settings = scene?.settings;
+    if (!settings) return;
+    engineRef.current?.editor?.setGridSettings({
+      tileSize: settings.grid.tileSize,
+      tileSubdivisions: settings.grid.tileSubdivisions,
+      cameraBounds2D: settings.cameraBounds2D,
+    });
+  }, [scene?.settings, viewportMode]);
 
   return (
     <div

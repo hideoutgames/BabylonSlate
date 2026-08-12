@@ -305,6 +305,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@babylonslate/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
       typescript:
         specifier: ~5.8.2
         version: 5.8.3

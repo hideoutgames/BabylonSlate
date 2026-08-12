@@ -30,6 +30,7 @@ import {
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { pickAtCanvas } from "./picking";
+import { meshNamesInCanvasRect } from "./two-d";
 
 export interface EngineHandle {
   engine: Engine;
@@ -65,6 +66,8 @@ export interface CreateEngineOptions {
   viewportMode?: ViewportMode;
   /** Actor id under an explicit tap, or null when the tap missed. */
   onPickActor?: (actorId: string | null) => void;
+  /** Actors inside a 2D one-finger marquee drag. */
+  onMarqueeSelect?: (actorIds: string[]) => void;
   /** Gizmo drag lifecycle so the editor can coalesce one undo entry. */
   onGizmoDragStart?: () => void;
   onGizmoDrag?: () => void;
@@ -78,6 +81,12 @@ export interface EditorTools {
   selection: SelectionOutline;
   sync: EditorSceneSync;
   setViewportMode: (mode: ViewportMode) => void;
+  /** Tile grid, subdivision and 2D game camera bounds from scene settings. */
+  setGridSettings: (settings: {
+    tileSize: number;
+    tileSubdivisions: number;
+    cameraBounds2D: { width: number; height: number };
+  }) => void;
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
   frameActor: (actorId: string) => void;
@@ -164,6 +173,19 @@ export function createEngine(
         const actorId = hit ? editorSync.actorForMesh(hit.meshName) : null;
         options.onPickActor?.(actorId);
       },
+      onMarquee: (rect) => {
+        if (!options.onMarqueeSelect) return;
+        const names = meshNamesInCanvasRect(
+          scene,
+          rect,
+          engine.getRenderWidth(),
+          engine.getRenderHeight(),
+        );
+        const actorIds = names
+          .map((name) => editorSync.actorForMesh(name))
+          .filter((id): id is string => id !== null);
+        options.onMarqueeSelect(actorIds);
+      },
     });
     disposeGestures = gestures.dispose;
 
@@ -178,6 +200,12 @@ export function createEngine(
         gizmos.setMode(next);
         grid.setMode(next);
         scheduler.invalidate("camera");
+      },
+      setGridSettings: (settings) => {
+        grid.setSpacing(settings.tileSize);
+        grid.setSubdivisions(settings.tileSubdivisions);
+        grid.setCameraBounds(settings.cameraBounds2D);
+        scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {
         const meshes = actorIds.map((id) => editorSync.meshForActor(id));

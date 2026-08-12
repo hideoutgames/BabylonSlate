@@ -8,15 +8,19 @@ import {
 import type { ViewportMode } from "@babylonslate/core";
 
 export const GRID_MESH_NAME = "__editor-grid__";
+export const GRID_MINOR_MESH_NAME = "__editor-grid-minor__";
 export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
 
 export interface EditorGridOptions {
   mode?: ViewportMode;
-  /** World units between grid lines. */
+  /** World units between major grid lines; the 2D tile size. */
   spacing?: number;
+  /** Minor lines drawn between two major lines; 1 disables the minor grid. */
+  subdivisions?: number;
   /** Line count per axis; the grid spans `extent * spacing` world units. */
   extent?: number;
   color?: Color3;
+  minorColor?: Color3;
 }
 
 /**
@@ -39,9 +43,10 @@ export function buildGridLines(
   mode: ViewportMode,
   spacing: number,
   extent: number,
+  reachOverride?: number,
 ): Vector3[][] {
   const offsets = gridLineOffsets(spacing, extent);
-  const reach = extent * spacing;
+  const reach = reachOverride ?? extent * spacing;
   const lines: Vector3[][] = [];
   for (const offset of offsets) {
     if (mode === "2d") {
@@ -57,8 +62,12 @@ export function buildGridLines(
 
 export interface EditorGrid {
   readonly mesh: LinesMesh;
+  /** Minor subdivision grid; only built in 2D, where pixel work needs it. */
+  readonly minorMesh: LinesMesh | null;
+  readonly boundsMesh: LinesMesh | null;
   setMode: (mode: ViewportMode) => void;
   setSpacing: (spacing: number) => void;
+  setSubdivisions: (subdivisions: number) => void;
   setVisible: (visible: boolean) => void;
   /** Draw the rectangle the game camera will frame (2D only). */
   setCameraBounds: (bounds: { width: number; height: number } | null) => void;
@@ -71,77 +80,122 @@ export function createEditorGrid(
 ): EditorGrid {
   let mode: ViewportMode = options.mode ?? "3d";
   let spacing = options.spacing ?? 1;
+  let subdivisions = Math.max(1, Math.round(options.subdivisions ?? 4));
   const extent = options.extent ?? 20;
   const color = options.color ?? new Color3(0.32, 0.34, 0.38);
+  const minorColor = options.minorColor ?? new Color3(0.2, 0.21, 0.24);
 
-  let mesh = MeshBuilder.CreateLineSystem(
-    GRID_MESH_NAME,
-    { lines: buildGridLines(mode, spacing, extent), updatable: false },
-    scene,
-  );
+  let mesh!: LinesMesh;
+  let minorMesh: LinesMesh | null = null;
   let boundsMesh: LinesMesh | null = null;
+  let requestedBounds: { width: number; height: number } | null = null;
+  let visible = true;
 
-  const style = (target: LinesMesh) => {
-    target.color = color;
+  const style = (target: LinesMesh, lineColor: Color3) => {
+    target.color = lineColor;
     target.isPickable = false;
     target.doNotSyncBoundingInfo = true;
+    target.isVisible = visible;
   };
-  style(mesh);
 
-  const rebuild = () => {
-    const visible = mesh.isVisible;
-    mesh.dispose();
+  const buildBounds = () => {
+    boundsMesh?.dispose();
+    boundsMesh = null;
+    // The game camera rectangle is a 2D framing aid; 3D has no equivalent.
+    if (!requestedBounds || mode !== "2d") return;
+    const halfWidth = requestedBounds.width / 2;
+    const halfHeight = requestedBounds.height / 2;
+    boundsMesh = MeshBuilder.CreateLines(
+      CAMERA_BOUNDS_MESH_NAME,
+      {
+        points: [
+          new Vector3(-halfWidth, -halfHeight, 0),
+          new Vector3(halfWidth, -halfHeight, 0),
+          new Vector3(halfWidth, halfHeight, 0),
+          new Vector3(-halfWidth, halfHeight, 0),
+          new Vector3(-halfWidth, -halfHeight, 0),
+        ],
+      },
+      scene,
+    );
+    boundsMesh.color = new Color3(0.9, 0.7, 0.2);
+    boundsMesh.isPickable = false;
+  };
+
+  const build = () => {
+    mesh?.dispose();
+    minorMesh?.dispose();
+    minorMesh = null;
+
     mesh = MeshBuilder.CreateLineSystem(
       GRID_MESH_NAME,
       { lines: buildGridLines(mode, spacing, extent), updatable: false },
       scene,
     );
-    style(mesh);
-    mesh.isVisible = visible;
+    style(mesh, color);
+
+    if (mode === "2d" && subdivisions > 1) {
+      const minorSpacing = spacing / subdivisions;
+      minorMesh = MeshBuilder.CreateLineSystem(
+        GRID_MINOR_MESH_NAME,
+        {
+          lines: buildGridLines(
+            mode,
+            minorSpacing,
+            extent * subdivisions,
+            extent * spacing,
+          ),
+          updatable: false,
+        },
+        scene,
+      );
+      style(minorMesh, minorColor);
+    }
+    buildBounds();
   };
+
+  build();
 
   return {
     get mesh() {
       return mesh;
     },
+    get minorMesh() {
+      return minorMesh;
+    },
+    get boundsMesh() {
+      return boundsMesh;
+    },
     setMode: (next: ViewportMode) => {
       if (next === mode) return;
       mode = next;
-      rebuild();
+      build();
     },
     setSpacing: (next: number) => {
       if (next <= 0 || next === spacing) return;
       spacing = next;
-      rebuild();
+      build();
     },
-    setVisible: (visible: boolean) => {
-      mesh.isVisible = visible;
+    setSubdivisions: (next: number) => {
+      const rounded = Math.max(1, Math.round(next));
+      if (rounded === subdivisions) return;
+      subdivisions = rounded;
+      build();
+    },
+    setVisible: (next: boolean) => {
+      visible = next;
+      mesh.isVisible = next;
+      if (minorMesh) minorMesh.isVisible = next;
     },
     setCameraBounds: (bounds) => {
-      boundsMesh?.dispose();
-      boundsMesh = null;
-      if (!bounds) return;
-      const halfWidth = bounds.width / 2;
-      const halfHeight = bounds.height / 2;
-      boundsMesh = MeshBuilder.CreateLines(
-        CAMERA_BOUNDS_MESH_NAME,
-        {
-          points: [
-            new Vector3(-halfWidth, -halfHeight, 0),
-            new Vector3(halfWidth, -halfHeight, 0),
-            new Vector3(halfWidth, halfHeight, 0),
-            new Vector3(-halfWidth, halfHeight, 0),
-            new Vector3(-halfWidth, -halfHeight, 0),
-          ],
-        },
-        scene,
-      );
-      boundsMesh.color = new Color3(0.9, 0.7, 0.2);
-      boundsMesh.isPickable = false;
+      requestedBounds = bounds;
+      buildBounds();
     },
     dispose: () => {
       boundsMesh?.dispose();
       boundsMesh = null;
+      minorMesh?.dispose();
+      minorMesh = null;
       mesh.dispose();
     },
   };

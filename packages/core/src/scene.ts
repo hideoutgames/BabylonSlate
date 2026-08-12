@@ -41,6 +41,14 @@ export interface SceneGridSettings {
   snapScale: number;
   /** Tile size in world units, used by the 2D tile grid. */
   tileSize: number;
+  /** Minor grid lines drawn between two tile lines in 2D. */
+  tileSubdivisions: number;
+}
+
+/** Rectangle the game camera frames in 2D, drawn as bounds in the viewport. */
+export interface SceneCameraBounds2D {
+  width: number;
+  height: number;
 }
 
 export interface SceneSettings {
@@ -52,6 +60,7 @@ export interface SceneSettings {
   /** GameInstance class override for this scene, null to use the project default. */
   gameInstanceClass: string | null;
   grid: SceneGridSettings;
+  cameraBounds2D: SceneCameraBounds2D;
 }
 
 export interface SerializedScene {
@@ -85,7 +94,9 @@ export function createDefaultSceneSettings(): SceneSettings {
       snapRotateDeg: 15,
       snapScale: 0.25,
       tileSize: 1,
+      tileSubdivisions: 4,
     },
+    cameraBounds2D: { width: 16, height: 9 },
   };
 }
 
@@ -185,6 +196,7 @@ export function normalizeSceneSettings(value: unknown): SceneSettings {
   const defaults = createDefaultSceneSettings();
   const source = (value ?? {}) as Record<string, unknown>;
   const grid = (source.grid ?? {}) as Record<string, unknown>;
+  const bounds = (source.cameraBounds2D ?? {}) as Record<string, unknown>;
   return {
     environmentColor: asNumberTuple3(
       source.environmentColor,
@@ -216,6 +228,20 @@ export function normalizeSceneSettings(value: unknown): SceneSettings {
           : defaults.grid.snapScale,
       tileSize:
         typeof grid.tileSize === "number" ? grid.tileSize : defaults.grid.tileSize,
+      tileSubdivisions:
+        typeof grid.tileSubdivisions === "number"
+          ? Math.max(1, Math.round(grid.tileSubdivisions))
+          : defaults.grid.tileSubdivisions,
+    },
+    cameraBounds2D: {
+      width:
+        typeof bounds.width === "number" && bounds.width > 0
+          ? bounds.width
+          : defaults.cameraBounds2D.width,
+      height:
+        typeof bounds.height === "number" && bounds.height > 0
+          ? bounds.height
+          : defaults.cameraBounds2D.height,
     },
   };
 }

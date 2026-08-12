@@ -16,3 +16,4 @@ export * from "./editor-scene-sync";
 export * from "./gizmo-host";
 export * from "./selection-outline";
 export * from "./viewport-gestures";
+export * from "./two-d";

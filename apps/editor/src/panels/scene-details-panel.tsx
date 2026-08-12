@@ -231,6 +231,54 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             },
           }),
       },
+      {
+        kind: "number",
+        id: "scene-tile-subdivisions",
+        label: "Tile subdivisions",
+        value: scene.settings.grid.tileSubdivisions,
+        defaultValue: defaults.grid.tileSubdivisions,
+        onChange: (tileSubdivisions) =>
+          mutate({
+            ...scene,
+            settings: {
+              ...scene.settings,
+              grid: {
+                ...scene.settings.grid,
+                tileSubdivisions: Math.max(1, Math.round(tileSubdivisions)),
+              },
+            },
+          }),
+      },
+      {
+        kind: "number",
+        id: "scene-camera-bounds-width",
+        label: "2D camera width",
+        value: scene.settings.cameraBounds2D.width,
+        defaultValue: defaults.cameraBounds2D.width,
+        onChange: (width) =>
+          mutate({
+            ...scene,
+            settings: {
+              ...scene.settings,
+              cameraBounds2D: { ...scene.settings.cameraBounds2D, width },
+            },
+          }),
+      },
+      {
+        kind: "number",
+        id: "scene-camera-bounds-height",
+        label: "2D camera height",
+        value: scene.settings.cameraBounds2D.height,
+        defaultValue: defaults.cameraBounds2D.height,
+        onChange: (height) =>
+          mutate({
+            ...scene,
+            settings: {
+              ...scene.settings,
+              cameraBounds2D: { ...scene.settings.cameraBounds2D, height },
+            },
+          }),
+      },
     ];
 
     return (

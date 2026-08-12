@@ -243,6 +243,52 @@ describe("editor grid", () => {
     expect(scene.getMeshByName("__editor-camera-bounds__")).toBeNull();
     grid.dispose();
   });
+
+  it("draws a minor subdivision grid in 2D only", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, {
+      mode: "3d",
+      extent: 2,
+      subdivisions: 4,
+    });
+    expect(grid.minorMesh).toBeNull();
+
+    grid.setMode("2d");
+    expect(grid.minorMesh).not.toBeNull();
+    expect(scene.getMeshByName("__editor-grid-minor__")).not.toBeNull();
+
+    grid.setSubdivisions(1);
+    expect(grid.minorMesh).toBeNull();
+
+    grid.dispose();
+  });
+
+  it("hides the minor grid along with the major grid", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, {
+      mode: "2d",
+      extent: 2,
+      subdivisions: 2,
+    });
+    grid.setVisible(false);
+    expect(grid.mesh.isVisible).toBe(false);
+    expect(grid.minorMesh?.isVisible).toBe(false);
+
+    grid.setVisible(true);
+    expect(grid.minorMesh?.isVisible).toBe(true);
+    grid.dispose();
+  });
+
+  it("keeps camera bounds out of 3D, where the rectangle is meaningless", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "3d", extent: 2 });
+    grid.setCameraBounds({ width: 16, height: 9 });
+    expect(grid.boundsMesh).toBeNull();
+
+    grid.setMode("2d");
+    expect(grid.boundsMesh).not.toBeNull();
+    grid.dispose();
+  });
 });
 
 describe("selection outline", () => {

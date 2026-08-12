@@ -47,6 +47,19 @@ describe("scene schema", () => {
       locked: false,
     });
     expect(scene.settings.grid.tileSize).toBe(1);
+    expect(scene.settings.grid.tileSubdivisions).toBe(4);
+    expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
+  });
+
+  it("rejects non-positive 2D camera bounds and fractional subdivisions", () => {
+    const scene = normalizeScene({
+      settings: {
+        grid: { tileSubdivisions: 3.7 },
+        cameraBounds2D: { width: 0, height: 12 },
+      },
+    });
+    expect(scene.settings.grid.tileSubdivisions).toBe(4);
+    expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 12 });
   });
 
   it("normalizes an empty payload to a 3d scene with no actors", () => {
