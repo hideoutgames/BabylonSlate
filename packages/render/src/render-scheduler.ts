@@ -23,7 +23,7 @@ export class RenderScheduler {
   private paused = false;
   private visible = true;
   private obstructed = false;
-  private frameCap = 60;
+  private frameCap = Number.POSITIVE_INFINITY;
   private lastRenderAt: number | null = null;
   private renderedFrames = 0;
   private invalidations = 0;

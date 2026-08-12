@@ -110,6 +110,14 @@ describe("render scheduler", () => {
     expect(scheduler.shouldRender(0)).toBe(false);
   });
 
+  it("does not cap frames until setFrameCap is called", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.acquireContinuous("play");
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
+    expect(scheduler.shouldRender(1)).toBe(true);
+  });
+
   it("caps continuous-render leases", () => {
     const scheduler = new RenderScheduler();
     scheduler.setFrameCap(60);
