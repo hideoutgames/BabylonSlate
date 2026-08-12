@@ -16,6 +16,7 @@ describe("BrandLogo", () => {
     expect(logo.getAttribute("alt")).toBe("BabylonSlate");
     expect(logo.getAttribute("src")).toBe(brandLogoSrc("light"));
     expect(logo.className).toContain("dark:hidden");
+    expect(logo.className).toContain("h-8");
   });
 
   it("renders the light-ink wordmark for dark chrome", () => {
@@ -25,5 +26,6 @@ describe("BrandLogo", () => {
     expect(logo.getAttribute("alt")).toBe("");
     expect(logo.getAttribute("aria-hidden")).toBe("true");
     expect(logo.className).toContain("dark:block");
+    expect(logo.className).toContain("h-8");
   });
 });

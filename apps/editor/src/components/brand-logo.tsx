@@ -7,14 +7,14 @@ export function BrandLogo({ className }: { className?: string }) {
       <img
         src={brandLogoSrc("light")}
         alt={BRAND_NAME}
-        className="h-12 w-auto dark:hidden"
+        className="h-8 w-auto dark:hidden"
         data-testid="brand-logo"
       />
       <img
         src={brandLogoSrc("dark")}
         alt=""
         aria-hidden="true"
-        className="hidden h-12 w-auto dark:block"
+        className="hidden h-8 w-auto dark:block"
         data-testid="brand-logo-dark"
       />
     </span>

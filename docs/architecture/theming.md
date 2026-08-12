@@ -148,7 +148,7 @@ Source artwork lives in [`engine-logos/`](../../engine-logos/):
 
 | File | Ink | Use |
 | --- | --- | --- |
-| `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Homepage header, docs home hero |
+| `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Homepage header (`h-8` / 2rem), docs home hero |
 | `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Docs nav, favicon source |
 
 `*Dark` is dark ink for light chrome; `*Light` is light ink for dark chrome. Served copies must stay byte-identical in `apps/editor/public/branding/` and `apps/docs/public/branding/`.
