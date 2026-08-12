@@ -10,3 +10,5 @@ test-results
 .turbo
 android
 .capacitor
+.vitepress/cache
+.vitepress/dist

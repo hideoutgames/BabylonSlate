@@ -4,7 +4,9 @@ import { expect, type Page } from "@playwright/test";
 export async function saveAllIfEnabled(page: Page): Promise<void> {
   const button = page.getByTestId("save-all-project");
   await expect(button).toBeVisible();
-  if (await button.isEnabled()) {
-    await button.click();
+  if (!(await button.isEnabled())) {
+    return;
   }
+  // force: the tooltip trigger span can intercept the first click on coarse pointers.
+  await button.click({ force: true });
 }

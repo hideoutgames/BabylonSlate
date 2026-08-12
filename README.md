@@ -4,6 +4,8 @@ BabylonJS Editor optimised for Touch Devices — an iPad-first game engine with 
 
 **Engine plan:** [docs/engineplan.md](docs/engineplan.md) — architecture, roadmap, and delivery checklist.
 
+**Docs site:** [https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/) — VitePress site generated from `docs/`.
+
 ## Stack
 
 - **Monorepo**: pnpm workspaces
@@ -17,6 +19,7 @@ BabylonJS Editor optimised for Touch Devices — an iPad-first game engine with 
 
 ```
 apps/editor/          Capacitor shell, Dockview layout, panels
+apps/docs/            VitePress site (content lives in docs/)
 packages/engine/      Babylon scene lifecycle
 packages/graph/       React Flow editor + execution
 packages/shared/      Types, project schema, command bus
@@ -39,7 +42,8 @@ MyGame.babylonslate/
 ```bash
 pnpm install
 pnpm dev          # start Vite dev server
-pnpm verify       # typecheck + lint + unit tests + Playwright E2E
+pnpm docs:dev     # VitePress docs site from docs/
+pnpm verify       # typecheck + lint + unit tests + Playwright E2E + docs build
 pnpm test         # unit tests only
 pnpm test:e2e     # Playwright smoke tests (CI runs this)
 ```
@@ -56,6 +60,8 @@ After pushes to `main`, the app deploys to:
 
 Open that URL in **Safari on your iPad**. The Pages build has test mode baked in — no folder prompts, fixed test project, and the **Test mode** badge in the toolbar.
 
+Documentation is on the same Pages site at **[/docs/](https://hideoutgames.github.io/BabylonSlate/docs/)**. Do not switch Pages source to “Deploy from a `/docs` folder” — that would replace the editor with Jekyll-rendered markdown.
+
 You can also append `?test=1` if needed; both URLs behave the same on the deployed preview.
 
 #### One-time setup (repo admin)
@@ -71,6 +77,8 @@ To verify the Pages build locally:
 ```bash
 pnpm build:pages
 ```
+
+That builds the editor and the VitePress docs site, then copies docs into `apps/editor/dist/docs/`.
 
 ### Manual checklist (~5 min)
 

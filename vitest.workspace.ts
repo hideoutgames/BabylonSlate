@@ -19,6 +19,7 @@ export default defineConfig({
             "packages/scripting/**/*.test.ts",
             "packages/scripting-nodes/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
+            "apps/docs/**/*.test.ts",
           ],
         },
       },

@@ -2,10 +2,13 @@
 
 Authoritative detail lives in [engineplan.md](../engineplan.md). This page orients contributors.
 
+`docs/` markdown is the source of truth for GitHub and the VitePress site at [https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/).
+
 ## Monorepo
 
 ```
 apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer
+apps/docs/            VitePress site; content is the markdown in `docs/`
 packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue (P5)
 packages/vfs/         Storage adapters, platform detection, app settings
 packages/assets/      Containers, asset registry, search index, importers, encode queue

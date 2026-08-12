@@ -4,15 +4,16 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter editor dev",
+    "docs:dev": "pnpm --filter docs-site dev",
     "build": "pnpm -r build",
-    "build:pages": "VITE_BASE_PATH=/BabylonSlate/ VITE_TEST_MODE=true pnpm --filter editor build",
+    "build:pages": "VITE_BASE_PATH=/BabylonSlate/ VITE_TEST_MODE=true pnpm --filter editor build && VITEPRESS_BASE=/BabylonSlate/docs/ pnpm --filter docs-site build && mkdir -p apps/editor/dist/docs && cp -a apps/docs/.vitepress/dist/. apps/editor/dist/docs/",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "vitest run --config vitest.workspace.ts",
     "test:coverage": "vitest run --config vitest.workspace.ts --coverage",
     "test:watch": "vitest --config vitest.workspace.ts",
     "test:e2e": "playwright test",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm test:e2e"
+    "verify": "pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm test:e2e && pnpm --filter docs-site build"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",

@@ -1,6 +1,6 @@
 # Testing architecture
 
-`pnpm verify` runs typecheck, lint, unit tests with coverage, and Playwright. CI runs the same command.
+`pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build. CI runs the same command.
 
 ## Vitest projects
 
@@ -8,7 +8,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/input`, `packages/test-kit` — no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/input`, `packages/test-kit`, `apps/docs` (sidebar coverage + repo-link rewriter) — no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` (`.test.ts` and `.test.tsx`) |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
@@ -18,7 +18,7 @@ The `jsdom` project sets `css: true` so `?raw` stylesheet imports resolve; Vites
 
 ## Coverage gates
 
-Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements). `apps/editor` is deliberately outside the gate because its behaviour is asserted by Playwright, not unit tests.
+Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements). `apps/editor` is outside the gate (Playwright). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
 
 Excluded, each for a stated reason:
 
