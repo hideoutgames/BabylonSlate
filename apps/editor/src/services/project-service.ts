@@ -286,6 +286,28 @@ export class ProjectService {
     this.projectSearchIndex = null;
   }
 
+  /** Display-name only: writes `metadata.name` when the folder can be opened. */
+  async renameListedProjectDisplayName(
+    handle: ProjectFolderHandle,
+    displayName: string,
+  ): Promise<void> {
+    const name = displayName.trim();
+    if (!name) return;
+    await this.storage.openKnownFolder(handle);
+    try {
+      if (!(await this.storage.exists(PROJECT_FILE))) return;
+      const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as {
+        metadata?: { name?: string; updatedAt?: string };
+      };
+      if (!raw.metadata) return;
+      raw.metadata.name = name;
+      raw.metadata.updatedAt = new Date().toISOString();
+      await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+    } finally {
+      await this.storage.releaseFolder();
+    }
+  }
+
   async exportZip(): Promise<Uint8Array> {
     return exportProjectZip(this.storage);
   }

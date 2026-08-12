@@ -4,7 +4,7 @@ test.describe("Touch shell UX", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/?test=1");
     await page.getByTestId("create-project-empty").click();
-    await page.locator('[data-asset-path="assets/main.scene.babasset"]').click();
+    await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
     await expect(page.getByTestId("viewport-panel")).toBeVisible({
       timeout: 15_000,
     });

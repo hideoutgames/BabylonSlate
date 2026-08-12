@@ -9,7 +9,7 @@ async function openTestProject(page: Page) {
 }
 
 async function openMainScene(page: Page) {
-  await page.locator('[data-asset-path="assets/main.scene.babasset"]').click();
+  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
   await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
   await expect(
     page.getByTestId("document-workspace-scene").locator("canvas"),

@@ -11,16 +11,35 @@ import {
   CardTitle,
 } from "@babylonslate/ui/components/card";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@babylonslate/ui/components/context-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@babylonslate/ui/components/dialog";
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
+import { Field, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
+import { Input } from "@babylonslate/ui/components/input";
+import { displayProjectName } from "../lib/display-project-name";
+import type { ListedProject } from "../lib/listed-projects";
 import { SettingsModal } from "./settings-modal";
 
 interface HomepageProps {
-  projects: ProjectFolderHandle[];
+  projects: ListedProject[];
   templates: Array<{ id: string; name: string }>;
   needsReconnect: boolean;
   recoveryAvailable: boolean;
@@ -28,6 +47,8 @@ interface HomepageProps {
   onCreateFromTemplate: (templateId: string, name: string) => Promise<void>;
   onOpenExternal: () => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
+  onRenameProject: (handle: ProjectFolderHandle, name: string) => Promise<void>;
+  onRemoveFromList: (handle: ProjectFolderHandle) => Promise<void>;
   onReconnect: () => Promise<void>;
   onRecover: () => void | Promise<void>;
   onDismissRecovery: () => void;
@@ -43,6 +64,8 @@ export function Homepage({
   onCreateFromTemplate,
   onOpenExternal,
   onOpenProject,
+  onRenameProject,
+  onRemoveFromList,
   onReconnect,
   onRecover,
   onDismissRecovery,
@@ -51,6 +74,8 @@ export function Homepage({
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<ListedProject | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const run = async (fn: () => Promise<void>) => {
     setError(null);
@@ -206,18 +231,49 @@ export function Homepage({
               <ul className="flex flex-col gap-2" data-testid="project-list">
                 {projects.map((project) => (
                   <li key={project.id}>
-                    <Button
-                      variant="outline"
-                      className="h-auto min-h-[var(--touch-target,44px)] w-full justify-between px-4 py-3"
-                      data-testid={`open-listed-project-${project.name}`}
-                      disabled={busy}
-                      onClick={() => void run(() => onOpenProject(project))}
-                    >
-                      <span className="font-medium">{project.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {project.tier}
-                      </span>
-                    </Button>
+                    <ContextMenu>
+                      <ContextMenuTrigger className="block">
+                        <Button
+                          variant="outline"
+                          className="h-auto min-h-[var(--touch-target,44px)] w-full justify-between px-4 py-3"
+                          data-testid={`open-listed-project-${project.name}`}
+                          disabled={busy}
+                          onClick={() => void run(() => onOpenProject(project))}
+                        >
+                          <span className="font-medium">
+                            {displayProjectName(project.label)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {project.tier}
+                          </span>
+                        </Button>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent data-testid="homepage-project-menu">
+                        <ContextMenuGroup>
+                          <ContextMenuItem
+                            data-testid="homepage-project-open"
+                            onClick={() => void run(() => onOpenProject(project))}
+                          >
+                            Open
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            data-testid="homepage-project-rename"
+                            onClick={() => {
+                              setRenameTarget(project);
+                              setRenameValue(displayProjectName(project.label));
+                            }}
+                          >
+                            Rename
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            data-testid="homepage-project-remove"
+                            onClick={() => void run(() => onRemoveFromList(project))}
+                          >
+                            Remove from list
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   </li>
                 ))}
               </ul>
@@ -232,6 +288,56 @@ export function Homepage({
           </Alert>
         ) : null}
       </main>
+
+      <Dialog
+        open={renameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenameTarget(null);
+        }}
+      >
+        <DialogContent data-testid="homepage-rename-dialog">
+          <DialogHeader>
+            <DialogTitle>Rename project</DialogTitle>
+            <DialogDescription>
+              Changes the display name in recents and project metadata. The
+              folder name is unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="homepage-rename-input">Name</FieldLabel>
+              <Input
+                id="homepage-rename-input"
+                data-testid="homepage-rename-input"
+                value={renameValue}
+                onChange={(event) => setRenameValue(event.target.value)}
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRenameTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              data-testid="homepage-rename-confirm"
+              disabled={busy || !renameValue.trim()}
+              onClick={() => {
+                const target = renameTarget;
+                if (!target) return;
+                void run(() => onRenameProject(target, renameValue.trim()));
+                setRenameTarget(null);
+              }}
+            >
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <SettingsModal
         open={settingsOpen}

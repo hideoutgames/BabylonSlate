@@ -55,6 +55,10 @@ import { ProjectService } from "../services/project-service";
 import { loadTemplateCards } from "../services/template-service";
 import { compileGraphDocuments } from "../services/script-compiler";
 import { applyFocusLayout } from "../shell/layout-ops";
+import {
+  listedProjectsFromRecents,
+  type ListedProject,
+} from "../lib/listed-projects";
 
 export type AppRoute = "home" | "editor";
 
@@ -74,7 +78,7 @@ interface DocumentContextValue {
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
-  listedProjects: ProjectFolderHandle[];
+  listedProjects: ListedProject[];
   needsReconnect: boolean;
   recoveryAvailable: boolean;
   dirtyDocuments: OpenDocument[];
@@ -85,6 +89,11 @@ interface DocumentContextValue {
   createEmptyProject: () => Promise<void>;
   createFromTemplate: (templateId: string, name: string) => Promise<void>;
   openListedProject: (handle: ProjectFolderHandle) => Promise<void>;
+  renameListedProject: (
+    handle: ProjectFolderHandle,
+    name: string,
+  ) => Promise<void>;
+  removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<void>;
   saveAll: () => Promise<void>;
@@ -159,9 +168,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const projectDocumentRef = useRef<ProjectDocument | null>(null);
   projectDocumentRef.current = projectDocument;
-  const [listedProjects, setListedProjects] = useState<ProjectFolderHandle[]>(
-    [],
-  );
+  const [listedProjects, setListedProjects] = useState<ListedProject[]>([]);
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
   const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
@@ -205,18 +212,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const refreshProjectList = useCallback(async () => {
     const fromStorage = await projectService.listProjects();
     const settings = await settingsStore.load();
-    // Merge recents that may not appear in listProjects yet (external bookmarks).
-    const byId = new Map(fromStorage.map((p) => [p.id, p]));
-    for (const recent of settings.recents) {
-      if (!byId.has(recent.id)) {
-        byId.set(recent.id, {
-          id: recent.id,
-          name: recent.name,
-          tier: recent.tier,
-        });
-      }
-    }
-    setListedProjects([...byId.values()]);
+    setListedProjects(
+      listedProjectsFromRecents(settings.recents, fromStorage),
+    );
     setNeedsReconnect(await projectService.needsReconnect());
   }, [projectService, settingsStore]);
 
@@ -428,6 +426,37 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await enterEditor(document, layouts, pending);
     },
     [enterEditor, projectService],
+  );
+
+  const renameListedProject = useCallback(
+    async (handle: ProjectFolderHandle, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      try {
+        await projectService.renameListedProjectDisplayName(handle, trimmed);
+      } catch {
+        // Recents still update when the folder cannot be opened.
+      }
+      const settings = await settingsStore.load();
+      settings.recents = settings.recents.map((recent) =>
+        recent.id === handle.id ? { ...recent, name: trimmed } : recent,
+      );
+      await settingsStore.save(settings);
+      await refreshProjectList();
+    },
+    [projectService, refreshProjectList, settingsStore],
+  );
+
+  const removeListedProject = useCallback(
+    async (handle: ProjectFolderHandle) => {
+      const settings = await settingsStore.load();
+      settings.recents = settings.recents.filter(
+        (recent) => recent.id !== handle.id,
+      );
+      await settingsStore.save(settings);
+      await refreshProjectList();
+    },
+    [refreshProjectList, settingsStore],
   );
 
   const reconnectProject = useCallback(async () => {
@@ -1088,6 +1117,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createEmptyProject,
       createFromTemplate,
       openListedProject,
+      renameListedProject,
+      removeListedProject,
       reconnectProject,
       saveProject,
       saveAll,
@@ -1162,6 +1193,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createEmptyProject,
       createFromTemplate,
       openListedProject,
+      renameListedProject,
+      removeListedProject,
       reconnectProject,
       saveProject,
       saveAll,

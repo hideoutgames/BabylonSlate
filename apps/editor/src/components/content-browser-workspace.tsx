@@ -22,6 +22,7 @@ import {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   SelectableText,
+  TreeView,
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import { documentId, labelFromPath } from "@babylonslate/core";
@@ -54,6 +55,14 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@babylonslate/ui/components/dialog";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -76,6 +85,7 @@ import {
   compressionBadgeLabel,
   defaultParentClassForType,
   filterAssets,
+  flattenFolderTree,
   folderRelativePath,
   newAssetFileName,
   textureCompressionState,
@@ -118,7 +128,7 @@ function FolderTreeNode({
       <Button
         type="button"
         variant={selected ? "secondary" : "ghost"}
-        size="touch"
+        size="sm"
         data-testid={`folder-node-${node.path}`}
         className={cn(
           "w-full justify-start rounded-md border-l-2 px-2 text-left",
@@ -153,7 +163,7 @@ function AssetTile({
   asset,
   selected,
   onOpen,
-  onToggleSelect,
+  onSelect,
   onLongPressMenu,
   thumbnailUrl,
   hasCompileError = false,
@@ -161,7 +171,7 @@ function AssetTile({
   asset: IndexedAsset;
   selected: boolean;
   onOpen: () => void;
-  onToggleSelect: () => void;
+  onSelect: () => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
   thumbnailUrl: string | null;
   hasCompileError?: boolean;
@@ -182,7 +192,7 @@ function AssetTile({
     clearPress();
     const timerId = setTimeout(() => {
       pressRef.current = null;
-      onToggleSelect();
+      onSelect();
       onLongPressMenu(event.clientX, event.clientY);
     }, CONTEXT_MENU_LONG_PRESS_MS);
     pressRef.current = {
@@ -220,9 +230,11 @@ function AssetTile({
 
   return (
     <Card
-      className={`relative gap-0 overflow-hidden py-0 ${
-        selected ? "border-primary ring-1 ring-primary" : ""
-      }`}
+      size="sm"
+      className={cn(
+        "relative w-full gap-0 overflow-hidden py-0",
+        selected ? "border-primary ring-1 ring-primary" : "",
+      )}
     >
       <button
         type="button"
@@ -231,11 +243,12 @@ function AssetTile({
         data-asset-path={asset.path}
         data-asset-guid={asset.header.guid}
         data-selected={selected ? "true" : "false"}
-        className="flex min-h-[var(--touch-target,44px)] w-full flex-col gap-1 p-3 text-left hover:bg-accent/50"
-        onClick={onOpen}
+        className="flex w-full flex-col text-left hover:bg-accent/50"
+        onClick={onSelect}
+        onDoubleClick={onOpen}
         onContextMenu={(event) => {
           event.preventDefault();
-          onToggleSelect();
+          onSelect();
           onLongPressMenu(event.clientX, event.clientY);
         }}
         onPointerDown={onPointerDown}
@@ -244,27 +257,27 @@ function AssetTile({
         onPointerCancel={onPointerUp}
         onDragStart={onDragStart}
       >
-        <CardHeader className="flex flex-row items-start gap-2 space-y-0 p-0">
+        <div className="aspect-square w-full bg-muted">
           {thumbnailUrl ? (
             <img
               src={thumbnailUrl}
               alt=""
               data-testid={`content-item-thumb-${asset.header.guid}`}
-              className="mt-0.5 size-10 shrink-0 rounded-sm object-cover"
+              className="size-full object-cover"
             />
           ) : (
-            <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <FileIcon className="size-full p-6 text-muted-foreground" />
           )}
-          <div className="min-w-0 flex-1">
-            <CardTitle className="truncate text-sm font-medium">
-              <SelectableText>{asset.header.name}</SelectableText>
-            </CardTitle>
-            <CardDescription className="truncate text-xs">
-              {asset.header.type}
-            </CardDescription>
-          </div>
+        </div>
+        <CardHeader className="gap-1 p-2">
+          <CardTitle className="truncate text-sm font-medium">
+            <SelectableText>{asset.header.name}</SelectableText>
+          </CardTitle>
+          <CardDescription className="truncate text-xs">
+            {asset.header.type}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-1 p-0 pt-1">
+        <CardContent className="flex flex-wrap gap-1 px-2 pb-2">
           {compression ? (
             <Badge variant="secondary" className="w-fit text-[10px]">
               {compressionBadgeLabel(compression)}
@@ -321,10 +334,16 @@ export function ContentBrowserWorkspace() {
   const [busy, setBusy] = useState(false);
   const [nameDialog, setNameDialog] = useState<
     | { kind: "rename"; guid: string; value: string }
-    | { kind: "move"; guid: string; value: string }
     | { kind: "folder"; value: string }
     | null
   >(null);
+  const [moveTarget, setMoveTarget] = useState<{
+    guid: string;
+    folderPath: string;
+  } | null>(null);
+  const [moveCollapsed, setMoveCollapsed] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [refsSummary, setRefsSummary] = useState<{
     name: string;
     inbound: string;
@@ -437,15 +456,6 @@ export function ContentBrowserWorkspace() {
     [openDocument, openIds, setActiveDocument],
   );
 
-  const toggleGuid = useCallback((guid: string) => {
-    setSelectedGuids((current) => {
-      const next = new Set(current);
-      if (next.has(guid)) next.delete(guid);
-      else next.add(guid);
-      return next;
-    });
-  }, []);
-
   const requestDelete = useCallback((guids: string[]) => {
     if (guids.length === 0) return;
     setDeleteTarget({ kind: "assets", guids });
@@ -508,16 +518,12 @@ export function ContentBrowserWorkspace() {
           if (!guid || !assetRegistry) return;
           const asset = assetRegistry.getByGuid(guid);
           if (!asset) return;
-          const folder = asset.path.includes("/")
-            ? asset.path.slice(
-                ASSETS_ROOT.length + 1,
-                asset.path.lastIndexOf("/"),
-              )
-            : "";
-          setNameDialog({
-            kind: "move",
+          const folderPath = asset.path.includes("/")
+            ? asset.path.slice(0, asset.path.lastIndexOf("/"))
+            : ASSETS_ROOT;
+          setMoveTarget({
             guid,
-            value: folder,
+            folderPath: folderPath || ASSETS_ROOT,
           });
         },
       },
@@ -695,19 +701,6 @@ export function ContentBrowserWorkspace() {
         );
         repairDocumentPath(before.path, renamed.path, renamed.header.type);
         await refreshAssetRegistry();
-      } else if (nameDialog.kind === "move") {
-        const before = assetRegistry.getByGuid(nameDialog.guid);
-        if (!before) return;
-        const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
-        const folder = nameDialog.value.trim().replace(/^\/+|\/+$/g, "");
-        const relative = folder ? `${folder}/${fileName}` : fileName;
-        const moved = await assetRegistry.moveAsset(
-          nameDialog.guid,
-          PROJECT_ROOT_ID,
-          relative,
-        );
-        repairDocumentPath(before.path, moved.path, moved.header.type);
-        await refreshAssetRegistry();
       }
       setNameDialog(null);
     } finally {
@@ -720,6 +713,28 @@ export function ContentBrowserWorkspace() {
     repairDocumentPath,
     selectedFolderPath,
   ]);
+
+  const confirmMove = useCallback(async () => {
+    if (!assetRegistry || !moveTarget) return;
+    setBusy(true);
+    try {
+      const before = assetRegistry.getByGuid(moveTarget.guid);
+      if (!before) return;
+      const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
+      const folder = folderRelativePath(moveTarget.folderPath, ASSETS_ROOT);
+      const relative = folder ? `${folder}/${fileName}` : fileName;
+      const moved = await assetRegistry.moveAsset(
+        moveTarget.guid,
+        PROJECT_ROOT_ID,
+        relative,
+      );
+      repairDocumentPath(before.path, moved.path, moved.header.type);
+      await refreshAssetRegistry();
+      setMoveTarget(null);
+    } finally {
+      setBusy(false);
+    }
+  }, [assetRegistry, moveTarget, refreshAssetRegistry, repairDocumentPath]);
 
   const handleImport = useCallback(async () => {
     const files = await pickImportFiles({ multiple: true });
@@ -799,65 +814,74 @@ export function ContentBrowserWorkspace() {
       data-testid="content-browser-workspace"
       {...bind}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">
-            Content Browser
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {projectDocument.metadata.name}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="touch"
-            data-testid="content-browser-import"
-            disabled={busy}
-            onClick={() => void handleImport()}
-          >
-            <UploadIcon data-icon="inline-start" />
-            Import
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="touch"
-            data-testid="content-browser-new-folder"
-            disabled={busy}
-            onClick={() =>
-              setNameDialog({ kind: "folder", value: "NewFolder" })
-            }
-          >
-            <FolderPlusIcon data-icon="inline-start" />
-            New Folder
-          </Button>
-          <Button
-            type="button"
-            size="touch"
-            data-testid="content-browser-new-asset"
-            disabled={busy}
-            onClick={() => setNewAssetOpen(true)}
-          >
-            <PlusIcon data-icon="inline-start" />
-            New Asset
-          </Button>
-          {selectedGuids.size > 0 ? (
-            <Button
-              type="button"
-              variant="destructive"
-              size="touch"
-              data-testid="content-browser-delete-selected"
-              disabled={busy}
-              onClick={() => requestDelete([...selectedGuids])}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="content-browser-import"
+          disabled={busy}
+          onClick={() => void handleImport()}
+        >
+          <UploadIcon data-icon="inline-start" />
+          Import
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          data-testid="content-browser-new-asset"
+          disabled={busy}
+          onClick={() => setNewAssetOpen(true)}
+        >
+          <PlusIcon data-icon="inline-start" />
+          New Asset
+        </Button>
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search assets…"
+          className="min-h-[var(--chrome-row,28px)] min-w-40 flex-1"
+          data-testid="content-browser-search"
+        />
+        <ToggleGroup
+          variant="outline"
+          size="sm"
+          spacing={1}
+          className="flex-wrap"
+          data-testid="content-browser-type-filters"
+          value={[typeFilter ?? "all"]}
+          onValueChange={(value) => {
+            const next = value[0];
+            setTypeFilter(!next || next === "all" ? null : next);
+          }}
+          aria-label="Asset type filter"
+        >
+          <ToggleGroupItem value="all" data-testid="content-browser-filter-all">
+            All
+          </ToggleGroupItem>
+          {typeChips.map((type) => (
+            <ToggleGroupItem
+              key={type}
+              value={type}
+              data-testid={`content-browser-filter-${type}`}
             >
-              <Trash2Icon data-icon="inline-start" />
-              Delete ({selectedGuids.size})
-            </Button>
-          ) : null}
-        </div>
-        {/* Capacitor-free Playwright / automated import path (UI uses pickImportFiles). */}
+              {type}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        {selectedGuids.size > 0 ? (
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            data-testid="content-browser-delete-selected"
+            disabled={busy}
+            onClick={() => requestDelete([...selectedGuids])}
+          >
+            <Trash2Icon data-icon="inline-start" />
+            Delete ({selectedGuids.size})
+          </Button>
+        ) : null}
         <input
           type="file"
           multiple
@@ -875,6 +899,20 @@ export function ContentBrowserWorkspace() {
           className="flex w-56 shrink-0 flex-col gap-1 overflow-y-auto overscroll-y-contain border-r border-border p-2"
           data-testid="content-browser-folder-tree"
         >
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full justify-start"
+            data-testid="content-browser-new-folder"
+            disabled={busy}
+            onClick={() =>
+              setNameDialog({ kind: "folder", value: "NewFolder" })
+            }
+          >
+            <FolderPlusIcon data-icon="inline-start" />
+            New Folder
+          </Button>
           <FolderTreeNode
             node={folderTree}
             selectedPath={selectedFolderPath}
@@ -885,44 +923,8 @@ export function ContentBrowserWorkspace() {
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex flex-col gap-3 border-b border-border px-4 py-3">
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search assets…"
-              className="min-h-[var(--touch-target,44px)]"
-              data-testid="content-browser-search"
-            />
-            <ToggleGroup
-              variant="outline"
-              size="touch"
-              spacing={1}
-              className="flex-wrap"
-              data-testid="content-browser-type-filters"
-              value={[typeFilter ?? "all"]}
-              onValueChange={(value) => {
-                const next = value[0];
-                setTypeFilter(!next || next === "all" ? null : next);
-              }}
-              aria-label="Asset type filter"
-            >
-              <ToggleGroupItem value="all" data-testid="content-browser-filter-all">
-                All
-              </ToggleGroupItem>
-              {typeChips.map((type) => (
-                <ToggleGroupItem
-                  key={type}
-                  value={type}
-                  data-testid={`content-browser-filter-${type}`}
-                >
-                  {type}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
-
           <div
-            className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3 overflow-y-auto overscroll-y-contain p-4"
+            className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,10rem)] content-start gap-3 overflow-y-auto overscroll-y-contain p-4"
             data-testid="content-browser-asset-grid"
           >
             {visibleAssets.map((asset) => (
@@ -935,14 +937,10 @@ export function ContentBrowserWorkspace() {
                   compileErrorGuids.has(asset.header.guid) ||
                   compileErrorGuids.has(asset.path)
                 }
-                onOpen={() => {
-                  if (selectedGuids.size > 0) {
-                    toggleGuid(asset.header.guid);
-                    return;
-                  }
-                  void openOrFocusDocument(asset);
-                }}
-                onToggleSelect={() => toggleGuid(asset.header.guid)}
+                onSelect={() =>
+                  setSelectedGuids(new Set([asset.header.guid]))
+                }
+                onOpen={() => void openOrFocusDocument(asset)}
                 onLongPressMenu={(x, y) => openTileMenu(asset.header.guid, x, y)}
               />
             ))}
@@ -1096,18 +1094,12 @@ export function ContentBrowserWorkspace() {
         <AlertDialogContent data-testid="content-browser-name-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {nameDialog?.kind === "folder"
-                ? "New Folder"
-                : nameDialog?.kind === "rename"
-                  ? "Rename Asset"
-                  : "Move Asset"}
+              {nameDialog?.kind === "folder" ? "New Folder" : "Rename Asset"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {nameDialog?.kind === "move"
-                ? "Destination folder relative to assets/ (leave empty for the assets root)."
-                : nameDialog?.kind === "folder"
-                  ? "Create a folder under the current selection."
-                  : "Rename the asset file. References by guid stay intact."}
+              {nameDialog?.kind === "folder"
+                ? "Create a folder under the current selection."
+                : "Rename the asset file. References by guid stay intact."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Input
@@ -1135,6 +1127,68 @@ export function ContentBrowserWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={moveTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setMoveTarget(null);
+        }}
+      >
+        <DialogContent data-testid="content-browser-move-dialog">
+          <DialogHeader>
+            <DialogTitle>Move Asset</DialogTitle>
+            <DialogDescription>
+              Choose a destination folder in the project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="h-64 min-h-0">
+            <TreeView
+              nodes={flattenFolderTree(folderTree, moveCollapsed).map(
+                (row) => ({
+                  id: row.id,
+                  label: row.label,
+                  depth: row.depth,
+                  hasChildren: row.hasChildren,
+                  expanded: row.expanded,
+                }),
+              )}
+              selectedId={moveTarget?.folderPath ?? null}
+              onSelect={(id) =>
+                setMoveTarget((current) =>
+                  current ? { ...current, folderPath: id } : current,
+                )
+              }
+              onToggleExpanded={(id) =>
+                setMoveCollapsed((current) => {
+                  const next = new Set(current);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  return next;
+                })
+              }
+              emptyLabel="No folders"
+              data-testid="content-browser-move-tree"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setMoveTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              data-testid="content-browser-move-confirm"
+              disabled={busy || !moveTarget}
+              onClick={() => void confirmMove()}
+            >
+              Move
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={refsSummary !== null}
