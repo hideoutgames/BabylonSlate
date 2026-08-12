@@ -64,7 +64,9 @@ export type CommandMessage =
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }
   | { channel: "input"; payload: ArrayBuffer | SharedArrayBuffer }
-  | { channel: "rpc"; payload: unknown };
+  | { channel: "rpc"; payload: unknown }
+  /** Hands a consumed transferable snapshot buffer back for reuse (no per-frame alloc). */
+  | { channel: "recycleSnapshot"; payload: ArrayBuffer };
 
 export type BridgeWorkerMessage =
   | { channel: "command"; payload: CommandMessage }
