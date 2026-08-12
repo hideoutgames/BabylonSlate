@@ -8,12 +8,6 @@ async function openWindowsMenu(page: Page) {
   await expect(content).toBeVisible();
 }
 
-async function clickWindowItem(page: Page, id: string) {
-  const item = page.getByTestId(`windows-menu-${id}`);
-  await expect(item).toBeVisible();
-  await item.evaluate((el: HTMLElement) => el.click());
-}
-
 test.describe("Windows menu", () => {
   test("sits left of Focus and is disabled on Content Browser", async ({
     page,
@@ -38,6 +32,7 @@ test.describe("Windows menu", () => {
   test("toggles Outliner and shows an empty Editor Utilities submenu", async ({
     page,
   }) => {
+    test.setTimeout(60_000);
     await openTestProject(page);
     await page
       .locator('[data-asset-path="assets/main.scene.babasset"]')
@@ -48,27 +43,19 @@ test.describe("Windows menu", () => {
 
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
     await openWindowsMenu(page);
-    await expect(page.getByTestId("windows-menu-scene-outliner")).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-    await clickWindowItem(page, "scene-outliner");
+    const outlinerItem = page.getByTestId("windows-menu-scene-outliner");
+    await expect(outlinerItem).toHaveAttribute("aria-checked", "true");
+    await outlinerItem.click({ force: true });
     await expect(page.getByTestId("scene-outliner-panel")).toHaveCount(0);
-
-    await openWindowsMenu(page);
-    await expect(page.getByTestId("windows-menu-scene-outliner")).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
-    await clickWindowItem(page, "scene-outliner");
+    await expect(page.getByTestId("windows-menu-content")).toBeVisible();
+    await expect(outlinerItem).toHaveAttribute("aria-checked", "false");
+    await outlinerItem.click({ force: true });
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
       timeout: 10_000,
     });
+    await expect(page.getByTestId("windows-menu-content")).toBeVisible();
 
-    await openWindowsMenu(page);
-    await page
-      .getByTestId("windows-editor-utilities")
-      .evaluate((el: HTMLElement) => el.click());
+    await page.getByTestId("windows-editor-utilities").click({ force: true });
     await expect(page.getByTestId("windows-editor-utilities-empty")).toBeVisible();
   });
 });

@@ -142,7 +142,7 @@ interface DocumentContextValue {
   activateDockPanel: (panelId: string) => void;
   toggleDockWindow: (panelId: string) => void;
   isDockWindowOpen: (panelId: string) => boolean;
-  openDockWindowCount: number;
+  getOpenDockWindowCount: () => number;
   captureActiveLayout: () => void;
   isLayoutFocused: boolean;
   toggleLayoutFocus: () => void;
@@ -161,6 +161,9 @@ interface DocumentContextValue {
 }
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
+
+/** Bumps only the Windows menu so dock add/remove does not remount editor chrome. */
+const DockWindowTickContext = createContext(0);
 
 function asDockWindowApi(api: DockviewApi): DockWindowApi {
   return api as unknown as DockWindowApi;
@@ -212,9 +215,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [registryVersion, setRegistryVersion] = useState(0);
+  const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
+  const bumpDockWindows = useCallback(
+    () => setDockWindowTick((v) => v + 1),
+    [],
+  );
   const documentService = documentServiceRef.current;
 
   const disposeDockSubscriptions = useCallback((id?: string) => {
@@ -1099,13 +1107,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     };
     dockSubscriptionsRef.current.set(id, [
-      api.onDidAddPanel(() => bump()),
-      api.onDidRemovePanel(() => bump()),
+      api.onDidAddPanel(() => bumpDockWindows()),
+      api.onDidRemovePanel(() => bumpDockWindows()),
       api.onDidLayoutChange(rememberPlacements),
     ]);
     rememberPlacements();
-    bump();
-  }, [bump, disposeDockSubscriptions, documentService]);
+    bumpDockWindows();
+  }, [bumpDockWindows, disposeDockSubscriptions, documentService]);
 
   const activateDockPanel = useCallback((panelId: string) => {
     const { activeDocumentId } = documentService.getState();
@@ -1138,14 +1146,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         result.placement,
       );
     }
-    bump();
-  }, [bump, documentService]);
+    bumpDockWindows();
+  }, [bumpDockWindows, documentService]);
 
   const isDockWindowOpen = useCallback((panelId: string) => {
     const { activeDocumentId } = documentService.getState();
     if (!activeDocumentId) return false;
     const api = dockviewApisRef.current.get(activeDocumentId);
     return api ? isDockWindowOpenOnApi(asDockWindowApi(api), panelId) : false;
+  }, [documentService]);
+
+  const getOpenDockWindowCount = useCallback(() => {
+    const { activeDocumentId } = documentService.getState();
+    if (!activeDocumentId) return 0;
+    const api = dockviewApisRef.current.get(activeDocumentId);
+    return api ? listDockPanels(asDockWindowApi(api)).length : 0;
   }, [documentService]);
 
   const toggleLayoutFocus = useCallback(() => {
@@ -1289,12 +1304,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       activateDockPanel,
       toggleDockWindow,
       isDockWindowOpen,
-      openDockWindowCount: (() => {
-        const activeId = documentService.getState().activeDocumentId;
-        if (!activeId) return 0;
-        const api = dockviewApisRef.current.get(activeId);
-        return api ? listDockPanels(asDockWindowApi(api)).length : 0;
-      })(),
+      getOpenDockWindowCount,
       captureActiveLayout,
       isLayoutFocused: (() => {
         const activeId = documentService.getState().activeDocumentId;
@@ -1362,6 +1372,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       activateDockPanel,
       toggleDockWindow,
       isDockWindowOpen,
+      getOpenDockWindowCount,
       captureActiveLayout,
       toggleLayoutFocus,
       focusedLayoutIds,
@@ -1370,7 +1381,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>
+    <DocumentContext.Provider value={value}>
+      <DockWindowTickContext.Provider value={dockWindowTick}>
+        {children}
+      </DockWindowTickContext.Provider>
+    </DocumentContext.Provider>
   );
 }
 
@@ -1382,6 +1397,10 @@ export function useDocuments(): DocumentContextValue {
     throw new Error("useDocuments must be used within DocumentProvider");
   }
   return context;
+}
+
+export function useDockWindowTick(): number {
+  return useContext(DockWindowTickContext);
 }
 
 /** @deprecated Use useDocuments instead */
