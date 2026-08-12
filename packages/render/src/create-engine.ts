@@ -284,9 +284,9 @@ export function createEngine(
       applySnapshotToScene(scene, binding, sampled);
     }
     // Measure render cost only, not wall-clock gap since the previous
-    // rendered frame — render-on-demand can idle for seconds between
-    // frames, and feeding that gap to the scaling valve would read as a
-    // catastrophic frame time and drop quality for no reason.
+    // rendered frame — a frozen obstructed viewport can idle for seconds
+    // between frames, and feeding that gap to the scaling valve would read
+    // as a catastrophic frame time and drop quality for no reason.
     const renderStart = performance.now();
     scene.render();
     scheduler.noteRendered();

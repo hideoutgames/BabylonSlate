@@ -16,6 +16,7 @@ import { useSceneEditing } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { isTestModeEnabled } from "@babylonslate/vfs";
+import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -125,10 +126,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     });
     engineRef.current = handle;
     registerSharedEngine(handle.engine);
-    registerScheduler({
+    const unregisterScheduler = registerScheduler({
       setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
       stats: () => handle.scheduler.stats(),
       setPaused: (v) => handle.setPaused(v),
+    });
+    const detachRenderGate = attachViewportRenderGate({
+      canvas,
+      scheduler: handle.scheduler,
     });
 
     const resizeIfSized = () => resizeCanvasIfSized(canvas, handle);
@@ -166,7 +171,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       unsubscribe();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
-      registerScheduler(null);
+      detachRenderGate();
+      unregisterScheduler();
       registerSharedEngine(null);
       handle.dispose();
       engineRef.current = null;

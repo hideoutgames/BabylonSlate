@@ -3,7 +3,9 @@ import { useEffect, useRef } from "react";
 import { createEngine, type EngineHandle } from "@babylonslate/render";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { usePrefabEditing } from "../context/prefab-editing-context";
+import { usePlay } from "../context/play-context";
 import { useSceneEditing } from "../context/scene-editing-context";
+import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { previewSceneFor } from "../lib/prefab-preview";
 
 function resizeCanvasIfSized(
@@ -26,24 +28,40 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const { components } = usePrefabEditing();
   const { gizmoTool, snapEnabled, viewportMode, selectedActorIds } =
     useSceneEditing();
+  const { registerScheduler, playing } = usePlay();
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const handle = createEngine(canvas, { editor: true, viewportMode });
     engineRef.current = handle;
+    const unregisterScheduler = registerScheduler({
+      setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
+      stats: () => handle.scheduler.stats(),
+      setPaused: (v) => handle.setPaused(v),
+    });
+    const detachRenderGate = attachViewportRenderGate({
+      canvas,
+      scheduler: handle.scheduler,
+    });
     const resizeIfSized = () => resizeCanvasIfSized(canvas, handle);
     resizeIfSized();
     const resizeObserver = new ResizeObserver(() => resizeIfSized());
     resizeObserver.observe(canvas);
     return () => {
       resizeObserver.disconnect();
+      detachRenderGate();
+      unregisterScheduler();
       handle.dispose();
       engineRef.current = null;
     };
     // Engine is created once; mode/tool changes are pushed below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    engineRef.current?.setPaused(playing);
+  }, [playing]);
 
   useEffect(() => {
     engineRef.current?.loadScene(previewSceneFor(components));
