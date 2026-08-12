@@ -20,6 +20,16 @@ Two mechanisms, both required:
 
 Inputs, textareas, `contenteditable` and anything inside `SelectableText` keep the platform menu, since that is where cut/copy/paste is still wanted.
 
+### iOS three-finger undo/redo
+
+iOS 13+ standalone / Add to Home Screen maps three-finger swipe and tap to system undo/redo. That fights the viewport pan gesture and delays `pointermove` while the recognizer decides.
+
+- `useSuppressIosEditingGestures` (applied once at the shell) `preventDefault`s 3+ finger `touchstart`/`touchmove` and `beforeinput` `historyUndo`/`historyRedo` document-wide.
+- Inputs, textareas, `contenteditable`, and `SelectableText` keep system typing undo.
+- Editor canvases (scene and Prefab Preview) also `preventDefault` every `touchstart`/`touchmove` with a non-passive listener so iOS does not hold pointer events for gesture recognition. The canvas already uses `touch-none` and does not scroll.
+
+Do not bind Cmd+Z to document undo without ignoring events while a three-pointer viewport gesture is active.
+
 ### Cancellation
 
 `useContextMenu` cancels a pending long-press when the pointer moves past 8px or on scroll (captured document-wide, since `scroll` does not bubble). The 500ms delay and 8px tolerance deliberately match Dockview's `LongPressDetector` defaults, so a panel drag and a context menu can never both fire from one gesture.
@@ -34,6 +44,10 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 | CSS | `overscroll-behavior: contain` on intentional scroll regions | Content browser, chrome tab strip, homepage body |
 | JS | `usePreventDocumentOverscroll` — `touchmove` guard on coarse pointers | iOS Safari / touch fallback |
 | Native | WKWebView `scrollView.bounces = false` | Capacitor iOS app only |
+
+### Standalone (Add to Home Screen)
+
+`apps/editor/index.html` sets `viewport-fit=cover` plus `apple-mobile-web-app-capable` / `mobile-web-app-capable` so a Pages home-screen app is fullscreen and does not resize-churn on the home indicator. The three-finger undo suppression above must ship with those tags; capable meta otherwise makes iOS editing gestures more aggressive.
 
 ### Regions that still scroll internally
 
@@ -62,7 +76,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 - **WASD** flies in 3D (look-relative) and pans on XY in 2D. Ignored while typing, while Play is open, or when the canvas is hidden.
 - **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Scene and Prefab toolbars expose a joystick toggle; Scene persists the setting, Prefab uses live context. Not the P9 game `TouchJoystick`.
 - **Gizmo drag** coalesces to one undo step via `mergeKey` on `SetActorTransformCommand` (`transform:{actorId}`).
-- Canvas uses `touch-none` so UI chrome does not steal gestures.
+- Canvas uses `touch-none` plus non-passive touch `preventDefault` so UI chrome and iOS system gestures do not steal look / pinch / pan.
 - Selection on explicit tap pick, not hover.
 
 ## Graph (React Flow)

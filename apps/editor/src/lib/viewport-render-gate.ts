@@ -42,11 +42,41 @@ function overlayIsOpen(el: Element): boolean {
   return true;
 }
 
+export type EditorCanvasRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+export type EditorViewportSize = {
+  width: number;
+  height: number;
+};
+
+/** True when any pixel of the canvas rect overlaps the window. */
+export function canvasRectIsOnScreen(
+  rect: EditorCanvasRect,
+  viewport: EditorViewportSize,
+): boolean {
+  return (
+    rect.right > 0 &&
+    rect.bottom > 0 &&
+    rect.left < viewport.width &&
+    rect.top < viewport.height
+  );
+}
+
 export function canvasIsEditorVisible(
   canvas: Pick<HTMLElement, "clientWidth" | "clientHeight">,
   intersecting: boolean,
+  rect?: EditorCanvasRect,
+  viewport?: EditorViewportSize,
 ): boolean {
-  return intersecting && canvas.clientWidth > 0 && canvas.clientHeight > 0;
+  if (canvas.clientWidth <= 0 || canvas.clientHeight <= 0) return false;
+  if (intersecting) return true;
+  if (!rect || !viewport) return false;
+  return canvasRectIsOnScreen(rect, viewport);
 }
 
 async function defaultLoadFrameCap(): Promise<number> {
@@ -61,11 +91,21 @@ export function attachViewportRenderGate(options: {
 }): () => void {
   const { canvas, scheduler } = options;
 
+  const viewportSize = (): EditorViewportSize => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
   const applyObstructed = () => {
     scheduler.setObstructed(isBlockingEditorOverlayOpen());
   };
-  const applyVisible = (intersecting: boolean) => {
-    scheduler.setVisible(canvasIsEditorVisible(canvas, intersecting));
+  const applyVisible = (
+    intersecting: boolean,
+    rect: EditorCanvasRect = canvas.getBoundingClientRect(),
+  ) => {
+    scheduler.setVisible(
+      canvasIsEditorVisible(canvas, intersecting, rect, viewportSize()),
+    );
   };
 
   applyObstructed();
@@ -75,7 +115,7 @@ export function attachViewportRenderGate(options: {
   if (typeof IntersectionObserver !== "undefined") {
     intersection = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        applyVisible(entry.isIntersecting);
+        applyVisible(entry.isIntersecting, entry.boundingClientRect);
       }
     });
     intersection.observe(canvas);

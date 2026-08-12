@@ -58,18 +58,46 @@ describe("isBlockingEditorOverlayOpen", () => {
 });
 
 describe("canvasIsEditorVisible", () => {
-  it("requires intersection and a non-zero size", () => {
+  const onScreen = { left: 10, top: 10, right: 110, bottom: 90 };
+  const viewport = { width: 800, height: 600 };
+
+  it("requires a non-zero size", () => {
     expect(
       canvasIsEditorVisible({ clientWidth: 100, clientHeight: 80 }, true),
     ).toBe(true);
-    expect(
-      canvasIsEditorVisible({ clientWidth: 100, clientHeight: 80 }, false),
-    ).toBe(false);
     expect(
       canvasIsEditorVisible({ clientWidth: 0, clientHeight: 80 }, true),
     ).toBe(false);
     expect(
       canvasIsEditorVisible({ clientWidth: 100, clientHeight: 0 }, true),
+    ).toBe(false);
+  });
+
+  it("treats an on-screen rect as visible when IntersectionObserver reports false", () => {
+    expect(
+      canvasIsEditorVisible(
+        { clientWidth: 100, clientHeight: 80 },
+        false,
+        onScreen,
+        viewport,
+      ),
+    ).toBe(true);
+  });
+
+  it("stays hidden when the rect is fully off-screen", () => {
+    expect(
+      canvasIsEditorVisible(
+        { clientWidth: 100, clientHeight: 80 },
+        false,
+        { left: -200, top: 0, right: -100, bottom: 80 },
+        viewport,
+      ),
+    ).toBe(false);
+  });
+
+  it("stays hidden without a rect when IntersectionObserver reports false", () => {
+    expect(
+      canvasIsEditorVisible({ clientWidth: 100, clientHeight: 80 }, false),
     ).toBe(false);
   });
 });

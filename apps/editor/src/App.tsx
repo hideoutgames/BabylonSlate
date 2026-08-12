@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   usePreventDocumentOverscroll,
+  useSuppressIosEditingGestures,
   useSuppressNativeContextMenu,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -228,6 +229,7 @@ function isComponentGalleryRoute(): boolean {
 
 function AppRoutes() {
   useSuppressNativeContextMenu();
+  useSuppressIosEditingGestures();
   usePreventDocumentOverscroll();
   const {
     route,

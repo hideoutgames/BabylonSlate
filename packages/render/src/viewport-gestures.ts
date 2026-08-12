@@ -196,11 +196,17 @@ export function attachViewportGestures(
     controller.zoom(event.deltaY < 0 ? 1.1 : 1 / 1.1);
   };
 
+  const onTouch = (event: TouchEvent) => {
+    event.preventDefault();
+  };
+
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
   canvas.addEventListener("wheel", onWheel, { passive: false });
+  canvas.addEventListener("touchstart", onTouch, { passive: false });
+  canvas.addEventListener("touchmove", onTouch, { passive: false });
 
   return {
     dispose: () => {
@@ -209,6 +215,8 @@ export function attachViewportGestures(
       canvas.removeEventListener("pointerup", endPointer);
       canvas.removeEventListener("pointercancel", endPointer);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("touchstart", onTouch);
+      canvas.removeEventListener("touchmove", onTouch);
       dropLease();
       pointers.clear();
     },

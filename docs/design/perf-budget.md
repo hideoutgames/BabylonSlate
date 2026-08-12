@@ -28,7 +28,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - `skipPointerMovePicking: true` on all scenes (touch has no hover).
 - Shadow maps default 1024; post-processing off by default.
 - Pause render loop, game worker, and encode queue on `visibilitychange` / app background.
-- Visible editor viewports render at `viewportFrameCap`; freeze when hidden, obstructed, or a modal is open. Dirty-driven idle is the Always Render-off path; continuous-render leases stay refcounted.
+- Visible editor viewports render at `viewportFrameCap`; freeze when hidden (zero-size or fully off-screen), obstructed, or a modal is open. IntersectionObserver plus an on-screen rect fallback; dirty-driven idle is the Always Render-off path; continuous-render leases stay refcounted.
 - Play/Preview renders at project `playFrameCap` (default 60), not the editor viewport cap.
 - Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags).
 - No per-actor per-frame allocation in snapshot apply (reuse scratch math objects).
