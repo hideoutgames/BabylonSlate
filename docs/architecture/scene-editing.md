@@ -78,7 +78,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 ## Outliner and Details visuals
 
 - **Outliner** (`TreeView`): 32px rows, type icon, selected row `bg-primary/20` + `border-l-primary`. **Search** and **+** share one row. Visibility/lock toggles are compact `sm` controls. Hold ~250ms arms reorder (`onReparent`); move before that scrolls. **Double-tap** frames the actor (`frameActor` via viewport context). **+** opens a **Place Actors** `CatalogDialog` (Shapes, Lights, Camera, Empty, Project assets). Spawned lights are outliner/details-complete; the viewport still uses its default hemispheric light.
-- **Details** (`PropertyGrid`): stacked **title-above-control** rows (`Field` vertical) with compact inspector spacing. Labels are humanized (`meshKind` → `Mesh kind`). Category headers use `--secondary`. Vector axes use `--axis-x/y/z` on one nowrap row under the title (letters live on `NumericDragField`). Scalar number rows keep a compact unlabeled scrub handle so the title is not repeated. Checkboxes are compact (`size-4`) under the title. Reset is a compact icon button (`↺`) on the title line, not the word Reset. Controls use `--chrome-row` (28px). **Add Component** uses the same catalog chrome, grouped Rendering / Camera / Physics. Numeric rows (`NumericDragField`) keep an empty typed draft; emptying does not commit `0` — blur restores the last committed number.
+- **Details** (`PropertyGrid`): stacked **title-above-control** rows (`Field` vertical) with compact inspector spacing. Labels are Title Cased (`meshKind` → `Mesh Kind`, `2D camera width` → `2D Camera Width`). Category headers use `--secondary`. Vector axes use `--axis-x/y/z` on one nowrap row under the title (letters live on `NumericDragField`). Scalar number rows keep a compact unlabeled scrub handle so the title is not repeated. Checkboxes are compact (`size-4`) under the title. Reset is a compact icon button (`↺`) on the title line, not the word Reset. Controls use `--chrome-row` (28px). **Add Component** uses the same catalog chrome, grouped Rendering / Camera / Physics. Numeric rows (`NumericDragField`) keep an empty typed draft; emptying does not commit `0` — blur restores the last committed number.
 - **Viewport overlay**: toolbar island on `--popover` with a shadow so it separates from the 3D view. Gizmo / snap / joystick / Focus pressed states use accent fill + primary border.
 
 ## 2D specifics
@@ -102,6 +102,8 @@ Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`
 | Right / bottom | Inspector, Compiler Results |
 
 The Prefab viewport reuses `ViewportToolbar` + `createEngine` (unlit gizmos, fly/look camera, joystick when enabled). The canvas is full-size, not a 160px sidebar strip, and stays dark like the Scene viewport. Component add/remove/reorder updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
+
+**Focus** (toolbar toggle) closes dock tabs that are not on the Engine Settings Focus keep-list. Class default is Graph only; Scene default is Viewport. Keep-listed tabs stay only if they were already open.
 
 Play instantiates this same `SerializedScene` in the game worker (`p7-play-scene-load`) rather than seeding demo actors. See [physics.md](physics.md) and [render.md](render.md).
 

@@ -1,7 +1,7 @@
 import { fireEvent, render, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
-import { GraphEditor } from "./graph-editor";
+import { GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 
 afterEach(cleanup);
@@ -58,6 +58,11 @@ function openPalette(container: HTMLElement) {
 }
 
 describe("GraphEditor", () => {
+  it("lets authors zoom the canvas out to 10 percent", () => {
+    expect(GRAPH_MIN_ZOOM).toBeLessThan(0.4);
+    expect(GRAPH_MIN_ZOOM).toBe(0.1);
+  });
+
   it("renders a node for each node in the graph", () => {
     const graph = createDefaultGraph();
     const { container } = render(<GraphEditor initialGraph={graph} />);
@@ -138,6 +143,33 @@ describe("GraphEditor", () => {
     );
 
     expect(getByLabelText("1 error")).toBeTruthy();
+  });
+
+  it("clips the title bar to the shell radius without clipping the error badge", () => {
+    const graph = createDefaultGraph();
+    const nodeId = graph.nodes[0]?.id ?? "";
+    const { getByText, getByLabelText, container } = render(
+      <GraphEditor
+        initialGraph={graph}
+        diagnostics={[
+          {
+            nodeId,
+            severity: "error",
+            message: "Type mismatch",
+          },
+        ]}
+      />,
+    );
+
+    const shell = container.querySelector("[data-node-role]");
+    expect(shell?.className).toMatch(/\boverflow-hidden\b/);
+    expect(shell?.className).toMatch(/\brounded-lg\b/);
+
+    const title = getByText("Log Message");
+    expect(title.className).toMatch(/\brounded-t-lg\b/);
+
+    const badge = getByLabelText("1 error");
+    expect(shell?.contains(badge)).toBe(false);
   });
 
   it("opens the node palette and adds a node from paletteNodes", () => {

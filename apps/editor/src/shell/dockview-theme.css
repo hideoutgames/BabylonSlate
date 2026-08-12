@@ -1,12 +1,19 @@
 .dockview-theme-babylonslate {
   --dv-group-view-background-color: var(--background);
-  --dv-tabs-and-actions-container-background-color: var(--card);
+  --dv-tabs-and-actions-container-background-color: var(--muted);
   --dv-tabs-and-actions-container-font-size: 11px;
   --dv-activegroup-visiblepanel-tab-background-color: var(--chrome-tab-active);
   --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--muted);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--muted);
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-tab-margin: 0 2px;
   --dv-tab-divider-color: var(--border);
-  --dv-separator-border: 1px solid var(--border);
+  --dv-separator-border: 1px solid
+    color-mix(in oklch, var(--foreground) 18%, transparent);
   --dv-paneview-header-border-color: var(--border);
   --dv-drag-over-background-color: color-mix(in oklch, var(--chrome-tab-accent) 20%, transparent);
   --dv-drag-over-border-color: var(--chrome-tab-accent);
@@ -18,6 +25,7 @@
   min-width: 28px;
   padding-inline: 6px;
   border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
 }
 
 .dockview-theme-babylonslate .dv-tabs-and-actions-container {
@@ -72,6 +80,12 @@
   background: var(--background);
 }
 
+.dockview-theme-babylonslate .dv-groupview {
+  outline: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
+  outline-offset: -1px;
+}
+
 .dockview-theme-babylonslate .dv-active-tab {
+  color: var(--foreground);
   box-shadow: inset 0 -2px 0 var(--chrome-tab-accent);
 }

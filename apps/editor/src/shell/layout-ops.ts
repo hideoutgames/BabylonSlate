@@ -1,13 +1,55 @@
-/** Dockview panel ids closed when entering Focus on a scene (if maximize is unavailable). */
-export const SCENE_FOCUS_HIDE = [
-  "scene-outliner",
-  "scene-details",
-  "output-log",
-  "mini-asset-browser",
-] as const;
+import { listDockWindows, type DockviewDocumentKind } from "./window-catalog";
 
-/** Dockview panel ids closed when entering Focus on a graph. */
-export const GRAPH_FOCUS_HIDE = ["prefab-viewport", "compiler-results"] as const;
+export type FocusDocumentKind = DockviewDocumentKind;
+
+export interface FocusKeepCandidate {
+  id: string;
+  title: string;
+}
+
+function catalogFocusCandidates(
+  kind: FocusDocumentKind,
+): FocusKeepCandidate[] {
+  return listDockWindows(kind).map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+  }));
+}
+
+/** Built-in Scene dock tabs Focus may keep. EditorUtility widgets merge in via `focusKeepCandidates`. */
+export const SCENE_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
+  catalogFocusCandidates("scene");
+
+/** Built-in Class dock tabs Focus may keep. EditorUtility widgets merge in via `focusKeepCandidates`. */
+export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
+  catalogFocusCandidates("graph");
+
+export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
+  scene: "viewport",
+  graph: "graph",
+};
+
+/**
+ * Dock tabs Focus can keep for a document kind.
+ * Merge registered EditorUtilityInterface widgets for this kind here when that registry exists.
+ */
+export function focusKeepCandidates(
+  kind: FocusDocumentKind,
+): FocusKeepCandidate[] {
+  return kind === "scene"
+    ? [...SCENE_FOCUS_CANDIDATES]
+    : [...GRAPH_FOCUS_CANDIDATES];
+}
+
+export function resolveFocusKeepPanelIds(
+  kind: FocusDocumentKind,
+  keepPanelIds: readonly string[] | undefined,
+): string[] {
+  if (!keepPanelIds || keepPanelIds.length === 0) {
+    return [FOCUS_PRIMARY_PANEL[kind]];
+  }
+  return [...keepPanelIds];
+}
 
 export interface FocusablePanelApi {
   maximize?: () => void;
@@ -19,26 +61,21 @@ export interface FocusableDockApi {
   getPanel: (
     id: string,
   ) => { api: FocusablePanelApi; group?: unknown } | undefined;
+  panels?: ReadonlyArray<{ id: string }>;
 }
 
-/** Collapse the dock to the document's primary editing surface. */
+/** Collapse the dock to keep-listed panels that are already open. */
 export function applyFocusLayout(
-  kind: "scene" | "graph",
+  kind: FocusDocumentKind,
   api: FocusableDockApi,
+  keepPanelIds?: readonly string[],
 ): void {
-  if (kind === "scene") {
-    const viewport = api.getPanel("viewport");
-    if (typeof viewport?.api.maximize === "function") {
-      viewport.api.maximize();
-      return;
-    }
-    for (const id of SCENE_FOCUS_HIDE) {
+  const keep = new Set(resolveFocusKeepPanelIds(kind, keepPanelIds));
+  const openIds = (api.panels ?? []).map((panel) => panel.id);
+  for (const id of openIds) {
+    if (!keep.has(id)) {
       api.getPanel(id)?.api.close();
     }
-    return;
-  }
-  for (const id of GRAPH_FOCUS_HIDE) {
-    api.getPanel(id)?.api.close();
   }
 }
 

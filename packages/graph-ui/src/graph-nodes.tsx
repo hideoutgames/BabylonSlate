@@ -5,6 +5,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
+import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
@@ -94,7 +95,7 @@ function PinHandle({
       id={pin.id}
       type={isSource ? "source" : "target"}
       position={isSource ? Position.Right : Position.Left}
-      aria-label={pin.name}
+      aria-label={humanizePropertyLabel(pin.name)}
       data-pin-type={pin.type.kind}
       data-error={hasError ? "true" : undefined}
       className={cn(
@@ -163,7 +164,7 @@ function PinRow({
               hasError={pinHasError(nodeId, incoming.id)}
             />
             <span className="max-w-[9rem] text-sm leading-snug break-words text-foreground">
-              {incoming.name}
+              {humanizePropertyLabel(incoming.name)}
             </span>
           </>
         ) : (
@@ -174,7 +175,7 @@ function PinRow({
         {outgoing ? (
           <>
             <span className="max-w-[9rem] text-right text-sm leading-snug break-words text-foreground">
-              {outgoing.name}
+              {humanizePropertyLabel(outgoing.name)}
             </span>
             <PinHandle
               nodeId={nodeId}
@@ -240,23 +241,25 @@ function BlueprintNodeShell({
   const { nodeErrorCount } = useGraphEditorContext();
 
   return (
-    <div
-      data-node-role={role}
-      className={cn(
-        "relative min-w-72 rounded-lg border border-border bg-card text-card-foreground shadow-md",
-        selected && "ring-2 ring-primary",
-      )}
-    >
+    <div className="relative">
       <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} />
       <div
+        data-node-role={role}
         className={cn(
-          "px-3 py-2 text-sm font-semibold leading-snug break-words text-node-title",
-          nodeRoleClass(role),
+          "min-w-72 overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
+          selected && "ring-2 ring-primary",
         )}
       >
-        {title}
+        <div
+          className={cn(
+            "rounded-t-lg px-3 py-2 text-sm font-semibold leading-snug break-words text-node-title",
+            nodeRoleClass(role),
+          )}
+        >
+          {title}
+        </div>
+        {children}
       </div>
-      {children}
     </div>
   );
 }

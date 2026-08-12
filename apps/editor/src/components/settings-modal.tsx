@@ -112,10 +112,15 @@ const ENGINE_CATEGORIES: Array<
     label: "Templates",
     keywords: "templates folder homepage",
   },
+  {
+    id: "focus",
+    label: "Focus",
+    keywords: "focus keep tabs panels layout",
+  },
 ];
 
 const ENGINE_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Editor", ids: ["appearance", "undo", "viewport", "thumbnails"] },
+  { label: "Editor", ids: ["appearance", "undo", "viewport", "thumbnails", "focus"] },
   { label: "Projects", ids: ["templates"] },
 ];
 
@@ -503,7 +508,7 @@ export function SettingsModal({
               data-testid="retry-texture-encoding"
               onClick={() => void retryFailedTextureEncoding()}
             >
-              Retry encoding
+              Retry Encoding
             </Button>
           </FieldSet>
         </FieldGroup>
