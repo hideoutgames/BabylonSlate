@@ -189,20 +189,7 @@ describe("PropertyGrid", () => {
     expect(reset.getAttribute("aria-label")).toBe("Reset Speed");
   });
 
-  it("gives the label column room to stay on one line", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          { kind: "text", id: "name", label: "Name", value: "Cube", onChange: () => {} },
-        ]}
-      />,
-    );
-    expect(screen.getByTestId("property-row-name").className).toContain(
-      "minmax(0,8rem)",
-    );
-  });
-
-  it("lays out the label beside its control", () => {
+  it("stacks the title above its control", () => {
     render(
       <PropertyGrid
         rows={[
@@ -211,8 +198,59 @@ describe("PropertyGrid", () => {
       />,
     );
     const row = screen.getByTestId("property-row-name");
-    expect(row.className).toContain("grid");
+    expect(row.getAttribute("data-orientation")).toBe("vertical");
+    expect(row.className).toContain("flex-col");
     expect(row.textContent).toContain("Name");
+    const title = row.querySelector('[data-slot="field-label"]');
+    const control = screen.getByTestId("property-name");
+    expect(title).not.toBeNull();
+    expect(
+      Boolean(
+        title!.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps reset on the title line", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "number",
+            id: "speed",
+            label: "Speed",
+            value: 5,
+            defaultValue: 1,
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const title = screen
+      .getByTestId("property-row-speed")
+      .querySelector('[data-slot="field-label"]');
+    const reset = screen.getByTestId("property-speed-reset");
+    expect(title?.parentElement).toContain(reset);
+  });
+
+  it("does not repeat the property title in the number scrub handle", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "number",
+            id: "speed",
+            label: "Speed",
+            value: 5,
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("property-row-speed").textContent).toContain("Speed");
+    expect(screen.getByTestId("property-speed-scrub").textContent).not.toMatch(
+      /Speed/i,
+    );
   });
 
   it("keeps vector axes on one nowrap row", () => {

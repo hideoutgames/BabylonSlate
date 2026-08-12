@@ -3,6 +3,7 @@ import { NullEngine, Scene } from "@babylonjs/core";
 import { HardwareScalingController } from "./hardware-scaling";
 import {
   applySnapshotToScene,
+  applyAssignMesh,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
 } from "./snapshot-apply";
@@ -56,6 +57,40 @@ describe("snapshot apply under NullEngine", () => {
       actors: [],
     });
     expect(binding.meshes.size).toBe(0);
+    disposeSnapshotBinding(binding);
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("honors assignMesh meshKind so Play is not always a box", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "sphere",
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    const mesh = binding.meshes.get(0);
+    expect(mesh).toBeDefined();
+    expect(mesh!.name).toBe("actor-0");
+    expect(mesh!.getTotalVertices()).toBeGreaterThan(24);
     disposeSnapshotBinding(binding);
     scene.dispose();
     engine.dispose();

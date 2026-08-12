@@ -1,5 +1,10 @@
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import {
   Select,
@@ -146,7 +151,7 @@ function RowControl({ row }: { row: PropertyRow }) {
     case "number":
       return (
         <NumericDragField
-          label={row.label}
+          id={`property-${row.id}`}
           value={row.value}
           min={row.min}
           max={row.max}
@@ -270,38 +275,43 @@ export function PropertyGrid({
           {title}
         </h3>
       ) : null}
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          data-testid={`property-row-${row.id}`}
-          className="grid min-h-[var(--chrome-row,28px)] grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-center gap-1 border-b border-border/60 px-2 py-0.5"
-        >
-          <label
-            className="truncate text-sm font-medium text-foreground"
-            htmlFor={`property-${row.id}`}
+      <FieldGroup className="gap-0">
+        {rows.map((row) => (
+          <Field
+            key={row.id}
+            data-testid={`property-row-${row.id}`}
+            data-disabled={row.disabled || undefined}
+            className="gap-0.5 border-b border-border/60 px-2 py-1"
           >
-            {humanizePropertyLabel(row.label)}
-          </label>
-          <div className="flex min-w-0 items-center gap-1">
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1">
+              <FieldLabel
+                htmlFor={
+                  row.kind === "vector3" ? undefined : `property-${row.id}`
+                }
+                className="w-auto min-w-0 flex-1 truncate"
+              >
+                {humanizePropertyLabel(row.label)}
+              </FieldLabel>
+              {hasDefault(row) ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
+                  disabled={isAtDefault(row)}
+                  aria-label={`Reset ${humanizePropertyLabel(row.label)}`}
+                  onClick={() => resetRow(row)}
+                  data-testid={`property-${row.id}-reset`}
+                >
+                  <span aria-hidden="true">↺</span>
+                </Button>
+              ) : null}
+            </div>
+            <div className="min-w-0">
               <RowControl row={row} />
             </div>
-            {hasDefault(row) ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground"
-                disabled={isAtDefault(row)}
-                aria-label={`Reset ${humanizePropertyLabel(row.label)}`}
-                onClick={() => resetRow(row)}
-                data-testid={`property-${row.id}-reset`}
-              >
-                <span aria-hidden="true">↺</span>
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ))}
+          </Field>
+        ))}
+      </FieldGroup>
     </div>
   );
 }

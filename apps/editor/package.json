@@ -15,6 +15,7 @@
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",
+    "@babylonslate/debugger": "workspace:*",
     "@babylonslate/edit": "workspace:*",
     "@babylonslate/editor-kit": "workspace:*",
     "@babylonslate/graph-ui": "workspace:*",

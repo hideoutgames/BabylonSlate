@@ -10,8 +10,10 @@ import {
 } from "@babylonslate/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import { createRuntimeFromLoad } from "./play-load";
+import { createPlayBootCoordinator } from "./play-boot";
 
 let runtime: RuntimeDriver | null = null;
+const boot = createPlayBootCoordinator();
 // Recycled via the host's `recycleSnapshot` message so the per-frame
 // snapshot transfer never allocates a fresh ArrayBuffer once warmed up.
 const snapshotPing = new TransferablePingPong(256);
@@ -37,26 +39,19 @@ function handleControl(msg: ControlMessage): void {
         runtime.stop();
         runtime = null;
       }
+      boot.reset();
       runtime = createRuntimeFromLoad(msg, onCommand);
-      runtime.getWorld().loadScene(msg.sceneAssetGuid);
       return;
     }
     case "loadScripts": {
       const rt = ensureRuntime();
       const spawn = msg.spawn ?? msg.scripts.map((s) => ({ classId: s.classId }));
-      void rt
-        .loadScripts(msg.scripts)
-        .then(() => {
-          for (const entry of spawn) rt.spawnScriptedActor(entry);
-        })
-        .catch((error) => rt.reportError(error));
+      boot.queueScripts(rt, msg.scripts, spawn);
       return;
     }
     case "play": {
       const rt = ensureRuntime();
-      void rt.loadPhysics().finally(() => {
-        rt.start();
-        rt.resume();
+      void boot.play(rt).then(() => {
         if (lastTick === 0) requestAnimationFrame(pump);
       });
       return;

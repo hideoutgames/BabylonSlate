@@ -17,6 +17,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Scene editing](scene-editing.md) | Viewport, outliner, gizmos |
 | [Input](input.md) | Action/axis mappings |
 | [Physics](physics.md) | Havok 3D and Rapier 2D |
+| [Debugger](debugger.md) | Command registry, console, stats HUD |
 | [Theming](theming.md) | UI color palette and semantic tokens |
 | [Testing](testing.md) | Vitest projects, coverage gates, Playwright |
 

@@ -33,6 +33,10 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-12 | cursor/p4-implementation-review-79b7 | p4-render-on-demand | Standards | `create-engine.ts` fed the hardware-scaling valve the wall-clock gap since the last rendered frame instead of render cost; render-on-demand's idle gaps (by design, seconds) would read as a catastrophic frame and drop resolution quality for no reason | Resolved |
 | 2026-08-12 | cursor/p4-implementation-review-79b7 | p4-bridge / p4-runtime-worker | Standards | `worker-entry.ts` allocated a fresh Float32Array/ArrayBuffer every rAF frame for the snapshot transfer instead of using `TransferablePingPong`; wired a `recycleSnapshot` host message so the host hands the consumed buffer back once its synchronous consumer is done, eliminating the per-frame allocation | Resolved |
 | 2026-08-12 | cursor/p4-implementation-review-79b7 | p4-bridge | Spec | True zero-copy SAB (main thread reading a shared buffer directly, no per-frame `postMessage`) is not wired into the live game-worker path — `worker-entry.ts` always uses the transferable-copy pattern regardless of `crossOriginIsolated`; primitives (`SeqLockSnapshotPair`) are implemented and unit-tested but unused end-to-end. Transferables are the CI-mandatory, always-correct path per `docs/architecture/testing.md`, so this is a performance follow-up, not a correctness gap | Accepted |
+| 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load / p8-command-system | Standards | `CODING_STANDARDS.md` package list omitted `debugger` after the new package landed | Resolved |
+| 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load / p8-command-system | Standards | Two Appendix A slices in one PR (`p7-play-scene-load` then `p8-command-system`); assigned plan required both | Accepted |
+| 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load | Spec | E2E asserts Play spawn guid `actor-1` rather than reading the snapshot buffer; spawn is how snapshot slots are assigned | Accepted |
+| 2026-08-12 | cursor/p7-play-scene-load-7208 | p8-command-system | Spec | `changescene` still only fires `GameInstance.onSceneLoaded`; core quality/volume/framecap setters emit console logs until the HUD/renderer consume them | Accepted |
 
 ## PR checklist
 
@@ -139,7 +143,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Active-graph pass works; full project sweep beyond open docs deferred |
 | Graph ownership by class asset | later polish (`assets`, editor) | Class ids currently derived from graph file name |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
-| ExecuteConsoleCommand registry + debug-tier warnings | P8 | Stub / call site in P5; full behaviour with command tiers |
+| ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed in `@babylonslate/debugger` (`p8-command-system`); console HUD / BDebugCommand remain |
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export | Print works; export strip preset + HUD polish deferred |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio / UI node runtime helpers beyond stubs | P9 | Catalog nodes exist; runtime helpers are inert stubs until content systems |
@@ -176,14 +180,29 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 
 ## P7 slice ownership
 
-Backends and Play physics options have landed (`p7-physics`, `p7-2d-physics`). Remaining named follow-ups live in [engineplan.md](../engineplan.md) Appendix A.
+Backends and Play scene load have landed (`p7-physics`, `p7-2d-physics`, `p7-play-scene-load`). Remaining named follow-up: `p7-character-controller`.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | Design notes | — | `docs/architecture/physics.md` | P6 complete |
 | Physics package + Havok V2 | `p7-physics` (done) | `physics`, `core` (scene `physicsWorld`), `object-model`, `runtime`, `scripting-nodes`, `bridge`, `test-kit`, `apps/editor` (Play overlay ms, Add Component, vendored wasm) | Design notes |
 | Rapier 2D | `p7-2d-physics` (done; CC scripting is `p7-character-controller`) | `physics`, `scripting-nodes`, `test-kit` | `p7-physics` interface + scene world field |
-| Play loads `SerializedScene` | `p7-play-scene-load` | `runtime`, `apps/editor` | P6 scene docs + P7 backends |
+| Play loads `SerializedScene` | `p7-play-scene-load` (done) | `runtime`, `object-model`, `bridge`, `render`, `apps/editor` | P6 scene docs + P7 backends |
 | Character-controller scripting | `p7-character-controller` | `scripting-nodes`, `runtime` | Play scene load |
 
 Design notes: [physics.md](../architecture/physics.md).
+
+## P8 slice ownership
+
+`p8-command-system` has landed (`@babylonslate/debugger` registry + parser, runtime `executeConsoleCommand`, compile-time debug-tier warning). Remaining: `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/debugger.md` | Play scene load |
+| Command registry | `p8-command-system` (done) | `debugger`, `runtime`, `apps/editor` (graph validation) | Design notes |
+| BDebugCommand + parameter list | `p8-bdebugcommand` | `object-model`, `editor-kit`, `debugger`, `apps/editor` | Command registry |
+| Console + stats HUD | `p8-console-hud` | `debugger`, `apps/editor`, `render` | Command registry |
+| Trace recorder | `p8-trace-recorder` | `debugger`, `assets` (container), `test-kit` | Command registry |
+
+Design notes: [debugger.md](../architecture/debugger.md).
+

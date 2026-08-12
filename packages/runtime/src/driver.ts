@@ -8,9 +8,11 @@ import {
   ClassRegistry,
   GameInstance,
   World,
+  createActorsFromSerializedScene,
   type Actor,
   type TickPhase,
 } from "@babylonslate/object-model";
+import type { SerializedScene } from "@babylonslate/core";
 import {
   InputRingBuffer,
   InputResolver,
@@ -27,6 +29,11 @@ import {
   SoftwarePhysicsBackend,
   type PhysicsWorldKind,
 } from "@babylonslate/physics";
+import {
+  createCommandRegistry,
+  type CommandRegistry,
+  type ConsoleCommandHost,
+} from "@babylonslate/debugger";
 import { LogRingBuffer } from "./log-ring";
 import {
   SessionDiagnosticAggregator,
@@ -55,6 +62,11 @@ export interface RuntimeDriverOptions {
   havokWasmUrl?: string;
   /** Skip wasm backends (tests / CI without wasm). */
   preferSoftwarePhysics?: boolean;
+  /** Authored scene to instantiate on `realizePlayWorld` (no demo actors). */
+  playScene?: SerializedScene;
+  playSceneGuid?: string;
+  /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
+  includeDebugCommands?: boolean;
 }
 
 export interface RuntimeDriver {
@@ -83,9 +95,15 @@ export interface RuntimeDriver {
     classId: string;
     variables?: Record<string, unknown>;
   }): Actor | null;
+  /**
+   * Instantiate `playScene` (if any) with compiled script hooks.
+   * Idempotent. Call after `loadScripts` so Begin Play binds on spawn.
+   */
+  realizePlayWorld(): void;
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
+  executeConsoleCommand(command: string): { success: boolean; output: string };
   readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
@@ -135,6 +153,10 @@ class InProcessRuntime implements RuntimeDriver {
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
   private physicsSync: PhysicsWorldSync;
+  private readonly playScene: SerializedScene | undefined;
+  private readonly playSceneGuid: string;
+  private playWorldRealized = false;
+  private readonly commands: CommandRegistry;
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -153,6 +175,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.gravity = options.gravity ?? [0, -9.81, 0];
     this.havokWasmUrl = options.havokWasmUrl;
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
+    this.playScene = options.playScene;
+    this.playSceneGuid = options.playSceneGuid ?? "play-scene";
+    this.commands = createCommandRegistry({
+      includeDebug: options.includeDebugCommands ?? true,
+    });
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
 
@@ -259,10 +286,7 @@ class InProcessRuntime implements RuntimeDriver {
       destroyActor: (actor) => {
         if (actor) this.world.destroyActor(actor.guid);
       },
-      executeConsoleCommand: (command) => ({
-        success: false,
-        output: `unknown command: ${command}`,
-      }),
+      executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       delay: (seconds) =>
         new Promise<void>((resolve) => {
           setTimeout(resolve, Math.max(0, seconds) * 1000);
@@ -286,7 +310,9 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
 
-    if (options.seedDemoActors !== false) this.seedDefaultActors();
+    if (options.seedDemoActors !== false && !options.playScene) {
+      this.seedDefaultActors();
+    }
   }
 
   async loadPhysics(): Promise<void> {
@@ -337,8 +363,98 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
     this.world.spawnActorNow(actor);
-    this.assignSlot(actor);
+    const slotId = this.assignSlot(actor);
+    this.emitMeshAssignment(actor, slotId);
     return actor;
+  }
+
+  realizePlayWorld(): void {
+    if (this.playWorldRealized) return;
+    this.playWorldRealized = true;
+    if (this.playScene) {
+      const actors = createActorsFromSerializedScene(
+        this.world,
+        this.playScene,
+        (classId) => {
+          const hooks = this.scriptHost.hooksFor(classId);
+          if (!hooks) return undefined;
+          return {
+            onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+            onTick: (self, ctx) =>
+              this.guardScript(() => hooks.onTick?.(self, ctx)),
+          };
+        },
+      );
+      for (const actor of actors) {
+        this.world.spawnActorNow(actor);
+        const slotId = this.assignSlot(actor);
+        this.emitMeshAssignment(actor, slotId);
+      }
+    }
+    this.world.loadScene(this.playSceneGuid);
+  }
+
+  executeConsoleCommand(command: string): { success: boolean; output: string } {
+    return this.commands.execute(command, this.consoleHost());
+  }
+
+  private consoleHost(): ConsoleCommandHost {
+    const emitSetting = (key: string, value: string | number | boolean) => {
+      this.emit({
+        type: "log",
+        severity: "log",
+        category: "console",
+        message: `${key}=${value}`,
+        frameId: this.frameId,
+      });
+    };
+    return {
+      changeScene: (scene) => {
+        this.world.loadScene(scene);
+      },
+      setRenderQuality: (level) => emitSetting("renderquality", level),
+      setShadowQuality: (level) => emitSetting("shadowquality", level),
+      setResolutionScale: (scale) => emitSetting("resolutionscale", scale),
+      setFrameCap: (fps) => emitSetting("framecap", fps),
+      setVolume: (volume) => emitSetting("volume", volume),
+      quit: () => {
+        this.stop();
+      },
+      setShowFps: (enabled) => emitSetting("showfps", enabled),
+      setStat: (name, enabled) => emitSetting(`stat.${name}`, enabled),
+      setShowCollision: (enabled) => emitSetting("showcollision", enabled),
+      setShowBounds: (enabled) => emitSetting("showbounds", enabled),
+      setWireframe: (enabled) => emitSetting("wireframe", enabled),
+      pause: () => {
+        this.pause();
+      },
+      step: () => {
+        this.tick();
+      },
+      setTimeDilation: (rate) => emitSetting("slomo", rate),
+      dumpLog: () =>
+        this.logs
+          .entries()
+          .map((entry) => entry.message)
+          .join("\n"),
+      startSnapshot: () => emitSetting("snapshot", "start"),
+      stopSnapshot: () => emitSetting("snapshot", "stop"),
+    };
+  }
+
+  private emitMeshAssignment(actor: Actor, slotId: number): void {
+    const mesh = actor.components.find(
+      (component) => component.classId === "MeshComponent" && !component.destroyed,
+    );
+    if (!mesh) return;
+    const meshKind = mesh.getVariable("meshKind");
+    const assetGuid = mesh.assetGuid ?? mesh.getVariable("assetGuid");
+    this.emit({
+      type: "assignMesh",
+      slotId,
+      meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
+      meshKind: typeof meshKind === "string" ? meshKind : null,
+    });
   }
 
   private guardScript(run: () => void): void {

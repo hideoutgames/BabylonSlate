@@ -55,6 +55,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 - Chrome tab strip — horizontal overflow
 - Content browser — folder tree and asset grid
 - Graph panel — React Flow pan/zoom (unchanged)
+- Global Search results (`global-search-results`) — overflow list inside a fixed-height dialog
 
 ## Virtual keyboard
 

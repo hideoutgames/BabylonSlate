@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { normalizeScene } from "@babylonslate/core";
 import {
   inProcessPlayRuntimeOptions,
   playLoadControl,
   playPhysicsFromOpenDocuments,
+  playSceneFromOpenDocuments,
 } from "./play-physics";
 
 describe("playLoadControl", () => {
@@ -16,6 +18,20 @@ describe("playLoadControl", () => {
     expect(msg.physicsWorld).toBe("2d");
     expect(msg.gravity).toEqual([0, -20, 0]);
     expect(msg.havokWasmUrl).toMatch(/\/havok\/HavokPhysics\.wasm$/);
+  });
+
+  it("forwards the authored scene document on the load message", () => {
+    const scene = {
+      name: "Main",
+      viewportMode: "3d" as const,
+      actors: [{ id: "actor-1", name: "Cube" }],
+    };
+    const msg = playLoadControl({
+      sceneAssetGuid: "scene:assets/main.scene.babasset",
+      scene: scene as never,
+    });
+    expect(msg.sceneAssetGuid).toBe("scene:assets/main.scene.babasset");
+    expect(msg.scene).toEqual(scene);
   });
 
   it("defaults to a 3d world and standard gravity", () => {
@@ -77,6 +93,36 @@ describe("playPhysicsFromOpenDocuments", () => {
       physicsWorld: "3d",
       gravity: [0, -9.81, 0],
     });
+  });
+});
+
+describe("playSceneFromOpenDocuments", () => {
+  it("returns the active scene document payload for Play load", () => {
+    const content = {
+      name: "Level",
+      viewportMode: "2d" as const,
+      settings: { physicsWorld: "2d" },
+      actors: [{ id: "hero", name: "Hero" }],
+    };
+    expect(
+      playSceneFromOpenDocuments(
+        [
+          {
+            id: "scene:assets/level.scene.babasset",
+            ref: { kind: "scene" },
+            content,
+          },
+        ],
+        "scene:assets/level.scene.babasset",
+      ),
+    ).toEqual({
+      sceneAssetGuid: "scene:assets/level.scene.babasset",
+      scene: normalizeScene(content),
+    });
+  });
+
+  it("returns null when no scene document is open", () => {
+    expect(playSceneFromOpenDocuments([], null)).toBeNull();
   });
 });
 

@@ -1,5 +1,9 @@
 import type { ControlMessage } from "@babylonslate/bridge";
-import type { PhysicsWorldKind } from "@babylonslate/core";
+import {
+  normalizeScene,
+  type PhysicsWorldKind,
+  type SerializedScene,
+} from "@babylonslate/core";
 
 /** Public path of the self-hosted Havok wasm (same pattern as `/ktx2/`). */
 export const EDITOR_HAVOK_WASM_PATH = "/havok/HavokPhysics.wasm";
@@ -63,16 +67,40 @@ export function playPhysicsFromOpenDocuments(
   documents: readonly PlaySceneDocument[],
   activeDocumentId: string | null,
 ): PlayPhysicsSettings {
-  const active = documents.find((entry) => entry.id === activeDocumentId);
-  const scene =
-    active?.ref.kind === "scene"
-      ? active
-      : documents.find((entry) => entry.ref.kind === "scene");
+  const scene = findOpenSceneDocument(documents, activeDocumentId);
   return playPhysicsFromSceneSettings(settingsFromContent(scene?.content));
+}
+
+function findOpenSceneDocument(
+  documents: readonly PlaySceneDocument[],
+  activeDocumentId: string | null,
+): PlaySceneDocument | undefined {
+  const active = documents.find((entry) => entry.id === activeDocumentId);
+  if (active?.ref.kind === "scene") return active;
+  return documents.find((entry) => entry.ref.kind === "scene");
+}
+
+export type PlaySceneLoad = {
+  sceneAssetGuid: string;
+  scene: SerializedScene;
+};
+
+/** Active (or first) open scene document for the Play `load` message. */
+export function playSceneFromOpenDocuments(
+  documents: readonly PlaySceneDocument[],
+  activeDocumentId: string | null,
+): PlaySceneLoad | null {
+  const scene = findOpenSceneDocument(documents, activeDocumentId);
+  if (!scene?.content) return null;
+  return {
+    sceneAssetGuid: scene.id,
+    scene: normalizeScene(scene.content),
+  };
 }
 
 export function playLoadControl(options: {
   sceneAssetGuid?: string;
+  scene?: SerializedScene;
   seed?: number;
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
@@ -84,6 +112,7 @@ export function playLoadControl(options: {
   return {
     type: "load",
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
+    scene: options.scene,
     seed: options.seed,
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,

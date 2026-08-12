@@ -6,6 +6,7 @@ import {
 } from "@babylonjs/core";
 import type { SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
+import type { CommandMessage } from "@babylonslate/bridge";
 import {
   createEditorCamera,
   type EditorCameraController,
@@ -30,6 +31,7 @@ import { HardwareScalingController } from "./hardware-scaling";
 import { SnapshotInterpolator } from "./snapshot-sync";
 import {
   applySnapshotToScene,
+  applyAssignMesh,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
@@ -49,6 +51,8 @@ export interface EngineHandle {
   loadScene: (sceneData: SerializedScene) => void;
   /** Push a worker snapshot and invalidate the viewport. */
   pushSnapshot: (buffer: Float32Array) => void;
+  /** Apply a structural command (spawn/assignMesh) from the game worker. */
+  applyCommand: (command: CommandMessage) => void;
   setPaused: (paused: boolean) => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
   liveObjectCounts: () => { meshes: number; textures: number };
@@ -396,6 +400,12 @@ export function createEngine(
       interpolator.push(buffer);
       interpAlpha = 1;
       scheduler.invalidate("snapshot");
+    },
+    applyCommand: (command: CommandMessage) => {
+      if (command.type === "assignMesh") {
+        applyAssignMesh(scene, binding, command);
+        scheduler.invalidate("snapshot");
+      }
     },
     setPaused: (paused: boolean) => scheduler.setPaused(paused),
     liveObjectCounts: () => ({
