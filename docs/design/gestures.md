@@ -61,6 +61,9 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 ## Graph (React Flow)
 
 - One-finger pan/zoom inside graph panel only.
+- **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`).
+- **Drag-to-connect:** allowed by the gesture contract; deferred as polish (see issue-tracker P5 follow-ups).
+- Node palette is a bottom sheet; long-press / secondary click for node context menus when enabled.
 
 ## Document tabs (chrome bar)
 
