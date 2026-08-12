@@ -191,6 +191,7 @@ Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 - **Undo**: `AddNodeCommand` / `RemoveNodeCommand` / `SetGraphMembersCommand` in `@babylonslate/edit` so palette adds and Class panel members persist through `diffGraphCommands`.
 - Tap-to-connect and drag-to-connect both persist (`onConnect`). Connect-end on empty pane opens a pin-filtered palette and auto-wires. Palette uses the shared Dialog catalog shell (`@babylonslate/ui` Dialog + ScrollArea) with a role-color chip per item.
 - Pin and wire colors use `--pin-*` tokens (exec white, bool red, float green, string magenta, vector yellow, …). Exec wires are 5px, data wires 4px. The canvas forces XYFlow `colorMode="dark"` (chrome theme does not wash the graph) and `--xy-*` overrides in `graph-editor.css`.
+- Canvas zoom: `GRAPH_MIN_ZOOM` 0.1 / `GRAPH_MAX_ZOOM` 1.5 (wheel, pinch, and Controls). `fitView` on a large graph may pull back to 10%. Focused-node fit still caps at 1.2.
 - Blocking Preview dialog uses `AlertDialog` (editor host).
 
 Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node types, validation binder) injectable; do not hardcode scripting-only assumptions into the canvas host.
