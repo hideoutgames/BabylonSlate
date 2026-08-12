@@ -127,7 +127,9 @@ export function createEngine(
     });
 
   if (options.sharedEngine) {
-    engine.registerView(canvas);
+    // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
+    // clear, skipped render-on-demand frames composite additively.
+    engine.registerView(canvas, undefined, true);
   }
 
   const scene = new Scene(engine);
@@ -143,6 +145,9 @@ export function createEngine(
   if (options.editor) {
     scheduler.setAlwaysRender(true);
   }
+  const releasePlayLoop = options.playMode
+    ? scheduler.acquireContinuous("play")
+    : null;
   const resourceCache = new ResourceCache();
   const scaling = new HardwareScalingController(engine);
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
@@ -262,7 +267,11 @@ export function createEngine(
     };
   }
 
-  loadScene(createDefaultScene());
+  // Play renders snapshot proxy meshes only. Seeding the default Cube here
+  // stacks it under those proxies at the origin (z-fighting / additive look).
+  if (!options.playMode) {
+    loadScene(createDefaultScene());
+  }
 
   const resize = () => {
     engine.resize();
@@ -275,7 +284,7 @@ export function createEngine(
   };
 
   let interpAlpha = 1;
-  engine.runRenderLoop(() => {
+  const renderLoop = () => {
     if (!scheduler.shouldRender()) {
       return;
     }
@@ -291,7 +300,8 @@ export function createEngine(
     scene.render();
     scheduler.noteRendered();
     scaling.noteFrameTime(performance.now() - renderStart);
-  });
+  };
+  engine.runRenderLoop(renderLoop);
 
   const onVisibility = () => {
     const hidden = document.visibilityState === "hidden";
@@ -332,6 +342,8 @@ export function createEngine(
     scaling,
     editor,
     dispose: () => {
+      releasePlayLoop?.();
+      engine.stopRenderLoop(renderLoop);
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
@@ -370,6 +382,22 @@ export function createEngine(
         : null;
     },
   };
+}
+
+/**
+ * Pause the editor viewport while Play is open. On close, restore the
+ * engine size (Play's registerView path may have called setSize) and
+ * invalidate so render-on-demand redraws the docked view.
+ */
+export function syncEditorPlayState(
+  handle: EngineHandle,
+  playing: boolean,
+): void {
+  handle.setPaused(playing);
+  if (!playing) {
+    handle.resize();
+    handle.scheduler.invalidate("play");
+  }
 }
 
 /** Create the single app-lifetime Engine (no scene). */
