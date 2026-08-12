@@ -4,7 +4,13 @@ Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.
 
 ## App-lifetime Engine
 
-One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its canvas with `registerView` / `unRegisterView` — never a second `Engine` (WebGL context caps).
+One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its overlay canvas with `registerView(canvas, undefined, true)` / `unRegisterView` — never a second `Engine` (WebGL context caps).
+
+`registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine.
+
+Play does **not** seed `createDefaultScene()` (the default Cube). The Play scene is camera + light only; snapshot apply then creates proxy boxes for runtime actors. Stacking the default Cube under those proxies at the origin z-fights and looks like a double draw. Authored `SerializedScene` load in Play is still `p7-play-scene-load`.
+
+Play takes a `acquireContinuous("play")` lease for the session so every overlay blit is preceded by `scene.render()`. The editor stays dirty-driven; `syncEditorPlayState(handle, playing)` pauses it while Play is open and on close resizes (undoing Play’s `setSize`) and invalidates so the docked viewport redraws.
 
 ## Snapshot apply
 
@@ -15,7 +21,7 @@ One `Engine` for the editor process. Editor viewport and Play each own a `Scene`
 
 ## Render-on-demand
 
-Dirty-driven editor loop: early-return unless invalidated. Continuous-render leases are refcounted. Invalidation sources: snapshot arrival, camera, selection, asset reload, Play. Dev Always Render toggle; HUD exposes rendered-fps vs invalidations/sec.
+Dirty-driven editor loop: early-return unless invalidated. Continuous-render leases are refcounted. Invalidation sources: snapshot arrival, camera, selection, asset reload, Play. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`. Dev Always Render toggle; HUD exposes rendered-fps vs invalidations/sec.
 
 `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. Pause render loop, game worker, and encode queue on background.
 
@@ -45,14 +51,15 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 
 | Module | Role |
 | --- | --- |
-| `editor-camera` | Mode-parametric ArcRotate controller; 2D ortho pan/zoom, pixel-perfect framing |
-| `gizmo-host` | Translate / rotate / scale on a utility layer; axis set filtered by `ViewportMode` |
+| `editor-camera` | Mode-parametric ArcRotate controller; 3D look-in-place + fly, 2D ortho pan/zoom, pixel-perfect framing |
+| `gizmo-host` | Translate / rotate / scale on a utility layer; axis set filtered by `ViewportMode`; `hitTest` / `isDragging` block camera look |
 | `editor-grid` | 3D XZ or 2D XY grid; tile spacing + subdivisions; `cameraBounds2D` overlay |
 | `selection-outline` | Highlight mesh(es) for selected actors |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
-| `viewport-gestures` | Two-finger orbit/pan/zoom; 2D one-finger marquee; tap pick |
+| `viewport-gestures` | 3D one-finger look, pinch zoom, three-finger pan; 2D one-finger marquee; tap pick |
+| `viewport-fly-keys` | WASD fly/pan with rAF + continuous-render lease |
 | `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds, pixel-grid snap, and `applyPixelArtSamplingToScene` when pixel-perfect is on |
 
-**Invalidation wiring**: `RenderScheduler.invalidate(reason)` — editor tools call `"camera"`, `"gizmo"`, and `"selection"`; scene sync uses `"asset"`. Gizmo drags acquire a continuous-render lease (`acquireContinuous("gizmo")`). See [scene-editing.md](scene-editing.md).
+**Invalidation wiring**: `RenderScheduler.invalidate(reason)` — editor tools call `"camera"`, `"gizmo"`, and `"selection"`; scene sync uses `"asset"`. Gizmo drags, viewport gestures, WASD fly, and the editor joystick acquire continuous-render leases. See [scene-editing.md](scene-editing.md).
 
 See [bridge.md](bridge.md) for the snapshot wire format and [perf-budget.md](../design/perf-budget.md) for budgets.

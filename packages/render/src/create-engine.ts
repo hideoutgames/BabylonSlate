@@ -15,6 +15,7 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
+import { attachViewportFlyKeys } from "./viewport-fly-keys";
 import { configureKtx2Transcoder } from "./ktx2-transcoder";
 import { EDITOR_CLEAR_COLOR } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
@@ -73,6 +74,8 @@ export interface CreateEngineOptions {
   onGizmoDragStart?: () => void;
   onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
+  /** When false, WASD does not fly the editor camera (Play overlay). */
+  editorFlyEnabled?: () => boolean;
 }
 
 export interface EditorTools {
@@ -127,7 +130,9 @@ export function createEngine(
     });
 
   if (options.sharedEngine) {
-    engine.registerView(canvas);
+    // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
+    // clear, skipped render-on-demand frames composite additively.
+    engine.registerView(canvas, undefined, true);
   }
 
   const scene = new Scene(engine);
@@ -140,6 +145,9 @@ export function createEngine(
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
+  const releasePlayLoop = options.playMode
+    ? scheduler.acquireContinuous("play")
+    : null;
   const resourceCache = new ResourceCache();
   const scaling = new HardwareScalingController(engine);
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
@@ -175,6 +183,7 @@ export function createEngine(
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
+      blockLook: (x, y) => gizmos.isDragging() || gizmos.hitTest(x, y),
       onTap: (x, y) => {
         const hit = pickAtCanvas(scene, x, y);
         const actorId = hit ? editorSync.actorForMesh(hit.meshName) : null;
@@ -194,7 +203,17 @@ export function createEngine(
         options.onMarqueeSelect(actorIds);
       },
     });
-    disposeGestures = gestures.dispose;
+    const flyKeys =
+      typeof window === "undefined"
+        ? null
+        : attachViewportFlyKeys(window, cameraController, canvas, {
+            scheduler,
+            isEnabled: options.editorFlyEnabled,
+          });
+    disposeGestures = () => {
+      gestures.dispose();
+      flyKeys?.dispose();
+    };
 
     editor = {
       camera: cameraController,
@@ -259,7 +278,11 @@ export function createEngine(
     };
   }
 
-  loadScene(createDefaultScene());
+  // Play renders snapshot proxy meshes only. Seeding the default Cube here
+  // stacks it under those proxies at the origin (z-fighting / additive look).
+  if (!options.playMode) {
+    loadScene(createDefaultScene());
+  }
 
   const resize = () => {
     engine.resize();
@@ -272,7 +295,7 @@ export function createEngine(
   };
 
   let interpAlpha = 1;
-  engine.runRenderLoop(() => {
+  const renderLoop = () => {
     if (!scheduler.shouldRender()) {
       return;
     }
@@ -288,7 +311,8 @@ export function createEngine(
     scene.render();
     scheduler.noteRendered();
     scaling.noteFrameTime(performance.now() - renderStart);
-  });
+  };
+  engine.runRenderLoop(renderLoop);
 
   const onVisibility = () => {
     const hidden = document.visibilityState === "hidden";
@@ -329,6 +353,8 @@ export function createEngine(
     scaling,
     editor,
     dispose: () => {
+      releasePlayLoop?.();
+      engine.stopRenderLoop(renderLoop);
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
@@ -367,6 +393,22 @@ export function createEngine(
         : null;
     },
   };
+}
+
+/**
+ * Pause the editor viewport while Play is open. On close, restore the
+ * engine size (Play's registerView path may have called setSize) and
+ * invalidate so render-on-demand redraws the docked view.
+ */
+export function syncEditorPlayState(
+  handle: EngineHandle,
+  playing: boolean,
+): void {
+  handle.setPaused(playing);
+  if (!playing) {
+    handle.resize();
+    handle.scheduler.invalidate("play");
+  }
 }
 
 /** Create the single app-lifetime Engine (no scene). */

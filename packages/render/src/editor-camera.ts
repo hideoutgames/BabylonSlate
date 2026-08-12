@@ -41,8 +41,18 @@ export interface EditorCameraController {
   setCanvasHeight: (heightPx: number) => void;
   /** Zoom factor relative to the pixel-perfect 1:1 framing. */
   pixelZoom: () => number;
-  /** Orbit is a no-op in 2D, where the plan allows pan and zoom only. */
+  /**
+   * Rotate look direction in place (camera position stays put). No-op in 2D.
+   * `orbit` is an alias kept for existing call sites.
+   */
+  look: (deltaYaw: number, deltaPitch: number) => void;
+  /** Same as `look`; kept so existing orbit call sites keep working. */
   orbit: (deltaAlpha: number, deltaBeta: number) => void;
+  /**
+   * Translate the camera along look (`forward`) and camera-right (`right`).
+   * In 2D this is XY pan: forward → +Y, right → +X.
+   */
+  fly: (forward: number, right: number) => void;
   pan: (deltaX: number, deltaY: number) => void;
   zoom: (factor: number) => void;
   frame: (target: Vector3, radius?: number) => void;
@@ -122,6 +132,46 @@ export function createEditorCamera(
 
   applyMode();
 
+  const look = (deltaYaw: number, deltaPitch: number) => {
+    if (mode === "2d") return;
+    camera.getViewMatrix();
+    const position = camera.position.clone();
+    camera.alpha += deltaYaw;
+    camera.beta = Math.min(
+      Math.PI - 0.01,
+      Math.max(0.01, camera.beta + deltaPitch),
+    );
+    camera.getViewMatrix();
+    camera.target.addInPlace(position.subtract(camera.position));
+    invalidate();
+  };
+
+  const fly = (forward: number, right: number) => {
+    if (forward === 0 && right === 0) return;
+    if (mode === "2d") {
+      camera.target.x += right;
+      camera.target.y += forward;
+      if (pixelPerfect) {
+        camera.target.x = snapToPixelGrid(
+          camera.target.x,
+          pixelPerfect.pixelsPerUnit,
+        );
+        camera.target.y = snapToPixelGrid(
+          camera.target.y,
+          pixelPerfect.pixelsPerUnit,
+        );
+      }
+      invalidate();
+      return;
+    }
+    camera.getViewMatrix();
+    const lookDir = camera.getDirection(Vector3.Forward());
+    const rightDir = camera.getDirection(Vector3.Right());
+    camera.target.addInPlace(lookDir.scale(forward));
+    camera.target.addInPlace(rightDir.scale(right));
+    invalidate();
+  };
+
   return {
     camera,
     get mode() {
@@ -147,15 +197,9 @@ export function createEditorCamera(
       }
     },
     orthoHalfHeight: () => orthoHalfHeight,
-    orbit: (deltaAlpha: number, deltaBeta: number) => {
-      if (mode === "2d") return;
-      camera.alpha += deltaAlpha;
-      camera.beta = Math.min(
-        Math.PI - 0.01,
-        Math.max(0.01, camera.beta + deltaBeta),
-      );
-      invalidate();
-    },
+    look,
+    orbit: look,
+    fly,
     setPixelPerfect: (settings: PixelPerfectSettings | null) => {
       pixelPerfect = settings;
       if (mode === "2d") {

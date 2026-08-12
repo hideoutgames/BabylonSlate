@@ -48,6 +48,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -393,26 +394,28 @@ export function EditorChromeBar({
                 <ChevronDownIcon data-icon="inline-end" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="center">
-                <DropdownMenuLabel>Preview debug</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {isTestModeEnabled() || import.meta.env.DEV ? (
-                  <DropdownMenuCheckboxItem
-                    data-testid="always-render-toggle"
-                    checked={alwaysRender}
-                    onCheckedChange={(checked) =>
-                      setAlwaysRender(checked === true)
-                    }
-                  >
-                    Always Render
-                    {renderStats
-                      ? ` (${renderStats.renderedFps}/${renderStats.invalidationsPerSecond})`
-                      : ""}
-                  </DropdownMenuCheckboxItem>
-                ) : (
-                  <DropdownMenuItem disabled>
-                    No debug options in this build
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Preview debug</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {isTestModeEnabled() || import.meta.env.DEV ? (
+                    <DropdownMenuCheckboxItem
+                      data-testid="always-render-toggle"
+                      checked={alwaysRender}
+                      onCheckedChange={(checked) =>
+                        setAlwaysRender(checked === true)
+                      }
+                    >
+                      Always Render
+                      {renderStats
+                        ? ` (${renderStats.renderedFps}/${renderStats.invalidationsPerSecond})`
+                        : ""}
+                    </DropdownMenuCheckboxItem>
+                  ) : (
+                    <DropdownMenuItem disabled>
+                      No debug options in this build
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

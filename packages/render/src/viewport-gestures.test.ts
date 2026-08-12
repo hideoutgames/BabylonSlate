@@ -114,7 +114,7 @@ describe("attachViewportGestures", () => {
     expect(marquees).toEqual([{ x: 60, y: 100, width: 40, height: 40 }]);
   });
 
-  it("does not marquee in 3D, where a single-finger drag has no meaning", () => {
+  it("does not marquee in 3D, where a single-finger drag looks instead", () => {
     const marquees: unknown[] = [];
     attach("3d", { onMarquee: (rect) => marquees.push(rect) });
 
@@ -125,9 +125,42 @@ describe("attachViewportGestures", () => {
     expect(marquees).toHaveLength(0);
   });
 
-  it("orbits on a two-finger drag in 3D and holds a continuous lease", () => {
+  it("looks in place on a one-finger drag in 3D and holds a continuous lease", () => {
+    const { controller } = attach("3d");
+    controller.camera.getViewMatrix();
+    const positionBefore = controller.camera.position.clone();
+    const alphaBefore = controller.camera.alpha;
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 100));
+    expect(scheduler.shouldRender()).toBe(true);
+
+    controller.camera.getViewMatrix();
+    expect(controller.camera.alpha).not.toBeCloseTo(alphaBefore, 6);
+    expect(controller.camera.position.x).toBeCloseTo(positionBefore.x, 4);
+    expect(controller.camera.position.y).toBeCloseTo(positionBefore.y, 4);
+    expect(controller.camera.position.z).toBeCloseTo(positionBefore.z, 4);
+
+    canvas.emit("pointerup", pointer(1, 160, 100));
+    scheduler.noteRendered();
+    expect(scheduler.shouldRender()).toBe(false);
+  });
+
+  it("does not look when blockLook reports the pointer is on a gizmo", () => {
+    const { controller } = attach("3d", { blockLook: () => true });
+    const alphaBefore = controller.camera.alpha;
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 100));
+    canvas.emit("pointerup", pointer(1, 160, 100));
+
+    expect(controller.camera.alpha).toBeCloseTo(alphaBefore, 6);
+  });
+
+  it("does not orbit or pan on a two-finger drag without a pinch", () => {
     const { controller } = attach("3d");
     const alphaBefore = controller.camera.alpha;
+    const targetBefore = controller.camera.target.clone();
 
     canvas.emit("pointerdown", pointer(1, 100, 100));
     canvas.emit("pointerdown", pointer(2, 200, 100));
@@ -136,7 +169,8 @@ describe("attachViewportGestures", () => {
     canvas.emit("pointermove", pointer(1, 140, 100));
     canvas.emit("pointermove", pointer(2, 240, 100));
 
-    expect(controller.camera.alpha).not.toBeCloseTo(alphaBefore, 6);
+    expect(controller.camera.alpha).toBeCloseTo(alphaBefore, 6);
+    expect(controller.camera.target.equals(targetBefore)).toBe(true);
 
     canvas.emit("pointerup", pointer(1, 140, 100));
     canvas.emit("pointerup", pointer(2, 240, 100));
@@ -144,7 +178,7 @@ describe("attachViewportGestures", () => {
     expect(scheduler.shouldRender()).toBe(false);
   });
 
-  it("pans instead of orbiting on a two-finger drag in 2D", () => {
+  it("does not pan on a two-finger drag in 2D without a pinch", () => {
     const { controller } = attach("2d");
     const alphaBefore = controller.camera.alpha;
     const targetBefore = controller.camera.target.clone();
@@ -155,6 +189,20 @@ describe("attachViewportGestures", () => {
     canvas.emit("pointermove", pointer(2, 240, 100));
 
     expect(controller.camera.alpha).toBeCloseTo(alphaBefore, 6);
+    expect(controller.camera.target.equals(targetBefore)).toBe(true);
+  });
+
+  it("pans on a three-finger drag", () => {
+    const { controller } = attach("3d");
+    const targetBefore = controller.camera.target.clone();
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 200, 100));
+    canvas.emit("pointerdown", pointer(3, 150, 180));
+    canvas.emit("pointermove", pointer(1, 140, 100));
+    canvas.emit("pointermove", pointer(2, 240, 100));
+    canvas.emit("pointermove", pointer(3, 190, 180));
+
     expect(controller.camera.target.equals(targetBefore)).toBe(false);
   });
 
