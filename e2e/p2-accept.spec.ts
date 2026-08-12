@@ -76,7 +76,7 @@ test.describe("P2 acceptance proofs", () => {
       return { opened, position: api.activeGraphNodePosition() };
     });
     expect(prepared?.opened).toBe(true);
-    expect(prepared?.position?.x).toBe(120);
+    expect(prepared?.position?.x).toBe(80);
 
     const nudged = await page.evaluate(async () => {
       const api = (
@@ -99,8 +99,8 @@ test.describe("P2 acceptance proofs", () => {
     });
     expect(nudged?.ok).toBe(true);
     expect(nudged?.journal).toBe(true);
-    expect(nudged?.after?.x).toBe(120 + 42);
-    expect(nudged?.after?.y).toBe(120 + 17);
+    expect(nudged?.after?.x).toBe(80 + 42);
+    expect(nudged?.after?.y).toBe(80 + 17);
 
     // Simulate killed tab: reload without clean Close (journal remains).
     await page.reload();
@@ -126,7 +126,7 @@ test.describe("P2 acceptance proofs", () => {
       ).__babylonslateTest;
       return api?.activeGraphNodePosition() ?? null;
     });
-    expect(restored?.x).toBe(120 + 42);
-    expect(restored?.y).toBe(120 + 17);
+    expect(restored?.x).toBe(80 + 42);
+    expect(restored?.y).toBe(80 + 17);
   });
 });

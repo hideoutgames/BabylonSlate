@@ -41,7 +41,7 @@ test.describe("Global project search", () => {
   }) => {
     await openTestProject(page);
     await page.getByTestId("global-search").click();
-    await page.getByTestId("global-search-query").fill("Hello from");
+    await page.getByTestId("global-search-query").fill("Event Begin Play");
     await expect(page.getByTestId("global-search-group-graph-node")).toBeVisible();
     await page
       .locator('[data-testid^="global-search-item-graph-node:"]')
@@ -49,7 +49,7 @@ test.describe("Global project search", () => {
       .click();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     await expect(
-      page.locator('.react-flow__node.selected[data-id="log-1"]'),
+      page.locator('.react-flow__node.selected[data-id="event-begin-play"]'),
     ).toBeVisible({ timeout: 10_000 });
   });
 });
