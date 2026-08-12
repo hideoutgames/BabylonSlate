@@ -199,7 +199,10 @@ describe("compact dock tab strips", () => {
 describe("dockview theme contrast", () => {
   const theme = cssBlock(dockviewCss, ".dockview-theme-babylonslate");
 
-  it("paints tab labels with foreground tokens instead of vendor white", () => {
+  it("paints tab strips with card chrome and tab labels with foreground tokens", () => {
+    expect(
+      tokenValue(theme, "--dv-tabs-and-actions-container-background-color"),
+    ).toBe("var(--card)");
     expect(tokenValue(theme, "--dv-activegroup-visiblepanel-tab-color")).toBe(
       "var(--foreground)",
     );
@@ -214,9 +217,12 @@ describe("dockview theme contrast", () => {
     );
   });
 
-  it("outlines each panel group with a 1px bound", () => {
+  it("outlines each panel content container with a 1px bound", () => {
     expect(dockviewCss).toMatch(
-      /\.dockview-theme-babylonslate\s+\.dv-groupview\s*\{[^}]*outline:\s*1px solid/,
+      /\.dockview-theme-babylonslate\s+\.dv-content-container\s*\{[^}]*outline:\s*1px solid/,
+    );
+    expect(dockviewCss).not.toMatch(
+      /\.dockview-theme-babylonslate\s+\.dv-groupview\s*\{[^}]*outline:/,
     );
   });
 });
