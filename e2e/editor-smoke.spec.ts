@@ -71,6 +71,7 @@ test.describe("BabylonSlate editor smoke", () => {
 
     await page.getByTestId("save-project").click();
     await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-project").click();
     await page.getByTestId("close-project").click();
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.getByTestId("create-project-empty").click();
@@ -87,6 +88,7 @@ test.describe("BabylonSlate editor smoke", () => {
       "TestProject.babproject",
     );
     await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-project").click();
     await page.getByTestId("close-project").click();
     await expect(page.getByTestId("homepage")).toBeVisible();
 

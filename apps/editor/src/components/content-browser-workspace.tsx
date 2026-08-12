@@ -313,6 +313,11 @@ export function ContentBrowserWorkspace() {
     | { kind: "folder"; value: string }
     | null
   >(null);
+  const [refsSummary, setRefsSummary] = useState<{
+    name: string;
+    inbound: string;
+    outbound: string;
+  } | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
   );
@@ -517,9 +522,11 @@ export function ContentBrowserWorkspace() {
           const outbound = refs.outbound
             .map((id) => assetRegistry.getByGuid(id)?.header.name ?? id)
             .join(", ");
-          window.alert(
-            `Inbound: ${inbound || "(none)"}\nOutbound: ${outbound || "(none)"}`,
-          );
+          setRefsSummary({
+            name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
+            inbound: inbound || "(none)",
+            outbound: outbound || "(none)",
+          });
         },
       },
       {
@@ -1105,6 +1112,37 @@ export function ContentBrowserWorkspace() {
               }}
             >
               Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={refsSummary !== null}
+        onOpenChange={(open) => {
+          if (!open) setRefsSummary(null);
+        }}
+      >
+        <AlertDialogContent data-testid="content-browser-refs-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>References</AlertDialogTitle>
+            <AlertDialogDescription>
+              Dependencies for {refsSummary?.name}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-2 text-sm">
+            <p>
+              <span className="font-medium">Inbound:</span>{" "}
+              <SelectableText>{refsSummary?.inbound}</SelectableText>
+            </p>
+            <p>
+              <span className="font-medium">Outbound:</span>{" "}
+              <SelectableText>{refsSummary?.outbound}</SelectableText>
+            </p>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setRefsSummary(null)}>
+              Close
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -62,6 +62,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     label: "Export",
     keywords: "export project zip download",
   },
+  {
+    id: "project",
+    label: "Close",
+    keywords: "close project homepage dirty save",
+  },
 ];
 
 const ENGINE_CATEGORY: CatalogCategory & { keywords: string } = {
@@ -183,27 +188,6 @@ export function SettingsModal({
       onSearchChange={setSearch}
       searchPlaceholder="Search settings"
       data-testid={testId}
-      footer={
-        onCloseProject && projectDocument ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <FieldDescription className="m-0">
-              Close returns to the Homepage after a dirty-document check.
-            </FieldDescription>
-            <Button
-              variant="destructive"
-              data-testid="close-project"
-              className="min-h-11"
-              onClick={() => {
-                onOpenChange(false);
-                onCloseProject();
-              }}
-            >
-              <LogOutIcon data-icon="inline-start" />
-              Close Project
-            </Button>
-          </div>
-        ) : null
-      }
     >
       {activeCategoryId === "engine" ? (
         <EngineSettingsForm settings={engineSettings} onChange={saveEngine} />
@@ -417,6 +401,32 @@ export function SettingsModal({
           </Field>
           <Button data-testid="export-project" onClick={() => void handleExport()}>
             Export Project
+          </Button>
+        </FieldGroup>
+      ) : null}
+
+      {showProjectBody &&
+      projectDocument &&
+      activeCategoryId === "project" &&
+      onCloseProject ? (
+        <FieldGroup className="gap-4">
+          <Field>
+            <FieldLabel>Close Project</FieldLabel>
+            <FieldDescription>
+              Returns to the Homepage after a dirty-document check.
+            </FieldDescription>
+          </Field>
+          <Button
+            variant="destructive"
+            data-testid="close-project"
+            className="min-h-11"
+            onClick={() => {
+              onOpenChange(false);
+              onCloseProject();
+            }}
+          >
+            <LogOutIcon data-icon="inline-start" />
+            Close Project
           </Button>
         </FieldGroup>
       ) : null}
