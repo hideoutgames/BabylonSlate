@@ -103,6 +103,8 @@ Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`
 
 The Prefab viewport reuses `ViewportToolbar` + `createEngine` (unlit gizmos, fly/look camera, joystick when enabled). The canvas is full-size, not a 160px sidebar strip, and stays dark like the Scene viewport. Component add/remove/reorder updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
 
+**Focus** (toolbar toggle) closes dock tabs that are not on the Engine Settings Focus keep-list. Class default is Graph only; Scene default is Viewport. Keep-listed tabs stay only if they were already open.
+
 Play instantiates this same `SerializedScene` in the game worker (`p7-play-scene-load`) rather than seeding demo actors. See [physics.md](physics.md) and [render.md](render.md).
 
 See [command-layer.md](command-layer.md) for undo/journal and [gestures.md](../design/gestures.md) for touch contracts.

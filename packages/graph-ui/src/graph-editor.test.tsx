@@ -140,6 +140,33 @@ describe("GraphEditor", () => {
     expect(getByLabelText("1 error")).toBeTruthy();
   });
 
+  it("clips the title bar to the shell radius without clipping the error badge", () => {
+    const graph = createDefaultGraph();
+    const nodeId = graph.nodes[0]?.id ?? "";
+    const { getByText, getByLabelText, container } = render(
+      <GraphEditor
+        initialGraph={graph}
+        diagnostics={[
+          {
+            nodeId,
+            severity: "error",
+            message: "Type mismatch",
+          },
+        ]}
+      />,
+    );
+
+    const shell = container.querySelector("[data-node-role]");
+    expect(shell?.className).toMatch(/\boverflow-hidden\b/);
+    expect(shell?.className).toMatch(/\brounded-lg\b/);
+
+    const title = getByText("Log Message");
+    expect(title.className).toMatch(/\brounded-t-lg\b/);
+
+    const badge = getByLabelText("1 error");
+    expect(shell?.contains(badge)).toBe(false);
+  });
+
   it("opens the node palette and adds a node from paletteNodes", () => {
     const onChange = vi.fn();
     const { getByText, container } = render(
