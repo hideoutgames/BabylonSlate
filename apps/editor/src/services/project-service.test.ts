@@ -19,4 +19,18 @@ describe("project round-trip", () => {
     const exists = await storage.exists(PROJECT_FILE);
     expect(exists).toBe(true);
   });
+
+  it("rewrites metadata.name without renaming the folder", async () => {
+    localStorage.clear();
+    const storage = new WebStorageAdapter();
+    const service = new ProjectService(storage);
+    const handle = await storage.openDocumentsProject("RenameMe.babproject");
+    await service.loadCurrentProject();
+    await service.closeProject();
+
+    await service.renameListedProjectDisplayName(handle, "Pretty Name");
+    const reopened = await service.openListedProject(handle);
+    expect(reopened.document.metadata.name).toBe("Pretty Name");
+    expect(storage.getCurrentFolder()?.name).toBe("RenameMe.babproject");
+  });
 });

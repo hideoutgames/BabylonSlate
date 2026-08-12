@@ -77,7 +77,7 @@ export function ViewportToolbar({
     >
       <ToggleGroup
         variant="outline"
-        size="touch"
+        size="sm"
         spacing={1}
         value={[gizmoTool]}
         onValueChange={(value) => {
@@ -105,7 +105,7 @@ export function ViewportToolbar({
           render={
             <Toggle
               variant="outline"
-              size="touch"
+              size="sm"
               aria-label="Snap"
               pressed={snapEnabled}
               onPressedChange={toggleSnap}
@@ -119,7 +119,7 @@ export function ViewportToolbar({
       </Tooltip>
       <ToggleGroup
         variant="outline"
-        size="touch"
+        size="sm"
         spacing={1}
         value={[viewportMode]}
         onValueChange={(value) => {

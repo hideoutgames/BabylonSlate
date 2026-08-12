@@ -38,6 +38,8 @@ describe("CatalogDialog", () => {
     fireEvent.click(getByTestId("catalog-category-input"));
     expect(onCategoryChange).toHaveBeenCalledWith("input");
     expect(getByPlaceholderText("Search").getAttribute("data-autofocus-search")).toBeNull();
+    expect(getByTestId("catalog-body")).toBeTruthy();
+    expect(document.activeElement).not.toBe(getByPlaceholderText("Search"));
   });
 
   it("autofocuses search only when requested", () => {

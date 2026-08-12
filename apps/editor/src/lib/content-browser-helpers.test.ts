@@ -4,6 +4,7 @@ import {
   collectFolderGuids,
   compressionBadgeLabel,
   filterAssets,
+  flattenFolderTree,
   matchesAssetSearch,
   textureCompressionState,
 } from "./content-browser-helpers";
@@ -96,5 +97,45 @@ describe("content-browser-helpers", () => {
     };
     const guids = collectFolderGuids("assets/textures", tree);
     expect([...guids]).toEqual(["child"]);
+  });
+
+  it("flattens a folder tree for the Move picker", () => {
+    const tree = {
+      name: "assets",
+      path: "assets",
+      assets: [],
+      children: [
+        {
+          name: "textures",
+          path: "assets/textures",
+          assets: [],
+          children: [
+            {
+              name: "ui",
+              path: "assets/textures/ui",
+              assets: [],
+              children: [],
+            },
+          ],
+        },
+      ],
+    };
+    const rows = flattenFolderTree(tree);
+    expect(rows.map((row) => row.path)).toEqual([
+      "assets",
+      "assets/textures",
+      "assets/textures/ui",
+    ]);
+    expect(rows[1]).toMatchObject({
+      label: "textures",
+      depth: 1,
+      hasChildren: true,
+      expanded: true,
+    });
+    const collapsed = flattenFolderTree(tree, new Set(["assets/textures"]));
+    expect(collapsed.map((row) => row.path)).toEqual([
+      "assets",
+      "assets/textures",
+    ]);
   });
 });

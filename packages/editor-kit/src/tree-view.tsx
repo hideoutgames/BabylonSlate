@@ -8,8 +8,8 @@ import {
 import { cn } from "@babylonslate/ui/lib/utils";
 import { CONTEXT_MENU_LONG_PRESS_MS, CONTEXT_MENU_MOVE_TOLERANCE_PX } from "./use-context-menu";
 
-/** Row height matches the touch-target floor so every row is a valid target. */
-export const TREE_ROW_HEIGHT = 44;
+/** Row height for compact outliner / folder trees. */
+export const TREE_ROW_HEIGHT = 32;
 
 export interface TreeViewNode {
   id: string;
@@ -225,7 +225,7 @@ export function TreeView({
                       ? `${node.expanded ? "Collapse" : "Expand"} ${node.label}`
                       : undefined
                   }
-                  className="flex h-11 w-8 shrink-0 items-center justify-center text-muted-foreground"
+                  className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"
                   disabled={!node.hasChildren}
                   onClick={(event) => {
                     event.stopPropagation();

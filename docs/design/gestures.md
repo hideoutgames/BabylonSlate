@@ -44,12 +44,12 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 
 ## Virtual keyboard
 
-Focusing a text field on iPad raises the keyboard and can cover a centered modal. Settings catalog search is **not** autofocused on open (`CatalogDialog` `autoFocusSearch` defaults to false). Add Node and Global Search may autofocus because they are search-first UIs.
+Focusing a text field on iPad raises the keyboard and can cover a centered modal. `CatalogDialog` search is **not** autofocused on open (`initialFocus` is the scrollable body; `autoFocusSearch` defaults to false). That includes Add Node, Place Actors, Add Component, and Settings. Global Search may autofocus because it is a search-first UI with no category list.
 
 ## Dockview
 
 - Dockview 8's `dndStrategy` defaults to `'auto'`: HTML5 drag for mouse, pointer events for touch and pen. Touch panel drag therefore needs no extra configuration.
-- Tab strips are **52px on coarse pointers** and a compact **36px strip on fine pointers**; grips stay 44px+.
+- Tab strips are **26px on coarse pointers** and **18px on fine pointers**; grips stay 44px+. Editor chrome and panel headers use `--chrome-row` (28px).
 - Sashes stay visually thin (4px) but carry a widened hit area via a transparent pseudo-element, because Dockview sizes the sash element itself from an internal constant that CSS cannot override.
 - Panel **content** is a gesture-safe zone — viewport and graph handle their own gestures.
 - No popout / floating groups on iOS/Android.
@@ -70,7 +70,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 - One-finger pan/zoom inside graph panel only.
 - **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`). Pin hit boxes are `--touch-target` (44px); visual pins are `--graph-pin-size` (16px). Wires use `--pin-*` colors and 4–5px strokes.
 - **Drag-to-connect:** allowed by the gesture contract; deferred as polish (see issue-tracker P5 follow-ups).
-- Node palette is a centered `CatalogDialog` (search autofocused); long-press / secondary click for node context menus when enabled.
+- Node palette is a centered `CatalogDialog` (search **not** autofocused); long-press / secondary click for node context menus when enabled.
 
 ## Document tabs (chrome bar)
 
@@ -80,3 +80,11 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | Tap tab label | Select tab |
 | Tap close | Close tab |
 | Long-press (~300 ms, stationary) on tab, then drag horizontally | Reorder tab (dnd-kit); distinct from Dockview panel drag |
+
+## Content Browser
+
+| Gesture | Action |
+| --- | --- |
+| Tap / click a tile | Select (replace selection) |
+| Double-tap / double-click a Scene or Graph | Open the document (`openOrFocusDocument`) |
+| Long-press / right-click | Context menu (move, rename, duplicate, delete, …) |

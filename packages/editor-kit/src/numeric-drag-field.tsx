@@ -94,10 +94,10 @@ export function NumericDragField({
   );
 
   return (
-    <label className="flex min-h-[var(--touch-target,44px)] items-center gap-2">
+    <label className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1">
       <span
         className={cn(
-          "min-w-8 shrink-0 cursor-ew-resize touch-none select-none text-xs font-semibold",
+          "w-3 shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold",
           accent === "x" && "text-axis-x",
           accent === "y" && "text-axis-y",
           accent === "z" && "text-axis-z",
@@ -115,7 +115,7 @@ export function NumericDragField({
       </span>
       <input
         type="number"
-        className="min-h-[var(--touch-target,44px)] w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+        className="h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-background px-1 text-xs"
         aria-label={label}
         data-testid={testId}
         disabled={disabled}

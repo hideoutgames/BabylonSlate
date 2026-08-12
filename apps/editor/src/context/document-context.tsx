@@ -47,6 +47,7 @@ import {
   isTestModeEnabled,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   DocumentService,
   type OpenDocument,
@@ -54,7 +55,11 @@ import {
 import { ProjectService } from "../services/project-service";
 import { loadTemplateCards } from "../services/template-service";
 import { compileGraphDocuments } from "../services/script-compiler";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import { applyFocusLayout } from "../shell/layout-ops";
+import {
+  listedProjectsFromRecents,
+  type ListedProject,
+} from "../lib/listed-projects";
 
 export type AppRoute = "home" | "editor";
 
@@ -74,7 +79,7 @@ interface DocumentContextValue {
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
-  listedProjects: ProjectFolderHandle[];
+  listedProjects: ListedProject[];
   needsReconnect: boolean;
   recoveryAvailable: boolean;
   dirtyDocuments: OpenDocument[];
@@ -85,6 +90,11 @@ interface DocumentContextValue {
   createEmptyProject: () => Promise<void>;
   createFromTemplate: (templateId: string, name: string) => Promise<void>;
   openListedProject: (handle: ProjectFolderHandle) => Promise<void>;
+  renameListedProject: (
+    handle: ProjectFolderHandle,
+    name: string,
+  ) => Promise<void>;
+  removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
   saveProject: () => Promise<void>;
   saveAll: () => Promise<void>;
@@ -114,6 +124,8 @@ interface DocumentContextValue {
   canRedoActiveDocument: boolean;
   registerDockviewApi: (id: string, api: DockviewApi) => void;
   captureActiveLayout: () => void;
+  isLayoutFocused: boolean;
+  toggleLayoutFocus: () => void;
   getAvailableDocuments: () => Array<{
     kind: "scene" | "graph";
     path: string;
@@ -143,6 +155,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
+  const preFocusLayoutsRef = useRef(new Map<string, Record<string, unknown>>());
+  const [focusedLayoutIds, setFocusedLayoutIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(64));
   const thumbnailsEnabledRef = useRef(true);
@@ -153,9 +169,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const projectDocumentRef = useRef<ProjectDocument | null>(null);
   projectDocumentRef.current = projectDocument;
-  const [listedProjects, setListedProjects] = useState<ProjectFolderHandle[]>(
-    [],
-  );
+  const [listedProjects, setListedProjects] = useState<ListedProject[]>([]);
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
   const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
@@ -199,18 +213,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const refreshProjectList = useCallback(async () => {
     const fromStorage = await projectService.listProjects();
     const settings = await settingsStore.load();
-    // Merge recents that may not appear in listProjects yet (external bookmarks).
-    const byId = new Map(fromStorage.map((p) => [p.id, p]));
-    for (const recent of settings.recents) {
-      if (!byId.has(recent.id)) {
-        byId.set(recent.id, {
-          id: recent.id,
-          name: recent.name,
-          tier: recent.tier,
-        });
-      }
-    }
-    setListedProjects([...byId.values()]);
+    setListedProjects(
+      listedProjectsFromRecents(settings.recents, fromStorage),
+    );
     setNeedsReconnect(await projectService.needsReconnect());
   }, [projectService, settingsStore]);
 
@@ -241,6 +246,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const captureLayoutForId = useCallback(
     (id: string) => {
+      const preFocus = preFocusLayoutsRef.current.get(id);
+      if (preFocus) {
+        documentService.setLayout(id, preFocus);
+        return;
+      }
       const api = dockviewApisRef.current.get(id);
       if (api) {
         documentService.setLayout(id, projectService.captureLayout(api));
@@ -346,6 +356,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pending: MigrationPending[] = [],
     ) => {
       dockviewApisRef.current.clear();
+      preFocusLayoutsRef.current.clear();
+      setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
       await documentService.initializeFromProject(
         projectService,
@@ -415,6 +427,37 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await enterEditor(document, layouts, pending);
     },
     [enterEditor, projectService],
+  );
+
+  const renameListedProject = useCallback(
+    async (handle: ProjectFolderHandle, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      try {
+        await projectService.renameListedProjectDisplayName(handle, trimmed);
+      } catch {
+        // Recents still update when the folder cannot be opened.
+      }
+      const settings = await settingsStore.load();
+      settings.recents = settings.recents.map((recent) =>
+        recent.id === handle.id ? { ...recent, name: trimmed } : recent,
+      );
+      await settingsStore.save(settings);
+      await refreshProjectList();
+    },
+    [projectService, refreshProjectList, settingsStore],
+  );
+
+  const removeListedProject = useCallback(
+    async (handle: ProjectFolderHandle) => {
+      const settings = await settingsStore.load();
+      settings.recents = settings.recents.filter(
+        (recent) => recent.id !== handle.id,
+      );
+      await settingsStore.save(settings);
+      await refreshProjectList();
+    },
+    [refreshProjectList, settingsStore],
   );
 
   const reconnectProject = useCallback(async () => {
@@ -505,6 +548,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await projectService.closeProject();
     projectService.setDerivedStorage(null);
     dockviewApisRef.current.clear();
+    preFocusLayoutsRef.current.clear();
+    setFocusedLayoutIds(new Set());
     editSessionRef.current.clear();
     documentService.ensureContentBrowserTab();
     setProjectDocument(null);
@@ -564,6 +609,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const closeDocument = useCallback(
     (id: string) => {
       dockviewApisRef.current.delete(id);
+      preFocusLayoutsRef.current.delete(id);
+      setFocusedLayoutIds((current) => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       documentService.closeDocument(id);
       editSessionRef.current.dropDocument(id);
       bump();
@@ -965,6 +1017,44 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     dockviewApisRef.current.set(id, api);
   }, []);
 
+  const toggleLayoutFocus = useCallback(() => {
+    const { activeDocumentId } = documentService.getState();
+    if (!activeDocumentId) return;
+    const doc = documentService
+      .getOpenDocumentsOrdered()
+      .find((entry) => entry.id === activeDocumentId);
+    if (!doc || (doc.ref.kind !== "scene" && doc.ref.kind !== "graph")) {
+      return;
+    }
+    const api = dockviewApisRef.current.get(activeDocumentId);
+    if (!api) return;
+
+    if (preFocusLayoutsRef.current.has(activeDocumentId)) {
+      const snapshot = preFocusLayoutsRef.current.get(activeDocumentId);
+      preFocusLayoutsRef.current.delete(activeDocumentId);
+      if (snapshot) {
+        api.fromJSON(snapshot as never);
+      }
+      setFocusedLayoutIds((current) => {
+        const next = new Set(current);
+        next.delete(activeDocumentId);
+        return next;
+      });
+      return;
+    }
+
+    preFocusLayoutsRef.current.set(
+      activeDocumentId,
+      api.toJSON() as unknown as Record<string, unknown>,
+    );
+    applyFocusLayout(doc.ref.kind, api);
+    setFocusedLayoutIds((current) => {
+      const next = new Set(current);
+      next.add(activeDocumentId);
+      return next;
+    });
+  }, [documentService]);
+
   const captureActiveLayout = useCallback(() => {
     const { activeDocumentId } = documentService.getState();
     if (activeDocumentId) {
@@ -1028,6 +1118,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createEmptyProject,
       createFromTemplate,
       openListedProject,
+      renameListedProject,
+      removeListedProject,
       reconnectProject,
       saveProject,
       saveAll,
@@ -1064,6 +1156,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       })(),
       registerDockviewApi,
       captureActiveLayout,
+      isLayoutFocused: (() => {
+        const activeId = documentService.getState().activeDocumentId;
+        return activeId ? focusedLayoutIds.has(activeId) : false;
+      })(),
+      toggleLayoutFocus,
       getAvailableDocuments,
       assetRegistry: projectService.registry,
       refreshAssetRegistry,
@@ -1097,6 +1194,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       createEmptyProject,
       createFromTemplate,
       openListedProject,
+      renameListedProject,
+      removeListedProject,
       reconnectProject,
       saveProject,
       saveAll,
@@ -1121,6 +1220,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       redoActiveDocument,
       registerDockviewApi,
       captureActiveLayout,
+      toggleLayoutFocus,
+      focusedLayoutIds,
       getAvailableDocuments,
     ],
   );

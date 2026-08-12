@@ -7,7 +7,6 @@ import { CompilerResultsPanel } from "../panels/compiler-results-panel";
 import { MyClassPanel } from "../panels/my-class-panel";
 import { SceneOutlinerPanel } from "../panels/scene-outliner-panel";
 import { SceneDetailsPanel } from "../panels/scene-details-panel";
-import { MiniAssetBrowserPanel } from "../panels/mini-asset-browser-panel";
 import { ActorPrefabPanel } from "../panels/actor-prefab-panel";
 import { PrefabViewportPanel } from "../panels/prefab-viewport-panel";
 
@@ -26,9 +25,7 @@ export const panelComponents = {
   "scene-details": (props: IDockviewPanelProps) => (
     <SceneDetailsPanel {...props} />
   ),
-  "mini-asset-browser": (props: IDockviewPanelProps) => (
-    <MiniAssetBrowserPanel {...props} />
-  ),
+  "mini-asset-browser": () => null,
   "actor-prefab": (props: IDockviewPanelProps) => <ActorPrefabPanel {...props} />,
   "prefab-viewport": (props: IDockviewPanelProps) => (
     <PrefabViewportPanel {...props} />

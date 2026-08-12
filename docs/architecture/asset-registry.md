@@ -84,11 +84,15 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 
 `apps/editor/src/components/content-browser-workspace.tsx` is the registry-backed project asset UI:
 
-- Folder tree from `folderTree("project")` (includes empty folders via `.babylonslate-folder` markers); shadcn `Card` asset grid filtered by folder, type chips, and search.
+- Folder tree from `folderTree("project")` (includes empty folders via `.babylonslate-folder` markers); **New Folder** sits on the tree (`content-browser-new-folder`), not the main toolbar.
+- One toolbar row: Import, New Asset, Search, type filter `ToggleGroup`, Delete when a tile is selected. No page heading or subtitle.
+- Fixed-size shadcn `Card` tiles (`grid-cols-[repeat(auto-fill,10rem)]`, `size="sm"`): square thumb (`aspect-square` + `object-cover`, icon fallback), then `CardTitle` / `CardDescription` / badges. Cells do not stretch with `minmax(…, 1fr)`.
+- **Click / tap selects** (replace selection; `data-selected`). **Double-click / double-tap opens** Scene and Graph via `openOrFocusDocument`. Context menu still on right-click / long-press.
 - Import through `pickImportFiles()` in `@babylonslate/vfs` (web/electron: DOM file input; iOS/Android: optional `babylonslate.documentPicker` bridge, else the same DOM picker). UI never calls Capacitor plugins directly. A hidden `content-browser-import-input` remains for Playwright `setInputFiles`.
 - **New Asset** uses type + engine-base parent-class pickers → `registry.createAsset`.
 - **New Folder** → `registry.createFolder` (mkdir + `.babylonslate-folder` marker so empty folders survive Git).
 - Long-press multi-select + `ContextMenuOverlay`: Duplicate, Rename, Move, Copy, Show References, Retry encoding, Delete; folder right-click opens the delete confirm for the folder tree (assets root is protected).
+- **Move** opens a `Dialog` + editor-kit `TreeView` of `flattenFolderTree(assetRegistry.folderTree("project"))`; confirm calls `moveAsset`. Rename stays a text dialog.
 - File ops: `moveAsset` / `renameAsset` / `duplicateAsset` / `copyAsset` / `moveFolder` keep guids stable on move/rename; duplicate/copy assign a new guid. Open Scene/Graph tabs are retargeted via `DocumentService.repathDocument`; `refreshAssetRegistry` rewrites `project.json` scene/graph path lists.
 - `AlertDialog` lists removed asset names and inbound refs from `showReferences` (names are `SelectableText`).
 - Drag source MIME `application/x-babylonslate-asset` with `{ guid, type, path }`.
@@ -105,5 +109,5 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 - Hundreds of assets open with near-zero `accountedPayloadBytes`.
 - Importer unit tests + guid-remap cases + GLB browse parse.
 - Encode queue states; loader KTX2 vs source; transcoder unavailable / export-omitted smoke; A16 Basis encode CI smoke.
-- Content Browser helpers (filter / new-asset / drag MIME) unit-tested in the editor.
-- E2E: Scene/Graph open, PNG+GLB import→reload, killed-tab journal recovery (`e2e/p2-accept.spec.ts`).
+- Content Browser helpers (filter / new-asset / drag MIME / folder-tree flatten for Move) unit-tested in the editor.
+- E2E: Scene/Graph **double-click** open, PNG+GLB import→reload, killed-tab journal recovery (`e2e/p2-accept.spec.ts`); density IA in `e2e/editor-density.spec.ts`.

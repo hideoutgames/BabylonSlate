@@ -169,7 +169,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | P7/P9 content systems | Preview-only UI shipped in P6; edits are session-local |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | Details can add components; editor mesh proxy only for MeshComponent |
-| Mini Asset Browser drop raycast placement | later polish | Drop spawns at default origin today |
+| Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | later polish | Project Settings Input tab is a JSON textarea |
 | Multi-select gizmo (transform all selected) | later polish | Outline covers all; gizmo attaches to first pickable |

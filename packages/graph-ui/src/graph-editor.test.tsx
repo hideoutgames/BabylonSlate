@@ -155,6 +155,21 @@ describe("GraphEditor", () => {
     expect(lastGraph.nodes[0]?.data.title).toBe("Log");
   });
 
+  it("does not autofocus palette search on open", () => {
+    const { getByRole, getByPlaceholderText, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+      />,
+    );
+
+    fireEvent.click(getByRole("button", { name: "Add node" }));
+    const search = getByPlaceholderText("Search nodes");
+    expect(search.getAttribute("data-autofocus-search")).toBeNull();
+    expect(document.activeElement).not.toBe(search);
+    expect(getByTestId("node-palette-body")).toBeTruthy();
+  });
+
   it("embeds palette pins into added nodes so handles appear", () => {
     const onChange = vi.fn();
     const { getByRole, getByText, container } = render(

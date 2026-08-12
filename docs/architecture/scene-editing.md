@@ -11,7 +11,7 @@ Shared-surface design note for viewport, outliner, details, and the edit layer. 
 | `settings` | Environment, gravity, timestep, `gameInstanceClass`, grid, `cameraBounds2D`, `editorJoystickEnabled` |
 | `actors` | Flat list with `parentId`; hierarchy resolved at apply time |
 
-Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / quaternion rotation / scale), `visible`, `locked`, `components[]`.
+Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / quaternion rotation / scale), `visible`, `locked`, `components[]`. Details shows **Position**, **Rotation**, and **Scale** as one nowrap XYZ row each. Rotation is **Euler degrees** in the UI; `transform.rotation` stays `[x,y,z,w]` quaternion (`quaternionToEulerDegrees` / `eulerDegreesToQuaternion` in `@babylonslate/core`). 2D drops unused axes (Position/Scale XY, Rotation Z).
 
 Each **component**: `id`, `classId`, `properties` (typed per class in the object-model registry).
 
@@ -71,12 +71,12 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 | `@babylonslate/edit` | Scene commands + `diffSceneCommands`; journal revivers |
 | `@babylonslate/render` | Editor tools: camera, gizmos, grid, outline, sync, gestures |
 | `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker |
-| `apps/editor` | Viewport, Outliner, Details, Mini Asset Browser, Actor prefab tab; `applySceneChange` |
+| `apps/editor` | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange` |
 
 ## Outliner and Details visuals
 
-- **Outliner** (`TreeView`): 44px rows, type icon, selected row `bg-primary/20` + `border-l-primary`. Visibility/lock toggles are ghost `touch` controls so the name stays readable in the 260px default column.
-- **Details** (`PropertyGrid`): Unreal-style **label | value** rows at `--touch-target` height. Category headers use `--secondary`. Vector axes use `--axis-x/y/z`. Checkboxes and select items are 44px.
+- **Outliner** (`TreeView`): 32px rows, type icon, selected row `bg-primary/20` + `border-l-primary`. Visibility/lock toggles are compact `sm` controls. **+** opens a **Place Actors** `CatalogDialog` (Shapes, Lights, Camera, Empty, Project assets). Spawned lights are outliner/details-complete; the viewport still uses its default hemispheric light.
+- **Details** (`PropertyGrid`): Unreal-style **label | value** rows at `--chrome-row` (32px). Category headers use `--secondary`. Vector axes use `--axis-x/y/z` on one nowrap row. Checkboxes are compact (`size-4`) inside the row. **Add Component** uses the same catalog chrome, grouped Rendering / Camera / Physics.
 - **Viewport overlay**: toolbar island on `--popover` with a shadow so it separates from the 3D view.
 
 ## 2D specifics
@@ -96,7 +96,7 @@ Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`
 | Dock | Panels |
 | --- | --- |
 | Center group | **Graph** and **Prefab** as siblings (`direction: "within"`). Selecting Prefab fills the workspace like Viewport does on a Scene. |
-| Left | **My Class** and **Components** (the actor component tree). |
+| Left | **Components** above **My Blueprint** (compact member tree). |
 | Right / bottom | Inspector, Compiler Results |
 
 The Prefab viewport reuses `ViewportToolbar` + `createEngine` (touch gizmos, fly/look camera). The canvas is full-size, not a 160px sidebar strip. Component add/remove updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).

@@ -20,7 +20,7 @@ export function createSceneDefaultLayout(api: DockviewApi): void {
     initialWidth: 260,
   });
 
-  const details = api.addPanel({
+  api.addPanel({
     id: "scene-details",
     component: "scene-details",
     title: "Details",
@@ -29,17 +29,6 @@ export function createSceneDefaultLayout(api: DockviewApi): void {
       direction: "right",
     },
     initialWidth: 300,
-  });
-
-  api.addPanel({
-    id: "mini-asset-browser",
-    component: "mini-asset-browser",
-    title: "Assets",
-    position: {
-      referencePanel: details,
-      direction: "below",
-    },
-    initialHeight: 220,
   });
 
   api.addPanel({
@@ -73,10 +62,10 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
     },
   });
 
-  const myClass = api.addPanel({
-    id: "my-class",
-    component: "my-class",
-    title: "My Class",
+  const components = api.addPanel({
+    id: "actor-prefab",
+    component: "actor-prefab",
+    title: "Components",
     position: {
       referencePanel: graph,
       direction: "left",
@@ -85,13 +74,14 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
   });
 
   api.addPanel({
-    id: "actor-prefab",
-    component: "actor-prefab",
-    title: "Components",
+    id: "my-class",
+    component: "my-class",
+    title: "My Blueprint",
     position: {
-      referencePanel: myClass,
-      direction: "within",
+      referencePanel: components,
+      direction: "below",
     },
+    initialHeight: 180,
   });
 
   api.addPanel({

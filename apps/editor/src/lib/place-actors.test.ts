@@ -1,0 +1,55 @@
+import { describe, expect, it } from "vitest";
+import { createDefaultScene } from "@babylonslate/core";
+import {
+  ENGINE_PLACE_ACTORS,
+  nextActorId,
+  spawnPlacedActor,
+  type PlaceActorItem,
+} from "./place-actors";
+
+describe("ENGINE_PLACE_ACTORS", () => {
+  it("groups shapes, lights, camera, and empty", () => {
+    const categories = new Set(ENGINE_PLACE_ACTORS.map((item) => item.category));
+    expect(categories).toEqual(
+      new Set(["Shapes", "Lights", "Camera", "Empty"]),
+    );
+  });
+});
+
+describe("spawnPlacedActor", () => {
+  const scene = createDefaultScene();
+
+  it("spawns a mesh primitive", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-sphere")!;
+    const actor = spawnPlacedActor(scene, item, "actor-1");
+    expect(actor.name).toBe("sphere");
+    expect(actor.components[0]?.classId).toBe("MeshComponent");
+    expect(actor.components[0]?.properties.meshKind).toBe("sphere");
+  });
+
+  it("spawns a light actor", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "light-point")!;
+    const actor = spawnPlacedActor(scene, item, "actor-2");
+    expect(actor.components[0]?.classId).toBe("LightComponent");
+    expect(actor.components[0]?.properties.lightKind).toBe("point");
+  });
+
+  it("spawns an empty actor", () => {
+    const item: PlaceActorItem = ENGINE_PLACE_ACTORS.find(
+      (entry) => entry.id === "empty",
+    )!;
+    const actor = spawnPlacedActor(scene, item, "actor-3");
+    expect(actor.components).toEqual([]);
+  });
+
+  it("allocates the next unused actor-N id", () => {
+    const empty = { ...scene, actors: [] };
+    expect(nextActorId(empty)).toBe("actor-1");
+    expect(
+      nextActorId({
+        ...empty,
+        actors: [spawnPlacedActor(empty, ENGINE_PLACE_ACTORS[0]!, "actor-1")],
+      }),
+    ).toBe("actor-2");
+  });
+});

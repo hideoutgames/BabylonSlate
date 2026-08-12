@@ -124,4 +124,19 @@ describe("Unreal-inspired theme tokens", () => {
   it("points the chrome tab accent at primary", () => {
     expect(tokenValue(dark, "--chrome-tab-accent")).toBe("var(--primary)");
   });
+
+  it("defines a compact chrome row token", () => {
+    const root = cssBlock(globalsCss, ":root");
+    expect(tokenValue(root, "--chrome-row")).toBe("28px");
+  });
 });
+
+describe("compact dock tab strips", () => {
+  it("halves dockview tab min-heights", () => {
+    expect(dockviewCss).toMatch(/min-height:\s*18px/);
+    expect(dockviewCss).toMatch(/min-height:\s*26px/);
+    expect(dockviewCss).not.toMatch(/min-height:\s*36px/);
+    expect(dockviewCss).not.toMatch(/min-height:\s*52px/);
+  });
+});
+

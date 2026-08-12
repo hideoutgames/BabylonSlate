@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { TreeView, type TreeViewNode } from "./tree-view";
+import { TREE_ROW_HEIGHT, TreeView, type TreeViewNode } from "./tree-view";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 import { CONTEXT_MENU_LONG_PRESS_MS } from "./use-context-menu";
 
@@ -13,6 +13,10 @@ const nodes: TreeViewNode[] = [
 describe("TreeView", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("uses compact 32px rows", () => {
+    expect(TREE_ROW_HEIGHT).toBe(32);
   });
 
   it("renders one row per visible node with disclosure state", () => {
@@ -53,12 +57,12 @@ describe("TreeView", () => {
 
     const tree = screen.getByTestId("tree");
     tree.getBoundingClientRect = () =>
-      ({ top: 0, left: 0, right: 200, bottom: 132 }) as DOMRect;
+      ({ top: 0, left: 0, right: 200, bottom: 96 }) as DOMRect;
 
     const row = screen.getByTestId("tree-row-child");
-    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 50 });
-    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 100 });
-    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 100 });
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 80 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 80 });
 
     expect(onReparent).toHaveBeenCalledWith("child", "other");
   });

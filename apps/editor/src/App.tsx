@@ -239,6 +239,8 @@ function AppRoutes() {
     createFromTemplate,
     openProject,
     openListedProject,
+    renameListedProject,
+    removeListedProject,
     reconnectProject,
     keepRecovery,
     dismissRecovery,
@@ -259,6 +261,8 @@ function AppRoutes() {
         onCreateFromTemplate={(id, name) => createFromTemplate(id, name)}
         onOpenExternal={openProject}
         onOpenProject={openListedProject}
+        onRenameProject={renameListedProject}
+        onRemoveFromList={removeListedProject}
         onReconnect={reconnectProject}
         onRecover={() => void keepRecovery()}
         onDismissRecovery={() => void dismissRecovery()}

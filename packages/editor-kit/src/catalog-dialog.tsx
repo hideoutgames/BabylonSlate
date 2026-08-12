@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -92,11 +92,14 @@ export function CatalogDialog({
     () => categorySections(categories, groups),
     [categories, groups],
   );
+  const searchRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid={testId}
+        initialFocus={autoFocusSearch ? searchRef : bodyRef}
         className={cn(
           "flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none z-50",
           className,
@@ -110,10 +113,11 @@ export function CatalogDialog({
         </DialogHeader>
         <div className="shrink-0 border-b px-4 py-3">
           <Input
+            ref={searchRef}
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={searchPlaceholder}
-            className="min-h-[var(--touch-target,44px)]"
+            className="min-h-[var(--chrome-row,28px)]"
             data-testid={testId ? `${testId}-search` : undefined}
             data-autofocus-search={autoFocusSearch ? "true" : undefined}
             autoFocus={autoFocusSearch}
@@ -140,7 +144,7 @@ export function CatalogDialog({
                     <Button
                       key={category.id}
                       type="button"
-                      size="touch"
+                      size="sm"
                       variant={active ? "secondary" : "ghost"}
                       className={cn(
                         "justify-between rounded-md border-l-2",
@@ -163,7 +167,12 @@ export function CatalogDialog({
               </div>
             ))}
           </nav>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            ref={bodyRef}
+            tabIndex={-1}
+            className="min-h-0 flex-1 overflow-y-auto outline-none"
+            data-testid={testId ? `${testId}-body` : undefined}
+          >
             <div className="p-4">{children}</div>
           </div>
         </div>
@@ -190,4 +199,27 @@ export function useCatalogFilter<T>(
 export function useCatalogSearchState(initial = "") {
   const [search, setSearch] = useState(initial);
   return { search, setSearch };
+}
+
+/** Compact outline row used by Place Actors, Add Component, and Add Node. */
+export function CatalogItemButton({
+  children,
+  onClick,
+  "data-testid": testId,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  "data-testid"?: string;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className="h-auto min-h-[var(--chrome-row,28px)] w-full justify-start gap-2 touch-manipulation"
+      data-testid={testId}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
 }

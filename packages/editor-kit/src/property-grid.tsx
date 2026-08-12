@@ -159,9 +159,12 @@ function RowControl({ row }: { row: PropertyRow }) {
     case "vector3": {
       const axes = row.axes ?? ["X", "Y", "Z"];
       return (
-        <div className="flex flex-wrap gap-2">
+        <div
+          className="flex min-w-0 flex-nowrap gap-1"
+          data-testid={`property-vector3-${row.id}`}
+        >
           {axes.map((axis, index) => (
-            <div key={axis} className="min-w-24 flex-1">
+            <div key={axis} className="min-w-0 flex-1">
               <NumericDragField
                 label={axis}
                 value={row.value[index] ?? 0}
@@ -185,7 +188,7 @@ function RowControl({ row }: { row: PropertyRow }) {
       return (
         <Checkbox
           id={`property-${row.id}`}
-          className="size-[var(--touch-target,44px)]"
+          className="size-4"
           checked={row.value}
           disabled={row.disabled}
           onCheckedChange={(checked) => row.onChange(checked === true)}
@@ -196,7 +199,7 @@ function RowControl({ row }: { row: PropertyRow }) {
       return (
         <Input
           id={`property-${row.id}`}
-          className="min-h-[var(--touch-target,44px)]"
+          className="min-h-[var(--chrome-row,28px)]"
           value={row.value}
           disabled={row.disabled}
           onChange={(event) => row.onChange(event.target.value)}
@@ -212,7 +215,7 @@ function RowControl({ row }: { row: PropertyRow }) {
         >
           <SelectTrigger
             id={`property-${row.id}`}
-            className="min-h-[var(--touch-target,44px)] w-full"
+            className="min-h-[var(--chrome-row,28px)] w-full"
             data-testid={`property-${row.id}`}
           >
             <SelectValue />
@@ -231,7 +234,7 @@ function RowControl({ row }: { row: PropertyRow }) {
         <input
           type="color"
           id={`property-${row.id}`}
-          className="min-h-[var(--touch-target,44px)] w-full rounded-md border border-input bg-background"
+          className="min-h-[var(--chrome-row,28px)] w-full rounded-md border border-input bg-background"
           value={toHex(row.value)}
           disabled={row.disabled}
           onChange={(event) => row.onChange(fromHex(event.target.value))}
@@ -242,7 +245,7 @@ function RowControl({ row }: { row: PropertyRow }) {
       return (
         <Button
           variant="outline"
-          className="min-h-[var(--touch-target,44px)] w-full justify-start"
+          className="min-h-[var(--chrome-row,28px)] w-full justify-start"
           disabled={row.disabled}
           onClick={row.onPick}
           data-testid={`property-${row.id}`}
@@ -270,7 +273,7 @@ export function PropertyGrid({
         <div
           key={row.id}
           data-testid={`property-row-${row.id}`}
-          className="grid min-h-[var(--touch-target,44px)] grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] items-center gap-2 border-b border-border/60 px-3 py-1"
+          className="grid min-h-[var(--chrome-row,28px)] grid-cols-[minmax(0,5.5rem)_minmax(0,1fr)] items-center gap-1 border-b border-border/60 px-2 py-0.5"
         >
           <label
             className="truncate text-sm font-medium text-foreground"
@@ -285,7 +288,7 @@ export function PropertyGrid({
             {hasDefault(row) ? (
               <Button
                 variant="ghost"
-                size="touch-icon"
+                size="icon-sm"
                 className="text-xs"
                 disabled={isAtDefault(row)}
                 aria-label={`Reset ${row.label}`}

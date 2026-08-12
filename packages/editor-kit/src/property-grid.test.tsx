@@ -151,6 +151,27 @@ describe("PropertyGrid", () => {
     expect(row.textContent).toContain("Name");
   });
 
+  it("keeps vector axes on one nowrap row", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "vector3",
+            id: "position",
+            label: "Position",
+            value: [1, 2, 3],
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const x = screen.getByTestId("property-position-x");
+    const group = x.closest("[data-testid='property-vector3-position']");
+    expect(group).not.toBeNull();
+    expect(group!.className).toContain("flex-nowrap");
+    expect(group!.className).not.toContain("flex-wrap");
+  });
+
   it("colors vector axis scrub labels", () => {
     render(
       <PropertyGrid

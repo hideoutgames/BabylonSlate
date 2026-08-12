@@ -13,7 +13,7 @@ test.describe("P4 Play overlay and session report", () => {
   }) => {
     await openTestProject(page);
 
-    await page.locator('[data-asset-path="assets/main.scene.babasset"]').click();
+    await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
     await expect(
       page.getByTestId("document-workspace-scene").locator("canvas"),

@@ -116,7 +116,7 @@ test.describe("P5 visual scripting acceptance", () => {
       });
     });
 
-    await page.locator('[data-asset-path="assets/main.graph.babasset"]').click();
+    await page.locator('[data-asset-path="assets/main.graph.babasset"]').dblclick();
     await expect(page.getByTestId("compiler-results")).toBeVisible();
     await expect(page.getByTestId("compiler-result-row").first()).toBeVisible({
       timeout: 15_000,

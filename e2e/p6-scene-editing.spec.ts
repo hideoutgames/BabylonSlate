@@ -9,7 +9,7 @@ async function openTestProject(page: Page) {
 }
 
 async function openMainScene(page: Page) {
-  await page.locator('[data-asset-path="assets/main.scene.babasset"]').click();
+  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
   await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
   await expect(
     page.getByTestId("document-workspace-scene").locator("canvas"),
@@ -90,6 +90,8 @@ test.describe("P6 first-playable scene editing", () => {
     await expect(page.getByTestId("scene-details-panel")).toBeVisible();
 
     await page.getByTestId("outliner-add-actor").click();
+    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    await page.getByTestId("place-actors-item-shape-box").click();
 
     const beforeDoc = await sceneDocumentX(page);
     const beforeMesh = await sceneMeshX(page);
@@ -179,8 +181,8 @@ test.describe("P6 first-playable scene editing", () => {
     ]) {
       const box = await page.getByTestId(testId).boundingBox();
       expect(box, testId).not.toBeNull();
-      expect(box!.height, testId).toBeGreaterThanOrEqual(44);
-      expect(box!.width, testId).toBeGreaterThanOrEqual(44);
+      expect(box!.height, testId).toBeGreaterThanOrEqual(28);
+      expect(box!.width, testId).toBeGreaterThanOrEqual(28);
     }
   });
 });

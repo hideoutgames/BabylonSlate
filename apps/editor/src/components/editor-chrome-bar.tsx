@@ -20,7 +20,6 @@ import {
   LayersIcon,
   LayoutGridIcon,
   PlayIcon,
-  PlusIcon,
   Redo2Icon,
   SaveIcon,
   SaveAllIcon,
@@ -29,16 +28,22 @@ import {
   Undo2Icon,
   XIcon,
   BugIcon,
+  Maximize2Icon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-  labelFromPath,
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   type DocumentKind,
 } from "@babylonslate/core";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
+import { Toggle } from "@babylonslate/ui/components/toggle";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@babylonslate/ui/components/tooltip";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -57,6 +62,7 @@ import type { OpenDocument } from "../services/document-service";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
+import { displayProjectName } from "../lib/display-project-name";
 import "../shell/editor-chrome.css";
 
 function kindIcon(kind: DocumentKind) {
@@ -186,8 +192,8 @@ export function EditorChromeBar({
     redoActiveDocument,
     canUndoActiveDocument,
     canRedoActiveDocument,
-    openDocument,
-    getAvailableDocuments,
+    isLayoutFocused,
+    toggleLayoutFocus,
   } = useDocuments();
 
   const { startPlay, playing, alwaysRender, setAlwaysRender, renderStats } =
@@ -205,7 +211,9 @@ export function EditorChromeBar({
   const closableDocs = openDocuments.filter(
     (doc) => doc.ref.kind !== "content-browser",
   );
-  const available = getAvailableDocuments();
+  const activeKind = openDocuments.find((doc) => doc.id === activeDocumentId)
+    ?.ref.kind;
+  const canFocus = activeKind === "scene" || activeKind === "graph";
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -250,9 +258,9 @@ export function EditorChromeBar({
         <div
           className="editor-chrome-title"
           data-testid="project-name"
-          title={projectName ?? undefined}
+          title={projectName ? displayProjectName(projectName) : undefined}
         >
-          {projectName ?? ""}
+          {projectName ? displayProjectName(projectName) : ""}
         </div>
 
         <div className="editor-chrome-tabs" data-testid="document-tab-bar">
@@ -283,42 +291,6 @@ export function EditorChromeBar({
               ))}
             </SortableContext>
           </DndContext>
-
-          {projectName && available.length > 0 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    size="touch"
-                    variant="ghost"
-                    data-testid="document-tab-add"
-                    className="chrome-action-button shrink-0"
-                  />
-                }
-              >
-                <PlusIcon data-icon="inline-start" />
-                Add
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {available.map((item) => (
-                  <DropdownMenuItem
-                    key={`${item.kind}:${item.path}`}
-                    data-testid={`add-document-${item.kind}-${item.path.replace(/\//g, "-")}`}
-                    onClick={() => {
-                      void openDocument({
-                        kind: item.kind,
-                        path: item.path,
-                        label: labelFromPath(item.path),
-                      });
-                    }}
-                  >
-                    {kindIcon(item.kind)}
-                    <span className="truncate">{labelFromPath(item.path)}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
         </div>
       </header>
 
@@ -374,7 +346,7 @@ export function EditorChromeBar({
         <div className="editor-global-toolbar-center">
           <div className="editor-play-island" data-testid="play-debug-island">
             <Button
-              size="touch"
+              size="sm"
               variant="ghost"
               data-testid="play-preview"
               className="chrome-action-button chrome-play-button relative"
@@ -408,7 +380,7 @@ export function EditorChromeBar({
               <DropdownMenuTrigger
                 render={
                   <Button
-                    size="touch"
+                    size="sm"
                     variant="ghost"
                     data-testid="debug-menu"
                     className="chrome-action-button"
@@ -463,6 +435,25 @@ export function EditorChromeBar({
         </div>
 
         <div className="editor-global-toolbar-end">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  variant="outline"
+                  size="sm"
+                  aria-label="Focus"
+                  pressed={isLayoutFocused}
+                  disabled={!projectName || !canFocus}
+                  onPressedChange={() => toggleLayoutFocus()}
+                  data-testid="focus-layout"
+                  className="chrome-icon-button"
+                >
+                  <Maximize2Icon />
+                </Toggle>
+              }
+            />
+            <TooltipContent>Focus</TooltipContent>
+          </Tooltip>
           <IconActionButton
             label="Search project"
             data-testid="global-search"
@@ -476,7 +467,7 @@ export function EditorChromeBar({
             <DropdownMenuTrigger
               render={
                 <Button
-                  size="touch"
+                  size="sm"
                   variant="outline"
                   data-testid="settings-menu"
                   className="chrome-action-button"

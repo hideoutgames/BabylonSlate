@@ -89,10 +89,13 @@ Title-bar fills for Blueprint-like nodes:
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `--touch-target` | `44px` | Buttons, tabs, pin hit boxes, tree rows |
+| `--touch-target` | `44px` | Graph pin rows and remaining large hit boxes |
+| `--chrome-row` | `28px` | Editor chrome, panel headers, property rows, catalog item rows |
 | `--graph-pin-size` | `16px` | Visual pin diamond/circle |
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
+
+Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tree rows are 32px.
 
 ## Axis colors
 
@@ -102,6 +105,7 @@ Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`,
 
 | Token | Purpose |
 | --- | --- |
+| `--chrome-row` | Compact chrome / panel header height (28px) |
 | `--chrome-tab-active` | Active document tab fill (`var(--card)`) |
 | `--chrome-tab-accent` | Tab indicator (`var(--primary)`) |
 

@@ -11,7 +11,7 @@ export function IconActionButton({
   label,
   children,
   variant = "outline",
-  size = "touch-icon",
+  size = "icon-sm",
   ...props
 }: ComponentProps<typeof Button> & { label: string }) {
   return (

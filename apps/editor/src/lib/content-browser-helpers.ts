@@ -113,6 +113,7 @@ export function compressionBadgeLabel(state: TextureCompressionState): string {
 }
 
 interface FolderTreeLike {
+  name?: string;
   path: string;
   assets: string[];
   children: FolderTreeLike[];
@@ -146,6 +147,41 @@ export function collectFolderGuids(
 
   find(tree);
   return guids;
+}
+
+export function flattenFolderTree(
+  node: FolderTreeLike,
+  collapsed: ReadonlySet<string> = new Set(),
+  depth = 0,
+): Array<{
+  id: string;
+  label: string;
+  depth: number;
+  hasChildren: boolean;
+  expanded: boolean;
+  path: string;
+}> {
+  const hasChildren = node.children.length > 0;
+  const expanded = !collapsed.has(node.path);
+  const label =
+    node.name ??
+    (node.path.includes("/") ? node.path.slice(node.path.lastIndexOf("/") + 1) : node.path);
+  const rows = [
+    {
+      id: node.path,
+      label,
+      depth,
+      hasChildren,
+      expanded,
+      path: node.path,
+    },
+  ];
+  if (expanded) {
+    for (const child of node.children) {
+      rows.push(...flattenFolderTree(child, collapsed, depth + 1));
+    }
+  }
+  return rows;
 }
 
 export function uniqueAssetTypes(assets: IndexedAsset[]): string[] {
