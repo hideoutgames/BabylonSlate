@@ -34,6 +34,8 @@ export {
   NumericDragField,
   type NumericDragFieldProps,
 } from "./numeric-drag-field";
+export { NumberField, type NumberFieldProps } from "./number-field";
+export { parseNumberInput } from "./parse-number-input";
 export {
   PropertyGrid,
   type PropertyGridProps,

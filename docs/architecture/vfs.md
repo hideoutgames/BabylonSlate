@@ -47,6 +47,8 @@ Global Engine Settings stored **outside** any project:
 
 Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap (visible scene + Prefab Preview; freeze when hidden or a modal is open), hardware scaling, thumbnail toggle, debugger defaults.
 
+Number fields (frame cap, hardware scaling, pointer scale, undo length, and Project Settings `pixelsPerUnit`) use `NumberField`: an empty draft while typing does not persist, and blur restores the last valid value. Out-of-range drafts clamp on blur.
+
 `createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. With no bridge the Electron store keeps settings in memory, so desktop never silently loses them to a missing backend.
 
 ## Templates folder

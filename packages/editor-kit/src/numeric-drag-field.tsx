@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type PointerEvent } from "react";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { parseNumberInput } from "./parse-number-input";
 
 export interface NumericDragFieldProps {
   label: string;
@@ -123,10 +124,9 @@ export function NumericDragField({
         value={draft ?? String(value)}
         onChange={(event) => {
           setDraft(event.target.value);
-          const parsed = Number(event.target.value);
-          if (Number.isFinite(parsed)) {
-            onChange(clamp(parsed, min, max));
-          }
+          const parsed = parseNumberInput(event.target.value);
+          if (parsed === undefined) return;
+          onChange(clamp(parsed, min, max));
         }}
         onBlur={() => {
           setDraft(null);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CatalogDialog,
+  NumberField,
   type CatalogCategory,
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
@@ -326,18 +327,17 @@ export function SettingsModal({
             <FieldLegend>2D</FieldLegend>
             <Field>
               <FieldLabel htmlFor="pixels-per-unit">Pixels per unit</FieldLabel>
-              <Input
+              <NumberField
                 id="pixels-per-unit"
-                type="number"
                 min={1}
                 step={1}
                 className="min-h-[var(--touch-target,44px)]"
                 value={twoD.pixelsPerUnit}
-                onChange={(event) =>
+                onChange={(pixelsPerUnit) =>
                   updateProjectSettings({
                     twoD: {
                       ...twoD,
-                      pixelsPerUnit: Number(event.target.value) || 100,
+                      pixelsPerUnit,
                     },
                   })
                 }

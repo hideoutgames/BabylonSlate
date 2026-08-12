@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { NumericDragField } from "./numeric-drag-field";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
@@ -83,6 +83,27 @@ describe("NumericDragField", () => {
     const scrub = screen.getByTestId("field-scrub");
     dispatchPointerEvent(scrub, "pointerdown", { pointerId: 1, clientX: 0 });
     dispatchPointerEvent(scrub, "pointermove", { pointerId: 2, clientX: 50 });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("does not commit zero when the typed draft is emptied", () => {
+    const onChange = vi.fn();
+    render(
+      <NumericDragField
+        label="X"
+        value={60}
+        onChange={onChange}
+        data-testid="field"
+      />,
+    );
+    const input = screen.getByTestId("field") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "" } });
+    expect(input.value).toBe("");
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.blur(input);
+    expect(input.value).toBe("60");
     expect(onChange).not.toHaveBeenCalled();
   });
 });
