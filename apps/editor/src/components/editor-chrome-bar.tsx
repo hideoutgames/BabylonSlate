@@ -21,7 +21,6 @@ import {
   LayoutGridIcon,
   PlayIcon,
   Redo2Icon,
-  SaveIcon,
   SaveAllIcon,
   SearchIcon,
   SettingsIcon,
@@ -186,8 +185,8 @@ export function EditorChromeBar({
     setActiveDocument,
     closeDocument,
     reorderClosableTabs,
-    saveProject,
     saveAll,
+    dirtyDocuments,
     undoActiveDocument,
     redoActiveDocument,
     canUndoActiveDocument,
@@ -299,30 +298,30 @@ export function EditorChromeBar({
         data-testid="editor-global-toolbar"
       >
         <div className="editor-global-toolbar-start">
-          <IconActionButton
-            label="Save All"
-            data-testid="save-all-project"
-            className="chrome-icon-button"
-            disabled={!projectName}
-            onClick={() => {
-              if (onSaveProject) onSaveProject();
-              else void saveAll();
-            }}
-          >
-            <SaveAllIcon />
-          </IconActionButton>
-          <IconActionButton
-            label="Save"
-            data-testid="save-project"
-            className="chrome-icon-button"
-            disabled={!projectName}
-            onClick={() => {
-              if (onSaveProject) onSaveProject();
-              else void saveProject();
-            }}
-          >
-            <SaveIcon />
-          </IconActionButton>
+          <span className="relative inline-flex">
+            <IconActionButton
+              label={
+                dirtyDocuments.length > 0
+                  ? "Save All (unsaved changes)"
+                  : "Save All"
+              }
+              data-testid="save-all-project"
+              className="chrome-icon-button"
+              disabled={!projectName || dirtyDocuments.length === 0}
+              onClick={() => {
+                if (onSaveProject) onSaveProject();
+                else void saveAll();
+              }}
+            >
+              <SaveAllIcon />
+            </IconActionButton>
+            {dirtyDocuments.length > 0 ? (
+              <span
+                data-testid="save-all-dirty"
+                className="pointer-events-none absolute top-0.5 end-0.5 size-1.5 rounded-full bg-destructive"
+              />
+            ) : null}
+          </span>
           <IconActionButton
             label="Undo"
             data-testid="undo-document"

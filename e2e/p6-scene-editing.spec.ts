@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { saveAllIfEnabled } from "./save-all";
 
 async function openTestProject(page: Page) {
   await page.goto("/?test=1");
@@ -111,7 +112,7 @@ test.describe("P6 first-playable scene editing", () => {
     await expect.poll(async () => sceneDocumentX(page)).toBeCloseTo(beforeDoc ?? 0, 5);
     await expect.poll(async () => sceneMeshX(page)).toBeCloseTo(beforeMesh ?? 0, 5);
 
-    await page.getByTestId("save-project").click();
+    await saveAllIfEnabled(page);
 
     await page.getByTestId("viewport-mode-2d").click();
     await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute(
@@ -128,7 +129,7 @@ test.describe("P6 first-playable scene editing", () => {
       "aria-pressed",
       "true",
     );
-    await page.getByTestId("save-project").click();
+    await saveAllIfEnabled(page);
 
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();

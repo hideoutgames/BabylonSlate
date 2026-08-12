@@ -1,6 +1,7 @@
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { saveAllIfEnabled } from "./save-all";
 
 const fixtures = path.join(process.cwd(), "e2e/fixtures");
 
@@ -38,7 +39,7 @@ test.describe("P2 acceptance proofs", () => {
       page.locator('[data-asset-path="assets/hero_HeroMat.babasset"]'),
     ).toBeVisible();
 
-    await page.getByTestId("save-project").click();
+    await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
 
