@@ -1,5 +1,7 @@
 import {
   createInProcessRuntime,
+  SessionDiagnosticAggregator,
+  type RuntimeDiagnostic,
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@babylonslate/runtime";
@@ -8,9 +10,32 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
-import { snapshotFloatCount } from "@babylonslate/bridge";
+import { snapshotFloatCount, type CommandMessage } from "@babylonslate/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
+
+/**
+ * Extract a `RuntimeDiagnostic` from a worker `diagnostic` command so it can
+ * feed the same `SessionDiagnosticAggregator` the in-process driver uses.
+ * The dedicated Worker path never runs `RuntimeDriver.reportError` on the
+ * main thread, so without this the Preview session report would stay empty
+ * for real script errors that occur while Play uses the Worker transport.
+ */
+export function diagnosticFromCommand(
+  command: CommandMessage,
+): RuntimeDiagnostic | null {
+  if (command.type !== "diagnostic") return null;
+  return {
+    code: command.code,
+    message: command.message,
+    severity: command.severity,
+    assetGuid: command.assetGuid,
+    graphId: command.graphId,
+    nodeId: command.nodeId,
+    stack: command.stack,
+    frameId: command.frameId,
+  };
+}
 
 export interface PlaySessionResult {
   diagnostics: SessionReportEntry[];
@@ -71,19 +96,12 @@ export function startPlaySession(options: {
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   let runtimeMode: "worker" | "in-process" = "in-process";
+  // Aggregates diagnostics received over the command channel (Worker mode).
+  // The in-process path already aggregates via `runtime.getDiagnostics()`.
+  const workerDiagnostics = new SessionDiagnosticAggregator();
 
-  const onCommand = (
-    command: {
-      type: string;
-      message?: string;
-      severity?: string;
-      fps?: number;
-      scriptMs?: number;
-      physicsMs?: number;
-      frameId?: number;
-    },
-  ) => {
-    if (command.type === "log" && command.message) {
+  const onCommand = (command: CommandMessage) => {
+    if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");
     }
     if (command.type === "stats") {
@@ -94,8 +112,10 @@ export function startPlaySession(options: {
         frameId: command.frameId ?? 0,
       });
     }
-    if (command.type === "diagnostic" && command.message) {
+    if (command.type === "diagnostic") {
       options.onLog?.(command.message, command.severity ?? "error");
+      const diagnostic = diagnosticFromCommand(command);
+      if (diagnostic) workerDiagnostics.push(diagnostic);
     }
   };
 
@@ -199,21 +219,17 @@ export function startPlaySession(options: {
         err.stack = `Error: Preview fixture throw\n    at run (babylonslate:///${FIXTURE_ASSET}.js:1:1)`;
         runtime.reportError(err);
       } else if (worker) {
-        // Worker path: synthesize a diagnostic command locally for the report.
-        sessionDiagnostics = [
-          {
-            code: "runtime.uncaught",
-            message: "Preview fixture throw",
-            severity: "error",
-            assetGuid: FIXTURE_ASSET,
-            graphId: "event-graph",
-            nodeId: FIXTURE_NODE,
-            frameId: 1,
-            count: 1,
-            firstFrameId: 1,
-            lastFrameId: 1,
-          },
-        ];
+        // Worker path: route through the same aggregator a real worker
+        // `diagnostic` command would use, rather than a report shortcut.
+        workerDiagnostics.push({
+          code: "runtime.uncaught",
+          message: "Preview fixture throw",
+          severity: "error",
+          assetGuid: FIXTURE_ASSET,
+          graphId: "event-graph",
+          nodeId: FIXTURE_NODE,
+          frameId: 1,
+        });
         options.onLog?.("Preview fixture throw", "error");
       }
     });
@@ -241,6 +257,9 @@ export function startPlaySession(options: {
         runtime.stop();
         sessionDiagnostics = runtime.getDiagnostics().entries();
         droppedDiagnostics = runtime.getDiagnostics().droppedCount();
+      } else {
+        sessionDiagnostics = workerDiagnostics.entries();
+        droppedDiagnostics = workerDiagnostics.droppedCount();
       }
       worker?.postControl({ type: "stop" });
       worker?.terminate();
