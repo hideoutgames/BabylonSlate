@@ -137,7 +137,7 @@ export function isClientPointOverGraphNode(
   pointer: { x: number; y: number },
   root: ParentNode = document,
 ): boolean {
-  const nodes = root.querySelectorAll(".react-flow__node");
+  const nodes = Array.from(root.querySelectorAll(".react-flow__node"));
   for (const node of nodes) {
     const rect = node.getBoundingClientRect();
     if (
