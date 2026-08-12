@@ -39,12 +39,16 @@ test.describe("Touch shell UX", () => {
     expect(box!.height).toBeGreaterThanOrEqual(44);
   });
 
-  test("dockview tabs meet minimum touch height", async ({ page }) => {
+  test("dockview tabs meet pointer-aware height", async ({ page }) => {
     const tab = page.locator(".dockview-theme-babylonslate .dv-tab").first();
     await expect(tab).toBeVisible();
     const box = await tab.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    const coarse = await page.evaluate(() =>
+      window.matchMedia("(pointer: coarse)").matches,
+    );
+    // Fine pointers use a compact 36px strip; coarse keeps the 44pt+ touch floor.
+    expect(box!.height).toBeGreaterThanOrEqual(coarse ? 44 : 36);
   });
 
   test("global toolbar buttons meet minimum touch target size", async ({

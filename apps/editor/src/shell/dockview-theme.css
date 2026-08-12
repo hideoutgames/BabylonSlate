@@ -1,7 +1,7 @@
 .dockview-theme-babylonslate {
   --dv-group-view-background-color: var(--background);
   --dv-tabs-and-actions-container-background-color: var(--card);
-  --dv-tabs-and-actions-container-font-size: 13px;
+  --dv-tabs-and-actions-container-font-size: 12px;
   --dv-activegroup-visiblepanel-tab-background-color: var(--chrome-tab-active);
   --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--muted);
@@ -12,15 +12,32 @@
   --dv-drag-over-border-color: var(--chrome-tab-accent);
 }
 
+/* Compact tab strip on fine pointers (mouse / trackpad). */
 .dockview-theme-babylonslate .dv-tab {
-  min-height: 52px;
+  min-height: 36px;
   min-width: 44px;
-  padding-inline: 12px;
+  padding-inline: 10px;
   border-radius: var(--radius-sm);
 }
 
 .dockview-theme-babylonslate .dv-tabs-and-actions-container {
-  min-height: 52px;
+  min-height: 36px;
+}
+
+/* Touch / coarse pointers keep the 52px strip from p0-shell-ux. */
+@media (pointer: coarse) {
+  .dockview-theme-babylonslate {
+    --dv-tabs-and-actions-container-font-size: 13px;
+  }
+
+  .dockview-theme-babylonslate .dv-tab {
+    min-height: 52px;
+    padding-inline: 12px;
+  }
+
+  .dockview-theme-babylonslate .dv-tabs-and-actions-container {
+    min-height: 52px;
+  }
 }
 
 /*

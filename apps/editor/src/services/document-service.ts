@@ -182,6 +182,39 @@ export class DocumentService {
     this.pinContentBrowserFirst();
   }
 
+  /**
+   * Retarget an open Scene/Graph tab after a registry move/rename.
+   * Guids stay stable; only path-based document ids and layout keys change.
+   */
+  repathDocument(
+    kind: "scene" | "graph",
+    oldPath: string,
+    newPath: string,
+  ): void {
+    if (oldPath === newPath) return;
+    const oldId = documentId({ kind, path: oldPath });
+    const doc = this.state.openDocuments.get(oldId);
+    if (!doc) return;
+    const newId = documentId({ kind, path: newPath });
+    this.state.openDocuments.delete(oldId);
+    const next: OpenDocument = {
+      ...doc,
+      id: newId,
+      ref: {
+        ...doc.ref,
+        path: newPath,
+        label: labelFromPath(newPath),
+      },
+    };
+    this.state.openDocuments.set(newId, next);
+    this.state.tabOrder = this.state.tabOrder.map((id) =>
+      id === oldId ? newId : id,
+    );
+    if (this.state.activeDocumentId === oldId) {
+      this.state.activeDocumentId = newId;
+    }
+  }
+
   setActiveDocument(id: string): void {
     if (this.state.openDocuments.has(id)) {
       this.state.activeDocumentId = id;

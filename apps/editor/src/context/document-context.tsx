@@ -64,6 +64,12 @@ interface DocumentContextValue {
   projectName: string | null;
   assetRegistry: AssetRegistry | null;
   refreshAssetRegistry: () => Promise<void>;
+  /** Retarget open tabs after a Scene/Graph file move or rename. */
+  repathDocument: (
+    kind: "scene" | "graph",
+    oldPath: string,
+    newPath: string,
+  ) => void;
   retryFailedTextureEncoding: () => Promise<number>;
   openDocuments: OpenDocument[];
   tabOrder: string[];
@@ -262,6 +268,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     bump();
   }, [bump, projectDocument, projectService]);
+
+  const repathDocument = useCallback(
+    (kind: "scene" | "graph", oldPath: string, newPath: string) => {
+      documentService.repathDocument(kind, oldPath, newPath);
+      bump();
+    },
+    [bump, documentService],
+  );
 
   const retryFailedTextureEncoding = useCallback(async () => {
     const count = await projectService.retryAllFailedTextureEncoding();
@@ -1053,6 +1067,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       getAvailableDocuments,
       assetRegistry: projectService.registry,
       refreshAssetRegistry,
+      repathDocument,
       retryFailedTextureEncoding,
       loadAssetThumbnail,
       thumbnailsEnabled,
@@ -1067,6 +1082,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService,
       projectService,
       refreshAssetRegistry,
+      repathDocument,
       retryFailedTextureEncoding,
       loadAssetThumbnail,
       thumbnailsEnabled,

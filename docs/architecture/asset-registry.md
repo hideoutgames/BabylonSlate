@@ -29,7 +29,9 @@ interface ContentRoot {
 | API | Role |
 | --- | --- |
 | `mountRoot` / `unmountRoot` | Add or remove a content root and (re)scan headers |
-| `getByGuid` / `list` / `folderTree` | Index queries |
+| `getByGuid` / `list` / `folderTree` | Index queries (folder tree includes marker-backed empty folders) |
+| `createFolder` / `moveFolder` | Empty folders (`.babylonslate-folder`) and folder moves |
+| `moveAsset` / `renameAsset` / `duplicateAsset` / `copyAsset` | Path ops; guid stable on move/rename |
 | `showReferences(guid)` | Inbound + outbound deps from header `dependencies[]` |
 | `importFile` | Document-picker bytes → importers → write `.babasset` + enqueue work |
 | `createAsset` / `deleteAsset` / `deleteFolder` | File ops (confirm delete in UI via Show References) |
@@ -82,10 +84,12 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 
 `apps/editor/src/components/content-browser-workspace.tsx` is the registry-backed project asset UI:
 
-- Folder tree from `folderTree("project")`; asset grid filtered by folder, type chips, and search.
+- Folder tree from `folderTree("project")` (includes empty folders via `.babylonslate-folder` markers); shadcn `Card` asset grid filtered by folder, type chips, and search.
 - Import through `pickImportFiles()` in `@babylonslate/vfs` (web/electron: DOM file input; iOS/Android: optional `babylonslate.documentPicker` bridge, else the same DOM picker). UI never calls Capacitor plugins directly. A hidden `content-browser-import-input` remains for Playwright `setInputFiles`.
 - **New Asset** uses type + engine-base parent-class pickers → `registry.createAsset`.
-- Long-press multi-select + `ContextMenuOverlay` delete / Retry encoding; folder right-click opens the same delete confirm for the folder tree (assets root is protected).
+- **New Folder** → `registry.createFolder` (mkdir + `.babylonslate-folder` marker so empty folders survive Git).
+- Long-press multi-select + `ContextMenuOverlay`: Duplicate, Rename, Move, Copy, Show References, Retry encoding, Delete; folder right-click opens the delete confirm for the folder tree (assets root is protected).
+- File ops: `moveAsset` / `renameAsset` / `duplicateAsset` / `copyAsset` / `moveFolder` keep guids stable on move/rename; duplicate/copy assign a new guid. Open Scene/Graph tabs are retargeted via `DocumentService.repathDocument`; `refreshAssetRegistry` rewrites `project.json` scene/graph path lists.
 - `AlertDialog` lists removed asset names and inbound refs from `showReferences` (names are `SelectableText`).
 - Drag source MIME `application/x-babylonslate-asset` with `{ guid, type, path }`.
 - Texture tiles show `payload.compressionState` badges (`pending`, `encoding`, `fallback_uncompressed`, `encode_failed`).
@@ -93,7 +97,7 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 - Grid tiles expose stable `data-testid="content-item-{path}"` plus `data-asset-path` / `data-asset-guid` for Playwright.
 - Thumbnails: `generateThumbnailBytes` at import → `writeThumbnail` in derived data; CB grid lazy-decodes visible Texture cells via `ThumbnailDecodeLru` / `loadAssetThumbnail`.
 
-`DocumentProvider` exposes `assetRegistry` and `refreshAssetRegistry()` (`projectService.remountRegistry()`).
+`DocumentProvider` exposes `assetRegistry`, `refreshAssetRegistry()` (`projectService.remountRegistry()`), and `repathDocument`.
 
 ## Tests
 

@@ -45,7 +45,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 ## Dockview
 
 - Dockview 8's `dndStrategy` defaults to `'auto'`: HTML5 drag for mouse, pointer events for touch and pen. Touch panel drag therefore needs no extra configuration.
-- Tab strips are 52px on coarse pointers; grips are 44px+.
+- Tab strips are **52px on coarse pointers** and a compact **36px strip on fine pointers**; grips stay 44px+.
 - Sashes stay visually thin (4px) but carry a widened hit area via a transparent pseudo-element, because Dockview sizes the sash element itself from an internal constant that CSS cannot override.
 - Panel **content** is a gesture-safe zone — viewport and graph handle their own gestures.
 - No popout / floating groups on iOS/Android.

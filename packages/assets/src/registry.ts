@@ -9,6 +9,7 @@ import {
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import type { ContentRoot } from "./content-root";
 import type { EncodeJobResult, EncodeQueue } from "./encode-queue";
+import { newAssetGuid } from "./guid";
 import {
   importByExtension,
   remapImportResultGuids,
@@ -38,6 +39,9 @@ export type ThumbnailWriter = (
   bytes: Uint8Array,
 ) => Promise<void>;
 
+/** Marker file so empty folders survive Git and remount scans. */
+export const FOLDER_MARKER_NAME = ".babylonslate-folder";
+
 export interface FolderNode {
   name: string;
   path: string;
@@ -64,6 +68,8 @@ export class AssetRegistry {
   private readonly roots = new Map<string, ContentRoot>();
   private readonly byGuid = new Map<string, IndexedAsset>();
   private readonly byPath = new Map<string, IndexedAsset>();
+  /** Empty (or marker-backed) folders discovered during scan, keyed by storage path. */
+  private readonly knownFolders = new Set<string>();
   /** guid -> guids of assets whose header `dependencies[]` names it. */
   private readonly inbound = new Map<string, Set<string>>();
   private encodeQueue: EncodeQueue | null = null;
@@ -151,7 +157,9 @@ export class AssetRegistry {
     const ensureNode = (path: string): FolderNode => {
       const existing = nodes.get(path);
       if (existing) return existing;
-      const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : root.pathPrefix;
+      const parentPath = path.includes("/")
+        ? path.slice(0, path.lastIndexOf("/"))
+        : root.pathPrefix;
       const parent = parentPath === path ? rootNode : ensureNode(parentPath);
       const node: FolderNode = {
         name: path.slice(path.lastIndexOf("/") + 1),
@@ -163,6 +171,15 @@ export class AssetRegistry {
       nodes.set(path, node);
       return node;
     };
+
+    for (const folderPath of this.knownFolders) {
+      if (
+        folderPath === root.pathPrefix ||
+        folderPath.startsWith(`${root.pathPrefix}/`)
+      ) {
+        ensureNode(folderPath);
+      }
+    }
 
     for (const asset of this.list({ rootId })) {
       const dir = asset.path.includes("/")
@@ -232,7 +249,238 @@ export class AssetRegistry {
         this.removeFromIndex(asset);
       }
     }
+    for (const known of [...this.knownFolders]) {
+      if (isWithinFolder(known, folderPath)) {
+        this.knownFolders.delete(known);
+      }
+    }
     await this.storage.remove(folderPath);
+  }
+
+  async createFolder(rootId: string, relativeFolder: string): Promise<void> {
+    const root = this.getRootOrThrow(rootId);
+    const folderPath = joinRootPath(root, relativeFolder);
+    if (!relativeFolder.replace(/^\/+|\/+$/g, "")) {
+      throw new Error("Cannot create the assets root folder");
+    }
+    await this.storage.mkdir(folderPath, true);
+    await this.storage.writeText(
+      `${folderPath}/${FOLDER_MARKER_NAME}`,
+      "# BabylonSlate folder marker\n",
+    );
+    this.knownFolders.add(folderPath);
+    // Ensure parent folders are visible even without their own markers.
+    let parent = folderPath.includes("/")
+      ? folderPath.slice(0, folderPath.lastIndexOf("/"))
+      : "";
+    while (parent && parent.startsWith(root.pathPrefix)) {
+      this.knownFolders.add(parent);
+      if (parent === root.pathPrefix) break;
+      parent = parent.includes("/")
+        ? parent.slice(0, parent.lastIndexOf("/"))
+        : "";
+    }
+  }
+
+  async moveAsset(
+    guid: string,
+    rootId: string,
+    newRelativePath: string,
+  ): Promise<IndexedAsset> {
+    const asset = this.byGuid.get(guid);
+    if (!asset) throw new Error(`Unknown asset ${guid}`);
+    if (asset.rootId !== rootId) {
+      throw new Error("Cross-root moves are not supported yet");
+    }
+    const root = this.getRootOrThrow(rootId);
+    const newPath = joinRootPath(root, newRelativePath);
+    if (newPath === asset.path) return asset;
+    if (this.byPath.has(newPath)) {
+      throw new Error(`Target path already exists: ${newPath}`);
+    }
+    const bytes = await this.storage.readBinary(asset.path);
+    const dir = newPath.includes("/")
+      ? newPath.slice(0, newPath.lastIndexOf("/"))
+      : "";
+    if (dir) await this.storage.mkdir(dir, true);
+    await this.storage.writeBinary(newPath, bytes);
+    await this.storage.remove(asset.path);
+    // Keep inbound refs: guid identity is unchanged, only the storage path moves.
+    if (this.byPath.get(asset.path) === asset) {
+      this.byPath.delete(asset.path);
+    }
+    const moved: IndexedAsset = { ...asset, path: newPath };
+    this.byGuid.set(guid, moved);
+    this.byPath.set(newPath, moved);
+    return moved;
+  }
+
+  async renameAsset(guid: string, newName: string): Promise<IndexedAsset> {
+    const asset = this.byGuid.get(guid);
+    if (!asset) throw new Error(`Unknown asset ${guid}`);
+    const safe = sanitizeFileName(newName);
+    if (!safe) throw new Error("Invalid asset name");
+    const dir = asset.path.includes("/")
+      ? asset.path.slice(0, asset.path.lastIndexOf("/"))
+      : "";
+    const newPath = dir ? `${dir}/${safe}.babasset` : `${safe}.babasset`;
+    if (newPath !== asset.path && this.byPath.has(newPath)) {
+      throw new Error(`Target path already exists: ${newPath}`);
+    }
+    const fileBytes = await this.storage.readBinary(asset.path);
+    const decoded = await decodeBabasset(fileBytes, (sha256) =>
+      this.blobs.readBlob(sha256),
+    );
+    const chunksById = new Map<string, ChunkInput>();
+    for (const entry of decoded.header.chunks) {
+      const data = decoded.chunks.get(entry.id);
+      if (data) {
+        chunksById.set(entry.id, {
+          id: entry.id,
+          kind: entry.kind,
+          mime: entry.mime,
+          data,
+        });
+      }
+    }
+    const { chunks, ...headerRest } = decoded.header;
+    void chunks;
+    const encoded = await encodeBabasset({
+      header: { ...headerRest, name: safe },
+      chunks: [...chunksById.values()],
+      writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
+    });
+    if (newPath !== asset.path) {
+      const parent = newPath.includes("/")
+        ? newPath.slice(0, newPath.lastIndexOf("/"))
+        : "";
+      if (parent) await this.storage.mkdir(parent, true);
+      await this.storage.writeBinary(newPath, encoded);
+      await this.storage.remove(asset.path);
+      this.removeFromIndex(asset);
+      return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded));
+    }
+    await this.storage.writeBinary(asset.path, encoded);
+    this.removeFromIndex(asset);
+    return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded));
+  }
+
+  async duplicateAsset(
+    guid: string,
+    rootId: string,
+    targetFolderRelative = "",
+  ): Promise<IndexedAsset> {
+    const asset = this.byGuid.get(guid);
+    if (!asset) throw new Error(`Unknown asset ${guid}`);
+    const root = this.getRootOrThrow(rootId);
+    const fileBytes = await this.storage.readBinary(asset.path);
+    const decoded = await decodeBabasset(fileBytes, (sha256) =>
+      this.blobs.readBlob(sha256),
+    );
+    const chunksById = new Map<string, ChunkInput>();
+    for (const entry of decoded.header.chunks) {
+      const data = decoded.chunks.get(entry.id);
+      if (data) {
+        chunksById.set(entry.id, {
+          id: entry.id,
+          kind: entry.kind,
+          mime: entry.mime,
+          data,
+        });
+      }
+    }
+    const newGuid = newAssetGuid();
+    const baseName = sanitizeFileName(decoded.header.name || "asset");
+    let relativePath = joinRelative(
+      targetFolderRelative,
+      `${baseName}.babasset`,
+    );
+    let candidate = joinRootPath(root, relativePath);
+    let suffix = 1;
+    while (this.byPath.has(candidate) || (await this.storage.exists(candidate))) {
+      relativePath = joinRelative(
+        targetFolderRelative,
+        `${baseName}_${suffix}.babasset`,
+      );
+      candidate = joinRootPath(root, relativePath);
+      suffix += 1;
+    }
+    const { chunks, ...headerRest } = decoded.header;
+    void chunks;
+    const encoded = await encodeBabasset({
+      header: { ...headerRest, guid: newGuid },
+      chunks: [...chunksById.values()],
+      writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
+    });
+    const dir = candidate.includes("/")
+      ? candidate.slice(0, candidate.lastIndexOf("/"))
+      : "";
+    if (dir) await this.storage.mkdir(dir, true);
+    await this.storage.writeBinary(candidate, encoded);
+    return this.indexHeader(rootId, candidate, readBabassetHeader(encoded));
+  }
+
+  /** Copy into a folder (same as duplicate with an explicit destination folder). */
+  async copyAsset(
+    guid: string,
+    rootId: string,
+    targetFolderRelative: string,
+  ): Promise<IndexedAsset> {
+    return this.duplicateAsset(guid, rootId, targetFolderRelative);
+  }
+
+  async moveFolder(
+    rootId: string,
+    relativeFolder: string,
+    newParentRelative: string,
+  ): Promise<void> {
+    const root = this.getRootOrThrow(rootId);
+    const fromPath = joinRootPath(root, relativeFolder);
+    const folderName = relativeFolder.includes("/")
+      ? relativeFolder.slice(relativeFolder.lastIndexOf("/") + 1)
+      : relativeFolder;
+    const toRelative = joinRelative(newParentRelative, folderName);
+    const toPath = joinRootPath(root, toRelative);
+    if (fromPath === toPath) return;
+    if (isWithinFolder(toPath, fromPath)) {
+      throw new Error("Cannot move a folder into itself");
+    }
+
+    const assets = [...this.byGuid.values()].filter(
+      (asset) =>
+        asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
+    );
+    for (const asset of assets) {
+      const suffix = asset.path.slice(fromPath.length + 1);
+      const newAssetPath = `${toPath}/${suffix}`;
+      const relative = newAssetPath.startsWith(`${root.pathPrefix}/`)
+        ? newAssetPath.slice(root.pathPrefix.length + 1)
+        : newAssetPath;
+      await this.moveAsset(asset.header.guid, rootId, relative);
+    }
+
+    // Relocate folder markers / empty folders.
+    const nestedFolders = [...this.knownFolders].filter((folder) =>
+      isWithinFolder(folder, fromPath),
+    );
+    for (const folder of nestedFolders) {
+      this.knownFolders.delete(folder);
+      const suffix =
+        folder === fromPath ? "" : folder.slice(fromPath.length + 1);
+      const next = suffix ? `${toPath}/${suffix}` : toPath;
+      this.knownFolders.add(next);
+      const markerFrom = `${folder}/${FOLDER_MARKER_NAME}`;
+      if (await this.storage.exists(markerFrom)) {
+        await this.storage.mkdir(next, true);
+        const text = await this.storage.readText(markerFrom);
+        await this.storage.writeText(`${next}/${FOLDER_MARKER_NAME}`, text);
+      }
+    }
+
+    if (await this.storage.exists(fromPath)) {
+      await this.storage.remove(fromPath);
+    }
+    this.knownFolders.add(toPath);
   }
 
   async importFile(
@@ -478,7 +726,12 @@ export class AssetRegistry {
       const path = `${dir}/${entry.name}`;
       if (entry.isDir) {
         if (entry.name === BLOBS_DIR_NAME) continue;
+        this.knownFolders.add(path);
         await this.walk(root, path);
+        continue;
+      }
+      if (entry.name === FOLDER_MARKER_NAME) {
+        this.knownFolders.add(dir);
         continue;
       }
       if (!path.endsWith(".babasset")) continue;

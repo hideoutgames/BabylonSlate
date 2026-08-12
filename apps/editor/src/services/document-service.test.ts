@@ -150,6 +150,27 @@ describe("DocumentService", () => {
     expect(state.tabOrder).toEqual([CONTENT_BROWSER_ID]);
     expect(state.activeDocumentId).toBe(CONTENT_BROWSER_ID);
   });
+
+  it("retargets open tabs when a document path changes", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const oldPath = "assets/main.scene.babasset";
+    const newPath = "assets/levels/main.scene.babasset";
+    await service.openDocument(project, {
+      kind: "scene",
+      path: oldPath,
+      label: "main",
+    });
+    const oldId = documentId({ kind: "scene", path: oldPath });
+    expect(service.getState().openDocuments.has(oldId)).toBe(true);
+
+    service.repathDocument("scene", oldPath, newPath);
+    const newId = documentId({ kind: "scene", path: newPath });
+    expect(service.getState().openDocuments.has(oldId)).toBe(false);
+    expect(service.getState().openDocuments.get(newId)?.ref.path).toBe(newPath);
+    expect(service.getState().tabOrder).toContain(newId);
+  });
 });
 
 describe("layout migration", () => {

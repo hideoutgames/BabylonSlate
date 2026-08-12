@@ -10,6 +10,7 @@ import {
 import {
   FileIcon,
   FolderIcon,
+  FolderPlusIcon,
   PlusIcon,
   Trash2Icon,
   UploadIcon,
@@ -27,6 +28,13 @@ import { documentId, labelFromPath } from "@babylonslate/core";
 import { pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@babylonslate/ui/components/card";
 import {
   Field,
   FieldGroup,
@@ -203,64 +211,70 @@ function AssetTile({
   };
 
   return (
-    <button
-      type="button"
-      draggable
-      data-testid={`content-item-${asset.path}`}
-      data-asset-path={asset.path}
-      data-asset-guid={asset.header.guid}
-      data-selected={selected ? "true" : "false"}
-      className={`relative flex min-h-11 flex-col gap-1 rounded-md border p-3 text-left hover:bg-accent ${
-        selected ? "border-primary bg-accent/60" : "border-border"
+    <Card
+      className={`relative gap-0 overflow-hidden py-0 ${
+        selected ? "border-primary ring-1 ring-primary" : ""
       }`}
-      onClick={onOpen}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        onToggleSelect();
-        onLongPressMenu(event.clientX, event.clientY);
-      }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onDragStart={onDragStart}
     >
-      <div className="flex items-start gap-2">
-        {thumbnailUrl ? (
-          <img
-            src={thumbnailUrl}
-            alt=""
-            data-testid={`content-item-thumb-${asset.header.guid}`}
-            className="mt-0.5 size-10 shrink-0 rounded-sm object-cover"
-          />
-        ) : (
-          <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        )}
-        <div className="min-w-0 flex-1">
-          <SelectableText className="truncate text-sm font-medium">
-            {asset.header.name}
-          </SelectableText>
-          <div className="truncate text-xs text-muted-foreground">
-            {asset.header.type}
+      <button
+        type="button"
+        draggable
+        data-testid={`content-item-${asset.path}`}
+        data-asset-path={asset.path}
+        data-asset-guid={asset.header.guid}
+        data-selected={selected ? "true" : "false"}
+        className="flex min-h-11 w-full flex-col gap-1 p-3 text-left hover:bg-accent/50"
+        onClick={onOpen}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onToggleSelect();
+          onLongPressMenu(event.clientX, event.clientY);
+        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDragStart={onDragStart}
+      >
+        <CardHeader className="flex flex-row items-start gap-2 space-y-0 p-0">
+          {thumbnailUrl ? (
+            <img
+              src={thumbnailUrl}
+              alt=""
+              data-testid={`content-item-thumb-${asset.header.guid}`}
+              className="mt-0.5 size-10 shrink-0 rounded-sm object-cover"
+            />
+          ) : (
+            <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          )}
+          <div className="min-w-0 flex-1">
+            <CardTitle className="truncate text-sm font-medium">
+              <SelectableText>{asset.header.name}</SelectableText>
+            </CardTitle>
+            <CardDescription className="truncate text-xs">
+              {asset.header.type}
+            </CardDescription>
           </div>
-        </div>
-      </div>
-      {compression ? (
-        <Badge variant="secondary" className="w-fit text-[10px]">
-          {compressionBadgeLabel(compression)}
-        </Badge>
-      ) : null}
-      {hasCompileError ? (
-        <Badge
-          variant="destructive"
-          className="w-fit text-[10px]"
-          data-testid={`compile-error-overlay-${asset.header.guid}`}
-        >
-          Compile error
-        </Badge>
-      ) : null}
-      <span data-lock-slot className="hidden" aria-hidden />
-    </button>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-1 p-0 pt-1">
+          {compression ? (
+            <Badge variant="secondary" className="w-fit text-[10px]">
+              {compressionBadgeLabel(compression)}
+            </Badge>
+          ) : null}
+          {hasCompileError ? (
+            <Badge
+              variant="destructive"
+              className="w-fit text-[10px]"
+              data-testid={`compile-error-overlay-${asset.header.guid}`}
+            >
+              Compile error
+            </Badge>
+          ) : null}
+          <span data-lock-slot className="hidden" aria-hidden />
+        </CardContent>
+      </button>
+    </Card>
   );
 }
 
@@ -269,6 +283,7 @@ export function ContentBrowserWorkspace() {
     projectDocument,
     assetRegistry,
     refreshAssetRegistry,
+    repathDocument,
     openDocument,
     setActiveDocument,
     tabOrder,
@@ -296,6 +311,17 @@ export function ContentBrowserWorkspace() {
   const [newAssetName, setNewAssetName] = useState("NewAsset");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [busy, setBusy] = useState(false);
+  const [nameDialog, setNameDialog] = useState<
+    | { kind: "rename"; guid: string; value: string }
+    | { kind: "move"; guid: string; value: string }
+    | { kind: "folder"; value: string }
+    | null
+  >(null);
+  const [refsSummary, setRefsSummary] = useState<{
+    name: string;
+    inbound: string;
+    outbound: string;
+  } | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>(
     {},
   );
@@ -426,8 +452,101 @@ export function ContentBrowserWorkspace() {
     [folderTree],
   );
 
+  const repairDocumentPath = useCallback(
+    (oldPath: string, newPath: string, type: string) => {
+      if (oldPath === newPath) return;
+      if (type === "Scene") repathDocument("scene", oldPath, newPath);
+      if (type === "Graph") repathDocument("graph", oldPath, newPath);
+    },
+    [repathDocument],
+  );
+
   const contextItems = useMemo(
     () => [
+      {
+        id: "duplicate",
+        label: "Duplicate",
+        onSelect: () => {
+          void (async () => {
+            if (!assetRegistry) return;
+            const folder = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
+            for (const guid of menuTargetGuidsRef.current) {
+              await assetRegistry.duplicateAsset(guid, PROJECT_ROOT_ID, folder);
+            }
+            await refreshAssetRegistry();
+          })();
+        },
+      },
+      {
+        id: "rename",
+        label: "Rename",
+        onSelect: () => {
+          const guid = menuTargetGuidsRef.current[0];
+          if (!guid || !assetRegistry) return;
+          const asset = assetRegistry.getByGuid(guid);
+          if (!asset) return;
+          setNameDialog({
+            kind: "rename",
+            guid,
+            value: asset.header.name,
+          });
+        },
+      },
+      {
+        id: "move",
+        label: "Move…",
+        onSelect: () => {
+          const guid = menuTargetGuidsRef.current[0];
+          if (!guid || !assetRegistry) return;
+          const asset = assetRegistry.getByGuid(guid);
+          if (!asset) return;
+          const folder = asset.path.includes("/")
+            ? asset.path.slice(
+                ASSETS_ROOT.length + 1,
+                asset.path.lastIndexOf("/"),
+              )
+            : "";
+          setNameDialog({
+            kind: "move",
+            guid,
+            value: folder,
+          });
+        },
+      },
+      {
+        id: "copy",
+        label: "Copy to folder…",
+        onSelect: () => {
+          void (async () => {
+            if (!assetRegistry) return;
+            const folder = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
+            for (const guid of menuTargetGuidsRef.current) {
+              await assetRegistry.copyAsset(guid, PROJECT_ROOT_ID, folder);
+            }
+            await refreshAssetRegistry();
+          })();
+        },
+      },
+      {
+        id: "show-references",
+        label: "Show References",
+        onSelect: () => {
+          const guid = menuTargetGuidsRef.current[0];
+          if (!guid || !assetRegistry) return;
+          const refs = assetRegistry.showReferences(guid);
+          const inbound = refs.inbound
+            .map((id) => assetRegistry.getByGuid(id)?.header.name ?? id)
+            .join(", ");
+          const outbound = refs.outbound
+            .map((id) => assetRegistry.getByGuid(id)?.header.name ?? id)
+            .join(", ");
+          setRefsSummary({
+            name: assetRegistry.getByGuid(guid)?.header.name ?? guid,
+            inbound: inbound || "(none)",
+            outbound: outbound || "(none)",
+          });
+        },
+      },
       {
         id: "retry-encoding",
         label: "Retry encoding",
@@ -447,7 +566,12 @@ export function ContentBrowserWorkspace() {
         onSelect: () => requestDelete(menuTargetGuidsRef.current),
       },
     ],
-    [assetRegistry, refreshAssetRegistry, requestDelete],
+    [
+      assetRegistry,
+      refreshAssetRegistry,
+      requestDelete,
+      selectedFolderPath,
+    ],
   );
 
   const { menu, closeMenu, openMenuAt, bind } = useContextMenu({
@@ -540,6 +664,54 @@ export function ContentBrowserWorkspace() {
     },
     [assetRegistry, refreshAssetRegistry, selectedFolderPath],
   );
+
+  const confirmNameDialog = useCallback(async () => {
+    if (!assetRegistry || !nameDialog) return;
+    setBusy(true);
+    try {
+      if (nameDialog.kind === "folder") {
+        const parent = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
+        const relative = parent
+          ? `${parent}/${nameDialog.value.trim()}`
+          : nameDialog.value.trim();
+        if (!relative) return;
+        await assetRegistry.createFolder(PROJECT_ROOT_ID, relative);
+        await refreshAssetRegistry();
+        setSelectedFolderPath(`${ASSETS_ROOT}/${relative}`);
+      } else if (nameDialog.kind === "rename") {
+        const before = assetRegistry.getByGuid(nameDialog.guid);
+        if (!before) return;
+        const renamed = await assetRegistry.renameAsset(
+          nameDialog.guid,
+          nameDialog.value.trim(),
+        );
+        repairDocumentPath(before.path, renamed.path, renamed.header.type);
+        await refreshAssetRegistry();
+      } else if (nameDialog.kind === "move") {
+        const before = assetRegistry.getByGuid(nameDialog.guid);
+        if (!before) return;
+        const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
+        const folder = nameDialog.value.trim().replace(/^\/+|\/+$/g, "");
+        const relative = folder ? `${folder}/${fileName}` : fileName;
+        const moved = await assetRegistry.moveAsset(
+          nameDialog.guid,
+          PROJECT_ROOT_ID,
+          relative,
+        );
+        repairDocumentPath(before.path, moved.path, moved.header.type);
+        await refreshAssetRegistry();
+      }
+      setNameDialog(null);
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    assetRegistry,
+    nameDialog,
+    refreshAssetRegistry,
+    repairDocumentPath,
+    selectedFolderPath,
+  ]);
 
   const handleImport = useCallback(async () => {
     const files = await pickImportFiles({ multiple: true });
@@ -639,6 +811,19 @@ export function ContentBrowserWorkspace() {
           >
             <UploadIcon className="size-4" />
             Import
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-11"
+            data-testid="content-browser-new-folder"
+            disabled={busy}
+            onClick={() =>
+              setNameDialog({ kind: "folder", value: "NewFolder" })
+            }
+          >
+            <FolderPlusIcon className="size-4" />
+            New Folder
           </Button>
           <Button
             type="button"
@@ -896,6 +1081,86 @@ export function ContentBrowserWorkspace() {
               }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={nameDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setNameDialog(null);
+        }}
+      >
+        <AlertDialogContent data-testid="content-browser-name-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {nameDialog?.kind === "folder"
+                ? "New Folder"
+                : nameDialog?.kind === "rename"
+                  ? "Rename Asset"
+                  : "Move Asset"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {nameDialog?.kind === "move"
+                ? "Destination folder relative to assets/ (leave empty for the assets root)."
+                : nameDialog?.kind === "folder"
+                  ? "Create a folder under the current selection."
+                  : "Rename the asset file. References by guid stay intact."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            className="min-h-11"
+            data-testid="content-browser-name-input"
+            value={nameDialog?.value ?? ""}
+            onChange={(event) =>
+              setNameDialog((current) =>
+                current ? { ...current, value: event.target.value } : current,
+              )
+            }
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              data-testid="content-browser-name-confirm"
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmNameDialog();
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={refsSummary !== null}
+        onOpenChange={(open) => {
+          if (!open) setRefsSummary(null);
+        }}
+      >
+        <AlertDialogContent data-testid="content-browser-refs-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>References</AlertDialogTitle>
+            <AlertDialogDescription>
+              Dependencies for {refsSummary?.name}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-2 text-sm">
+            <p>
+              <span className="font-medium">Inbound:</span>{" "}
+              <SelectableText>{refsSummary?.inbound}</SelectableText>
+            </p>
+            <p>
+              <span className="font-medium">Outbound:</span>{" "}
+              <SelectableText>{refsSummary?.outbound}</SelectableText>
+            </p>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setRefsSummary(null)}>
+              Close
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

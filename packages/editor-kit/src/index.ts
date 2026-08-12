@@ -1,3 +1,10 @@
+export {
+  CatalogDialog,
+  useCatalogFilter,
+  useCatalogSearchState,
+  type CatalogCategory,
+  type CatalogDialogProps,
+} from "./catalog-dialog";
 export { PanelFrame } from "./panel-frame";
 export { ToolbarStrip } from "./toolbar-strip";
 export { SelectableText } from "./selectable-text";

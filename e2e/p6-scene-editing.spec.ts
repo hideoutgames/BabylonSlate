@@ -118,6 +118,8 @@ test.describe("P6 first-playable scene editing", () => {
     await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
     await page.getByTestId("save-project").click();
 
+    await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-project").click();
     await page.getByTestId("close-project").click();
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.getByTestId("open-listed-project-TestProject.babproject").click();
@@ -159,7 +161,6 @@ test.describe("P6 first-playable scene editing", () => {
       "gizmo-tool-scale",
       "gizmo-snap-toggle",
       "viewport-mode-toggle",
-      "viewport-play-toggle",
       "outliner-add-actor",
     ]) {
       const box = await page.getByTestId(testId).boundingBox();

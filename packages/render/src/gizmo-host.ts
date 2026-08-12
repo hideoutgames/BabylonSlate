@@ -42,7 +42,7 @@ export interface GizmoHost {
 }
 
 /** Touch handles need to be well past the 44px floor at typical zoom. */
-export const DEFAULT_GIZMO_HANDLE_SCALE = 1.6;
+export const DEFAULT_GIZMO_HANDLE_SCALE = 2.4;
 
 export interface GizmoAxisEnabledFlags {
   position: { x: boolean; y: boolean; z: boolean };
