@@ -1,4 +1,4 @@
-import { act, fireEvent, render, cleanup } from "@testing-library/react";
+import { act, fireEvent, render, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
@@ -396,6 +396,58 @@ describe("GraphEditor", () => {
     expect(queryByRole("button", { name: "Add node" })).toBeNull();
     expect(getByTestId("graph-toolbar")).toBeTruthy();
     expect(getByTestId("graph-format")).toHaveProperty("disabled", true);
+  });
+
+  it("reports selected node ids when a node is clicked", async () => {
+    const onSelectionChange = vi.fn();
+    const onChange = vi.fn();
+    const { container } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        onSelectionChange={onSelectionChange}
+        onChange={onChange}
+      />,
+    );
+
+    const node = container.querySelector('.react-flow__node[data-id="log-a"]');
+    expect(node).not.toBeNull();
+    fireEvent.click(node!);
+
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenCalledWith(["log-a"]);
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("reports an empty selection when the pane is clicked", async () => {
+    const onSelectionChange = vi.fn();
+    const { container, rerender } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        focusedNodeId="log-a"
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenCalledWith(["log-a"]);
+    });
+    onSelectionChange.mockClear();
+
+    rerender(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    fireEvent.click(pane!);
+
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenCalledWith([]);
+    });
   });
 
   it("recolors a boxed wildcard pin when a concrete type is wired in", () => {

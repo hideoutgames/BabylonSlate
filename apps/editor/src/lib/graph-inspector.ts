@@ -1,0 +1,173 @@
+import type { PropertyRow } from "@babylonslate/editor-kit";
+import type { GraphPin, LiteralPinDefault } from "@babylonslate/scripting";
+import {
+  colorRgbToPinDefault,
+  defaultJsValue,
+  listUnconnectedLiteralPinDefaults,
+  pinDefaultAsBoolean,
+  pinDefaultAsNumber,
+  pinDefaultAsString,
+  pinDefaultAsVec3Tuple,
+  pinDefaultColorRgb,
+  pinDefaultPropertyKey,
+  vec3TupleToObject,
+} from "@babylonslate/scripting";
+
+export function connectedInputPinIds(
+  edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
+  nodeId: string,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const edge of edges) {
+    if (edge.target === nodeId && edge.targetHandle) {
+      ids.add(edge.targetHandle);
+    }
+  }
+  return ids;
+}
+
+export function pinsFromNodeData(data: Record<string, unknown>): GraphPin[] {
+  return Array.isArray(data.__pins) ? (data.__pins as GraphPin[]) : [];
+}
+
+export function inspectorLiteralPinDefaults(
+  node: { id: string; data: Record<string, unknown> },
+  edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
+) {
+  return listUnconnectedLiteralPinDefaults(
+    pinsFromNodeData(node.data),
+    node.data,
+    connectedInputPinIds(edges, node.id),
+  );
+}
+
+export const LOG_SEVERITY_OPTIONS = [
+  { value: "verbose", label: "Verbose" },
+  { value: "log", label: "Log" },
+  { value: "warning", label: "Warning" },
+  { value: "error", label: "Error" },
+] as const;
+
+export function pinDefaultPropertyRows(
+  entries: readonly LiteralPinDefault[],
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  const rows: PropertyRow[] = [];
+  for (const entry of entries) {
+    const key = pinDefaultPropertyKey(entry.name);
+    const typeDefault = defaultJsValue(entry.type);
+    switch (entry.type.kind) {
+      case "bool":
+        rows.push({
+          kind: "boolean",
+          id: entry.pinId,
+          label: entry.name,
+          value: pinDefaultAsBoolean(entry.value),
+          defaultValue: pinDefaultAsBoolean(typeDefault),
+          onChange: (value) => onPatch({ [key]: value }),
+        });
+        break;
+      case "int":
+      case "float":
+        rows.push({
+          kind: "number",
+          id: entry.pinId,
+          label: entry.name,
+          value: pinDefaultAsNumber(entry.value),
+          defaultValue: pinDefaultAsNumber(typeDefault),
+          onChange: (value) => onPatch({ [key]: value }),
+        });
+        break;
+      case "string":
+        rows.push({
+          kind: "text",
+          id: entry.pinId,
+          label: entry.name,
+          value: pinDefaultAsString(entry.value),
+          defaultValue: pinDefaultAsString(typeDefault),
+          onChange: (value) => onPatch({ [key]: value }),
+        });
+        break;
+      case "vec2":
+        rows.push({
+          kind: "vector3",
+          id: entry.pinId,
+          label: entry.name,
+          value: pinDefaultAsVec3Tuple(entry.value, ["x", "y"]),
+          defaultValue: pinDefaultAsVec3Tuple(typeDefault, ["x", "y"]),
+          axes: ["X", "Y"],
+          onChange: (value) =>
+            onPatch({ [key]: vec3TupleToObject(value, ["x", "y"]) }),
+        });
+        break;
+      case "vec3":
+        rows.push({
+          kind: "vector3",
+          id: entry.pinId,
+          label: entry.name,
+          value: pinDefaultAsVec3Tuple(entry.value, ["x", "y", "z"]),
+          defaultValue: pinDefaultAsVec3Tuple(typeDefault, ["x", "y", "z"]),
+          onChange: (value) =>
+            onPatch({ [key]: vec3TupleToObject(value, ["x", "y", "z"]) }),
+        });
+        break;
+      case "rotator":
+        rows.push({
+          kind: "vector3",
+          id: entry.pinId,
+          label: entry.name,
+          value: pinDefaultAsVec3Tuple(entry.value, ["pitch", "yaw", "roll"]),
+          defaultValue: pinDefaultAsVec3Tuple(typeDefault, [
+            "pitch",
+            "yaw",
+            "roll",
+          ]),
+          axes: ["Pitch", "Yaw", "Roll"],
+          onChange: (value) =>
+            onPatch({
+              [key]: vec3TupleToObject(value, ["pitch", "yaw", "roll"]),
+            }),
+        });
+        break;
+      case "color":
+        rows.push({
+          kind: "color",
+          id: entry.pinId,
+          label: entry.name,
+          value: pinDefaultColorRgb(entry.value),
+          defaultValue: pinDefaultColorRgb(typeDefault),
+          onChange: (value) =>
+            onPatch({ [key]: colorRgbToPinDefault(value, entry.value) }),
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  return rows;
+}
+
+export function logNodePropertyRows(
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  return [
+    {
+      kind: "enum",
+      id: "severity",
+      label: "severity",
+      value: pinDefaultAsString(data.severity) || "log",
+      defaultValue: "log",
+      options: [...LOG_SEVERITY_OPTIONS],
+      onChange: (value) => onPatch({ severity: value }),
+    },
+    {
+      kind: "text",
+      id: "category",
+      label: "category",
+      value: pinDefaultAsString(data.category) || "Script",
+      defaultValue: "Script",
+      onChange: (value) => onPatch({ category: value }),
+    },
+  ];
+}

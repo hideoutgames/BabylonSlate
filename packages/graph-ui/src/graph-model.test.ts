@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createEdgeId,
   DEFAULT_NODE_TYPE,
+  nodeChangesMutateGraph,
   nodesMissingFromLocal,
   toSerializedGraph,
 } from "./graph-model";
@@ -119,5 +120,20 @@ describe("nodesMissingFromLocal", () => {
 describe("createEdgeId", () => {
   it("builds a stable id from node and pin endpoints", () => {
     expect(createEdgeId("a", "out", "b", "in")).toBe("e:a:out:b:in");
+  });
+});
+
+describe("nodeChangesMutateGraph", () => {
+  it("ignores select-only changes so selection does not dirty the document", () => {
+    expect(
+      nodeChangesMutateGraph([{ type: "select" }, { type: "select" }]),
+    ).toBe(false);
+  });
+
+  it("treats position and remove changes as document mutations", () => {
+    expect(
+      nodeChangesMutateGraph([{ type: "select" }, { type: "position" }]),
+    ).toBe(true);
+    expect(nodeChangesMutateGraph([{ type: "remove" }])).toBe(true);
   });
 });

@@ -198,4 +198,60 @@ describe("compiler emits runnable JavaScript", () => {
     });
     expect(logs).toEqual(["warm"]);
   });
+
+  it("emits authored default: pin values when the input is unconnected", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "add", "math.add", { "default:a": 2, "default:b": 3 }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "log", "execIn"),
+        edge("e2", "add", "out", "log", "message"),
+      ],
+    };
+
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain("2");
+    expect(compiled.source).toContain("3");
+    const mod = loadModule(compiled.source);
+    const logs: string[] = [];
+    (mod.run as (ctx: unknown) => void)({
+      formatValue: (v: unknown) => String(v),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(logs).toEqual(["5"]);
+  });
+
+  it("ignores a stored pin default when that input is connected", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "left", "math.add", { "default:a": 10, "default:b": 1 }),
+        node(registry, "right", "math.add", { "default:a": 2, "default:b": 3 }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "log", "execIn"),
+        edge("e2", "left", "out", "right", "a"),
+        edge("e3", "right", "out", "log", "message"),
+      ],
+    };
+
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const mod = loadModule(compiled.source);
+    const logs: string[] = [];
+    (mod.run as (ctx: unknown) => void)({
+      formatValue: (v: unknown) => String(v),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+    });
+    expect(logs).toEqual(["14"]);
+  });
 });

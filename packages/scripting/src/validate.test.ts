@@ -109,6 +109,52 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "js.parse")).toBe(true);
   });
 
+  it("does not warn pin.missing_input when a default: property is authored", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "add",
+          typeId: "math.add",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("a", "a", "in", INT),
+            pin("b", "b", "in", INT),
+            pin("out", "out", "out", INT),
+          ],
+          properties: { "default:a": 2, "default:b": 3 },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
+  });
+
+  it("warns pin.missing_input for an unconnected required pin without a default", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "add",
+          typeId: "math.add",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("a", "a", "in", INT),
+            pin("b", "b", "in", INT),
+            pin("out", "out", "out", INT),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.filter((d) => d.code === "pin.missing_input")).toHaveLength(2);
+  });
+
   it("flags incompatible wildcard resolution groups", () => {
     const T = RESOLVING_WILDCARD;
     const graph: LogicGraph = {
