@@ -1,5 +1,6 @@
 export {
   CatalogDialog,
+  CatalogItemButton,
   useCatalogFilter,
   useCatalogSearchState,
   type CatalogCategory,

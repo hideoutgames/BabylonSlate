@@ -12,6 +12,26 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("ColliderComponent");
   });
 
+  it("groups addable classes into Rendering, Camera, and Physics", () => {
+    const byCategory = new Map<string, string[]>();
+    for (const entry of ADDABLE_COMPONENT_CLASSES) {
+      const list = byCategory.get(entry.category) ?? [];
+      list.push(entry.id);
+      byCategory.set(entry.category, list);
+    }
+    expect([...byCategory.keys()]).toEqual(["Rendering", "Camera", "Physics"]);
+    expect(byCategory.get("Rendering")).toEqual([
+      "MeshComponent",
+      "SpriteComponent",
+      "LightComponent",
+    ]);
+    expect(byCategory.get("Camera")).toEqual(["CameraComponent"]);
+    expect(byCategory.get("Physics")).toEqual([
+      "RigidBodyComponent",
+      "ColliderComponent",
+    ]);
+  });
+
   it("seeds RigidBody defaults from the physics property schema", () => {
     expect(defaultPropertiesFor("RigidBodyComponent")).toEqual({
       motionType: "dynamic",

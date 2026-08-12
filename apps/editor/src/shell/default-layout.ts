@@ -20,7 +20,7 @@ export function createSceneDefaultLayout(api: DockviewApi): void {
     initialWidth: 260,
   });
 
-  const details = api.addPanel({
+  api.addPanel({
     id: "scene-details",
     component: "scene-details",
     title: "Details",
@@ -29,17 +29,6 @@ export function createSceneDefaultLayout(api: DockviewApi): void {
       direction: "right",
     },
     initialWidth: 300,
-  });
-
-  api.addPanel({
-    id: "mini-asset-browser",
-    component: "mini-asset-browser",
-    title: "Assets",
-    position: {
-      referencePanel: details,
-      direction: "below",
-    },
-    initialHeight: 220,
   });
 
   api.addPanel({

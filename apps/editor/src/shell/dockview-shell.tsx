@@ -8,6 +8,7 @@ import "dockview-react/dist/styles/dockview.css";
 import "./dockview-theme.css";
 import { useCallback, useRef } from "react";
 import { createDefaultLayoutForKind } from "./default-layout";
+import { migrateRestoredLayout } from "./layout-ops";
 import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
 
@@ -34,6 +35,7 @@ export function DockviewShell({
       } else {
         createDefaultLayoutForKind(event.api, documentKind);
       }
+      migrateRestoredLayout(event.api);
 
       if (platformOptions.disableFloatingGroups) {
         event.api.onDidAddPanel(() => {

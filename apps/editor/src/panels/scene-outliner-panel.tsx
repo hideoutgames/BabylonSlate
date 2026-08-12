@@ -9,8 +9,6 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   actorSubtree,
-  createActor,
-  createMeshComponent,
   wouldCreateCycle,
   type SerializedActor,
   type SerializedScene,
@@ -22,6 +20,13 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
+import { PlaceActorsDialog } from "../components/place-actors-dialog";
+import {
+  nextActorId,
+  projectPlaceActors,
+  spawnPlacedActor,
+  type PlaceActorItem,
+} from "../lib/place-actors";
 
 /** Depth-first walk so children follow their parent in the flattened list. */
 export function flattenActors(
@@ -77,22 +82,15 @@ export function flattenActors(
   return rows;
 }
 
-function nextActorId(scene: SerializedScene): string {
-  let index = scene.actors.length + 1;
-  while (scene.actors.some((actor) => actor.id === `actor-${index}`)) {
-    index += 1;
-  }
-  return `actor-${index}`;
-}
-
 export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange } = useDocuments();
+  const { openDocuments, applySceneChange, assetRegistry } = useDocuments();
   const { selectedActorIds, selectActor } = useSceneEditing();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [menuActorId, setMenuActorId] = useState<string | null>(null);
+  const [placeOpen, setPlaceOpen] = useState(false);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const scene =
@@ -117,20 +115,24 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [applySceneChange, documentId],
   );
 
-  const addActor = useCallback(() => {
-    if (!scene) return;
-    const id = nextActorId(scene);
-    mutate({
-      ...scene,
-      actors: [
-        ...scene.actors,
-        createActor(id, `Actor ${scene.actors.length + 1}`, {
-          components: [createMeshComponent(`${id}-mesh`, "box")],
-        }),
-      ],
-    });
-    selectActor(id);
-  }, [mutate, scene, selectActor]);
+  const projectItems = useMemo(
+    () => projectPlaceActors(assetRegistry?.list() ?? []),
+    [assetRegistry],
+  );
+
+  const addActor = useCallback(
+    (item: PlaceActorItem) => {
+      if (!scene) return;
+      const id = nextActorId(scene);
+      mutate({
+        ...scene,
+        actors: [...scene.actors, spawnPlacedActor(scene, item, id)],
+      });
+      selectActor(id);
+      setPlaceOpen(false);
+    },
+    [mutate, scene, selectActor],
+  );
 
   const removeActor = useCallback(
     (actorId: string) => {
@@ -210,7 +212,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       toolbar={
         <IconActionButton
           label="Add actor"
-          onClick={addActor}
+          onClick={() => setPlaceOpen(true)}
           disabled={!scene}
           data-testid="outliner-add-actor"
         >
@@ -278,6 +280,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         </div>
       </div>
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+      <PlaceActorsDialog
+        open={placeOpen}
+        onOpenChange={setPlaceOpen}
+        onSelect={addActor}
+        projectItems={projectItems}
+      />
     </PanelFrame>
   );
 }

@@ -5,15 +5,41 @@ import {
 } from "@babylonslate/physics";
 
 export const ADDABLE_COMPONENT_CLASSES = [
-  { id: "MeshComponent", label: "Mesh", description: "Renderable primitive" },
-  { id: "SpriteComponent", label: "Sprite", description: "2D sprite" },
-  { id: "CameraComponent", label: "Camera", description: "Scene camera" },
-  { id: "LightComponent", label: "Light", description: "Scene light" },
-  { id: "RigidBodyComponent", label: "Rigid Body", description: "Physics body" },
+  {
+    id: "MeshComponent",
+    label: "Mesh",
+    description: "Renderable primitive",
+    category: "Rendering",
+  },
+  {
+    id: "SpriteComponent",
+    label: "Sprite",
+    description: "2D sprite",
+    category: "Rendering",
+  },
+  {
+    id: "LightComponent",
+    label: "Light",
+    description: "Scene light",
+    category: "Rendering",
+  },
+  {
+    id: "CameraComponent",
+    label: "Camera",
+    description: "Scene camera",
+    category: "Camera",
+  },
+  {
+    id: "RigidBodyComponent",
+    label: "Rigid Body",
+    description: "Physics body",
+    category: "Physics",
+  },
   {
     id: "ColliderComponent",
     label: "Collider",
     description: "Physics collider",
+    category: "Physics",
   },
 ] as const;
 

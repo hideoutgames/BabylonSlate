@@ -3,7 +3,6 @@ import { useCallback, useState } from "react";
 import {
   PanelFrame,
   PropertyGrid,
-  SearchSheet,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -20,10 +19,8 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
-import {
-  ADDABLE_COMPONENT_CLASSES,
-  defaultPropertiesFor,
-} from "./add-component-catalog";
+import { AddComponentDialog } from "../components/add-component-dialog";
+import { defaultPropertiesFor } from "./add-component-catalog";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 
@@ -464,15 +461,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           </div>
         ))}
       </div>
-      <SearchSheet
+      <AddComponentDialog
         open={addComponentOpen}
         onOpenChange={setAddComponentOpen}
-        title="Add component"
-        items={ADDABLE_COMPONENT_CLASSES.map((entry) => ({
-          id: entry.id,
-          label: entry.label,
-          description: entry.description,
-        }))}
         onSelect={(classId) =>
           updateActor((entry) => ({
             ...entry,
@@ -489,7 +480,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             ],
           }))
         }
-        data-testid="add-component-sheet"
+        data-testid="add-component-catalog"
       />
     </PanelFrame>
   );

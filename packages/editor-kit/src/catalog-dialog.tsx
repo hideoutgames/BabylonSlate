@@ -191,3 +191,26 @@ export function useCatalogSearchState(initial = "") {
   const [search, setSearch] = useState(initial);
   return { search, setSearch };
 }
+
+/** Compact outline row used by Place Actors, Add Component, and Add Node. */
+export function CatalogItemButton({
+  children,
+  onClick,
+  "data-testid": testId,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  "data-testid"?: string;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className="h-auto min-h-[var(--chrome-row,28px)] w-full justify-start gap-2 touch-manipulation"
+      data-testid={testId}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}

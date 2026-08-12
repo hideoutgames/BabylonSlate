@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyFocusLayout,
   GRAPH_FOCUS_HIDE,
+  migrateRestoredLayout,
   SCENE_FOCUS_HIDE,
 } from "./layout-ops";
 
@@ -54,5 +55,37 @@ describe("applyFocusLayout", () => {
     }
     expect(api.getPanel("graph")!.api.close).not.toHaveBeenCalled();
     expect(api.getPanel("inspector")!.api.close).not.toHaveBeenCalled();
+  });
+});
+
+describe("migrateRestoredLayout", () => {
+  it("closes the retired Assets dock", () => {
+    const api = fakeApi(["viewport", "mini-asset-browser", "scene-details"]);
+    migrateRestoredLayout(api);
+    expect(api.getPanel("mini-asset-browser")!.api.close).toHaveBeenCalled();
+  });
+
+  it("moves My Blueprint below Components when they share a group", () => {
+    const group = { id: "left" };
+    const myClass = {
+      api: { close: vi.fn(), moveTo: vi.fn() },
+      group,
+    };
+    const components = {
+      api: { close: vi.fn(), moveTo: vi.fn() },
+      group,
+    };
+    const api = {
+      getPanel: (id: string) => {
+        if (id === "my-class") return myClass;
+        if (id === "actor-prefab") return components;
+        return undefined;
+      },
+    };
+    migrateRestoredLayout(api);
+    expect(myClass.api.moveTo).toHaveBeenCalledWith({
+      position: "bottom",
+      group,
+    });
   });
 });

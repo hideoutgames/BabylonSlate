@@ -12,10 +12,13 @@ export const GRAPH_FOCUS_HIDE = ["prefab-viewport", "compiler-results"] as const
 export interface FocusablePanelApi {
   maximize?: () => void;
   close: () => void;
+  moveTo?: (options: { position?: string; group?: unknown }) => void;
 }
 
 export interface FocusableDockApi {
-  getPanel: (id: string) => { api: FocusablePanelApi } | undefined;
+  getPanel: (
+    id: string,
+  ) => { api: FocusablePanelApi; group?: unknown } | undefined;
 }
 
 /** Collapse the dock to the document's primary editing surface. */
@@ -36,5 +39,21 @@ export function applyFocusLayout(
   }
   for (const id of GRAPH_FOCUS_HIDE) {
     api.getPanel(id)?.api.close();
+  }
+}
+
+/** Drop retired panels and restack My Blueprint under Components. */
+export function migrateRestoredLayout(api: FocusableDockApi): void {
+  api.getPanel("mini-asset-browser")?.api.close();
+  const myClass = api.getPanel("my-class");
+  const components = api.getPanel("actor-prefab");
+  if (
+    myClass &&
+    components &&
+    myClass.group &&
+    myClass.group === components.group &&
+    typeof myClass.api.moveTo === "function"
+  ) {
+    myClass.api.moveTo({ position: "bottom", group: components.group });
   }
 }

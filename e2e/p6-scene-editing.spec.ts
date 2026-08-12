@@ -90,6 +90,8 @@ test.describe("P6 first-playable scene editing", () => {
     await expect(page.getByTestId("scene-details-panel")).toBeVisible();
 
     await page.getByTestId("outliner-add-actor").click();
+    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    await page.getByTestId("place-actors-item-shape-box").click();
 
     const beforeDoc = await sceneDocumentX(page);
     const beforeMesh = await sceneMeshX(page);

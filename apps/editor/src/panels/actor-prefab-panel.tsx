@@ -2,7 +2,6 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { useMemo, useState } from "react";
 import {
   PanelFrame,
-  SearchSheet,
   TreeView,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
@@ -10,7 +9,7 @@ import { PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { IconActionButton } from "../components/icon-action-button";
-import { ADDABLE_COMPONENT_CLASSES } from "./add-component-catalog";
+import { AddComponentDialog } from "../components/add-component-dialog";
 
 /**
  * Actor component tree for class documents. The 3D preview lives in the
@@ -84,17 +83,11 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         emptyLabel="No components"
         data-testid="prefab-tree"
       />
-      <SearchSheet
+      <AddComponentDialog
         open={addOpen}
         onOpenChange={setAddOpen}
-        title="Add component"
-        items={ADDABLE_COMPONENT_CLASSES.map((entry) => ({
-          id: entry.id,
-          label: entry.label,
-          description: entry.description,
-        }))}
         onSelect={addComponent}
-        data-testid="prefab-add-component-sheet"
+        data-testid="prefab-add-component-catalog"
       />
     </PanelFrame>
   );
