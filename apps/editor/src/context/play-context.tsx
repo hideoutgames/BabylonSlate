@@ -20,22 +20,17 @@ import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import { playPhysicsFromOpenDocuments } from "../services/play-physics";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
+import {
+  EditorSchedulerRegistry,
+  type EditorLoopHandle,
+} from "../lib/editor-scheduler-registry";
 
 interface PlayContextValue {
   playing: boolean;
   startPlay: (options?: { injectFixtureThrow?: boolean }) => void;
   stopPlay: () => void;
   registerSharedEngine: (engine: Engine | null) => void;
-  registerScheduler: (
-    scheduler: {
-      setAlwaysRender: (v: boolean) => void;
-      stats: () => {
-        renderedFps: number;
-        invalidationsPerSecond: number;
-      };
-      setPaused: (v: boolean) => void;
-    } | null,
-  ) => void;
+  registerScheduler: (scheduler: EditorLoopHandle) => () => void;
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
@@ -52,14 +47,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const engineRef = useRef<Engine | null>(null);
   const ownedEngineRef = useRef<Engine | null>(null);
   const ownedCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const schedulerRef = useRef<{
-    setAlwaysRender: (v: boolean) => void;
-    stats: () => {
-      renderedFps: number;
-      invalidationsPerSecond: number;
-    };
-    setPaused: (v: boolean) => void;
-  } | null>(null);
+  const schedulerRegistryRef = useRef(new EditorSchedulerRegistry());
   const [playing, setPlaying] = useState(false);
   const [injectThrow, setInjectThrow] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -67,7 +55,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [dropped, setDropped] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
-  const [alwaysRender, setAlwaysRenderState] = useState(false);
+  const [alwaysRender, setAlwaysRenderState] = useState(true);
   const [renderStats, setRenderStats] = useState<{
     renderedFps: number;
     invalidationsPerSecond: number;
@@ -95,33 +83,18 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     engineRef.current = ownedEngineRef.current;
   }, []);
 
-  const registerScheduler = useCallback(
-    (
-      scheduler: {
-        setAlwaysRender: (v: boolean) => void;
-        stats: () => {
-          renderedFps: number;
-          invalidationsPerSecond: number;
-        };
-        setPaused: (v: boolean) => void;
-      } | null,
-    ) => {
-      schedulerRef.current = scheduler;
-      if (scheduler) {
-        scheduler.setAlwaysRender(alwaysRender);
-      }
-    },
-    [alwaysRender],
-  );
+  const registerScheduler = useCallback((scheduler: EditorLoopHandle) => {
+    return schedulerRegistryRef.current.register(scheduler);
+  }, []);
 
   const setAlwaysRender = useCallback((value: boolean) => {
     setAlwaysRenderState(value);
-    schedulerRef.current?.setAlwaysRender(value);
+    schedulerRegistryRef.current.setAlwaysRender(value);
   }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      const stats = schedulerRef.current?.stats();
+      const stats = schedulerRegistryRef.current.stats();
       if (stats) setRenderStats(stats);
     }, 500);
     return () => window.clearInterval(id);
@@ -129,7 +102,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return attachLifecyclePause((paused) => {
-      schedulerRef.current?.setPaused(paused);
+      schedulerRegistryRef.current.setPaused(paused);
       setEncodeQueuePauseReason("visibility", paused);
     });
   }, []);

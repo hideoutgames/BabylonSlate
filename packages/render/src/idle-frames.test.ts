@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { RenderScheduler } from "./render-scheduler";
 
 describe("idle editor renders zero frames", () => {
@@ -24,13 +24,11 @@ describe("idle editor renders zero frames", () => {
   });
 
   it("release of continuous lease returns to idle", () => {
-    vi.useFakeTimers();
     const scheduler = new RenderScheduler();
     const release = scheduler.acquireContinuous("camera");
-    expect(scheduler.shouldRender()).toBe(true);
-    scheduler.noteRendered();
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
     release();
-    expect(scheduler.shouldRender()).toBe(false);
-    vi.useRealTimers();
+    expect(scheduler.shouldRender(17)).toBe(false);
   });
 });

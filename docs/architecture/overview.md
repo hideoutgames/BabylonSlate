@@ -15,7 +15,7 @@ packages/physics/     Body/shape protocol; Havok 3D + Rapier 2D backends (P7)
 packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
 packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader, script host
 packages/input/       Raw input ring + action/axis mapping model and `InputResolver`
-packages/render/      Snapshot sync, render-on-demand, resource cache, editor tools, KTX2 transcoder
+packages/render/      Snapshot sync, visibility-gated editor loop, resource cache, editor tools, KTX2 transcoder
 packages/scripting/   Graph IR, pin types, validator, JS codegen + anchors (P5)
 packages/scripting-nodes/ Data-driven node catalog (P5)
 packages/graph-ui/    React Flow graph editor with Blueprint node chrome (mutations via edit)
@@ -52,7 +52,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Bridge / runtime**: `@babylonslate/bridge` + `@babylonslate/runtime` own Play transports, fixed-step worker, and diagnostics.
 - **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
 - **Visual scripting (P5)**: `@babylonslate/scripting` compiles logic graphs to JS modules with anchor tables; `@babylonslate/scripting-nodes` supplies the catalog; `runtime.ScriptHost` loads those modules and binds Begin Play / Tick entry points to actor lifecycle hooks, and Preview ships compiled project graphs to the worker (see [scripting.md](scripting.md)).
-- **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); editor dirty-driven, Play continuous for the session.
+- **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); visible editor canvases render at `viewportFrameCap` and freeze when hidden or a modal is open; Play holds a continuous lease for the session.
 
 ## Package rules
 

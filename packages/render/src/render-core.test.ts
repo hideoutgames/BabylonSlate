@@ -63,17 +63,69 @@ describe("render scheduler", () => {
   it("refcount continuous leases", () => {
     const scheduler = new RenderScheduler();
     const release = scheduler.acquireContinuous("camera");
-    expect(scheduler.shouldRender()).toBe(true);
-    scheduler.noteRendered();
-    expect(scheduler.shouldRender()).toBe(true);
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
+    expect(scheduler.shouldRender(17)).toBe(true);
     release();
-    expect(scheduler.shouldRender()).toBe(false);
+    expect(scheduler.shouldRender(34)).toBe(false);
   });
 
   it("always-render toggle forces frames", () => {
     const scheduler = new RenderScheduler();
     scheduler.setAlwaysRender(true);
-    expect(scheduler.shouldRender()).toBe(true);
+    expect(scheduler.shouldRender(0)).toBe(true);
+  });
+
+  it("skips frames inside the frame-cap window", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    scheduler.setFrameCap(60);
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
+    expect(scheduler.shouldRender(8)).toBe(false);
+    expect(scheduler.shouldRender(17)).toBe(true);
+  });
+
+  it("honors a 30 fps frame cap interval", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    scheduler.setFrameCap(30);
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
+    expect(scheduler.shouldRender(20)).toBe(false);
+    expect(scheduler.shouldRender(34)).toBe(true);
+  });
+
+  it("does not render when the canvas is not visible", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    scheduler.setVisible(false);
+    expect(scheduler.shouldRender(0)).toBe(false);
+  });
+
+  it("does not render when obstructed by a modal", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    scheduler.setObstructed(true);
+    expect(scheduler.shouldRender(0)).toBe(false);
+  });
+
+  it("does not cap frames until setFrameCap is called", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.acquireContinuous("play");
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
+    expect(scheduler.shouldRender(1)).toBe(true);
+  });
+
+  it("caps continuous-render leases", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.setFrameCap(60);
+    scheduler.acquireContinuous("camera");
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
+    expect(scheduler.shouldRender(1)).toBe(false);
+    expect(scheduler.shouldRender(17)).toBe(true);
   });
 });
 

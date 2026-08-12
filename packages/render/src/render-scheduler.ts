@@ -7,14 +7,24 @@ export type InvalidationReason =
   | "play"
   | "manual";
 
+function nowMs(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
 /**
  * Dirty-driven render scheduler with refcounted continuous-render leases.
+ * Visible editor viewports also honor Always Render + a frame cap; freeze
+ * when paused, not visible, or obstructed.
  */
 export class RenderScheduler {
   private dirty = false;
   private continuous = 0;
   private alwaysRender = false;
   private paused = false;
+  private visible = true;
+  private obstructed = false;
+  private frameCap = Number.POSITIVE_INFINITY;
+  private lastRenderAt: number | null = null;
   private renderedFrames = 0;
   private invalidations = 0;
   private lastSecond = 0;
@@ -50,15 +60,34 @@ export class RenderScheduler {
     this.paused = value;
   }
 
-  shouldRender(): boolean {
-    if (this.paused) return false;
-    if (this.alwaysRender) return true;
-    if (this.continuous > 0) return true;
-    return this.dirty;
+  setVisible(value: boolean): void {
+    this.visible = value;
   }
 
-  noteRendered(): void {
+  setObstructed(value: boolean): void {
+    this.obstructed = value;
+  }
+
+  setFrameCap(fps: number): void {
+    this.frameCap = fps > 0 ? fps : 60;
+  }
+
+  shouldRender(now: number = nowMs()): boolean {
+    if (this.paused) return false;
+    if (!this.visible || this.obstructed) return false;
+    const wants =
+      this.alwaysRender || this.continuous > 0 || this.dirty;
+    if (!wants) return false;
+    if (this.lastRenderAt !== null) {
+      const minDelta = 1000 / this.frameCap;
+      if (now - this.lastRenderAt < minDelta) return false;
+    }
+    return true;
+  }
+
+  noteRendered(now: number = nowMs()): void {
     this.dirty = false;
+    this.lastRenderAt = now;
     this.renderedFrames += 1;
     this.renderedThisSecond += 1;
     this.rollStats();
@@ -80,8 +109,7 @@ export class RenderScheduler {
   }
 
   private rollStats(): void {
-    const now =
-      typeof performance !== "undefined" ? performance.now() : Date.now();
+    const now = nowMs();
     if (this.lastSecond === 0) {
       this.lastSecond = now;
       return;

@@ -21,11 +21,11 @@ Play takes a `acquireContinuous("play")` lease for the session so every overlay 
 
 ## Render-on-demand
 
-Dirty-driven editor loop: early-return unless invalidated. Continuous-render leases are refcounted. Invalidation sources: snapshot arrival, camera, selection, asset reload, Play. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`. Dev Always Render toggle; HUD exposes rendered-fps vs invalidations/sec.
+Visible editor canvases (scene viewport and Prefab Preview) render at Engine Settings `viewportFrameCap` (Always Render default on). Freeze — skip `scene.render()` — when the canvas is not intersecting / zero-size, a dialog/alert/sheet overlay is open, Play is up, or the app is backgrounded. Dirty-driven invalidation and refcounted continuous-render leases remain the Always Render-off path and still honor the same frame cap. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`, and they do not use the editor frame cap. HUD exposes rendered-fps vs invalidations/sec.
 
 `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. Pause render loop, game worker, and encode queue on background.
 
-The dynamic resolution valve (`HardwareScalingController.noteFrameTime`) is fed the cost of `scene.render()` itself, timed immediately around that call — never the wall-clock gap since the previous rendered frame. Render-on-demand can leave that gap at seconds while idle; feeding the idle gap in would read as a catastrophic frame time on the next render and drop quality for no reason.
+The dynamic resolution valve (`HardwareScalingController.noteFrameTime`) is fed the cost of `scene.render()` itself, timed immediately around that call — never the wall-clock gap since the previous rendered frame. A frozen obstructed viewport can leave that gap at seconds; feeding the idle gap in would read as a catastrophic frame time on the next render and drop quality for no reason.
 
 ## Resource cache
 
@@ -44,6 +44,8 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 ## Lifecycle pause
 
 `visibilitychange` (and Capacitor app-state when present) pauses the render scheduler, game worker / in-process runtime tick, and texture encode queue. Encode pause uses a reason set (`visibility` | `play`) so ending Play does not resume encoding while the tab is still hidden.
+
+Editor canvases also freeze when not intersecting or when a blocking overlay (`dialog-overlay`, `alert-dialog-overlay`, `sheet-overlay`) is open. Scene and Prefab Preview both register with the editor scheduler registry so Always Render and pause apply to whichever canvas is alive.
 
 ## Editor tools (P6)
 
