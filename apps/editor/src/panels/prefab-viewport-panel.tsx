@@ -1,6 +1,6 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useRef } from "react";
-import { createEngine, type EngineHandle } from "@babylonslate/render";
+import { createEngine, syncEditorPlayState, type EngineHandle } from "@babylonslate/render";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { usePlay } from "../context/play-context";
@@ -60,7 +60,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, []);
 
   useEffect(() => {
-    engineRef.current?.setPaused(playing);
+    if (engineRef.current) {
+      syncEditorPlayState(engineRef.current, playing);
+    }
   }, [playing]);
 
   useEffect(() => {
