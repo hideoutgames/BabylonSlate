@@ -1,27 +1,28 @@
-export type FocusDocumentKind = "scene" | "graph";
+import { listDockWindows, type DockviewDocumentKind } from "./window-catalog";
+
+export type FocusDocumentKind = DockviewDocumentKind;
 
 export interface FocusKeepCandidate {
   id: string;
   title: string;
 }
 
+function catalogFocusCandidates(
+  kind: FocusDocumentKind,
+): FocusKeepCandidate[] {
+  return listDockWindows(kind).map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+  }));
+}
+
 /** Built-in Scene dock tabs Focus may keep. EditorUtility widgets merge in via `focusKeepCandidates`. */
-export const SCENE_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] = [
-  { id: "viewport", title: "Viewport" },
-  { id: "scene-outliner", title: "Outliner" },
-  { id: "scene-details", title: "Details" },
-  { id: "output-log", title: "Output Log" },
-];
+export const SCENE_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
+  catalogFocusCandidates("scene");
 
 /** Built-in Class dock tabs Focus may keep. EditorUtility widgets merge in via `focusKeepCandidates`. */
-export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] = [
-  { id: "graph", title: "Graph" },
-  { id: "prefab-viewport", title: "Prefab" },
-  { id: "actor-prefab", title: "Components" },
-  { id: "my-class", title: "Class" },
-  { id: "inspector", title: "Inspector" },
-  { id: "compiler-results", title: "Compiler Results" },
-];
+export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
+  catalogFocusCandidates("graph");
 
 export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   scene: "viewport",

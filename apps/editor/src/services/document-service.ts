@@ -1,5 +1,6 @@
 import type {
   DocumentRef,
+  PanelPlacement,
   ProjectLayouts,
   SerializedGraph,
   SerializedScene,
@@ -27,6 +28,7 @@ export interface DocumentRegistryState {
   openDocuments: Map<string, OpenDocument>;
   tabOrder: string[];
   activeDocumentId: string | null;
+  panelPlacements: Record<string, Record<string, PanelPlacement>>;
 }
 
 export class DocumentService {
@@ -34,6 +36,7 @@ export class DocumentService {
     openDocuments: new Map(),
     tabOrder: [],
     activeDocumentId: null,
+    panelPlacements: {},
   };
 
   getState(): DocumentRegistryState {
@@ -98,6 +101,7 @@ export class DocumentService {
       openDocuments: new Map(),
       tabOrder: [],
       activeDocumentId: null,
+      panelPlacements: structuredClone(layouts.panelPlacements ?? {}),
     };
 
     this.ensureContentBrowserTab();
@@ -213,6 +217,11 @@ export class DocumentService {
     if (this.state.activeDocumentId === oldId) {
       this.state.activeDocumentId = newId;
     }
+    const placements = this.state.panelPlacements[oldId];
+    if (placements) {
+      this.state.panelPlacements[newId] = placements;
+      delete this.state.panelPlacements[oldId];
+    }
   }
 
   setActiveDocument(id: string): void {
@@ -269,6 +278,31 @@ export class DocumentService {
     }
   }
 
+  setPanelPlacement(
+    documentId: string,
+    panelId: string,
+    placement: PanelPlacement,
+  ): void {
+    const current = this.state.panelPlacements[documentId] ?? {};
+    this.state.panelPlacements[documentId] = {
+      ...current,
+      [panelId]: placement,
+    };
+  }
+
+  getPanelPlacements(
+    documentId: string,
+  ): Record<string, PanelPlacement> {
+    return this.state.panelPlacements[documentId] ?? {};
+  }
+
+  replacePanelPlacements(
+    documentId: string,
+    placements: Record<string, PanelPlacement>,
+  ): void {
+    this.state.panelPlacements[documentId] = { ...placements };
+  }
+
   markAllClean(): void {
     for (const doc of this.state.openDocuments.values()) {
       if (doc.ref.kind !== "content-browser") {
@@ -284,10 +318,16 @@ export class DocumentService {
         documents[id] = doc.layout;
       }
     }
+    const panelPlacements = Object.fromEntries(
+      Object.entries(this.state.panelPlacements).filter(
+        ([, placements]) => Object.keys(placements).length > 0,
+      ),
+    );
     return {
       documents,
       tabOrder: [...this.state.tabOrder],
       activeDocumentId: this.state.activeDocumentId,
+      ...(Object.keys(panelPlacements).length > 0 ? { panelPlacements } : {}),
     };
   }
 

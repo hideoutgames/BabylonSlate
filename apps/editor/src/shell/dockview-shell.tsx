@@ -24,14 +24,19 @@ export function DockviewShell({
   initialLayout,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const initialLayoutRef = useRef(initialLayout);
+  initialLayoutRef.current = initialLayout;
   const platformOptions = usePlatformLayoutOptions();
 
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
 
-      if (initialLayout) {
-        event.api.fromJSON(initialLayout as never);
+      const layout = initialLayoutRef.current;
+      if (layout) {
+        event.api.fromJSON(layout as never);
       } else {
         createDefaultLayoutForKind(event.api, documentKind);
       }
@@ -43,9 +48,9 @@ export function DockviewShell({
         });
       }
 
-      onReady?.(event.api);
+      onReadyRef.current?.(event.api);
     },
-    [documentKind, initialLayout, onReady, platformOptions.disableFloatingGroups],
+    [documentKind, platformOptions.disableFloatingGroups],
   );
 
   return (

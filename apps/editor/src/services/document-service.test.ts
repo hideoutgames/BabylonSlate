@@ -132,6 +132,43 @@ describe("DocumentService", () => {
     expect(layouts.activeDocumentId).toBe(CONTENT_BROWSER_ID);
   });
 
+  it("round-trips panel placements in buildLayouts", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const projectService = createMockProjectService();
+    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+    const savedPlacement = {
+      referencePanelId: "viewport",
+      direction: "below" as const,
+      height: 180,
+    };
+
+    await service.initializeFromProject(projectService, project, {
+      documents: {},
+      tabOrder: [sceneId],
+      activeDocumentId: CONTENT_BROWSER_ID,
+      panelPlacements: {
+        [sceneId]: { "output-log": savedPlacement },
+      },
+    });
+
+    service.setPanelPlacement(sceneId, "scene-outliner", {
+      referencePanelId: "viewport",
+      direction: "left",
+      width: 260,
+    });
+
+    const layouts = service.buildLayouts();
+    expect(layouts.panelPlacements?.[sceneId]?.["output-log"]).toEqual(
+      savedPlacement,
+    );
+    expect(layouts.panelPlacements?.[sceneId]?.["scene-outliner"]).toEqual({
+      referencePanelId: "viewport",
+      direction: "left",
+      width: 260,
+    });
+  });
+
   it("closes a document and falls back to content browser", async () => {
     const service = new DocumentService();
     const project = createEmptyProject("Test");

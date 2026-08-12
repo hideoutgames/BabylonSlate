@@ -5,6 +5,7 @@ import {
   migrateRestoredLayout,
   resolveFocusKeepPanelIds,
 } from "./layout-ops";
+import { listDockWindows } from "./window-catalog";
 
 function fakeApi(ids: string[]) {
   const panelMap = new Map(
@@ -29,23 +30,15 @@ function fakeApi(ids: string[]) {
 
 describe("focusKeepCandidates", () => {
   it("lists scene dock tabs that Focus can keep", () => {
-    expect(focusKeepCandidates("scene").map((panel) => panel.id)).toEqual([
-      "viewport",
-      "scene-outliner",
-      "scene-details",
-      "output-log",
-    ]);
+    expect(focusKeepCandidates("scene").map((panel) => panel.id)).toEqual(
+      listDockWindows("scene").map((entry) => entry.id),
+    );
   });
 
   it("lists class dock tabs that Focus can keep", () => {
-    expect(focusKeepCandidates("graph").map((panel) => panel.id)).toEqual([
-      "graph",
-      "prefab-viewport",
-      "actor-prefab",
-      "my-class",
-      "inspector",
-      "compiler-results",
-    ]);
+    expect(focusKeepCandidates("graph").map((panel) => panel.id)).toEqual(
+      listDockWindows("graph").map((entry) => entry.id),
+    );
   });
 });
 
