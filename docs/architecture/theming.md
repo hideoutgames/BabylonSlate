@@ -91,7 +91,7 @@ Title-bar fills for Blueprint-like nodes:
 | --- | --- | --- |
 | `--touch-target` | `44px` | Graph pin rows and remaining large hit boxes |
 | `--chrome-row` | `28px` | Editor chrome, panel headers, property rows, catalog item rows |
-| `--graph-pin-size` | `22px` | Visual pin diamond/circle |
+| `--graph-pin-size` | `22px` | Visual pin diamond / circle / list |
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 

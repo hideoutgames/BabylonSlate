@@ -48,6 +48,7 @@ import {
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { Diagnostic } from "@babylonslate/scripting";
 import {
   DocumentService,
   type OpenDocument,
@@ -55,6 +56,7 @@ import {
 import { ProjectService } from "../services/project-service";
 import { loadTemplateCards } from "../services/template-service";
 import { compileGraphDocuments } from "../services/script-compiler";
+import { validateSerializedGraph } from "../services/graph-validation";
 import { applyFocusLayout } from "../shell/layout-ops";
 import {
   listedProjectsFromRecents,
@@ -103,8 +105,8 @@ interface DocumentContextValue {
   ) => Promise<void>;
   removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
-  saveProject: () => Promise<void>;
-  saveAll: () => Promise<void>;
+  saveProject: () => Promise<boolean>;
+  saveAll: () => Promise<boolean>;
   approveMigrationsAndSave: () => Promise<void>;
   closeProject: () => Promise<{ blocked: boolean; dirty: OpenDocument[] }>;
   forceCloseProject: () => Promise<void>;
@@ -144,6 +146,14 @@ interface DocumentContextValue {
   thumbnailsEnabled: boolean;
   /** Compile every project graph into runtime script bundles for Preview. */
   collectScriptBundles: () => Promise<ScriptBundleEntry[]>;
+  /** Compile and validate every project graph for the Play prepare path. */
+  collectPlayPreviewScripts: () => Promise<{
+    bundles: ScriptBundleEntry[];
+    diagnostics: Diagnostic[];
+  }>;
+  /** True when a graph changed since the last successful project compile. */
+  scriptsStale: boolean;
+  markScriptsCurrent: () => void;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
 }
@@ -186,6 +196,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [registryVersion, setRegistryVersion] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
+  const [scriptsStale, setScriptsStale] = useState(false);
+  const markScriptsStale = useCallback(() => setScriptsStale(true), []);
+  const markScriptsCurrent = useCallback(() => setScriptsStale(false), []);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
   const documentService = documentServiceRef.current;
@@ -348,12 +361,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documentService.updateScene(id, content as SerializedScene);
       } else {
         documentService.updateGraph(id, content as SerializedGraph);
+        markScriptsStale();
       }
     }
     await truncateJournal(derived, guid);
     setRecoveryAvailable(false);
     bump();
-  }, [bump, documentService, ensureDerived, projectService]);
+  }, [bump, documentService, ensureDerived, markScriptsStale, projectService]);
 
   const enterEditor = useCallback(
     async (
@@ -374,6 +388,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
       setProjectDocument(document);
       setMigrationPending(pending);
+      setScriptsStale(false);
       setRoute("editor");
       const { probeKtx2TranscoderAvailable } = await import(
         "@babylonslate/render"
@@ -482,13 +497,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await enterEditor(document, layouts, pending);
   }, [enterEditor, projectService]);
 
-  const saveProject = useCallback(async () => {
+  const saveProject = useCallback(async (): Promise<boolean> => {
     const document = projectDocumentRef.current;
-    if (!document) return;
+    if (!document) return false;
     if (projectService.pendingMigrations.length > 0) {
       setMigrationPending(projectService.pendingMigrations);
       // Caller must use approveMigrationsAndSave — never silently rewrite.
-      return;
+      return false;
     }
     if (saveDebounceRef.current) {
       clearTimeout(saveDebounceRef.current);
@@ -526,6 +541,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setRecoveryAvailable(false);
     }
     bump();
+    return true;
   }, [bump, captureAllLayouts, documentService, ensureDerived, projectService]);
 
   const scheduleDebouncedSave = useCallback(() => {
@@ -581,6 +597,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setProjectDocument(null);
     setRecoveryAvailable(false);
     setMigrationPending([]);
+    setScriptsStale(false);
     setRoute("home");
     await refreshProjectList();
     bump();
@@ -689,9 +706,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const updateGraph = useCallback(
     (id: string, graph: SerializedGraph) => {
       documentService.updateGraph(id, graph);
+      markScriptsStale();
       bump();
     },
-    [bump, documentService],
+    [bump, documentService, markScriptsStale],
   );
 
   const updateProjectSettings = useCallback(
@@ -743,6 +761,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
       documentService.updateGraph(id, current);
+      markScriptsStale();
       projectService.indexOpenDocument(doc.ref.path, current);
       const guid = projectService.guid;
       if (guid) {
@@ -764,7 +783,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump();
       return true;
     },
-    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
+    [bump, documentService, ensureDerived, markScriptsStale, projectService, scheduleDebouncedSave],
   );
 
   const applySceneChange = useCallback(
@@ -807,15 +826,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
 
-  const collectScriptBundles = useCallback(async (): Promise<
-    ScriptBundleEntry[]
+  const loadProjectGraphDocuments = useCallback(async (): Promise<
+    Array<{ path: string; content: SerializedGraph }>
   > => {
     const paths = projectDocument?.graphs ?? [];
     const open = documentService.getState().openDocuments;
     const documents: Array<{ path: string; content: SerializedGraph }> = [];
     for (const path of paths) {
       const openDoc = open.get(documentId({ kind: "graph", path }));
-      // Unsaved edits must run in Preview, so prefer the in-memory document.
       if (openDoc?.content) {
         documents.push({ path, content: openDoc.content as SerializedGraph });
         continue;
@@ -830,8 +848,33 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         console.error(`[play] failed to load graph ${path}`, error);
       }
     }
-    return compileGraphDocuments(documents);
+    return documents;
   }, [documentService, projectDocument, projectService]);
+
+  const collectScriptBundles = useCallback(async (): Promise<
+    ScriptBundleEntry[]
+  > => {
+    const documents = await loadProjectGraphDocuments();
+    const bundles = compileGraphDocuments(documents);
+    markScriptsCurrent();
+    return bundles;
+  }, [loadProjectGraphDocuments, markScriptsCurrent]);
+
+  const collectPlayPreviewScripts = useCallback(async (): Promise<{
+    bundles: ScriptBundleEntry[];
+    diagnostics: Diagnostic[];
+  }> => {
+    const documents = await loadProjectGraphDocuments();
+    const diagnostics = documents.flatMap((doc) =>
+      validateSerializedGraph(doc.content, {
+        assetGuid: doc.path,
+        graphId: documentId({ kind: "graph", path: doc.path }),
+      }),
+    );
+    const bundles = compileGraphDocuments(documents);
+    markScriptsCurrent();
+    return { bundles, diagnostics };
+  }, [loadProjectGraphDocuments, markScriptsCurrent]);
 
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
@@ -982,6 +1025,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
         }
         documentService.updateGraph(id, graph);
+        markScriptsStale();
         bump();
         return true;
       },
@@ -997,6 +1041,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump,
     documentService,
     ensureDerived,
+    markScriptsStale,
     projectService,
   ]);
 
@@ -1014,6 +1059,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
         documentService.updateGraph(activeDocumentId, result.doc);
+        markScriptsStale();
         bump();
         return;
       }
@@ -1028,7 +1074,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         bump();
       }
     },
-    [bump, documentService],
+    [bump, documentService, markScriptsStale],
   );
 
   const undoActiveDocument = useCallback(() => {
@@ -1213,6 +1259,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,
+      collectPlayPreviewScripts,
+      scriptsStale,
+      markScriptsCurrent,
       searchIndex: projectService.searchIndex,
     };
     },
@@ -1228,6 +1277,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,
+      collectPlayPreviewScripts,
+      scriptsStale,
+      markScriptsCurrent,
       listedProjects,
       needsReconnect,
       recoveryAvailable,

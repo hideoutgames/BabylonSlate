@@ -140,7 +140,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Format graph (layout selection / tidy exec-data chain to the right) | later polish (`graph-ui`) | Overlay **Format** button is a visible disabled stub; algorithm in engineplan §7.4 |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
 | Full Enum / Structure / ScriptInterface row editors | later polish (`apps/editor`, `editor-kit`) | Creatable assets exist; richer field editors incomplete |
-| Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Active-graph pass works; full project sweep beyond open docs deferred |
+| Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Play now validates the compiled project graph set (`collectPlayPreviewScripts`); startup-map / GameInstance / plugin EUO sweep still deferred |
 | Graph ownership by class asset | later polish (`assets`, editor) | Class ids currently derived from graph file name |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed in `@babylonslate/debugger` (`p8-command-system`); console HUD / BDebugCommand remain |

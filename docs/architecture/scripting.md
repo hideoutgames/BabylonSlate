@@ -120,7 +120,7 @@ type Diagnostic = {
 | --- | --- |
 | Edit (≈300ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
-| Pre-Preview | Startup map, GameInstance, classes referenced by open scene, enabled plugin EUOs |
+| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`); startup map / GameInstance / plugin EUO sweep still later polish |
 | Export | Hard gate + export-only rules (Print strip, debug-tier commands) |
 | CI | Golden fixture projects |
 
@@ -185,12 +185,13 @@ Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 
 - **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + centered **Add node** catalog modal (opened by double-tap pane or connect-end, not a floating button).
 - **`GraphDocument`**: local extension of core `SerializedGraph`; edges may carry optional `sourceHandle` / `targetHandle` for pin-aware wiring. Optional `members` round-trip Class panel rows.
-- **Nodes**: scripting nodes render via `PinNode` when `data.__pins` is present. Chrome is Blueprint-like: role-colored title bar (`--node-*`) clipped to the shell radius (`overflow-hidden` + `rounded-t-lg`) while the error badge sits outside that clip, two-column pin rows, exec diamonds and data circles. Each pin row is `--touch-target` (44px) tall; the visual pin is `--graph-pin-size` (22px). Titles wrap; `flow.event.*` without `data.title` formats as **Event …**. Tap output pin → tap input pin to connect. Legacy `logMessage` without pins still uses the same shell until the host hydrates.
+- **Nodes**: scripting nodes render via `PinNode` when `data.__pins` is present. Chrome is Blueprint-like: role-colored title bar (`--node-*`) clipped to the shell radius (`overflow-hidden` + `rounded-t-lg`) while the error badge sits outside that clip, two-column pin rows, exec diamonds, data circles, and array list bars. Each pin row is `--touch-target` (44px) tall; the visual pin is `--graph-pin-size` (22px). Titles wrap; `flow.event.*` without `data.title` formats as **Event …**. Tap output pin → tap input pin to connect. Legacy `logMessage` without pins still uses the same shell until the host hydrates.
 - **Host pin hydration** (`hydrateSerializedGraphForEditor` in the editor): injects `__pins` plus `__category` / `__pure` / `__latent` from `@babylonslate/scripting-nodes` on load; palette entries carry `pins`, `pure`, `latent`, and `defaultData` so Add node creates connectable, colored handles. `graph-ui` stays free of the catalog package (`node-theme.ts` maps type/category strings only).
 - **New graphs** seed `flow.event.beginPlay` + `flow.event.tick` via `createDefaultLogicGraphSerialized` (project scaffold + Content Browser create). Existing `logMessage` graphs hydrate to `debug.log` pins without auto-injecting events.
 - **Undo**: `AddNodeCommand` / `RemoveNodeCommand` / `SetGraphMembersCommand` in `@babylonslate/edit` so palette adds and Class panel members persist through `diffGraphCommands`.
 - Tap-to-connect and drag-to-connect both persist (`onConnect`). Connect-end on empty pane opens a pin-filtered palette and auto-wires. Palette uses the shared Dialog catalog shell (`@babylonslate/ui` Dialog + ScrollArea) with a role-color chip per item.
 - Pin and wire colors use `--pin-*` tokens (exec white, bool red, float green, string magenta, vector yellow, …). Exec wires are 5px, data wires 4px. The canvas forces XYFlow `colorMode="dark"` (chrome theme does not wash the graph) and `--xy-*` overrides in `graph-editor.css`.
+- Canvas zoom: `GRAPH_MIN_ZOOM` 0.1 / `GRAPH_MAX_ZOOM` 1.5 (wheel, pinch, and Controls). `fitView` on a large graph may pull back to 10%. Focused-node fit still caps at 1.2.
 - Blocking Preview dialog uses `AlertDialog` (editor host).
 
 Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node types, validation binder) injectable; do not hardcode scripting-only assumptions into the canvas host.
@@ -200,6 +201,7 @@ Reusable by shader / animation / BT graphs later: keep graph-kind plugins (node 
 - Debounced edit-time pass → Compiler Results + inline node/pin markers.
 - Content Browser compile-error overlay (same iconography as missing ref).
 - Play button error-count badge.
+- Global toolbar **Compilation Error** status next to Compile on graph documents (tap opens Compiler Results).
 - Pre-Preview project sweep → blocking dialog with Play Anyway.
 - Headless CI over golden fixture projects (`packages/scripting/fixtures/` — one broken graph per diagnostic code).
 
@@ -242,7 +244,9 @@ The `ctx` handed to compiled code carries `self`, `deltaSeconds`, `formatValue`,
 
 ### Editor Play wiring
 
-`collectScriptBundles()` (document context) compiles every graph in `ProjectDocument.graphs`, preferring in-memory documents so unsaved edits run. `startPlaySession({ scripts })` ships them to the worker, or loads them into the in-process runtime when no worker is available. Class ownership of graphs is not modelled yet, so a graph's class id is derived from its file name.
+Play (`requestPlay`) saves dirty documents and compiles project graphs **before** the overlay launches. If anything still needs saving or compiling, a non-dismissible progress dialog (`play-prepare-dialog`) lists dirty names and the current phase (`Saving…` / `Compiling…`). A clean project with a current compile skips the dialog. After compile, blocking diagnostics open the existing Play Anyway dialog; Play Anyway launches with the bundles just produced and does not skip save/compile. Schema migrations abort prepare and reuse the migrate-on-save dialog; Play resumes after approval.
+
+`collectPlayPreviewScripts()` (document context) loads every graph in `ProjectDocument.graphs` (open in-memory documents first, else disk), validates that set, and compiles to `ScriptBundleEntry[]`. `startPlaySession({ scripts })` ships them to the worker, or loads them into the in-process runtime when no worker is available. Class ownership of graphs is not modelled yet, so a graph's class id is derived from its file name.
 
 ## Acceptance (phase)
 

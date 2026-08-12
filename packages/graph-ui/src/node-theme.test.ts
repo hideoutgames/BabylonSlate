@@ -4,6 +4,7 @@ import {
   nodeRoleClass,
   nodeVisualRole,
   pinCssVar,
+  pinVisualShape,
 } from "./node-theme";
 
 describe("pinCssVar", () => {
@@ -53,6 +54,29 @@ describe("pinCssVar", () => {
 
   it("falls back to wildcard for unknown kinds", () => {
     expect(pinCssVar({ kind: "mystery" })).toBe("var(--pin-wildcard)");
+  });
+});
+
+describe("pinVisualShape", () => {
+  it("uses a diamond for exec, a list for arrays, and a circle otherwise", () => {
+    expect(pinVisualShape({ kind: "exec" })).toBe("diamond");
+    expect(
+      pinVisualShape({ kind: "array", element: { kind: "float" } }),
+    ).toBe("list");
+    expect(
+      pinVisualShape({
+        kind: "array",
+        element: { kind: "array", element: { kind: "string" } },
+      }),
+    ).toBe("list");
+    expect(pinVisualShape({ kind: "string" })).toBe("circle");
+    expect(
+      pinVisualShape({
+        kind: "map",
+        key: { kind: "string" },
+        value: { kind: "bool" },
+      }),
+    ).toBe("circle");
   });
 });
 
