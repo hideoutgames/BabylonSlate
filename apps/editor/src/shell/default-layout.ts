@@ -62,10 +62,10 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
     },
   });
 
-  const myClass = api.addPanel({
-    id: "my-class",
-    component: "my-class",
-    title: "My Class",
+  const components = api.addPanel({
+    id: "actor-prefab",
+    component: "actor-prefab",
+    title: "Components",
     position: {
       referencePanel: graph,
       direction: "left",
@@ -74,13 +74,14 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
   });
 
   api.addPanel({
-    id: "actor-prefab",
-    component: "actor-prefab",
-    title: "Components",
+    id: "my-class",
+    component: "my-class",
+    title: "My Blueprint",
     position: {
-      referencePanel: myClass,
-      direction: "within",
+      referencePanel: components,
+      direction: "below",
     },
+    initialHeight: 180,
   });
 
   api.addPanel({
