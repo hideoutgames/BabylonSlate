@@ -101,4 +101,160 @@ describe("validateGraphs", () => {
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.some((d) => d.code === "js.parse")).toBe(true);
   });
+
+  it("flags execution cycles", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "a",
+          typeId: "debug.log",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+          ],
+          properties: {},
+        },
+        {
+          id: "b",
+          typeId: "debug.log",
+          position: { x: 100, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "a",
+          sourcePinId: "execOut",
+          targetNodeId: "b",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "b",
+          sourcePinId: "execOut",
+          targetNodeId: "a",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "exec.cycle")).toBe(true);
+  });
+
+  it("flags pure data cycles", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "function",
+      nodes: [
+        {
+          id: "a",
+          typeId: "math.add",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("a", "a", "in", INT),
+            pin("b", "b", "in", INT),
+            pin("out", "out", "out", INT),
+          ],
+          properties: {},
+        },
+        {
+          id: "b",
+          typeId: "math.add",
+          position: { x: 100, y: 0 },
+          pins: [
+            pin("a", "a", "in", INT),
+            pin("b", "b", "in", INT),
+            pin("out", "out", "out", INT),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "a",
+          sourcePinId: "out",
+          targetNodeId: "b",
+          targetPinId: "a",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "b",
+          sourcePinId: "out",
+          targetNodeId: "a",
+          targetPinId: "a",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pure.cycle")).toBe(true);
+  });
+
+  it("flags missing edge endpoints and bad pin direction", () => {
+    const missingNode: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [],
+      edges: [
+        {
+          id: "e",
+          sourceNodeId: "gone",
+          sourcePinId: "out",
+          targetNodeId: "also",
+          targetPinId: "in",
+        },
+      ],
+    };
+    expect(
+      validateGraphs([missingNode], { assetGuid: "a" }).some(
+        (d) => d.code === "ref.missing_node",
+      ),
+    ).toBe(true);
+
+    const badDirection: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "a",
+          typeId: "flow.entry",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "b",
+          typeId: "debug.log",
+          position: { x: 1, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e",
+          sourceNodeId: "b",
+          sourcePinId: "execIn",
+          targetNodeId: "a",
+          targetPinId: "execOut",
+        },
+      ],
+    };
+    expect(
+      validateGraphs([badDirection], { assetGuid: "a" }).some(
+        (d) => d.code === "pin.direction",
+      ),
+    ).toBe(true);
+  });
 });
