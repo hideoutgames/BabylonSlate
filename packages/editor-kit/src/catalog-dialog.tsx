@@ -57,7 +57,7 @@ export function CatalogDialog({
       <DialogContent
         data-testid={testId}
         className={cn(
-          "flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
+          "flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none z-50",
           className,
         )}
       >
