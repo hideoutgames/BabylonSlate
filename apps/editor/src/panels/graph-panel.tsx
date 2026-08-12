@@ -67,7 +67,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   );
 
   return (
-    <PanelFrame title="Graph" data-testid="graph-panel">
+    <PanelFrame data-testid="graph-panel">
       <GraphEditor
         key={documentId}
         initialGraph={graph}

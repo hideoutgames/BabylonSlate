@@ -6,10 +6,10 @@ import {
   TreeView,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import { IconActionButton } from "../components/icon-action-button";
 
 const COMPONENT_CLASSES = [
   { id: "MeshComponent", label: "Mesh", description: "Renderable primitive" },
@@ -59,27 +59,21 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
       data-testid="actor-prefab-panel"
       toolbar={
         <>
-          <Button
-            size="sm"
-            variant="outline"
-            className="min-h-[var(--touch-target,44px)] min-w-[var(--touch-target,44px)]"
-            aria-label="Add component"
+          <IconActionButton
+            label="Add component"
             onClick={() => setAddOpen(true)}
             data-testid="prefab-add-component"
           >
             <PlusIcon />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="min-h-[var(--touch-target,44px)] min-w-[var(--touch-target,44px)]"
-            aria-label="Remove component"
+          </IconActionButton>
+          <IconActionButton
+            label="Remove component"
             disabled={!selectedId || selectedId === PREFAB_ROOT_ID}
             onClick={removeSelected}
             data-testid="prefab-remove-component"
           >
             <Trash2Icon />
-          </Button>
+          </IconActionButton>
         </>
       }
     >

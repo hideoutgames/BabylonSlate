@@ -85,6 +85,14 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 ## Actor Prefab tab
 
-The Prefab panel on class documents is **preview-only** in P6: component add/remove updates a local tree and 3D preview, but does not write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
+Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`. Default class layout:
+
+| Dock | Panels |
+| --- | --- |
+| Center group | **Graph** and **Prefab** as siblings (`direction: "within"`). Selecting Prefab fills the workspace like Viewport does on a Scene. |
+| Left | **My Class** and **Components** (the actor component tree). |
+| Right / bottom | Inspector, Compiler Results |
+
+The Prefab viewport reuses `ViewportToolbar` + `createEngine` (touch gizmos, two-finger camera). The canvas is full-size, not a 160px sidebar strip. Component add/remove updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
 
 See [command-layer.md](command-layer.md) for undo/journal and [gestures.md](../design/gestures.md) for touch contracts.

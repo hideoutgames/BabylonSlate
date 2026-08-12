@@ -29,6 +29,11 @@ import { pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@babylonslate/ui/components/toggle-group";
+import { cn } from "@babylonslate/ui/lib/utils";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -110,12 +115,15 @@ function FolderTreeNode({
   const selected = node.path === selectedPath;
   return (
     <div className="flex flex-col">
-      <button
+      <Button
         type="button"
+        variant={selected ? "secondary" : "ghost"}
+        size="touch"
         data-testid={`folder-node-${node.path}`}
-        className={`flex min-h-11 items-center gap-2 rounded-sm px-2 text-left text-sm hover:bg-accent ${
-          selected ? "bg-accent font-medium" : ""
-        }`}
+        className={cn(
+          "w-full justify-start rounded-md border-l-2 px-2 text-left",
+          selected ? "border-l-foreground" : "border-l-transparent",
+        )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={() => onSelect(node.path)}
         onContextMenu={(event) => {
@@ -124,9 +132,9 @@ function FolderTreeNode({
           onRequestDelete(node.path);
         }}
       >
-        <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+        <FolderIcon data-icon="inline-start" />
         <SelectableText className="truncate">{node.name}</SelectableText>
-      </button>
+      </Button>
       {node.children.map((child) => (
         <FolderTreeNode
           key={child.path}
@@ -223,7 +231,7 @@ function AssetTile({
         data-asset-path={asset.path}
         data-asset-guid={asset.header.guid}
         data-selected={selected ? "true" : "false"}
-        className="flex min-h-11 w-full flex-col gap-1 p-3 text-left hover:bg-accent/50"
+        className="flex min-h-[var(--touch-target,44px)] w-full flex-col gap-1 p-3 text-left hover:bg-accent/50"
         onClick={onOpen}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -803,48 +811,48 @@ export function ContentBrowserWorkspace() {
         <div className="flex gap-2">
           <Button
             type="button"
-            variant="secondary"
-            className="min-h-11"
+            variant="outline"
+            size="touch"
             data-testid="content-browser-import"
             disabled={busy}
             onClick={() => void handleImport()}
           >
-            <UploadIcon className="size-4" />
+            <UploadIcon data-icon="inline-start" />
             Import
           </Button>
           <Button
             type="button"
-            variant="secondary"
-            className="min-h-11"
+            variant="outline"
+            size="touch"
             data-testid="content-browser-new-folder"
             disabled={busy}
             onClick={() =>
               setNameDialog({ kind: "folder", value: "NewFolder" })
             }
           >
-            <FolderPlusIcon className="size-4" />
+            <FolderPlusIcon data-icon="inline-start" />
             New Folder
           </Button>
           <Button
             type="button"
-            className="min-h-11"
+            size="touch"
             data-testid="content-browser-new-asset"
             disabled={busy}
             onClick={() => setNewAssetOpen(true)}
           >
-            <PlusIcon className="size-4" />
+            <PlusIcon data-icon="inline-start" />
             New Asset
           </Button>
           {selectedGuids.size > 0 ? (
             <Button
               type="button"
               variant="destructive"
-              className="min-h-11"
+              size="touch"
               data-testid="content-browser-delete-selected"
               disabled={busy}
               onClick={() => requestDelete([...selectedGuids])}
             >
-              <Trash2Icon className="size-4" />
+              <Trash2Icon data-icon="inline-start" />
               Delete ({selectedGuids.size})
             </Button>
           ) : null}
@@ -882,42 +890,35 @@ export function ContentBrowserWorkspace() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search assets…"
-              className="min-h-11"
+              className="min-h-[var(--touch-target,44px)]"
               data-testid="content-browser-search"
             />
-            <div
-              className="flex flex-wrap gap-2"
+            <ToggleGroup
+              variant="outline"
+              size="touch"
+              spacing={1}
+              className="flex-wrap"
               data-testid="content-browser-type-filters"
+              value={[typeFilter ?? "all"]}
+              onValueChange={(value) => {
+                const next = value[0];
+                setTypeFilter(!next || next === "all" ? null : next);
+              }}
+              aria-label="Asset type filter"
             >
-              <button
-                type="button"
-                className={`min-h-11 rounded-full px-3 text-sm ${
-                  typeFilter === null
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground"
-                }`}
-                onClick={() => setTypeFilter(null)}
-              >
+              <ToggleGroupItem value="all" data-testid="content-browser-filter-all">
                 All
-              </button>
+              </ToggleGroupItem>
               {typeChips.map((type) => (
-                <button
+                <ToggleGroupItem
                   key={type}
-                  type="button"
-                  className={`min-h-11 rounded-full px-3 text-sm ${
-                    typeFilter === type
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground"
-                  }`}
+                  value={type}
                   data-testid={`content-browser-filter-${type}`}
-                  onClick={() =>
-                    setTypeFilter((current) => (current === type ? null : type))
-                  }
                 >
                   {type}
-                </button>
+                </ToggleGroupItem>
               ))}
-            </div>
+            </ToggleGroup>
           </div>
 
           <div
@@ -973,7 +974,7 @@ export function ContentBrowserWorkspace() {
                   setNewAssetType(value as CreatableAssetType)
                 }
               >
-                <SelectTrigger id="new-asset-type" className="min-h-11 w-full">
+                <SelectTrigger id="new-asset-type" className="min-h-[var(--touch-target,44px)] w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -989,7 +990,7 @@ export function ContentBrowserWorkspace() {
               <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
               <Input
                 id="new-asset-name"
-                className="min-h-11"
+                className="min-h-[var(--touch-target,44px)]"
                 value={newAssetName}
                 onChange={(event) => setNewAssetName(event.target.value)}
               />
@@ -998,7 +999,7 @@ export function ContentBrowserWorkspace() {
               <Field>
                 <FieldLabel htmlFor="new-asset-parent">Parent class</FieldLabel>
                 <Select value={newAssetParent} onValueChange={setNewAssetParent}>
-                  <SelectTrigger id="new-asset-parent" className="min-h-11 w-full">
+                  <SelectTrigger id="new-asset-parent" className="min-h-[var(--touch-target,44px)] w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1110,7 +1111,7 @@ export function ContentBrowserWorkspace() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Input
-            className="min-h-11"
+            className="min-h-[var(--touch-target,44px)]"
             data-testid="content-browser-name-input"
             value={nameDialog?.value ?? ""}
             onChange={(event) =>

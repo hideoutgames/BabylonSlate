@@ -110,9 +110,9 @@ export function PlayOverlay({
         </span>
       </div>
       <Button
-        size="icon"
+        size="touch-icon"
         variant="secondary"
-        className="absolute right-3 top-3 z-10 min-h-11 min-w-11"
+        className="absolute right-3 top-3 z-10"
         data-testid="play-overlay-close"
         aria-label="Stop Play"
         onClick={() => {

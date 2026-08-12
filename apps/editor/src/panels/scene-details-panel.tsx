@@ -13,10 +13,11 @@ import {
   type SerializedComponent,
   type SerializedScene,
 } from "@babylonslate/core";
-import { Button } from "@babylonslate/ui/components/button";
+import { ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
+import { IconActionButton } from "../components/icon-action-button";
 
 const COMPONENT_CLASSES = [
   { id: "MeshComponent", label: "Mesh", description: "Renderable primitive" },
@@ -131,7 +132,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
 
   if (!scene) {
     return (
-      <PanelFrame title="Details" data-testid="scene-details-panel">
+      <PanelFrame data-testid="scene-details-panel">
         <p className="p-4 text-sm text-muted-foreground">Open a scene.</p>
       </PanelFrame>
     );
@@ -314,7 +315,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     ];
 
     return (
-      <PanelFrame title="Details" data-testid="scene-details-panel">
+      <PanelFrame data-testid="scene-details-panel">
         <PropertyGrid
           title="Scene settings"
           rows={settingsRows}
@@ -456,18 +457,15 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
 
   return (
     <PanelFrame
-      title="Details"
       data-testid="scene-details-panel"
       toolbar={
-        <Button
-          size="sm"
-          variant="ghost"
-          className="min-h-11 min-w-11"
+        <IconActionButton
+          label="Add component"
           onClick={() => setAddComponentOpen(true)}
           data-testid="details-add-component"
         >
-          Add component
-        </Button>
+          <PlusIcon />
+        </IconActionButton>
       }
     >
       <div className="flex flex-col gap-3 pb-4">
@@ -487,12 +485,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 {component.classId}
               </span>
               <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="min-h-11 min-w-11 text-xs"
+                <IconActionButton
+                  label={`Move ${component.classId} up`}
                   disabled={index === 0}
-                  aria-label={`Move ${component.classId} up`}
                   onClick={() =>
                     updateActor((entry) => {
                       const components = [...entry.components];
@@ -503,13 +498,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   }
                   data-testid={`component-up-${component.id}`}
                 >
-                  Up
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="min-h-11 min-w-11 text-xs"
-                  aria-label={`Remove ${component.classId}`}
+                  <ChevronUpIcon />
+                </IconActionButton>
+                <IconActionButton
+                  label={`Remove ${component.classId}`}
                   onClick={() =>
                     updateActor((entry) => ({
                       ...entry,
@@ -520,8 +512,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   }
                   data-testid={`component-remove-${component.id}`}
                 >
-                  Remove
-                </Button>
+                  <Trash2Icon />
+                </IconActionButton>
               </div>
             </div>
             <PropertyGrid

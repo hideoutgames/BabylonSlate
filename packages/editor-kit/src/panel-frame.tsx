@@ -22,12 +22,14 @@ export function PanelFrame({
       data-testid={testId}
     >
       {showHeader ? (
-        <header className="flex min-h-[var(--touch-target,44px)] shrink-0 items-center justify-between gap-2 border-b border-border px-3">
+        <header
+          className={`flex min-h-[var(--touch-target,44px)] shrink-0 items-center gap-2 border-b border-border px-3 ${
+            title ? "justify-between" : "justify-end"
+          }`}
+        >
           {title ? (
             <h2 className="truncate text-sm font-medium">{title}</h2>
-          ) : (
-            <span />
-          )}
+          ) : null}
           {toolbar ? (
             <div className="flex shrink-0 items-center gap-1">{toolbar}</div>
           ) : null}

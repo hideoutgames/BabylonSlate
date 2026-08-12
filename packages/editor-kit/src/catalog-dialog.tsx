@@ -140,10 +140,10 @@ export function CatalogDialog({
                     <Button
                       key={category.id}
                       type="button"
-                      size="sm"
+                      size="touch"
                       variant={active ? "secondary" : "ghost"}
                       className={cn(
-                        "min-h-[var(--touch-target,44px)] justify-between rounded-md border-l-2",
+                        "justify-between rounded-md border-l-2",
                         active ? "border-l-foreground" : "border-l-transparent",
                       )}
                       onClick={() => onCategoryChange(category.id)}

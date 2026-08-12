@@ -78,6 +78,7 @@ export function Homepage({
         </div>
         <Button
           variant="outline"
+          size="touch"
           data-testid="engine-settings"
           onClick={() => setSettingsOpen(true)}
         >

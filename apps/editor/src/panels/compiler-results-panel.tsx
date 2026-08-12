@@ -1,6 +1,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Card } from "@babylonslate/ui/components/card";
+import { Button } from "@babylonslate/ui/components/button";
 import { PanelFrame, SelectableText } from "@babylonslate/editor-kit";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
@@ -18,7 +19,7 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   }
 
   return (
-    <PanelFrame title="Compiler Results" data-testid="compiler-results">
+    <PanelFrame data-testid="compiler-results">
       <ScrollArea className="min-h-0 flex-1 p-2">
         <div className="flex flex-col gap-2 pr-2">
           {diagnostics.length === 0 ? (
@@ -30,10 +31,12 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                   {graphId}
                 </div>
                 {list.map((d, i) => (
-                  <button
+                  <Button
                     key={`${d.code}-${d.nodeId ?? ""}-${i}`}
                     type="button"
-                    className="flex min-h-11 w-full flex-col items-start gap-0.5 rounded-md px-2 py-2 text-left hover:bg-muted"
+                    variant="ghost"
+                    size="touch"
+                    className="h-auto w-full flex-col items-start justify-center gap-0.5 px-2 py-2 text-left"
                     data-testid="compiler-result-row"
                     onClick={() => {
                       clearFocusedNode();
@@ -54,7 +57,7 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                       {d.nodeId ? ` @ ${d.nodeId}` : ""}
                       {d.pinId ? `.${d.pinId}` : ""}
                     </SelectableText>
-                  </button>
+                  </Button>
                 ))}
               </Card>
             ))

@@ -50,6 +50,18 @@ test.describe("BabylonSlate editor smoke", () => {
     await page.locator('[data-asset-path="assets/main.graph.babasset"]').click();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await expect(page.getByTestId("actor-prefab-panel")).toBeVisible();
+    await expect(
+      page.getByTestId("actor-prefab-panel").getByTestId("prefab-preview-canvas"),
+    ).toHaveCount(0);
+
+    await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
+    await expect(page.getByTestId("prefab-viewport-panel")).toBeVisible();
+    const prefabCanvas = page.getByTestId("prefab-preview-canvas");
+    await expect(prefabCanvas).toBeVisible();
+    const prefabBox = await prefabCanvas.boundingBox();
+    expect(prefabBox, "prefab canvas should fill the center tab").not.toBeNull();
+    expect(prefabBox!.height).toBeGreaterThan(160);
 
     await page.getByTestId("save-project").click();
 

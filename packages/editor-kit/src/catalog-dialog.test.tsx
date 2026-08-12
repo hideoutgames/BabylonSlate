@@ -91,5 +91,11 @@ describe("CatalogDialog", () => {
     expect(getByText("Session")).toBeTruthy();
     expect(getByTestId("catalog-category-general")).toBeTruthy();
     expect(getByTestId("catalog-category-close")).toBeTruthy();
+    expect(getByTestId("catalog-category-general").className).toContain(
+      "border-l-foreground",
+    );
+    expect(getByTestId("catalog-category-input").className).toContain(
+      "border-l-transparent",
+    );
   });
 });

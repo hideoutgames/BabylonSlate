@@ -96,7 +96,8 @@ export function SearchSheet({
                 <Button
                   key={item.id}
                   variant="ghost"
-                  className="min-h-[var(--touch-target,44px)] w-full justify-between gap-2 text-left"
+                  size="touch"
+                  className="w-full justify-between gap-2 text-left"
                   onClick={() => {
                     onSelect(item.id);
                     setQuery("");

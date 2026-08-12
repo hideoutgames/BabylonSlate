@@ -82,4 +82,17 @@ Secondary fills use `--card`, `--popover`, `--secondary`, `--muted`, `--accent`,
 
 Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylonslate/editor-kit` (panel frame, toolbar strip). Do not add raw styled `<input>`, `<select>`, or `<button>` in `apps/editor/src` — use Field + shadcn primitives.
 
+**Action vs pressed:**
+
+| Treatment | Use |
+| --- | --- |
+| `Button variant="outline"` | Visible actions (chrome Save/Undo, panel Add/Remove, catalog primary controls) |
+| `Button variant="ghost"` | Tabs, menu items, icon-only close |
+| `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses secondary fill + `aria-pressed` |
+| Catalog / folder selected | `variant="secondary"` plus a 2px start-edge ink bar (`border-l-2 border-foreground`) |
+
+**Touch sizes** on `Button` / `Toggle`: `touch` and `touch-icon` map to `min-h/min-w: var(--touch-target, 44px)`. Prefer these over repeating `min-h-11` at call sites. Docked panels omit `PanelFrame` titles when Dockview already shows the tab name; keep a toolbar-only row when actions are present.
+
+Icon-only controls always have `aria-label`; tooltips are secondary and must not be the only way to discover the action.
+
 Dev-only **Component Gallery**: `/?test=1&gallery=1` renders every installed primitive for on-device visual checks.

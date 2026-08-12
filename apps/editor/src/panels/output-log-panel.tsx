@@ -7,7 +7,7 @@ export function OutputLogPanel(_props: IDockviewPanelProps) {
   void _props;
   const { lines } = useOutputLog();
   return (
-    <PanelFrame title="Output Log" data-testid="output-log-panel">
+    <PanelFrame data-testid="output-log-panel">
       <ScrollArea className="flex-1 p-2">
         {lines.length === 0 ? (
           <p className="text-sm text-muted-foreground">No log output yet.</p>

@@ -31,6 +31,9 @@ const buttonVariants = cva(
         "icon-sm":
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
+        touch:
+          "min-h-[var(--touch-target,44px)] gap-1.5 px-3 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
+        "touch-icon": "size-[var(--touch-target,44px)]",
       },
     },
     defaultVariants: {
