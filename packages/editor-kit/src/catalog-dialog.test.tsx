@@ -1,9 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { CatalogDialog } from "./catalog-dialog";
+
+afterEach(() => {
+  cleanup();
+});
 
 describe("CatalogDialog", () => {
   it("renders categories and search", () => {
+    // Base UI ScrollArea schedules getAnimations; jsdom lacks it.
+    Element.prototype.getAnimations = () => [];
+
     const onSearchChange = vi.fn();
     const onCategoryChange = vi.fn();
     const { getByTestId, getByPlaceholderText } = render(

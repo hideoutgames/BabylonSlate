@@ -210,9 +210,6 @@ function AssetTile({
 
   return (
     <Card
-      data-testid={`content-item-${asset.path}`}
-      data-asset-path={asset.path}
-      data-asset-guid={asset.header.guid}
       className={`relative gap-0 overflow-hidden py-0 ${
         selected ? "border-primary ring-1 ring-primary" : ""
       }`}
@@ -220,6 +217,9 @@ function AssetTile({
       <button
         type="button"
         draggable
+        data-testid={`content-item-${asset.path}`}
+        data-asset-path={asset.path}
+        data-asset-guid={asset.header.guid}
         className="flex min-h-11 w-full flex-col gap-1 p-3 text-left hover:bg-accent/50"
         onClick={onOpen}
         onContextMenu={(event) => {
