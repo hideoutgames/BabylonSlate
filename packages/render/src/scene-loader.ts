@@ -23,17 +23,12 @@ export function clearSceneMeshes(scene: Scene): void {
   });
 }
 
-/** Build the Babylon mesh for an actor's first renderable component. */
-export function createActorMesh(scene: Scene, actor: SerializedActor): Mesh {
-  const meshComponent = actor.components.find(
-    (component) => component.classId === "MeshComponent",
-  );
-  const meshKind =
-    typeof meshComponent?.properties.meshKind === "string"
-      ? meshComponent.properties.meshKind
-      : null;
-  const name = editorMeshName(actor.id);
-
+/** Build a primitive mesh for editor or Play from a MeshComponent kind. */
+export function createPrimitiveMesh(
+  scene: Scene,
+  name: string,
+  meshKind: string | null | undefined,
+): Mesh {
   switch (meshKind) {
     case "sphere":
       return MeshBuilder.CreateSphere(name, { diameter: 1.5 }, scene);
@@ -51,6 +46,18 @@ export function createActorMesh(scene: Scene, actor: SerializedActor): Mesh {
       // they can be selected and transformed in the viewport.
       return MeshBuilder.CreateBox(name, { size: 0.25 }, scene);
   }
+}
+
+/** Build the Babylon mesh for an actor's first renderable component. */
+export function createActorMesh(scene: Scene, actor: SerializedActor): Mesh {
+  const meshComponent = actor.components.find(
+    (component) => component.classId === "MeshComponent",
+  );
+  const meshKind =
+    typeof meshComponent?.properties.meshKind === "string"
+      ? meshComponent.properties.meshKind
+      : null;
+  return createPrimitiveMesh(scene, editorMeshName(actor.id), meshKind);
 }
 
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {

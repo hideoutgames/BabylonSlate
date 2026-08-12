@@ -8,9 +8,11 @@ import {
   ClassRegistry,
   GameInstance,
   World,
+  createActorsFromSerializedScene,
   type Actor,
   type TickPhase,
 } from "@babylonslate/object-model";
+import type { SerializedScene } from "@babylonslate/core";
 import {
   InputRingBuffer,
   InputResolver,
@@ -55,6 +57,9 @@ export interface RuntimeDriverOptions {
   havokWasmUrl?: string;
   /** Skip wasm backends (tests / CI without wasm). */
   preferSoftwarePhysics?: boolean;
+  /** Authored scene to instantiate on `realizePlayWorld` (no demo actors). */
+  playScene?: SerializedScene;
+  playSceneGuid?: string;
 }
 
 export interface RuntimeDriver {
@@ -83,6 +88,11 @@ export interface RuntimeDriver {
     classId: string;
     variables?: Record<string, unknown>;
   }): Actor | null;
+  /**
+   * Instantiate `playScene` (if any) with compiled script hooks.
+   * Idempotent. Call after `loadScripts` so Begin Play binds on spawn.
+   */
+  realizePlayWorld(): void;
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
@@ -135,6 +145,9 @@ class InProcessRuntime implements RuntimeDriver {
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
   private physicsSync: PhysicsWorldSync;
+  private readonly playScene: SerializedScene | undefined;
+  private readonly playSceneGuid: string;
+  private playWorldRealized = false;
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -153,6 +166,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.gravity = options.gravity ?? [0, -9.81, 0];
     this.havokWasmUrl = options.havokWasmUrl;
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
+    this.playScene = options.playScene;
+    this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
 
@@ -286,7 +301,9 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
 
-    if (options.seedDemoActors !== false) this.seedDefaultActors();
+    if (options.seedDemoActors !== false && !options.playScene) {
+      this.seedDefaultActors();
+    }
   }
 
   async loadPhysics(): Promise<void> {
@@ -337,8 +354,50 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
     this.world.spawnActorNow(actor);
-    this.assignSlot(actor);
+    const slotId = this.assignSlot(actor);
+    this.emitMeshAssignment(actor, slotId);
     return actor;
+  }
+
+  realizePlayWorld(): void {
+    if (this.playWorldRealized) return;
+    this.playWorldRealized = true;
+    if (this.playScene) {
+      const actors = createActorsFromSerializedScene(
+        this.world,
+        this.playScene,
+        (classId) => {
+          const hooks = this.scriptHost.hooksFor(classId);
+          if (!hooks) return undefined;
+          return {
+            onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+            onTick: (self, ctx) =>
+              this.guardScript(() => hooks.onTick?.(self, ctx)),
+          };
+        },
+      );
+      for (const actor of actors) {
+        this.world.spawnActorNow(actor);
+        const slotId = this.assignSlot(actor);
+        this.emitMeshAssignment(actor, slotId);
+      }
+    }
+    this.world.loadScene(this.playSceneGuid);
+  }
+
+  private emitMeshAssignment(actor: Actor, slotId: number): void {
+    const mesh = actor.components.find(
+      (component) => component.classId === "MeshComponent" && !component.destroyed,
+    );
+    if (!mesh) return;
+    const meshKind = mesh.getVariable("meshKind");
+    const assetGuid = mesh.assetGuid ?? mesh.getVariable("assetGuid");
+    this.emit({
+      type: "assignMesh",
+      slotId,
+      meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
+      meshKind: typeof meshKind === "string" ? meshKind : null,
+    });
   }
 
   private guardScript(run: () => void): void {

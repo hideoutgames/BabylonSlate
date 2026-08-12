@@ -7,7 +7,13 @@ export {
 export {
   createRuntimeFromLoad,
   runtimeOptionsFromLoadControl,
+  unmatchedScriptSpawns,
 } from "./play-load";
+export {
+  createPlayBootCoordinator,
+  type PlayBootRuntime,
+  type PlaySpawnEntry,
+} from "./play-boot";
 export { PhysicsWorldSync } from "./physics-sync";
 export { LogRingBuffer, type LogEntry, type LogSeverity } from "./log-ring";
 export {

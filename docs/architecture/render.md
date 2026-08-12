@@ -8,7 +8,7 @@ One `Engine` for the editor process. Editor viewport and Play each own a `Scene`
 
 `registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine.
 
-Play does **not** seed `createDefaultScene()` (the default Cube). The Play scene is camera + light only; snapshot apply then creates proxy boxes for runtime actors. Stacking the default Cube under those proxies at the origin z-fights and looks like a double draw. Authored `SerializedScene` load in Play is still `p7-play-scene-load`.
+Play does **not** seed `createDefaultScene()` (the default Cube) into the Play Babylon scene. The Play scene is camera + light only; snapshot apply creates meshes for runtime actors. `assignMesh` commands carry `meshKind` from `MeshComponent` so Play primitives match the editor (sphere, box, …) instead of always being a unit box. Authored actors themselves come from the `load` message `scene` payload (`p7-play-scene-load`).
 
 Play takes a `acquireContinuous("play")` lease for the session so every overlay blit is preceded by `scene.render()`. The editor stays dirty-driven; `syncEditorPlayState(handle, playing)` pauses it while Play is open and on close resizes (undoing Play’s `setSize`) and invalidates so the docked viewport redraws.
 
@@ -18,6 +18,7 @@ Play takes a `acquireContinuous("play")` lease for the session so every overlay 
 - Reuse scratch `Vector3` / `Quaternion` / `Matrix`; no per-actor per-frame allocation.
 - Bulk apply / despawn wrapped in `blockMaterialDirtyMechanism` and `blockfreeActiveMeshesAndRenderingGroups`.
 - `skipPointerMovePicking: true` on every scene.
+- `applyAssignMesh` records `meshKind` per slot and rebuilds the Play mesh via `createPrimitiveMesh` (shared with the editor loader).
 
 ## Render-on-demand
 

@@ -16,6 +16,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` | Stable string ids for engine types |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
+| `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play |
 
 Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React, Babylon, or Capacitor.
 
@@ -50,6 +51,8 @@ Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBod
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
 
 See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
+
+`createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, transforms, and component properties — so Play can instantiate the authored document without the editor touching Babylon.
 
 ## ScriptInterface dispatch
 

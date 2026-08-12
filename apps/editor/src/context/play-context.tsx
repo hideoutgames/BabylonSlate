@@ -18,7 +18,7 @@ import { useDocuments } from "./document-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
-import { playPhysicsFromOpenDocuments } from "../services/play-physics";
+import { playPhysicsFromOpenDocuments, playSceneFromOpenDocuments } from "../services/play-physics";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import {
@@ -68,6 +68,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const { collectScriptBundles, openDocuments, activeDocumentId, projectDocument } =
     useDocuments();
   const playPhysics = playPhysicsFromOpenDocuments(
+    openDocuments,
+    activeDocumentId,
+  );
+  const playScene = playSceneFromOpenDocuments(
     openDocuments,
     activeDocumentId,
   );
@@ -210,6 +214,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             injectFixtureThrow={injectThrow}
             scripts={scripts}
             physics={playPhysics}
+            sceneAssetGuid={playScene?.sceneAssetGuid}
+            scene={playScene?.scene}
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
             }

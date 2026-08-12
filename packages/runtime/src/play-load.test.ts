@@ -8,6 +8,7 @@ import {
 import {
   createRuntimeFromLoad,
   runtimeOptionsFromLoadControl,
+  unmatchedScriptSpawns,
 } from "./play-load";
 
 describe("runtimeOptionsFromLoadControl", () => {
@@ -25,6 +26,9 @@ describe("runtimeOptionsFromLoadControl", () => {
       physicsWorld: "2d",
       gravity: [0, -20, 0],
       havokWasmUrl: "/havok/HavokPhysics.wasm",
+      playScene: undefined,
+      playSceneGuid: "play-scene",
+      seedDemoActors: true,
     });
   });
 
@@ -39,6 +43,9 @@ describe("runtimeOptionsFromLoadControl", () => {
       physicsWorld: "3d",
       gravity: [0, -9.81, 0],
       havokWasmUrl: undefined,
+      playScene: undefined,
+      playSceneGuid: "play-scene",
+      seedDemoActors: true,
     });
   });
 });
@@ -116,5 +123,16 @@ describe("createRuntimeFromLoad", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+describe("unmatchedScriptSpawns", () => {
+  it("drops spawn entries whose class already exists in the scene", () => {
+    expect(
+      unmatchedScriptSpawns(
+        [{ classId: "Mover" }, { classId: "Extra" }],
+        new Set(["Mover"]),
+      ),
+    ).toEqual([{ classId: "Extra" }]);
   });
 });

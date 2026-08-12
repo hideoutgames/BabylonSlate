@@ -12,6 +12,7 @@ import {
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { SerializedScene } from "@babylonslate/core";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 
 export interface PlayOverlayProps {
@@ -19,6 +20,8 @@ export interface PlayOverlayProps {
   injectFixtureThrow?: boolean;
   scripts?: readonly ScriptBundleEntry[];
   physics?: PlayPhysicsSettings;
+  sceneAssetGuid?: string;
+  scene?: SerializedScene;
   /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
   onClose: (result: PlaySessionResult) => void;
@@ -40,6 +43,8 @@ export function PlayOverlay({
   injectFixtureThrow,
   scripts,
   physics,
+  sceneAssetGuid,
+  scene,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   onClose,
 }: PlayOverlayProps) {
@@ -50,6 +55,7 @@ export function PlayOverlay({
   const [physicsMs, setPhysicsMs] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [moveX, setMoveX] = useState<number | null>(null);
+  const [actorGuids, setActorGuids] = useState<string[]>([]);
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -57,6 +63,8 @@ export function PlayOverlay({
   scriptsRef.current = scripts;
   const physicsRef = useRef(physics);
   physicsRef.current = physics;
+  const sceneRef = useRef({ sceneAssetGuid, scene });
+  sceneRef.current = { sceneAssetGuid, scene };
   const initialFrameCapRef = useRef(frameCap);
 
   useEffect(() => {
@@ -68,6 +76,8 @@ export function PlayOverlay({
       injectFixtureThrow,
       scripts: scriptsRef.current,
       physics: physicsRef.current,
+      sceneAssetGuid: sceneRef.current.sceneAssetGuid,
+      scene: sceneRef.current.scene,
       frameCap: initialFrameCapRef.current,
       onStats: (stats) => {
         setFps(stats.fps);
@@ -85,6 +95,7 @@ export function PlayOverlay({
     });
     const movePoll = window.setInterval(() => {
       setMoveX(sessionRef.current?.lastMoveX() ?? null);
+      setActorGuids([...(sessionRef.current?.spawnedActorGuids() ?? [])]);
     }, 100);
     return () => {
       window.clearInterval(movePoll);
@@ -119,6 +130,10 @@ export function PlayOverlay({
             move.x={moveX === null ? "—" : moveX.toFixed(2)}
           </SelectableText>
         </span>
+        <span
+          data-testid="play-actor-guids"
+          data-guids={actorGuids.join(",")}
+        />
       </div>
       <Button
         size="touch-icon"

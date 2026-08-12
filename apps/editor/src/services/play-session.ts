@@ -1,11 +1,12 @@
 import {
-  createInProcessRuntime,
+  createPlayBootCoordinator,
+  createRuntimeFromLoad,
   SessionDiagnosticAggregator,
   type RuntimeDiagnostic,
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@babylonslate/runtime";
-import { DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
 import {
   createEngine,
   type EngineHandle,
@@ -20,7 +21,6 @@ import { spawnListForScripts } from "./script-compiler";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
 import {
-  inProcessPlayRuntimeOptions,
   playLoadControl,
   type PlayPhysicsSettings,
 } from "./play-physics";
@@ -71,6 +71,8 @@ export interface PlaySession {
   lastMoveX: () => number | null;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
+  /** Actor guids spawned this session (authored scene + unmatched scripts). */
+  spawnedActorGuids: () => readonly string[];
   stop: () => PlaySessionResult;
 }
 
@@ -94,6 +96,9 @@ export function startPlaySession(options: {
   physics?: PlayPhysicsSettings;
   /** Compiled project graphs to run for this session. */
   scripts?: readonly ScriptBundleEntry[];
+  /** Authored scene instantiated in the worker instead of demo actors. */
+  sceneAssetGuid?: string;
+  scene?: SerializedScene;
   onStats?: (stats: {
     fps: number;
     scriptMs: number;
@@ -133,7 +138,14 @@ export function startPlaySession(options: {
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
 
+  const spawnedActorGuids: string[] = [];
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "spawn") {
+      spawnedActorGuids.push(command.actorGuid);
+    }
+    if (command.type === "assignMesh") {
+      handle.applyCommand(command);
+    }
     if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");
     }
@@ -167,7 +179,8 @@ export function startPlaySession(options: {
     gravity: [0, -9.81, 0] as [number, number, number],
   };
   const loadControl = playLoadControl({
-    sceneAssetGuid: "play-scene",
+    sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
+    scene: options.scene,
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
   });
@@ -189,12 +202,7 @@ export function startPlaySession(options: {
   } catch (err) {
     worker = null;
     runtimeMode = "in-process";
-    runtime = createInProcessRuntime({
-      seed: 1,
-      maxActors: 256,
-      ...inProcessPlayRuntimeOptions(physics),
-      onCommand: (command) => onCommand(command),
-    });
+    runtime = createRuntimeFromLoad(loadControl, (command) => onCommand(command));
     runtime.registerAnchors(FIXTURE_ASSET, [
       {
         line: 1,
@@ -204,18 +212,14 @@ export function startPlaySession(options: {
         nodeId: FIXTURE_NODE,
       },
     ]);
-    void runtime.loadPhysics().finally(() => {
-      runtime?.start();
-    });
+    const inProcess = runtime;
+    const boot = createPlayBootCoordinator();
     if (scripts.length > 0) {
-      const inProcess = runtime;
-      void inProcess
-        .loadScripts(scripts)
-        .then(() => {
-          for (const entry of spawn) inProcess.spawnScriptedActor(entry);
-        })
-        .catch((error) => inProcess.reportError(error));
+      boot.queueScripts(inProcess, scripts, spawn);
     }
+    void boot.play(inProcess).catch((error) => {
+      inProcess.reportError(error);
+    });
     options.onLog?.(
       `Play worker unavailable (${err instanceof Error ? err.message : String(err)}); using in-process.`,
       "warning",
@@ -337,6 +341,7 @@ export function startPlaySession(options: {
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);
     },
+    spawnedActorGuids: () => spawnedActorGuids,
     stop: () => {
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", unlock);

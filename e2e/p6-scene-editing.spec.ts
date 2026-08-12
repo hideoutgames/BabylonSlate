@@ -149,6 +149,12 @@ test.describe("P6 first-playable scene editing", () => {
       })
       .toBeGreaterThan(0.5);
 
+    await expect
+      .poll(async () => {
+        return page.getByTestId("play-actor-guids").getAttribute("data-guids");
+      })
+      .toContain("actor-1");
+
     await page.getByTestId("play-overlay-close").click();
     await injectGamepad(page, null);
 
