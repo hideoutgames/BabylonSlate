@@ -45,9 +45,9 @@ Global Engine Settings stored **outside** any project:
 | localStorage | Web |
 | Electron userData bridge | Desktop — settings only until the P14 host lands |
 
-Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap (visible scene + Prefab Preview; freeze when hidden or a modal is open), hardware scaling, thumbnail toggle, debugger defaults, Focus keep-lists (`focusKeepPanels.scene` default `["viewport"]`, `focusKeepPanels.graph` default `["graph"]` — already-open dock tabs that stay when Focus is on).
+Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap (visible scene + Prefab Preview; freeze when hidden or a modal is open), hardware scaling, thumbnail toggle, debugger defaults, Focus keep-lists (`focusKeepPanels.scene` default `["viewport"]`, `focusKeepPanels.graph` default `["graph"]` — already-open dock tabs that stay when Focus is on), graph default zoom (`graphDefaultZoom` default 0.5, range 0.1–1.5 — opening fit-view cap for node graphs).
 
-Number fields (frame cap, hardware scaling, pointer scale, undo length, and Project Settings `pixelsPerUnit`) use `NumberField`: an empty draft while typing does not persist, and blur restores the last valid value. Out-of-range drafts clamp on blur.
+Number fields (frame cap, hardware scaling, pointer scale, undo length, graph default zoom, and Project Settings `pixelsPerUnit`) use `NumberField`: an empty draft while typing does not persist, and blur restores the last valid value. Out-of-range drafts clamp on blur.
 
 `createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. With no bridge the Electron store keeps settings in memory, so desktop never silently loses them to a missing backend.
 

@@ -64,6 +64,7 @@ import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
+import { WindowsMenu } from "./windows-menu";
 import { displayProjectName } from "../lib/display-project-name";
 import "../shell/editor-chrome.css";
 
@@ -453,6 +454,7 @@ export function EditorChromeBar({
         </div>
 
         <div className="editor-global-toolbar-end">
+          <WindowsMenu />
           <Tooltip>
             <TooltipTrigger
               render={

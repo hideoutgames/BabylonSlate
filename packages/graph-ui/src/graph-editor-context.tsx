@@ -1,11 +1,13 @@
 import { createContext, useContext } from "react";
 import type { NavigateRequest } from "./graph-types";
+import type { PinTypeRef } from "./node-theme";
 
 export type GraphEditorContextValue = {
   pendingPin: { nodeId: string; pinId: string } | null;
   onPinTap: (nodeId: string, pinId: string, direction: "in" | "out") => void;
   nodeErrorCount: (nodeId: string) => number;
   pinHasError: (nodeId: string, pinId: string) => boolean;
+  pinDisplayType: (nodeId: string, pinId: string) => PinTypeRef | undefined;
   onNavigateRequest?: (request: NavigateRequest) => void;
 };
 
