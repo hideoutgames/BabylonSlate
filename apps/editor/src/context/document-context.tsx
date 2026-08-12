@@ -15,7 +15,7 @@ import type {
   ProjectDocument,
   ProjectFolderHandle,
 } from "@babylonslate/core";
-import { documentId } from "@babylonslate/core";
+import { documentId, normalizeProjectSettings } from "@babylonslate/core";
 import {
   appendJournalLine,
   hasJournal,
@@ -31,6 +31,7 @@ import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
   diffGraphCommands,
+  diffSceneCommands,
   EditSession,
   replayJournalLines,
   serializeJournalLine,
@@ -96,6 +97,10 @@ interface DocumentContextValue {
   updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
+  /** Apply a scene edit through the command layer (marks dirty + undoable). */
+  applySceneChange: (id: string, next: SerializedScene) => Promise<boolean>;
+  /** Persist project.json settings (Input, 2D units, textures, …). */
+  updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -137,6 +142,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [projectDocument, setProjectDocument] = useState<ProjectDocument | null>(
     null,
   );
+  const projectDocumentRef = useRef<ProjectDocument | null>(null);
+  projectDocumentRef.current = projectDocument;
   const [listedProjects, setListedProjects] = useState<ProjectFolderHandle[]>(
     [],
   );
@@ -269,17 +276,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Ensure every journal target graph is open so replay is not skipped.
+    // Ensure every journal target document is open so replay is not skipped.
     for (const raw of lines) {
       try {
         const line = JSON.parse(raw) as { docId?: string };
         const docId = line.docId;
-        if (!docId || !docId.startsWith("graph:")) continue;
+        const kind = docId?.startsWith("graph:")
+          ? "graph"
+          : docId?.startsWith("scene:")
+            ? "scene"
+            : null;
+        if (!docId || !kind) continue;
         if (documentService.getState().openDocuments.has(docId)) continue;
-        const path = docId.slice("graph:".length);
+        const path = docId.slice(`${kind}:`.length);
         await documentService.openDocument(
           projectService,
-          { kind: "graph", path, label: path.split("/").pop() ?? path },
+          { kind, path, label: path.split("/").pop() ?? path },
           null,
           false,
         );
@@ -288,16 +300,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const openGraphs = new Map<string, SerializedGraph>();
+    const openDocs = new Map<string, SerializedGraph | SerializedScene>();
     for (const doc of documentService.getOpenDocumentsOrdered()) {
-      if (doc.ref.kind === "graph" && doc.content) {
-        openGraphs.set(doc.id, doc.content as SerializedGraph);
+      if ((doc.ref.kind === "graph" || doc.ref.kind === "scene") && doc.content) {
+        openDocs.set(doc.id, doc.content);
       }
     }
 
-    const { documents } = replayJournalLines(lines, openGraphs);
-    for (const [id, graph] of documents) {
-      documentService.updateGraph(id, graph);
+    const { documents } = replayJournalLines(lines, openDocs);
+    for (const [id, content] of documents) {
+      if (id.startsWith("scene:")) {
+        documentService.updateScene(id, content as SerializedScene);
+      } else {
+        documentService.updateGraph(id, content as SerializedGraph);
+      }
     }
     await truncateJournal(derived, guid);
     setRecoveryAvailable(false);
@@ -391,7 +407,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [enterEditor, projectService]);
 
   const saveProject = useCallback(async () => {
-    if (!projectDocument) return;
+    const document = projectDocumentRef.current;
+    if (!document) return;
     if (projectService.pendingMigrations.length > 0) {
       setMigrationPending(projectService.pendingMigrations);
       // Caller must use approveMigrationsAndSave — never silently rewrite.
@@ -413,7 +430,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
     const layouts = documentService.buildLayouts();
-    await projectService.saveProject(projectDocument, layouts);
+    await projectService.saveProject(document, layouts);
     documentService.markAllClean();
     setMigrationPending([]);
     const guid = projectService.guid;
@@ -423,14 +440,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setRecoveryAvailable(false);
     }
     bump();
-  }, [
-    bump,
-    captureAllLayouts,
-    documentService,
-    ensureDerived,
-    projectDocument,
-    projectService,
-  ]);
+  }, [bump, captureAllLayouts, documentService, ensureDerived, projectService]);
 
   const scheduleDebouncedSave = useCallback(() => {
     if (saveDebounceRef.current) {
@@ -589,6 +599,39 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService],
   );
 
+  const updateProjectSettings = useCallback(
+    (settings: Partial<ProjectDocument["settings"]>) => {
+      setProjectDocument((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          settings: normalizeProjectSettings({
+            ...current.settings,
+            ...settings,
+            textures: {
+              ...current.settings.textures,
+              ...settings.textures,
+            },
+            twoD: {
+              ...current.settings.twoD,
+              ...settings.twoD,
+            },
+            input: settings.input
+              ? settings.input
+              : current.settings.input,
+          }),
+          metadata: {
+            ...current.metadata,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
+      scheduleDebouncedSave();
+      bump();
+    },
+    [bump, scheduleDebouncedSave],
+  );
+
   const applyGraphChange = useCallback(
     async (id: string, next: SerializedGraph): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
@@ -605,6 +648,45 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
       documentService.updateGraph(id, current);
+      const guid = projectService.guid;
+      if (guid) {
+        const derived = await ensureDerived();
+        for (const command of commands) {
+          await appendJournalLine(
+            derived,
+            guid,
+            serializeJournalLine({
+              v: 1,
+              docId: id,
+              at: new Date().toISOString(),
+              command: commandToJournalPayload(command),
+            }),
+          );
+        }
+      }
+      scheduleDebouncedSave();
+      bump();
+      return true;
+    },
+    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
+  );
+
+  const applySceneChange = useCallback(
+    async (id: string, next: SerializedScene): Promise<boolean> => {
+      const doc = documentService.getState().openDocuments.get(id);
+      if (!doc || doc.ref.kind !== "scene" || !doc.content) {
+        return false;
+      }
+      const previous = doc.content as SerializedScene;
+      const commands = diffSceneCommands(previous, next);
+      if (commands.length === 0) {
+        return false;
+      }
+      let current = previous;
+      for (const command of commands) {
+        current = editSessionRef.current.apply(id, current, command).doc;
+      }
+      documentService.updateScene(id, current);
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
@@ -678,6 +760,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         cancelDebouncedSave: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
         hasRecoveryJournal: () => Promise<boolean>;
+        /** Move the first scene actor by a fixed delta through the command layer. */
+        nudgeActiveSceneActor: () => Promise<boolean>;
+        activeSceneActorPosition: () => [number, number, number] | null;
+        injectTestGamepad: (pad: {
+          index?: number;
+          axes?: number[];
+          buttons?: number[];
+        } | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
       };
     };
@@ -736,6 +826,52 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         };
         return applyGraphChange(id, graph);
       },
+      activeSceneActorPosition: () => {
+        const doc = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "scene" && entry.content,
+        );
+        const scene = doc?.content as SerializedScene | undefined;
+        const position = scene?.actors[0]?.transform.position;
+        return position ? [...position] : null;
+      },
+      nudgeActiveSceneActor: async () => {
+        const openDocuments = documentService.getState().openDocuments;
+        const id = [...openDocuments.values()].find((d) => d.ref.kind === "scene")
+          ?.id;
+        if (!id) return false;
+        const doc = openDocuments.get(id);
+        if (!doc?.content) return false;
+        const scene = structuredClone(doc.content as SerializedScene);
+        const actor = scene.actors[0];
+        if (!actor) return false;
+        const [x, y, z] = actor.transform.position;
+        scene.actors[0] = {
+          ...actor,
+          transform: {
+            ...actor.transform,
+            position: [x + 1.5, y, z],
+          },
+        };
+        return applySceneChange(id, scene);
+      },
+      injectTestGamepad: (pad) => {
+        const globalHost = globalThis as {
+          __babylonslateTestGamepad?: {
+            index: number;
+            axes: number[];
+            buttons: number[];
+          };
+        };
+        if (!pad) {
+          delete globalHost.__babylonslateTestGamepad;
+          return;
+        }
+        globalHost.__babylonslateTestGamepad = {
+          index: pad.index ?? 0,
+          axes: pad.axes ?? [0, 0, 0, 0],
+          buttons: pad.buttons ?? [0, 0, 0, 0],
+        };
+      },
       /** Replace the main graph so Preview compiles a known script. */
       setMainGraphContent: async (graph: SerializedGraph) => {
         const path = "assets/main.graph.babasset";
@@ -755,34 +891,56 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
     return () => {
       delete host.__babylonslateTest;
+      delete (globalThis as { __babylonslateTestGamepad?: unknown })
+        .__babylonslateTestGamepad;
     };
-  }, [applyGraphChange, bump, documentService, ensureDerived, projectService]);
+  }, [
+    applyGraphChange,
+    applySceneChange,
+    bump,
+    documentService,
+    ensureDerived,
+    projectService,
+  ]);
+
+  const stepActiveDocumentHistory = useCallback(
+    (direction: "undo" | "redo") => {
+      const { activeDocumentId, openDocuments } = documentService.getState();
+      if (!activeDocumentId) return;
+      const doc = openDocuments.get(activeDocumentId);
+      if (!doc?.content) return;
+      if (doc.ref.kind === "graph") {
+        const stack =
+          editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
+        const content = doc.content as SerializedGraph;
+        const result =
+          direction === "undo" ? stack.undo(content) : stack.redo(content);
+        if (!result) return;
+        documentService.updateGraph(activeDocumentId, result.doc);
+        bump();
+        return;
+      }
+      if (doc.ref.kind === "scene") {
+        const stack =
+          editSessionRef.current.getStack<SerializedScene>(activeDocumentId);
+        const content = doc.content as SerializedScene;
+        const result =
+          direction === "undo" ? stack.undo(content) : stack.redo(content);
+        if (!result) return;
+        documentService.updateScene(activeDocumentId, result.doc);
+        bump();
+      }
+    },
+    [bump, documentService],
+  );
 
   const undoActiveDocument = useCallback(() => {
-    const { activeDocumentId, openDocuments } = documentService.getState();
-    if (!activeDocumentId) return;
-    const doc = openDocuments.get(activeDocumentId);
-    if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
-    const stack =
-      editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
-    const result = stack.undo(doc.content as SerializedGraph);
-    if (!result) return;
-    documentService.updateGraph(activeDocumentId, result.doc);
-    bump();
-  }, [bump, documentService]);
+    stepActiveDocumentHistory("undo");
+  }, [stepActiveDocumentHistory]);
 
   const redoActiveDocument = useCallback(() => {
-    const { activeDocumentId, openDocuments } = documentService.getState();
-    if (!activeDocumentId) return;
-    const doc = openDocuments.get(activeDocumentId);
-    if (!doc || doc.ref.kind !== "graph" || !doc.content) return;
-    const stack =
-      editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
-    const result = stack.redo(doc.content as SerializedGraph);
-    if (!result) return;
-    documentService.updateGraph(activeDocumentId, result.doc);
-    bump();
-  }, [bump, documentService]);
+    stepActiveDocumentHistory("redo");
+  }, [stepActiveDocumentHistory]);
 
   const registerDockviewApi = useCallback((id: string, api: DockviewApi) => {
     dockviewApisRef.current.set(id, api);
@@ -869,6 +1027,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateScene,
       updateGraph,
       applyGraphChange,
+      applySceneChange,
+      updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,
       canUndoActiveDocument: (() => {
@@ -933,6 +1093,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateScene,
       updateGraph,
       applyGraphChange,
+      applySceneChange,
+      updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,

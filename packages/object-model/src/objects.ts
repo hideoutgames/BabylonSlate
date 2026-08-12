@@ -10,6 +10,22 @@ export type TickContext = {
   dt: number;
   tickIndex: number;
   world: WorldLike;
+  /** Resolved input actions / axes for this tick; absent when no mappings. */
+  isActionHeld?: (action: string) => boolean;
+  wasActionPressed?: (action: string) => boolean;
+  wasActionReleased?: (action: string) => boolean;
+  getAxis?: (axis: string) => number;
+  getAxis2D?: (axis: string) => { x: number; y: number };
+  setGamepadRumble?: (
+    gamepadIndex: number,
+    intensity: number,
+    durationMs: number,
+  ) => void;
+  /** Connection transitions observed while resolving this tick. */
+  gamepadConnections?: ReadonlyArray<{
+    gamepadIndex: number;
+    connected: boolean;
+  }>;
 };
 
 export interface WorldLike {

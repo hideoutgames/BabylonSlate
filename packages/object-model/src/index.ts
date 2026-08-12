@@ -37,7 +37,7 @@ export {
   type TickPhase,
   type TickSchedulerOptions,
 } from "./tick";
-export { World, type WorldOptions } from "./world";
+export { World, type WorldOptions, type WorldInputProvider } from "./world";
 export {
   createWorldSnapshot,
   stringifyWorldSnapshot,

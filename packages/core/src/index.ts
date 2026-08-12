@@ -1,5 +1,6 @@
 export * from "./storage-port";
 export * from "./command-bus";
+export * from "./scene";
 export * from "./project";
 export * from "./document";
 export * from "./guid-result";

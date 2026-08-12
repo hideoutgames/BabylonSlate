@@ -1,0 +1,129 @@
+import { useCallback, useRef, useState, type PointerEvent } from "react";
+
+export interface NumericDragFieldProps {
+  label: string;
+  value: number;
+  /** World units (or degrees) per pixel of horizontal drag. */
+  sensitivity?: number;
+  step?: number;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+  /** Fired once when a scrub starts, so callers can open one undo entry. */
+  onDragBegin?: () => void;
+  onChange: (value: number) => void;
+  /** Fired once when a scrub ends, so callers can close the undo entry. */
+  onDragEnd?: (value: number) => void;
+  "data-testid"?: string;
+}
+
+function clamp(value: number, min?: number, max?: number): number {
+  let next = value;
+  if (typeof min === "number") next = Math.max(min, next);
+  if (typeof max === "number") next = Math.min(max, next);
+  return next;
+}
+
+/**
+ * Touch-first numeric entry: drag the label to scrub, tap the field to type.
+ * Scrubs report begin/end so one gesture coalesces into one undo entry.
+ */
+export function NumericDragField({
+  label,
+  value,
+  sensitivity = 0.01,
+  step = 0.001,
+  min,
+  max,
+  disabled = false,
+  onDragBegin,
+  onChange,
+  onDragEnd,
+  "data-testid": testId,
+}: NumericDragFieldProps) {
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startValue: number;
+    latest: number;
+  } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const onPointerDown = useCallback(
+    (event: PointerEvent<HTMLSpanElement>) => {
+      if (disabled) return;
+      dragRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startValue: value,
+        latest: value,
+      };
+      setDragging(true);
+      onDragBegin?.();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    },
+    [disabled, onDragBegin, value],
+  );
+
+  const onPointerMove = useCallback(
+    (event: PointerEvent<HTMLSpanElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const delta = (event.clientX - drag.startX) * sensitivity;
+      const next = clamp(drag.startValue + delta, min, max);
+      drag.latest = next;
+      onChange(next);
+    },
+    [max, min, onChange, sensitivity],
+  );
+
+  const endDrag = useCallback(
+    (event: PointerEvent<HTMLSpanElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      dragRef.current = null;
+      setDragging(false);
+      onDragEnd?.(drag.latest);
+    },
+    [onDragEnd],
+  );
+
+  return (
+    <label className="flex min-h-[var(--touch-target,44px)] items-center gap-2">
+      <span
+        className={`min-w-8 shrink-0 cursor-ew-resize touch-none select-none text-xs font-medium text-muted-foreground ${
+          dragging ? "text-foreground" : ""
+        }`}
+        data-testid={testId ? `${testId}-scrub` : undefined}
+        aria-hidden="true"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        {label}
+      </span>
+      <input
+        type="number"
+        className="min-h-[var(--touch-target,44px)] w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+        aria-label={label}
+        data-testid={testId}
+        disabled={disabled}
+        step={step}
+        value={draft ?? String(value)}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          const parsed = Number(event.target.value);
+          if (Number.isFinite(parsed)) {
+            onChange(clamp(parsed, min, max));
+          }
+        }}
+        onBlur={() => {
+          setDraft(null);
+          onDragEnd?.(value);
+        }}
+      />
+    </label>
+  );
+}

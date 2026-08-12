@@ -79,6 +79,25 @@ export function attachInputCapture(
           buttons: pad.buttons.map((b) => b.value),
         });
       }
+      // Test-mode synthetic pad: e2e injects axes without a real controller.
+      const synthetic = (
+        globalThis as {
+          __babylonslateTestGamepad?: {
+            index: number;
+            axes: number[];
+            buttons: number[];
+          };
+        }
+      ).__babylonslateTestGamepad;
+      if (synthetic) {
+        ring.push({
+          kind: "gamepad",
+          tick,
+          gamepadIndex: synthetic.index,
+          axes: [...synthetic.axes],
+          buttons: [...synthetic.buttons],
+        });
+      }
     },
     dispose: () => {
       canvas.removeEventListener("pointerdown", down);

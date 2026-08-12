@@ -1,11 +1,24 @@
 import { describe, expect, it, afterEach } from "vitest";
-import { createDefaultScene } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  createMeshComponent,
+  type SerializedScene,
+} from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import {
+  actorIdFromMeshName,
   applySceneToBabylonScene,
   clearSceneMeshes,
   countSceneMeshes,
+  editorMeshName,
 } from "./scene-loader";
+
+function sceneWithActors(
+  actors: SerializedScene["actors"],
+): SerializedScene {
+  return { ...createDefaultScene(), actors };
+}
 
 describe("scene-loader", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -25,33 +38,37 @@ describe("scene-loader", () => {
     return handle;
   }
 
-  it("creates one box mesh from default scene data", () => {
+  it("creates one mesh per actor from default scene data", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());
     expect(countSceneMeshes(scene)).toBe(1);
-    expect(scene.getMeshByName("cube")).not.toBeNull();
+    expect(scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
   });
 
   it("replaces meshes when loading a new scene", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());
-    applySceneToBabylonScene(scene, {
-      name: "Other",
-      meshes: [
-        { id: "box-a", type: "box", position: [1, 0, 0] },
-        { id: "box-b", type: "box", position: [2, 0, 0] },
-      ],
-    });
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("box-a", "A", {
+          components: [createMeshComponent("c1", "box")],
+        }),
+        createActor("box-b", "B", {
+          components: [createMeshComponent("c2", "sphere")],
+        }),
+      ]),
+    );
 
     expect(countSceneMeshes(scene)).toBe(2);
-    expect(scene.getMeshByName("cube")).toBeNull();
-    expect(scene.getMeshByName("box-a")).not.toBeNull();
+    expect(scene.getMeshByName(editorMeshName("actor-1"))).toBeNull();
+    expect(scene.getMeshByName(editorMeshName("box-a"))).not.toBeNull();
   });
 
-  it("handles empty mesh list", () => {
+  it("handles an empty actor list", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());
-    applySceneToBabylonScene(scene, { name: "Empty", meshes: [] });
+    applySceneToBabylonScene(scene, sceneWithActors([]));
     expect(countSceneMeshes(scene)).toBe(0);
   });
 
@@ -62,36 +79,69 @@ describe("scene-loader", () => {
     expect(countSceneMeshes(scene)).toBe(0);
   });
 
-  it("places each box at its serialized position", () => {
+  it("places each actor at its serialized transform", () => {
     const { scene } = createHandle();
-    applySceneToBabylonScene(scene, {
-      name: "Positions",
-      meshes: [{ id: "box-a", type: "box", position: [1, 2, 3] }],
-    });
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("box-a", "A", {
+          transform: {
+            position: [1, 2, 3],
+            rotation: [0, 0, 0, 1],
+            scale: [2, 2, 2],
+          },
+          components: [createMeshComponent("c1", "box")],
+        }),
+      ]),
+    );
 
-    const box = scene.getMeshByName("box-a");
+    const box = scene.getMeshByName(editorMeshName("box-a"));
     expect(box).not.toBeNull();
     expect([box!.position.x, box!.position.y, box!.position.z]).toEqual([
       1, 2, 3,
     ]);
+    expect(box!.scaling.x).toBe(2);
   });
 
-  it("ignores mesh definitions of unknown type", () => {
+  it("parents child actors to their parent mesh", () => {
     const { scene } = createHandle();
-    applySceneToBabylonScene(scene, {
-      name: "Unknown",
-      meshes: [
-        { id: "box-a", type: "box", position: [0, 0, 0] },
-        {
-          id: "mystery",
-          type: "sphere" as unknown as "box",
-          position: [0, 0, 0],
-        },
-      ],
-    });
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("parent", "Parent"),
+        createActor("child", "Child", { parentId: "parent" }),
+      ]),
+    );
 
-    expect(countSceneMeshes(scene)).toBe(1);
-    expect(scene.getMeshByName("mystery")).toBeNull();
+    const child = scene.getMeshByName(editorMeshName("child"));
+    expect(child?.parent?.name).toBe(editorMeshName("parent"));
+  });
+
+  it("creates a pickable proxy for actors without a mesh component", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([createActor("empty", "Empty")]),
+    );
+    expect(scene.getMeshByName(editorMeshName("empty"))).not.toBeNull();
+  });
+
+  it("hides invisible actors and unlocks pickability from the locked flag", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("hidden", "Hidden", { visible: false, locked: true }),
+      ]),
+    );
+    const mesh = scene.getMeshByName(editorMeshName("hidden"))!;
+    expect(mesh.isVisible).toBe(false);
+    expect(mesh.isPickable).toBe(false);
+  });
+
+  it("maps mesh names back to actor ids", () => {
+    expect(actorIdFromMeshName(editorMeshName("abc"))).toBe("abc");
+    expect(actorIdFromMeshName("actor-3")).toBeNull();
   });
 
   it("clearSceneMeshes is safe on an already empty scene", () => {

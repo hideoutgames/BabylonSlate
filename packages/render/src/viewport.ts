@@ -6,7 +6,8 @@ import {
   Vector3,
 } from "@babylonjs/core";
 
-export const DEFAULT_CAMERA_RADIUS = 8;
+import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";
+
 export const DEFAULT_LIGHT_INTENSITY = 0.9;
 
 /**

@@ -2,11 +2,11 @@ import { describe, expect, it, afterEach } from "vitest";
 import { Color3 } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import {
-  DEFAULT_CAMERA_RADIUS,
   DEFAULT_LIGHT_INTENSITY,
   setHighlightColor,
   setupDefaultViewport,
 } from "./viewport";
+import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";
 
 describe("viewport", () => {
   const handles: Array<{

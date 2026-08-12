@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { GraphEditor } from "@babylonslate/graph-ui";
+import { PanelFrame } from "@babylonslate/editor-kit";
 import { createDefaultGraph, type SerializedGraph } from "@babylonslate/core";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { useDocuments } from "../context/document-context";
@@ -66,7 +67,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   );
 
   return (
-    <div className="h-full w-full">
+    <PanelFrame title="Graph" data-testid="graph-panel">
       <GraphEditor
         key={documentId}
         initialGraph={graph}
@@ -78,6 +79,6 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           void applyGraphChange(documentId, next as SerializedGraph);
         }}
       />
-    </div>
+    </PanelFrame>
   );
 }

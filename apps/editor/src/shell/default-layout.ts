@@ -10,14 +10,36 @@ export function createSceneDefaultLayout(api: DockviewApi): void {
   });
 
   api.addPanel({
-    id: "inspector",
-    component: "inspector",
-    title: "Inspector",
+    id: "scene-outliner",
+    component: "scene-outliner",
+    title: "Outliner",
+    position: {
+      referencePanel: viewport,
+      direction: "left",
+    },
+    initialWidth: 260,
+  });
+
+  const details = api.addPanel({
+    id: "scene-details",
+    component: "scene-details",
+    title: "Details",
     position: {
       referencePanel: viewport,
       direction: "right",
     },
-    initialWidth: 280,
+    initialWidth: 300,
+  });
+
+  api.addPanel({
+    id: "mini-asset-browser",
+    component: "mini-asset-browser",
+    title: "Assets",
+    position: {
+      referencePanel: details,
+      direction: "below",
+    },
+    initialHeight: 220,
   });
 
   api.addPanel({
@@ -41,7 +63,7 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
     title: "Graph",
   });
 
-  api.addPanel({
+  const myClass = api.addPanel({
     id: "my-class",
     component: "my-class",
     title: "My Class",
@@ -50,6 +72,17 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
       direction: "left",
     },
     initialWidth: 260,
+  });
+
+  // The prefab tab shares the class sidebar group with My Class.
+  api.addPanel({
+    id: "actor-prefab",
+    component: "actor-prefab",
+    title: "Prefab",
+    position: {
+      referencePanel: myClass,
+      direction: "within",
+    },
   });
 
   api.addPanel({

@@ -1,7 +1,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Card } from "@babylonslate/ui/components/card";
-import { SelectableText } from "@babylonslate/editor-kit";
+import { PanelFrame, SelectableText } from "@babylonslate/editor-kit";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
 
@@ -18,9 +18,8 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   }
 
   return (
-    <div className="flex h-full flex-col gap-2 p-2" data-testid="compiler-results">
-      <div className="text-sm font-medium text-foreground">Compiler Results</div>
-      <ScrollArea className="min-h-0 flex-1">
+    <PanelFrame title="Compiler Results" data-testid="compiler-results">
+      <ScrollArea className="min-h-0 flex-1 p-2">
         <div className="flex flex-col gap-2 pr-2">
           {diagnostics.length === 0 ? (
             <p className="text-sm text-muted-foreground">No diagnostics.</p>
@@ -62,6 +61,6 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
           )}
         </div>
       </ScrollArea>
-    </div>
+    </PanelFrame>
   );
 }

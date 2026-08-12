@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Card } from "@babylonslate/ui/components/card";
 import { Button } from "@babylonslate/ui/components/button";
+import { PanelFrame } from "@babylonslate/editor-kit";
 import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -47,14 +48,16 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   const className = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : null;
 
   return (
-    <div className="flex h-full flex-col gap-2 p-2" data-testid="my-class-panel">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-medium">{className ?? "My Class"}</div>
+    <PanelFrame
+      title={className ?? "My Class"}
+      data-testid="my-class-panel"
+      toolbar={
         <Button type="button" size="sm" variant="outline" disabled>
           Add
         </Button>
-      </div>
-      <ScrollArea className="min-h-0 flex-1">
+      }
+    >
+      <ScrollArea className="min-h-0 flex-1 p-2">
         <div className="flex flex-col gap-1 pr-2">
           {members.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -84,6 +87,6 @@ export function MyClassPanel(_props: MyClassPanelProps) {
           )}
         </div>
       </ScrollArea>
-    </div>
+    </PanelFrame>
   );
 }

@@ -5,6 +5,8 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
+import { Input } from "@babylonslate/ui/components/input";
+import { Textarea } from "@babylonslate/ui/components/textarea";
 import { Separator } from "@babylonslate/ui/components/separator";
 import {
   Sheet,
@@ -30,12 +32,14 @@ export function ProjectSettingsSheet({
   open,
   onOpenChange,
 }: ProjectSettingsSheetProps) {
-  const { projectDocument, exportProject, retryFailedTextureEncoding } =
+  const { projectDocument, exportProject, retryFailedTextureEncoding, updateProjectSettings } =
     useDocuments();
 
   if (!open || !projectDocument) {
     return null;
   }
+
+  const twoD = projectDocument.settings.twoD;
 
   const handleExport = async () => {
     const bytes = await exportProject();
@@ -58,8 +62,10 @@ export function ProjectSettingsSheet({
           </SheetDescription>
         </SheetHeader>
         <Tabs defaultValue="general" className="px-4 pb-4">
-          <TabsList className="w-full">
+          <TabsList className="w-full flex-wrap h-auto">
             <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="input">Input</TabsTrigger>
+            <TabsTrigger value="twoD">2D</TabsTrigger>
             <TabsTrigger value="textures">Textures</TabsTrigger>
             <TabsTrigger value="export">Export</TabsTrigger>
           </TabsList>
@@ -80,6 +86,154 @@ export function ProjectSettingsSheet({
                 </p>
                 <FieldDescription>
                   Matches shell <code>--touch-target</code> on this device.
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+          </TabsContent>
+          <TabsContent value="input" className="flex flex-col gap-4 pt-4">
+            <FieldGroup>
+              <Field>
+                <FieldLabel>Actions</FieldLabel>
+                <FieldDescription>
+                  Named actions resolve through the input mapping model. Edit
+                  the JSON below; each binding needs a device and code.
+                </FieldDescription>
+                <Textarea
+                  className="min-h-32 font-mono text-xs"
+                  value={JSON.stringify(
+                    projectDocument.settings.input.actions,
+                    null,
+                    2,
+                  )}
+                  onChange={(event) => {
+                    try {
+                      const actions = JSON.parse(event.target.value) as unknown;
+                      if (!Array.isArray(actions)) return;
+                      updateProjectSettings({
+                        input: {
+                          ...projectDocument.settings.input,
+                          actions: actions as typeof projectDocument.settings.input.actions,
+                        },
+                      });
+                    } catch {
+                      // Keep typing until the JSON is valid again.
+                    }
+                  }}
+                  data-testid="settings-input-actions"
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Axes</FieldLabel>
+                <Textarea
+                  className="min-h-32 font-mono text-xs"
+                  value={JSON.stringify(
+                    projectDocument.settings.input.axes,
+                    null,
+                    2,
+                  )}
+                  onChange={(event) => {
+                    try {
+                      const axes = JSON.parse(event.target.value) as unknown;
+                      if (!Array.isArray(axes)) return;
+                      updateProjectSettings({
+                        input: {
+                          ...projectDocument.settings.input,
+                          axes: axes as typeof projectDocument.settings.input.axes,
+                        },
+                      });
+                    } catch {
+                      // Keep typing until the JSON is valid again.
+                    }
+                  }}
+                  data-testid="settings-input-axes"
+                />
+              </Field>
+            </FieldGroup>
+          </TabsContent>
+          <TabsContent value="twoD" className="flex flex-col gap-4 pt-4">
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="pixels-per-unit">Pixels per unit</FieldLabel>
+                <Input
+                  id="pixels-per-unit"
+                  type="number"
+                  min={1}
+                  step={1}
+                  className="min-h-11"
+                  value={twoD.pixelsPerUnit}
+                  onChange={(event) =>
+                    updateProjectSettings({
+                      twoD: {
+                        ...twoD,
+                        pixelsPerUnit: Number(event.target.value) || 100,
+                      },
+                    })
+                  }
+                  data-testid="settings-pixels-per-unit"
+                />
+                <FieldDescription>
+                  Texture pixels that span one world unit in 2D scenes.
+                </FieldDescription>
+              </Field>
+              <Field>
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={twoD.pixelPerfect}
+                    onChange={(event) =>
+                      updateProjectSettings({
+                        twoD: { ...twoD, pixelPerfect: event.target.checked },
+                      })
+                    }
+                    data-testid="settings-pixel-perfect"
+                  />
+                  Pixel-perfect mode
+                </label>
+                <FieldDescription>
+                  Ortho bounds from canvas size, nearest sampling, camera snapped
+                  to the pixel grid.
+                </FieldDescription>
+              </Field>
+              <Field>
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={twoD.integerZoomSteps}
+                    onChange={(event) =>
+                      updateProjectSettings({
+                        twoD: {
+                          ...twoD,
+                          integerZoomSteps: event.target.checked,
+                        },
+                      })
+                    }
+                    data-testid="settings-integer-zoom"
+                  />
+                  Integer zoom steps
+                </label>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="sorting-layers">Sorting layers</FieldLabel>
+                <Input
+                  id="sorting-layers"
+                  className="min-h-11"
+                  value={twoD.sortingLayers.join(", ")}
+                  onChange={(event) =>
+                    updateProjectSettings({
+                      twoD: {
+                        ...twoD,
+                        sortingLayers: event.target.value
+                          .split(",")
+                          .map((layer) => layer.trim())
+                          .filter(Boolean),
+                      },
+                    })
+                  }
+                  data-testid="settings-sorting-layers"
+                />
+                <FieldDescription>
+                  Comma-separated, back to front. Compiles to one alphaIndex sort
+                  key per sprite.
                 </FieldDescription>
               </Field>
             </FieldGroup>

@@ -39,4 +39,20 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 
 `visibilitychange` (and Capacitor app-state when present) pauses the render scheduler, game worker / in-process runtime tick, and texture encode queue. Encode pause uses a reason set (`visibility` | `play`) so ending Play does not resume encoding while the tab is still hidden.
 
+## Editor tools (P6)
+
+Editor viewport attaches these modules from `@babylonslate/render` (Play views omit them):
+
+| Module | Role |
+| --- | --- |
+| `editor-camera` | Mode-parametric ArcRotate controller; 2D ortho pan/zoom, pixel-perfect framing |
+| `gizmo-host` | Translate / rotate / scale on a utility layer; axis set filtered by `ViewportMode` |
+| `editor-grid` | 3D XZ or 2D XY grid; tile spacing + subdivisions; `cameraBounds2D` overlay |
+| `selection-outline` | Highlight mesh(es) for selected actors |
+| `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
+| `viewport-gestures` | Two-finger orbit/pan/zoom; 2D one-finger marquee; tap pick |
+| `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds and pixel-grid snap |
+
+**Invalidation wiring**: `RenderScheduler.invalidate(reason)` — editor tools call `"camera"`, `"gizmo"`, and `"selection"`; scene sync uses `"asset"`. Gizmo drags acquire a continuous-render lease (`acquireContinuous("gizmo")`). See [scene-editing.md](scene-editing.md).
+
 See [bridge.md](bridge.md) for the snapshot wire format and [perf-budget.md](../design/perf-budget.md) for budgets.

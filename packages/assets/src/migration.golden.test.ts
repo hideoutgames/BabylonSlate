@@ -79,10 +79,50 @@ describe("historical migration goldens", () => {
     expect(loaded.pending).toEqual({
       type: "Scene",
       fromVersion: 0,
-      toVersion: 1,
+      toVersion: 2,
       path: "assets/legacy.scene.babasset",
     });
-    expect(loaded.payload).toEqual({ name: "Legacy", meshes: [] });
+    expect(loaded.payload.name).toBe("Legacy");
+    expect(loaded.payload.actors).toEqual([]);
+    expect(loaded.payload.viewportMode).toBe("3d");
+    expect(loaded.payload.meshes).toBeUndefined();
+  });
+
+  it("migrates a Scene v1 mesh list into actors with mesh components", () => {
+    const registry = createDefaultMigrationRegistry();
+    const loaded = loadPayloadWithMigration(registry, {
+      type: "Scene",
+      version: 1,
+      payload: {
+        name: "Legacy",
+        meshes: [{ id: "cube", type: "box", position: [1, 2, 3] }],
+      },
+      path: "assets/legacy.scene.babasset",
+    });
+
+    expect(loaded.version).toBe(2);
+    expect(loaded.payload.actors).toEqual([
+      {
+        id: "cube",
+        name: "cube",
+        classId: "Actor",
+        parentId: null,
+        transform: {
+          position: [1, 2, 3],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+        },
+        visible: true,
+        locked: false,
+        components: [
+          {
+            id: "cube-mesh",
+            classId: "MeshComponent",
+            properties: { meshKind: "box", assetGuid: null },
+          },
+        ],
+      },
+    ]);
   });
 
   it("refuses a golden written by a newer engine", async () => {

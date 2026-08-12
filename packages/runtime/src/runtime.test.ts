@@ -98,4 +98,36 @@ describe("in-process runtime driver", () => {
     expect(header.actorCount).toBeGreaterThan(0);
     runtime.stop();
   });
+
+  it("resolves mapped actions and axes into TickContext", () => {
+    const held: boolean[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, maxActors: 4 });
+    const world = runtime.getWorld();
+    const probe = world.createActor({
+      classId: "Actor",
+      hooks: {
+        onTick: (_self, ctx) => {
+          held.push(ctx.isActionHeld?.("Jump") ?? false);
+        },
+      },
+    });
+    world.spawnActorNow(probe);
+    runtime.start();
+    runtime.pushInput([{ kind: "key", tick: 0, code: "Space", phase: "down" }]);
+    runtime.tick();
+    expect(runtime.getResolvedInput().actions.Jump?.pressed).toBe(true);
+    expect(held.at(-1)).toBe(true);
+    runtime.pushInput([
+      {
+        kind: "gamepad",
+        tick: 1,
+        gamepadIndex: 0,
+        axes: [0.9, 0, 0, 0],
+        buttons: [],
+      },
+    ]);
+    runtime.tick();
+    expect(runtime.getResolvedInput().axes2D.Move!.x).toBeGreaterThan(0.5);
+    runtime.stop();
+  });
 });

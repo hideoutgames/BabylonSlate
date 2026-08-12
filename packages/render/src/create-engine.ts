@@ -5,8 +5,17 @@ import {
   Scene,
   ScenePerformancePriority,
 } from "@babylonjs/core";
-import type { SerializedScene } from "@babylonslate/core";
+import type { SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
+import {
+  createEditorCamera,
+  type EditorCameraController,
+} from "./editor-camera";
+import { createEditorGrid, type EditorGrid } from "./editor-grid";
+import { EditorSceneSync } from "./editor-scene-sync";
+import { createGizmoHost, type GizmoHost } from "./gizmo-host";
+import { SelectionOutline } from "./selection-outline";
+import { attachViewportGestures } from "./viewport-gestures";
 import { configureKtx2Transcoder } from "./ktx2-transcoder";
 import { applySceneToBabylonScene } from "./scene-loader";
 import { setupDefaultViewport } from "./viewport";
@@ -21,6 +30,7 @@ import {
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { pickAtCanvas } from "./picking";
+import { meshNamesInCanvasRect } from "./two-d";
 
 export interface EngineHandle {
   engine: Engine;
@@ -41,6 +51,8 @@ export interface EngineHandle {
     canvasX: number,
     canvasY: number,
   ) => { meshName: string; slotId: number | null } | null;
+  /** Editor camera, gizmos, grid, outline and scene sync; null in Play views. */
+  editor: EditorTools | null;
 }
 
 export interface CreateEngineOptions {
@@ -49,6 +61,48 @@ export interface CreateEngineOptions {
   /** When true, use Play scene performance settings. */
   playMode?: boolean;
   maxActors?: number;
+  /** Attach the editor camera, gizmos, grid, selection and scene sync. */
+  editor?: boolean;
+  viewportMode?: ViewportMode;
+  /** Actor id under an explicit tap, or null when the tap missed. */
+  onPickActor?: (actorId: string | null) => void;
+  /** Actors inside a 2D one-finger marquee drag. */
+  onMarqueeSelect?: (actorIds: string[]) => void;
+  /** Gizmo drag lifecycle so the editor can coalesce one undo entry. */
+  onGizmoDragStart?: () => void;
+  onGizmoDrag?: () => void;
+  onGizmoDragEnd?: () => void;
+}
+
+export interface EditorTools {
+  camera: EditorCameraController;
+  gizmos: GizmoHost;
+  grid: EditorGrid;
+  selection: SelectionOutline;
+  sync: EditorSceneSync;
+  setViewportMode: (mode: ViewportMode) => void;
+  /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
+  setPixelPerfect: (
+    settings: { pixelsPerUnit: number; integerZoomSteps: boolean } | null,
+  ) => void;
+  /** Ordered sorting layers from project settings, back to front. */
+  setSortingLayers: (layers: readonly string[]) => void;
+  /** Tile grid, subdivision and 2D game camera bounds from scene settings. */
+  setGridSettings: (settings: {
+    tileSize: number;
+    tileSubdivisions: number;
+    cameraBounds2D: { width: number; height: number };
+  }) => void;
+  /** Select actors by id; passing an empty list clears the selection. */
+  setSelectedActors: (actorIds: string[]) => void;
+  frameActor: (actorId: string) => void;
+  /** Live transform of the gizmo-attached mesh, for turning a drag into a command. */
+  attachedActorTransform: () => {
+    actorId: string;
+    position: [number, number, number];
+    rotation: [number, number, number, number];
+    scale: [number, number, number];
+  } | null;
 }
 
 /**
@@ -90,14 +144,124 @@ export function createEngine(
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
 
+  const editorSync = options.editor ? new EditorSceneSync(scene, scheduler) : null;
+
   const loadScene = (sceneData: SerializedScene) => {
+    if (editorSync) {
+      editorSync.apply(sceneData);
+      return;
+    }
     applySceneToBabylonScene(scene, sceneData);
     scheduler.invalidate("asset");
   };
 
+  let editor: EditorTools | null = null;
+  let disposeGestures: (() => void) | null = null;
+  if (options.editor && editorSync) {
+    const mode: ViewportMode = options.viewportMode ?? "3d";
+    // The editor camera replaces the default viewport camera set up above.
+    scene.activeCamera?.dispose();
+    const cameraController = createEditorCamera(scene, { mode, scheduler });
+    const grid = createEditorGrid(scene, { mode });
+    const selection = new SelectionOutline(scene);
+    const gizmos = createGizmoHost(scene, {
+      mode,
+      scheduler,
+      onDragStart: options.onGizmoDragStart,
+      onDrag: options.onGizmoDrag,
+      onDragEnd: options.onGizmoDragEnd,
+    });
+
+    const gestures = attachViewportGestures(canvas, cameraController, {
+      scheduler,
+      onTap: (x, y) => {
+        const hit = pickAtCanvas(scene, x, y);
+        const actorId = hit ? editorSync.actorForMesh(hit.meshName) : null;
+        options.onPickActor?.(actorId);
+      },
+      onMarquee: (rect) => {
+        if (!options.onMarqueeSelect) return;
+        const names = meshNamesInCanvasRect(
+          scene,
+          rect,
+          engine.getRenderWidth(),
+          engine.getRenderHeight(),
+        );
+        const actorIds = names
+          .map((name) => editorSync.actorForMesh(name))
+          .filter((id): id is string => id !== null);
+        options.onMarqueeSelect(actorIds);
+      },
+    });
+    disposeGestures = gestures.dispose;
+
+    editor = {
+      camera: cameraController,
+      gizmos,
+      grid,
+      selection,
+      sync: editorSync,
+      setViewportMode: (next: ViewportMode) => {
+        cameraController.setMode(next);
+        gizmos.setMode(next);
+        grid.setMode(next);
+        scheduler.invalidate("camera");
+      },
+      setPixelPerfect: (settings) => {
+        cameraController.setCanvasHeight(engine.getRenderHeight());
+        cameraController.setPixelPerfect(settings);
+      },
+      setSortingLayers: (layers) => {
+        editorSync.setSortingLayers(layers);
+        scheduler.invalidate("asset");
+      },
+      setGridSettings: (settings) => {
+        grid.setSpacing(settings.tileSize);
+        grid.setSubdivisions(settings.tileSubdivisions);
+        grid.setCameraBounds(settings.cameraBounds2D);
+        scheduler.invalidate("asset");
+      },
+      setSelectedActors: (actorIds: string[]) => {
+        const meshes = actorIds.map((id) => editorSync.meshForActor(id));
+        selection.set(meshes);
+        gizmos.attachTo(meshes[0] ?? null);
+        scheduler.invalidate("selection");
+      },
+      frameActor: (actorId: string) => {
+        const mesh = editorSync.meshForActor(actorId);
+        if (mesh) {
+          cameraController.frame(mesh.getAbsolutePosition());
+        }
+      },
+      attachedActorTransform: () => {
+        const mesh = gizmos.attachedMesh();
+        if (!mesh) return null;
+        const actorId = editorSync.actorForMesh(mesh.name);
+        if (!actorId) return null;
+        const rotation = mesh.rotationQuaternion;
+        return {
+          actorId,
+          position: [mesh.position.x, mesh.position.y, mesh.position.z],
+          rotation: rotation
+            ? [rotation.x, rotation.y, rotation.z, rotation.w]
+            : [0, 0, 0, 1],
+          scale: [mesh.scaling.x, mesh.scaling.y, mesh.scaling.z],
+        };
+      },
+    };
+  }
+
   loadScene(createDefaultScene());
 
-  const resize = () => engine.resize();
+  const resize = () => {
+    engine.resize();
+    const width = engine.getRenderWidth();
+    const height = engine.getRenderHeight();
+    if (height > 0) {
+      editor?.camera.setCanvasHeight(height);
+      editor?.camera.updateOrthoBounds(width / height);
+    }
+  };
 
   let interpAlpha = 1;
   engine.runRenderLoop(() => {
@@ -145,7 +309,9 @@ export function createEngine(
       scheduler.invalidate("selection");
     }
   };
-  canvas.addEventListener("pointerdown", onPointerDown);
+  if (!options.editor) {
+    canvas.addEventListener("pointerdown", onPointerDown);
+  }
 
   return {
     engine,
@@ -153,7 +319,13 @@ export function createEngine(
     scheduler,
     resourceCache,
     scaling,
+    editor,
     dispose: () => {
+      disposeGestures?.();
+      editor?.gizmos.dispose();
+      editor?.grid.dispose();
+      editor?.selection.dispose();
+      editor?.sync.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);

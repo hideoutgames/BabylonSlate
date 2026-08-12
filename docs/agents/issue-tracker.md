@@ -28,7 +28,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-11 | cursor/p4-bridge-play-2497 | p4-render-sync | Standards | Per-frame ActorSlot/Set alloc in snapshot sync — fixed to reuse scratch | Resolved |
 | 2026-08-11 | cursor/p4-bridge-play-2497 | p4-bridge | Spec | Multi-transport parity harness now exercises SAB + transferable against in-process snapshot payload | Resolved |
 | 2026-08-11 | cursor/p4-bridge-play-2497 | p4-preview-report | Spec | Navigate focuses fixture node id (full graph/bodyLine navigation waits on P5 compiler) | Accepted |
-| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-input-capture | Spec | Synthetic encode/decode tested; full harness replay-through-runtime deferred with action mappings to P6 | Accepted |
+| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-input-capture | Spec | Synthetic encode/decode tested; full harness replay-through-runtime deferred with action mappings to P6 | Resolved (P6 `p6-input-mappings`) |
 | 2026-08-12 | cursor/p4-implementation-review-79b7 | p4-preview-report | Spec | Worker-mode Play never populated the session report (`play-session.ts` `onCommand` used an ad hoc type missing `code`/`assetGuid`/`nodeId`/`stack`, so real worker `diagnostic` commands were logged but never aggregated — only the injected fixture-throw path faked report entries) | Resolved |
 | 2026-08-12 | cursor/p4-implementation-review-79b7 | p4-render-on-demand | Standards | `create-engine.ts` fed the hardware-scaling valve the wall-clock gap since the last rendered frame instead of render cost; render-on-demand's idle gaps (by design, seconds) would read as a catastrophic frame and drop resolution quality for no reason | Resolved |
 | 2026-08-12 | cursor/p4-implementation-review-79b7 | p4-bridge / p4-runtime-worker | Standards | `worker-entry.ts` allocated a fresh Float32Array/ArrayBuffer every rAF frame for the snapshot transfer instead of using `TransferablePingPong`; wired a `recycleSnapshot` host message so the host hands the consumed buffer back once its synchronous consumer is done, eliminating the per-frame allocation | Resolved |
@@ -126,3 +126,20 @@ Design notes: [bridge.md](../architecture/bridge.md), [render.md](../architectur
 Design notes: [scripting.md](../architecture/scripting.md).
 
 **Parallelism:** after `p5-scripting-core` lands its types and a failing/passing golden harness, catalog categories may run as separate PRs (one package ownership set per agent). Do not start `p5-graph-ui` and `p5-scripting-core` against competing IR shapes — core owns the IR contract first.
+
+## P6 slice ownership
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/scene-editing.md`, `input.md` | P5 complete |
+| Scene schema | — | `core` (`SerializedScene` v2) | Design notes |
+| Editor kit | `p6-editor-kit` | `editor-kit`, `apps/editor` (gallery route) | Design notes |
+| Scene editing | `p6-scene-editing` | `edit` (scene commands), `apps/editor` (viewport, outliner, details, mini asset browser, actor prefab) | Scene schema + editor-kit + command layer |
+| 2D viewport | `p6-2d-viewport` | `render` (editor-camera, gizmo-host, editor-grid, viewport-gestures) | Scene editing |
+| 2D units + sorting | `p6-2d-units-sorting` | `core` (project `twoD` settings), `render` (sorting, pixel-perfect) | 2D viewport |
+| Input mappings | `p6-input-mappings` | `input`, `runtime`, `scripting-nodes`, `apps/editor` (Project Settings Input tab) | P4 input capture |
+| E2E + docs | — | `e2e/`, `docs/` | All P6 slices |
+
+Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](../architecture/input.md).
+
+**Closed deferrals:** P2 "scene document commands on the edit layer → P6" (`p6-scene-editing`); P4 "action mappings deferred to P6" (`p6-input-mappings`).

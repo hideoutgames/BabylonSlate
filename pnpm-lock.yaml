@@ -231,6 +231,9 @@ importers:
 
   packages/editor-kit:
     dependencies:
+      '@babylonslate/ui':
+        specifier: workspace:*
+        version: link:../ui
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -302,6 +305,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@babylonslate/test-kit':
+        specifier: workspace:*
+        version: link:../test-kit
       typescript:
         specifier: ~5.8.2
         version: 5.8.3

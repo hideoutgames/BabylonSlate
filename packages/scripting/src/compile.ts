@@ -262,6 +262,52 @@ export function compileGraph(
         break;
       }
 
+      // Input event entries gate their then-chain on the resolved tick state.
+      if (
+        node.typeId === "input.onAction" ||
+        node.typeId === "input.onGamepadConnected" ||
+        node.typeId === "input.onGamepadDisconnected"
+      ) {
+        const ctx = makeCtx(node);
+        const anchor = {
+          column: 1,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId: node.id,
+        };
+        for (const p of node.pins) {
+          if (p.kind === "data" && p.direction === "out") {
+            const name = ctx.output(p.name);
+            emitBody(`  let ${name} = ${defaultValueLiteral(p.type)};`, anchor);
+          }
+        }
+        if (node.typeId === "input.onAction") {
+          const action = ctx.input("action");
+          const phase = ctx.input("phase");
+          emitBody(
+            `  if (((${phase} === "released" ? ctx.wasActionReleased?.(${action}) : ctx.wasActionPressed?.(${action})) ?? false)) {`,
+            anchor,
+          );
+          for (const t of execSuccessors(graph, node.id, "then")) {
+            emitExecChain(t, new Set(visited));
+          }
+          emitBody(`  }`, anchor);
+        } else {
+          const connected = node.typeId === "input.onGamepadConnected";
+          const index = ctx.output("index");
+          emitBody(
+            `  for (const __pad of (ctx.gamepadConnections ?? []).filter((c) => c.connected === ${connected})) {`,
+            anchor,
+          );
+          emitBody(`    ${index} = __pad.gamepadIndex;`, anchor);
+          for (const t of execSuccessors(graph, node.id, "then")) {
+            emitExecChain(t, new Set(visited));
+          }
+          emitBody(`  }`, anchor);
+        }
+        break;
+      }
+
       if (node.typeId === "flow.sequence") {
         for (const outPin of node.pins.filter(
           (p) => p.kind === "exec" && p.direction === "out",
