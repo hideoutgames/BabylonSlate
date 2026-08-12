@@ -7,6 +7,22 @@ afterEach(() => {
   cleanup();
 });
 
+describe("EngineSettingsForm graph", () => {
+  it("shows graph default zoom 0.5", () => {
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={() => {}}
+        categoryId="graph"
+      />,
+    );
+    expect(getByTestId("setting-graph-default-zoom")).toHaveProperty(
+      "value",
+      "0.5",
+    );
+  });
+});
+
 describe("EngineSettingsForm focus", () => {
   it("lists default keep tabs for scene and class", () => {
     const { getByTestId } = render(

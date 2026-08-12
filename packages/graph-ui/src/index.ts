@@ -1,4 +1,5 @@
 export * from "./graph-editor";
+export { resolveGraphViewport } from "./graph-viewport";
 export * from "./graph-connect";
 export * from "./graph-model";
 export * from "./graph-types";

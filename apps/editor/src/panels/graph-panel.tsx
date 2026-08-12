@@ -1,13 +1,18 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { GraphEditor } from "@babylonslate/graph-ui";
-import type { PaletteNode } from "@babylonslate/graph-ui";
+import {
+  GraphEditor,
+  GRAPH_DEFAULT_ZOOM,
+  type PaletteNode,
+} from "@babylonslate/graph-ui";
 import { PanelFrame } from "@babylonslate/editor-kit";
 import type { SerializedGraph } from "@babylonslate/core";
+import { createAppSettingsStore } from "@babylonslate/vfs";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
+import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
@@ -29,6 +34,24 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     focusDiagnostic,
     setFocusDiagnostic,
   } = useValidation();
+  const [defaultZoom, setDefaultZoom] = useState(GRAPH_DEFAULT_ZOOM);
+
+  useEffect(() => {
+    const store = createAppSettingsStore();
+    void store.load().then((settings) => {
+      setDefaultZoom(settings.graphDefaultZoom);
+    });
+    const onSettings = (event: Event) => {
+      const detail = (event as CustomEvent<{ graphDefaultZoom?: number }>)
+        .detail;
+      if (detail && typeof detail.graphDefaultZoom === "number") {
+        setDefaultZoom(detail.graphDefaultZoom);
+      }
+    };
+    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+    return () =>
+      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+  }, []);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph = useMemo(() => {
@@ -91,6 +114,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         key={documentId}
         initialGraph={graph}
         colorMode="dark"
+        defaultZoom={defaultZoom}
         focusedNodeId={focusId}
         diagnostics={graphDiagnostics}
         paletteNodes={paletteNodes}
