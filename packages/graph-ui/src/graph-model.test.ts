@@ -126,20 +126,14 @@ describe("createEdgeId", () => {
 describe("nodeChangesMutateGraph", () => {
   it("ignores select-only changes so selection does not dirty the document", () => {
     expect(
-      nodeChangesMutateGraph([
-        { type: "select", id: "n1", selected: true },
-        { type: "select", id: "n2", selected: false },
-      ]),
+      nodeChangesMutateGraph([{ type: "select" }, { type: "select" }]),
     ).toBe(false);
   });
 
   it("treats position and remove changes as document mutations", () => {
     expect(
-      nodeChangesMutateGraph([
-        { type: "select", id: "n1", selected: true },
-        { type: "position", id: "n1", position: { x: 10, y: 20 } },
-      ]),
+      nodeChangesMutateGraph([{ type: "select" }, { type: "position" }]),
     ).toBe(true);
-    expect(nodeChangesMutateGraph([{ type: "remove", id: "n1" }])).toBe(true);
+    expect(nodeChangesMutateGraph([{ type: "remove" }])).toBe(true);
   });
 });
