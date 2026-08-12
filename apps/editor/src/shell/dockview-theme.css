@@ -1,6 +1,6 @@
 .dockview-theme-babylonslate {
   --dv-group-view-background-color: var(--background);
-  --dv-tabs-and-actions-container-background-color: var(--muted);
+  --dv-tabs-and-actions-container-background-color: var(--card);
   --dv-tabs-and-actions-container-font-size: 11px;
   --dv-activegroup-visiblepanel-tab-background-color: var(--chrome-tab-active);
   --dv-activegroup-hiddenpanel-tab-background-color: var(--muted);
@@ -78,9 +78,6 @@
 
 .dockview-theme-babylonslate .dv-content-container {
   background: var(--background);
-}
-
-.dockview-theme-babylonslate .dv-groupview {
   outline: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
   outline-offset: -1px;
 }
