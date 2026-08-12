@@ -82,7 +82,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 ## Graph (React Flow)
 
-- One-finger pan/zoom inside graph panel only. **Tap empty pane** clears selection. **Hold empty pane ~250ms, then move** marquees (do not steal one-finger pan until the hold arms).
+- One-finger pan/zoom inside graph panel only. Zoom-out floor is 10% (`GRAPH_MIN_ZOOM` 0.1); zoom-in ceiling is 1.5. **Tap empty pane** clears selection. **Hold empty pane ~250ms, then move** marquees (do not steal one-finger pan until the hold arms).
 - **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`). Pin hit boxes are `--touch-target` (44px); visual pins are `--graph-pin-size` (22px). Wires use `--pin-*` colors and 4–5px strokes.
 - **Drag-to-connect:** shipped. React Flow `onConnect` / `isValidConnection` persist the same `addEdge` path as tap-to-connect. Connection preview uses the dragged pin’s color. `onConnectEnd` on empty pane (not within ~48px of the source pin or an existing handle) opens Add Node filtered to nodes with a compatible opposite pin, places at the drop, and auto-wires.
 - **Double-tap empty pane** opens the unfiltered Add Node catalog. There is no floating Add node button.
