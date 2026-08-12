@@ -150,6 +150,15 @@ describe("Minimal Neutral theme tokens", () => {
     expect(toggleVariants()).toContain("aria-pressed:bg-accent");
     expect(toggleVariants()).toContain("data-[state=on]:bg-accent");
   });
+
+  it("keeps dark category and muted fills distinct from popover", () => {
+    expect(oklchLightness(tokenValue(dark, "--secondary"))).not.toBe(
+      oklchLightness(tokenValue(dark, "--popover")),
+    );
+    expect(oklchLightness(tokenValue(dark, "--muted"))).not.toBe(
+      oklchLightness(tokenValue(dark, "--popover")),
+    );
+  });
 });
 
 describe("compact dock tab strips", () => {
@@ -158,6 +167,31 @@ describe("compact dock tab strips", () => {
     expect(dockviewCss).toMatch(/min-height:\s*26px/);
     expect(dockviewCss).not.toMatch(/min-height:\s*36px/);
     expect(dockviewCss).not.toMatch(/min-height:\s*52px/);
+  });
+});
+
+describe("dockview theme contrast", () => {
+  const theme = cssBlock(dockviewCss, ".dockview-theme-babylonslate");
+
+  it("paints tab labels with foreground tokens instead of vendor white", () => {
+    expect(tokenValue(theme, "--dv-activegroup-visiblepanel-tab-color")).toBe(
+      "var(--foreground)",
+    );
+    expect(tokenValue(theme, "--dv-inactivegroup-visiblepanel-tab-color")).toBe(
+      "var(--foreground)",
+    );
+    expect(tokenValue(theme, "--dv-activegroup-hiddenpanel-tab-color")).toBe(
+      "var(--muted-foreground)",
+    );
+    expect(tokenValue(theme, "--dv-inactivegroup-hiddenpanel-tab-color")).toBe(
+      "var(--muted-foreground)",
+    );
+  });
+
+  it("outlines each panel group with a 1px bound", () => {
+    expect(dockviewCss).toMatch(
+      /\.dockview-theme-babylonslate\s+\.dv-groupview\s*\{[^}]*outline:\s*1px solid/,
+    );
   });
 });
 
