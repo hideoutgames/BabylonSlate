@@ -19,7 +19,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 
 ## React / editor
 
-- Minimum **44px** touch targets on interactive chrome (buttons, tabs, grips).
+- Chrome and dock tabs use `--chrome-row` (**28px**). Graph pin rows stay **44px** (`--touch-target`). Dockview tab strips are **18px** (fine pointer) / **26px** (coarse).
 - Use `@babylonslate/ui` and semantic tokens (`bg-background`, `text-muted-foreground`, `text-primary`, `bg-node-event`) — no raw hex colors in app code.
 - Compose forms from `Field` + shadcn inputs (`Input`, `Select`, `Switch`, `Checkbox`) — no raw `<input>`, `<select>`, or `<textarea>` with hand-rolled Tailwind in `apps/editor/src`.
 - Use `@babylonslate/editor-kit` panel composites (`PanelFrame`, `ToolbarStrip`) for docked panel chrome.

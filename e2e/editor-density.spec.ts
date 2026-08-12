@@ -1,0 +1,120 @@
+import { expect, test, type Page } from "@playwright/test";
+import { closeProjectViaSettings } from "./close-project";
+
+async function openTestProject(page: Page) {
+  await page.goto("/?test=1");
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await page.getByTestId("create-project-empty").click();
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+}
+
+test.describe("Editor density and IA", () => {
+  test("chrome is compact, has no Add tab, and Focus is disabled on Content Browser", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+
+    await expect(page.getByTestId("document-tab-add")).toHaveCount(0);
+    await expect(page.getByTestId("project-name")).toContainText("TestProject");
+    await expect(page.getByTestId("project-name")).not.toContainText(".babproject");
+    await expect(page.getByTestId("focus-layout")).toBeDisabled();
+
+    const undo = page.getByTestId("undo-document");
+    await expect(undo).toBeVisible();
+    const undoBox = await undo.boundingBox();
+    expect(undoBox).not.toBeNull();
+    expect(undoBox!.height).toBeGreaterThanOrEqual(28);
+
+    const dockTab = page.locator(".dockview-theme-babylonslate .dv-tab").first();
+    await expect(dockTab).toBeVisible();
+    const dockBox = await dockTab.boundingBox();
+    expect(dockBox).not.toBeNull();
+    const coarse = await page.evaluate(() =>
+      window.matchMedia("(pointer: coarse)").matches,
+    );
+    expect(dockBox!.height).toBeGreaterThanOrEqual(coarse ? 26 : 18);
+  });
+
+  test("Content Browser click selects and double-click opens a scene", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await expect(sceneTile).toBeVisible();
+    await sceneTile.click();
+    await expect(sceneTile).toHaveAttribute("data-selected", "true");
+    await expect(page.getByTestId("document-workspace-scene")).toHaveCount(0);
+
+    await sceneTile.dblclick();
+    await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
+    await expect(page.getByTestId("viewport-panel")).toBeVisible();
+  });
+
+  test("Focus hides the Outliner; Place Actors catalog does not focus search", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const focus = page.getByTestId("focus-layout");
+    await expect(focus).toBeEnabled();
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("scene-outliner-panel")).not.toBeVisible();
+
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
+
+    await page.getByTestId("outliner-add-actor").click();
+    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    await expect(page.getByTestId("place-actors-catalog-search")).not.toBeFocused();
+    await expect(page.getByTestId("place-actors-catalog-body")).toBeVisible();
+  });
+
+  test("Add Node catalog does not focus search", async ({ page }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.graph.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("graph-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.getByTestId("add-node-button").click();
+    await expect(page.getByTestId("node-palette")).toBeVisible();
+    await expect(page.getByTestId("node-palette-search")).not.toBeFocused();
+    await expect(page.getByTestId("node-palette-body")).toBeVisible();
+  });
+
+  test("homepage project rows expose Open, Rename, and Remove from list", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page.getByTestId("save-project").click();
+    await closeProjectViaSettings(page);
+    await expect(page.getByTestId("homepage")).toBeVisible();
+
+    const listed = page.getByTestId("open-listed-project-TestProject.babproject");
+    await expect(listed).toContainText("TestProject");
+    await listed.click({ button: "right" });
+    await expect(page.getByTestId("homepage-project-menu")).toBeVisible();
+    await expect(page.getByTestId("homepage-project-open")).toBeVisible();
+    await expect(page.getByTestId("homepage-project-rename")).toBeVisible();
+    await expect(page.getByTestId("homepage-project-remove")).toBeVisible();
+
+    await page.getByTestId("homepage-project-rename").click();
+    await expect(page.getByTestId("homepage-rename-dialog")).toBeVisible();
+    await page.getByTestId("homepage-rename-input").fill("Renamed Game");
+    await page.getByTestId("homepage-rename-confirm").click();
+    await expect(listed).toContainText("Renamed Game");
+  });
+});

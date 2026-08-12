@@ -13,7 +13,7 @@ P4 already owns stack→node mapping (`AnchorEntry`, `loadCompiledModule`, Previ
 | `graph-ui` | Touch React Flow shell reusable by script / shader / anim / BT graphs; Blueprint node chrome; pin/wire colors via `--pin-*` tokens | Babylon, Capacitor |
 | `core` | Shared `formatValue`, diagnostic / pin type primitives reused outside scripting | React, Babylon, Capacitor |
 | `runtime` | Loads compiled modules, registers anchors, Log/Print command forwarding | Babylon, DOM |
-| `apps/editor` | Class document, My Class, Compiler Results, validation gates, type asset editors | Capacitor |
+| `apps/editor` | Class document, My Blueprint, Compiler Results, validation gates, type asset editors | Capacitor |
 
 Add `scripting` / `scripting-nodes` to the ESLint pure-package allowlist beside `object-model` (same React/Babylon/Capacitor bans).
 
@@ -156,7 +156,7 @@ Ship with the catalog but own dedicated designs (not one-line templates):
 | **Print** | Boxed wildcard via `formatValue`; colour + duration; keyed registry replaces in place; worker sends command, HUD draws; export may strip or degrade to log |
 | **ExecuteConsoleCommand** | Stub/compile against command registry when P8 lands; P5 may emit a call site + warning diagnostic when registry absent |
 
-Shared **parameter-list editor** (typed named reorderable rows) lives in `editor-kit` — reused by ExecuteJavaScript, My Class function signatures, ScriptInterface, and later `BDebugCommand`.
+Shared **parameter-list editor** (typed named reorderable rows) lives in `editor-kit` — reused by ExecuteJavaScript, My Blueprint function signatures, ScriptInterface, and later `BDebugCommand`.
 
 ## Node catalog (`scripting-nodes`)
 
@@ -172,11 +172,12 @@ AI / navigation categories wait for P11.
 
 ### Class document
 
-- **Graph** canvas (event + per-function graphs) + centered **Add Node** catalog modal (`Dialog` with categories + search).
-- **My Class**: variables, functions, event dispatchers, implemented interfaces, Actor component tree; inherited members shown and marked. Re-parenting UX consumes `ClassRegistry.reparent` invalidation list (design here; do not retrofit later).
+- **Graph** canvas (event + per-function graphs) + centered **Add Node** catalog modal (`Dialog` with categories + search; search is **not** autofocused).
+- **My Blueprint**: compact collapsible tree (Graphs, Functions, Variables, Events, Interfaces) stacked *under* Components. Events come from `membersForGraph`; clicking an event focuses that graph node. Other sections stay empty until class documents store metadata.
 - **Details**: selected node / variable / component; ExecuteJavaScript pin lists + body.
 - **Compiler Results**: diagnostics grouped by graph; tap → select node, pan canvas, flash pin (or scroll CodeMirror to `bodyLine`).
-- **Prefab** (Actor): deferred polish OK if My Class + Graph work; 3D preview can stay minimal until P6 viewport.
+- **Prefab** (Actor): deferred polish OK if My Blueprint + Graph work; 3D preview can stay minimal until P6 viewport.
+- **Components**: actor component tree in the left dock; Add Component uses the Place Actors catalog chrome.
 
 ### `graph-ui` rework
 
@@ -272,14 +273,14 @@ See [issue-tracker P5 slice ownership](../agents/issue-tracker.md#p5-slice-owner
 
 ## Implementation status (landed)
 
-Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tree. Editor wires validation (Compiler Results, Play badge + Play Anyway `AlertDialog`), graph-ui tap-to-connect + Sheet palette, My Class panel, CodeMirror ExecuteJavaScript body editor, Enum/Structure/ScriptInterface creatable assets, `FunctionLibrary` engine base, `formatValue`, and validator fixtures.
+Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tree. Editor wires validation (Compiler Results, Play badge + Play Anyway `AlertDialog`), graph-ui tap-to-connect + CatalogDialog palette, My Blueprint panel, CodeMirror ExecuteJavaScript body editor, Enum/Structure/ScriptInterface creatable assets, `FunctionLibrary` engine base, `formatValue`, and validator fixtures.
 
 Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers both acceptance claims (a scripted actor running in Preview; a type mismatch blocking Preview with tap-to-navigate).
 
 **Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (drag-to-connect, pin flash, type-asset row editors, project-wide validation sweep, class-owned graphs, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, and AddNode undo persistence are landed — do not reopen those as P5 gaps.
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
-- Re-parenting class invalidation — design My Class UX against `ClassRegistry.reparent` from the start.
+- Re-parenting class invalidation — design My Blueprint UX against `ClassRegistry.reparent` from the start.
 - Blocking Preview dialog becoming dismiss-reflex — Play Anyway + "don't ask again"; demote noisy rules rather than harden the dialog.
 - ExecuteJavaScript unsandboxed — disclose on import when assets contain JS bodies.
 - Anchor tables invalidated by code moves — rewrite offsets on concat; never minify.
