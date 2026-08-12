@@ -1,5 +1,6 @@
 import { NumberField } from "@babylonslate/editor-kit";
 import type { EngineSettings } from "@babylonslate/vfs";
+import { Button } from "@babylonslate/ui/components/button";
 import { Switch } from "@babylonslate/ui/components/switch";
 import {
   Field,
@@ -17,13 +18,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@babylonslate/ui/components/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@babylonslate/ui/components/dropdown-menu";
+import { PlusIcon, XIcon } from "lucide-react";
+import {
+  focusKeepCandidates,
+  type FocusDocumentKind,
+} from "../shell/layout-ops";
 
 export type EngineSettingsCategoryId =
   | "appearance"
   | "undo"
   | "viewport"
   | "thumbnails"
-  | "templates";
+  | "templates"
+  | "focus";
 
 export function EngineSettingsForm({
   settings,
@@ -194,6 +208,31 @@ export function EngineSettingsForm({
         </FieldSet>
       ) : null}
 
+      {categoryId === "focus" ? (
+        <>
+          <FocusKeepPanelList
+            kind="scene"
+            label="Scene"
+            ids={settings.focusKeepPanels.scene}
+            onChange={(scene) =>
+              void onChange({
+                focusKeepPanels: { ...settings.focusKeepPanels, scene },
+              })
+            }
+          />
+          <FocusKeepPanelList
+            kind="graph"
+            label="Class"
+            ids={settings.focusKeepPanels.graph}
+            onChange={(graph) =>
+              void onChange({
+                focusKeepPanels: { ...settings.focusKeepPanels, graph },
+              })
+            }
+          />
+        </>
+      ) : null}
+
       {categoryId === "templates" ? (
         <FieldSet>
           <FieldLegend>Templates</FieldLegend>
@@ -223,5 +262,94 @@ export function EngineSettingsForm({
         </FieldSet>
       ) : null}
     </FieldGroup>
+  );
+}
+
+function focusKeepTitle(kind: FocusDocumentKind, id: string): string {
+  return (
+    focusKeepCandidates(kind).find((candidate) => candidate.id === id)?.title ??
+    id
+  );
+}
+
+function FocusKeepPanelList({
+  kind,
+  label,
+  ids,
+  onChange,
+}: {
+  kind: FocusDocumentKind;
+  label: string;
+  ids: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const remaining = focusKeepCandidates(kind).filter(
+    (candidate) => !ids.includes(candidate.id),
+  );
+  return (
+    <FieldSet>
+      <FieldLegend>{label}</FieldLegend>
+      <Field>
+        <FieldDescription>
+          Dock tabs that stay visible in Focus if they are already open. Closed
+          tabs are not opened.
+        </FieldDescription>
+      </Field>
+      {ids.map((id) => {
+        const title = focusKeepTitle(kind, id);
+        return (
+          <Field
+            key={id}
+            orientation="horizontal"
+            data-testid={`focus-keep-${kind}-${id}`}
+          >
+            <FieldLabel>{title}</FieldLabel>
+            <Button
+              type="button"
+              variant="ghost"
+              size="touch-icon"
+              aria-label={`Remove ${title}`}
+              data-testid={`focus-keep-${kind}-remove-${id}`}
+              onClick={() => onChange(ids.filter((entry) => entry !== id))}
+            >
+              <XIcon />
+            </Button>
+          </Field>
+        );
+      })}
+      {remaining.length > 0 ? (
+        <Field>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-[var(--touch-target,44px)] w-full"
+                  data-testid={`focus-keep-${kind}-add`}
+                />
+              }
+            >
+              <PlusIcon data-icon="inline-start" />
+              Add tab to keep
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-44">
+              <DropdownMenuGroup>
+                {remaining.map((candidate) => (
+                  <DropdownMenuItem
+                    key={candidate.id}
+                    data-testid={`focus-keep-${kind}-add-${candidate.id}`}
+                    onClick={() => onChange([...ids, candidate.id])}
+                  >
+                    {candidate.title}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </Field>
+      ) : null}
+    </FieldSet>
   );
 }

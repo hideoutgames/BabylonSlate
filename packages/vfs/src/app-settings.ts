@@ -30,6 +30,12 @@ export const engineSettingsSchema = z.object({
       logLevel: z.enum(["error", "warn", "info", "debug"]).default("warn"),
     })
     .default({ showFps: false, logLevel: "warn" }),
+  focusKeepPanels: z
+    .object({
+      scene: z.array(z.string()).default(["viewport"]),
+      graph: z.array(z.string()).default(["graph"]),
+    })
+    .default({ scene: ["viewport"], graph: ["graph"] }),
 });
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;
