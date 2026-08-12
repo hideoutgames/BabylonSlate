@@ -49,6 +49,42 @@ export function spawnListForScripts(
   return spawn;
 }
 
+export type GraphCompileDocument = {
+  path: string;
+  content: SerializedGraph;
+};
+
+/**
+ * Stable fingerprint of graph *compile* inputs. Node positions are omitted so
+ * Format / canvas nudges do not re-enable Compile.
+ */
+export function graphCompileSignature(
+  documents: ReadonlyArray<GraphCompileDocument>,
+): string {
+  const payload = [...documents]
+    .map((doc) => ({
+      path: doc.path,
+      nodes: doc.content.nodes
+        .map((node) => ({
+          id: node.id,
+          type: node.type,
+          data: node.data,
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+      edges: [...doc.content.edges].sort((a, b) => a.id.localeCompare(b.id)),
+      members: doc.content.members ?? [],
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  return JSON.stringify(payload);
+}
+
+export function graphsNeedCompile(
+  currentSignature: string,
+  lastCompiledSignature: string | null,
+): boolean {
+  return lastCompiledSignature !== currentSignature;
+}
+
 export function compileGraphDocuments(
   documents: ReadonlyArray<{
     path: string;

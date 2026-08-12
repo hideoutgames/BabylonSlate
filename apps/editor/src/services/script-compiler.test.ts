@@ -4,6 +4,8 @@ import {
   classIdForGraphPath,
   compileGraphDocument,
   compileGraphDocuments,
+  graphCompileSignature,
+  graphsNeedCompile,
   spawnListForScripts,
 } from "./script-compiler";
 
@@ -84,5 +86,63 @@ describe("script compiler service", () => {
     expect(spawnListForScripts([withEvent, withoutEvent])).toEqual([
       { classId: "main" },
     ]);
+  });
+});
+
+describe("graphCompileSignature", () => {
+  it("ignores node positions so layout does not count as a compile change", () => {
+    const moved: SerializedGraph = {
+      ...tickToLog,
+      nodes: tickToLog.nodes.map((node) => ({
+        ...node,
+        position: { x: node.position.x + 40, y: node.position.y + 10 },
+      })),
+    };
+    expect(
+      graphCompileSignature([{ path: "assets/main.graph.babasset", content: tickToLog }]),
+    ).toBe(
+      graphCompileSignature([{ path: "assets/main.graph.babasset", content: moved }]),
+    );
+  });
+
+  it("changes when node data or edges change", () => {
+    const edited: SerializedGraph = {
+      ...tickToLog,
+      nodes: tickToLog.nodes.map((node) =>
+        node.id === "log"
+          ? { ...node, data: { message: "goodbye" } }
+          : node,
+      ),
+    };
+    const disconnected: SerializedGraph = { ...tickToLog, edges: [] };
+    const base = graphCompileSignature([
+      { path: "assets/main.graph.babasset", content: tickToLog },
+    ]);
+    expect(
+      graphCompileSignature([{ path: "assets/main.graph.babasset", content: edited }]),
+    ).not.toBe(base);
+    expect(
+      graphCompileSignature([
+        { path: "assets/main.graph.babasset", content: disconnected },
+      ]),
+    ).not.toBe(base);
+  });
+
+  it("is order-independent across documents", () => {
+    const other: SerializedGraph = { nodes: [], edges: [] };
+    const a = { path: "assets/a.graph.babasset", content: tickToLog };
+    const b = { path: "assets/b.graph.babasset", content: other };
+    expect(graphCompileSignature([a, b])).toBe(graphCompileSignature([b, a]));
+  });
+});
+
+describe("graphsNeedCompile", () => {
+  it("is true before any compile and false when the signature matches", () => {
+    const signature = graphCompileSignature([
+      { path: "assets/main.graph.babasset", content: tickToLog },
+    ]);
+    expect(graphsNeedCompile(signature, null)).toBe(true);
+    expect(graphsNeedCompile(signature, signature)).toBe(false);
+    expect(graphsNeedCompile(`${signature}-edited`, signature)).toBe(true);
   });
 });

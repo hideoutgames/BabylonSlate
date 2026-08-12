@@ -102,4 +102,20 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(page.getByTestId("project-name")).toContainText("TestProject");
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
   });
+
+  test("graph Compile button shows a label and disables after compile", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page.locator('[data-asset-path="assets/main.graph.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
+
+    const compile = page.getByTestId("compile-graph");
+    await expect(compile).toBeVisible();
+    await expect(compile).toContainText("Compile");
+    await expect(compile).toBeEnabled();
+
+    await compile.click();
+    await expect(compile).toBeDisabled();
+  });
 });
