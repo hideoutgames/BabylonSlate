@@ -1,11 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 import {
   CONNECT_END_CANCEL_PX,
+  collectSafeConnectPins,
+  containerPointerToClient,
   displayNodeTitle,
   filterPaletteForPin,
+  isClientPointOverGraphNode,
   isNearSourcePin,
+  nodePinLists,
   pinsAreCompatible,
+  screenCentersForSafePins,
+  shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
 
 const execOut: SerializedPin = {
@@ -111,5 +117,200 @@ describe("isNearSourcePin", () => {
     expect(
       isNearSourcePin({ x: 10, y: 10 }, { x: 200, y: 80 }, CONNECT_END_CANCEL_PX),
     ).toBe(false);
+  });
+});
+
+describe("CONNECT_END_CANCEL_PX", () => {
+  it("is 96 screen pixels so a short slip off a pin does not open Add Node", () => {
+    expect(CONNECT_END_CANCEL_PX).toBe(96);
+  });
+});
+
+describe("collectSafeConnectPins", () => {
+  const nodes = [
+    { id: "source", pins: [execOut, stringOut] },
+    { id: "log", pins: [execIn, execOut, stringIn, floatIn] },
+  ];
+
+  it("includes the dragged source pin and compatible opposite pins", () => {
+    expect(collectSafeConnectPins(nodes, "source", execOut)).toEqual([
+      { nodeId: "source", pinId: "execOut" },
+      { nodeId: "log", pinId: "execIn" },
+    ]);
+  });
+
+  it("excludes incompatible pins", () => {
+    const refs = collectSafeConnectPins(nodes, "source", stringOut);
+    expect(refs).toEqual([
+      { nodeId: "source", pinId: "value" },
+      { nodeId: "log", pinId: "message" },
+    ]);
+    expect(refs.some((ref) => ref.pinId === "a")).toBe(false);
+    expect(refs.some((ref) => ref.pinId === "execIn")).toBe(false);
+  });
+});
+
+describe("shouldOpenAddNodeOnConnectEnd", () => {
+  const source = { x: 0, y: 0 };
+
+  it("cancels when the pointer is near the source pin", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 40, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("opens Add Node when the pointer is far from every safe pin", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 200, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(true);
+  });
+
+  it("cancels when the pointer is near a compatible pin even if far from the source", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 250, y: 0 },
+        safePins: [source, { x: 200, y: 0 }],
+      }),
+    ).toBe(false);
+  });
+
+  it("opens Add Node when the pointer is near an incompatible pin only", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 200, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(true);
+  });
+
+  it("cancels when React Flow already snapped to a target handle", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: true,
+        pointerOverNode: false,
+        pointer: { x: 200, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("cancels when the pointer is over a node body", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: true,
+        pointer: { x: 200, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("cancels strictly inside the threshold and opens at the boundary", () => {
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 95, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+    expect(
+      shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointer: { x: 96, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(true);
+  });
+});
+
+function mockRect(
+  el: Element,
+  rect: { left: number; top: number; width: number; height: number },
+) {
+  Object.defineProperty(el, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      x: rect.left,
+      y: rect.top,
+      left: rect.left,
+      top: rect.top,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      width: rect.width,
+      height: rect.height,
+      toJSON() {
+        return {};
+      },
+    }),
+  });
+}
+
+describe("nodePinLists", () => {
+  it("reads __pins from canvas node data", () => {
+    expect(
+      nodePinLists([
+        { id: "a", data: { __pins: [execOut] } },
+        { id: "b", data: { message: "no pins" } },
+      ]),
+    ).toEqual([
+      { id: "a", pins: [execOut] },
+      { id: "b", pins: undefined },
+    ]);
+  });
+});
+
+describe("screen-space connect helpers", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it("returns handle centers for safe pin refs", () => {
+    const handle = document.createElement("div");
+    handle.className = "react-flow__handle";
+    handle.dataset.nodeid = "source";
+    handle.dataset.handleid = "execOut";
+    mockRect(handle, { left: 10, top: 20, width: 44, height: 44 });
+    document.body.append(handle);
+
+    expect(
+      screenCentersForSafePins(document, [
+        { nodeId: "source", pinId: "execOut" },
+      ]),
+    ).toEqual([{ x: 32, y: 42 }]);
+  });
+
+  it("detects a client point over a graph node body", () => {
+    const node = document.createElement("div");
+    node.className = "react-flow__node";
+    mockRect(node, { left: 100, top: 100, width: 180, height: 80 });
+    document.body.append(node);
+
+    expect(isClientPointOverGraphNode({ x: 120, y: 110 }, document)).toBe(true);
+    expect(isClientPointOverGraphNode({ x: 10, y: 10 }, document)).toBe(false);
+  });
+
+  it("converts a container-relative pointer to client coordinates", () => {
+    const pane = document.createElement("div");
+    mockRect(pane, { left: 50, top: 80, width: 400, height: 300 });
+    expect(containerPointerToClient({ x: 10, y: 20 }, pane)).toEqual({
+      x: 60,
+      y: 100,
+    });
   });
 });
