@@ -21,7 +21,7 @@ Play takes a `acquireContinuous("play")` lease for the session so every overlay 
 
 ## Render-on-demand
 
-Visible editor canvases (scene viewport and Prefab Preview) render at Engine Settings `viewportFrameCap` (Always Render default on). Freeze — skip `scene.render()` — when the canvas is not intersecting / zero-size, a dialog/alert/sheet overlay is open, Play is up, or the app is backgrounded. Dirty-driven invalidation and refcounted continuous-render leases remain the Always Render-off path and still honor the same frame cap. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`, and they do not use the editor frame cap. HUD exposes rendered-fps vs invalidations/sec.
+Visible editor canvases (scene viewport and Prefab Preview) render at Engine Settings `viewportFrameCap` (Always Render default on). Freeze — skip `scene.render()` — when the canvas is not intersecting / zero-size, a dialog/alert/sheet overlay is open, Play is up, or the app is backgrounded. Dirty-driven invalidation and refcounted continuous-render leases remain the Always Render-off path and still honor the same frame cap. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`, and they use the project `playFrameCap` (default 60) rather than the editor viewport cap. The cap is applied when Play starts; the overlay control changes it for that session only (does not write `project.json`). HUD exposes rendered-fps vs invalidations/sec.
 
 `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. Pause render loop, game worker, and encode queue on background.
 

@@ -5,6 +5,7 @@ import {
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@babylonslate/runtime";
+import { DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
 import {
   createEngine,
   type EngineHandle,
@@ -68,7 +69,14 @@ export interface PlaySession {
   setPaused: (paused: boolean) => void;
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
+  /** Session-only Play/Preview fps cap; does not write `project.json`. */
+  setFrameCap: (fps: number) => void;
   stop: () => PlaySessionResult;
+}
+
+/** Resolve a Play session cap; omitted or non-positive values become 60. */
+export function resolvePlayFrameCap(fps?: number): number {
+  return typeof fps === "number" && fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
 }
 
 const FIXTURE_ASSET = "preview-fixture";
@@ -99,6 +107,8 @@ export function startPlaySession(options: {
     duration: number;
     color: string;
   }) => void;
+  /** Project `playFrameCap`; omitted or invalid → 60. Live overlay tweaks use `setFrameCap`. */
+  frameCap?: number;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
@@ -111,6 +121,7 @@ export function startPlaySession(options: {
     sharedEngine,
     playMode: true,
     maxActors: 256,
+    frameCap: resolvePlayFrameCap(options.frameCap),
   });
   handle.scheduler.invalidate("play");
   liveBefore.meshes = handle.liveObjectCounts().meshes;
@@ -322,6 +333,9 @@ export function startPlaySession(options: {
         return runtime.getResolvedInput().axes2D.Move?.x ?? lastObservedMoveX;
       }
       return lastObservedMoveX;
+    },
+    setFrameCap: (fps: number) => {
+      handle.scheduler.setFrameCap(fps);
     },
     stop: () => {
       cancelAnimationFrame(raf);
