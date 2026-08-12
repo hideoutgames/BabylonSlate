@@ -49,7 +49,7 @@ export function NodePalette({ paletteNodes, onAddNode }: NodePaletteProps) {
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-sm font-semibold text-card-foreground">
-            Add node
+            Node palette
           </h2>
           <button
             type="button"

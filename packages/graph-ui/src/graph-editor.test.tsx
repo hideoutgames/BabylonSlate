@@ -88,10 +88,13 @@ describe("GraphEditor", () => {
       <GraphEditor initialGraph={graphWithPins()} onChange={onChange} />,
     );
 
-    const source = container.querySelector(
+    const nodeElements = container.querySelectorAll(".react-flow__node");
+    expect(nodeElements.length).toBe(2);
+
+    const source = nodeElements[0]?.querySelector(
       '[data-handleid="execOut"][data-handlepos="right"]',
     );
-    const target = container.querySelector(
+    const target = nodeElements[1]?.querySelector(
       '[data-handleid="execIn"][data-handlepos="left"]',
     );
     expect(source).not.toBeNull();
@@ -132,7 +135,7 @@ describe("GraphEditor", () => {
 
   it("opens the node palette and adds a node from paletteNodes", () => {
     const onChange = vi.fn();
-    const { getByText } = render(
+    const { getByRole, getByText } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[
@@ -142,7 +145,7 @@ describe("GraphEditor", () => {
       />,
     );
 
-    fireEvent.click(getByText("Add node"));
+    fireEvent.click(getByRole("button", { name: "Add node" }));
     fireEvent.click(getByText("Log"));
 
     expect(onChange).toHaveBeenCalled();

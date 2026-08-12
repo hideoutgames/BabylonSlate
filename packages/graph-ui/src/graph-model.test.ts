@@ -70,6 +70,27 @@ describe("toSerializedGraph", () => {
     });
   });
 
+  it("round-trips scripting node type via internal __nodeType data", () => {
+    expect(
+      toSerializedGraph(
+        [
+          {
+            id: "n1",
+            type: "pinNode",
+            position: { x: 0, y: 0 },
+            data: { title: "Log", __nodeType: "debug.log", __pins: [] },
+          },
+        ],
+        [],
+      ).nodes[0],
+    ).toEqual({
+      id: "n1",
+      type: "debug.log",
+      position: { x: 0, y: 0 },
+      data: { title: "Log", __pins: [] },
+    });
+  });
+
   it("returns an empty node list for an empty canvas", () => {
     expect(toSerializedGraph([], [])).toEqual({ nodes: [], edges: [] });
   });

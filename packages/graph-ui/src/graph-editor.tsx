@@ -102,6 +102,8 @@ function GraphEditorCanvas({
     nodeId: string;
     pinId: string;
   } | null>(null);
+  const pendingPinRef = useRef(pendingPin);
+  pendingPinRef.current = pendingPin;
   const { screenToFlowPosition } = useReactFlow();
   const graphStateRef = useRef({ nodes, edges });
   graphStateRef.current = { nodes, edges };
@@ -194,20 +196,24 @@ function GraphEditorCanvas({
   const onPinTap = useCallback(
     (nodeId: string, pinId: string, direction: "in" | "out") => {
       if (direction === "out") {
-        setPendingPin({ nodeId, pinId });
+        const next = { nodeId, pinId };
+        pendingPinRef.current = next;
+        setPendingPin(next);
         return;
       }
 
-      if (!pendingPin) return;
-      if (pendingPin.nodeId === nodeId) {
+      const activePin = pendingPinRef.current;
+      if (!activePin) return;
+      if (activePin.nodeId === nodeId) {
         setPendingPin(null);
         return;
       }
 
-      addEdge(pendingPin.nodeId, pendingPin.pinId, nodeId, pinId);
+      addEdge(activePin.nodeId, activePin.pinId, nodeId, pinId);
+      pendingPinRef.current = null;
       setPendingPin(null);
     },
-    [addEdge, pendingPin],
+    [addEdge],
   );
 
   const handleAddPaletteNode = useCallback(
