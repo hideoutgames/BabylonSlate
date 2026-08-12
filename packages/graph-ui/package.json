@@ -13,6 +13,7 @@
   "dependencies": {
     "@babylonslate/core": "workspace:*",
     "@babylonslate/editor-kit": "workspace:*",
+    "@babylonslate/scripting": "workspace:*",
     "@babylonslate/ui": "workspace:*",
     "@xyflow/react": "^12.11.2",
     "react": "^19.0.0",

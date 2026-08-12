@@ -289,6 +289,9 @@ importers:
       '@babylonslate/editor-kit':
         specifier: workspace:*
         version: link:../editor-kit
+      '@babylonslate/scripting':
+        specifier: workspace:*
+        version: link:../scripting
       '@babylonslate/ui':
         specifier: workspace:*
         version: link:../ui

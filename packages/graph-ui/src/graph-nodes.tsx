@@ -137,8 +137,9 @@ function PinHandle({
   pending: boolean;
   hasError: boolean;
 }) {
-  const { onPinTap } = useGraphEditorContext();
+  const { onPinTap, pinDisplayType } = useGraphEditorContext();
   const isSource = pin.direction === "out";
+  const displayType = pinDisplayType(nodeId, pin.id) ?? pin.type;
 
   return (
     <Handle
@@ -170,7 +171,7 @@ function PinHandle({
         onPinTap(nodeId, pin.id, pin.direction);
       }}
     >
-      <PinVisual type={pin.type} />
+      <PinVisual type={displayType} />
     </Handle>
   );
 }

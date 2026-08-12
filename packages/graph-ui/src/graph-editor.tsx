@@ -40,6 +40,8 @@ import {
   isNearSourcePin,
   pinsAreCompatible,
 } from "./graph-connect";
+import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
+import type { PinDisplayLookup } from "./wildcard-display";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
@@ -72,14 +74,22 @@ function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
   }));
 }
 
-function styleFlowEdges(edges: Edge[], nodes: CanvasNode[]): Edge[] {
+function styleFlowEdges(
+  edges: Edge[],
+  nodes: CanvasNode[],
+  displayTypes: PinDisplayLookup,
+): Edge[] {
   return edges.map((edge) => {
     const source = nodes.find((node) => node.id === edge.source);
     const pins = hasSerializedPins(source?.data) ? source.data.__pins : [];
     const pin = pins.find((entry) => entry.id === edge.sourceHandle);
+    const display =
+      (edge.sourceHandle
+        ? displayTypes.get(pinTypeKey(edge.source, edge.sourceHandle))
+        : undefined) ?? pin?.type;
     return {
       ...edge,
-      style: edgeStyleForPin(pin?.type),
+      style: edgeStyleForPin(display),
     };
   });
 }
@@ -559,9 +569,20 @@ function GraphEditorCanvas({
     setSelectionDrag(false);
   }, []);
 
-  const styledEdges = useMemo(
-    () => styleFlowEdges(edges, nodes),
+  const pinDisplayTypes = useMemo(
+    () => displayPinTypesForGraph(nodes, edges),
     [edges, nodes],
+  );
+
+  const pinDisplayType = useCallback(
+    (nodeId: string, pinId: string) =>
+      pinDisplayTypes.get(pinTypeKey(nodeId, pinId)),
+    [pinDisplayTypes],
+  );
+
+  const styledEdges = useMemo(
+    () => styleFlowEdges(edges, nodes, pinDisplayTypes),
+    [edges, nodes, pinDisplayTypes],
   );
 
   const connectionLineStyle = useMemo(() => {
@@ -569,13 +590,22 @@ function GraphEditorCanvas({
       const source = nodes.find((node) => node.id === pendingPin.nodeId);
       const pins = hasSerializedPins(source?.data) ? source.data.__pins : [];
       const pin = pins.find((entry) => entry.id === pendingPin.pinId);
-      return edgeStyleForPin(pin?.type);
+      const display =
+        pinDisplayTypes.get(pinTypeKey(pendingPin.nodeId, pendingPin.pinId)) ??
+        pin?.type;
+      return edgeStyleForPin(display);
     }
     if (pendingConnect?.pin) {
-      return edgeStyleForPin(pendingConnect.pin.type);
+      const display =
+        (pendingConnect.nodeId
+          ? pinDisplayTypes.get(
+              pinTypeKey(pendingConnect.nodeId, pendingConnect.pin.id),
+            )
+          : undefined) ?? pendingConnect.pin.type;
+      return edgeStyleForPin(display);
     }
     return edgeStyleForPin({ kind: "exec" });
-  }, [nodes, pendingConnect, pendingPin]);
+  }, [nodes, pendingConnect, pendingPin, pinDisplayTypes]);
 
   const contextValue = useMemo(
     () => ({
@@ -583,9 +613,17 @@ function GraphEditorCanvas({
       onPinTap,
       nodeErrorCount,
       pinHasError,
+      pinDisplayType,
       onNavigateRequest,
     }),
-    [nodeErrorCount, onNavigateRequest, onPinTap, pendingPin, pinHasError],
+    [
+      nodeErrorCount,
+      onNavigateRequest,
+      onPinTap,
+      pendingPin,
+      pinDisplayType,
+      pinHasError,
+    ],
   );
 
   return (
