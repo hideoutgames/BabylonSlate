@@ -8,9 +8,6 @@ afterEach(() => {
 
 describe("CatalogDialog", () => {
   it("renders categories and search", () => {
-    // Base UI ScrollArea schedules getAnimations; jsdom lacks it.
-    Element.prototype.getAnimations = () => [];
-
     const onSearchChange = vi.fn();
     const onCategoryChange = vi.fn();
     const { getByTestId, getByPlaceholderText } = render(

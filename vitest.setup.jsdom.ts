@@ -21,3 +21,11 @@ if (!("DOMMatrixReadOnly" in globalThis)) {
   (globalThis as Record<string, unknown>).DOMMatrixReadOnly =
     DOMMatrixReadOnlyStub;
 }
+
+/** Base UI / Radix may call getAnimations; jsdom does not implement it. */
+if (typeof Element !== "undefined" && !Element.prototype.getAnimations) {
+  Element.prototype.getAnimations = () => [];
+}
+if (typeof Document !== "undefined" && !Document.prototype.getAnimations) {
+  Document.prototype.getAnimations = () => [];
+}

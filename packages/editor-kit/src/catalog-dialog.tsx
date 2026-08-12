@@ -8,7 +8,6 @@ import {
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
 import { Input } from "@babylonslate/ui/components/input";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { cn } from "@babylonslate/ui/lib/utils";
 
 export interface CatalogCategory {
@@ -103,9 +102,9 @@ export function CatalogDialog({
               </Button>
             ))}
           </nav>
-          <ScrollArea className="min-h-0 flex-1">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="p-4">{children}</div>
-          </ScrollArea>
+          </div>
         </div>
         {footer ? (
           <div className="shrink-0 border-t px-4 py-3">{footer}</div>
