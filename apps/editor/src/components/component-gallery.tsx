@@ -52,7 +52,7 @@ import {
 } from "@babylonslate/ui/components/tooltip";
 
 const GALLERY_TREE_NODES: TreeViewNode[] = [
-  { id: "root", label: "Scene root", depth: 0, hasChildren: true, expanded: true },
+  { id: "root", label: "Scene Root", depth: 0, hasChildren: true, expanded: true },
   { id: "player", label: "Player", depth: 1, hasChildren: false, expanded: false },
   { id: "ground", label: "Ground", depth: 1, hasChildren: false, expanded: false },
 ];
@@ -94,7 +94,7 @@ function GalleryComposites() {
     {
       kind: "enum",
       id: "gallery-mode",
-      label: "Viewport mode",
+      label: "Viewport Mode",
       value: "3d",
       options: [
         { value: "3d", label: "3D" },

@@ -59,6 +59,7 @@ describe("displayNodeTitle", () => {
     expect(displayNodeTitle("flow.event.beginPlay")).toBe("Event Begin Play");
     expect(displayNodeTitle("flow.event.tick")).toBe("Event Tick");
     expect(displayNodeTitle("flow.event.custom")).toBe("Event Custom");
+    expect(displayNodeTitle("flow.event.camera2D")).toBe("Event Camera 2D");
   });
 });
 

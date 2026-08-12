@@ -503,7 +503,7 @@ export function SettingsModal({
               data-testid="retry-texture-encoding"
               onClick={() => void retryFailedTextureEncoding()}
             >
-              Retry encoding
+              Retry Encoding
             </Button>
           </FieldSet>
         </FieldGroup>
