@@ -166,6 +166,90 @@ describe("editor camera controller", () => {
     expect(invalidate).toHaveBeenCalledTimes(3);
     expect(invalidate).toHaveBeenCalledWith("camera");
   });
+
+  it("restores 3D orbit, radius, and target after a 2D detour", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.look(0.4, 0.2);
+    controller.zoom(2);
+    controller.frame(new Vector3(3, 4, 5));
+    const alpha = controller.camera.alpha;
+    const beta = controller.camera.beta;
+    const radius = controller.camera.radius;
+    const target = controller.camera.target.clone();
+
+    controller.setMode("2d");
+    controller.frame(new Vector3(-8, 2, 0));
+    controller.setMode("3d");
+
+    expect(controller.camera.alpha).toBeCloseTo(alpha, 5);
+    expect(controller.camera.beta).toBeCloseTo(beta, 5);
+    expect(controller.camera.radius).toBeCloseTo(radius, 5);
+    expect(controller.camera.target.x).toBeCloseTo(target.x, 5);
+    expect(controller.camera.target.y).toBeCloseTo(target.y, 5);
+    expect(controller.camera.target.z).toBeCloseTo(target.z, 5);
+  });
+
+  it("restores 2D pan and ortho zoom after a 3D detour", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "2d" });
+    controller.frame(new Vector3(6, -3, 0));
+    controller.zoom(2);
+    const target = controller.camera.target.clone();
+    const halfHeight = controller.orthoHalfHeight();
+
+    controller.setMode("3d");
+    controller.frame(new Vector3(1, 1, 1), 12);
+    controller.setMode("2d");
+
+    expect(controller.camera.target.x).toBeCloseTo(target.x, 5);
+    expect(controller.camera.target.y).toBeCloseTo(target.y, 5);
+    expect(controller.orthoHalfHeight()).toBeCloseTo(halfHeight, 5);
+  });
+
+  it("keeps 3D and 2D targets independent after both modes have been visited", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.frame(new Vector3(5, 6, 7), 10);
+
+    controller.setMode("2d");
+    controller.frame(new Vector3(-3, 4, 0));
+
+    controller.setMode("3d");
+    expect(controller.camera.target.x).toBeCloseTo(5, 5);
+    expect(controller.camera.target.y).toBeCloseTo(6, 5);
+    expect(controller.camera.target.z).toBeCloseTo(7, 5);
+
+    controller.setMode("2d");
+    expect(controller.camera.target.x).toBeCloseTo(-3, 5);
+    expect(controller.camera.target.y).toBeCloseTo(4, 5);
+  });
+
+  it("pins look to the 2D convention on the first switch from 3D", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.look(0.5, 0.2);
+
+    controller.setMode("2d");
+
+    expect(controller.camera.alpha).toBeCloseTo(TWO_D_ALPHA);
+    expect(controller.camera.beta).toBeCloseTo(TWO_D_BETA);
+  });
+
+  it("restores pixel-perfect zoom when returning to 2D", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "2d" });
+    controller.setCanvasHeight(600);
+    controller.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+    controller.zoom(2);
+    expect(controller.pixelZoom()).toBe(2);
+
+    controller.setMode("3d");
+    controller.setMode("2d");
+
+    expect(controller.pixelZoom()).toBe(2);
+    expect(controller.orthoHalfHeight()).toBe(1.5);
+  });
 });
 
 describe("EditorSceneSync", () => {

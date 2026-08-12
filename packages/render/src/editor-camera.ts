@@ -85,6 +85,17 @@ export function createEditorCamera(
   let pixelPerfect: PixelPerfectSettings | null = null;
   let canvasHeightPx = 0;
   let pixelZoom = 1;
+  let pose3d: {
+    target: Vector3;
+    alpha: number;
+    beta: number;
+    radius: number;
+  } | null = null;
+  let pose2d: {
+    target: Vector3;
+    orthoHalfHeight: number;
+    pixelZoom: number;
+  } | null = null;
 
   const invalidate = () => options.scheduler?.invalidate("camera");
 
@@ -128,6 +139,39 @@ export function createEditorCamera(
       camera.upperBetaLimit = Math.PI - 0.01;
     }
     invalidate();
+  };
+
+  const snapshotCurrent = () => {
+    if (mode === "3d") {
+      pose3d = {
+        target: camera.target.clone(),
+        alpha: camera.alpha,
+        beta: camera.beta,
+        radius: camera.radius,
+      };
+      return;
+    }
+    pose2d = {
+      target: camera.target.clone(),
+      orthoHalfHeight,
+      pixelZoom,
+    };
+  };
+
+  const restorePose = () => {
+    if (mode === "3d") {
+      if (!pose3d) return;
+      camera.target.copyFrom(pose3d.target);
+      camera.alpha = pose3d.alpha;
+      camera.beta = pose3d.beta;
+      camera.radius = pose3d.radius;
+      return;
+    }
+    if (!pose2d) return;
+    camera.target.copyFrom(pose2d.target);
+    orthoHalfHeight = pose2d.orthoHalfHeight;
+    pixelZoom = pose2d.pixelZoom;
+    applyOrthoBounds();
   };
 
   applyMode();
@@ -179,8 +223,10 @@ export function createEditorCamera(
     },
     setMode: (next: ViewportMode) => {
       if (next === mode) return;
+      snapshotCurrent();
       mode = next;
       applyMode();
+      restorePose();
     },
     updateOrthoBounds: (aspectRatio: number) => {
       aspect = aspectRatio > 0 ? aspectRatio : 1;
