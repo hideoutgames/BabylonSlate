@@ -27,7 +27,7 @@ import {
   type SerializedPin,
 } from "./graph-types";
 import { GraphEditorProvider } from "./graph-editor-context";
-import { createEdgeId, toSerializedGraph } from "./graph-model";
+import { createEdgeId, nodesMissingFromLocal, toSerializedGraph } from "./graph-model";
 import {
   type CanvasNode,
   graphNodeTypes,
@@ -173,6 +173,8 @@ function GraphEditorCanvas({
   );
   const lastPaneTapRef = useRef(0);
   const paneHoldRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const membersRef = useRef(initialGraph.members);
+  membersRef.current = initialGraph.members;
   const { screenToFlowPosition } = useReactFlow();
   const graphStateRef = useRef({ nodes, edges });
   graphStateRef.current = { nodes, edges };
@@ -211,11 +213,21 @@ function GraphEditorCanvas({
             sourceHandle: edge.sourceHandle ?? undefined,
             targetHandle: edge.targetHandle ?? undefined,
           })),
+          { members: membersRef.current },
         ),
       );
     },
     [onChange],
   );
+
+  useEffect(() => {
+    const missing = nodesMissingFromLocal(
+      graphStateRef.current.nodes,
+      toCanvasNodes(initialGraph.nodes),
+    );
+    if (missing.length === 0) return;
+    setNodes((current) => [...current, ...missing]);
+  }, [initialGraph.nodes]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {

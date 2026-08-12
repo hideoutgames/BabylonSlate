@@ -64,7 +64,7 @@ describe("My Class members", () => {
     expect(membersForSection(members, null)).toEqual([]);
   });
 
-  it("builds a compact section tree with Events populated", () => {
+  it("builds a compact section tree with Events populated and no Graphs section", () => {
     const members = membersForGraph({
       nodes: [
         {
@@ -78,7 +78,6 @@ describe("My Class members", () => {
     });
     const rows = blueprintTreeNodes(members, new Set());
     expect(rows.map((row) => row.id)).toEqual([
-      "section-graphs",
       "section-functions",
       "section-variables",
       "section-events",
@@ -88,5 +87,27 @@ describe("My Class members", () => {
     expect(rows.find((row) => row.id === "begin")?.label).toBe(
       "Event Begin Play",
     );
+  });
+
+  it("lists persisted functions, variables, and interfaces from graph members", () => {
+    const graph: SerializedGraph = {
+      nodes: [],
+      edges: [],
+      members: [
+        { id: "fn-1", kind: "function", name: "Jump" },
+        { id: "var-1", kind: "variable", name: "Health" },
+        { id: "if-1", kind: "interface", name: "Damageable" },
+      ],
+    };
+    const members = membersForGraph(graph);
+    expect(membersForSection(members, "function")).toEqual([
+      { kind: "function", name: "Jump", detail: "fn-1" },
+    ]);
+    expect(membersForSection(members, "variable")).toEqual([
+      { kind: "variable", name: "Health", detail: "var-1" },
+    ]);
+    expect(membersForSection(members, "interface")).toEqual([
+      { kind: "interface", name: "Damageable", detail: "if-1" },
+    ]);
   });
 });

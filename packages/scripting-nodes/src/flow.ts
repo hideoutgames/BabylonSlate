@@ -29,6 +29,16 @@ export const flowNodes: NodeDefinition[] = [
     codegen: () => ({ deltaSeconds: "ctx.deltaSeconds" }),
   },
   {
+    id: "flow.event.custom",
+    title: "Event Custom",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
     id: "flow.entry",
     title: "Entry",
     category: "flow",

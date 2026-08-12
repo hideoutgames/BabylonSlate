@@ -96,7 +96,14 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         paletteNodes={paletteNodes}
         onNavigateRequest={() => setFocusDiagnostic(null)}
         onChange={(next) => {
-          void applyGraphChange(documentId, next as SerializedGraph);
+          const current =
+            doc?.ref.kind === "graph"
+              ? (doc.content as SerializedGraph)
+              : null;
+          void applyGraphChange(documentId, {
+            ...next,
+            members: next.members ?? current?.members,
+          } as SerializedGraph);
         }}
       />
     </PanelFrame>

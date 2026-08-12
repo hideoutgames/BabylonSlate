@@ -104,6 +104,22 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(hydrated.nodes[0]?.data.__latent).toBe(false);
     expect(hydrated.nodes[0]?.data.__nodeType).toBe("flow.event.beginPlay");
   });
+
+  it("keeps an authored custom event title instead of the registry default", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "hit",
+          type: "flow.event.custom",
+          position: { x: 0, y: 0 },
+          data: { title: "Event On Hit", name: "On Hit" },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.title).toBe("Event On Hit");
+  });
 });
 
 describe("createDefaultLogicGraphSerialized", () => {

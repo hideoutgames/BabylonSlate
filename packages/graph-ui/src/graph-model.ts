@@ -36,6 +36,7 @@ function serializedNodeData(data: unknown): Record<string, unknown> {
 export function toSerializedGraph(
   nodes: CanvasNode[],
   edges: GraphEdge[],
+  extras?: Pick<GraphDocument, "members">,
 ): GraphDocument {
   return {
     nodes: nodes.map((node) => ({
@@ -51,7 +52,18 @@ export function toSerializedGraph(
       ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
       ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
     })),
+    ...(extras?.members && extras.members.length > 0
+      ? { members: extras.members }
+      : {}),
   };
+}
+
+export function nodesMissingFromLocal<T extends { id: string }>(
+  local: readonly T[],
+  incoming: readonly T[],
+): T[] {
+  const have = new Set(local.map((node) => node.id));
+  return incoming.filter((node) => !have.has(node.id));
 }
 
 export function createEdgeId(

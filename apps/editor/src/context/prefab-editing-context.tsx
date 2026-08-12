@@ -10,6 +10,7 @@ import type { SerializedComponent } from "@babylonslate/core";
 import {
   defaultPrefabComponents,
   previewSceneFor,
+  reorderPrefabComponents,
 } from "../lib/prefab-preview";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 
@@ -19,6 +20,7 @@ interface PrefabEditingContextValue {
   setSelectedId: (id: string | null) => void;
   addComponent: (classId: string) => void;
   removeSelected: () => void;
+  reparentComponent: (dragId: string, targetId: string | null) => void;
 }
 
 const PrefabEditingContext = createContext<PrefabEditingContextValue | null>(
@@ -50,6 +52,15 @@ export function PrefabEditingProvider({ children }: { children: ReactNode }) {
     setSelectedId("prefab-root");
   }, [selectedId]);
 
+  const reparentComponent = useCallback(
+    (dragId: string, targetId: string | null) => {
+      setComponents((current) =>
+        reorderPrefabComponents(current, dragId, targetId),
+      );
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       components,
@@ -57,8 +68,9 @@ export function PrefabEditingProvider({ children }: { children: ReactNode }) {
       setSelectedId,
       addComponent,
       removeSelected,
+      reparentComponent,
     }),
-    [addComponent, components, removeSelected, selectedId],
+    [addComponent, components, removeSelected, reparentComponent, selectedId],
   );
 
   return (

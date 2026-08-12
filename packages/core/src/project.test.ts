@@ -7,6 +7,7 @@ import {
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
+  normalizeGraphMembers,
   normalizeProjectSettings,
 } from "./project";
 
@@ -39,6 +40,22 @@ describe("project schema", () => {
   it("creates default scene and graph structures", () => {
     expect(createDefaultScene().actors.length).toBeGreaterThan(0);
     expect(createDefaultGraph().nodes.length).toBeGreaterThan(0);
+  });
+
+  it("normalizes graph class members and drops invalid rows", () => {
+    expect(normalizeGraphMembers(undefined)).toEqual([]);
+    expect(
+      normalizeGraphMembers([
+        { id: "fn-1", kind: "function", name: " Jump " },
+        { id: "", kind: "variable", name: "Health" },
+        { kind: "event", name: "Tick" },
+        { id: "bad", kind: "graphs", name: "Nope" },
+        { id: "var-1", kind: "variable", name: "Health" },
+      ]),
+    ).toEqual([
+      { id: "fn-1", kind: "function", name: "Jump" },
+      { id: "var-1", kind: "variable", name: "Health" },
+    ]);
   });
 
   it("normalizes missing 2D settings and drops duplicate sorting layers", () => {

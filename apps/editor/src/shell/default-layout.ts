@@ -45,6 +45,10 @@ export function createSceneDefaultLayout(api: DockviewApi): void {
   viewport.api.setActive();
 }
 
+export const CLASS_PANEL_TITLE = "Class";
+/** About half the left stack so Class is not a 180px stub under Components. */
+export const CLASS_PANEL_INITIAL_HEIGHT = 400;
+
 export function createGraphDefaultLayout(api: DockviewApi): void {
   const graph = api.addPanel({
     id: "graph",
@@ -76,12 +80,12 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
   api.addPanel({
     id: "my-class",
     component: "my-class",
-    title: "My Blueprint",
+    title: CLASS_PANEL_TITLE,
     position: {
       referencePanel: components,
       direction: "below",
     },
-    initialHeight: 180,
+    initialHeight: CLASS_PANEL_INITIAL_HEIGHT,
   });
 
   api.addPanel({
