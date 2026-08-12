@@ -5,6 +5,10 @@ hero:
   name: BabylonSlate
   text: Touch-first Babylon.js engine
   tagline: Architecture, design notes, and contributor docs. Markdown in docs/ is the source for both GitHub and this site.
+  image:
+    light: /branding/SlateLogoDark.png
+    dark: /branding/SlateLogoLight.png
+    alt: BabylonSlate
   actions:
     - theme: brand
       text: Engine plan

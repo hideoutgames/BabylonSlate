@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { withMermaid } from "vitepress-plugin-mermaid";
+import { docsBrand } from "../src/branding";
 import { installRepoLinkRewriter } from "../src/rewrite-repo-links";
 import { docsSidebar } from "../src/sidebar";
 
@@ -28,13 +29,20 @@ export default withMermaid(
         {
           rel: "icon",
           type: "image/svg+xml",
-          href: `${base}favicon.svg`,
+          href: `${base}${docsBrand.favicon.replace(/^\//, "")}`,
+        },
+      ],
+      [
+        "link",
+        {
+          rel: "apple-touch-icon",
+          href: `${base}${docsBrand.appleTouchIcon.replace(/^\//, "")}`,
         },
       ],
     ],
     lastUpdated: true,
     themeConfig: {
-      logo: "/favicon.svg",
+      logo: docsBrand.navLogo,
       siteTitle: "BabylonSlate",
       nav: [
         { text: "Docs", link: "/engineplan" },

@@ -62,3 +62,17 @@
 .VPHome {
   background: var(--vp-c-bg);
 }
+
+.VPNavBarTitle .logo {
+  height: 28px;
+  width: auto;
+}
+
+.VPHero.has-image .image-bg {
+  display: none;
+}
+
+.VPHero.has-image .image-src {
+  max-width: min(100%, 22rem);
+  height: auto;
+}

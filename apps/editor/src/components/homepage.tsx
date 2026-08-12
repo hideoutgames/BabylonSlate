@@ -43,6 +43,7 @@ import {
   normalizeProjectFolderName,
   type CreateProjectOptions,
 } from "../lib/create-project";
+import { BrandLogo } from "./brand-logo";
 import { SettingsModal } from "./settings-modal";
 
 interface HomepageProps {
@@ -112,7 +113,9 @@ export function Homepage({
     >
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">BabylonSlate</h1>
+          <h1 className="m-0">
+            <BrandLogo />
+          </h1>
           <p className="text-sm text-muted-foreground">
             Create or open a project to start editing
           </p>
