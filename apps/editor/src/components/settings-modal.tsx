@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CatalogDialog,
   type CatalogCategory,
+  type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -9,10 +10,12 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { Switch } from "@babylonslate/ui/components/switch";
 import { Textarea } from "@babylonslate/ui/components/textarea";
-import { Separator } from "@babylonslate/ui/components/separator";
 import {
   createAppSettingsStore,
   defaultEngineSettings,
@@ -20,17 +23,17 @@ import {
 } from "@babylonslate/vfs";
 import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
-import { EngineSettingsForm } from "./engine-settings-form";
+import {
+  EngineSettingsForm,
+  type EngineSettingsCategoryId,
+} from "./engine-settings-form";
 
-type SettingsScope = "project" | "engine";
+export type SettingsScope = "project" | "engine";
 
 interface SettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Initial scope when the modal opens. */
-  initialScope?: SettingsScope;
-  /** Include both Project and Engine category groups (editor chrome). */
-  allowEngine?: boolean;
+  scope: SettingsScope;
   onCloseProject?: () => void;
   onEngineSaved?: () => void | Promise<void>;
   "data-testid"?: string;
@@ -69,22 +72,64 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   },
 ];
 
-const ENGINE_CATEGORY: CatalogCategory & { keywords: string } = {
-  id: "engine",
-  label: "Engine",
-  keywords:
-    "undo history viewport frame cap thumbnails templates folder appearance",
-};
+const PROJECT_GROUPS: CatalogCategoryGroup[] = [
+  { label: "Project", ids: ["general", "input", "twoD", "textures", "export"] },
+  { label: "Session", ids: ["project"] },
+];
+
+const ENGINE_CATEGORIES: Array<
+  CatalogCategory & { keywords: string; id: EngineSettingsCategoryId }
+> = [
+  {
+    id: "appearance",
+    label: "Appearance",
+    keywords: "theme coarse pointer target scale",
+  },
+  {
+    id: "undo",
+    label: "Undo",
+    keywords: "undo history length stack",
+  },
+  {
+    id: "viewport",
+    label: "Viewport",
+    keywords: "frame cap hardware scaling",
+  },
+  {
+    id: "thumbnails",
+    label: "Thumbnails",
+    keywords: "generate thumbnails",
+  },
+  {
+    id: "templates",
+    label: "Templates",
+    keywords: "templates folder homepage",
+  },
+];
+
+const ENGINE_GROUPS: CatalogCategoryGroup[] = [
+  { label: "Editor", ids: ["appearance", "undo", "viewport", "thumbnails"] },
+  { label: "Projects", ids: ["templates"] },
+];
+
+function matchesSearch(
+  label: string,
+  keywords: string,
+  needle: string,
+): boolean {
+  return !needle || `${label} ${keywords}`.toLowerCase().includes(needle);
+}
 
 export function SettingsModal({
   open,
   onOpenChange,
-  initialScope = "project",
-  allowEngine = true,
+  scope,
   onCloseProject,
   onEngineSaved,
-  "data-testid": testId = "settings-modal",
+  "data-testid": testId,
 }: SettingsModalProps) {
+  const resolvedTestId =
+    testId ?? (scope === "engine" ? "engine-settings-modal" : "settings-modal");
   const {
     projectDocument,
     exportProject,
@@ -93,7 +138,7 @@ export function SettingsModal({
   } = useDocuments();
   const [search, setSearch] = useState("");
   const [activeCategoryId, setActiveCategoryId] = useState(
-    initialScope === "engine" ? "engine" : "general",
+    scope === "engine" ? "appearance" : "general",
   );
   const store = useMemo(() => createAppSettingsStore(), []);
   const [engineSettings, setEngineSettings] = useState<EngineSettings>(
@@ -103,11 +148,11 @@ export function SettingsModal({
   useEffect(() => {
     if (!open) return;
     setSearch("");
-    setActiveCategoryId(initialScope === "engine" ? "engine" : "general");
-    if (allowEngine || initialScope === "engine") {
+    setActiveCategoryId(scope === "engine" ? "appearance" : "general");
+    if (scope === "engine") {
       void store.load().then(setEngineSettings);
     }
-  }, [open, initialScope, allowEngine, store]);
+  }, [open, scope, store]);
 
   const saveEngine = useCallback(
     async (patch: Partial<EngineSettings>) => {
@@ -119,35 +164,21 @@ export function SettingsModal({
     [engineSettings, onEngineSaved, store],
   );
 
+  const source = scope === "engine" ? ENGINE_CATEGORIES : PROJECT_CATEGORIES;
+  const groups = scope === "engine" ? ENGINE_GROUPS : PROJECT_GROUPS;
+
   const categories = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    const matches = (label: string, keywords: string) =>
-      !needle || `${label} ${keywords}`.toLowerCase().includes(needle);
-
-    const list: CatalogCategory[] = [];
-    if (projectDocument) {
-      for (const category of PROJECT_CATEGORIES) {
-        if (matches(category.label, category.keywords)) {
-          list.push({ id: category.id, label: category.label });
-        }
-      }
-    }
-    if (allowEngine || initialScope === "engine") {
-      if (matches(ENGINE_CATEGORY.label, ENGINE_CATEGORY.keywords)) {
-        list.push({ id: ENGINE_CATEGORY.id, label: ENGINE_CATEGORY.label });
-      }
-    }
-    if (list.length === 0 && (allowEngine || initialScope === "engine")) {
-      list.push({ id: ENGINE_CATEGORY.id, label: ENGINE_CATEGORY.label });
-    }
-    return list;
-  }, [allowEngine, initialScope, projectDocument, search]);
+    return source.filter((category) =>
+      matchesSearch(category.label, category.keywords, needle),
+    );
+  }, [search, source]);
 
   useEffect(() => {
     if (!categories.some((category) => category.id === activeCategoryId)) {
-      setActiveCategoryId(categories[0]?.id ?? "general");
+      setActiveCategoryId(categories[0]?.id ?? source[0]?.id ?? "general");
     }
-  }, [activeCategoryId, categories]);
+  }, [activeCategoryId, categories, source]);
 
   const handleExport = async () => {
     if (!projectDocument) return;
@@ -163,245 +194,263 @@ export function SettingsModal({
     URL.revokeObjectURL(url);
   };
 
-  const showProjectBody =
-    Boolean(projectDocument) && activeCategoryId !== "engine";
   const twoD = projectDocument?.settings.twoD;
+  const showProjectBody = scope === "project" && Boolean(projectDocument);
 
   return (
     <CatalogDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={
-        initialScope === "engine" && !projectDocument
-          ? "Engine Settings"
-          : "Settings"
-      }
+      title={scope === "engine" ? "Engine Settings" : "Project Settings"}
       description={
-        projectDocument
-          ? `Configuration for ${projectDocument.metadata.name}`
-          : "Global editor preferences stored outside any project"
+        scope === "engine"
+          ? "Global editor preferences stored outside any project"
+          : projectDocument
+            ? `Configuration for ${projectDocument.metadata.name}`
+            : "Open a project to edit project settings"
       }
       categories={categories}
+      groups={groups}
       activeCategoryId={activeCategoryId}
       onCategoryChange={setActiveCategoryId}
       search={search}
       onSearchChange={setSearch}
       searchPlaceholder="Search settings"
-      data-testid={testId}
+      data-testid={resolvedTestId}
     >
-      {activeCategoryId === "engine" ? (
-        <EngineSettingsForm settings={engineSettings} onChange={saveEngine} />
+      {scope === "engine" ? (
+        <EngineSettingsForm
+          settings={engineSettings}
+          onChange={saveEngine}
+          categoryId={activeCategoryId as EngineSettingsCategoryId}
+        />
       ) : null}
 
       {showProjectBody && projectDocument && twoD && activeCategoryId === "general" ? (
         <FieldGroup>
-          <Field>
-            <FieldLabel>Project name</FieldLabel>
-            <p className="text-sm">{projectDocument.metadata.name}</p>
-          </Field>
-          <Field>
-            <FieldLabel>Version</FieldLabel>
-            <p className="text-sm">{projectDocument.metadata.version}</p>
-          </Field>
-          <Field>
-            <FieldLabel>Touch target minimum</FieldLabel>
-            <p className="text-sm">
-              {projectDocument.settings.touchMinTargetPx}px
-            </p>
-            <FieldDescription>
-              Matches shell <code>--touch-target</code> on this device.
-            </FieldDescription>
-          </Field>
+          <FieldSet>
+            <FieldLegend>General</FieldLegend>
+            <Field>
+              <FieldLabel>Project name</FieldLabel>
+              <p className="text-sm">{projectDocument.metadata.name}</p>
+            </Field>
+            <Field>
+              <FieldLabel>Version</FieldLabel>
+              <p className="text-sm">{projectDocument.metadata.version}</p>
+            </Field>
+            <Field>
+              <FieldLabel>Touch target minimum</FieldLabel>
+              <p className="text-sm">
+                {projectDocument.settings.touchMinTargetPx}px
+              </p>
+              <FieldDescription>
+                Matches shell <code>--touch-target</code> on this device.
+              </FieldDescription>
+            </Field>
+          </FieldSet>
         </FieldGroup>
       ) : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "input" ? (
         <FieldGroup className="gap-4">
-          <Field>
-            <FieldLabel>Actions</FieldLabel>
-            <FieldDescription>
-              Named actions resolve through the input mapping model. Edit the
-              JSON below; each binding needs a device and code.
-            </FieldDescription>
-            <Textarea
-              className="min-h-32 font-mono text-xs"
-              value={JSON.stringify(
-                projectDocument.settings.input.actions,
-                null,
-                2,
-              )}
-              onChange={(event) => {
-                try {
-                  const actions = JSON.parse(event.target.value) as unknown;
-                  if (!Array.isArray(actions)) return;
-                  updateProjectSettings({
-                    input: {
-                      ...projectDocument.settings.input,
-                      actions:
-                        actions as typeof projectDocument.settings.input.actions,
-                    },
-                  });
-                } catch {
-                  // Keep typing until the JSON is valid again.
-                }
-              }}
-              data-testid="settings-input-actions"
-            />
-          </Field>
-          <Field>
-            <FieldLabel>Axes</FieldLabel>
-            <Textarea
-              className="min-h-32 font-mono text-xs"
-              value={JSON.stringify(
-                projectDocument.settings.input.axes,
-                null,
-                2,
-              )}
-              onChange={(event) => {
-                try {
-                  const axes = JSON.parse(event.target.value) as unknown;
-                  if (!Array.isArray(axes)) return;
-                  updateProjectSettings({
-                    input: {
-                      ...projectDocument.settings.input,
-                      axes: axes as typeof projectDocument.settings.input.axes,
-                    },
-                  });
-                } catch {
-                  // Keep typing until the JSON is valid again.
-                }
-              }}
-              data-testid="settings-input-axes"
-            />
-          </Field>
+          <FieldSet>
+            <FieldLegend>Input</FieldLegend>
+            <Field>
+              <FieldLabel>Actions</FieldLabel>
+              <FieldDescription>
+                Named actions resolve through the input mapping model. Edit the
+                JSON below; each binding needs a device and code.
+              </FieldDescription>
+              <Textarea
+                className="min-h-32 font-mono text-xs"
+                value={JSON.stringify(
+                  projectDocument.settings.input.actions,
+                  null,
+                  2,
+                )}
+                onChange={(event) => {
+                  try {
+                    const actions = JSON.parse(event.target.value) as unknown;
+                    if (!Array.isArray(actions)) return;
+                    updateProjectSettings({
+                      input: {
+                        ...projectDocument.settings.input,
+                        actions:
+                          actions as typeof projectDocument.settings.input.actions,
+                      },
+                    });
+                  } catch {
+                    // Keep typing until the JSON is valid again.
+                  }
+                }}
+                data-testid="settings-input-actions"
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Axes</FieldLabel>
+              <Textarea
+                className="min-h-32 font-mono text-xs"
+                value={JSON.stringify(
+                  projectDocument.settings.input.axes,
+                  null,
+                  2,
+                )}
+                onChange={(event) => {
+                  try {
+                    const axes = JSON.parse(event.target.value) as unknown;
+                    if (!Array.isArray(axes)) return;
+                    updateProjectSettings({
+                      input: {
+                        ...projectDocument.settings.input,
+                        axes: axes as typeof projectDocument.settings.input.axes,
+                      },
+                    });
+                  } catch {
+                    // Keep typing until the JSON is valid again.
+                  }
+                }}
+                data-testid="settings-input-axes"
+              />
+            </Field>
+          </FieldSet>
         </FieldGroup>
       ) : null}
 
       {showProjectBody && projectDocument && twoD && activeCategoryId === "twoD" ? (
         <FieldGroup className="gap-4">
-          <Field>
-            <FieldLabel htmlFor="pixels-per-unit">Pixels per unit</FieldLabel>
-            <Input
-              id="pixels-per-unit"
-              type="number"
-              min={1}
-              step={1}
-              className="min-h-11"
-              value={twoD.pixelsPerUnit}
-              onChange={(event) =>
-                updateProjectSettings({
-                  twoD: {
-                    ...twoD,
-                    pixelsPerUnit: Number(event.target.value) || 100,
-                  },
-                })
-              }
-              data-testid="settings-pixels-per-unit"
-            />
-            <FieldDescription>
-              Texture pixels that span one world unit in 2D scenes.
-            </FieldDescription>
-          </Field>
-          <Field>
-            <label className="flex min-h-11 items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={twoD.pixelPerfect}
-                onChange={(event) =>
-                  updateProjectSettings({
-                    twoD: { ...twoD, pixelPerfect: event.target.checked },
-                  })
-                }
-                data-testid="settings-pixel-perfect"
-              />
-              Pixel-perfect mode
-            </label>
-            <FieldDescription>
-              Ortho bounds from canvas size, nearest sampling, camera snapped to
-              the pixel grid.
-            </FieldDescription>
-          </Field>
-          <Field>
-            <label className="flex min-h-11 items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={twoD.integerZoomSteps}
+          <FieldSet>
+            <FieldLegend>2D</FieldLegend>
+            <Field>
+              <FieldLabel htmlFor="pixels-per-unit">Pixels per unit</FieldLabel>
+              <Input
+                id="pixels-per-unit"
+                type="number"
+                min={1}
+                step={1}
+                className="min-h-[var(--touch-target,44px)]"
+                value={twoD.pixelsPerUnit}
                 onChange={(event) =>
                   updateProjectSettings({
                     twoD: {
                       ...twoD,
-                      integerZoomSteps: event.target.checked,
+                      pixelsPerUnit: Number(event.target.value) || 100,
                     },
+                  })
+                }
+                data-testid="settings-pixels-per-unit"
+              />
+              <FieldDescription>
+                Texture pixels that span one world unit in 2D scenes.
+              </FieldDescription>
+            </Field>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="settings-pixel-perfect">
+                Pixel-perfect mode
+              </FieldLabel>
+              <Switch
+                id="settings-pixel-perfect"
+                checked={twoD.pixelPerfect}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({
+                    twoD: { ...twoD, pixelPerfect: checked === true },
+                  })
+                }
+                data-testid="settings-pixel-perfect"
+              />
+            </Field>
+            <FieldDescription>
+              Ortho bounds from canvas size, nearest sampling, camera snapped to
+              the pixel grid.
+            </FieldDescription>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="settings-integer-zoom">
+                Integer zoom steps
+              </FieldLabel>
+              <Switch
+                id="settings-integer-zoom"
+                checked={twoD.integerZoomSteps}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({
+                    twoD: { ...twoD, integerZoomSteps: checked === true },
                   })
                 }
                 data-testid="settings-integer-zoom"
               />
-              Integer zoom steps
-            </label>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="sorting-layers">Sorting layers</FieldLabel>
-            <Input
-              id="sorting-layers"
-              className="min-h-11"
-              value={twoD.sortingLayers.join(", ")}
-              onChange={(event) =>
-                updateProjectSettings({
-                  twoD: {
-                    ...twoD,
-                    sortingLayers: event.target.value
-                      .split(",")
-                      .map((layer) => layer.trim())
-                      .filter(Boolean),
-                  },
-                })
-              }
-              data-testid="settings-sorting-layers"
-            />
-            <FieldDescription>
-              Comma-separated, back to front. Compiles to one alphaIndex sort
-              key per sprite.
-            </FieldDescription>
-          </Field>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="sorting-layers">Sorting layers</FieldLabel>
+              <Input
+                id="sorting-layers"
+                className="min-h-[var(--touch-target,44px)]"
+                value={twoD.sortingLayers.join(", ")}
+                onChange={(event) =>
+                  updateProjectSettings({
+                    twoD: {
+                      ...twoD,
+                      sortingLayers: event.target.value
+                        .split(",")
+                        .map((layer) => layer.trim())
+                        .filter(Boolean),
+                    },
+                  })
+                }
+                data-testid="settings-sorting-layers"
+              />
+              <FieldDescription>
+                Comma-separated, back to front. Compiles to one alphaIndex sort
+                key per sprite.
+              </FieldDescription>
+            </Field>
+          </FieldSet>
         </FieldGroup>
       ) : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "textures" ? (
         <FieldGroup className="gap-4">
-          <Field>
-            <FieldLabel>Texture policy</FieldLabel>
-            <FieldDescription>
-              Max dimension{" "}
-              {projectDocument.settings.textures.maxTextureDimension}
-              px. Auto re-queue uncompressed:{" "}
-              {projectDocument.settings.textures.autoRequeueUncompressed
-                ? "on"
-                : "off"}
-              .
-            </FieldDescription>
-          </Field>
-          <Button
-            variant="secondary"
-            data-testid="retry-texture-encoding"
-            onClick={() => void retryFailedTextureEncoding()}
-          >
-            Retry encoding
-          </Button>
+          <FieldSet>
+            <FieldLegend>Textures</FieldLegend>
+            <Field>
+              <FieldLabel>Texture policy</FieldLabel>
+              <FieldDescription>
+                Max dimension{" "}
+                {projectDocument.settings.textures.maxTextureDimension}
+                px. Auto re-queue uncompressed:{" "}
+                {projectDocument.settings.textures.autoRequeueUncompressed
+                  ? "on"
+                  : "off"}
+                .
+              </FieldDescription>
+            </Field>
+            <Button
+              variant="outline"
+              className="min-h-[var(--touch-target,44px)] w-fit"
+              data-testid="retry-texture-encoding"
+              onClick={() => void retryFailedTextureEncoding()}
+            >
+              Retry encoding
+            </Button>
+          </FieldSet>
         </FieldGroup>
       ) : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "export" ? (
         <FieldGroup className="gap-4">
-          <Separator />
-          <Field>
-            <FieldLabel>Export Project</FieldLabel>
-            <FieldDescription>
-              Download a zip of the project directory layout.
-            </FieldDescription>
-          </Field>
-          <Button data-testid="export-project" onClick={() => void handleExport()}>
-            Export Project
-          </Button>
+          <FieldSet>
+            <FieldLegend>Export</FieldLegend>
+            <Field>
+              <FieldLabel>Export Project</FieldLabel>
+              <FieldDescription>
+                Download a zip of the project directory layout.
+              </FieldDescription>
+            </Field>
+            <Button
+              className="min-h-[var(--touch-target,44px)] w-fit"
+              data-testid="export-project"
+              onClick={() => void handleExport()}
+            >
+              Export Project
+            </Button>
+          </FieldSet>
         </FieldGroup>
       ) : null}
 
@@ -410,24 +459,27 @@ export function SettingsModal({
       activeCategoryId === "project" &&
       onCloseProject ? (
         <FieldGroup className="gap-4">
-          <Field>
-            <FieldLabel>Close Project</FieldLabel>
-            <FieldDescription>
-              Returns to the Homepage after a dirty-document check.
-            </FieldDescription>
-          </Field>
-          <Button
-            variant="destructive"
-            data-testid="close-project"
-            className="min-h-11"
-            onClick={() => {
-              onOpenChange(false);
-              onCloseProject();
-            }}
-          >
-            <LogOutIcon data-icon="inline-start" />
-            Close Project
-          </Button>
+          <FieldSet>
+            <FieldLegend>Close</FieldLegend>
+            <Field>
+              <FieldLabel>Close Project</FieldLabel>
+              <FieldDescription>
+                Returns to the Homepage after a dirty-document check.
+              </FieldDescription>
+            </Field>
+            <Button
+              variant="destructive"
+              data-testid="close-project"
+              className="min-h-[var(--touch-target,44px)] w-fit"
+              onClick={() => {
+                onOpenChange(false);
+                onCloseProject();
+              }}
+            >
+              <LogOutIcon data-icon="inline-start" />
+              Close Project
+            </Button>
+          </FieldSet>
         </FieldGroup>
       ) : null}
     </CatalogDialog>

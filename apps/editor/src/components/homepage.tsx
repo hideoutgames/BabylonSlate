@@ -235,8 +235,7 @@ export function Homepage({
       <SettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        initialScope="engine"
-        allowEngine
+        scope="engine"
         onEngineSaved={onSettingsChanged}
         data-testid="engine-settings-modal"
       />

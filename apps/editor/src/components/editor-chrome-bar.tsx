@@ -191,7 +191,9 @@ export function EditorChromeBar({
   const { startPlay, playing, alwaysRender, setAlwaysRender, renderStats } =
     usePlay();
   const { diagnostics, errorCount, setFocusDiagnostic } = useValidation();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsScope, setSettingsScope] = useState<"project" | "engine" | null>(
+    null,
+  );
   const [searchOpen, setSearchOpen] = useState(false);
   const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
 
@@ -478,28 +480,56 @@ export function EditorChromeBar({
           >
             <SearchIcon />
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="project-settings"
-            className="chrome-action-button"
-            aria-label="Project settings"
-            disabled={!projectName}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <SettingsIcon data-icon="inline-start" />
-            Project Settings
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="settings-menu"
+                  className="chrome-action-button"
+                  aria-label="Settings"
+                  disabled={!projectName}
+                />
+              }
+            >
+              <SettingsIcon data-icon="inline-start" />
+              Settings
+              <ChevronDownIcon data-icon="inline-end" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                data-testid="project-settings"
+                onClick={() => setSettingsScope("project")}
+              >
+                Project Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-testid="engine-settings"
+                onClick={() => setSettingsScope("engine")}
+              >
+                Engine Settings
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       <SettingsModal
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        initialScope="project"
-        allowEngine
+        open={settingsScope === "project"}
+        onOpenChange={(open) => {
+          if (!open) setSettingsScope(null);
+        }}
+        scope="project"
         onCloseProject={onCloseProject}
+      />
+      <SettingsModal
+        open={settingsScope === "engine"}
+        onOpenChange={(open) => {
+          if (!open) setSettingsScope(null);
+        }}
+        scope="engine"
       />
     </div>
   );

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { closeProjectViaSettings } from "./close-project";
 
 async function openTestProject(page: import("@playwright/test").Page) {
   await page.goto("/?test=1");
@@ -15,7 +16,7 @@ test.describe("BabylonSlate editor smoke", () => {
 
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("editor-global-toolbar")).toBeVisible();
-    await expect(page.getByTestId("project-settings")).toBeVisible();
+    await expect(page.getByTestId("settings-menu")).toBeVisible();
 
     await expect(
       page.locator('[data-testid="document-tab"][data-document-kind="content-browser"]'),
@@ -70,9 +71,7 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(page.locator("canvas")).toHaveCount(0);
 
     await page.getByTestId("save-project").click();
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-project").click();
-    await page.getByTestId("close-project").click();
+    await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.getByTestId("create-project-empty").click();
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
@@ -87,9 +86,7 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(page.getByTestId("project-name")).toContainText(
       "TestProject.babproject",
     );
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-project").click();
-    await page.getByTestId("close-project").click();
+    await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
 
     await page.reload();

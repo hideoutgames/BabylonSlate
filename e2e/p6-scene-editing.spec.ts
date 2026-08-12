@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { closeProjectViaSettings } from "./close-project";
 
 async function openTestProject(page: Page) {
   await page.goto("/?test=1");
@@ -118,9 +119,7 @@ test.describe("P6 first-playable scene editing", () => {
     await expect(page.getByTestId("viewport-mode-toggle")).toHaveText("2D");
     await page.getByTestId("save-project").click();
 
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-project").click();
-    await page.getByTestId("close-project").click();
+    await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.getByTestId("open-listed-project-TestProject.babproject").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
