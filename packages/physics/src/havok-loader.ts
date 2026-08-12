@@ -43,12 +43,36 @@ async function resolveWasmBinary(havokWasmUrl?: string): Promise<Uint8Array> {
     }
   }
 
-  // Node / Vitest: read the package wasm via require.resolve.
-  const { createRequire } = await import("node:module");
-  const { readFileSync } = await import("node:fs");
-  const require = createRequire(import.meta.url);
-  const wasmPath = require.resolve(
-    "@babylonjs/havok/lib/esm/HavokPhysics.wasm",
+  // Node / Vitest: resolve the package wasm without static `node:*` imports so
+  // apps/editor typecheck (DOM-only libs) does not require @types/node.
+  const g = globalThis as {
+    process?: { versions?: { node?: string } };
+  };
+  if (g.process?.versions?.node) {
+    const dynImport = new Function("s", "return import(s)") as (
+      s: string,
+    ) => Promise<Record<string, unknown>>;
+    const nodeModule = await dynImport("node:module");
+    const nodeFs = await dynImport("node:fs");
+    const createRequire = nodeModule.createRequire as
+      | ((url: string | URL) => {
+          (id: string): string;
+          resolve(id: string): string;
+        })
+      | undefined;
+    const readFileSync = nodeFs.readFileSync as
+      | ((path: string) => Uint8Array)
+      | undefined;
+    if (createRequire && readFileSync) {
+      const require = createRequire(import.meta.url);
+      const wasmPath = require.resolve(
+        "@babylonjs/havok/lib/esm/HavokPhysics.wasm",
+      );
+      return new Uint8Array(readFileSync(wasmPath));
+    }
+  }
+
+  throw new Error(
+    "Havok wasm not found: pass PhysicsBackendOptions.havokWasmUrl",
   );
-  return new Uint8Array(readFileSync(wasmPath));
 }

@@ -130,11 +130,22 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return this.software.shapeSweep(shape, start, end);
   }
 
-  createCharacterController(_desc: CharacterControllerDesc): void {}
+  createCharacterController(desc: CharacterControllerDesc): void {
+    void desc;
+  }
 
-  destroyCharacterController(_id: string): void {}
+  destroyCharacterController(id: string): void {
+    void id;
+  }
 
-  moveCharacter(): PhysicsTransform | null {
+  moveCharacter(
+    id: string,
+    translation: Vec3,
+    dt: number,
+  ): PhysicsTransform | null {
+    void id;
+    void translation;
+    void dt;
     return null;
   }
 }

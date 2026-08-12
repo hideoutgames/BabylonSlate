@@ -176,6 +176,88 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
+  it("parses extended collider shapes for both worlds", () => {
+    expect(
+      parseColliderProperties(
+        { shape: { kind: "sphere", radius: 2 } },
+        "3d",
+      ).shape,
+    ).toEqual({ kind: "sphere", radius: 2 });
+    expect(
+      parseColliderProperties(
+        { shape: { kind: "circle", radius: 1 } },
+        "2d",
+      ).shape,
+    ).toEqual({ kind: "circle", radius: 1 });
+    expect(
+      parseColliderProperties(
+        {
+          shape: {
+            kind: "chain",
+            points: [
+              { x: 0, y: 0 },
+              { x: 1, y: 0 },
+            ],
+            loop: true,
+          },
+        },
+        "2d",
+      ).shape.kind,
+    ).toBe("chain");
+    expect(
+      parseRigidBodyProperties({ motionType: "kinematic", mass: 2 })
+        .motionType,
+    ).toBe("kinematic");
+  });
+
+  it("software shapeSweep and impulse move a dynamic body", () => {
+    const backend = createSoftwarePhysicsBackend("3d", {
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    backend.createBody({
+      id: "a",
+      actorId: "actor",
+      motionType: "dynamic",
+      mass: 1,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 0,
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    });
+    backend.createCollider({
+      id: "c",
+      bodyId: "a",
+      shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+      friction: 0,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+    });
+    backend.addImpulse("a", { x: 10, y: 0, z: 0 }, 1);
+    backend.step(1 / 60);
+    const t = backend.getBodyTransform("a");
+    expect(t!.position.x).toBeGreaterThan(0);
+    const sweep = backend.shapeSweep(
+      { kind: "sphere", radius: 0.25 },
+      {
+        position: { x: -5, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+      {
+        position: { x: 5, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    );
+    expect(sweep.hit).toBe(true);
+    backend.dispose();
+  });
+
   it("preferSoftware never loads wasm backends", async () => {
     resetLoadedBackendModules();
     const backend = await createPhysicsBackend({

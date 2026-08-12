@@ -66,6 +66,12 @@ describe("scene schema", () => {
   it("normalizes an empty payload to a 3d scene with no actors", () => {
     const scene = normalizeScene(undefined);
     expect(scene).toMatchObject({ viewportMode: "3d", actors: [] });
+    expect(scene.settings.physicsWorld).toBe("3d");
+  });
+
+  it("defaults physicsWorld from viewportMode when omitted", () => {
+    const scene = normalizeScene({ viewportMode: "2d", settings: {} });
+    expect(scene.settings.physicsWorld).toBe("2d");
   });
 
   it("normalizes malformed transforms to identity", () => {

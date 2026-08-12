@@ -361,7 +361,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   shapeSweep(
-    shape: ColliderDesc["shape"],
+    _shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
   ): HitResult {
@@ -383,8 +383,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   moveCharacter(
     id: string,
     translation: Vec3,
-    _dt: number,
+    dt: number,
   ): PhysicsTransform | null {
+    void dt;
     const character = this.characters.get(id);
     if (!character) return null;
     const bodyRecord = this.bodies.get(character.desc.bodyId);

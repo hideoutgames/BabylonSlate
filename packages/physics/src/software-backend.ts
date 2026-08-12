@@ -27,13 +27,6 @@ type CharacterState = {
   desc: CharacterControllerDesc;
 };
 
-const IDENTITY_ROT: PhysicsTransform["rotation"] = {
-  x: 0,
-  y: 0,
-  z: 0,
-  w: 1,
-};
-
 function vec(x = 0, y = 0, z = 0): Vec3 {
   return { x, y, z };
 }
@@ -409,8 +402,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
   moveCharacter(
     id: string,
     translation: Vec3,
-    _dt: number,
+    dt: number,
   ): PhysicsTransform | null {
+    void dt;
     const character = this.characters.get(id);
     if (!character) return null;
     const body = this.bodies.get(character.desc.bodyId);

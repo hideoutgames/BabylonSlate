@@ -63,6 +63,11 @@ export default defineConfig({
         "**/create-engine.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.
         "**/worker-entry.ts",
+        // Physics wasm backends: exercised by dedicated load tests; coverage
+        // of the embind/wasm surface is environment-dependent.
+        "**/havok-backend.ts",
+        "**/havok-loader.ts",
+        "**/rapier-backend.ts",
         // Browser Worker + OffscreenCanvas encode path; covered by editor wiring
         // and the Node Basis A16 smoke (`node-basis-encode.ts`).
         "**/worker-encode.ts",
