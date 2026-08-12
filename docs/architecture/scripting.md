@@ -154,7 +154,7 @@ Ship with the catalog but own dedicated designs (not one-line templates):
 | **ExecuteJavaScript** | Editable in/out pin lists (JS identifier validation); fixed exec in/out; body → module-scope named function with defaulted outputs; async → latent; CodeMirror 6 body editor (lazy, accessory key bar, selection enabled); parse errors → Compiler Results with `bodyLine`/`bodyColumn` |
 | **Log** | Severity + category → runtime log / Output Log / ring buffer |
 | **Print** | Boxed wildcard via `formatValue`; colour + duration; keyed registry replaces in place; worker sends command, HUD draws; export may strip or degrade to log |
-| **ExecuteConsoleCommand** | Stub/compile against command registry when P8 lands; P5 may emit a call site + warning diagnostic when registry absent |
+| **ExecuteConsoleCommand** | Runs through `@babylonslate/debugger` command registry; returns success + output; compile-time warning when a literal names a debug-tier command |
 
 Shared **parameter-list editor** (typed named reorderable rows) lives in `editor-kit` — reused by ExecuteJavaScript, Class panel function signatures, ScriptInterface, and later `BDebugCommand`.
 
@@ -253,7 +253,7 @@ An actor scripted in the editor compiles and runs in the worker; a type mismatch
 | Item | Owner |
 | --- | --- |
 | Full physics / input node behaviour | Queries + impulse done (P7); `physics.moveCharacter` is `p7-character-controller` |
-| ExecuteConsoleCommand registry + debug-tier warnings | P8 (P5 may stub) |
+| ExecuteConsoleCommand registry + debug-tier warnings | P8 (`p8-command-system` landed) |
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export |
 | Behaviour-tree validation rules | P11 |
 | Shader / AnimationGraph validators | P9 |

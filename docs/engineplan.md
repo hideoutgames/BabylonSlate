@@ -140,8 +140,8 @@ packages/
 ```
 
 Boundary rules, enforced by an ESLint import-restriction config extending [.cursor/rules/agent-workflow.md](.cursor/rules/agent-workflow.md):
-- `core`, `assets`, `edit`, `object-model`, `scripting`, `scripting-nodes`, `input`, `behaviour-tree` must not import React or Babylon. `navigation` may load the recast wasm but must not import Babylon, so it runs in the game worker. They are pure, fast to test, and hold the bulk of the engine's logic.
-- `render` must not import React. `runtime` must not import Babylon or the DOM. `@babylonslate/physics` hosts Babylon Physics V2 on a worker-local `NullEngine` Scene so the runtime stays Babylon-free.
+- `core`, `assets`, `edit`, `object-model`, `scripting`, `scripting-nodes`, `input`, `debugger`, `behaviour-tree` must not import React or Babylon. `navigation` may load the recast wasm but must not import Babylon, so it runs in the game worker. They are pure, fast to test, and hold the bulk of the engine's logic.
+- `render` must not import React. `runtime` must not import Babylon or the DOM. `@babylonslate/debugger` is the same boundary as `runtime` (no React/Babylon). `@babylonslate/physics` hosts Babylon Physics V2 on a worker-local `NullEngine` Scene so the runtime stays Babylon-free.
 - The texture pipeline splits across that line deliberately: `assets` owns **encoding** (Basis encoder wasm, no Babylon) while `render` owns **decoding** (`KhronosTextureContainer2` and the transcoder), so the compression work in 3.5 does not drag Babylon into the asset layer.
 - Only `vfs` adapters may touch Capacitor plugins.
 
@@ -1126,7 +1126,7 @@ Granular tasks tracked against the roadmap in section 18. Update checkboxes as s
 
 ### P8
 
-- [ ] **p8-command-system** — P8: debugger package command registry with core and debug tiers, parser and argument coercion, core commands (changescene, renderquality, shadowquality, resolutionscale, framecap, volume, quit) present in every build, debug tier tree-shaken out of non-debug exports, ExecuteConsoleCommand node returning success and output with a compile-time warning when a graph references a debug-tier command
+- [x] **p8-command-system** — P8: debugger package command registry with core and debug tiers, parser and argument coercion, core commands (changescene, renderquality, shadowquality, resolutionscale, framecap, volume, quit) present in every build, debug tier tree-shaken out of non-debug exports, ExecuteConsoleCommand node returning success and output with a compile-time warning when a graph references a debug-tier command
 - [ ] **p8-bdebugcommand** — P8: BDebugCommand object base class with command name, description, category and a typed parameter list driving generated OnCommandRun pins; registry discovery through the parent chain; user commands shipped in every export; the parameter-list editor extracted as the shared row-list component also used by ExecuteJavaScript, Class panel function signatures and ScriptInterface
 - [ ] **p8-console-hud** — P8: debug console with history, argument hints and registry-driven autocomplete including enum value completion, as an iPad bottom sheet with the accessory key bar and SelectableText transcript; stats HUD at 5Hz covering frame time split across main-thread render, the script phase and the physics phase (separated even though both run in the game worker, because they share one budget), the combined tick flagged against the section 1.2 budget, memory including how much texture memory is compressed, draw calls, object counts and per-channel bridge traffic
 - [ ] **p8-trace-recorder** — P8: debug snapshot recorder - capped in-memory buffer spilling to a .babtrace file reusing the container format, capturing stats, log and print events, world snapshots, the input stream and the RNG seed; playback document tab with scrubbable timeline, graphs and time-filtered log; replay of a recorded trace through the headless deterministic harness

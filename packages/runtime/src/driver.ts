@@ -29,6 +29,11 @@ import {
   SoftwarePhysicsBackend,
   type PhysicsWorldKind,
 } from "@babylonslate/physics";
+import {
+  createCommandRegistry,
+  type CommandRegistry,
+  type ConsoleCommandHost,
+} from "@babylonslate/debugger";
 import { LogRingBuffer } from "./log-ring";
 import {
   SessionDiagnosticAggregator,
@@ -60,6 +65,8 @@ export interface RuntimeDriverOptions {
   /** Authored scene to instantiate on `realizePlayWorld` (no demo actors). */
   playScene?: SerializedScene;
   playSceneGuid?: string;
+  /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
+  includeDebugCommands?: boolean;
 }
 
 export interface RuntimeDriver {
@@ -96,6 +103,7 @@ export interface RuntimeDriver {
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
+  executeConsoleCommand(command: string): { success: boolean; output: string };
   readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
@@ -148,6 +156,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly playScene: SerializedScene | undefined;
   private readonly playSceneGuid: string;
   private playWorldRealized = false;
+  private readonly commands: CommandRegistry;
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -168,6 +177,9 @@ class InProcessRuntime implements RuntimeDriver {
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
     this.playScene = options.playScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
+    this.commands = createCommandRegistry({
+      includeDebug: options.includeDebugCommands ?? true,
+    });
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
 
@@ -274,10 +286,7 @@ class InProcessRuntime implements RuntimeDriver {
       destroyActor: (actor) => {
         if (actor) this.world.destroyActor(actor.guid);
       },
-      executeConsoleCommand: (command) => ({
-        success: false,
-        output: `unknown command: ${command}`,
-      }),
+      executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       delay: (seconds) =>
         new Promise<void>((resolve) => {
           setTimeout(resolve, Math.max(0, seconds) * 1000);
@@ -383,6 +392,54 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.world.loadScene(this.playSceneGuid);
+  }
+
+  executeConsoleCommand(command: string): { success: boolean; output: string } {
+    return this.commands.execute(command, this.consoleHost());
+  }
+
+  private consoleHost(): ConsoleCommandHost {
+    const emitSetting = (key: string, value: string | number | boolean) => {
+      this.emit({
+        type: "log",
+        severity: "log",
+        category: "console",
+        message: `${key}=${value}`,
+        frameId: this.frameId,
+      });
+    };
+    return {
+      changeScene: (scene) => {
+        this.world.loadScene(scene);
+      },
+      setRenderQuality: (level) => emitSetting("renderquality", level),
+      setShadowQuality: (level) => emitSetting("shadowquality", level),
+      setResolutionScale: (scale) => emitSetting("resolutionscale", scale),
+      setFrameCap: (fps) => emitSetting("framecap", fps),
+      setVolume: (volume) => emitSetting("volume", volume),
+      quit: () => {
+        this.stop();
+      },
+      setShowFps: (enabled) => emitSetting("showfps", enabled),
+      setStat: (name, enabled) => emitSetting(`stat.${name}`, enabled),
+      setShowCollision: (enabled) => emitSetting("showcollision", enabled),
+      setShowBounds: (enabled) => emitSetting("showbounds", enabled),
+      setWireframe: (enabled) => emitSetting("wireframe", enabled),
+      pause: () => {
+        this.pause();
+      },
+      step: () => {
+        this.tick();
+      },
+      setTimeDilation: (rate) => emitSetting("slomo", rate),
+      dumpLog: () =>
+        this.logs
+          .entries()
+          .map((entry) => entry.message)
+          .join("\n"),
+      startSnapshot: () => emitSetting("snapshot", "start"),
+      stopSnapshot: () => emitSetting("snapshot", "stop"),
+    };
   }
 
   private emitMeshAssignment(actor: Actor, slotId: number): void {

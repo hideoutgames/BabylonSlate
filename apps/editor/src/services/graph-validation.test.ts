@@ -4,6 +4,7 @@ import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
+  validateSerializedGraph,
 } from "./graph-validation";
 
 const registry = createDefaultNodeRegistry();
@@ -132,5 +133,28 @@ describe("createDefaultLogicGraphSerialized", () => {
       expect(Array.isArray(node.data.__pins)).toBe(true);
       expect((node.data.__pins as unknown[]).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("validateSerializedGraph", () => {
+  it("warns when ExecuteConsoleCommand literals name a debug-tier command", () => {
+    const diags = validateSerializedGraph(
+      {
+        id: "event-graph",
+        kind: "event",
+        nodes: [
+          {
+            id: "cmd",
+            typeId: "debug.executeConsoleCommand",
+            position: { x: 0, y: 0 },
+            pins: [],
+            properties: { command: "showfps" },
+          },
+        ],
+        edges: [],
+      },
+      { assetGuid: "g1", graphId: "event-graph" },
+    );
+    expect(diags.some((d) => d.code === "console.debug_tier")).toBe(true);
   });
 });

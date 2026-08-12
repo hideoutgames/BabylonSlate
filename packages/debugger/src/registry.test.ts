@@ -1,0 +1,160 @@
+import { describe, expect, it } from "vitest";
+import {
+  createCommandRegistry,
+  type ConsoleCommandHost,
+} from "./registry";
+
+function recordingHost(): ConsoleCommandHost & { calls: string[] } {
+  const calls: string[] = [];
+  return {
+    calls,
+    changeScene: (scene) => {
+      calls.push(`changeScene:${scene}`);
+    },
+    setRenderQuality: (level) => {
+      calls.push(`renderquality:${level}`);
+    },
+    setShadowQuality: (level) => {
+      calls.push(`shadowquality:${level}`);
+    },
+    setResolutionScale: (scale) => {
+      calls.push(`resolutionscale:${scale}`);
+    },
+    setFrameCap: (fps) => {
+      calls.push(`framecap:${fps}`);
+    },
+    setVolume: (volume) => {
+      calls.push(`volume:${volume}`);
+    },
+    quit: () => {
+      calls.push("quit");
+    },
+    setShowFps: (enabled) => {
+      calls.push(`showfps:${enabled}`);
+    },
+    setStat: (name, enabled) => {
+      calls.push(`stat:${name}:${enabled}`);
+    },
+    setShowCollision: (enabled) => {
+      calls.push(`showcollision:${enabled}`);
+    },
+    setShowBounds: (enabled) => {
+      calls.push(`showbounds:${enabled}`);
+    },
+    setWireframe: (enabled) => {
+      calls.push(`wireframe:${enabled}`);
+    },
+    pause: () => {
+      calls.push("pause");
+    },
+    step: () => {
+      calls.push("step");
+    },
+    setTimeDilation: (rate) => {
+      calls.push(`slomo:${rate}`);
+    },
+    dumpLog: () => "log-tail",
+    startSnapshot: () => {
+      calls.push("snapshot:start");
+    },
+    stopSnapshot: () => {
+      calls.push("snapshot:stop");
+    },
+  };
+}
+
+describe("createCommandRegistry", () => {
+  it("runs core commands in every registry", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: false });
+    expect(registry.execute("changescene level-2", host)).toEqual({
+      success: true,
+      output: "changed scene to level-2",
+    });
+    expect(registry.execute("renderquality high", host).success).toBe(true);
+    expect(registry.execute("shadowquality low", host).success).toBe(true);
+    expect(registry.execute("resolutionscale 0.75", host).success).toBe(true);
+    expect(registry.execute("framecap 30", host).success).toBe(true);
+    expect(registry.execute("volume 0.5", host).success).toBe(true);
+    expect(registry.execute("quit", host)).toEqual({
+      success: true,
+      output: "quit",
+    });
+    expect(host.calls).toEqual([
+      "changeScene:level-2",
+      "renderquality:high",
+      "shadowquality:low",
+      "resolutionscale:0.75",
+      "framecap:30",
+      "volume:0.5",
+      "quit",
+    ]);
+  });
+
+  it("accepts name=value arguments and quoted strings", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry();
+    expect(
+      registry.execute('changescene scene="my level"', host),
+    ).toEqual({
+      success: true,
+      output: "changed scene to my level",
+    });
+    expect(host.calls).toEqual(["changeScene:my level"]);
+  });
+
+  it("rejects unknown commands without throwing", () => {
+    const registry = createCommandRegistry();
+    expect(registry.execute("not-a-command", recordingHost())).toEqual({
+      success: false,
+      output: "unknown command: not-a-command",
+    });
+  });
+
+  it("reports stripped debug commands instead of unknown", () => {
+    const registry = createCommandRegistry({ includeDebug: false });
+    expect(registry.execute("showfps", recordingHost())).toEqual({
+      success: false,
+      output: "debug command 'showfps' is not available in this build",
+    });
+    expect(registry.execute("stat unit", recordingHost()).output).toContain(
+      "stat unit",
+    );
+    expect(registry.execute("snapshot start", recordingHost()).success).toBe(
+      false,
+    );
+  });
+
+  it("runs debug-tier commands only when includeDebug is true", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("showfps off", host).success).toBe(true);
+    expect(registry.execute("stat memory", host).success).toBe(true);
+    expect(registry.execute("pause", host).success).toBe(true);
+    expect(registry.execute("slomo 0.25", host).success).toBe(true);
+    expect(registry.execute("dumplog", host)).toEqual({
+      success: true,
+      output: "log-tail",
+    });
+    expect(host.calls).toEqual([
+      "showfps:false",
+      "stat:memory:true",
+      "pause",
+      "slomo:0.25",
+    ]);
+  });
+
+  it("coerces types and rejects bad enum values", () => {
+    const registry = createCommandRegistry();
+    expect(registry.execute("framecap nope", recordingHost())).toEqual({
+      success: false,
+      output: 'parameter "fps" expects int, got "nope"',
+    });
+    expect(registry.execute("renderquality ultra", recordingHost())).toEqual({
+      success: false,
+      output:
+        'parameter "level" expects one of low, medium, high, got "ultra"',
+    });
+    expect(registry.execute("changescene", recordingHost()).success).toBe(false);
+  });
+});
