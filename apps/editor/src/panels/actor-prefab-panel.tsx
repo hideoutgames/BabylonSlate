@@ -15,13 +15,10 @@ import {
 } from "@babylonslate/core";
 import { createEngine, type EngineHandle } from "@babylonslate/render";
 import { Button } from "@babylonslate/ui/components/button";
-
-const COMPONENT_CLASSES = [
-  { id: "MeshComponent", label: "Mesh", description: "Renderable primitive" },
-  { id: "SpriteComponent", label: "Sprite", description: "2D sprite" },
-  { id: "CameraComponent", label: "Camera", description: "Scene camera" },
-  { id: "LightComponent", label: "Light", description: "Scene light" },
-];
+import {
+  ADDABLE_COMPONENT_CLASSES,
+  defaultPropertiesFor,
+} from "./add-component-catalog";
 
 /** Preview scene holding the prefab's components on a single actor. */
 export function previewSceneFor(
@@ -148,7 +145,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         open={addOpen}
         onOpenChange={setAddOpen}
         title="Add component"
-        items={COMPONENT_CLASSES.map((entry) => ({
+        items={ADDABLE_COMPONENT_CLASSES.map((entry) => ({
           id: entry.id,
           label: entry.label,
           description: entry.description,
@@ -159,10 +156,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
             {
               id: `prefab-component-${current.length + 1}`,
               classId,
-              properties:
-                classId === "MeshComponent"
-                  ? { meshKind: "box", assetGuid: null }
-                  : {},
+              properties: defaultPropertiesFor(classId),
             },
           ])
         }

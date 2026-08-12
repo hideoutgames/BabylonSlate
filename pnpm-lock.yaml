@@ -86,6 +86,9 @@ importers:
       '@babylonslate/input':
         specifier: workspace:*
         version: link:../../packages/input
+      '@babylonslate/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
       '@babylonslate/render':
         specifier: workspace:*
         version: link:../../packages/render
