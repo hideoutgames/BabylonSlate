@@ -19,6 +19,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test:coverage
+      - run: pnpm --filter docs-site build
 
   e2e:
     runs-on: ubuntu-latest
