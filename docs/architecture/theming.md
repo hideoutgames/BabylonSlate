@@ -141,3 +141,16 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 Icon-only controls always have `aria-label`; tooltips are secondary and must not be the only way to discover the action. Chrome **Save All** is disabled when the project is clean; a `bg-destructive` dot (`data-testid="save-all-dirty"`) marks unsaved documents.
 
 Dev-only **Component Gallery**: `/?test=1&gallery=1` renders every installed primitive for on-device visual checks.
+
+## Brand assets
+
+Source artwork lives in [`engine-logos/`](../../engine-logos/):
+
+| File | Ink | Use |
+| --- | --- | --- |
+| `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Homepage header, docs home hero |
+| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Docs nav, favicon source |
+
+`*Dark` is dark ink for light chrome; `*Light` is light ink for dark chrome. Served copies must stay byte-identical in `apps/editor/public/branding/` and `apps/docs/public/branding/`.
+
+Favicon is a theme-aware SVG (`prefers-color-scheme`) plus `favicon.ico` and `apple-touch-icon.png` in each app's `public/`. The editor homepage swaps wordmarks with `html.dark` (`dark:hidden` / `dark:block`), not `prefers-color-scheme`, so Engine Settings Appearance wins.

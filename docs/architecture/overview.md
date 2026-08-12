@@ -9,6 +9,7 @@ Authoritative detail lives in [engineplan.md](../engineplan.md). This page orien
 ```
 apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer
 apps/docs/            VitePress site; content is the markdown in `docs/`
+engine-logos/         Slate wordmark and icon (dark/light ink); copied into editor and docs `public/branding/`
 packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue (P5)
 packages/vfs/         Storage adapters, platform detection, app settings
 packages/assets/      Containers, asset registry, search index, importers, encode queue
