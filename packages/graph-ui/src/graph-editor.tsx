@@ -17,7 +17,6 @@ import "@xyflow/react/dist/style.css";
 import "./graph-editor.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@babylonslate/ui/components/button";
-import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
 import {
   hasSerializedPins,
   type GraphDiagnostic,
@@ -56,6 +55,12 @@ import {
   GRAPH_DEFAULT_ZOOM,
   resolveGraphViewport,
 } from "./graph-viewport";
+import { formatGraphNodes } from "./graph-format";
+import {
+  attachGraphPaneMarquee,
+  flowRectFromPoints,
+  nodesIntersectingMarquee,
+} from "./graph-marquee";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
@@ -204,13 +209,19 @@ function GraphEditorCanvas({
     nodeId?: string;
     position: { x: number; y: number };
   } | null>(null);
-  const [selectionDrag, setSelectionDrag] = useState(false);
+  const [marqueeScreen, setMarqueeScreen] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [hasClipboard, setHasClipboard] = useState(false);
   const clipboardRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] } | null>(
     null,
   );
   const lastPaneTapRef = useRef(0);
-  const paneHoldRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const skipPaneClickRef = useRef(false);
   const membersRef = useRef(initialGraph.members);
   membersRef.current = initialGraph.members;
   const { screenToFlowPosition } = useReactFlow();
@@ -581,6 +592,46 @@ function GraphEditorCanvas({
     });
   }, [emitChange]);
 
+  const formatSelection = useCallback(() => {
+    const selected = graphStateRef.current.nodes
+      .filter((node) => node.selected)
+      .map((node) => node.id);
+    if (selected.length === 0) return;
+    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    const formatted = formatGraphNodes(
+      currentNodes.map((node) => ({
+        id: node.id,
+        position: node.position,
+        width: node.measured?.width ?? node.width,
+        height: node.measured?.height ?? node.height,
+        pins: hasSerializedPins(node.data) ? node.data.__pins : undefined,
+      })),
+      currentEdges.map((edge) => ({
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? undefined,
+      })),
+      selected,
+    );
+    const positions = new Map(
+      formatted.map((node) => [node.id, node.position]),
+    );
+    setNodes((current) => {
+      const next = current.map((node) => {
+        const position = positions.get(node.id);
+        if (
+          !position ||
+          (position.x === node.position.x && position.y === node.position.y)
+        ) {
+          return node;
+        }
+        return { ...node, position };
+      });
+      emitChange(next, graphStateRef.current.edges);
+      return next;
+    });
+  }, [emitChange]);
+
   const clearSelection = useCallback(() => {
     setNodes((current) =>
       current.map((node) => ({ ...node, selected: false })),
@@ -588,6 +639,10 @@ function GraphEditorCanvas({
   }, []);
 
   const handlePaneClick = useCallback(() => {
+    if (skipPaneClickRef.current) {
+      skipPaneClickRef.current = false;
+      return;
+    }
     clearSelection();
     const now = Date.now();
     if (now - lastPaneTapRef.current < DOUBLE_TAP_MS) {
@@ -597,27 +652,33 @@ function GraphEditorCanvas({
     lastPaneTapRef.current = now;
   }, [clearSelection]);
 
-  const onWrapperPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const target = event.target as HTMLElement | null;
-      if (!target?.closest(".react-flow__pane")) return;
-      if (target.closest(".react-flow__node, .react-flow__handle, .react-flow__edge")) {
-        return;
-      }
-      if (paneHoldRef.current) clearTimeout(paneHoldRef.current);
-      paneHoldRef.current = setTimeout(() => {
-        setSelectionDrag(true);
-      }, DRAG_ARM_MS);
-    },
-    [],
-  );
+  const screenToFlowPositionRef = useRef(screenToFlowPosition);
+  screenToFlowPositionRef.current = screenToFlowPosition;
 
-  const endPaneHold = useCallback(() => {
-    if (paneHoldRef.current) {
-      clearTimeout(paneHoldRef.current);
-      paneHoldRef.current = null;
-    }
-    setSelectionDrag(false);
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const handle = attachGraphPaneMarquee(wrapper, {
+      onMarqueeRect: setMarqueeScreen,
+      onMarqueeEnd: (startClient, endClient) => {
+        skipPaneClickRef.current = true;
+        const from = screenToFlowPositionRef.current(startClient);
+        const to = screenToFlowPositionRef.current(endClient);
+        const ids = new Set(
+          nodesIntersectingMarquee(
+            graphStateRef.current.nodes,
+            flowRectFromPoints(from, to),
+          ),
+        );
+        setNodes((current) =>
+          current.map((node) => ({
+            ...node,
+            selected: ids.has(node.id),
+          })),
+        );
+      },
+    });
+    return () => handle.dispose();
   }, []);
 
   const pinDisplayTypes = useMemo(
@@ -680,11 +741,21 @@ function GraphEditorCanvas({
   return (
     <GraphEditorProvider value={contextValue}>
       <div
+        ref={wrapperRef}
         className="relative h-full w-full touch-manipulation"
-        onPointerDown={onWrapperPointerDown}
-        onPointerUp={endPaneHold}
-        onPointerCancel={endPaneHold}
       >
+        {marqueeScreen ? (
+          <div
+            data-testid="graph-marquee"
+            className="pointer-events-none absolute z-20 border border-dashed border-primary bg-primary/15"
+            style={{
+              left: marqueeScreen.x,
+              top: marqueeScreen.y,
+              width: marqueeScreen.width,
+              height: marqueeScreen.height,
+            }}
+          />
+        ) : null}
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card/90 p-1 shadow-md"
@@ -724,8 +795,9 @@ function GraphEditorCanvas({
               type="button"
               variant="outline"
               size="sm"
-              disabled
-              title="Format will tidy selected nodes, or follow a single node’s chain to the right"
+              disabled={selectedNodes.length === 0}
+              onClick={formatSelection}
+              title="Format selected nodes, or follow a single node’s then-chain to the right"
               data-testid="graph-format"
             >
               Format
@@ -744,8 +816,7 @@ function GraphEditorCanvas({
           onConnectEnd={handleConnectEnd}
           isValidConnection={isValidConnection}
           onPaneClick={handlePaneClick}
-          selectionOnDrag={selectionDrag}
-          panOnDrag={!selectionDrag}
+          panOnDrag
           connectionLineStyle={connectionLineStyle}
           connectionLineComponent={GraphConnectionLine}
           defaultEdgeOptions={{ type: "default" }}

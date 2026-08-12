@@ -198,6 +198,7 @@ export function EditorChromeBar({
     isLayoutFocused,
     toggleLayoutFocus,
     collectScriptBundles,
+    graphsNeedCompile,
     activateDockPanel,
   } = useDocuments();
 
@@ -348,11 +349,13 @@ export function EditorChromeBar({
           </IconActionButton>
           {activeKind === "graph" ? (
             <>
-              <IconActionButton
-                label="Compile"
+              <Button
+                size="sm"
+                variant="outline"
                 data-testid="compile-graph"
-                className="chrome-icon-button"
-                disabled={!projectName}
+                className="chrome-action-button"
+                aria-label="Compile"
+                disabled={!projectName || !graphsNeedCompile}
                 onClick={() => {
                   const graphs = openDocuments.filter(
                     (doc) => doc.ref.kind === "graph" && doc.content,
@@ -369,8 +372,9 @@ export function EditorChromeBar({
                   activateDockPanel("compiler-results");
                 }}
               >
-                <HammerIcon />
-              </IconActionButton>
+                <HammerIcon data-icon="inline-start" />
+                Compile
+              </Button>
               <CompilationErrorIndicator
                 errorCount={errorCount}
                 onOpenResults={() => activateDockPanel("compiler-results")}

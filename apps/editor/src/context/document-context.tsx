@@ -55,7 +55,11 @@ import {
 } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { loadTemplateCards } from "../services/template-service";
-import { compileGraphDocuments } from "../services/script-compiler";
+import {
+  compileGraphDocuments,
+  graphCompileSignature,
+  graphsNeedCompile as compileSignatureIsStale,
+} from "../services/script-compiler";
 import { validateSerializedGraph } from "../services/graph-validation";
 import { applyFocusLayout } from "../shell/layout-ops";
 import {
@@ -163,11 +167,25 @@ interface DocumentContextValue {
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }>;
-  /** True when a graph changed since the last successful project compile. */
+  /** True when a compiled graph changed since the last successful compile (positions ignored). */
   scriptsStale: boolean;
+  /** True when Compile should run: never compiled this session, or open graphs changed. */
+  graphsNeedCompile: boolean;
   markScriptsCurrent: () => void;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
+}
+
+function openGraphCompileDocuments(
+  documentService: DocumentService,
+): Array<{ path: string; content: SerializedGraph }> {
+  return documentService
+    .getOpenDocumentsOrdered()
+    .filter((doc) => doc.ref.kind === "graph" && doc.content)
+    .map((doc) => ({
+      path: doc.ref.path,
+      content: doc.content as SerializedGraph,
+    }));
 }
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
@@ -227,9 +245,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [registryVersion, setRegistryVersion] = useState(0);
   const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
-  const [scriptsStale, setScriptsStale] = useState(false);
-  const markScriptsStale = useCallback(() => setScriptsStale(true), []);
-  const markScriptsCurrent = useCallback(() => setScriptsStale(false), []);
+  const [lastCompiledSignature, setLastCompiledSignature] = useState<
+    string | null
+  >(null);
+  const markScriptsCurrent = useCallback(() => {
+    setLastCompiledSignature(
+      graphCompileSignature(openGraphCompileDocuments(documentServiceRef.current)),
+    );
+  }, []);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
   const bumpDockWindows = useCallback(
@@ -410,13 +433,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documentService.updateScene(id, content as SerializedScene);
       } else {
         documentService.updateGraph(id, content as SerializedGraph);
-        markScriptsStale();
       }
     }
     await truncateJournal(derived, guid);
     setRecoveryAvailable(false);
     bump();
-  }, [bump, documentService, ensureDerived, markScriptsStale, projectService]);
+  }, [bump, documentService, ensureDerived, projectService]);
 
   const enterEditor = useCallback(
     async (
@@ -438,7 +460,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
       setProjectDocument(document);
       setMigrationPending(pending);
-      setScriptsStale(false);
+      setLastCompiledSignature(null);
       setRoute("editor");
       const { probeKtx2TranscoderAvailable } = await import(
         "@babylonslate/render"
@@ -580,6 +602,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           content: doc.content as SerializedGraph,
         }));
       compileGraphDocuments(graphs);
+      setLastCompiledSignature(graphCompileSignature(graphs));
     }
     const layouts = documentService.buildLayouts();
     await projectService.saveProject(document, layouts);
@@ -649,7 +672,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setProjectDocument(null);
     setRecoveryAvailable(false);
     setMigrationPending([]);
-    setScriptsStale(false);
+    setLastCompiledSignature(null);
     setRoute("home");
     await refreshProjectList();
     bump();
@@ -760,10 +783,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const updateGraph = useCallback(
     (id: string, graph: SerializedGraph) => {
       documentService.updateGraph(id, graph);
-      markScriptsStale();
       bump();
     },
-    [bump, documentService, markScriptsStale],
+    [bump, documentService],
   );
 
   const updateProjectSettings = useCallback(
@@ -815,7 +837,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
       documentService.updateGraph(id, current);
-      markScriptsStale();
       projectService.indexOpenDocument(doc.ref.path, current);
       const guid = projectService.guid;
       if (guid) {
@@ -837,7 +858,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump();
       return true;
     },
-    [bump, documentService, ensureDerived, markScriptsStale, projectService, scheduleDebouncedSave],
+    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
 
   const applySceneChange = useCallback(
@@ -1079,7 +1100,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
         }
         documentService.updateGraph(id, graph);
-        markScriptsStale();
         bump();
         return true;
       },
@@ -1095,7 +1115,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump,
     documentService,
     ensureDerived,
-    markScriptsStale,
     projectService,
   ]);
 
@@ -1113,7 +1132,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
         documentService.updateGraph(activeDocumentId, result.doc);
-        markScriptsStale();
         bump();
         return;
       }
@@ -1128,7 +1146,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         bump();
       }
     },
-    [bump, documentService, markScriptsStale],
+    [bump, documentService],
   );
 
   const undoActiveDocument = useCallback(() => {
@@ -1303,6 +1321,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // registryVersion is a bump counter for imperative document-service
       // mutations that are not themselves React state.
       void registryVersion;
+      const currentGraphSignature = graphCompileSignature(
+        openGraphCompileDocuments(documentService),
+      );
       return {
       route,
       projectDocument,
@@ -1377,7 +1398,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
-      scriptsStale,
+      graphsNeedCompile: compileSignatureIsStale(
+        currentGraphSignature,
+        lastCompiledSignature,
+      ),
+      scriptsStale:
+        lastCompiledSignature !== null &&
+        compileSignatureIsStale(currentGraphSignature, lastCompiledSignature),
       markScriptsCurrent,
       searchIndex: projectService.searchIndex,
     };
@@ -1395,7 +1422,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
-      scriptsStale,
+      lastCompiledSignature,
       markScriptsCurrent,
       listedProjects,
       needsReconnect,

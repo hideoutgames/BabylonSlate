@@ -1,10 +1,32 @@
-import { fireEvent, render, cleanup, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
+import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
 import { GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
+import { FORMAT_GAP_X } from "./graph-format";
+import { MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+function dispatchPointerEvent(
+  target: Element,
+  type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
+  init: { clientX?: number; clientY?: number } = {},
+): void {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: init.clientX ?? 0,
+    clientY: init.clientY ?? 0,
+  });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerType", { value: "touch" });
+  target.dispatchEvent(event);
+}
 
 const debugLogPins = [
   {
@@ -494,6 +516,77 @@ describe("GraphEditor", () => {
     expect(persisted.find((pin) => pin.id === "value")?.type.kind).toBe(
       "boxedWildcard",
     );
+  });
+
+  it("enables Format when a node is selected", () => {
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graphWithPins()} />,
+    );
+    const node = container.querySelector(".react-flow__node");
+    expect(node).not.toBeNull();
+    fireEvent.click(node!);
+    expect(getByTestId("graph-format")).toHaveProperty("disabled", false);
+  });
+
+  it("formats the then-chain to the right of a single selected node", () => {
+    const onChange = vi.fn();
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "log-a",
+          type: "debug.log",
+          position: { x: 0, y: 40 },
+          data: { message: "A", __pins: debugLogPins },
+        },
+        {
+          id: "log-b",
+          type: "debug.log",
+          position: { x: 12, y: 180 },
+          data: { message: "B", __pins: debugLogPins },
+        },
+      ],
+      edges: [
+        {
+          id: "e:log-a:execOut:log-b:execIn",
+          source: "log-a",
+          target: "log-b",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+    fireEvent.click(container.querySelector(".react-flow__node")!);
+    fireEvent.click(getByTestId("graph-format"));
+
+    expect(onChange).toHaveBeenCalled();
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.nodes.find((node) => node.id === "log-a")?.position).toEqual(
+      { x: 0, y: 40 },
+    );
+    expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
+      x: MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X,
+      y: 40,
+    });
+  });
+
+  it("draws a marquee overlay after a stationary pane hold then move", () => {
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graphWithPins()} />,
+    );
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    vi.useFakeTimers();
+    act(() => {
+      dispatchPointerEvent(pane!, "pointerdown", { clientX: 20, clientY: 20 });
+      vi.advanceTimersByTime(DRAG_ARM_MS);
+    });
+    act(() => {
+      dispatchPointerEvent(pane!, "pointermove", { clientX: 140, clientY: 110 });
+    });
+    expect(getByTestId("graph-marquee")).toBeTruthy();
   });
 
   it("titles event nodes Event … when data.title is missing", () => {
