@@ -2,11 +2,21 @@ import { expect, test } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
 
+async function showContentBrowser(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  await page
+    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+    .click();
+  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+}
+
 async function createAsset(
   page: import("@playwright/test").Page,
   type: "UserInterface" | "Font" | "Sprite" | "AnimationGraph" | "Shader",
   name: string,
 ): Promise<void> {
+  await showContentBrowser(page);
   await page.getByTestId("content-browser-new-asset").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
   await page.getByTestId("new-asset-type").click();
@@ -59,6 +69,7 @@ test.describe("P9 content systems", () => {
     await expect(sample).toContainText("The quick brown fox");
     const family = await sample.evaluate((el) => getComputedStyle(el).fontFamily);
     expect(family.toLowerCase()).toMatch(/display|sans-serif/);
+    await page.getByTestId("settings-menu").click();
     await page.getByTestId("project-settings").click();
     await page.getByTestId("settings-modal-category-fonts").click();
     await expect(page.getByTestId("settings-global-fallback")).toHaveValue(
