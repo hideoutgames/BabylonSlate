@@ -67,6 +67,50 @@ describe("editor camera pixel-perfect framing", () => {
     scene.dispose();
     engine.dispose();
   });
+
+  it("accumulates sub-step zoom-in until the next integer scale", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = createEditorCamera(scene, { mode: "2d" });
+    camera.setCanvasHeight(600);
+    camera.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+
+    expect(camera.pixelZoom()).toBe(1);
+    expect(camera.orthoHalfHeight()).toBe(3);
+
+    // 1.1^4 ≈ 1.46 still rounds to 1×; 1.1^5 ≈ 1.61 rounds to 2×.
+    for (let i = 0; i < 4; i++) camera.zoom(1.1);
+    expect(camera.pixelZoom()).toBe(1);
+    expect(camera.orthoHalfHeight()).toBe(3);
+
+    camera.zoom(1.1);
+    expect(camera.pixelZoom()).toBe(2);
+    expect(camera.orthoHalfHeight()).toBe(1.5);
+
+    camera.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("accumulates sub-step zoom-out until the next 1/n scale", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = createEditorCamera(scene, { mode: "2d" });
+    camera.setCanvasHeight(600);
+    camera.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+
+    for (let i = 0; i < 4; i++) camera.zoom(1 / 1.1);
+    expect(camera.pixelZoom()).toBe(1);
+    expect(camera.orthoHalfHeight()).toBe(3);
+
+    camera.zoom(1 / 1.1);
+    expect(camera.pixelZoom()).toBe(0.5);
+    expect(camera.orthoHalfHeight()).toBe(6);
+
+    camera.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
 });
 
 describe("applyPixelArtSampling", () => {

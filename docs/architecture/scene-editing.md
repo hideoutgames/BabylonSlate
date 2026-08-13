@@ -89,6 +89,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 - **`cameraBounds2D`**: rectangle drawn in the viewport for the game camera frame.
 - **`pixelsPerUnit`**: project setting (default 100); drives pixel-perfect ortho bounds and grid snapping.
 - **Pixel-perfect sampling**: when `twoD.pixelPerfect` is on in 2D mode, `setPixelPerfect` also runs `applyPixelArtSamplingToScene` (nearest sampling, clamp wrap, anisotropy 1) on every texture currently on the Babylon scene.
+- **Integer zoom steps**: with pixel-perfect + `twoD.integerZoomSteps` (the 2D project template default), the frustum snaps to 1, 2, 3… / `1/n`. Pinch and wheel still multiply a raw zoom so ~1.1 factors accumulate until the next whole-pixel scale; quantizing each event would leave 2D pinch stuck at 1×. `pixelZoom()` is the applied (snapped) scale.
 - **Sorting layers**: ordered list in Project Settings (`NamedListEditor`); `(sortingLayer, orderInLayer)` compiled to one `alphaIndex` sort key; rendering groups reserved for coarse background / world / foreground / UI separation (`sorting.ts`).
 - **Locked actors**: `isPickable = false` and the viewport gizmo attaches only to pickable meshes. **Locking an actor immediately drops it from `selectedActorIds`** (Outliner lock toggle and Details Locked). Unlock does not reselect. Details then shows scene settings when nothing remains selected.
 
