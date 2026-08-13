@@ -12,11 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@babylonslate/ui/components/card";
+import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { cn } from "@babylonslate/ui/lib/utils";
-import {
-  typeColorCardAccent,
-  typeColorThumbAccent,
-} from "@babylonslate/ui/lib/data-types";
 import {
   compressionBadgeLabel,
   displayAssetTitle,
@@ -46,7 +43,6 @@ export function ContentBrowserAssetTile({
   typeVisual,
 }: ContentBrowserAssetTileProps) {
   const compression = textureCompressionState(asset);
-  const cardAccent = typeColorCardAccent(typeVisual.colorVar);
   const thumbAccent = typeColorThumbAccent(typeVisual.colorVar);
   const bind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
@@ -59,13 +55,9 @@ export function ContentBrowserAssetTile({
     <Card
       size="sm"
       className={cn(
-        "relative w-full gap-0 overflow-hidden border py-0",
+        "relative w-full gap-0 overflow-hidden py-0",
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
-      style={{
-        backgroundColor: cardAccent.backgroundColor,
-        borderColor: selected ? undefined : cardAccent.borderColor,
-      }}
     >
       <button
         type="button"

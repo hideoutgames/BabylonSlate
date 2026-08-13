@@ -89,6 +89,16 @@ function oklchChroma(value: string): number {
   return match ? Number(match[1]) : Number.NaN;
 }
 
+function oklchHue(value: string): number {
+  const match = value.match(/oklch\(\s*[0-9.]+\s+[0-9.]+\s+([0-9.]+)/i);
+  return match ? Number(match[1]) : Number.NaN;
+}
+
+function circularHueDistance(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 360;
+  return Math.min(diff, 360 - diff);
+}
+
 describe("authored shell stylesheets", () => {
   it.each(Object.entries(AUTHORED_STYLESHEETS))(
     "%s draws every radius from the token scale",
@@ -149,6 +159,24 @@ describe("Minimal Neutral theme tokens", () => {
     for (const name of ASSET_TOKENS) {
       expect(tokenValue(root, name), name).not.toBe("");
       expect(tokenValue(dark, name), name).not.toBe("");
+    }
+  });
+
+  it("keeps asset type hues at least 25 degrees apart", () => {
+    const hues = ASSET_TOKENS.map((name) => {
+      const hue = oklchHue(tokenValue(root, name));
+      expect(hue, name).not.toBeNaN();
+      expect(oklchHue(tokenValue(dark, name)), `${name} dark`).toBe(hue);
+      return { name, hue };
+    });
+    for (let i = 0; i < hues.length; i++) {
+      for (let j = i + 1; j < hues.length; j++) {
+        const distance = circularHueDistance(hues[i]!.hue, hues[j]!.hue);
+        expect(
+          distance,
+          `${hues[i]!.name} (${hues[i]!.hue}) vs ${hues[j]!.name} (${hues[j]!.hue})`,
+        ).toBeGreaterThanOrEqual(25);
+      }
     }
   });
 

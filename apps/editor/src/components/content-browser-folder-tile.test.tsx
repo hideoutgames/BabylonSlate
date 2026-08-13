@@ -106,16 +106,18 @@ describe("ContentBrowserFolderTile", () => {
     expect(tile.getAttribute("draggable")).not.toBe("true");
   });
 
-  it("tints the card with the folder type token", () => {
+  it("tints only the thumb well, leaving the card and text panel on card chrome", () => {
     const { tile } = renderTile();
-    const card = tile.closest('[data-slot="card"]');
+    const card = tile.closest('[data-slot="card"]') as HTMLElement | null;
     expect(card).not.toBeNull();
-    expect((card as HTMLElement).style.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-folder) 16%, var(--card))",
+    expect(card?.style.backgroundColor).toBe("");
+    expect(card?.style.borderColor).toBe("");
+    const thumb = tile.querySelector(".aspect-square") as HTMLElement | null;
+    expect(thumb).not.toBeNull();
+    expect(thumb?.style.backgroundColor).toBe(
+      "color-mix(in oklch, var(--asset-folder) 45%, var(--muted))",
     );
-    expect((card as HTMLElement).style.borderColor).toBe(
-      "color-mix(in oklch, var(--asset-folder) 50%, var(--border))",
-    );
+    expect(thumb?.style.boxShadow).toBe("inset 0 -3px 0 var(--asset-folder)");
   });
 
   it("does not bubble pointer events to an empty-grid listener", () => {

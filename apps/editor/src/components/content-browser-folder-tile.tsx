@@ -8,12 +8,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@babylonslate/ui/components/card";
+import { assetColorVar, typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { cn } from "@babylonslate/ui/lib/utils";
-import {
-  assetColorVar,
-  typeColorCardAccent,
-  typeColorThumbAccent,
-} from "@babylonslate/ui/lib/data-types";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 
 export interface ContentBrowserFolderTileProps {
@@ -34,7 +30,6 @@ export function ContentBrowserFolderTile({
   onLongPressMenu,
 }: ContentBrowserFolderTileProps) {
   const colorVar = assetColorVar("folder");
-  const cardAccent = typeColorCardAccent(colorVar);
   const thumbAccent = typeColorThumbAccent(colorVar);
   const bind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
@@ -47,13 +42,9 @@ export function ContentBrowserFolderTile({
     <Card
       size="sm"
       className={cn(
-        "relative w-full gap-0 overflow-hidden border py-0",
+        "relative w-full gap-0 overflow-hidden py-0",
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
-      style={{
-        backgroundColor: cardAccent.backgroundColor,
-        borderColor: selected ? undefined : cardAccent.borderColor,
-      }}
     >
       <button
         type="button"
