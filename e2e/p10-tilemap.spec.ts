@@ -78,7 +78,7 @@ async function pickSelectedAsset(
     hasText: classId,
   });
   await expect(card).toBeVisible();
-  await card.locator(`[data-testid$="-${property}"]`).click();
+  await card.locator(`button[data-testid$="-${property}"]`).click();
   const item = page.getByTestId(`search-item-${guid}`);
   await expect(item).toBeVisible();
   await item.click();
