@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
 import { createActor, createDefaultScene } from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
@@ -97,7 +98,7 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["actor-1"];
     const mesh = scene().actors[0]?.components[0];
     if (mesh) mesh.properties.assetGuid = "mesh-1";
-    render(<SceneDetailsPanel {...({} as never)} />);
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const button = screen.getByTestId("property-actor-1-component-1-assetGuid");
     expect(button.textContent).toContain("Rock");
     expect(button.textContent).not.toContain("mesh-1");
@@ -126,14 +127,14 @@ describe("SceneDetailsPanel authoring", () => {
       }),
     ];
     harness.selectedActorIds = ["actor-1"];
-    render(<SceneDetailsPanel {...({} as never)} />);
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.getByTestId("property-actor-1-col-1-shape-kind")).toBeTruthy();
     expect(screen.queryByTestId("property-actor-1-col-1-shape")).toBeNull();
     expect(screen.queryByDisplayValue("[object Object]")).toBeNull();
   });
 
   it("picks Game Instance from ClassPicker instead of a free text field", async () => {
-    render(<SceneDetailsPanel {...({} as never)} />);
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const trigger = screen.getByTestId("property-scene-game-instance-class");
     expect(trigger.tagName).toBe("BUTTON");
     fireEvent.click(trigger);

@@ -114,10 +114,11 @@ function colliderShapeRows(
 ): PropertyRow[] {
   const parsed = parseColliderProperties(component.properties, physicsWorld);
   const shape = parsed.shape;
-  const base = physicsWorld === "2d" ? [...SHAPE_KINDS_2D] : [...SHAPE_KINDS_3D];
-  const kinds = base.includes(shape.kind as (typeof base)[number])
-    ? base
-    : [...base, shape.kind];
+  const kinds: string[] =
+    physicsWorld === "2d" ? [...SHAPE_KINDS_2D] : [...SHAPE_KINDS_3D];
+  if (!kinds.includes(shape.kind)) {
+    kinds.push(shape.kind);
+  }
   const rows: PropertyRow[] = [
     {
       kind: "enum",

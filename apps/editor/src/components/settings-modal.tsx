@@ -8,6 +8,7 @@ import {
   type CatalogCategory,
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
+import type { ProjectInputSettings } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -372,7 +373,11 @@ export function SettingsModal({
             </FieldDescription>
             <InputMappingEditor
               value={normalizeInputMappings(projectDocument.settings.input)}
-              onChange={(input) => updateProjectSettings({ input })}
+              onChange={(input) =>
+                updateProjectSettings({
+                  input: input as ProjectInputSettings,
+                })
+              }
               touchControlIds={collectTouchControlIds(openDocuments)}
               data-testid="settings-input-mapping"
             />

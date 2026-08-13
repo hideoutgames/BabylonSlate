@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { IDockviewPanelProps } from "dockview-react";
 import { MyClassPanel } from "./my-class-panel";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -50,7 +51,7 @@ afterEach(() => {
 describe("MyClassPanel name prompt", () => {
   it("adds a function through NamePromptDialog instead of window.prompt", () => {
     const prompt = vi.spyOn(window, "prompt");
-    render(<MyClassPanel {...({} as never)} />);
+    render(<MyClassPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("class-add-functions"));
     expect(prompt).not.toHaveBeenCalled();
     fireEvent.change(screen.getByTestId("name-prompt-input"), {
