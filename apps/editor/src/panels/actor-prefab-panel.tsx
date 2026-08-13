@@ -100,23 +100,25 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         </>
       }
     >
-      <TreeView
-        nodes={nodes}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onToggleExpanded={(id) =>
-          setCollapsed((current) => {
-            const next = new Set(current);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-          })
-        }
-        onReparent={reparentComponent}
-        reparentArm="immediate"
-        emptyLabel="No components"
-        data-testid="prefab-tree"
-      />
+      <div className="min-h-0 flex-1">
+        <TreeView
+          nodes={nodes}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onToggleExpanded={(id) =>
+            setCollapsed((current) => {
+              const next = new Set(current);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          onReparent={reparentComponent}
+          reparentArm="immediate"
+          emptyLabel="No components"
+          data-testid="prefab-tree"
+        />
+      </div>
       <AddComponentDialog
         open={addOpen}
         onOpenChange={setAddOpen}

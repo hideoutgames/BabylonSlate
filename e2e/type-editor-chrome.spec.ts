@@ -26,13 +26,19 @@ async function createAsset(
 async function dragTreeRow(page: Page, fromId: string, toId: string): Promise<void> {
   const from = page.getByTestId(`tree-row-${fromId}`);
   const to = page.getByTestId(`tree-row-${toId}`);
+  await expect(from).toBeVisible();
+  await expect(to).toBeVisible();
   const fromBox = await from.boundingBox();
   const toBox = await to.boundingBox();
   expect(fromBox).not.toBeNull();
   expect(toBox).not.toBeNull();
-  await page.mouse.move(fromBox!.x + 24, fromBox!.y + fromBox!.height / 2);
+  const fromX = fromBox!.x + Math.min(40, fromBox!.width / 2);
+  const fromY = fromBox!.y + fromBox!.height / 2;
+  const toX = toBox!.x + Math.min(40, toBox!.width / 2);
+  const toY = toBox!.y + toBox!.height / 2;
+  await page.mouse.move(fromX, fromY);
   await page.mouse.down();
-  await page.mouse.move(toBox!.x + 24, toBox!.y + toBox!.height / 2, { steps: 10 });
+  await page.mouse.move(toX, toY, { steps: 16 });
   await page.mouse.up();
 }
 
@@ -127,15 +133,15 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await page
       .getByTestId("prefab-add-component-catalog-item-LightComponent")
       .click();
-    const child = page.locator('[data-testid^="tree-row-prefab-component-"]');
+    await expect(page.getByTestId("prefab-add-component-catalog")).toHaveCount(0);
+    const tree = page.getByTestId("prefab-tree");
+    const child = tree.locator('[data-testid^="tree-row-prefab-component-"]');
     await expect(child).toBeVisible();
     const childId = await child.getAttribute("data-testid");
     expect(childId).toBeTruthy();
     const id = childId!.replace("tree-row-", "");
-    const before = await child.evaluate((el) => getComputedStyle(el).paddingLeft);
+    await expect(child).toHaveAttribute("data-depth", "1");
     await dragTreeRow(page, id, "prefab-mesh");
-    await expect
-      .poll(async () => child.evaluate((el) => getComputedStyle(el).paddingLeft))
-      .not.toBe(before);
+    await expect(child).toHaveAttribute("data-depth", "2");
   });
 });

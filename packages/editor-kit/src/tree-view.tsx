@@ -124,6 +124,16 @@ export function TreeView({
     const drag = dragRef.current;
     if (drag?.longPressTimer) clearTimeout(drag.longPressTimer);
     if (drag?.dragArmTimer) clearTimeout(drag.dragArmTimer);
+    if (
+      drag &&
+      containerRef.current?.hasPointerCapture?.(drag.pointerId)
+    ) {
+      try {
+        containerRef.current.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* jsdom and detached nodes */
+      }
+    }
     dragRef.current = null;
     setDropTargetId(undefined);
   }, []);
@@ -134,6 +144,13 @@ export function TreeView({
         ? setTimeout(() => {
             const drag = dragRef.current;
             if (!drag || drag.armed || drag.moved) return;
+            if (containerRef.current?.hasPointerCapture?.(drag.pointerId)) {
+              try {
+                containerRef.current.releasePointerCapture(drag.pointerId);
+              } catch {
+                /* jsdom */
+              }
+            }
             dragRef.current = null;
             onContextMenu(nodeId, event.clientX, event.clientY);
           }, CONTEXT_MENU_LONG_PRESS_MS)
@@ -157,6 +174,11 @@ export function TreeView({
         dragArmTimer,
         longPressTimer,
       };
+      try {
+        containerRef.current?.setPointerCapture?.(event.pointerId);
+      } catch {
+        /* jsdom and detached nodes */
+      }
     },
     [onContextMenu, onReparent, reparentArm],
   );
@@ -242,6 +264,7 @@ export function TreeView({
                 aria-selected={selected}
                 aria-expanded={node.hasChildren ? node.expanded : undefined}
                 data-testid={`tree-row-${node.id}`}
+                data-depth={node.depth}
                 data-drop-target={dropTargetId === node.id ? "true" : undefined}
                 className={cn(
                   "absolute right-0 left-0 flex touch-none items-center gap-1 border-l-2 px-1 text-sm",

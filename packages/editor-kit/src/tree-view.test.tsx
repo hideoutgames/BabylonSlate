@@ -27,6 +27,9 @@ describe("TreeView", () => {
     expect(
       screen.getByTestId("tree-row-child").getAttribute("aria-expanded"),
     ).toBeNull();
+    expect(
+      screen.getByTestId("tree-row-child").getAttribute("data-depth"),
+    ).toBe("1");
   });
 
   it("selects a row on tap", () => {
