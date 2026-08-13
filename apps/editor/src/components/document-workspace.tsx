@@ -208,6 +208,7 @@ export function DocumentWorkspace() {
               documentJoystickEnabled={
                 sceneContent?.settings.editorJoystickEnabled
               }
+              documentGridVisible={sceneContent?.settings.grid.showGrid}
             >
               <PrefabEditingProvider>
               <GraphEditingProvider>

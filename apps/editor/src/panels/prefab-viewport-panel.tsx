@@ -47,6 +47,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     snapEnabled,
     viewportMode,
     joystickEnabled,
+    gridVisible,
   } = useSceneEditing();
   const { registerScheduler, playing } = usePlay();
 
@@ -152,6 +153,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [snapEnabled]);
 
   useEffect(() => {
+    engineRef.current?.editor?.grid.setVisible(gridVisible);
+  }, [gridVisible]);
+
+  useEffect(() => {
     const handle = engineRef.current;
     if (!handle?.editor) return;
     handle.editor.setSelectedActors([PREFAB_ROOT_ID]);
@@ -171,7 +176,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
         <div className="pointer-events-auto rounded-md border border-border bg-card/90 p-1">
-          <ViewportToolbar testIdPrefix="prefab-" />
+          <ViewportToolbar testIdPrefix="prefab-" showDragSelect={false} />
         </div>
       </div>
       <canvas

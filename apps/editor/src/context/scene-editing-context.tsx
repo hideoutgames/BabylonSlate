@@ -23,6 +23,11 @@ export interface SceneEditingContextValue {
   setSnapEnabled: (enabled: boolean) => void;
   joystickEnabled: boolean;
   setJoystickEnabled: (enabled: boolean) => void;
+  gridVisible: boolean;
+  setGridVisible: (visible: boolean) => void;
+  /** One-shot Drag Select; unpresses after the next tap or marquee. */
+  dragSelectActive: boolean;
+  setDragSelectActive: (active: boolean) => void;
   /** Live viewport mode; the scene document holds the per-scene default. */
   viewportMode: ViewportMode;
   setViewportMode: (mode: ViewportMode) => void;
@@ -58,6 +63,7 @@ export function SceneEditingProvider({
   documentViewportMode,
   documentSnapEnabled,
   documentJoystickEnabled,
+  documentGridVisible,
 }: {
   children: ReactNode;
   initialViewportMode?: ViewportMode;
@@ -67,6 +73,8 @@ export function SceneEditingProvider({
   documentSnapEnabled?: boolean;
   /** When the scene document's editorJoystickEnabled changes, sync the toolbar. */
   documentJoystickEnabled?: boolean;
+  /** When the scene document's grid.showGrid changes, sync the toolbar toggle. */
+  documentGridVisible?: boolean;
 }) {
   const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
   const [gizmoTool, setGizmoTool] = useState<GizmoTool>("translate");
@@ -76,6 +84,10 @@ export function SceneEditingProvider({
   const [joystickEnabled, setJoystickEnabled] = useState(
     documentJoystickEnabled ?? false,
   );
+  const [gridVisible, setGridVisible] = useState(
+    documentGridVisible ?? true,
+  );
+  const [dragSelectActive, setDragSelectActive] = useState(false);
   const [viewportMode, setViewportMode] = useState<ViewportMode>(
     resolveDocumentViewportMode(documentViewportMode ?? initialViewportMode),
   );
@@ -97,6 +109,11 @@ export function SceneEditingProvider({
     if (documentJoystickEnabled === undefined) return;
     setJoystickEnabled(documentJoystickEnabled);
   }, [documentJoystickEnabled]);
+
+  useEffect(() => {
+    if (documentGridVisible === undefined) return;
+    setGridVisible(documentGridVisible);
+  }, [documentGridVisible]);
 
   const selectActor = useCallback(
     (actorId: string | null, additive = false) => {
@@ -134,14 +151,20 @@ export function SceneEditingProvider({
       setSnapEnabled,
       joystickEnabled,
       setJoystickEnabled,
+      gridVisible,
+      setGridVisible,
+      dragSelectActive,
+      setDragSelectActive,
       viewportMode,
       setViewportMode,
       frameActor,
       setFrameActorHandler,
     }),
     [
+      dragSelectActive,
       frameActor,
       gizmoTool,
+      gridVisible,
       joystickEnabled,
       selectActor,
       selectedActorIds,

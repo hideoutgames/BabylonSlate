@@ -1,3 +1,5 @@
+import { NestedMenu, type NestedMenuItem } from "@babylonslate/editor-kit";
+import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   ToggleGroup,
@@ -11,11 +13,11 @@ import {
 import type { SerializedScene } from "@babylonslate/core";
 import type { GizmoTool } from "@babylonslate/render";
 import {
-  Gamepad2Icon,
-  MagnetIcon,
   MoveIcon,
   RotateCwIcon,
   ScalingIcon,
+  Settings2Icon,
+  SquareDashedMousePointerIcon,
 } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -33,8 +35,10 @@ const TOOLS: Array<{
 
 export function ViewportToolbar({
   testIdPrefix = "",
+  showDragSelect = true,
 }: {
   testIdPrefix?: string;
+  showDragSelect?: boolean;
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
@@ -45,6 +49,10 @@ export function ViewportToolbar({
     setSnapEnabled,
     joystickEnabled,
     setJoystickEnabled,
+    gridVisible,
+    setGridVisible,
+    dragSelectActive,
+    setDragSelectActive,
     viewportMode,
     setViewportMode,
   } = useSceneEditing();
@@ -83,6 +91,49 @@ export function ViewportToolbar({
     }
   };
 
+  const toggleGrid = (enabled: boolean) => {
+    setGridVisible(enabled);
+    if (scene && scene.settings.grid.showGrid !== enabled) {
+      void applySceneChange(documentId, {
+        ...scene,
+        settings: {
+          ...scene.settings,
+          grid: { ...scene.settings.grid, showGrid: enabled },
+        },
+      });
+    }
+  };
+
+  const settingsItems: NestedMenuItem[] = [
+    {
+      type: "checkbox",
+      id: "snap",
+      label: "Snap",
+      checked: snapEnabled,
+      closeOnClick: false,
+      testId: `${testIdPrefix}gizmo-snap-toggle`,
+      onCheckedChange: toggleSnap,
+    },
+    {
+      type: "checkbox",
+      id: "show-grid",
+      label: "Show Grid",
+      checked: gridVisible,
+      closeOnClick: false,
+      testId: `${testIdPrefix}viewport-show-grid-toggle`,
+      onCheckedChange: toggleGrid,
+    },
+    {
+      type: "checkbox",
+      id: "joystick",
+      label: "Joystick",
+      checked: joystickEnabled,
+      closeOnClick: false,
+      testId: `${testIdPrefix}gizmo-joystick-toggle`,
+      onCheckedChange: toggleJoystick,
+    },
+  ];
+
   return (
     <div
       className="flex flex-wrap items-center gap-2"
@@ -113,40 +164,41 @@ export function ViewportToolbar({
           );
         })}
       </ToggleGroup>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Toggle
-              variant="outline"
-              size="sm"
-              aria-label="Snap"
-              pressed={snapEnabled}
-              onPressedChange={toggleSnap}
-              data-testid={`${testIdPrefix}gizmo-snap-toggle`}
-            >
-              <MagnetIcon />
-            </Toggle>
-          }
-        />
-        <TooltipContent>Snap</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Toggle
-              variant="outline"
-              size="sm"
-              aria-label="Camera joystick"
-              pressed={joystickEnabled}
-              onPressedChange={toggleJoystick}
-              data-testid={`${testIdPrefix}gizmo-joystick-toggle`}
-            >
-              <Gamepad2Icon />
-            </Toggle>
-          }
-        />
-        <TooltipContent>Joystick</TooltipContent>
-      </Tooltip>
+      {showDragSelect ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Toggle
+                variant="outline"
+                size="sm"
+                aria-label="Drag Select"
+                pressed={dragSelectActive}
+                onPressedChange={(pressed) => setDragSelectActive(pressed)}
+                data-testid={`${testIdPrefix}viewport-drag-select`}
+              >
+                <SquareDashedMousePointerIcon />
+              </Toggle>
+            }
+          />
+          <TooltipContent>Drag Select</TooltipContent>
+        </Tooltip>
+      ) : null}
+      <NestedMenu
+        items={settingsItems}
+        size="chrome"
+        align="end"
+        contentTestId={`${testIdPrefix}viewport-settings-menu`}
+        trigger={
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label="Viewport Settings"
+            data-testid={`${testIdPrefix}viewport-settings`}
+          />
+        }
+      >
+        <Settings2Icon />
+      </NestedMenu>
       <ToggleGroup
         variant="outline"
         size="sm"

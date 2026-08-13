@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ContextMenuOverlay,
   useContextMenu,
@@ -59,6 +59,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     snapEnabled,
     viewportMode,
     joystickEnabled,
+    gridVisible,
+    dragSelectActive,
+    setDragSelectActive,
     setFrameActorHandler,
   } = useSceneEditing();
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
@@ -69,6 +72,18 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const playingRef = useRef(playing);
   playingRef.current = playing;
   const joystickLeaseRef = useRef<(() => void) | null>(null);
+  const [marqueeRect, setMarqueeRect] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const dragSelectActiveRef = useRef(dragSelectActive);
+  dragSelectActiveRef.current = dragSelectActive;
+  const setDragSelectActiveRef = useRef(setDragSelectActive);
+  setDragSelectActiveRef.current = setDragSelectActive;
+  const setMarqueeRectRef = useRef(setMarqueeRect);
+  setMarqueeRectRef.current = setMarqueeRect;
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -140,6 +155,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       onPickActor: (actorId) => selectActorRef.current(actorId),
       onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
+      onMarqueeMove: (rect) => setMarqueeRectRef.current(rect),
+      dragSelectActive: () => dragSelectActiveRef.current,
+      onDragSelectEnd: () => {
+        setDragSelectActiveRef.current(false);
+        setMarqueeRectRef.current(null);
+      },
       onGizmoDragStart: () => {
         dragStartSceneRef.current = sceneRef.current;
       },
@@ -303,6 +324,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [scene?.settings, viewportMode]);
 
   useEffect(() => {
+    engineRef.current?.editor?.grid.setVisible(gridVisible);
+  }, [gridVisible]);
+
+  useEffect(() => {
     const twoD = projectDocument?.settings.twoD;
     const editor = engineRef.current?.editor;
     if (!editor || !twoD) return;
@@ -379,6 +404,18 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         className="h-full w-full flex-1 touch-none"
         data-testid="viewport-canvas"
       />
+      {marqueeRect ? (
+        <div
+          data-testid="viewport-marquee"
+          className="pointer-events-none absolute z-10 border border-dashed border-primary bg-primary/15"
+          style={{
+            left: marqueeRect.x,
+            top: marqueeRect.y,
+            width: marqueeRect.width,
+            height: marqueeRect.height,
+          }}
+        />
+      ) : null}
       <canvas
         ref={previewCanvasRef}
         hidden
