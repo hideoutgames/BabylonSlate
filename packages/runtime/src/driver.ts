@@ -186,6 +186,7 @@ class InProcessRuntime implements RuntimeDriver {
   private tickPrints: Array<{ message: string; key: string }> = [];
   private readonly animGraphs = new Map<string, AnimGraphDocument>();
   private readonly animEvalBySlot = new Map<number, AnimEvalState>();
+  private uiInstanceSeq = 0;
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -351,6 +352,18 @@ class InProcessRuntime implements RuntimeDriver {
       },
       setWidgetVisible: (widget, visible) => {
         this.emit({ type: "uiSetVisible", widgetId: widget, visible });
+      },
+      applyUserInterface: (assetGuid) => {
+        const guid = String(assetGuid ?? "").trim();
+        if (!guid) return "";
+        const instanceId = `ui-${++this.uiInstanceSeq}`;
+        this.emit({ type: "uiApply", instanceId, assetGuid: guid });
+        return instanceId;
+      },
+      removeUserInterface: (instanceId) => {
+        const id = String(instanceId ?? "").trim();
+        if (!id) return;
+        this.emit({ type: "uiRemove", instanceId: id });
       },
     });
 

@@ -1,4 +1,5 @@
 import type { EdgeInsets } from "./types";
+import { ZERO_INSETS } from "./types";
 
 export interface DevicePreset {
   id: "ipad-landscape" | "ipad-portrait" | "desktop-16-9";
@@ -69,4 +70,31 @@ export function devicePresetForViewport(
     }
   }
   return best;
+}
+
+export const DESIRED_CANVAS_ID = "desired" as const;
+
+export type DesignerCanvasId = DevicePreset["id"] | typeof DESIRED_CANVAS_ID;
+
+/** Viewport used by the UserInterface designer, including Desired mode. */
+export function designerViewport(
+  presetId: string,
+  desiredSize: { width: number; height: number },
+): { id: string; width: number; height: number; safeArea: EdgeInsets } {
+  if (presetId === DESIRED_CANVAS_ID) {
+    return {
+      id: DESIRED_CANVAS_ID,
+      width: Math.max(1, desiredSize.width),
+      height: Math.max(1, desiredSize.height),
+      safeArea: { ...ZERO_INSETS },
+    };
+  }
+  const preset =
+    devicePresetById(presetId as DevicePreset["id"]) ?? DEVICE_PRESETS[0]!;
+  return {
+    id: preset.id,
+    width: preset.width,
+    height: preset.height,
+    safeArea: preset.safeArea,
+  };
 }

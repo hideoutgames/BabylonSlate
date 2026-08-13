@@ -22,12 +22,12 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Dialog** (`DialogTitle`, `DialogHeader`, `DialogContent`, …) | Centered modal. Title required. | Global search, Play prepare, Content Browser rename/move, CatalogDialog shell. |
 | **DropdownMenu** (`DropdownMenuTrigger`, `DropdownMenuItem`, `DropdownMenuGroup`, …) | Anchored menu. `DropdownMenuLabel` must sit in a `DropdownMenuGroup`. Chrome menus use `modal={false}` so they do not cover the viewport. | Windows, Debug, Settings, Add, Content Browser item menus. |
 | **Empty** (`EmptyHeader`, `EmptyTitle`, `EmptyDescription`, `EmptyContent`, `EmptyMedia`) | Empty-state layout. | Homepage with no projects; global search with no hits; gallery. |
-| **Field** (`FieldGroup`, `FieldLabel`, `FieldSet`, `FieldLegend`, `FieldDescription`, `FieldError`, `FieldContent`, `FieldTitle`) | Form row layout. Uses **Label** internally — do not invent a parallel label. | Engine / Project Settings, Homepage create, Content Browser forms, PropertyGrid. |
+| **Field** (`FieldGroup`, `FieldLabel`, `FieldSet`, `FieldLegend`, `FieldDescription`, `FieldError`, `FieldContent`, `FieldTitle`) | Form row layout. Uses **Label** internally — do not invent a parallel label. | Engine / Project Settings, Homepage create, Content Browser forms, PropertyGrid, UserInterface desired size. |
 | **Input** | Single-line text. | Names, search fields, settings strings. |
 | **Label** | Accessible control caption. | Not imported by app code; Field wraps it. |
 | **Progress** (`ProgressTrack`, `ProgressIndicator`, `ProgressLabel`, `ProgressValue`) | Determinate progress. | Content Browser encode / import. |
 | **ScrollArea** (`ScrollBar`) | Overlay scrollbar region. | Gallery, Output Log, Compiler Results, SearchSheet body. |
-| **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. | Engine Settings enums; PropertyGrid enum rows. |
+| **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset. |
 | **Separator** | Horizontal or vertical rule. | Toolbar strips, search dialog, catalog layout. |
 | **Sheet** (`SheetTitle`, `SheetContent`, `SheetHeader`, …) | Edge drawer. Title required. | SearchSheet (add-component / asset picker / gallery). |
 | **Switch** | On/off toggle. | Engine / Project Settings booleans. |
@@ -46,13 +46,13 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | --- | --- | --- |
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
-| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print). |
-| **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog. |
+| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print), UserInterface widget details (including nested UI asset). |
+| **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; gallery. |
-| **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields; Project Settings via CatalogDialog. |
+| **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields; Project Settings via CatalogDialog; UserInterface desired width/height. |
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search. |
 | **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; gallery. Add Component / Place Actors use CatalogDialog instead. |
-| **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks as they land. |
+| **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks; UserInterface nested-UI picker (self and cycle partners excluded). |
 | **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
 | **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component. |
 | **TypeVisualIcon** | Colored Lucide glyph for an asset / class family (`resolveTypeVisual`). | Outliner, Details, Prefab, Content Browser, global search, Place Actors, Add Component, AssetPicker, document tabs. |

@@ -179,12 +179,55 @@ describe("default play HUD", () => {
   it("seeds a title and move stick for every widget kind catalog", () => {
     expect(WIDGET_KINDS).toContain("TouchJoystick");
     expect(WIDGET_KINDS).toContain("Grid");
+    expect(WIDGET_KINDS).toContain("UserInterface");
     const hud = createDefaultPlayHud("HUD");
     expect(hud.viewportLayer).toBe(true);
     expect(hud.widgets.stick?.kind).toBe("TouchJoystick");
     expect(hud.widgets.header?.props.text).toBe("Score");
+    expect(hud.desiredSize).toEqual(hud.designResolution);
     for (const kind of WIDGET_KINDS) {
       expect(createWidget(`id-${kind}`, kind).kind).toBe(kind);
     }
+  });
+
+  it("defaults blank UserInterface assets to a reusable desired size", () => {
+    expect(createDefaultUserInterface().desiredSize).toEqual({
+      width: 400,
+      height: 300,
+    });
+  });
+});
+
+describe("nested UserInterface layout", () => {
+  it("lays a nested UserInterface into the host slot using its desired size", () => {
+    const chip = createDefaultUserInterface("Chip");
+    chip.desiredSize = { width: 80, height: 20 };
+    const label = createWidget("label", "Text", "HP");
+    label.props.text = "HP";
+    chip.widgets.canvas!.children = ["label"];
+    chip.widgets.label = label;
+
+    const hud = createDefaultUserInterface("HUD");
+    const host = createWidget(
+      "chip",
+      "UserInterface",
+      "Chip",
+      pinLayout({ x: 0, y: 1 }, { x: 80, y: 20 }, { x: 0, y: 1 }),
+    );
+    host.nestedUiGuid = "chip-guid";
+    hud.widgets.canvas!.children = ["chip"];
+    hud.widgets.chip = host;
+
+    const result = layoutUserInterface(
+      hud,
+      { width: 200, height: 100 },
+      { resolveNested: (guid) => (guid === "chip-guid" ? chip : null) },
+    );
+    const nested = result.tree?.children[0];
+    expect(nested?.kind).toBe("UserInterface");
+    expect(nested?.children[0]?.name).toBe("Canvas");
+    const text = nested?.children[0]?.children[0];
+    expect(text?.name).toBe("HP");
+    expect(text?.id).toBe("chip/label");
   });
 });

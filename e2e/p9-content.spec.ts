@@ -60,6 +60,12 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("ui-device-preset").click();
     await page.getByTestId("ui-preset-desktop-16-9").click();
     await expect(canvas).toHaveAttribute("data-preset", "desktop-16-9");
+
+    await page.getByTestId("ui-device-preset").click();
+    await page.getByTestId("ui-preset-desired").click();
+    await expect(canvas).toHaveAttribute("data-preset", "desired");
+    await expect(page.getByTestId("ui-desired-width")).toBeVisible();
+    await expect(page.getByTestId("ui-desired-height")).toBeVisible();
   });
 
   test("UserInterface designer on iPad shows the same HUD widgets", {
@@ -102,7 +108,7 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-hud")).toBeVisible();
-    await expect(page.getByTestId("play-hud-stick")).toBeVisible();
+    await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
 
     await page.evaluate(() => {
       (
@@ -192,7 +198,8 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
-    await expect(page.getByTestId("play-hud-stick")).toBeVisible();
+    await expect(page.getByTestId("play-hud")).toBeVisible();
+    await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
     // Desktop-chrome also runs @ipad tests (see docs/architecture/testing.md).
     // Only the iPad projects use 1194×834 / 834×1194, which map to iPad
     // presets and non-zero safe-area insets.
@@ -211,5 +218,79 @@ test.describe("P9 content systems", () => {
       expect(safeTop).toBe(0);
     }
     await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("Play applies a UserInterface only when a class graph asks", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    const guid = await page.evaluate(() => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: { guidForPath: (path: string) => string | null };
+      };
+      return host.__babylonslateTest?.guidForPath("assets/HUD.ui.babasset") ?? "";
+    });
+    expect(guid).not.toBe("");
+    const installed = await page.evaluate(
+      async ({ graph }) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setMainGraphContent: (g: unknown) => Promise<boolean>;
+          };
+        };
+        return host.__babylonslateTest?.setMainGraphContent(graph) ?? false;
+      },
+      {
+        graph: {
+          nodes: [
+            {
+              id: "begin",
+              type: "flow.event.beginPlay",
+              position: { x: 40, y: 80 },
+              data: {},
+            },
+            {
+              id: "apply",
+              type: "ui.applyToViewport",
+              position: { x: 320, y: 80 },
+              data: { asset: guid },
+            },
+          ],
+          edges: [
+            {
+              id: "e1",
+              source: "begin",
+              target: "apply",
+              sourceHandle: "execOut",
+              targetHandle: "execIn",
+            },
+          ],
+        },
+      },
+    );
+    expect(installed).toBe(true);
+
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect(page.getByTestId("play-hud-stick")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("UserInterface designer cannot nest itself", async ({ page }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await createAsset(page, "UserInterface", "Panel");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
+    await page.getByTestId("ui-add-widget-UserInterface").click();
+    await page.getByTestId("property-nestedUi").click();
+    await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
+    await expect(page.getByText("Panel")).toBeVisible();
+    await expect(
+      page.getByTestId("ui-nested-picker").getByText("HUD", { exact: true }),
+    ).toHaveCount(0);
   });
 });

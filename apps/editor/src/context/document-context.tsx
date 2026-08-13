@@ -78,6 +78,8 @@ import {
   listedProjectsFromRecents,
   type ListedProject,
 } from "../lib/listed-projects";
+import { playUiLibraryFromAssets } from "../lib/play-content";
+import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
 export type AppRoute = "home" | "editor";
 
@@ -176,6 +178,8 @@ interface DocumentContextValue {
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }>;
+  /** UserInterface assets keyed by guid for Play apply/remove. */
+  collectPlayUiLibrary: () => Promise<Record<string, UserInterfaceDocument>>;
   /** True when a compiled graph changed since the last successful compile (positions ignored). */
   scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
@@ -1008,6 +1012,35 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return { bundles, diagnostics };
   }, [loadProjectGraphDocuments, markScriptsCurrent]);
 
+  const collectPlayUiLibrary = useCallback(async (): Promise<
+    Record<string, UserInterfaceDocument>
+  > => {
+    const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+      guid: asset.header.guid,
+      path: asset.path,
+      type: asset.header.type,
+    }));
+    const open = documentService.getState().openDocuments;
+    const loaded = new Map<string, unknown>();
+    for (const asset of assets) {
+      if (asset.type !== "UserInterface") continue;
+      const openDoc = open.get(documentId({ kind: "ui", path: asset.path }));
+      if (openDoc?.content) {
+        loaded.set(asset.path, openDoc.content);
+        continue;
+      }
+      try {
+        loaded.set(
+          asset.path,
+          await projectService.loadDocument("ui", asset.path),
+        );
+      } catch (error) {
+        console.error(`[play] failed to load UserInterface ${asset.path}`, error);
+      }
+    }
+    return playUiLibraryFromAssets(assets, (path) => loaded.get(path) ?? null);
+  }, [assetRegistry, documentService, projectService]);
+
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
       if (!thumbnailsEnabledRef.current) return null;
@@ -1042,6 +1075,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         } | null) => void;
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
+        guidForPath: (path: string) => string | null;
       };
     };
     host.__babylonslateTest = {
@@ -1171,6 +1205,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         bump();
         return true;
       },
+      guidForPath: (path: string) => projectService.guidForPath(path),
     };
     return () => {
       delete host.__babylonslateTest;
@@ -1488,6 +1523,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
+      collectPlayUiLibrary,
       graphsNeedCompile: compileSignatureIsStale(
         currentGraphSignature,
         lastCompiledSignature,
@@ -1512,6 +1548,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
+      collectPlayUiLibrary,
       lastCompiledSignature,
       markScriptsCurrent,
       listedProjects,

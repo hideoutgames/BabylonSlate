@@ -8,6 +8,35 @@ import {
 
 export const uiNodes: NodeDefinition[] = [
   {
+    id: "ui.applyToViewport",
+    title: "Apply User Interface",
+    category: "ui",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("asset", "asset", "in", STRING),
+      pin("instance", "instance", "out", STRING),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `${ctx.output("instance")} = ctx.applyUserInterface(${ctx.input("asset")});`,
+      );
+    },
+  },
+  {
+    id: "ui.removeFromViewport",
+    title: "Remove User Interface",
+    category: "ui",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("instance", "instance", "in", STRING),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.removeUserInterface(${ctx.input("instance")});`);
+    },
+  },
+  {
     id: "ui.setVisibility",
     title: "Set Widget Visibility",
     category: "ui",

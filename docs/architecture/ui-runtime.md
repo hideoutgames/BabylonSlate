@@ -10,7 +10,7 @@ Shared surface for the widget tree, anchoring/layout, font-stack compilation, an
 
 UI mutations travel on the **command channel** ([bridge.md](bridge.md)), not the snapshot. The game worker drives widget properties; the main thread measures text, resolves layout, and applies an injectable GUI host. Worker code never calls `document.fonts`.
 
-v1 Play hosts a **DOM overlay** (`PlayHudOverlay`) so FontFace loads and joystick hit-testing stay on the main thread without mixing React into `@babylonslate/render`. Layout uses `devicePresetForViewport` so iPad Playwright sizes get the matching safe-area insets. The overlay hosts the **active (or first) open viewport-layer UserInterface** when one is open — the same pattern as Play’s open scene — and falls back to `createDefaultPlayHud`. Scanning every UserInterface in the asset registry is later polish. `applyUiControls` still takes an injectable `UiApplyHost` (recorder in tests; Babylon `AdvancedDynamicTexture` remains the long-term mesh/HUD apply target).
+v1 Play hosts a **DOM overlay** (`PlayHudOverlay`) so FontFace loads and joystick hit-testing stay on the main thread without mixing React into `@babylonslate/render`. Layout uses `devicePresetForViewport` so iPad Playwright sizes get the matching safe-area insets. The overlay starts **empty**: Play and the exported game do **not** auto-apply a UserInterface. A class graph must call **Apply User Interface** (`ui.applyToViewport`) with an asset guid; the node returns an instance ref. **Remove User Interface** (`ui.removeFromViewport`) takes that ref. The worker emits `uiApply` / `uiRemove`; the host looks up documents from a Play UI library (every UserInterface asset, open documents first). `applyUiControls` still takes an injectable `UiApplyHost` (recorder in tests; Babylon `AdvancedDynamicTexture` remains the long-term mesh/HUD apply target).
 
 ## Layout (pure function)
 
@@ -27,7 +27,7 @@ top    = parent.y + parent.h * anchorMax.y + offsetMax.y
 - `pivot` is separate from anchors (rotation / alignment origin inside the computed rect).
 - Safe-area insets are a first-class parent rect, not a widget flag.
 - Design resolution + scale rule: `fitWidth` | `fitHeight` | `shortestSide`.
-- Device presets (`ipad-landscape`, `ipad-portrait`, `desktop-16-9`) are data consumed by both the designer and the runtime.
+- Device presets (`ipad-landscape`, `ipad-portrait`, `desktop-16-9`) plus designer **Desired** (`desired` canvas id) are data consumed by the designer; Play overlay layout uses `devicePresetForViewport`.
 
 Babylon GUI is top-left: `guiY = parentHeight - rect.y - rect.height`. Layout goldens stay in engine space; the apply step converts.
 
@@ -35,18 +35,21 @@ Text measurement is injected (`TextMeasurer`). Golden tests use a deterministic 
 
 ## Widget payload
 
-A `UserInterface` asset stores the widget tree in the `document` chunk. Nested UserInterface refs are allowed; **edit-time cycle check** rejects a graph that would include itself.
+A `UserInterface` asset stores the widget tree in the `document` chunk. Nested UserInterface widgets (`kind: "UserInterface"`, `nestedUiGuid`) are allowed; **edit-time cycle check** (`nestedUiPickableGuids`) excludes self and cycle partners from the designer picker.
 
 Placement:
 
-- **Viewport layer** — fullscreen HUD on the Play `Scene` (same Engine; textures through the resource cache).
+- **Viewport layer** — applied at runtime by `ctx.applyUserInterface(assetGuid)` (instance ids `ui-1`, `ui-2`, …). Not auto-hosted on Play.
 - **WidgetComponent** — world-space 2D prefab (`CreateForMesh`). Component class id already exists; P9 makes it addable and runtime-backed.
 
-`ctx.setWidgetVisible(widgetId, visible)` is a real worker helper: it emits a UI command; render applies it. Scripts never touch Babylon GUI.
+`ctx.setWidgetVisible(widgetId, visible)`, `ctx.applyUserInterface(assetGuid)`, and `ctx.removeUserInterface(instanceId)` are real worker helpers: they emit UI commands; the Play overlay applies them. Scripts never touch Babylon GUI.
 
 ## Designer
 
-Dedicated document workspace (not a Dockview Windows menu): **Design** tab (canvas, widget hierarchy `TreeView`, Details `PropertyGrid`, device-preset selector) + **Logic** tab (`GraphEditor` from `graph-ui`, same host as script graphs). Undo via `@babylonslate/edit`. Compose from [components.md](components.md) (`PanelFrame`, `Tabs`, `TreeView`, `PropertyGrid`).
+Dedicated document workspace (not a Dockview Windows menu): **Design** tab (canvas, widget hierarchy `TreeView`, Details `PropertyGrid`, device-preset selector including **Desired**) + **Logic** tab (`GraphEditor` from `graph-ui`, same host as script graphs). Undo via `@babylonslate/edit`. Compose from [components.md](components.md) (`PanelFrame`, `Tabs`, `TreeView`, `PropertyGrid`, `NumberField`, `AssetPicker`).
+
+- **Desired size** (`desiredSize`, default `{ width: 400, height: 300 }` on a blank UI; Play HUD template copies `designResolution`) is the authoring canvas for reusable elements. The Desired preset uses that size with zero safe-area insets. Nested layout treats the nested asset’s `desiredSize` as its design resolution inside the host slot.
+- **Nested UserInterface** is a widget kind. The Details asset picker lists other UserInterface assets and omits the document under edit and any guid that would close a cycle.
 
 ## Touch → P6 input
 
