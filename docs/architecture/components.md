@@ -68,7 +68,7 @@ Reusable by script, shader, animation, and behaviour-tree graphs.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, marquee, pin-filtered drop-to-add. | Graph document panel. |
+| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, cancelled pin-drag disconnect, marquee, pin-filtered drop-to-add. | Graph document panel. |
 | **NodePalette** | CatalogDialog of nodes with role-color chips; optional pin compatibility filter. | Add Node from GraphEditor (empty-pane connect-end and Add Node). |
 
 ## App wrappers
