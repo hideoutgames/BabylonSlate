@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
+import { createDefaultPlayHud, createWidget } from "@babylonslate/ui-runtime";
 import { UiDesigner } from "./ui-designer";
 
 function dispatchPointerEvent(
@@ -30,11 +30,69 @@ function dispatchPointerEvent(
   target.dispatchEvent(event);
 }
 
+if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
-    assetRegistry: { list: () => [], getByGuid: () => undefined },
+    assetRegistry: {
+      list: () => [
+        {
+          header: {
+            guid: "tex-1",
+            name: "Icon",
+            type: "Texture",
+            payload: {},
+          },
+          path: "assets/Icon.texture.babasset",
+        },
+        {
+          header: {
+            guid: "font-1",
+            name: "Display",
+            type: "Font",
+            payload: { family: "Display Face" },
+          },
+          path: "assets/Display.font.babasset",
+        },
+      ],
+      getByGuid: (guid: string) =>
+        guid === "font-1"
+          ? {
+              header: {
+                guid: "font-1",
+                name: "Display",
+                type: "Font",
+                payload: { family: "Display Face" },
+              },
+              path: "assets/Display.font.babasset",
+            }
+          : guid === "tex-1"
+            ? {
+                header: { guid: "tex-1", name: "Icon", type: "Texture", payload: {} },
+                path: "assets/Icon.texture.babasset",
+              }
+            : undefined,
+    },
     openDocuments: [],
     collectPlayUiLibrary: async () => ({}),
+    projectDocument: {
+      settings: {
+        input: {
+          actions: [
+            { name: "Jump", bindings: [] },
+            { name: "Confirm", bindings: [] },
+          ],
+          axes: [{ name: "Move", bindings: [] }],
+        },
+      },
+    },
   }),
 }));
 
@@ -154,5 +212,82 @@ describe("UiDesigner", () => {
       });
     });
     expect(Number(canvas.getAttribute("data-pan-x"))).toBeGreaterThan(0);
+  });
+
+  it("picks an Image texture, Text font, and TouchButton action", async () => {
+    const onChange = vi.fn();
+    const payload = createDefaultPlayHud("HUD");
+    payload.widgets.icon = createWidget("icon", "Image", "Icon");
+    payload.widgets.jump = createWidget("jump", "TouchButton", "Jump");
+    payload.widgets.canvas!.children = [
+      ...payload.widgets.canvas!.children,
+      "icon",
+      "jump",
+    ];
+    render(
+      <UiDesigner
+        path="assets/HUD.ui.babasset"
+        payload={payload as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("ui-widget-icon"));
+    fireEvent.click(screen.getByTestId("property-image"));
+    expect(await screen.findByTestId("search-item-tex-1")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("search-item-tex-1"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        widgets: expect.objectContaining({
+          icon: expect.objectContaining({
+            props: expect.objectContaining({ imageGuid: "tex-1" }),
+          }),
+        }),
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("ui-widget-header"));
+    fireEvent.click(screen.getByTestId("property-font"));
+    expect(await screen.findByTestId("search-item-font-1")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("search-item-font-1"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        widgets: expect.objectContaining({
+          header: expect.objectContaining({
+            style: expect.objectContaining({ fontFamily: "Display Face" }),
+          }),
+        }),
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("ui-widget-jump"));
+    expect(screen.getByTestId("property-action").tagName).not.toBe("INPUT");
+    expect(screen.getByTestId("property-visual-override")).toBeTruthy();
+  });
+
+  it("prompts for class member names with NamePromptDialog", async () => {
+    const onChange = vi.fn();
+    render(
+      <UiDesigner
+        path="assets/HUD.ui.babasset"
+        payload={createDefaultPlayHud("HUD") as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Logic" }));
+    fireEvent.click(screen.getByTestId("class-add-functions"));
+    fireEvent.change(screen.getByTestId("name-prompt-input"), {
+      target: { value: "Jump" },
+    });
+    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        logic: expect.objectContaining({
+          members: expect.arrayContaining([
+            expect.objectContaining({ kind: "function", name: "Jump" }),
+          ]),
+        }),
+      }),
+    );
   });
 });

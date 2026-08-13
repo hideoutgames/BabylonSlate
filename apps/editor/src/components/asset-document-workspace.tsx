@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AssetPicker,
+  NamedListEditor,
   PanelFrame,
   ParameterListEditor,
   PropertyGrid,
@@ -26,6 +27,7 @@ import {
   addScriptInterfaceMethod,
   addStructureField,
   patchTextureUsage,
+  STRUCTURE_FIELD_TYPES,
   TEXTURE_USAGE_OPTIONS,
 } from "../lib/asset-settings";
 import type {
@@ -112,6 +114,15 @@ function FontEditor({
   const font = normalizeFontPayload(payload, "Custom Font");
   const [sample, setSample] = useState("The quick brown fox");
   const [fontsReady, setFontsReady] = useState(false);
+  const [fallbackPick, setFallbackPick] = useState<number | "new" | null>(null);
+  const fontAssets = (assetRegistry?.list() ?? [])
+    .filter((asset) => asset.header.type === "Font" && asset.path !== path)
+    .map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+      path: asset.path,
+    }));
   const familyForGuid = (guid: string): string | null => {
     const asset = assetRegistry?.getByGuid(guid);
     return familyFromAssetPayload(asset?.header.payload);
@@ -208,6 +219,54 @@ function FontEditor({
             ? `Fallback glyphs: ${flagged.join(" ")}`
             : "No fallback glyphs detected"}
         </p>
+        <div className="p-3">
+          <NamedListEditor
+            values={font.fallbackGuids}
+            onChange={(fallbackGuids) => onChange({ ...font, fallbackGuids })}
+            title="Fallbacks"
+            addLabel="Add Fallback"
+            onAdd={() => setFallbackPick("new")}
+            data-testid="font-fallbacks"
+            renderItem={({ value, index }) => (
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                data-testid={`font-fallback-${index}`}
+                onClick={() => setFallbackPick(index)}
+              >
+                {assetRegistry?.getByGuid(value)?.header.name ?? value}
+              </Button>
+            )}
+          />
+        </div>
+        <AssetPicker
+          open={fallbackPick !== null}
+          onOpenChange={(open) => {
+            if (!open) setFallbackPick(null);
+          }}
+          assets={fontAssets}
+          allowedTypes={["Font"]}
+          title="Pick Fallback Font"
+          allowNone={fallbackPick !== "new"}
+          onPick={(guid) => {
+            if (fallbackPick === "new") {
+              if (guid) {
+                onChange({
+                  ...font,
+                  fallbackGuids: [...font.fallbackGuids, guid],
+                });
+              }
+            } else if (typeof fallbackPick === "number") {
+              const fallbackGuids = [...font.fallbackGuids];
+              if (guid) fallbackGuids[fallbackPick] = guid;
+              else fallbackGuids.splice(fallbackPick, 1);
+              onChange({ ...font, fallbackGuids });
+            }
+            setFallbackPick(null);
+          }}
+          data-testid="font-fallback-picker"
+        />
       </div>
     </PanelFrame>
   );
@@ -465,9 +524,17 @@ function AssetSettingsEditor({
                 },
                 {
                   id: `type-${index}`,
-                  kind: "text",
+                  kind: "enum",
                   label: "Type",
                   value: field.typeId,
+                  options: [
+                    ...STRUCTURE_FIELD_TYPES,
+                    ...(STRUCTURE_FIELD_TYPES as readonly string[]).includes(
+                      field.typeId,
+                    )
+                      ? []
+                      : [field.typeId],
+                  ].map((typeId) => ({ value: typeId, label: typeId })),
                   onChange: (value) => {
                     const fields = [...asset.fields];
                     fields[index] = { ...field, typeId: value };

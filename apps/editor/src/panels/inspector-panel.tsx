@@ -8,6 +8,7 @@ import { Field, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field
 import { Input } from "@babylonslate/ui/components/input";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
+import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
@@ -31,7 +32,7 @@ import {
 export function InspectorPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange } = useDocuments();
+  const { openDocuments, applyGraphChange, projectDocument } = useDocuments();
   const { focusDiagnostic } = useValidation();
   const { focusedNodeId } = usePlay();
   const { selectedNodeIds } = useGraphEditing();
@@ -96,9 +97,14 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     void applyGraphChange(documentId, next);
   };
 
+  const inputMappings = normalizeInputMappings(projectDocument?.settings.input);
   const pinDefaultRows = pinDefaultPropertyRows(
     inspectorLiteralPinDefaults(selectedNode, graph.edges),
     updateNodeData,
+    {
+      actionNames: inputMappings.actions.map((action) => action.name),
+      axisNames: inputMappings.axes.map((axis) => axis.name),
+    },
   );
   const logRows = isLog
     ? logNodePropertyRows(selectedNode.data, updateNodeData)

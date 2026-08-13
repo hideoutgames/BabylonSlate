@@ -4,6 +4,16 @@ import type {
   StructureAsset,
 } from "@babylonslate/scripting";
 
+export const STRUCTURE_FIELD_TYPES = [
+  "float",
+  "int",
+  "bool",
+  "string",
+  "enum",
+] as const;
+
+export type StructureFieldType = (typeof STRUCTURE_FIELD_TYPES)[number];
+
 export const TEXTURE_USAGE_OPTIONS = [
   "albedo",
   "normal",

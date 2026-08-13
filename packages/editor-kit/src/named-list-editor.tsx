@@ -20,6 +20,8 @@ export interface NamedListEditorProps {
   title?: string;
   addPlaceholder?: string;
   addLabel?: string;
+  /** When set, Add is a button only — used for asset-pick rows. */
+  onAdd?: () => void;
   renderItem?: (args: NamedListItemRenderArgs) => ReactNode;
   "data-testid"?: string;
 }
@@ -41,6 +43,7 @@ export function NamedListEditor({
   title,
   addPlaceholder = "name",
   addLabel = "Add",
+  onAdd,
   renderItem,
   "data-testid": testId,
 }: NamedListEditorProps) {
@@ -123,33 +126,46 @@ export function NamedListEditor({
           </div>
         </FieldGroup>
       ))}
-      <Field>
-        <FieldLabel htmlFor={`${rootId}-add-value`}>{addLabel}</FieldLabel>
-        <div className="flex gap-2">
-          <Input
-            id={`${rootId}-add-value`}
-            className="min-h-[var(--touch-target,44px)] min-w-0 flex-1"
-            value={draft}
-            placeholder={addPlaceholder}
-            onChange={(event) => setDraft(event.target.value)}
-            data-testid={`${rootId}-add-value`}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="touch"
-            data-testid={`${rootId}-add`}
-            onClick={() => {
-              const name = draft.trim();
-              if (!name) return;
-              onChange([...values, name]);
-              setDraft("");
-            }}
-          >
-            {addLabel}
-          </Button>
-        </div>
-      </Field>
+      {onAdd ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="touch"
+          className="w-fit"
+          data-testid={`${rootId}-add`}
+          onClick={onAdd}
+        >
+          {addLabel}
+        </Button>
+      ) : (
+        <Field>
+          <FieldLabel htmlFor={`${rootId}-add-value`}>{addLabel}</FieldLabel>
+          <div className="flex gap-2">
+            <Input
+              id={`${rootId}-add-value`}
+              className="min-h-[var(--touch-target,44px)] min-w-0 flex-1"
+              value={draft}
+              placeholder={addPlaceholder}
+              onChange={(event) => setDraft(event.target.value)}
+              data-testid={`${rootId}-add-value`}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="touch"
+              data-testid={`${rootId}-add`}
+              onClick={() => {
+                const name = draft.trim();
+                if (!name) return;
+                onChange([...values, name]);
+                setDraft("");
+              }}
+            >
+              {addLabel}
+            </Button>
+          </div>
+        </Field>
+      )}
     </div>
   );
 }

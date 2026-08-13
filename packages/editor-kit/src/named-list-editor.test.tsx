@@ -60,4 +60,19 @@ describe("NamedListEditor", () => {
     fireEvent.click(screen.getByTestId("custom-item"));
     expect(onChange).toHaveBeenCalledWith(["guid-b"]);
   });
+
+  it("uses a custom add action instead of a typed name field", () => {
+    const onAdd = vi.fn();
+    render(
+      <NamedListEditor
+        values={["guid-a"]}
+        onChange={() => {}}
+        onAdd={onAdd}
+        addLabel="Add Fallback"
+      />,
+    );
+    expect(screen.queryByTestId("named-list-add-value")).toBeNull();
+    fireEvent.click(screen.getByTestId("named-list-add"));
+    expect(onAdd).toHaveBeenCalled();
+  });
 });

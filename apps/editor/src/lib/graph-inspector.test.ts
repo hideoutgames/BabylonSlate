@@ -88,6 +88,36 @@ describe("pinDefaultPropertyRows", () => {
       "default:tint": { x: 0, y: 1, z: 0, w: 0.5 },
     });
   });
+
+  it("turns unconnected action and axis pins into mapping enums", () => {
+    const onPatch = vi.fn();
+    const rows = pinDefaultPropertyRows(
+      [
+        { pinId: "action", name: "action", type: STRING, value: "Jump" },
+        { pinId: "axis", name: "axis", type: STRING, value: "Move" },
+        { pinId: "msg", name: "message", type: STRING, value: "hi" },
+      ],
+      onPatch,
+      {
+        actionNames: ["Jump", "Confirm"],
+        axisNames: ["Move", "Look"],
+      },
+    );
+    expect(rows).toMatchObject([
+      { kind: "enum", id: "action", label: "action", value: "Jump" },
+      { kind: "enum", id: "axis", label: "axis", value: "Move" },
+      { kind: "text", id: "msg", label: "message", value: "hi" },
+    ]);
+    const action = rows[0];
+    if (action?.kind === "enum") {
+      expect(action.options.map((option) => option.value)).toEqual([
+        "Jump",
+        "Confirm",
+      ]);
+      action.onChange("Confirm");
+    }
+    expect(onPatch).toHaveBeenCalledWith({ "default:action": "Confirm" });
+  });
 });
 
 describe("logNodePropertyRows", () => {
