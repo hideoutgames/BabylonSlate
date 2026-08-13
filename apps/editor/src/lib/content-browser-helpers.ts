@@ -2,7 +2,6 @@ import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   createDefaultSpritePayload,
-  createFontPayload,
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
@@ -50,17 +49,11 @@ export const ENGINE_BASE_CLASSES = [
 /** Asset types creatable from the Content Browser New Asset flow. */
 export const CREATABLE_ASSET_TYPES = [
   "Scene",
-  "Graph",
+  "Class",
   "UserInterface",
-  "Texture",
-  "Material",
-  "Model",
-  "Audio",
-  "Font",
   "Sprite",
   "AnimationGraph",
   "Shader",
-  "Class",
   "Enum",
   "Structure",
   "ScriptInterface",
@@ -280,6 +273,17 @@ export function visualForIndexedAsset(
   return resolveTypeVisual({ assetType: asset.header.type });
 }
 
+export function classDocumentShowsPrefab(
+  parentClass: string | null | undefined,
+  parentOf: (id: string) => string | null,
+  options?: { assetType?: string },
+): boolean {
+  const start =
+    parentClass ??
+    (options?.assetType === "Graph" ? "Actor" : "BObject");
+  return walkAncestry(start, parentOf).includes("Actor");
+}
+
 export function defaultParentClassForType(
   type: CreatableAssetType,
 ): string | null {
@@ -315,18 +319,18 @@ export function buildNewAssetResult(options: {
     };
   }
 
-  if (type === "Graph") {
+  if (type === "Class") {
     const payload = createDefaultLogicGraphSerialized() as unknown as Record<
       string,
       unknown
     >;
     return {
-      type: "Graph",
+      type: "Class",
       name,
       guid,
       version: 1,
       dependencies: [],
-      parentClass: null,
+      parentClass: parentClass ?? defaultParentClassForType(type),
       payload,
       chunks: [
         {
@@ -374,15 +378,6 @@ export function buildNewAssetResult(options: {
     );
   }
 
-  if (type === "Font") {
-    return documentAsset(
-      type,
-      name,
-      guid,
-      createFontPayload(name) as unknown as Record<string, unknown>,
-    );
-  }
-
   if (type === "Enum" || type === "Structure" || type === "ScriptInterface") {
     const payload: Record<string, unknown> =
       type === "Enum"
@@ -409,24 +404,8 @@ export function buildNewAssetResult(options: {
     };
   }
 
-  const payload: Record<string, unknown> =
-    type === "Texture"
-      ? { compressionState: "pending", usage: "albedo" }
-      : {};
-
-  return {
-    type,
-    name,
-    guid,
-    version: 1,
-    dependencies: [],
-    parentClass:
-      type === "Class"
-        ? (parentClass ?? defaultParentClassForType(type))
-        : null,
-    payload,
-    chunks: [],
-  };
+  const exhaustive: never = type;
+  throw new Error(`Unsupported creatable asset type: ${String(exhaustive)}`);
 }
 
 export function newAssetFileName(
@@ -437,8 +416,8 @@ export function newAssetFileName(
   const suffix =
     type === "Scene"
       ? ".scene.babasset"
-      : type === "Graph"
-        ? ".graph.babasset"
+      : type === "Class"
+        ? ".class.babasset"
         : type === "UserInterface"
           ? ".ui.babasset"
           : type === "Sprite"

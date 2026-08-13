@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultScene,
-  MAIN_GRAPH_FILE,
+  MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
   type SerializedScene,
 } from "@babylonslate/core";
 import {
   decodeBabasset,
+  encodeAssetDocument,
   encodeBabasset,
   readAssetDocumentHeader,
 } from "@babylonslate/assets";
@@ -28,7 +29,7 @@ describe("project documents as .babasset", () => {
     const { storage, loaded } = await scaffolded();
     expect(loaded.document.scenes).toEqual([MAIN_SCENE_FILE]);
     expect(await storage.exists(MAIN_SCENE_FILE)).toBe(true);
-    expect(await storage.exists(MAIN_GRAPH_FILE)).toBe(true);
+    expect(await storage.exists(MAIN_CLASS_FILE)).toBe(true);
     expect(await storage.exists("assets/.blobs")).toBe(true);
     expect(await storage.exists(PROJECT_FILE)).toBe(true);
   });
@@ -45,11 +46,16 @@ describe("project documents as .babasset", () => {
   });
 
   it("round-trips scene and graph content through the codec", async () => {
-    const { service } = await scaffolded();
+    const { storage, service } = await scaffolded();
     const scene = await service.loadDocument("scene", MAIN_SCENE_FILE);
-    const graph = await service.loadDocument("graph", MAIN_GRAPH_FILE);
+    const graph = await service.loadDocument("graph", MAIN_CLASS_FILE);
     expect(scene).toEqual(createDefaultScene());
     expect(graph).toEqual(createDefaultLogicGraphSerialized());
+    const classHeader = readAssetDocumentHeader(
+      await storage.readBinary(MAIN_CLASS_FILE),
+    );
+    expect(classHeader.type).toBe("Class");
+    expect(classHeader.parentClass).toBe("Actor");
   });
 
   it("keeps an asset guid stable across saves", async () => {
@@ -168,5 +174,69 @@ describe("project documents as .babasset", () => {
       unknown
     >;
     expect(reloaded.family).toBe("Ui Display");
+  });
+
+  it("rewrites legacy Graph assets to Class on save", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/legacy.graph.babasset";
+    await storage.writeBinary(
+      path,
+      await encodeAssetDocument({
+        type: "Graph",
+        name: "legacy",
+        guid: "graph-guid",
+        version: 1,
+        payload: { nodes: [], edges: [] },
+      }),
+    );
+    const loaded = await service.loadDocument("graph", path);
+    service.approveMigrateOnSave();
+    await service.saveDocument("graph", path, loaded);
+    const header = readAssetDocumentHeader(await storage.readBinary(path));
+    expect(header.type).toBe("Class");
+    expect(header.parentClass).toBe("Actor");
+  });
+
+  it("saves Texture settings onto the header without dropping pixel chunks", async () => {
+    const { storage, service } = await scaffolded();
+    const pixels = new Uint8Array([9, 8, 7, 6]);
+    const path = "assets/hero.babasset";
+    await storage.writeBinary(
+      path,
+      await encodeBabasset({
+        header: {
+          guid: "tex-guid",
+          type: "Texture",
+          name: "hero",
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: [],
+          parentClass: null,
+          payload: { usage: "albedo", compressionState: "compressed" },
+        },
+        chunks: [
+          { id: "pixels", kind: "image", mime: "image/png", data: pixels },
+        ],
+      }),
+    );
+
+    const payload = (await service.loadDocument(
+      "asset-settings",
+      path,
+    )) as Record<string, unknown>;
+    expect(payload.usage).toBe("albedo");
+    await service.saveDocument("asset-settings", path, {
+      ...payload,
+      usage: "pixelArt",
+    });
+
+    const saved = await decodeBabasset(await storage.readBinary(path));
+    expect(saved.header.type).toBe("Texture");
+    expect(saved.header.payload.usage).toBe("pixelArt");
+    expect(saved.chunks.get("pixels")).toEqual(pixels);
+    expect(
+      saved.header.chunks.some((chunk) => chunk.id === "document"),
+    ).toBe(false);
   });
 });

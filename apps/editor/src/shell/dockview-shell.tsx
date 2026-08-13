@@ -16,12 +16,14 @@ export interface DockviewShellProps {
   documentKind: DockviewDocumentKind;
   onReady?: (api: DockviewApi) => void;
   initialLayout?: Record<string, unknown> | null;
+  actorPrefab?: boolean;
 }
 
 export function DockviewShell({
   documentKind,
   onReady,
   initialLayout,
+  actorPrefab = true,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const onReadyRef = useRef(onReady);
@@ -38,9 +40,15 @@ export function DockviewShell({
       if (layout) {
         event.api.fromJSON(layout as never);
       } else {
-        createDefaultLayoutForKind(event.api, documentKind);
+        createDefaultLayoutForKind(event.api, documentKind, {
+          actorPrefab,
+        });
       }
       migrateRestoredLayout(event.api);
+      if (!actorPrefab) {
+        event.api.getPanel("prefab-viewport")?.api.close();
+        event.api.getPanel("actor-prefab")?.api.close();
+      }
 
       if (platformOptions.disableFloatingGroups) {
         event.api.onDidAddPanel(() => {
@@ -50,7 +58,7 @@ export function DockviewShell({
 
       onReadyRef.current?.(event.api);
     },
-    [documentKind, platformOptions.disableFloatingGroups],
+    [documentKind, actorPrefab, platformOptions.disableFloatingGroups],
   );
 
   return (

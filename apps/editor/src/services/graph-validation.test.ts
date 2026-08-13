@@ -3,11 +3,27 @@ import type { SerializedGraph } from "@babylonslate/core";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import {
   createDefaultLogicGraphSerialized,
+  hydrateClassDocumentPayload,
   hydrateSerializedGraphForEditor,
   validateSerializedGraph,
 } from "./graph-validation";
 
 const registry = createDefaultNodeRegistry();
+
+describe("hydrateClassDocumentPayload", () => {
+  it("seeds a default event graph when the Class payload is empty", () => {
+    const seeded = hydrateClassDocumentPayload({});
+    expect(seeded.nodes.some((node) => node.type.includes("beginPlay"))).toBe(
+      true,
+    );
+    expect(seeded.nodes.some((node) => node.type.includes("tick"))).toBe(true);
+  });
+
+  it("keeps an existing SerializedGraph payload", () => {
+    const existing: SerializedGraph = { nodes: [], edges: [] };
+    expect(hydrateClassDocumentPayload(existing)).toEqual(existing);
+  });
+});
 
 describe("hydrateSerializedGraphForEditor", () => {
   it("injects __pins from the registry when missing", () => {

@@ -258,6 +258,27 @@ describe("AssetRegistry", () => {
     });
   });
 
+  it("lists Class assets as graph documents", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/hero.class.babasset", {
+      guid: "c1",
+      type: "Class",
+      name: "Hero",
+    });
+    await writeAsset(storage, "assets/legacy.graph.babasset", {
+      guid: "g1",
+      type: "Graph",
+      name: "Legacy",
+    });
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.listDocumentPaths()).toEqual({
+      scenes: [],
+      graphs: ["assets/hero.class.babasset", "assets/legacy.graph.babasset"],
+    });
+  });
+
   it("creates empty folders with a git-visible marker", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);

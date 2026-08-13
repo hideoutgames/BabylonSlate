@@ -34,6 +34,14 @@ describe("documentOpenForTarget", () => {
         assetType: "Graph",
       }),
     ).toEqual({ kind: "graph", path: "assets/main.graph.babasset" });
+    expect(
+      documentOpenForTarget({
+        kind: "asset",
+        path: "assets/hero.class.babasset",
+        guid: "c1",
+        assetType: "Class",
+      }),
+    ).toEqual({ kind: "graph", path: "assets/hero.class.babasset" });
   });
 
   it("routes actors to their scene and nodes to their graph", () => {
@@ -61,7 +69,7 @@ describe("documentOpenForTarget", () => {
     ).toEqual({ kind: "graph", path: "assets/main.graph.babasset" });
   });
 
-  it("reveals other assets in the Content Browser", () => {
+  it("opens settings documents for import and type assets", () => {
     expect(
       documentOpenForTarget({
         kind: "asset",
@@ -69,10 +77,26 @@ describe("documentOpenForTarget", () => {
         guid: "tex-1",
         assetType: "Texture",
       }),
-    ).toEqual({ kind: "content-browser", path: "assets/hero.babasset" });
+    ).toEqual({ kind: "asset-settings", path: "assets/hero.babasset" });
+    expect(
+      documentOpenForTarget({
+        kind: "asset",
+        path: "assets/colors.babasset",
+        guid: "enum-1",
+        assetType: "Enum",
+      }),
+    ).toEqual({ kind: "asset-settings", path: "assets/colors.babasset" });
     expect(
       documentOpenForTarget({ kind: "class", classId: "Actor" }),
     ).toEqual({ kind: "content-browser", path: "" });
+    expect(
+      documentOpenForTarget({
+        kind: "class",
+        classId: "MyHero",
+        path: "assets/hero.class.babasset",
+        guid: "c1",
+      }),
+    ).toEqual({ kind: "graph", path: "assets/hero.class.babasset" });
   });
 });
 
@@ -85,7 +109,7 @@ describe("revealAssetFromTarget", () => {
         guid: "tex-1",
         assetType: "Texture",
       }),
-    ).toEqual({ guid: "tex-1", path: "assets/hero.babasset" });
+    ).toBeNull();
     expect(
       revealAssetFromTarget({
         kind: "class",

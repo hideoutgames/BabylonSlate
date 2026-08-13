@@ -141,9 +141,8 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
-| Full Enum / Structure / ScriptInterface row editors | later polish (`apps/editor`, `editor-kit`) | Creatable assets exist; richer field editors incomplete |
+| Full Enum / Structure / ScriptInterface row editors | later polish (`apps/editor`, `editor-kit`) | Compact settings tabs landed (member/field/method rows + `ParameterListEditor`); richer designers not in scope |
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Play now validates the compiled project graph set (`collectPlayPreviewScripts`); startup-map / GameInstance / plugin EUO sweep still deferred |
-| Graph ownership by class asset | later polish (`assets`, editor) | Class ids currently derived from graph file name |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed (`p8-command-system`) |
 | BDebugCommand + parameter list | P8 | Landed (`p8-bdebugcommand`) |
@@ -154,6 +153,8 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Audio / UI node runtime helpers beyond stubs | P9 | `setWidgetVisible` emits `uiSetVisible`; audio helpers still stubs |
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (selection tidy / then-chain); **hold-to-marquee** (`attachGraphPaneMarquee`).
+
+**Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface and import data types open compact `asset-settings` tabs (not new Shader/UI editors). Legacy Graph files still load.
 
 ## P6 slice ownership
 

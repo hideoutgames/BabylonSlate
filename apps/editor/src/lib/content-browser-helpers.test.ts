@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
+  CREATABLE_ASSET_TYPES,
   ENGINE_BASE_CLASSES,
   buildNewAssetResult,
+  classDocumentShowsPrefab,
   collectFolderGuids,
   compressionBadgeLabel,
   displayAssetTitle,
@@ -188,16 +190,16 @@ describe("content-browser-helpers", () => {
   it("detects a New Asset name that already exists in the folder", () => {
     const paths = [
       "assets/main.scene.babasset",
-      "assets/hero.babasset",
-      "assets/textures/hero.babasset",
+      "assets/hero.class.babasset",
+      "assets/classes/hero.class.babasset",
     ];
     expect(isNewAssetNameTaken(paths, "assets", "Scene", "main")).toBe(true);
-    expect(isNewAssetNameTaken(paths, "assets", "Texture", "hero")).toBe(true);
-    expect(isNewAssetNameTaken(paths, "assets", "Texture", "crate")).toBe(false);
-    expect(isNewAssetNameTaken(paths, "assets/textures", "Texture", "hero")).toBe(
+    expect(isNewAssetNameTaken(paths, "assets", "Class", "hero")).toBe(true);
+    expect(isNewAssetNameTaken(paths, "assets", "Class", "crate")).toBe(false);
+    expect(isNewAssetNameTaken(paths, "assets/classes", "Class", "hero")).toBe(
       true,
     );
-    expect(isNewAssetNameTaken(paths, "assets/textures", "Texture", "main")).toBe(
+    expect(isNewAssetNameTaken(paths, "assets/classes", "Class", "main")).toBe(
       false,
     );
   });
@@ -258,6 +260,7 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
     expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.babasset");
     expect(newAssetFileName("Shader", "Surface")).toBe("Surface.shader.babasset");
+    expect(newAssetFileName("Class", "Hero")).toBe("Hero.class.babasset");
     const hud = buildNewAssetResult({
       type: "UserInterface",
       name: "HUD",
@@ -268,12 +271,68 @@ describe("content-browser-helpers", () => {
     expect(hud.payload.rootId).toBe("canvas");
     expect(hud.payload.viewportLayer).toBe(true);
     expect(hud.chunks.some((chunk) => chunk.id === "document")).toBe(true);
-    const font = buildNewAssetResult({
-      type: "Font",
-      name: "Display",
-      guid: "font-1",
-      parentClass: null,
+  });
+
+  it("lists only authored types in New Asset", () => {
+    expect([...CREATABLE_ASSET_TYPES]).toEqual([
+      "Scene",
+      "Class",
+      "UserInterface",
+      "Sprite",
+      "AnimationGraph",
+      "Shader",
+      "Enum",
+      "Structure",
+      "ScriptInterface",
+    ]);
+  });
+
+  it("creates Class assets with a logic graph and parent class", () => {
+    const klass = buildNewAssetResult({
+      type: "Class",
+      name: "Hero",
+      guid: "class-1",
+      parentClass: "Actor",
     });
-    expect(font.chunks.some((chunk) => chunk.id === "document")).toBe(true);
+    expect(klass.type).toBe("Class");
+    expect(klass.parentClass).toBe("Actor");
+    expect(Array.isArray(klass.payload.nodes)).toBe(true);
+    expect((klass.payload.nodes as unknown[]).length).toBeGreaterThan(0);
+    expect(Array.isArray(klass.payload.edges)).toBe(true);
+    expect(klass.chunks.some((chunk) => chunk.id === "document")).toBe(true);
+  });
+
+  it("shows Prefab only for Actor-lineage classes", () => {
+    const hero = asset({
+      type: "Class",
+      name: "MyHero",
+      parentClass: "Actor",
+    });
+    const stats = asset({
+      type: "Class",
+      name: "GameStats",
+      parentClass: "BObject",
+    });
+    const meshComp = asset({
+      type: "Class",
+      name: "MyMesh",
+      parentClass: "ActorComponent",
+    });
+    const subclass = asset({
+      type: "Class",
+      name: "Boss",
+      parentClass: "MyHero",
+    });
+    const parentOf = classParentLookup([hero, stats, meshComp, subclass]);
+    expect(classDocumentShowsPrefab("Actor", parentOf)).toBe(true);
+    expect(classDocumentShowsPrefab("MyHero", parentOf)).toBe(true);
+    expect(classDocumentShowsPrefab("Boss", parentOf)).toBe(true);
+    expect(classDocumentShowsPrefab("BObject", parentOf)).toBe(false);
+    expect(classDocumentShowsPrefab("GameStats", parentOf)).toBe(false);
+    expect(classDocumentShowsPrefab("ActorComponent", parentOf)).toBe(false);
+    expect(classDocumentShowsPrefab("MyMesh", parentOf)).toBe(false);
+    expect(
+      classDocumentShowsPrefab(null, parentOf, { assetType: "Graph" }),
+    ).toBe(true);
   });
 });

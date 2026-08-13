@@ -8,6 +8,7 @@ import {
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
 export const MAIN_GRAPH_FILE = "assets/main.graph.babasset";
+export const MAIN_CLASS_FILE = "assets/main.class.babasset";
 export const MAIN_SCENE_FILE = "assets/main.scene.babasset";
 
 export interface ProjectMetadata {
@@ -333,7 +334,7 @@ export function createEmptyProject(name: string): ProjectDocument {
     },
     settings: normalizeProjectSettings(undefined),
     scenes: [MAIN_SCENE_FILE],
-    graphs: [MAIN_GRAPH_FILE],
+    graphs: [MAIN_CLASS_FILE],
   };
 }
 

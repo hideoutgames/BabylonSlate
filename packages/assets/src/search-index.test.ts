@@ -211,6 +211,39 @@ describe("ProjectSearchIndex", () => {
     expect(index.query("uniqueBodyTokenShouldNotMatch")).toEqual([]);
   });
 
+  it("indexes logic graph nodes stored on Class assets", async () => {
+    const storage = await createStorage();
+    await writeDocument(storage, "assets/hero.class.babasset", {
+      guid: "class-1",
+      type: "Class",
+      name: "Hero",
+      payload: {
+        nodes: [
+          {
+            id: "log-1",
+            type: "logMessage",
+            data: { message: "Class owned hello" },
+          },
+        ],
+        edges: [],
+      },
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage, {
+      nodeTitles: { logMessage: "Log" },
+    });
+    await index.rebuild(registry);
+    expect(
+      index.query("class owned hello").some(
+        (hit) =>
+          hit.kind === "graph-node" &&
+          hit.target.kind === "graph-node" &&
+          hit.target.graphPath === "assets/hero.class.babasset",
+      ),
+    ).toBe(true);
+  });
+
   it("indexes catalog class ids and Class asset headers", async () => {
     const storage = await createStorage();
     await writeDocument(storage, "assets/my-hero.babasset", {

@@ -1,5 +1,9 @@
 import type { SearchEntry, SearchEntryKind, SearchOpenTarget } from "@babylonslate/assets";
 import {
+  documentKindForAssetType,
+  type AssetDocumentKind,
+} from "@babylonslate/core";
+import {
   engineParentOf,
   resolveActorTypeVisual,
   resolveTypeVisual,
@@ -17,20 +21,16 @@ export const SEARCH_RESULT_GROUPS: Array<{ kind: SearchEntryKind; label: string 
 ];
 
 export type SearchDocumentOpen =
-  | { kind: "scene"; path: string }
-  | { kind: "graph"; path: string }
+  | { kind: AssetDocumentKind; path: string }
   | { kind: "content-browser"; path: string };
 
 export function documentOpenForTarget(target: SearchOpenTarget): SearchDocumentOpen {
   switch (target.kind) {
-    case "asset":
-      if (target.assetType === "Scene") {
-        return { kind: "scene", path: target.path };
-      }
-      if (target.assetType === "Graph") {
-        return { kind: "graph", path: target.path };
-      }
+    case "asset": {
+      const kind = documentKindForAssetType(target.assetType);
+      if (kind) return { kind, path: target.path };
       return { kind: "content-browser", path: target.path };
+    }
     case "scene-actor":
     case "scene-component":
       return { kind: "scene", path: target.scenePath };
@@ -38,14 +38,18 @@ export function documentOpenForTarget(target: SearchOpenTarget): SearchDocumentO
     case "variable":
       return { kind: "graph", path: target.graphPath };
     case "class":
-      return { kind: "content-browser", path: target.path ?? "" };
+      if (target.path) {
+        return { kind: "graph", path: target.path };
+      }
+      return { kind: "content-browser", path: "" };
   }
 }
 
 export function revealAssetFromTarget(
   target: SearchOpenTarget,
 ): { guid: string; path: string } | null {
-  if (target.kind === "asset" && target.assetType !== "Scene" && target.assetType !== "Graph") {
+  if (target.kind === "asset") {
+    if (documentKindForAssetType(target.assetType)) return null;
     return { guid: target.guid, path: target.path };
   }
   if (target.kind === "class" && target.guid && target.path) {

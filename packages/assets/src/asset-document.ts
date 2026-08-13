@@ -47,9 +47,13 @@ export async function encodeAssetDocument(
     engineVersion?: string;
     blobs?: BlobStore;
     extraChunks?: readonly ChunkInput[];
+    parentClass?: string | null;
+    headerPayload?: Record<string, unknown>;
   } = {},
 ): Promise<Uint8Array> {
   const body = new TextEncoder().encode(stableStringify(document.payload));
+  const extra = options.extraChunks ?? [];
+  const storeInHeader = options.headerPayload !== undefined;
   return encodeBabasset({
     header: {
       dependencies: [],
@@ -57,20 +61,22 @@ export async function encodeAssetDocument(
       guid: document.guid,
       mode: "thin",
       name: document.name,
-      parentClass: null,
-      payload: {},
+      parentClass: options.parentClass ?? null,
+      payload: options.headerPayload ?? {},
       type: document.type,
       version: document.version,
     },
-    chunks: [
-      {
-        id: DOCUMENT_CHUNK_ID,
-        kind: "document",
-        mime: "application/json",
-        data: body,
-      },
-      ...(options.extraChunks ?? []),
-    ],
+    chunks: storeInHeader
+      ? [...extra]
+      : [
+          {
+            id: DOCUMENT_CHUNK_ID,
+            kind: "document",
+            mime: "application/json",
+            data: body,
+          },
+          ...extra,
+        ],
     writeBlob: options.blobs
       ? (sha256, data) => options.blobs!.writeBlob(sha256, data)
       : undefined,

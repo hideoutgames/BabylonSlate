@@ -36,9 +36,10 @@ describe("nextCopyName", () => {
 });
 
 describe("asset file suffix helpers", () => {
-  it("strips .scene.babasset, .graph.babasset, and .babasset", () => {
+  it("strips .scene.babasset, .graph.babasset, .class.babasset, and .babasset", () => {
     expect(stripAssetFileSuffix("main.scene.babasset")).toBe("main");
     expect(stripAssetFileSuffix("logic.graph.babasset")).toBe("logic");
+    expect(stripAssetFileSuffix("hero.class.babasset")).toBe("hero");
     expect(stripAssetFileSuffix("hud.ui.babasset")).toBe("hud");
     expect(stripAssetFileSuffix("tex.babasset")).toBe("tex");
     expect(stripAssetFileSuffix("Duplicate_1.babasset")).toBe("Duplicate_1");
@@ -47,6 +48,7 @@ describe("asset file suffix helpers", () => {
   it("preserves the original container suffix", () => {
     expect(assetFileSuffix("main.scene.babasset")).toBe(".scene.babasset");
     expect(assetFileSuffix("logic.graph.babasset")).toBe(".graph.babasset");
+    expect(assetFileSuffix("hero.class.babasset")).toBe(".class.babasset");
     expect(assetFileSuffix("hud.ui.babasset")).toBe(".ui.babasset");
     expect(assetFileSuffix("hero.sprite.babasset")).toBe(".sprite.babasset");
     expect(assetFileSuffix("loco.anim.babasset")).toBe(".anim.babasset");

@@ -51,7 +51,7 @@ test.describe("P5 visual scripting acceptance", () => {
     }, SCRIPTED_GRAPH);
     expect(installed).toBe(true);
 
-    await page.locator('[data-asset-path="assets/main.graph.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
     await expect(page.getByTestId("compile-graph")).toBeVisible();
     await expect(page.getByTestId("compilation-error")).toHaveCount(0);
 
@@ -114,7 +114,7 @@ test.describe("P5 visual scripting acceptance", () => {
       });
     });
 
-    await page.locator('[data-asset-path="assets/main.graph.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
     await expect(page.getByTestId("compiler-results")).toBeVisible();
     await expect(page.getByTestId("compiler-result-row").first()).toBeVisible({
       timeout: 15_000,

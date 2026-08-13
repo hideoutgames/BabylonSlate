@@ -14,6 +14,10 @@ import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
 import { DockviewShell } from "../shell/dockview-shell";
+import {
+  classDocumentShowsPrefab,
+  classParentLookup,
+} from "../lib/content-browser-helpers";
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
@@ -40,10 +44,12 @@ function RegisteredDockviewShell({
   id,
   documentKind,
   initialLayout,
+  actorPrefab,
 }: {
   id: string;
   documentKind: "scene" | "graph";
   initialLayout: Record<string, unknown> | null;
+  actorPrefab?: boolean;
 }) {
   const { registerDockviewApi } = useDocuments();
   const onReady = useCallback(
@@ -57,6 +63,7 @@ function RegisteredDockviewShell({
     <DockviewShell
       documentKind={documentKind}
       initialLayout={initialLayout}
+      actorPrefab={actorPrefab}
       onReady={onReady}
     />
   );
@@ -68,6 +75,7 @@ export function DocumentWorkspace() {
     activeDocumentId,
     openDocuments,
     projectDocument,
+    assetRegistry,
   } = useDocuments();
 
   const [mountedIds, setMountedIds] = useState<Set<string>>(() => new Set());
@@ -147,6 +155,16 @@ export function DocumentWorkspace() {
           doc.ref.kind === "scene"
             ? (doc.content as SerializedScene | null)
             : null;
+        const parentOf = classParentLookup(assetRegistry?.list() ?? []);
+        const indexed = assetRegistry
+          ?.list()
+          .find((asset) => asset.path === doc.ref.path);
+        const actorPrefab =
+          doc.ref.kind !== "graph" ||
+          !indexed ||
+          classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
+            assetType: indexed.header.type,
+          });
 
         return (
           <DocumentWorkspaceProvider key={id} documentId={id}>
@@ -170,8 +188,9 @@ export function DocumentWorkspace() {
                 {shouldMount ? (
                   <RegisteredDockviewShell
                     id={id}
-                    documentKind={doc.ref.kind}
+                    documentKind={doc.ref.kind === "scene" ? "scene" : "graph"}
                     initialLayout={doc.layout}
+                    actorPrefab={actorPrefab}
                   />
                 ) : null}
               </div>
