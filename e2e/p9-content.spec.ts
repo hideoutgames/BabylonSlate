@@ -65,8 +65,12 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("ui-device-preset").click();
     await page.getByTestId("ui-preset-desired").click();
     await expect(canvas).toHaveAttribute("data-preset", "desired");
-    await expect(page.getByTestId("ui-desired-width")).toBeVisible();
-    await expect(page.getByTestId("ui-desired-height")).toBeVisible();
+    await expect(page.getByTestId("ui-desired-width")).toHaveCount(0);
+    await expect(page.getByTestId("ui-desired-height")).toHaveCount(0);
+    const desiredBox = await canvas.boundingBox();
+    expect(desiredBox).not.toBeNull();
+    expect(desiredBox!.width).toBeLessThan(500);
+    expect(desiredBox!.height).toBeLessThan(500);
   });
 
   test("UserInterface designer drags a widget and undo restores it", async ({

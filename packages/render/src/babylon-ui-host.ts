@@ -239,17 +239,22 @@ export function createBabylonControl(
       button.thickness = spec.thickness ?? 0;
       if (spec.background) button.background = spec.background;
       if (typeof spec.cornerRadius === "number") button.cornerRadius = spec.cornerRadius;
+      const fill = spec.color ?? "#ffffff";
+      button.color = fill;
+      if (button.textBlock) button.textBlock.color = fill;
       return button;
     }
     case "TextBlock": {
       const text = new TextBlock(spec.id, spec.text ?? "");
       applyCommon(text, spec);
+      text.color = spec.color ?? "#ffffff";
       return text;
     }
     case "InputText": {
       const input = new InputText(spec.id, spec.text ?? "");
       applyCommon(input, spec);
       if (spec.background) input.background = spec.background;
+      input.color = spec.color ?? "#ffffff";
       return input;
     }
     case "Slider": {
@@ -278,7 +283,7 @@ export function createBabylonControl(
       const ellipse = new Ellipse(spec.id);
       applyCommon(ellipse, spec);
       ellipse.thickness = spec.thickness ?? 2;
-      ellipse.background = spec.background ?? "#000000";
+      ellipse.background = spec.background ?? "#e5e5e5";
       return ellipse;
     }
     case "StackPanel": {

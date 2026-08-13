@@ -43,6 +43,7 @@ export {
   SAFE_AREA_CONTROL_ID,
   STUB_TEXT_MEASURER,
   clamp01,
+  contentDesiredSize,
   designScale,
   flattenLaidOut,
   insetRect,
