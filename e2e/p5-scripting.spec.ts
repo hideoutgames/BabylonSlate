@@ -132,4 +132,32 @@ test.describe("P5 visual scripting acceptance", () => {
       page.locator('.react-flow__node.selected[data-id="branch"]'),
     ).toBeVisible({ timeout: 10_000 });
   });
+
+  test("chrome undo and redo restore a node added on the Class graph", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .dblclick();
+    const graph = page.getByTestId("graph-panel");
+    await expect(graph).toBeVisible();
+    const nodes = graph.locator(".react-flow__node");
+    await expect(nodes).toHaveCount(2);
+
+    const pane = graph.locator(".react-flow__pane");
+    await pane.dblclick({ position: { x: 24, y: 24 } });
+    await expect(page.getByTestId("node-palette")).toBeVisible();
+    await page.getByTestId("node-palette-search").fill("Log");
+    await page.getByTestId("node-palette-item-debug.log").click();
+    await expect(nodes).toHaveCount(3);
+
+    await expect(page.getByTestId("undo-document")).toBeEnabled();
+    await page.getByTestId("undo-document").click();
+    await expect(nodes).toHaveCount(2);
+
+    await expect(page.getByTestId("redo-document")).toBeEnabled();
+    await page.getByTestId("redo-document").click();
+    await expect(nodes).toHaveCount(3);
+  });
 });

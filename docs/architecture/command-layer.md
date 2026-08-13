@@ -53,7 +53,7 @@ interface EditCommand<TDoc = unknown> {
 
 - One `DocumentEditStack` per open document id — **never** a global undo stack.
 - Closing a document drops its history.
-- Chrome undo/redo act on the **active** document only; buttons are the primary touch affordance (keyboard shortcuts secondary on desktop).
+- Chrome undo/redo act on the **active** document only; buttons are the primary touch affordance. Desktop **Mod+Z** undoes, **Mod+Shift+Z** / **Mod+Y** redo (`documentHistoryHotkey`); skipped in text fields / `SelectableText` and while three pointers are down. Graph canvases reconcile the restored document so node add/move/connect/delete is visible (same path as scene / UI Design / tilemap).
 - Caps (both enforced; drop from the oldest end when either is exceeded):
   - **Entry limit** from Engine Settings `undoHistoryLength` (default 50).
   - **Byte budget** across recorded `byteSize` values (snapshot fallbacks).
@@ -87,4 +87,4 @@ See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 
 ## Tests
 
-Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer.
+Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer; `e2e/p5-scripting.spec.ts` covers Class graph undo/redo on the canvas.
