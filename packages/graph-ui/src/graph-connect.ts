@@ -142,6 +142,19 @@ export function edgesTouchingPin<T extends PinEdgeRef>(
   return edges.filter((edge) => edgeTouchesPin(edge, nodeId, pinId));
 }
 
+export function edgeTouchesNode(edge: PinEdgeRef, nodeId: string): boolean {
+  return edge.source === nodeId || edge.target === nodeId;
+}
+
+export function edgesTouchingNodes<T extends PinEdgeRef>(
+  edges: readonly T[],
+  nodeIds: ReadonlySet<string>,
+): T[] {
+  return edges.filter(
+    (edge) => nodeIds.has(edge.source) || nodeIds.has(edge.target),
+  );
+}
+
 export function nodePinLists(
   nodes: Array<{ id: string; data?: Record<string, unknown> }>,
 ): Array<{ id: string; pins?: SerializedPin[] }> {
