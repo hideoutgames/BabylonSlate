@@ -2,6 +2,47 @@ import type { SerializedGraph } from "@babylonslate/core";
 import type { AnimGraphDocument } from "./graph";
 import { createDefaultAnimGraph } from "./graph";
 
+export type AnimGraphPin = {
+  id: string;
+  name: string;
+  kind: "exec";
+  direction: "in" | "out";
+  type: { kind: "exec" };
+};
+
+export const ANIM_STATE_PINS: AnimGraphPin[] = [
+  {
+    id: "in",
+    name: "in",
+    kind: "exec",
+    direction: "in",
+    type: { kind: "exec" },
+  },
+  {
+    id: "out",
+    name: "out",
+    kind: "exec",
+    direction: "out",
+    type: { kind: "exec" },
+  },
+];
+
+export function animPaletteNodes(): Array<{
+  id: "anim.state";
+  title: string;
+  category: string;
+  pins: AnimGraphPin[];
+}> {
+  return [
+    {
+      id: "anim.state",
+      title: "State",
+      category: "Animation",
+      pins: ANIM_STATE_PINS,
+    },
+  ];
+}
+
 export function animGraphToSerialized(doc: AnimGraphDocument): SerializedGraph {
   return {
     nodes: doc.states.map((state, index) => ({
@@ -55,5 +96,23 @@ export function serializedToAnimGraph(
       hasExitTime: false,
       exitTime: 0,
     })),
+  };
+}
+
+export function hydrateAnimGraphForEditor(
+  graph: SerializedGraph,
+): SerializedGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const data = { ...(node.data as Record<string, unknown>) };
+      if (Array.isArray(data.__pins) && data.__pins.length > 0) {
+        return { ...node, data };
+      }
+      return {
+        ...node,
+        data: { ...data, __pins: ANIM_STATE_PINS },
+      };
+    }),
   };
 }

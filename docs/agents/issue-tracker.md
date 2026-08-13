@@ -226,7 +226,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 ## P9 slice ownership
 
-P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9; residual ADT mesh HUD / NodeMaterial.Parse bind is later polish.
+P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9 packages. Authoring-surface hosts (canvas gestures, Logic palette, Sprite Texture picker, `NodeMaterial.Parse` preview) landed on `cursor/authoring-surface-8678`. Residual ADT mesh HUD / CustomBlock GLSL IDE stays later polish.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -257,13 +257,26 @@ Chrome polish (pin flash, JSON input textarea, multi-select gizmo, ADT HUD) stay
 | Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
 | `playSound` mixer, ADT HUD, `.babtrace` tab, §9.4 HUD | Parked |
 
+### Authoring-surface wave (before P11)
+
+Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime`). Do **not** rebuild `@babylonslate/ui-runtime`, `@babylonslate/shader-graph`, `@babylonslate/anim-graph`, or `@babylonslate/scripting`. Do not start P11 `behaviour-tree` / `navigation` from leftover chrome polish.
+
+| Wave | Status |
+| --- | --- |
+| A — UI design canvas pan/zoom/drag + offset PropertyGrid | Done (`cursor/authoring-surface-8678`) |
+| B — UI Logic palette + Play compile + Class `flow.event.custom` | Done (`cursor/authoring-surface-8678`) |
+| C — Sprite Texture picker | Done (`cursor/authoring-surface-8678`) |
+| D — Shader `NodeMaterial.Parse` preview + shader/anim catalog pin hydration | Done (`cursor/authoring-surface-8678`) |
+
+Parked with this wave: pin flash, JSON input textarea, multi-select gizmo, ADT Play HUD, `WidgetComponent` `CreateForMesh`, per-function graphs, FunctionLibrary palette, anim blend/exit-time inspector, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
+
 ### P9 follow-ups / open deferrals
 
 | Gap vs engineplan §11–§14 | Reality | Owner |
 | --- | --- | --- |
 | Viewport-layer HUD as Babylon `AdvancedDynamicTexture` | Play hosts a DOM overlay (`PlayHudOverlay`); `applyUiControls` is injectable | Later polish / P14 player |
 | Every UserInterface in the asset registry auto-hosted in Play | Play does **not** auto-apply UI. Class graphs call `ui.applyToViewport` / `ui.removeFromViewport`; the host loads a guid-keyed library of all UserInterface assets | Done (`cursor/ui-apply-nested-8c7a`) |
-| `NodeMaterial.Parse` + live Babylon preview | IR compile + throttle + `compileShaderGraphAtLoad` injection; host supplies `forceCompilationAsync` | Later polish |
+| `NodeMaterial.Parse` + live Babylon preview | `applyShaderGraphPreview` throttles `compileShaderGraphForRender` then `NodeMaterial.Parse` (injected `forceCompilationAsync` / parser in tests). Shader tab hosts a preview canvas; catalog `__pins` hydrated | Done (`cursor/authoring-surface-8678`) |
 | Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
 | Play engine applies sprite-clip UVs from `animState` | `applyAnimStateToScene` calls `applySpriteAnimFrame` when `clipKind === "sprite"`; Play loads sprite payloads from scene `SpriteComponent` guids | Done (`cursor/play-path-harden-8678`) |
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |

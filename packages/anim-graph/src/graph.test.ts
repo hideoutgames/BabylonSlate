@@ -7,6 +7,7 @@ import {
   validateAnimGraph,
   animGraphToSerialized,
   serializedToAnimGraph,
+  hydrateAnimGraphForEditor,
 } from "./index";
 
 describe("anim graph evaluator", () => {
@@ -97,5 +98,21 @@ describe("anim graph evaluator", () => {
     expect(parsed).toEqual(doc);
     expect(parseAnimGraphDocument({ name: "bad" })).toBeNull();
     expect(clipForState(doc, "idle")?.clipName).toBe("Idle");
+  });
+
+  it("hydrates state pins so Add Node is not an empty box", () => {
+    const hydrated = hydrateAnimGraphForEditor(
+      animGraphToSerialized(createDefaultAnimGraph()),
+    );
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      direction: string;
+    }>;
+    expect(pins.some((pin) => pin.id === "in" && pin.direction === "in")).toBe(
+      true,
+    );
+    expect(pins.some((pin) => pin.id === "out" && pin.direction === "out")).toBe(
+      true,
+    );
   });
 });

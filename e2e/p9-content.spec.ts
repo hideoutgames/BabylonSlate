@@ -258,6 +258,7 @@ test.describe("P9 content systems", () => {
     await page.locator('[data-asset-path="assets/Surface.shader.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-shader")).toBeVisible();
     await expect(page.getByTestId("shader-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("shader-preview")).toBeVisible();
   });
 
   test("Play overlay stick is reachable on iPad", {

@@ -14,6 +14,10 @@ export {
   type ShaderValueKind,
 } from "./graph";
 export {
-  shaderGraphToSerialized,
+  hydrateShaderGraphForEditor,
+  pinsForShaderNode,
   serializedToShaderGraph,
+  shaderGraphToSerialized,
+  shaderPaletteNodes,
+  type ShaderGraphPin,
 } from "./serialize";

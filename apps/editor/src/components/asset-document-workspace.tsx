@@ -13,27 +13,13 @@ import {
   normalizeFontPayload,
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
-import {
-  animGraphToSerialized,
-  serializedToAnimGraph,
-  validateAnimGraph,
-  type AnimGraphDocument,
-} from "@babylonslate/anim-graph";
-import {
-  SHADER_CATALOG,
-  compileShaderGraph,
-  createDefaultShaderGraph,
-  shaderGraphToSerialized,
-  serializedToShaderGraph,
-  validateShaderGraph,
-  type ShaderGraphDocument,
-} from "@babylonslate/shader-graph";
-import { GraphEditor, type PaletteNode } from "@babylonslate/graph-ui";
-import { useDocuments } from "../context/document-context";
-import { FontRegistry } from "@babylonslate/render";
 import { TilemapEditor } from "./tilemap-editor";
 import { SpriteEditor } from "./sprite-editor";
 import { UiDesigner } from "./ui-designer";
+import { AnimGraphEditor } from "./anim-graph-editor";
+import { ShaderGraphEditor } from "./shader-graph-editor";
+import { useDocuments } from "../context/document-context";
+import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import {
   addEnumMember,
@@ -339,82 +325,6 @@ function TilesetEditor({
         />
       </div>
     </PanelFrame>
-  );
-}
-
-function AnimGraphEditor({
-  payload,
-  onChange,
-}: {
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}) {
-  const doc = payload as unknown as AnimGraphDocument;
-  const diagnostics = validateAnimGraph(doc).map((row) => ({
-    nodeId: row.nodeId,
-    severity: row.severity,
-    message: row.message,
-  }));
-  const palette: PaletteNode[] = [
-    { id: "anim.state", title: "State", category: "Animation" },
-  ];
-  return (
-    <div className="flex min-h-0 flex-1" data-testid="anim-graph-editor">
-      <GraphEditor
-        initialGraph={animGraphToSerialized(doc)}
-        diagnostics={diagnostics}
-        paletteNodes={palette}
-        onChange={(next) =>
-          onChange(
-            serializedToAnimGraph(next, doc) as unknown as Record<string, unknown>,
-          )
-        }
-      />
-    </div>
-  );
-}
-
-function ShaderGraphEditor({
-  payload,
-  onChange,
-}: {
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}) {
-  const doc =
-    (payload as unknown as ShaderGraphDocument) ?? createDefaultShaderGraph();
-  const compiled = compileShaderGraph(doc);
-  const diagnostics = validateShaderGraph(doc).map((row) => ({
-    nodeId: row.nodeId,
-    severity: row.severity,
-    message: row.message,
-  }));
-  const palette: PaletteNode[] = SHADER_CATALOG.map((entry) => ({
-    id: entry.type,
-    title: entry.title,
-    category: entry.category,
-  }));
-  return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="shader-graph-editor">
-      <p className="px-3 py-1 text-xs text-muted-foreground">
-        {compiled.ipadCostWarning
-          ? "Post-process materials are expensive on iPad and off by default"
-          : "Surface shader"}
-      </p>
-      <GraphEditor
-        initialGraph={shaderGraphToSerialized(doc)}
-        diagnostics={diagnostics}
-        paletteNodes={palette}
-        onChange={(next) =>
-          onChange(
-            serializedToShaderGraph(next, doc) as unknown as Record<
-              string,
-              unknown
-            >,
-          )
-        }
-      />
-    </div>
   );
 }
 

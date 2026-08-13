@@ -19,4 +19,4 @@ Drives:
 
 ## Authoring
 
-`GraphEditor` from `graph-ui` with a small node-type map (states, transitions, blend). Own validator; diagnostics navigate like script graphs.
+`GraphEditor` from `graph-ui` with a small node-type map (states, transitions). `hydrateAnimGraphForEditor` / `animPaletteNodes()` inject `in` / `out` pins on `anim.state` so Add Node is connectable. Own validator; diagnostics navigate like script graphs. Blend / exit-time inspector stays parked — the Play evaluator already consumes those fields when present.

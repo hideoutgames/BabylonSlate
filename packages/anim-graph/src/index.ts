@@ -14,6 +14,10 @@ export {
   type AnimTransition,
 } from "./graph";
 export {
+  ANIM_STATE_PINS,
   animGraphToSerialized,
+  animPaletteNodes,
+  hydrateAnimGraphForEditor,
   serializedToAnimGraph,
+  type AnimGraphPin,
 } from "./serialize";

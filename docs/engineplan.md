@@ -15,7 +15,7 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 P0–P9 are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** P11 behaviour trees / navigation. P10 tilemaps (codecs, chain colliders, painting, 2D template) is landed. Parked: `p1-device-spikes` (hardware-only). Do not start P11+ packages from leftover editor polish.
+**Next engine slice:** P11 behaviour trees / navigation, **after** the authoring-surface wave. P10 tilemaps (codecs, chain colliders, painting, 2D template) is landed. Parked: `p1-device-spikes` (hardware-only). Do not start P11+ packages from leftover **chrome** polish (pin flash, JSON input textarea, multi-select gizmo, ADT HUD).
 
 Appendix A `[x]` means the **package/slice** landed. It does not mean every Play or document-tab path matches the letter of the spec. Honest residuals:
 
@@ -31,6 +31,19 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | Actor Prefab persistence | Class documents store `components`; Place Actors copies them when the class tab is open | Done |
 | Map nodes | `map.get` / `set` / `has` / `remove` / `size` / `keys` with K/V wildcards | Done |
 | `playSound` / ADT HUD / `.babtrace` tab / §9.4 HUD completeness | Recorded P8/P9 polish — do not rebuild those packages | Parked |
+
+**Authoring-surface residuals** (document-tab hosts, not a new engine phase; do not rebuild `ui-runtime` / `shader-graph` / `anim-graph` / `scripting`):
+
+| Residual | Reality | Owner |
+| --- | --- | --- |
+| Sprite Texture picker | Sprite workspace `AssetPicker` (`allowedTypes={["Texture"]}`) writes `textureGuid` | Done (authoring-surface wave) |
+| UserInterface design canvas | Pan / pinch-zoom / drag-to-offset; Details anchors, offsets, pivot, padding | Done (authoring-surface wave) |
+| UserInterface Logic tab | Script palette + members dock; Play compiles `payload.logic`; Class `flow.event.custom` dispatches | Done (authoring-surface wave) |
+| Shader preview | Throttled `compileShaderGraphForRender` → `applyShaderGraphPreview` / `NodeMaterial.Parse`; catalog pin hydration | Done (authoring-surface wave) |
+| Anim graph Add Node pins | `hydrateAnimGraphForEditor` / `animPaletteNodes` inject `in`/`out` | Done (authoring-surface wave) |
+| Anim blend / exit-time inspector | Play evaluator already works; inspector parked | Follow-up |
+| Pin flash, JSON input editor, multi-select gizmo | Chrome polish | Parked |
+| CustomBlock GLSL IDE; assign shader to a live scene mesh | Preview canvas is the host | Parked |
 
 **Landed (do not rebuild):**
 - **Editor shell.** Two-row chrome in [apps/editor/src/components/editor-chrome-bar.tsx](apps/editor/src/components/editor-chrome-bar.tsx): title/tab bar (truncated project name with `.babproject` stripped, pinned Content Browser, no tab-bar Add) and a global toolbar (Save All with dirty dot, Undo, Redo, **Compile** plus **Compilation Error** on graph documents, Play, **Debug** with Always Render in DEV/test, **Windows** immediately left of Focus, Focus, Search, Settings). Per-document Dockview in [apps/editor/src/shell/dockview-shell.tsx](apps/editor/src/shell/dockview-shell.tsx); Windows restores last `layout.json` placements. Homepage owns create/open/close/recents; the shell runs only against an open project.
