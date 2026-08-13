@@ -160,10 +160,10 @@ describe("PropertyGrid", () => {
         ]}
       />,
     );
-    expect(screen.getByTestId("property-mesh").textContent).toContain("Rock");
-    expect(screen.getByTestId("property-mesh").textContent).not.toContain(
-      "guid-rock",
-    );
+    const button = screen.getByLabelText("Mesh");
+    expect(button.textContent).toContain("Rock");
+    expect(button.textContent).not.toContain("guid-rock");
+    expect(button.getAttribute("id")).toBe("property-mesh");
   });
 
   it("humanizes camelCase property keys as Title Case", () => {

@@ -234,6 +234,7 @@ function RowControl({ row }: { row: PropertyRow }) {
     case "asset":
       return (
         <Button
+          id={`property-${row.id}`}
           variant="outline"
           className="min-h-[var(--chrome-row,28px)] w-full justify-start"
           disabled={row.disabled}

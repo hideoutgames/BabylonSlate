@@ -68,12 +68,21 @@ async function openMainScene(page: Page): Promise<void> {
   ).toBeVisible({ timeout: 15_000 });
 }
 
-async function fillSelectedAssetGuid(page: Page, classId: string, guid: string) {
+async function pickSelectedAsset(
+  page: Page,
+  classId: string,
+  guid: string,
+  property: "assetGuid" | "graphGuid" = "assetGuid",
+) {
   const card = page.locator("[data-testid^='component-card-']").filter({
     hasText: classId,
   });
   await expect(card).toBeVisible();
-  await card.getByLabel("Asset GUID").fill(guid);
+  await card.locator(`[data-testid$="-${property}"]`).click();
+  const item = page.getByTestId(`search-item-${guid}`);
+  await expect(item).toBeVisible();
+  await item.click();
+  await expect(page.getByTestId("details-asset-picker")).toBeHidden();
 }
 
 test.describe("P10 tilemaps", () => {
@@ -127,7 +136,7 @@ test.describe("P10 tilemaps", () => {
       page,
       "assets/Overworld.tilemap.babasset",
     );
-    await fillSelectedAssetGuid(page, "TilemapComponent", tilemapGuid);
+    await pickSelectedAsset(page, "TilemapComponent", tilemapGuid);
 
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
@@ -142,12 +151,14 @@ test.describe("P10 tilemaps", () => {
     await page.getByTestId("add-component-catalog-item-ColliderComponent").click();
 
     const spriteGuid = await guidForPath(page, "assets/Hero.sprite.babasset");
-    await fillSelectedAssetGuid(page, "SpriteComponent", spriteGuid);
+    await pickSelectedAsset(page, "SpriteComponent", spriteGuid);
     const graphGuid = await guidForPath(page, "assets/Loco.anim.babasset");
-    const graphCard = page.locator("[data-testid^='component-card-']").filter({
-      hasText: "AnimationGraphComponent",
-    });
-    await graphCard.getByLabel("Graph GUID").fill(graphGuid);
+    await pickSelectedAsset(
+      page,
+      "AnimationGraphComponent",
+      graphGuid,
+      "graphGuid",
+    );
     await page.getByTestId("property-actor-position-y").fill("3");
 
     await page.getByTestId("play-preview").click();
