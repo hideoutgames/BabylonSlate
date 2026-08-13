@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { pinLayout } from "@babylonslate/ui-runtime";
 import {
-  anchorPointsToScreen,
   applyWidgetDragOffset,
   canvasDeltaToLayoutDelta,
   centeredFitView,
   clampDesignZoom,
+  designRectToBitmap,
   designRectToScreen,
   passedDragThreshold,
   pivotToScreen,
@@ -16,26 +16,29 @@ import {
 } from "./ui-design-gestures";
 
 describe("ui-design-gestures", () => {
-  it("keeps anchors and translates both offsets by the layout delta", () => {
-    const layout = pinLayout({ x: 0.12, y: 0.18 }, { x: 160, y: 160 });
-    const next = applyWidgetDragOffset(layout, { x: 10, y: -20 });
-    expect(next.anchorMin).toEqual(layout.anchorMin);
-    expect(next.anchorMax).toEqual(layout.anchorMax);
-    expect(next.pivot).toEqual(layout.pivot);
-    expect(next.offsetMin).toEqual({
-      x: layout.offsetMin.x + 10,
-      y: layout.offsetMin.y - 20,
-    });
-    expect(next.offsetMax).toEqual({
-      x: layout.offsetMax.x + 10,
-      y: layout.offsetMax.y - 20,
+  it("translates left/top by the layout delta without flipping Y", () => {
+    const layout = pinLayout("left", "bottom", 160, 160, 40, 0);
+    const next = applyWidgetDragOffset(layout, { x: 10, y: 20 });
+    expect(next.horizontalAlignment).toBe("left");
+    expect(next.verticalAlignment).toBe("bottom");
+    expect(next.width).toBe(160);
+    expect(next.left).toBe(50);
+    expect(next.top).toBe(20);
+  });
+
+  it("scales design-space rects onto the bitmap from the origin", () => {
+    expect(designRectToBitmap({ x: 10, y: 20, width: 100, height: 40 }, 0.5)).toEqual({
+      x: 5,
+      y: 10,
+      width: 50,
+      height: 20,
     });
   });
 
-  it("converts screen-down deltas into layout Y-up at the view scale", () => {
+  it("converts screen deltas into layout space at the view scale", () => {
     expect(canvasDeltaToLayoutDelta({ x: 45, y: 18 }, 0.45)).toEqual({
       x: 100,
-      y: -40,
+      y: 40,
     });
   });
 
@@ -79,23 +82,14 @@ describe("ui-design-gestures", () => {
     expect(screen).toEqual({ x: 15, y: 27, width: 100, height: 50 });
   });
 
-  it("maps pivot and unique anchor corners into screen space", () => {
+  it("maps transform center into screen space (Y-down)", () => {
     const view = { zoom: 1, panX: 0, panY: 0 };
     expect(
       pivotToScreen({ x: 0, y: 0, width: 100, height: 40 }, { x: 0.5, y: 0 }, view, 1),
-    ).toEqual({ x: 50, y: 40 });
+    ).toEqual({ x: 50, y: 0 });
     expect(
-      anchorPointsToScreen(
-        { x: 0, y: 0, width: 200, height: 100 },
-        { x: 0, y: 1 },
-        { x: 1, y: 1 },
-        view,
-        1,
-      ),
-    ).toEqual([
-      { x: 0, y: 0 },
-      { x: 200, y: 0 },
-    ]);
+      pivotToScreen({ x: 0, y: 0, width: 100, height: 40 }, { x: 0.5, y: 1 }, view, 1),
+    ).toEqual({ x: 50, y: 40 });
   });
 
   it("falls back to a readable scale when the viewport is unmeasured", () => {

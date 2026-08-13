@@ -646,7 +646,7 @@ function documentAsset(
     type,
     name,
     guid,
-    version: 1,
+    version: createDefaultMigrationRegistry().currentVersion(type) || 1,
     dependencies: [],
     parentClass: null,
     payload,

@@ -13,7 +13,7 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
 } from "@babylonslate/core";
-import { createAppEngine } from "@babylonslate/render";
+import { createAppEngine, type FontAssetEntry } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
@@ -45,6 +45,7 @@ import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
+import { collectFontAssetEntries } from "../lib/play-fonts";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -108,6 +109,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playUiLibrary, setPlayUiLibrary] = useState<
     Record<string, UserInterfaceDocument>
   >({});
+  const [playFontEntries, setPlayFontEntries] = useState<FontAssetEntry[]>([]);
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
     [],
   );
@@ -146,6 +148,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     scriptsStale,
     migrationPending,
     saveAll,
+    assetRegistry,
+    readAssetChunk,
   } = useDocuments();
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const playScene = resolvePlayScene({
@@ -309,6 +313,25 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayUiLibrary({});
         }
         try {
+          const fonts = assetRegistry?.list() ?? [];
+          setPlayFontEntries(
+            await collectFontAssetEntries(
+              fonts.map((asset) => ({
+                guid: asset.header.guid,
+                path: asset.path,
+                type: asset.header.type,
+                payload: asset.header.payload,
+              })),
+              readAssetChunk,
+            ),
+          );
+        } catch (error) {
+          appendLog(
+            `Font registry failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayFontEntries([]);
+        }
+        try {
           setPlayAnimGraphs(await collectPlayAnimGraphs(resolvedScene?.scene));
         } catch (error) {
           appendLog(
@@ -398,6 +421,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       playScene,
       openDocuments,
       activeDocumentId,
+      assetRegistry,
+      readAssetChunk,
       saveAll,
       scripts,
       scriptsStale,
@@ -524,6 +549,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             gameInstanceClass={playScene?.scene.settings.gameInstanceClass ?? undefined}
             scenes={playSceneLibrary}
             uiLibrary={playUiLibrary}
+            fontEntries={playFontEntries}
             animGraphs={playAnimGraphs}
             spritePayloads={playSpritePayloads}
             tilemapPayloads={playTilemaps}

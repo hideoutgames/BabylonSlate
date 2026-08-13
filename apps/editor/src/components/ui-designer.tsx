@@ -28,6 +28,7 @@ import {
   createWidget,
   defaultAddLayout,
   describeUiControls,
+  designScale,
   designerViewport,
   insertWidget,
   layoutUserInterface,
@@ -46,6 +47,8 @@ import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { familyFromAssetPayload } from "../lib/font-preview";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
+import { collectFontAssetEntries } from "../lib/play-fonts";
+import type { FontAssetEntry } from "@babylonslate/render";
 import {
   resolveDesignerCanvasId,
   useEngineUiDesignerPresets,
@@ -82,7 +85,7 @@ export function UiDesigner({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { openDocuments, assetRegistry, collectPlayUiLibrary, projectDocument } =
+  const { openDocuments, assetRegistry, collectPlayUiLibrary, projectDocument, readAssetChunk } =
     useDocuments();
   const play = useOptionalPlay();
   const ui = asUiDocument(payload);
@@ -133,6 +136,7 @@ export function UiDesigner({
     "nestedUi" | "image" | "font" | "visualOverride" | null
   >(null);
   const [uiLibrary, setUiLibrary] = useState<PlayUiLibrary>({});
+  const [fontEntries, setFontEntries] = useState<FontAssetEntry[]>([]);
   const [view, setView] = useState<DesignView>({ zoom: 1, panX: 0, panY: 0 });
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -148,6 +152,23 @@ export function UiDesigner({
   const selfGuid =
     assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
     path;
+  useEffect(() => {
+    let cancelled = false;
+    const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+      guid: asset.header.guid,
+      path: asset.path,
+      type: asset.header.type,
+      payload: asset.header.payload,
+    }));
+    void collectFontAssetEntries(assets, readAssetChunk ?? (async () => null)).then(
+      (entries) => {
+        if (!cancelled) setFontEntries(entries);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [assetRegistry, readAssetChunk]);
   useEffect(() => {
     let cancelled = false;
     void collectPlayUiLibrary()
@@ -175,9 +196,14 @@ export function UiDesigner({
   const layout = layoutUserInterface(
     ui,
     { width: viewport.width, height: viewport.height },
-    { safeArea: viewport.safeArea, resolveNested },
+    { safeArea: viewport.safeArea, resolveNested, designSpace: true },
   );
-  const controls = describeUiControls(ui, layout, viewport.height);
+  const bitmapScale = designScale(
+    { width: viewport.width, height: viewport.height },
+    ui.designResolution,
+    ui.scaleRule,
+  );
+  const controls = describeUiControls(ui, layout);
   const previewScale = previewScaleToFit(viewportSize, {
     width: viewport.width,
     height: viewport.height,
@@ -413,7 +439,9 @@ export function UiDesigner({
             selectedId={selectedId}
             view={view}
             previewScale={previewScale}
+            bitmapScale={bitmapScale}
             sharedEngine={sharedEngine}
+            fontEntries={fontEntries}
             onSelect={setSelectedId}
             onViewChange={setView}
             onLayoutChange={(id, nextLayout, mergeKey) =>

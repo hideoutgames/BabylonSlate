@@ -92,6 +92,49 @@ describe("asUiDocument", () => {
     expect(doc.desiredSize).toEqual({ width: 240, height: 64 });
   });
 
+  it("migrates legacy RectTransform widgets to Babylon layout", () => {
+    const doc = asUiDocument({
+      name: "HUD",
+      rootId: "canvas",
+      widgets: {
+        canvas: {
+          id: "canvas",
+          kind: "Canvas",
+          name: "Canvas",
+          layout: {
+            anchorMin: { x: 0, y: 0 },
+            anchorMax: { x: 1, y: 1 },
+            offsetMin: { x: 0, y: 0 },
+            offsetMax: { x: 0, y: 0 },
+            pivot: { x: 0.5, y: 0.5 },
+          },
+          visible: true,
+          children: ["stick"],
+          style: {},
+          props: {},
+        },
+        stick: {
+          id: "stick",
+          kind: "TouchJoystick",
+          name: "Stick",
+          layout: {
+            anchorMin: { x: 0.5, y: 0.5 },
+            anchorMax: { x: 0.5, y: 0.5 },
+            offsetMin: { x: -80, y: -80 },
+            offsetMax: { x: 80, y: 80 },
+            pivot: { x: 0.5, y: 0.5 },
+          },
+          visible: true,
+          children: [],
+          style: {},
+          props: {},
+        },
+      },
+    });
+    expect(doc.widgets.stick?.layout.horizontalAlignment).toBe("center");
+    expect(doc.widgets.stick?.layout.width).toBe(160);
+  });
+
   it("falls back desired size to design resolution when omitted", () => {
     const doc = asUiDocument({
       designResolution: { width: 1920, height: 1080 },

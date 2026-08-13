@@ -7,8 +7,6 @@ import {
 import {
   ZERO_INSETS,
   applyAnchorPreset,
-  applyAuthoringFields,
-  authoringFieldsFromLayout,
   clamp01,
   laidOutParentRect,
   matchAnchorPreset,
@@ -49,7 +47,6 @@ export function UiDesignDetails({
   const parent = parentId ? ui.widgets[parentId] : null;
   const slotOwned = parent ? parentOwnsChildLayout(parent.kind) : false;
   const parentRect = laidOutParentRect(layout, selected.id);
-  const fields = authoringFieldsFromLayout(parentRect, selected.layout);
   const presetId = matchAnchorPreset(selected.layout);
   const padding = selected.style.padding ?? ZERO_INSETS;
 
@@ -74,76 +71,120 @@ export function UiDesignDetails({
   const layoutRows: PropertyRow[] = slotOwned
     ? []
     : [
-        ...(fields.pinX
-          ? [
-              numberRow("pos-x", "Pos X", fields.posX, (posX) =>
-                onPatchLayout(
-                  selected.id,
-                  applyAuthoringFields(selected.layout, parentRect, { posX }),
-                ),
-              ),
-              numberRow("width", "Width", fields.width, (width) =>
-                onPatchLayout(
-                  selected.id,
-                  applyAuthoringFields(selected.layout, parentRect, { width }),
-                ),
-              ),
-            ]
-          : [
-              numberRow("left", "Left", fields.left, (left) =>
-                onPatchLayout(
-                  selected.id,
-                  applyAuthoringFields(selected.layout, parentRect, { left }),
-                ),
-              ),
-              numberRow("right", "Right", fields.right, (right) =>
-                onPatchLayout(
-                  selected.id,
-                  applyAuthoringFields(selected.layout, parentRect, { right }),
-                ),
-              ),
-            ]),
-        ...(fields.pinY
-          ? [
-              numberRow("pos-y", "Pos Y", fields.posY, (posY) =>
-                onPatchLayout(
-                  selected.id,
-                  applyAuthoringFields(selected.layout, parentRect, { posY }),
-                ),
-              ),
-              numberRow("height", "Height", fields.height, (height) =>
-                onPatchLayout(
-                  selected.id,
-                  applyAuthoringFields(selected.layout, parentRect, { height }),
-                ),
-              ),
-            ]
-          : [
-              numberRow("top", "Top", fields.top, (top) =>
-                onPatchLayout(
-                  selected.id,
-                  applyAuthoringFields(selected.layout, parentRect, { top }),
-                ),
-              ),
-              numberRow("bottom", "Bottom", fields.bottom, (bottom) =>
-                onPatchLayout(
-                  selected.id,
-                  applyAuthoringFields(selected.layout, parentRect, { bottom }),
-                ),
-              ),
-            ]),
         {
-          id: "pivot",
-          kind: "vector3",
-          label: "Pivot",
-          value: [selected.layout.pivot.x, selected.layout.pivot.y, 0],
-          axes: ["X", "Y"],
-          onChange: ([x, y]) =>
+          id: "horizontal-alignment",
+          kind: "enum",
+          label: "Horizontal",
+          value: selected.layout.horizontalAlignment,
+          options: [
+            { value: "left", label: "Left" },
+            { value: "center", label: "Center" },
+            { value: "right", label: "Right" },
+          ],
+          onChange: (horizontalAlignment) =>
             onPatchLayout(selected.id, {
               ...selected.layout,
-              pivot: { x: clamp01(x), y: clamp01(y) },
+              horizontalAlignment: horizontalAlignment as WidgetLayout["horizontalAlignment"],
             }),
         },
+        {
+          id: "vertical-alignment",
+          kind: "enum",
+          label: "Vertical",
+          value: selected.layout.verticalAlignment,
+          options: [
+            { value: "top", label: "Top" },
+            { value: "center", label: "Center" },
+            { value: "bottom", label: "Bottom" },
+          ],
+          onChange: (verticalAlignment) =>
+            onPatchLayout(selected.id, {
+              ...selected.layout,
+              verticalAlignment: verticalAlignment as WidgetLayout["verticalAlignment"],
+            }),
+        },
+        numberRow("left", "Left", selected.layout.left, (left) =>
+          onPatchLayout(selected.id, { ...selected.layout, left }),
+        ),
+        numberRow("top", "Top", selected.layout.top, (top) =>
+          onPatchLayout(selected.id, { ...selected.layout, top }),
+        ),
+        numberRow("width", "Width", selected.layout.width, (width) =>
+          onPatchLayout(selected.id, { ...selected.layout, width }),
+        ),
+        {
+          id: "width-unit",
+          kind: "enum",
+          label: "Width Unit",
+          value: selected.layout.widthUnit,
+          options: [
+            { value: "px", label: "px" },
+            { value: "percent", label: "%" },
+          ],
+          onChange: (widthUnit) =>
+            onPatchLayout(selected.id, {
+              ...selected.layout,
+              widthUnit: widthUnit as WidgetLayout["widthUnit"],
+            }),
+        },
+        numberRow("height", "Height", selected.layout.height, (height) =>
+          onPatchLayout(selected.id, { ...selected.layout, height }),
+        ),
+        {
+          id: "height-unit",
+          kind: "enum",
+          label: "Height Unit",
+          value: selected.layout.heightUnit,
+          options: [
+            { value: "px", label: "px" },
+            { value: "percent", label: "%" },
+          ],
+          onChange: (heightUnit) =>
+            onPatchLayout(selected.id, {
+              ...selected.layout,
+              heightUnit: heightUnit as WidgetLayout["heightUnit"],
+            }),
+        },
+        numberRow("layout-padding-left", "Padding Left", selected.layout.padding.left, (left) =>
+          onPatchLayout(selected.id, {
+            ...selected.layout,
+            padding: { ...selected.layout.padding, left },
+          }),
+        ),
+        numberRow("layout-padding-right", "Padding Right", selected.layout.padding.right, (right) =>
+          onPatchLayout(selected.id, {
+            ...selected.layout,
+            padding: { ...selected.layout.padding, right },
+          }),
+        ),
+        numberRow("layout-padding-top", "Padding Top", selected.layout.padding.top, (top) =>
+          onPatchLayout(selected.id, {
+            ...selected.layout,
+            padding: { ...selected.layout.padding, top },
+          }),
+        ),
+        numberRow(
+          "layout-padding-bottom",
+          "Padding Bottom",
+          selected.layout.padding.bottom,
+          (bottom) =>
+            onPatchLayout(selected.id, {
+              ...selected.layout,
+              padding: { ...selected.layout.padding, bottom },
+            }),
+        ),
+        ...(parent?.kind === "Canvas"
+          ? [
+              {
+                id: "ignore-safe-area",
+                kind: "boolean" as const,
+                label: "Ignore Safe Area",
+                value: selected.ignoreSafeArea === true,
+                onChange: (ignoreSafeArea: boolean) =>
+                  onPatchWidget(selected.id, { ignoreSafeArea }),
+              },
+            ]
+          : []),
       ];
 
   const styleRows: PropertyRow[] = [
@@ -192,51 +233,15 @@ export function UiDesignDetails({
 
   const advanced: PropertyRow[] = [
     {
-      id: "raw-anchor-min",
+      id: "transform-center",
       kind: "vector3",
-      label: "Anchor Min",
-      value: [selected.layout.anchorMin.x, selected.layout.anchorMin.y, 0],
+      label: "Transform Center",
+      value: [selected.layout.transformCenter.x, selected.layout.transformCenter.y, 0],
       axes: ["X", "Y"],
       onChange: ([x, y]) =>
         onPatchLayout(selected.id, {
           ...selected.layout,
-          anchorMin: { x: clamp01(x), y: clamp01(y) },
-        }),
-    },
-    {
-      id: "raw-anchor-max",
-      kind: "vector3",
-      label: "Anchor Max",
-      value: [selected.layout.anchorMax.x, selected.layout.anchorMax.y, 0],
-      axes: ["X", "Y"],
-      onChange: ([x, y]) =>
-        onPatchLayout(selected.id, {
-          ...selected.layout,
-          anchorMax: { x: clamp01(x), y: clamp01(y) },
-        }),
-    },
-    {
-      id: "raw-offset-min",
-      kind: "vector3",
-      label: "Offset Min",
-      value: [selected.layout.offsetMin.x, selected.layout.offsetMin.y, 0],
-      axes: ["X", "Y"],
-      onChange: ([x, y]) =>
-        onPatchLayout(selected.id, {
-          ...selected.layout,
-          offsetMin: { x, y },
-        }),
-    },
-    {
-      id: "raw-offset-max",
-      kind: "vector3",
-      label: "Offset Max",
-      value: [selected.layout.offsetMax.x, selected.layout.offsetMax.y, 0],
-      axes: ["X", "Y"],
-      onChange: ([x, y]) =>
-        onPatchLayout(selected.id, {
-          ...selected.layout,
-          offsetMax: { x, y },
+          transformCenter: { x: clamp01(x), y: clamp01(y) },
         }),
     },
   ];
