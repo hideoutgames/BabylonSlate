@@ -6,8 +6,10 @@ import {
   actorIdFromMeshName,
   applyActorTransform,
   createActorMesh,
+  editorMeshKindOf,
 } from "./scene-loader";
 import { syncAuthoredIllumination } from "./scene-illumination";
+import { applyEditorBillboardFromActor } from "./editor-billboard";
 import { applySortingToMesh, resolveSortingLayer } from "./sorting";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
@@ -25,42 +27,6 @@ function spriteSortingOf(
     layer: typeof layer === "string" ? layer : "Default",
     orderInLayer: typeof order === "number" ? order : 0,
   };
-}
-
-function meshKindOf(actor: SerializedActor): string | null {
-  const meshComponent = actor.components.find(
-    (entry) => entry.classId === "MeshComponent",
-  );
-  const spriteComponent = actor.components.find(
-    (entry) => entry.classId === "SpriteComponent",
-  );
-  const tilemapComponent = actor.components.find(
-    (entry) => entry.classId === "TilemapComponent",
-  );
-  const lightComponent = actor.components.find(
-    (entry) => entry.classId === "LightComponent",
-  );
-  const cameraComponent = actor.components.find(
-    (entry) => entry.classId === "CameraComponent",
-  );
-  const asset =
-    (typeof meshComponent?.properties.assetGuid === "string" &&
-      meshComponent.properties.assetGuid) ||
-    (typeof spriteComponent?.properties.assetGuid === "string" &&
-      spriteComponent.properties.assetGuid) ||
-    (typeof tilemapComponent?.properties.assetGuid === "string" &&
-      tilemapComponent.properties.assetGuid) ||
-    "";
-  if (typeof meshComponent?.properties.meshKind === "string") {
-    return `${meshComponent.properties.meshKind}:${asset}`;
-  }
-  if (spriteComponent) return `sprite:${asset}`;
-  if (tilemapComponent) return `tilemap:${asset}`;
-  if (lightComponent) {
-    return `light:${String(lightComponent.properties.lightKind ?? "point")}`;
-  }
-  if (cameraComponent) return "camera";
-  return null;
 }
 
 /**
@@ -103,7 +69,7 @@ export class EditorSceneSync {
 
     for (const actor of sceneData.actors) {
       this.liveIds.add(actor.id);
-      const kind = meshKindOf(actor);
+      const kind = editorMeshKindOf(actor);
       let mesh = this.meshes.get(actor.id);
       if (mesh && this.meshKinds.get(actor.id) !== kind) {
         mesh.dispose();
@@ -115,6 +81,7 @@ export class EditorSceneSync {
         this.meshKinds.set(actor.id, kind);
       }
       applyActorTransform(mesh, actor);
+      applyEditorBillboardFromActor(mesh, actor);
 
       const sorting = spriteSortingOf(actor);
       if (sorting) {
