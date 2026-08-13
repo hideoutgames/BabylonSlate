@@ -13,9 +13,9 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 ## 1. Where the project stands today
 
-P0–P6 are landed. P7 physics backends and Play scene load are landed. The first P8 slice (`p8-command-system`) is landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
+P0–P8 are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** remaining P8 — `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`. Parked: `p1-device-spikes` (hardware-only). Do not start P9+ packages.
+**Next engine slice:** P9 content systems (`ui-runtime`, then anim/shader graphs). Parked: `p1-device-spikes` (hardware-only). Do not start P9+ packages from leftover editor polish.
 
 **Landed (do not rebuild):**
 - **Editor shell.** Two-row chrome in [apps/editor/src/components/editor-chrome-bar.tsx](apps/editor/src/components/editor-chrome-bar.tsx): title/tab bar (truncated project name with `.babproject` stripped, pinned Content Browser, no tab-bar Add) and a global toolbar (Save All with dirty dot, Undo, Redo, **Compile** plus **Compilation Error** on graph documents, Play, **Debug** with Always Render in DEV/test, **Windows** immediately left of Focus, Focus, Search, Settings). Per-document Dockview in [apps/editor/src/shell/dockview-shell.tsx](apps/editor/src/shell/dockview-shell.tsx); Windows restores last `layout.json` placements. Homepage owns create/open/close/recents; the shell runs only against an open project.
@@ -25,7 +25,7 @@ P0–P6 are landed. P7 physics backends and Play scene load are landed. The firs
 - **Object model and Play (P3–P4).** Headless World/tick; SAB + transferable bridge; game worker; snapshot-driven renderer; visibility-gated editor loop; LRU resource cache; fullscreen Play overlay; Preview session report.
 - **Scripting and scene editing (P5–P6).** Graph IR, validator, JS codegen, node catalog, touch graph UI; outliner/details/gizmos; 2D/3D viewport toggle; input mappings; global Search.
 - **Physics (P7).** `@babylonslate/physics` in the game worker (Havok 3D + Rapier 2D); Play loads authored `SerializedScene` actors. `physics.moveCharacter` takes an Actor, lazily creates a character controller on that actor’s rigid body, and applies the resolved transform the same tick.
-- **Debugger (partial P8).** `@babylonslate/debugger` command registry, parser, `ExecuteConsoleCommand`. Play overlay already shows FPS + `scriptMs` / `physicsMs`; Output Log, keyed Print, and the session report already shipped. Remaining P8 **extends** those — it does not replace them. See [architecture/debugger.md](architecture/debugger.md).
+- **Debugger (P8).** `@babylonslate/debugger` command registry, parser, `ExecuteConsoleCommand`, `BDebugCommand` (core-tier user commands), Play console + 5 Hz stats HUD, and `.babtrace` recorder/replay. Output Log, keyed Print, and the session report already shipped in P4/P5 and are consumed rather than replaced. See [architecture/debugger.md](architecture/debugger.md).
 - **CI.** `verify.yml` (typecheck, lint, Vitest with coverage, Playwright, VitePress docs) plus `preview.yml` (GitHub Pages: editor at `/`, docs at `/docs/`). A deployed URL is the practical iPad loop without a Mac.
 - **Touch chrome.** `--chrome-row` 28px, graph pin rows `--touch-target` 44px, [.cursor/rules/touch-editor.md](.cursor/rules/touch-editor.md).
 
@@ -1122,14 +1122,14 @@ Granular tasks tracked against the roadmap in section 18. Update checkboxes as s
 > - Query quality: Rapier `shapeSweep` approximates lineTrace; Havok `sphereOverlap` uses AABB.
 > - Per-backend **file** goldens are not required (Havok vs Rapier numeric drift); within-backend reproducibility stays in [physics.md](architecture/physics.md).
 > - Software AABB is the wasm-failure path; do not add `planck.js`. Software character controllers now work in both 2D and 3D.
-> - Full 5 Hz stats HUD is **P8** `p8-console-hud`; tilemap merged chain colliders are **P10**.
+> - Full 5 Hz stats HUD landed in **P8** `p8-console-hud`; tilemap merged chain colliders are **P10**.
 
 ### P8
 
 - [x] **p8-command-system** — P8: debugger package command registry with core and debug tiers, parser and argument coercion, core commands (changescene, renderquality, shadowquality, resolutionscale, framecap, volume, quit) present in every build, debug tier tree-shaken out of non-debug exports, ExecuteConsoleCommand node returning success and output with a compile-time warning when a graph references a debug-tier command
-- [ ] **p8-bdebugcommand** — P8: BDebugCommand object base class with command name, description, category and a typed parameter list driving generated OnCommandRun pins; registry discovery through the parent chain; user commands shipped in every export; the parameter-list editor extracted as the shared row-list component also used by ExecuteJavaScript, Class panel function signatures and ScriptInterface
-- [ ] **p8-console-hud** — P8: debug console with history, argument hints and registry-driven autocomplete including enum value completion, as an iPad bottom sheet with the accessory key bar and SelectableText transcript; stats HUD at 5Hz covering frame time split across main-thread render, the script phase and the physics phase (separated even though both run in the game worker, because they share one budget), the combined tick flagged against the section 1.2 budget, memory including how much texture memory is compressed, draw calls, object counts and per-channel bridge traffic
-- [ ] **p8-trace-recorder** — P8: debug snapshot recorder - capped in-memory buffer spilling to a .babtrace file reusing the container format, capturing stats, log and print events, world snapshots, the input stream and the RNG seed; playback document tab with scrubbable timeline, graphs and time-filtered log; replay of a recorded trace through the headless deterministic harness
+- [x] **p8-bdebugcommand** — P8: BDebugCommand object base class with command name, description, category and a typed parameter list driving generated OnCommandRun pins; registry discovery through the parent chain; user commands shipped in every export; the parameter-list editor extracted as the shared row-list component also used by ExecuteJavaScript, Class panel function signatures and ScriptInterface
+- [x] **p8-console-hud** — P8: debug console with history, argument hints and registry-driven autocomplete including enum value completion, as an iPad bottom sheet with the accessory key bar and SelectableText transcript; stats HUD at 5Hz covering frame time split across main-thread render, the script phase and the physics phase (separated even though both run in the game worker, because they share one budget), the combined tick flagged against the section 1.2 budget, memory including how much texture memory is compressed, draw calls, object counts and per-channel bridge traffic
+- [x] **p8-trace-recorder** — P8: debug snapshot recorder - capped in-memory buffer spilling to a .babtrace file reusing the container format, capturing stats, log and print events, world snapshots, the input stream and the RNG seed; playback document tab with scrubbable timeline, graphs and time-filtered log; replay of a recorded trace through the headless deterministic harness
 
 ### P9
 

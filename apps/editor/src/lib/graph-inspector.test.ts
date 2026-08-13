@@ -4,7 +4,11 @@ import {
   connectedInputPinIds,
   inspectorLiteralPinDefaults,
   logNodePropertyRows,
+  parameterRowsFromPinList,
+  parameterTypeFromPin,
   pinDefaultPropertyRows,
+  pinListFromParameterRows,
+  pinTypeFromParameterType,
   pinsFromNodeData,
 } from "./graph-inspector";
 
@@ -100,5 +104,27 @@ describe("logNodePropertyRows", () => {
     const severity = rows[0];
     if (severity?.kind === "enum") severity.onChange("error");
     expect(onPatch).toHaveBeenCalledWith({ severity: "error" });
+  });
+});
+
+describe("parameter list conversion", () => {
+  it("round-trips ExecuteJavaScript pin types through ParameterRow", () => {
+    const rows = parameterRowsFromPinList(
+      [
+        { name: "health", type: { kind: "float" } },
+        { name: "label", type: { kind: "string" } },
+      ],
+      "in",
+    );
+    expect(rows).toEqual([
+      { id: "in-0-health", name: "health", type: "float" },
+      { id: "in-1-label", name: "label", type: "string" },
+    ]);
+    expect(pinListFromParameterRows(rows)).toEqual([
+      { name: "health", type: FLOAT },
+      { name: "label", type: STRING },
+    ]);
+    expect(parameterTypeFromPin("enum")).toBe("enum");
+    expect(pinTypeFromParameterType("enum")).toEqual(STRING);
   });
 });

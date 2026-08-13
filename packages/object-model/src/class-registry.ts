@@ -77,6 +77,13 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
+    this.register({
+      id: "BDebugCommand",
+      parentClassId: "BObject",
+      kind: "other",
+      variables: [],
+      implementedInterfaces: [],
+    });
     for (const id of ENGINE_COMPONENT_CLASS_IDS) {
       this.register({
         id,

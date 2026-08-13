@@ -56,7 +56,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
 | **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component. |
 | **TypeVisualIcon** | Colored Lucide glyph for an asset / class family (`resolveTypeVisual`). | Outliner, Details, Prefab, Content Browser, global search, Place Actors, Add Component, AssetPicker, document tabs. |
-| **ParameterListEditor** | Named, typed, reorderable pin/parameter rows. | Inspector Execute JavaScript; Class / ScriptInterface signatures. |
+| **ParameterListEditor** | Named, typed, reorderable pin/parameter rows (type, optional, default, enum, up/down). | Inspector Execute JavaScript Inputs/Outputs; Event On Command Run / BDebugCommand; Class / ScriptInterface signatures. |
 | **SelectableText** | Opt-in selectable span inside a `user-select: none` shell. | Logs, compiler messages, Play overlay copy, gallery code snippets. |
 | **ContextMenuOverlay** | Pointer-anchored menu driven by `useContextMenu` (500ms hold or `contextmenu`). | Viewport, Outliner, Content Browser. |
 

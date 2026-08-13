@@ -257,4 +257,44 @@ describe("script host runs compiled graphs", () => {
     void EXEC;
     void pin;
   });
+
+  it("runs OnCommandRun from the console and ExecuteConsoleCommand", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "run", "flow.event.commandRun", {
+          parameters: [{ name: "amount", type: "float" }],
+        }),
+        node(registry, "report", "debug.reportCommand", {
+          success: true,
+          output: "ok",
+        }),
+      ],
+      edges: [edge("e1", "run", "execOut", "report", "execIn")],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 4,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      includeDebugCommands: false,
+    });
+    await runtime.loadScripts([
+      {
+        ...toScript(graph, registry, "HealCommand", "heal-asset"),
+        command: {
+          name: "heal",
+          description: "Heal",
+          category: "game",
+          parameters: [{ name: "amount", type: "float" }],
+        },
+      },
+    ]);
+    expect(runtime.executeConsoleCommand("heal 3")).toEqual({
+      success: true,
+      output: "ok",
+    });
+    runtime.stop();
+  });
 });

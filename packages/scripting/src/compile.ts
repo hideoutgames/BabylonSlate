@@ -13,11 +13,12 @@ export type CompileAnchor = {
 };
 
 /** Lifecycle events an entry node can bind to at runtime. */
-export type ScriptEventName = "onBeginPlay" | "onTick";
+export type ScriptEventName = "onBeginPlay" | "onTick" | "onCommandRun";
 
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
+  "flow.event.commandRun": "onCommandRun",
 };
 
 export type CompiledEntryPoint = {

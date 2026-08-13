@@ -186,4 +186,20 @@ export const debugNodes: NodeDefinition[] = [
       );
     },
   },
+  {
+    id: "debug.reportCommand",
+    title: "Report Command",
+    category: "debug",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("success", "success", "in", BOOL),
+      pin("output", "output", "in", STRING),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `ctx.reportCommand(${ctx.input("success")}, ${ctx.input("output")});`,
+      );
+    },
+  },
 ];

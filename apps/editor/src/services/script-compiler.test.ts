@@ -87,6 +87,52 @@ describe("script compiler service", () => {
       { classId: "main" },
     ]);
   });
+
+  it("compiles OnCommandRun into a core console command and does not spawn an actor", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "run",
+          type: "flow.event.commandRun",
+          position: { x: 0, y: 0 },
+          data: {
+            commandName: "heal",
+            description: "Heal the player",
+            category: "game",
+            parameters: [{ name: "amount", type: "float" }],
+          },
+        },
+        {
+          id: "report",
+          type: "debug.reportCommand",
+          position: { x: 200, y: 0 },
+          data: { success: true, output: "ok" },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "run",
+          target: "report",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    const script = compileGraphDocument(graph, {
+      path: "assets/HealCommand.graph.babasset",
+    });
+    expect(script?.command).toEqual({
+      name: "heal",
+      description: "Heal the player",
+      category: "game",
+      parameters: [{ name: "amount", type: "float" }],
+    });
+    expect(script?.entryPoints.some((entry) => entry.event === "onCommandRun")).toBe(
+      true,
+    );
+    expect(spawnListForScripts([script!])).toEqual([]);
+  });
 });
 
 describe("graphCompileSignature", () => {

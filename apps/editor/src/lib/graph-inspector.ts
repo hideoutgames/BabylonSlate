@@ -1,6 +1,14 @@
-import type { PropertyRow } from "@babylonslate/editor-kit";
-import type { GraphPin, LiteralPinDefault } from "@babylonslate/scripting";
+import type {
+  ParameterRow,
+  ParameterValueType,
+  PropertyRow,
+} from "@babylonslate/editor-kit";
+import type { GraphPin, LiteralPinDefault, PinType } from "@babylonslate/scripting";
 import {
+  BOOL,
+  FLOAT,
+  INT,
+  STRING,
   colorRgbToPinDefault,
   defaultJsValue,
   listUnconnectedLiteralPinDefaults,
@@ -170,4 +178,97 @@ export function logNodePropertyRows(
       onChange: (value) => onPatch({ category: value }),
     },
   ];
+}
+
+const PARAMETER_TYPES = new Set<ParameterValueType>([
+  "string",
+  "float",
+  "int",
+  "bool",
+  "enum",
+]);
+
+export function parameterTypeFromPin(type: unknown): ParameterValueType {
+  if (typeof type === "string" && PARAMETER_TYPES.has(type as ParameterValueType)) {
+    return type as ParameterValueType;
+  }
+  if (type && typeof type === "object" && "kind" in type) {
+    const kind = (type as { kind: string }).kind;
+    if (PARAMETER_TYPES.has(kind as ParameterValueType)) {
+      return kind as ParameterValueType;
+    }
+  }
+  return "float";
+}
+
+export function pinTypeFromParameterType(type: ParameterValueType): PinType {
+  switch (type) {
+    case "string":
+    case "enum":
+      return STRING;
+    case "int":
+      return INT;
+    case "bool":
+      return BOOL;
+    default:
+      return FLOAT;
+  }
+}
+
+export function parameterRowsFromPinList(
+  rows: ReadonlyArray<{ name: string; type?: unknown }>,
+  prefix: string,
+): ParameterRow[] {
+  return rows.map((row, index) => ({
+    id: `${prefix}-${index}-${row.name}`,
+    name: row.name,
+    type: parameterTypeFromPin(row.type),
+  }));
+}
+
+export function pinListFromParameterRows(
+  rows: readonly ParameterRow[],
+): Array<{ name: string; type: PinType }> {
+  return rows.map((row) => ({
+    name: row.name,
+    type: pinTypeFromParameterType(row.type),
+  }));
+}
+
+export function commandParameterRows(
+  rows: ReadonlyArray<{
+    name: string;
+    type?: unknown;
+    optional?: boolean;
+    defaultValue?: unknown;
+    enumValues?: unknown;
+  }>,
+): ParameterRow[] {
+  return rows.map((row, index) => ({
+    id: `cmd-${index}-${row.name}`,
+    name: row.name,
+    type: parameterTypeFromPin(row.type),
+    optional: row.optional === true,
+    defaultValue:
+      row.defaultValue == null ? undefined : String(row.defaultValue),
+    enumValues: Array.isArray(row.enumValues)
+      ? row.enumValues.filter((value): value is string => typeof value === "string")
+      : undefined,
+  }));
+}
+
+export function commandParametersFromRows(rows: readonly ParameterRow[]): Array<{
+  name: string;
+  type: ParameterValueType;
+  optional?: boolean;
+  defaultValue?: string;
+  enumValues?: string[];
+}> {
+  return rows.map((row) => ({
+    name: row.name,
+    type: row.type,
+    optional: row.optional,
+    defaultValue: row.defaultValue,
+    enumValues: row.enumValues ? [...row.enumValues] : undefined,
+  }));
 }

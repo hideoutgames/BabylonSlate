@@ -28,7 +28,7 @@ packages/object-model/ World, actors, tick, class registry
 packages/physics/     Havok 3D + Rapier 2D (game worker)
 packages/bridge/      SAB + transferable transports
 packages/runtime/     Game worker + in-process driver
-packages/debugger/    Console command registry (P8)
+packages/debugger/    Console command registry, BDebugCommand, stats HUD helpers, trace recorder (P8)
 packages/input/       Action/axis mappings
 packages/render/      Snapshot sync, resource cache, editor tools
 packages/scripting/   Graph IR, validator, JS codegen

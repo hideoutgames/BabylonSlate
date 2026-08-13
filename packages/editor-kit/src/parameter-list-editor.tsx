@@ -1,9 +1,35 @@
-import { useState, type ChangeEvent } from "react";
+import { useState } from "react";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
+import { Checkbox } from "@babylonslate/ui/components/checkbox";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
+import { Input } from "@babylonslate/ui/components/input";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@babylonslate/ui/components/toggle-group";
+
+export const PARAMETER_VALUE_TYPES = [
+  "string",
+  "float",
+  "int",
+  "bool",
+  "enum",
+] as const;
+
+export type ParameterValueType = (typeof PARAMETER_VALUE_TYPES)[number];
 
 export type ParameterRow = {
   id: string;
   name: string;
-  typeLabel: string;
+  type: ParameterValueType;
+  optional?: boolean;
+  defaultValue?: string;
+  enumValues?: readonly string[];
 };
 
 export type ParameterListEditorProps = {
@@ -11,6 +37,43 @@ export type ParameterListEditorProps = {
   onChange: (rows: ParameterRow[]) => void;
   title?: string;
 };
+
+const TYPE_LABEL: Record<ParameterValueType, string> = {
+  string: "String",
+  float: "Float",
+  int: "Int",
+  bool: "Bool",
+  enum: "Enum",
+};
+
+function patchRow(
+  rows: ParameterRow[],
+  id: string,
+  patch: Partial<ParameterRow>,
+): ParameterRow[] {
+  return rows.map((row) => (row.id === id ? { ...row, ...patch } : row));
+}
+
+function moveRow(
+  rows: ParameterRow[],
+  index: number,
+  delta: number,
+): ParameterRow[] {
+  const nextIndex = index + delta;
+  if (nextIndex < 0 || nextIndex >= rows.length) return rows;
+  const next = [...rows];
+  const current = next[index]!;
+  next[index] = next[nextIndex]!;
+  next[nextIndex] = current;
+  return next;
+}
+
+function parseEnumValues(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
 
 /** Shared typed named reorderable row list (ExecuteJavaScript, My Class, interfaces). */
 export function ParameterListEditor({
@@ -24,46 +87,151 @@ export function ParameterListEditor({
     <div className="flex flex-col gap-2" data-testid="parameter-list-editor">
       <div className="text-sm font-medium">{title}</div>
       {rows.map((row, index) => (
-        <div
+        <FieldGroup
           key={row.id}
-          className="flex min-h-11 items-center gap-2 rounded-md border border-border px-2"
+          className="rounded-md border border-border p-2"
         >
-          <input
-            className="min-h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-            value={row.name}
-            aria-label={`Parameter ${index + 1} name`}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-              const next = rows.map((r) =>
-                r.id === row.id ? { ...r, name: e.target.value } : r,
-              );
-              onChange(next);
-            }}
-          />
-          <span className="text-xs text-muted-foreground">{row.typeLabel}</span>
-          <button
-            type="button"
-            className="min-h-11 rounded-md px-2 text-sm hover:bg-muted"
-            aria-label={`Remove ${row.name}`}
-            onClick={() => onChange(rows.filter((r) => r.id !== row.id))}
-          >
-            Remove
-          </button>
-        </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Field className="min-w-32 flex-1">
+              <FieldLabel htmlFor={`parameter-${row.id}-name`}>Name</FieldLabel>
+              <Input
+                id={`parameter-${row.id}-name`}
+                className="min-h-11"
+                value={row.name}
+                aria-label={`Parameter ${index + 1} name`}
+                onChange={(event) =>
+                  onChange(patchRow(rows, row.id, { name: event.target.value }))
+                }
+              />
+            </Field>
+            <Button
+              type="button"
+              variant="ghost"
+              size="touch-icon"
+              aria-label={`Move ${row.name} up`}
+              data-testid={`parameter-${row.id}-move-up`}
+              disabled={index === 0}
+              onClick={() => onChange(moveRow(rows, index, -1))}
+            >
+              <ChevronUpIcon />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="touch-icon"
+              aria-label={`Move ${row.name} down`}
+              data-testid={`parameter-${row.id}-move-down`}
+              disabled={index === rows.length - 1}
+              onClick={() => onChange(moveRow(rows, index, 1))}
+            >
+              <ChevronDownIcon />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="touch"
+              aria-label={`Remove ${row.name}`}
+              onClick={() => onChange(rows.filter((entry) => entry.id !== row.id))}
+            >
+              Remove
+            </Button>
+          </div>
+          <Field>
+            <FieldLabel>Type</FieldLabel>
+            <ToggleGroup
+              variant="outline"
+              size="touch"
+              spacing={1}
+              value={[row.type]}
+              onValueChange={(value) => {
+                const next = value[0] as ParameterValueType | undefined;
+                if (!next) return;
+                onChange(patchRow(rows, row.id, { type: next }));
+              }}
+              aria-label={`Parameter ${row.name} type`}
+            >
+              {PARAMETER_VALUE_TYPES.map((type) => (
+                <ToggleGroupItem
+                  key={type}
+                  value={type}
+                  aria-label={TYPE_LABEL[type]}
+                  data-testid={`parameter-${row.id}-type-${type}`}
+                >
+                  {TYPE_LABEL[type]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </Field>
+          <div className="flex flex-wrap items-center gap-2">
+            <Field orientation="horizontal">
+              <Checkbox
+                id={`parameter-${row.id}-optional`}
+                checked={row.optional === true}
+                onCheckedChange={(checked) =>
+                  onChange(
+                    patchRow(rows, row.id, { optional: checked === true }),
+                  )
+                }
+                data-testid={`parameter-${row.id}-optional`}
+              />
+              <FieldLabel htmlFor={`parameter-${row.id}-optional`}>
+                Optional
+              </FieldLabel>
+            </Field>
+            <Field className="min-w-32 flex-1">
+              <FieldLabel htmlFor={`parameter-${row.id}-default`}>
+                Default
+              </FieldLabel>
+              <Input
+                id={`parameter-${row.id}-default`}
+                className="min-h-11"
+                value={row.defaultValue ?? ""}
+                data-testid={`parameter-${row.id}-default`}
+                onChange={(event) =>
+                  onChange(
+                    patchRow(rows, row.id, { defaultValue: event.target.value }),
+                  )
+                }
+              />
+            </Field>
+          </div>
+          {row.type === "enum" ? (
+            <Field>
+              <FieldLabel htmlFor={`parameter-${row.id}-enum-values`}>
+                Enum Values
+              </FieldLabel>
+              <Input
+                id={`parameter-${row.id}-enum-values`}
+                className="min-h-11"
+                value={(row.enumValues ?? []).join(", ")}
+                data-testid={`parameter-${row.id}-enum-values`}
+                placeholder="low, medium, high"
+                onChange={(event) =>
+                  onChange(
+                    patchRow(rows, row.id, {
+                      enumValues: parseEnumValues(event.target.value),
+                    }),
+                  )
+                }
+              />
+            </Field>
+          ) : null}
+        </FieldGroup>
       ))}
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Add parameter</label>
+      <Field>
+        <FieldLabel htmlFor="parameter-add-name">Add Parameter</FieldLabel>
         <div className="flex gap-2">
-          <input
-            className="min-h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+          <Input
+            id="parameter-add-name"
+            className="min-h-11 min-w-0 flex-1"
             value={draftName}
-            onChange={(e: ChangeEvent<HTMLInputElement>) =>
-              setDraftName(e.target.value)
-            }
+            onChange={(event) => setDraftName(event.target.value)}
             placeholder="name"
           />
-          <button
+          <Button
             type="button"
-            className="min-h-11 rounded-md border border-border px-3 text-sm hover:bg-muted"
+            variant="outline"
+            size="touch"
             onClick={() => {
               const name = draftName.trim();
               if (!name) return;
@@ -72,16 +240,16 @@ export function ParameterListEditor({
                 {
                   id: `p_${Date.now()}`,
                   name,
-                  typeLabel: "float",
+                  type: "float",
                 },
               ]);
               setDraftName("");
             }}
           >
             Add
-          </button>
+          </Button>
         </div>
-      </div>
+      </Field>
     </div>
   );
 }

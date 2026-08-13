@@ -142,7 +142,10 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Play now validates the compiled project graph set (`collectPlayPreviewScripts`); startup-map / GameInstance / plugin EUO sweep still deferred |
 | Graph ownership by class asset | later polish (`assets`, editor) | Class ids currently derived from graph file name |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
-| ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed in `@babylonslate/debugger` (`p8-command-system`); console HUD / BDebugCommand remain |
+| ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed (`p8-command-system`) |
+| BDebugCommand + parameter list | P8 | Landed (`p8-bdebugcommand`) |
+| Play console + stats HUD | P8 | Landed (`p8-console-hud`) |
+| Trace recorder / `.babtrace` | P8 | Landed (`p8-trace-recorder`) |
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export | Print works; export strip preset + HUD polish deferred |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio / UI node runtime helpers beyond stubs | P9 | Catalog nodes exist; runtime helpers are inert stubs until content systems |
@@ -193,15 +196,15 @@ Design notes: [physics.md](../architecture/physics.md).
 
 ## P8 slice ownership
 
-`p8-command-system` has landed (`@babylonslate/debugger` registry + parser, runtime `executeConsoleCommand`, compile-time debug-tier warning). Remaining: `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`.
+`p8-command-system`, `p8-bdebugcommand`, `p8-console-hud`, and `p8-trace-recorder` have landed. P8 does not depend on further physics work.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | Design notes | — | `docs/architecture/debugger.md` | Play scene load |
 | Command registry | `p8-command-system` (done) | `debugger`, `runtime`, `apps/editor` (graph validation) | Design notes |
-| BDebugCommand + parameter list | `p8-bdebugcommand` | `object-model`, `editor-kit`, `debugger`, `apps/editor` | Command registry |
-| Console + stats HUD | `p8-console-hud` | `debugger`, `apps/editor`, `render` | Command registry |
-| Trace recorder | `p8-trace-recorder` | `debugger`, `assets` (container), `test-kit` | Command registry |
+| BDebugCommand + parameter list | `p8-bdebugcommand` (done) | `object-model`, `editor-kit`, `debugger`, `apps/editor` | Command registry |
+| Console + stats HUD | `p8-console-hud` (done) | `debugger`, `apps/editor`, `render` | Command registry |
+| Trace recorder | `p8-trace-recorder` (done) | `debugger`, `assets` (container), `runtime` | Command registry |
 
 Design notes: [debugger.md](../architecture/debugger.md).
 

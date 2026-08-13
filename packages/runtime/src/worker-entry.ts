@@ -73,6 +73,15 @@ function handleControl(msg: ControlMessage): void {
       if (msg.paused) ensureRuntime().pause();
       else ensureRuntime().resume();
       return;
+    case "console": {
+      const result = ensureRuntime().executeConsoleCommand(msg.line);
+      onCommand({
+        type: "consoleResult",
+        success: result.success,
+        output: result.output,
+      });
+      return;
+    }
   }
 }
 

@@ -29,6 +29,7 @@ export {
   type ControlMessage,
   type ScriptAnchorPayload,
   type ScriptBundleEntry,
+  type ScriptConsoleCommand,
 } from "./channels";
 export {
   createRpcHost,

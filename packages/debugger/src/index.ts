@@ -18,3 +18,12 @@ export {
   type ConsoleCommandDiagnostic,
   type ConsoleCommandGraph,
 } from "./validation";
+export { createUserCommand, type UserCommandDef } from "./user-commands";
+export { suggestConsoleCompletions } from "./autocomplete";
+export { TICK_BUDGET_MS, isTickOverBudget } from "./stats";
+export {
+  TraceRecorder,
+  type TraceFrame,
+  type TracePayload,
+  type TraceRecorderOptions,
+} from "./trace-recorder";

@@ -163,8 +163,10 @@ Ship with the catalog but own dedicated designs (not one-line templates):
 | **Log** | Severity + category → runtime log / Output Log / ring buffer |
 | **Print** | Boxed wildcard via `formatValue`; colour + duration; keyed registry replaces in place; worker sends command, HUD draws; export may strip or degrade to log |
 | **ExecuteConsoleCommand** | Runs through `@babylonslate/debugger` command registry; returns success + output; compile-time warning when a literal names a debug-tier command |
+| **Event On Command Run** | `BDebugCommand` entry; output pins from the parameter list; compiles to `onCommandRun` |
+| **Report Command** | Sets the console success flag + output string for `OnCommandRun` |
 
-Shared **parameter-list editor** (typed named reorderable rows) lives in `editor-kit` — reused by ExecuteJavaScript, Class panel function signatures, ScriptInterface, and later `BDebugCommand`.
+Shared **parameter-list editor** (typed named reorderable rows: type, optional, default, enum, up/down) lives in `editor-kit` — reused by ExecuteJavaScript Inputs/Outputs, Class / ScriptInterface signatures, and `BDebugCommand` / Event On Command Run.
 
 ## Node catalog (`scripting-nodes`)
 
@@ -277,6 +279,7 @@ An actor scripted in the editor compiles and runs in the worker; a type mismatch
 | --- | --- |
 | Full physics / input node behaviour | Queries, impulse, and `physics.moveCharacter` done (P7) |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 (`p8-command-system` landed) |
+| BDebugCommand / OnCommandRun / Play console + trace | P8 (landed) |
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export |
 | Behaviour-tree validation rules | P11 |
 | Shader / AnimationGraph validators | P9 |
