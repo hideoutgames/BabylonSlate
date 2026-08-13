@@ -1,6 +1,6 @@
 import type { SerializedGraph } from "@babylonslate/core";
-import type { AnimGraphDocument } from "./graph";
-import { createDefaultAnimGraph } from "./graph";
+import type { AnimGraphDocument, AnimTransition } from "./graph";
+import { createDefaultAnimGraph, defaultAnimStatePosition } from "./graph";
 
 export type AnimGraphPin = {
   id: string;
@@ -43,12 +43,40 @@ export function animPaletteNodes(): Array<{
   ];
 }
 
+function transitionPairKey(fromStateId: string, toStateId: string): string {
+  return `${fromStateId}\0${toStateId}`;
+}
+
+function mergeTransitions(
+  edges: SerializedGraph["edges"],
+  previous: readonly AnimTransition[],
+): AnimTransition[] {
+  const byId = new Map(previous.map((row) => [row.id, row]));
+  const byPair = new Map(
+    previous.map((row) => [transitionPairKey(row.fromStateId, row.toStateId), row]),
+  );
+  return edges.map((edge) => {
+    const prev =
+      byId.get(edge.id) ??
+      byPair.get(transitionPairKey(edge.source, edge.target));
+    return {
+      id: edge.id,
+      fromStateId: edge.source,
+      toStateId: edge.target,
+      condition: prev?.condition,
+      blendSeconds: prev?.blendSeconds ?? 0.1,
+      hasExitTime: prev?.hasExitTime ?? false,
+      exitTime: prev?.exitTime ?? 0,
+    };
+  });
+}
+
 export function animGraphToSerialized(doc: AnimGraphDocument): SerializedGraph {
   return {
     nodes: doc.states.map((state, index) => ({
       id: state.id,
       type: "anim.state",
-      position: { x: 80 + index * 220, y: 80 },
+      position: state.position ?? defaultAnimStatePosition(index),
       data: {
         title: state.name,
         clipId: state.clipId,
@@ -71,7 +99,7 @@ export function serializedToAnimGraph(
   graph: SerializedGraph,
   previous: AnimGraphDocument = createDefaultAnimGraph(),
 ): AnimGraphDocument {
-  const states = graph.nodes.map((node) => ({
+  const states = graph.nodes.map((node, index) => ({
     id: node.id,
     name:
       typeof node.data.title === "string" ? node.data.title : node.id,
@@ -79,6 +107,7 @@ export function serializedToAnimGraph(
       typeof node.data.clipId === "string" ? node.data.clipId : null,
     speed: typeof node.data.speed === "number" ? node.data.speed : 1,
     loop: node.data.loop !== false,
+    position: node.position ?? defaultAnimStatePosition(index),
   }));
   const entry =
     graph.nodes.find((node) => node.data.entry === true)?.id ??
@@ -88,14 +117,7 @@ export function serializedToAnimGraph(
     ...previous,
     entryStateId: entry,
     states,
-    transitions: graph.edges.map((edge) => ({
-      id: edge.id,
-      fromStateId: edge.source,
-      toStateId: edge.target,
-      blendSeconds: 0.1,
-      hasExitTime: false,
-      exitTime: 0,
-    })),
+    transitions: mergeTransitions(graph.edges, previous.transitions),
   };
 }
 
