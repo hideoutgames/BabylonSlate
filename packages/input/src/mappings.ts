@@ -100,6 +100,18 @@ export const DEFAULT_INPUT_MAPPINGS: InputMappings = {
           deadZone: 0.15,
           invert: true,
         },
+        {
+          device: "touch",
+          code: "joystick-x",
+          component: "x",
+          deadZone: 0.15,
+        },
+        {
+          device: "touch",
+          code: "joystick-y",
+          component: "y",
+          deadZone: 0.15,
+        },
       ],
     },
     {

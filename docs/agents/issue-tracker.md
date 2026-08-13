@@ -208,3 +208,33 @@ Design notes: [physics.md](../architecture/physics.md).
 
 Design notes: [debugger.md](../architecture/debugger.md).
 
+### P8 follow-ups / open deferrals
+
+P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`). Do **not** rebuild P8; residual HUD/trace/settings polish is later work.
+
+| Gap vs engineplan §9 | Reality | Owner |
+| --- | --- | --- |
+| Core quality commands “mutate real engine settings” | `consoleHost` still `emitSetting` logs ([debugger.md](../architecture/debugger.md) already says this) | Later polish / P14 player |
+| §9.4 HUD (render ms, invalidations/s, HW scale, texture/geometry/compressed bytes, LRU evictions, actors, per-channel bytes) | `StatsHud` shows fps, script/physics ms, tick-budget flag, one accounted-byte total, mesh/texture counts, draws, aggregate bridge msgs/s | `p8-hud-polish` |
+| Trace as document tab + graphs + derived-data `.babtrace` spill | In-memory + overlay `TracePlayback`; `encodeTraceDocument` exists, editor does not write it | `p8-trace-playback` (P11 needs real input replay) |
+| `ParameterListEditor` on Class / ScriptInterface | Used for ExecuteJavaScript + `OnCommandRun` only | Later polish |
+
+## P9 slice ownership
+
+Design notes land first. Sprite / AnimationGraph / Shader are in Appendix A and §4 but **not** in the P9 acceptance sentence — ship UI + fonts + joystick first so the phase gate can close, then sprite / anim / shader as follow-on PRs.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/ui-runtime.md`, `fonts.md`, `sprites.md`, `anim-graph.md`, `shader-graph.md` | P8 complete |
+| Anchoring + layout | `p9-ui-anchoring` | `ui-runtime` | Design notes |
+| Font payload + registry | `p9-fonts` | `assets`, `core`, `render`, `ui-runtime`, `apps/editor` | Design notes |
+| UserInterface + designer | `p9-ui-system` | `ui-runtime`, `render`, `bridge`, `runtime`, `apps/editor`, `edit` | Anchoring + fonts |
+| Widget library + touch axis | `p9-widget-library` | `ui-runtime`, `input`, `apps/editor` | UI system |
+| Sprite packer + quad | `p9-sprite` | `assets`, `render`, `apps/editor` | Design notes |
+| AnimationGraph | `p9-anim-graph` | `anim-graph`, `runtime`, `render`, `graph-ui`, `apps/editor` | Sprite (clips) + graph-ui host |
+| Shader graph | `p9-shader-graph` | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
+
+Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
+
+**Parallelism:** after design notes, layout goldens (`ui-runtime`), font payload (`assets` / `core` / `render`), and sprite packer (`assets` / `render`) may run concurrently. Do **not** parallelize designer vs widget library vs Play overlay — they all own `apps/editor`. Sequence `p9-ui-system` → `p9-widget-library`. Anim and shader wait on a `graph-ui` host copy; they can run in parallel with each other after sprite (anim) / independently (shader). Thin-instance / merged-static batching stay out of v1.
+

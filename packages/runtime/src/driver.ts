@@ -332,6 +332,9 @@ class InProcessRuntime implements RuntimeDriver {
         if (!target) return;
         this.physicsSync.moveCharacter(target, translation, dt, offset);
       },
+      setWidgetVisible: (widget, visible) => {
+        this.emit({ type: "uiSetVisible", widgetId: widget, visible });
+      },
     });
 
     if (options.seedDemoActors !== false && !options.playScene) {
@@ -508,15 +511,30 @@ class InProcessRuntime implements RuntimeDriver {
     const mesh = actor.components.find(
       (component) => component.classId === "MeshComponent" && !component.destroyed,
     );
-    if (!mesh) return;
-    const meshKind = mesh.getVariable("meshKind");
-    const assetGuid = mesh.assetGuid ?? mesh.getVariable("assetGuid");
-    this.emit({
-      type: "assignMesh",
-      slotId,
-      meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
-      meshKind: typeof meshKind === "string" ? meshKind : null,
-    });
+    const sprite = actor.components.find(
+      (component) =>
+        component.classId === "SpriteComponent" && !component.destroyed,
+    );
+    if (mesh) {
+      const meshKind = mesh.getVariable("meshKind");
+      const assetGuid = mesh.assetGuid ?? mesh.getVariable("assetGuid");
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
+        meshKind: typeof meshKind === "string" ? meshKind : null,
+      });
+      return;
+    }
+    if (sprite) {
+      const assetGuid = sprite.assetGuid ?? sprite.getVariable("assetGuid");
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
+        meshKind: "sprite",
+      });
+    }
   }
 
   private guardScript(run: () => void): void {

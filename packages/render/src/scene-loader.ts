@@ -1,6 +1,7 @@
 import { MeshBuilder, Quaternion, Scene, Vector3 } from "@babylonjs/core";
 import type { Mesh } from "@babylonjs/core";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
+import { createSpriteQuad } from "./sprite-quad";
 
 /** Editor meshes are named so picking can map a hit back to an actor id. */
 export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
@@ -41,6 +42,18 @@ export function createPrimitiveMesh(
       return MeshBuilder.CreateGround(name, { width: 10, height: 10 }, scene);
     case "box":
       return MeshBuilder.CreateBox(name, { size: 1.5 }, scene);
+    case "sprite":
+      return createSpriteQuad(scene, name, {
+        name: "idle",
+        u: 0,
+        v: 0,
+        uSize: 1,
+        vSize: 1,
+        durationMs: 100,
+        pivot: { x: 0.5, y: 0.5 },
+        width: 100,
+        height: 100,
+      });
     default:
       // Actors without a renderable component still need a pickable proxy so
       // they can be selected and transformed in the viewport.
@@ -53,6 +66,12 @@ export function createActorMesh(scene: Scene, actor: SerializedActor): Mesh {
   const meshComponent = actor.components.find(
     (component) => component.classId === "MeshComponent",
   );
+  const spriteComponent = actor.components.find(
+    (component) => component.classId === "SpriteComponent",
+  );
+  if (!meshComponent && spriteComponent) {
+    return createPrimitiveMesh(scene, editorMeshName(actor.id), "sprite");
+  }
   const meshKind =
     typeof meshComponent?.properties.meshKind === "string"
       ? meshComponent.properties.meshKind

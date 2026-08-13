@@ -1,4 +1,5 @@
 import { newAssetGuid } from "../guid";
+import { createFontPayload } from "../font-payload";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 
@@ -60,7 +61,13 @@ export async function importFont(
       version: 1,
       dependencies: [],
       parentClass: null,
-      payload: {},
+      payload: createFontPayload(family, {
+        representations: {
+          source: false,
+          facetype: !isMsdfFile(options.fileName),
+          msdf: isMsdfFile(options.fileName),
+        },
+      }) as unknown as Record<string, unknown>,
       chunks: [{ id: chunkId, kind: chunkKind, mime: "application/json", data: bytes }],
     };
     if (existingGuid) {
@@ -79,7 +86,9 @@ export async function importFont(
       version: 1,
       dependencies: [],
       parentClass: null,
-      payload: {},
+      payload: createFontPayload(baseName(options.fileName), {
+        representations: { source: true, facetype: false, msdf: false },
+      }) as unknown as Record<string, unknown>,
       chunks: [{ id: "source", kind: "font", mime, data: bytes }],
     },
   ];

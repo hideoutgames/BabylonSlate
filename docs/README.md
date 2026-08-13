@@ -27,6 +27,11 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/input.md](architecture/input.md) | Action/axis mappings |
 | [architecture/physics.md](architecture/physics.md) | Havok 3D and Rapier 2D |
 | [architecture/debugger.md](architecture/debugger.md) | Command registry, console, stats HUD |
+| [architecture/ui-runtime.md](architecture/ui-runtime.md) | UserInterface widget tree, layout, designer |
+| [architecture/fonts.md](architecture/fonts.md) | Font payload, FontFace registry, fallback stacks |
+| [architecture/sprites.md](architecture/sprites.md) | Sprite atlas, packer, SpriteComponent quad |
+| [architecture/anim-graph.md](architecture/anim-graph.md) | Worker animation graph evaluator |
+| [architecture/shader-graph.md](architecture/shader-graph.md) | Shader IR to NodeMaterial |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |

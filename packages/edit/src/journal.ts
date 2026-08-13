@@ -31,6 +31,9 @@ import {
   createSetSceneSettingCommandFromJson,
   createSetViewportModeCommandFromJson,
 } from "./commands/scene";
+import {
+  createSetAssetDocumentCommandFromJson,
+} from "./commands/asset-document";
 
 export interface JournalLine {
   v: 1;
@@ -149,10 +152,10 @@ export function commandToJournalPayload(
       };
     }
     default: {
-      if (command.type.startsWith("scene.")) {
-        // Scene commands keep every payload field as an own property, so a
-        // shallow copy is the full journal payload; revivers ignore the
-        // derived mergeKey and byteSize fields.
+      if (
+        command.type.startsWith("scene.") ||
+        command.type.startsWith("asset.")
+      ) {
         return { ...(command as object) } as { type: string };
       }
       return { type: command.type };
@@ -236,5 +239,13 @@ export function registerSceneCommandRevivers(): void {
   );
 }
 
+export function registerAssetDocumentCommandRevivers(): void {
+  registerCommandReviver(
+    "asset.setDocument",
+    createSetAssetDocumentCommandFromJson,
+  );
+}
+
 registerGraphCommandRevivers();
 registerSceneCommandRevivers();
+registerAssetDocumentCommandRevivers();

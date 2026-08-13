@@ -36,7 +36,7 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
 
-Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder), **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`).
+Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder). **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`) is used by UserInterface / Font / Sprite / graph asset workspaces (design vs logic).
 
 ## Composites (`@babylonslate/editor-kit`)
 

@@ -13,8 +13,11 @@
   "dependencies": {
     "@babylonjs/core": "^9.20.0",
     "@babylonjs/ktx2decoder": "9.20.0",
+    "@babylonslate/assets": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
-    "@babylonslate/core": "workspace:*"
+    "@babylonslate/core": "workspace:*",
+    "@babylonslate/shader-graph": "workspace:*",
+    "@babylonslate/ui-runtime": "workspace:*"
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",

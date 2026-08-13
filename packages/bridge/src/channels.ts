@@ -128,6 +128,18 @@ export type CommandMessage =
   | {
       type: "trace";
       payload: Record<string, unknown>;
+    }
+  | {
+      type: "uiSetVisible";
+      widgetId: string;
+      visible: boolean;
+    }
+  | {
+      type: "animState";
+      slotId: number;
+      stateId: string;
+      normalisedTime: number;
+      blendWeights: Record<string, number>;
     };
 
 export type BridgeHostMessage =

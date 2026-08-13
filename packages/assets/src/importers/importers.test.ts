@@ -56,6 +56,10 @@ describe("importers", () => {
       existingGuids: new Set(),
     });
     expect(font[0]!.type).toBe("Font");
+    expect(font[0]!.payload.family).toBe("Ui");
+    expect((font[0]!.payload.representations as { source: boolean }).source).toBe(
+      true,
+    );
 
     const attached = await importFont(
       new TextEncoder().encode(JSON.stringify({ glyphs: [] })),

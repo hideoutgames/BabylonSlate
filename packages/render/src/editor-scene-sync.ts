@@ -29,9 +29,13 @@ function meshKindOf(actor: SerializedActor): string | null {
   const component = actor.components.find(
     (entry) => entry.classId === "MeshComponent",
   );
-  return typeof component?.properties.meshKind === "string"
-    ? component.properties.meshKind
-    : null;
+  if (typeof component?.properties.meshKind === "string") {
+    return component.properties.meshKind;
+  }
+  if (actor.components.some((entry) => entry.classId === "SpriteComponent")) {
+    return "sprite";
+  }
+  return null;
 }
 
 /**

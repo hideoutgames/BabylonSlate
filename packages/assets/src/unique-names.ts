@@ -26,12 +26,20 @@ export function stripAssetFileSuffix(fileName: string): string {
   return fileName
     .replace(/\.scene\.babasset$/i, "")
     .replace(/\.graph\.babasset$/i, "")
+    .replace(/\.ui\.babasset$/i, "")
+    .replace(/\.sprite\.babasset$/i, "")
+    .replace(/\.anim\.babasset$/i, "")
+    .replace(/\.shader\.babasset$/i, "")
     .replace(/\.babasset$/i, "");
 }
 
-/** Preserve Scene/Graph container suffixes when duplicating. */
+/** Preserve Scene/Graph/P9 container suffixes when duplicating. */
 export function assetFileSuffix(fileName: string): string {
   if (/\.scene\.babasset$/i.test(fileName)) return ".scene.babasset";
   if (/\.graph\.babasset$/i.test(fileName)) return ".graph.babasset";
+  if (/\.ui\.babasset$/i.test(fileName)) return ".ui.babasset";
+  if (/\.sprite\.babasset$/i.test(fileName)) return ".sprite.babasset";
+  if (/\.anim\.babasset$/i.test(fileName)) return ".anim.babasset";
+  if (/\.shader\.babasset$/i.test(fileName)) return ".shader.babasset";
   return ".babasset";
 }

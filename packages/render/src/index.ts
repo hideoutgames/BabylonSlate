@@ -21,3 +21,7 @@ export * from "./viewport-fly-keys";
 export * from "./two-d";
 export * from "./sorting";
 export * from "./pixel-perfect";
+export * from "./font-registry";
+export * from "./ui-apply";
+export * from "./sprite-quad";
+export * from "./shader-compile";
