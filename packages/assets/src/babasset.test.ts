@@ -193,4 +193,12 @@ describe("schema migration", () => {
     const registry = createDefaultMigrationRegistry();
     expect(() => registry.migrate("Graph", 99, {})).toThrow(/newer engine version/);
   });
+
+  it("passes through types that have no migration chain", () => {
+    const registry = createDefaultMigrationRegistry();
+    const result = registry.migrate("UserInterface", 1, { name: "HUD" });
+    expect(result.migrated).toBe(false);
+    expect(result.version).toBe(1);
+    expect(result.payload).toEqual({ name: "HUD" });
+  });
 });
