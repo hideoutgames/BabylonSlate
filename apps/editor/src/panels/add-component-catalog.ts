@@ -18,12 +18,6 @@ export const ADDABLE_COMPONENT_CLASSES = [
     category: "Rendering",
   },
   {
-    id: "WidgetComponent",
-    label: "Widget",
-    description: "World-space User Interface",
-    category: "UI",
-  },
-  {
     id: "AnimationGraphComponent",
     label: "Animation Graph",
     description: "Worker-evaluated clip state machine",

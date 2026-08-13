@@ -15,7 +15,21 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 P0–P9 are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** P10 tilemaps. Parked: `p1-device-spikes` (hardware-only). Do not start P10+ packages from leftover editor polish.
+**Next engine slice:** P10 tilemaps, after a short **Play-path hardening** wave (not a new phase, not a P8/P9 rebuild). Parked: `p1-device-spikes` (hardware-only). Do not start P11+ packages from leftover editor polish.
+
+Appendix A `[x]` means the **package/slice** landed. It does not mean every Play or document-tab path matches the letter of the spec. Honest residuals:
+
+| Residual | Reality | Owner |
+| --- | --- | --- |
+| Sprite clips in Play | Worker `animState` with `clipKind: "sprite"` now calls `applySpriteAnimFrame` | Done (Play-path wave) |
+| Worker HUD timings | rAF FPS pump merges fps into last worker `scriptMs` / `physicsMs` instead of zeroing them | Done (Play-path wave) |
+| Play content from closed tabs | AnimationGraph / Sprite payloads load from scene component guids; UserInterface library is every HUD asset | Done (Play-path wave) |
+| `ctx.changeScene` | Calls `World.loadScene` (same as console `changescene`) | Done (Play-path wave) |
+| Unbuilt components in catalogs | `TilemapComponent` / `BehaviourTreeComponent` / `NavAgentComponent` stay in `ENGINE_COMPONENT_CLASS_IDS` but are gated from Search and Add Component until those phases. `WidgetComponent` is hidden until `CreateForMesh` exists | Play-path / P10 / P11 |
+| Type-asset tabs | Enum / Structure / ScriptInterface open `asset-settings` editors | Done (`p5-types` follow-up) |
+| Actor Prefab persistence | Preview tab was session-local; class-document `components` is the Wave 2 fix | Wave 2 / P10 dogfood |
+| Map nodes | Pin `mapOf` exists; palette map get/set/has wait on Wave 2 | Wave 2 |
+| `playSound` / ADT HUD / `.babtrace` tab / §9.4 HUD completeness | Recorded P8/P9 polish — do not rebuild those packages | Parked |
 
 **Landed (do not rebuild):**
 - **Editor shell.** Two-row chrome in [apps/editor/src/components/editor-chrome-bar.tsx](apps/editor/src/components/editor-chrome-bar.tsx): title/tab bar (truncated project name with `.babproject` stripped, pinned Content Browser, no tab-bar Add) and a global toolbar (Save All with dirty dot, Undo, Redo, **Compile** plus **Compilation Error** on graph documents, Play, **Debug** with Always Render in DEV/test, **Windows** immediately left of Focus, Focus, Search, Settings). Per-document Dockview in [apps/editor/src/shell/dockview-shell.tsx](apps/editor/src/shell/dockview-shell.tsx); Windows restores last `layout.json` placements. Homepage owns create/open/close/recents; the shell runs only against an open project.

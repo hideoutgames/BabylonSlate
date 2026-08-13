@@ -87,6 +87,19 @@ describe("resolveTypeVisual", () => {
     );
   });
 
+  it("does not advertise unbuilt Tilemap, behaviour-tree, or nav as distinct component glyphs", () => {
+    const actorComponent = resolveTypeVisual({ classId: "ActorComponent" });
+    for (const classId of [
+      "TilemapComponent",
+      "BehaviourTreeComponent",
+      "NavAgentComponent",
+    ]) {
+      const visual = resolveTypeVisual({ classId });
+      expect(visual.iconKey).not.toBe(classId);
+      expect(visual.icon).toBe(actorComponent.icon);
+    }
+  });
+
   it("uses component color for engine components unless family is overridden", () => {
     const mesh = resolveTypeVisual({ classId: "MeshComponent" });
     const light = resolveTypeVisual({ classId: "LightComponent" });

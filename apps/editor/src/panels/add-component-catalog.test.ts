@@ -8,13 +8,14 @@ describe("Add Component catalog", () => {
   it("lists RigidBody and Collider alongside render components", () => {
     const ids = ADDABLE_COMPONENT_CLASSES.map((entry) => entry.id);
     expect(ids).toContain("SpriteComponent");
-    expect(ids).toContain("WidgetComponent");
+    expect(ids).not.toContain("WidgetComponent");
+    expect(ids).not.toContain("TilemapComponent");
     expect(ids).toContain("AnimationGraphComponent");
     expect(ids).toContain("RigidBodyComponent");
     expect(ids).toContain("ColliderComponent");
   });
 
-  it("groups addable classes into Rendering, UI, Animation, Camera, and Physics", () => {
+  it("groups addable classes into Rendering, Animation, Camera, and Physics", () => {
     const byCategory = new Map<string, string[]>();
     for (const entry of ADDABLE_COMPONENT_CLASSES) {
       const list = byCategory.get(entry.category) ?? [];
@@ -23,7 +24,6 @@ describe("Add Component catalog", () => {
     }
     expect([...byCategory.keys()]).toEqual([
       "Rendering",
-      "UI",
       "Animation",
       "Camera",
       "Physics",
@@ -33,7 +33,7 @@ describe("Add Component catalog", () => {
       "SpriteComponent",
       "LightComponent",
     ]);
-    expect(byCategory.get("UI")).toEqual(["WidgetComponent"]);
+    expect(byCategory.get("UI")).toBeUndefined();
     expect(byCategory.get("Animation")).toEqual(["AnimationGraphComponent"]);
     expect(byCategory.get("Camera")).toEqual(["CameraComponent"]);
     expect(byCategory.get("Physics")).toEqual([
