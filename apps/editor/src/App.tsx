@@ -160,6 +160,7 @@ function EditorLayout() {
     pendingExclusiveScene,
     confirmExclusiveSceneOpen,
     cancelExclusiveSceneOpen,
+    approveMigrationsAndSave,
   } = useDocuments();
   const {
     playAwaitingMigration,

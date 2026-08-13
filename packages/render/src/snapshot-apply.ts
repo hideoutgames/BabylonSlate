@@ -214,11 +214,12 @@ export function applySnapshotToScene(
       const light = binding.lights.get(actor.slotId);
       if (light) updateAuthoredLightTransform(light, actor.position);
       const camera = binding.cameras.get(actor.slotId);
-      if (camera) {
+      if (camera instanceof FreeCamera) {
         camera.position.copyFrom(scratchPos);
-        if (camera.rotationQuaternion) {
-          camera.rotationQuaternion.copyFrom(scratchQuat);
+        if (!camera.rotationQuaternion) {
+          camera.rotationQuaternion = Quaternion.Identity();
         }
+        camera.rotationQuaternion.copyFrom(scratchQuat);
       }
     }
     for (const [slotId, mesh] of binding.meshes) {

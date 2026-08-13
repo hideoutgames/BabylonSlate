@@ -31,7 +31,6 @@ import {
   playSceneFromOpenDocuments,
   playIsEnabled,
   resolvePlayScene,
-  type PlaySceneLoad,
 } from "../services/play-physics";
 import type { PlayAnimGraphEntry } from "../lib/play-content";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -126,7 +125,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
   );
-  const [playSceneLoad, setPlaySceneLoad] = useState<PlaySceneLoad | null>(null);
   const [playSceneLibrary, setPlaySceneLibrary] = useState<
     Array<{ guid: string; scene: import("@babylonslate/core").SerializedScene }>
   >([]);
@@ -292,7 +290,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           openDocuments,
           activeDocumentId,
         );
-        setPlaySceneLoad(resolvedScene);
         try {
           setPlaySceneLibrary(await collectPlaySceneLibrary());
         } catch (error) {

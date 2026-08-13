@@ -13,8 +13,8 @@ export const renderNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("width", "Width", "in", INT),
-      pin("height", "Height", "in", INT),
+      pin("width", "width", "in", INT),
+      pin("height", "height", "in", INT),
     ],
     codegen: (ctx) => {
       ctx.emit(
