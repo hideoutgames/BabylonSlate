@@ -3,6 +3,7 @@ import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { EncodeQueue } from "./encode-queue";
 import {
   clampDimension,
+  effectiveTextureMaxDimension,
   encodeSettingsHash,
   ktx2ChunkId,
   shouldCompressTexture,
@@ -30,6 +31,12 @@ describe("texture compression policy", () => {
       clamped: true,
     });
     expect(clampDimension(1024, 512, 2048).clamped).toBe(false);
+  });
+
+  it("takes the min of source, asset max, and project max", () => {
+    expect(effectiveTextureMaxDimension(undefined, 2048)).toBe(2048);
+    expect(effectiveTextureMaxDimension(1024, 2048)).toBe(1024);
+    expect(effectiveTextureMaxDimension(4096, 2048)).toBe(2048);
   });
 });
 
@@ -96,6 +103,55 @@ describe("EncodeQueue", () => {
     queue.resume();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(completed).toEqual(["paused"]);
+  });
+
+  it("fails a hung encode on timeout and pumps the next job", async () => {
+    const states: string[] = [];
+    const completed: string[] = [];
+    const errors: string[] = [];
+    const queue = new EncodeQueue({
+      jobTimeoutMs: 20,
+      encode: async (source, settings) => {
+        if (source[0] === 1) {
+          await new Promise(() => undefined);
+        }
+        return stubEncodeKtx2(source, settings);
+      },
+      onState: (guid, state) => states.push(`${guid}:${state}`),
+      onComplete: (result) => {
+        completed.push(result.assetGuid);
+      },
+      onError: (guid) => {
+        errors.push(guid);
+      },
+    });
+    queue.enqueue({
+      assetGuid: "hang",
+      source: new Uint8Array([1]),
+      settings: {
+        format: "uastc",
+        quality: 2,
+        maxDimension: 2048,
+        generateMipmaps: true,
+      },
+    });
+    queue.enqueue({
+      assetGuid: "ok",
+      source: new Uint8Array([2]),
+      settings: {
+        format: "uastc",
+        quality: 2,
+        maxDimension: 2048,
+        generateMipmaps: true,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(errors).toEqual(["hang"]);
+      expect(completed).toEqual(["ok"]);
+    });
+    expect(states).toContain("hang:encoding");
+    expect(states).toContain("hang:encode_failed");
+    expect(states).toContain("ok:compressed");
   });
 });
 
@@ -258,5 +314,157 @@ describe("registry encode pipeline", () => {
       ).toBe("compressed");
     });
     expect(attempts).toBe(2);
+  });
+
+  it("retries pending and interrupted encoding textures", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("pending.babproject");
+    await storage.mkdir("assets", true);
+    for (const [guid, name, state] of [
+      ["pend-tex", "Pend", "pending"],
+      ["enc-tex", "Enc", "encoding"],
+    ] as const) {
+      const bytes = await encodeBabasset({
+        header: {
+          guid,
+          type: "Texture",
+          name,
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: [],
+          parentClass: null,
+          payload: { compressionState: state, usage: "albedo" },
+        },
+        chunks: [
+          {
+            id: "pixels",
+            kind: "pixels",
+            mime: "image/png",
+            data: new Uint8Array([9, 8, 7]),
+          },
+        ],
+      });
+      await storage.writeBinary(`assets/${name.toLowerCase()}.babasset`, bytes);
+    }
+
+    const registry = new AssetRegistry(storage);
+    const queue = new EncodeQueue({
+      onComplete: async (result) => {
+        await registry.commitCompressedTexture(result);
+      },
+    });
+    registry.setEncodePipeline(queue);
+    await registry.mountRoot(projectContentRoot());
+
+    expect(
+      await registry.retryTextureEncoding("pend-tex"),
+    ).toBe(true);
+    expect(
+      await registry.retryTextureEncoding("enc-tex"),
+    ).toBe(true);
+    await vi.waitFor(() => {
+      expect(
+        registry.getByGuid("pend-tex")!.header.payload.compressionState,
+      ).toBe("compressed");
+      expect(
+        registry.getByGuid("enc-tex")!.header.payload.compressionState,
+      ).toBe("compressed");
+    });
+  });
+
+  it("requeues pending and encoding textures on remount", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("requeue.babproject");
+    await storage.mkdir("assets", true);
+    const bytes = await encodeBabasset({
+      header: {
+        guid: "stuck-tex",
+        type: "Texture",
+        name: "Stuck",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: { compressionState: "encoding", usage: "albedo" },
+      },
+      chunks: [
+        {
+          id: "pixels",
+          kind: "pixels",
+          mime: "image/png",
+          data: new Uint8Array([3, 2, 1]),
+        },
+      ],
+    });
+    await storage.writeBinary("assets/stuck.babasset", bytes);
+
+    const registry = new AssetRegistry(storage);
+    const queue = new EncodeQueue({
+      onComplete: async (result) => {
+        await registry.commitCompressedTexture(result);
+      },
+    });
+    registry.setEncodePipeline(queue);
+    await registry.mountRoot(projectContentRoot());
+    const count = await registry.requeueUncompressedTextures();
+    expect(count).toBe(1);
+    await vi.waitFor(() => {
+      expect(
+        registry.getByGuid("stuck-tex")!.header.payload.compressionState,
+      ).toBe("compressed");
+    });
+  });
+
+  it("does not let a slow encoding write clobber encode_failed", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("race.babproject");
+    await storage.mkdir("assets", true);
+    const bytes = await encodeBabasset({
+      header: {
+        guid: "race-tex",
+        type: "Texture",
+        name: "Race",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: { compressionState: "pending", usage: "albedo" },
+      },
+      chunks: [
+        {
+          id: "pixels",
+          kind: "pixels",
+          mime: "image/png",
+          data: new Uint8Array([1]),
+        },
+      ],
+    });
+    await storage.writeBinary("assets/race.babasset", bytes);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    let releaseFirst: () => void = () => undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const originalWrite = storage.writeBinary.bind(storage);
+    let writes = 0;
+    storage.writeBinary = async (path, data) => {
+      writes += 1;
+      if (writes === 1) await firstGate;
+      return originalWrite(path, data);
+    };
+
+    const encoding = registry.setCompressionState("race-tex", "encoding");
+    const failed = registry.setCompressionState("race-tex", "encode_failed");
+    await Promise.resolve();
+    releaseFirst();
+    await Promise.all([encoding, failed]);
+    expect(
+      registry.getByGuid("race-tex")!.header.payload.compressionState,
+    ).toBe("encode_failed");
   });
 });

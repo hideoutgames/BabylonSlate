@@ -92,8 +92,8 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **IconActionButton** ([`icon-action-button.tsx`](../../apps/editor/src/components/icon-action-button.tsx)) | Icon-only `Button` with `aria-label` plus Tooltip. | Chrome bar, Outliner, Details, Prefab panel. |
-| **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: type-tinted thumb well (or image), `--card` text panel, selection, long-press / right-click menu. Pointer events do not bubble to the empty-grid menu. | Content Browser grid. |
-| **ContentBrowserFolderTile** ([`content-browser-folder-tile.tsx`](../../apps/editor/src/components/content-browser-folder-tile.tsx)) | Folder card with `--asset-folder` thumb accent; click selects, double-click navigates. | Content Browser grid (child folders first). |
-| **ContentBrowserMoveDialog** ([`content-browser-move-dialog.tsx`](../../apps/editor/src/components/content-browser-move-dialog.tsx)) | Destination picker: item preview, folder search, `TreeView` with muted illegal rows. Move or copy. | Content Browser **Move…** / **Copy to Folder…** for assets and folders. |
+| **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: radial type-tinted thumb well (or image) + inset kind bar, `--card` text panel, selection, long-press / right-click menu. Pointer events do not bubble to the empty-grid menu. | Content Browser grid. |
+| **ContentBrowserFolderTile** ([`content-browser-folder-tile.tsx`](../../apps/editor/src/components/content-browser-folder-tile.tsx)) | Uncolored folder card (`--card` well, muted glyph); click selects, double-click navigates. | Content Browser grid (child folders first). |
+| **ContentBrowserMoveDialog** ([`content-browser-move-dialog.tsx`](../../apps/editor/src/components/content-browser-move-dialog.tsx)) | Destination picker: item preview, folder search, `TreeView` with muted illegal rows. Move or copy of one or many selected items. | Content Browser **Move…** / **Copy to Folder…** for the current tile selection. |
 
 Not kit (single call site): `BrandLogo` (Homepage), `JsBodyEditor` (Inspector Execute JavaScript body).

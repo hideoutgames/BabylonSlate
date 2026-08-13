@@ -14,12 +14,13 @@ export interface DecodedRgbaImage {
 export async function decodeSourceToRgba(
   source: Uint8Array,
   maxDimension: number,
+  mime?: string,
 ): Promise<DecodedRgbaImage> {
   if (typeof createImageBitmap !== "function") {
     throw new Error("createImageBitmap is required for texture encode decode");
   }
   const copy = source.slice();
-  const blob = new Blob([copy]);
+  const blob = new Blob([copy], mime ? { type: mime } : undefined);
   const bitmap = await createImageBitmap(blob);
   try {
     const { width, height, clamped } = clampDimension(

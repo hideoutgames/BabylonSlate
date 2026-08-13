@@ -8,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@babylonslate/ui/components/card";
-import { assetColorVar, typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 
@@ -29,8 +28,6 @@ export function ContentBrowserFolderTile({
   onSelect,
   onLongPressMenu,
 }: ContentBrowserFolderTileProps) {
-  const colorVar = assetColorVar("folder");
-  const thumbAccent = typeColorThumbAccent(colorVar);
   const bind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
       onSelect();
@@ -59,13 +56,9 @@ export function ContentBrowserFolderTile({
         onDoubleClick={onOpen}
         {...bind}
       >
-        <div
-          className="flex aspect-square w-full items-center justify-center"
-          style={thumbAccent}
-        >
+        <div className="flex aspect-square w-full items-center justify-center bg-card">
           <FolderIcon
-            className="size-10"
-            style={{ color: colorVar }}
+            className="size-10 text-muted-foreground"
             aria-hidden
           />
         </div>

@@ -102,7 +102,11 @@ export function ContentBrowserAssetTile({
         </CardHeader>
         <CardContent className="flex flex-wrap gap-1 px-1.5 pb-1.5">
           {compression ? (
-            <Badge variant="secondary" className="w-fit text-[10px]">
+            <Badge
+              variant="secondary"
+              className="w-fit text-[10px]"
+              data-testid={`texture-compression-${asset.header.guid}`}
+            >
               {compressionBadgeLabel(compression)}
             </Badge>
           ) : null}

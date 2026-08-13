@@ -17,9 +17,10 @@ import {
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
 import {
+  contentBrowserMoveDialogTitle,
   filterFolderTreeRows,
   flattenFolderTree,
-  isValidMoveDestination,
+  isValidSelectionMoveDestination,
   type MoveKind,
 } from "../lib/content-browser-helpers";
 
@@ -37,6 +38,9 @@ export interface ContentBrowserMoveDialogProps {
   onConfirm: () => void;
   busy?: boolean;
   typeVisual?: TypeVisual | null;
+  itemCount?: number;
+  assetSourcePaths?: readonly string[];
+  folderSourcePaths?: readonly string[];
 }
 
 export function ContentBrowserMoveDialog({
@@ -53,14 +57,34 @@ export function ContentBrowserMoveDialog({
   onConfirm,
   busy = false,
   typeVisual = null,
+  itemCount,
+  assetSourcePaths,
+  folderSourcePaths,
 }: ContentBrowserMoveDialogProps) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const canConfirm = isValidMoveDestination({
-    kind,
-    sourcePath,
+  const resolvedFolderSources = useMemo(
+    () => folderSourcePaths ?? (kind === "folder" ? [sourcePath] : []),
+    [folderSourcePaths, kind, sourcePath],
+  );
+  const resolvedAssetSources = useMemo(
+    () => assetSourcePaths ?? (kind === "asset" ? [sourcePath] : []),
+    [assetSourcePaths, kind, sourcePath],
+  );
+  const resolvedItemCount =
+    itemCount ?? resolvedFolderSources.length + resolvedAssetSources.length;
+  const destinationOptions = {
     destinationPath,
     operation,
+    assetSourcePaths: resolvedAssetSources,
+    folderSourcePaths: resolvedFolderSources,
+  };
+  const canConfirm = isValidSelectionMoveDestination(destinationOptions);
+  const title = contentBrowserMoveDialogTitle({
+    operation,
+    itemCount: resolvedItemCount,
+    folderCount: resolvedFolderSources.length,
+    assetCount: resolvedAssetSources.length,
   });
 
   const nodes = useMemo(() => {
@@ -71,11 +95,11 @@ export function ContentBrowserMoveDialog({
       searching ? new Set() : collapsed,
     );
     return filterFolderTreeRows(rows, search).map((row) => {
-      const muted = !isValidMoveDestination({
-        kind,
-        sourcePath,
+      const muted = !isValidSelectionMoveDestination({
         destinationPath: row.path,
         operation,
+        assetSourcePaths: resolvedAssetSources,
+        folderSourcePaths: resolvedFolderSources,
       });
       return {
         id: row.id,
@@ -87,7 +111,14 @@ export function ContentBrowserMoveDialog({
         icon: <FolderIcon />,
       };
     });
-  }, [collapsed, folderTree, kind, operation, search, sourcePath]);
+  }, [
+    collapsed,
+    folderTree,
+    operation,
+    resolvedAssetSources,
+    resolvedFolderSources,
+    search,
+  ]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -96,15 +127,7 @@ export function ContentBrowserMoveDialog({
         data-testid="content-browser-move-dialog"
       >
         <DialogHeader>
-          <DialogTitle>
-            {operation === "copy"
-              ? kind === "folder"
-                ? "Copy Folder"
-                : "Copy Asset"
-              : kind === "folder"
-                ? "Move Folder"
-                : "Move Asset"}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Choose a destination folder. Currently in {currentFolderPath}.
           </DialogDescription>
@@ -113,7 +136,9 @@ export function ContentBrowserMoveDialog({
           className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2"
           data-testid="content-browser-move-item"
         >
-          {kind === "folder" ? (
+          {resolvedItemCount > 1 ? (
+            <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+          ) : kind === "folder" ? (
             <FolderIcon className="size-4 shrink-0 text-primary" />
           ) : typeVisual ? (
             <TypeVisualIcon visual={typeVisual} />
@@ -137,11 +162,11 @@ export function ContentBrowserMoveDialog({
             selectedId={destinationPath}
             onSelect={(id) => {
               if (
-                !isValidMoveDestination({
-                  kind,
-                  sourcePath,
+                !isValidSelectionMoveDestination({
                   destinationPath: id,
                   operation,
+                  assetSourcePaths: resolvedAssetSources,
+                  folderSourcePaths: resolvedFolderSources,
                 })
               ) {
                 return;

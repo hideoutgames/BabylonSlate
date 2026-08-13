@@ -158,9 +158,9 @@ describe("ContentBrowserAssetTile", () => {
     expect(card?.style.borderColor).toBe("");
     const glyph = screen.getByTestId("content-item-type-icon-hero-1");
     const thumb = glyph.parentElement as HTMLElement;
-    expect(thumb.style.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 55%, var(--muted))",
-    );
+    expect(thumb.style.backgroundImage).toContain("radial-gradient");
+    expect(thumb.style.backgroundImage).toContain("var(--card)");
+    expect(thumb.style.backgroundImage).toContain("var(--asset-texture)");
     expect(thumb.style.boxShadow).toBe("inset 0 -3px 0 var(--asset-texture)");
   });
 });
