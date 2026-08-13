@@ -113,4 +113,13 @@ export class FontRegistry {
   isReady(guid: string): boolean {
     return this.loaded.has(guid);
   }
+
+  /** Await every face before the first UI draw (engineplan §11.4). */
+  async registerAll(entries: readonly FontAssetEntry[]): Promise<boolean> {
+    let ok = true;
+    for (const entry of entries) {
+      if (!(await this.register(entry))) ok = false;
+    }
+    return ok;
+  }
 }

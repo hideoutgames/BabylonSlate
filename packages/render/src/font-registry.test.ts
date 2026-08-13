@@ -72,4 +72,23 @@ describe("FontRegistry", () => {
     ).toBe(false);
     expect(noHost.getWarnings()[0]?.message).toMatch(/no FontFace host/);
   });
+
+  it("registerAll awaits every face before reporting ready", async () => {
+    const registry = new FontRegistry(mockHost());
+    const ok = await registry.registerAll([
+      {
+        guid: "a",
+        family: "Display",
+        bytes: new Uint8Array([1]).buffer,
+      },
+      {
+        guid: "b",
+        family: "Fallback Face",
+        bytes: new Uint8Array([2]).buffer,
+      },
+    ]);
+    expect(ok).toBe(true);
+    expect(registry.isReady("a")).toBe(true);
+    expect(registry.isReady("b")).toBe(true);
+  });
 });

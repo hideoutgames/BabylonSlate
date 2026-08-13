@@ -38,3 +38,35 @@ export function devicePresetById(
 ): DevicePreset | undefined {
   return DEVICE_PRESETS.find((preset) => preset.id === id);
 }
+
+/**
+ * Closest device preset for a live viewport. Exact CSS-pixel matches first
+ * (Playwright iPad Pro 11 is 1194×834 / 834×1194), then aspect + size.
+ */
+export function devicePresetForViewport(
+  width: number,
+  height: number,
+): DevicePreset {
+  const exact = DEVICE_PRESETS.find(
+    (preset) => preset.width === width && preset.height === height,
+  );
+  if (exact) return exact;
+  const aspect = height > 0 ? width / height : 1;
+  let best = DEVICE_PRESETS[0]!;
+  let bestAspect = Number.POSITIVE_INFINITY;
+  let bestSize = Number.POSITIVE_INFINITY;
+  for (const preset of DEVICE_PRESETS) {
+    const presetAspect = preset.height > 0 ? preset.width / preset.height : 1;
+    const aspectDelta = Math.abs(presetAspect - aspect);
+    const sizeDelta = Math.hypot(preset.width - width, preset.height - height);
+    if (
+      aspectDelta < bestAspect - 1e-6 ||
+      (Math.abs(aspectDelta - bestAspect) < 1e-6 && sizeDelta < bestSize)
+    ) {
+      best = preset;
+      bestAspect = aspectDelta;
+      bestSize = sizeDelta;
+    }
+  }
+  return best;
+}

@@ -37,6 +37,9 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load / p8-command-system | Standards | Two Appendix A slices in one PR (`p7-play-scene-load` then `p8-command-system`); assigned plan required both | Accepted |
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load | Spec | E2E asserts Play spawn guid `actor-1` rather than reading the snapshot buffer; spawn is how snapshot slots are assigned | Accepted |
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p8-command-system | Spec | `changescene` still only fires `GameInstance.onSceneLoaded`; core quality/volume/framecap setters emit console logs until the HUD/renderer consume them | Accepted |
+| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD does not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes). Cold-load Play first-frame is later polish | Accepted |
+| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; designer goldens cover layout | Accepted |
+| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-system | Standards | Play HUD `borderRadius: 999` (stick) pre-existed; widget style passthrough still uses a numeric fallback | Accepted |
 
 ## PR checklist
 
@@ -221,7 +224,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 ## P9 slice ownership
 
-P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9; residual ADT mesh HUD / NodeMaterial.Parse bind is later polish.
+P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9; residual ADT mesh HUD / NodeMaterial.Parse bind / registry-wide Play hosting is later polish.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -241,7 +244,11 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 | Gap vs engineplan §11–§14 | Reality | Owner |
 | --- | --- | --- |
 | Viewport-layer HUD as Babylon `AdvancedDynamicTexture` | Play hosts a DOM overlay (`PlayHudOverlay`); `applyUiControls` is injectable | Later polish / P14 player |
-| Project UserInterface assets loaded into Play | Default HUD is always shown; registry viewport-layer assets are not auto-hosted | Later polish |
+| Every UserInterface in the asset registry auto-hosted in Play | Open viewport-layer UI documents are hosted (same pattern as the open scene); default HUD if none are open | Later polish |
 | `NodeMaterial.Parse` + live Babylon preview | IR compile + throttle + `compileShaderGraphAtLoad` injection; host supplies `forceCompilationAsync` | Later polish |
 | Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
+| Play engine applies sprite-clip UVs from `animState` | `applySpriteAnimFrame` is unit-tested; `create-engine` seeks AnimationGroups only | Later polish |
+| World-space `WidgetComponent` (`CreateForMesh`) | Component is addable; viewport-layer HUD is the v1 Play path | Later polish |
+| Designer nested-UI guid field + cycle check UI | `uiDocumentWouldCycle` is tested in `ui-runtime`; PropertyGrid does not yet edit nested refs | Later polish |
+| Play HUD `FontRegistry.registerAll` from project Font assets | Font editor registers imported `source` bytes; Play HUD uses the compiled CSS stack + generic fallback without awaiting project FontFace loads | Later polish (same class as registry-wide UI hosting) |
 

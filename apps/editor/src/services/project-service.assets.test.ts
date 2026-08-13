@@ -6,7 +6,11 @@ import {
   PROJECT_FILE,
   type SerializedScene,
 } from "@babylonslate/core";
-import { readAssetDocumentHeader } from "@babylonslate/assets";
+import {
+  decodeBabasset,
+  encodeBabasset,
+  readAssetDocumentHeader,
+} from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
 import { createDefaultLogicGraphSerialized } from "./graph-validation";
@@ -123,5 +127,46 @@ describe("project documents as .babasset", () => {
     expect(
       service.searchIndex!.query("renamedhero").some((hit) => hit.kind === "actor"),
     ).toBe(true);
+  });
+
+  it("opens an imported Font (header payload, no document chunk) and keeps source bytes on save", async () => {
+    const { storage, service } = await scaffolded();
+    const source = new Uint8Array([10, 11, 12, 13]);
+    const path = "assets/Ui.babasset";
+    await storage.writeBinary(
+      path,
+      await encodeBabasset({
+        header: {
+          guid: "font-guid",
+          type: "Font",
+          name: "Ui",
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: [],
+          parentClass: null,
+          payload: { family: "Ui", weight: 400, style: "normal" },
+        },
+        chunks: [
+          { id: "source", kind: "font", mime: "font/woff2", data: source },
+        ],
+      }),
+    );
+
+    const payload = (await service.loadDocument("font", path)) as Record<
+      string,
+      unknown
+    >;
+    expect(payload.family).toBe("Ui");
+    expect(await service.readAssetChunk(path, "source")).toEqual(source);
+
+    await service.saveDocument("font", path, { ...payload, family: "Ui Display" });
+    const saved = await decodeBabasset(await storage.readBinary(path));
+    expect(saved.chunks.get("source")).toEqual(source);
+    const reloaded = (await service.loadDocument("font", path)) as Record<
+      string,
+      unknown
+    >;
+    expect(reloaded.family).toBe("Ui Display");
   });
 });

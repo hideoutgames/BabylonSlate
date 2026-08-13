@@ -10,7 +10,7 @@ Shared surface for the widget tree, anchoring/layout, font-stack compilation, an
 
 UI mutations travel on the **command channel** ([bridge.md](bridge.md)), not the snapshot. The game worker drives widget properties; the main thread measures text, resolves layout, and applies an injectable GUI host. Worker code never calls `document.fonts`.
 
-v1 Play hosts a **DOM overlay** (`PlayHudOverlay`) so FontFace loads and joystick hit-testing stay on the main thread without mixing React into `@babylonslate/render`. `applyUiControls` still takes an injectable `UiApplyHost` (recorder in tests; Babylon `AdvancedDynamicTexture` remains the long-term mesh/HUD apply target).
+v1 Play hosts a **DOM overlay** (`PlayHudOverlay`) so FontFace loads and joystick hit-testing stay on the main thread without mixing React into `@babylonslate/render`. Layout uses `devicePresetForViewport` so iPad Playwright sizes get the matching safe-area insets. The overlay hosts the **active (or first) open viewport-layer UserInterface** when one is open — the same pattern as Play’s open scene — and falls back to `createDefaultPlayHud`. Scanning every UserInterface in the asset registry is later polish. `applyUiControls` still takes an injectable `UiApplyHost` (recorder in tests; Babylon `AdvancedDynamicTexture` remains the long-term mesh/HUD apply target).
 
 ## Layout (pure function)
 

@@ -1,3 +1,4 @@
+import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
   createPlayBootCoordinator,
   createRuntimeFromLoad,
@@ -127,6 +128,8 @@ export function startPlaySession(options: {
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
   onUiSetVisible?: (widgetId: string, visible: boolean) => void;
+  /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
+  animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
@@ -243,6 +246,12 @@ export function startPlaySession(options: {
         spawn,
       });
     }
+    if ((options.animGraphs?.length ?? 0) > 0) {
+      worker.postControl({
+        type: "loadAnimGraphs",
+        graphs: [...(options.animGraphs ?? [])],
+      });
+    }
     worker.postControl({ type: "play" });
   } catch (err) {
     worker = null;
@@ -261,6 +270,10 @@ export function startPlaySession(options: {
     const boot = createPlayBootCoordinator();
     if (scripts.length > 0) {
       boot.queueScripts(inProcess, scripts, spawn);
+    }
+    for (const entry of options.animGraphs ?? []) {
+      const document = parseAnimGraphDocument(entry.document);
+      if (document) inProcess.registerAnimGraph(entry.guid, document);
     }
     void boot.play(inProcess).catch((error) => {
       inProcess.reportError(error);

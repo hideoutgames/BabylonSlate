@@ -38,10 +38,24 @@ test.describe("P9 content systems", () => {
     await expect(canvas).toHaveAttribute("data-preset", "ipad-landscape");
     await expect(page.getByTestId("ui-widget-stick")).toBeVisible();
     await expect(page.getByTestId("ui-widget-header")).toBeVisible();
+    const landscapeStickX = await page
+      .getByTestId("ui-widget-stick")
+      .getAttribute("data-gui-x");
+    const landscapeHeaderY = await page
+      .getByTestId("ui-widget-header")
+      .getAttribute("data-gui-y");
 
     await page.getByTestId("ui-device-preset").click();
     await page.getByTestId("ui-preset-ipad-portrait").click();
     await expect(canvas).toHaveAttribute("data-preset", "ipad-portrait");
+    const portraitStickX = await page
+      .getByTestId("ui-widget-stick")
+      .getAttribute("data-gui-x");
+    const portraitHeaderY = await page
+      .getByTestId("ui-widget-header")
+      .getAttribute("data-gui-y");
+    expect(portraitStickX).not.toBe(landscapeStickX);
+    expect(portraitHeaderY).not.toBe(landscapeHeaderY);
 
     await page.getByTestId("ui-device-preset").click();
     await page.getByTestId("ui-preset-desktop-16-9").click();
@@ -66,9 +80,13 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("document-workspace-font")).toBeVisible();
     const sample = page.getByTestId("font-sample-preview");
     await expect(sample).toBeVisible();
+    await expect(sample).toHaveAttribute("data-fonts-ready", "true");
     await expect(sample).toContainText("The quick brown fox");
     const family = await sample.evaluate((el) => getComputedStyle(el).fontFamily);
     expect(family.toLowerCase()).toMatch(/display|sans-serif/);
+    const stack = await sample.getAttribute("data-font-stack");
+    expect(stack?.toLowerCase()).toContain("sans-serif");
+    expect(stack?.toLowerCase()).toMatch(/display/);
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("project-settings").click();
     await page.getByTestId("settings-modal-category-fonts").click();
@@ -170,11 +188,28 @@ test.describe("P9 content systems", () => {
 
   test("Play overlay stick is reachable on iPad", {
     tag: IPAD_TEST_TAG,
-  }, async ({ page }) => {
+  }, async ({ page }, testInfo) => {
     await openTestProject(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-hud-stick")).toBeVisible();
+    // Desktop-chrome also runs @ipad tests (see docs/architecture/testing.md).
+    // Only the iPad projects use 1194×834 / 834×1194, which map to iPad
+    // presets and non-zero safe-area insets.
+    const preset = await page.getByTestId("play-hud").getAttribute("data-preset");
+    const safeTop = Number(
+      await page.getByTestId("play-hud").getAttribute("data-safe-top"),
+    );
+    if (testInfo.project.name === "ipad-landscape") {
+      expect(preset).toBe("ipad-landscape");
+      expect(safeTop).toBeGreaterThan(0);
+    } else if (testInfo.project.name === "ipad-portrait") {
+      expect(preset).toBe("ipad-portrait");
+      expect(safeTop).toBeGreaterThan(0);
+    } else {
+      expect(preset).toBe("desktop-16-9");
+      expect(safeTop).toBe(0);
+    }
     await page.getByTestId("play-overlay-close").click();
   });
 });
