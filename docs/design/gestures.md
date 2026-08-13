@@ -72,11 +72,11 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 ## Viewport (Babylon)
 
-- **One finger**: tap to pick/select. In **3D**, drag looks in place (yaw/pitch; camera position stays put). In **2D**, drag **pans** 1:1 with the pointer (the world point under the finger stays put; same scale/axes as three-finger pan). **Hold ~250ms then move** marquees (actors whose origin falls inside the rect). Gizmo handle hits skip look/pan so transform drags still win.
+- **One finger**: tap to pick/select. In **3D**, drag looks in place (yaw/pitch; camera position stays put). In **2D**, drag **pans** 1:1 with the pointer (the world point under the finger stays put; same scale/axes as three-finger pan). **Hold ~250ms then move** marquees in 2D (actors whose origin falls inside the rect). **Drag Select** (viewport toolbar) hijacks the next one-finger drag in 2D and 3D: no pan/look, live overlay, commit on release, then the tool unpresses. Gizmo handle hits skip look/pan so transform drags still win, except while Drag Select is armed.
 - **Pinch** (two fingers, spread change) zooms / dollies. Two-finger translation does not orbit or pan. 2D pinch and wheel are continuous, including when pixel-perfect integer zoom steps is on.
 - **Three fingers** pan (move the camera). In 2D this is the same 1:1 frustum / CSS-pixel mapping as one-finger pan; in 3D it uses a fixed world-units-per-pixel scale.
 - **WASD** flies in 3D (look-relative) and pans on XY in 2D. Ignored while typing, while Play is open, or when the canvas is hidden.
-- **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Scene and Prefab toolbars expose a joystick toggle; Scene persists the setting, Prefab uses live context. Not the P9 game `TouchJoystick`.
+- **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Scene and Prefab **Viewport Settings** menus expose Snap, Show Grid, and Joystick; Scene persists those settings, Prefab uses live context. Not the P9 game `TouchJoystick`.
 - **Gizmo drag** coalesces to one undo step via `mergeKey` on `SetActorTransformCommand` (`transform:{actorId}`).
 - Canvas uses `touch-none` plus non-passive touch `preventDefault` so UI chrome and iOS system gestures do not steal look / pinch / pan.
 - Selection on explicit tap pick, not hover.

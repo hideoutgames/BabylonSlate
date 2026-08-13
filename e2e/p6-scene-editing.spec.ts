@@ -171,8 +171,8 @@ test.describe("P6 first-playable scene editing", () => {
       "gizmo-tool-translate",
       "gizmo-tool-rotate",
       "gizmo-tool-scale",
-      "gizmo-snap-toggle",
-      "gizmo-joystick-toggle",
+      "viewport-drag-select",
+      "viewport-settings",
       "viewport-mode-toggle",
       "outliner-add-actor",
     ]) {

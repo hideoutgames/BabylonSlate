@@ -52,7 +52,7 @@ export interface SceneGridSettings {
   snapScale: number;
   /** Tile size in world units, used by the 2D tile grid. */
   tileSize: number;
-  /** Minor grid lines drawn between two tile lines in 2D. */
+  /** Minor grid lines drawn between two major tile lines. */
   tileSubdivisions: number;
   /** Editor viewport grid visibility; missing keys normalize to true. */
   showGrid: boolean;

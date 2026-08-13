@@ -187,7 +187,7 @@ test.describe("Editor density and IA", () => {
     );
   });
 
-  test("gizmo tools look pressed and the joystick toggle is on the toolbar", {
+  test("gizmo tools look pressed and the joystick toggle is in viewport settings", {
     tag: IPAD_TEST_TAG,
   }, async ({
     page,
@@ -209,11 +209,12 @@ test.describe("Editor density and IA", () => {
     await expect(focus).toHaveAttribute("aria-pressed", "false");
     await expect(focus).toHaveClass(/aria-pressed:bg-accent/);
 
+    await page.getByTestId("viewport-settings").click();
     const joystick = page.getByTestId("gizmo-joystick-toggle");
     await expect(joystick).toBeVisible();
-    await expect(joystick).toHaveAttribute("aria-pressed", "false");
+    await expect(joystick).toHaveAttribute("aria-checked", "false");
     await joystick.click();
-    await expect(joystick).toHaveAttribute("aria-pressed", "true");
+    await expect(joystick).toHaveAttribute("aria-checked", "true");
   });
 
   test("tapping empty Content Browser grid clears the tile selection", async ({

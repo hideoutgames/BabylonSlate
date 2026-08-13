@@ -74,13 +74,13 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | --- | --- |
 | `editor-camera` | Mode-parametric ArcRotate controller; 3D look-in-place + fly, 2D ortho pan/zoom, pixel-perfect framing. `setMode` snapshots the current pose and restores the other mode's last in-session framing (not written to the scene document). |
 | `gizmo-host` | Translate / rotate / scale on a utility layer; unlit axis materials (`GIZMO_AXIS_COLORS`), thinner shafts, planar handles, hover; axis set filtered by `ViewportMode`; `hitTest` / `isDragging` block camera look |
-| `editor-grid` | 3D XZ or 2D XY grid; tile spacing + subdivisions; `cameraBounds2D` overlay |
+| `editor-grid` | World-aligned shader plane (3D XZ / 2D XY) that follows the editor camera; tile spacing + subdivisions; `cameraBounds2D` overlay |
 | `selection-outline` | Highlight mesh(es) for selected actors |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
 | `scene-illumination` | Authored `PointLight` / `DirectionalLight` / `SpotLight` and cameras from `LightComponent` / `CameraComponent`. Editor keeps the orbit camera; Play currently uses the first authored camera. Default hemi dims when any authored light exists. **As-is stub vs contract:** direction is still `(0,-1,0)`, Play lights are white, game cameras are `FreeCamera`. Full contract (rotation-driven direction, Play parity, detached `UniversalCamera`, **Default Camera** `SceneComponentPicker`, **Possess Camera**, one `ShadowGenerator` from `shadowquality`, fog/IBL/clear) is [engineplan §2.5](../engineplan.md) / `p-lighting-camera`. |
 | `editor-billboard` | Camera-facing unlit icon quads for Light / Camera / Audio actors so they stay pickable. Mesh / sprite / tilemap still win when present. Play does not `assignMesh` these; authored lights/cameras come from `scene-illumination`. |
 | `editor-debug-overlay` | Selected `CameraComponent`: dashed frustum lines + 320×180 `RenderTargetTexture` ticked at 1 Hz (not the 60 fps loop), blitted into a corner `data-testid="camera-preview"` canvas. Selected `LightComponent`: dashed point rings, spot cone, or directional arrow from `range` / `outerAngle`. Same overlay in the scene viewport and Prefab viewport. Does not replace the editor hemispheric fill light. |
-| `viewport-gestures` | 3D one-finger look, 2D one-finger pan 1:1 with the pointer (hold-then-move marquee), pinch zoom, three-finger pan (2D same 1:1 scale; 3D `panScale`); tap pick |
+| `viewport-gestures` | 3D one-finger look, 2D one-finger pan 1:1 with the pointer (hold-then-move marquee), Drag Select immediate marquee in both modes, pinch zoom, three-finger pan (2D same 1:1 scale; 3D `panScale`); tap pick |
 | `viewport-fly-keys` | WASD fly/pan with rAF + continuous-render lease |
 | `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds, pixel-grid snap, and `applyPixelArtSamplingToScene` when pixel-perfect is on. Editor pinch/wheel zoom is continuous (integer zoom steps do not snap the frustum). |
 
