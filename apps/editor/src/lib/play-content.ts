@@ -1,8 +1,5 @@
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
-import {
-  createDefaultPlayHud,
-  type UserInterfaceDocument,
-} from "@babylonslate/ui-runtime";
+import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
 export interface PlayContentDocument {
   id: string;
@@ -16,16 +13,27 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function sizeFrom(value: unknown): { width: number; height: number } | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { width?: unknown; height?: unknown };
+  const width = record.width;
+  const height = record.height;
+  if (typeof width !== "number" || !Number.isFinite(width)) return null;
+  if (typeof height !== "number" || !Number.isFinite(height)) return null;
+  return { width: Math.max(1, width), height: Math.max(1, height) };
+}
+
 /** Hydrate a UserInterface document from an open asset payload. */
 export function asUiDocument(value: unknown): UserInterfaceDocument {
   const record = asRecord(value);
+  const designResolution =
+    sizeFrom(record.designResolution) ?? { width: 1920, height: 1080 };
   return {
     name: typeof record.name === "string" ? record.name : "HUD",
     rootId: typeof record.rootId === "string" ? record.rootId : "canvas",
-    designResolution:
-      record.designResolution && typeof record.designResolution === "object"
-        ? (record.designResolution as UserInterfaceDocument["designResolution"])
-        : { width: 1920, height: 1080 },
+    designResolution,
+    desiredSize:
+      sizeFrom(record.desiredSize) ?? { ...designResolution },
     scaleRule:
       record.scaleRule === "fitWidth" || record.scaleRule === "fitHeight"
         ? record.scaleRule
@@ -35,31 +43,54 @@ export function asUiDocument(value: unknown): UserInterfaceDocument {
   };
 }
 
-function findOpenUiDocument(
-  documents: readonly PlayContentDocument[],
-  activeDocumentId: string | null,
-): PlayContentDocument | undefined {
-  const active = documents.find((entry) => entry.id === activeDocumentId);
-  if (active?.ref.kind === "ui") return active;
-  return documents.find((entry) => entry.ref.kind === "ui");
+export type PlayHudInstance = { instanceId: string; assetGuid: string };
+
+export type PlayUiLibrary = Record<string, UserInterfaceDocument>;
+
+export function playUiLibraryFromAssets(
+  assets: ReadonlyArray<{ guid: string; path: string; type: string }>,
+  contentByPath: (path: string) => unknown | null,
+): PlayUiLibrary {
+  const library: PlayUiLibrary = {};
+  for (const asset of assets) {
+    if (asset.type !== "UserInterface") continue;
+    const content = contentByPath(asset.path);
+    if (!content) continue;
+    library[asset.guid] = asUiDocument(content);
+  }
+  return library;
 }
 
-/**
- * Active (or first) open viewport-layer UserInterface for Play.
- * Falls back to the default HUD when none is open — same pattern as
- * `playSceneFromOpenDocuments`. Full project-registry hosting stays later.
- */
-export function playHudFromOpenDocuments(
-  documents: readonly PlayContentDocument[],
-  activeDocumentId: string | null,
-): UserInterfaceDocument {
-  const open = findOpenUiDocument(documents, activeDocumentId);
-  if (!open?.content) return createDefaultPlayHud("HUD");
-  const hud = asUiDocument(open.content);
-  if (!hud.viewportLayer || Object.keys(hud.widgets).length === 0) {
-    return createDefaultPlayHud("HUD");
+export function applyPlayHudInstance(
+  instances: readonly PlayHudInstance[],
+  instanceId: string,
+  assetGuid: string,
+): PlayHudInstance[] {
+  const id = instanceId.trim();
+  const guid = assetGuid.trim();
+  if (!id || !guid) return [...instances];
+  if (instances.some((entry) => entry.instanceId === id)) return [...instances];
+  return [...instances, { instanceId: id, assetGuid: guid }];
+}
+
+export function removePlayHudInstance(
+  instances: readonly PlayHudInstance[],
+  instanceId: string,
+): PlayHudInstance[] {
+  return instances.filter((entry) => entry.instanceId !== instanceId);
+}
+
+export function resolvePlayHudDocuments(
+  instances: readonly PlayHudInstance[],
+  library: PlayUiLibrary,
+): Array<{ instanceId: string; document: UserInterfaceDocument }> {
+  const resolved: Array<{ instanceId: string; document: UserInterfaceDocument }> =
+    [];
+  for (const entry of instances) {
+    const document = library[entry.assetGuid];
+    if (document) resolved.push({ instanceId: entry.instanceId, document });
   }
-  return hud;
+  return resolved;
 }
 
 export type PlayAnimGraphEntry = { guid: string; document: unknown };

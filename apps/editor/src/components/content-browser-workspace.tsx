@@ -18,10 +18,10 @@ import {
   ContextMenuOverlay,
   SearchInput,
   SelectableText,
-  TreeView,
   TypeVisualIcon,
   resolveTypeVisual,
   useContextMenu,
+  type TypeVisual,
 } from "@babylonslate/editor-kit";
 import { documentId, documentKindForAssetType, labelFromPath } from "@babylonslate/core";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
@@ -57,7 +57,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
@@ -81,6 +80,7 @@ import {
   buildNewAssetResult,
   collectFolderGuids,
   defaultParentClassForType,
+  displayAssetTitle,
   filterAssets,
   flattenFolderTree,
   folderRelativePath,
@@ -88,6 +88,8 @@ import {
   isNewAssetNameTaken,
   isRenameNameTaken,
   newAssetFileName,
+  parentFolderPath,
+  remapPathAfterFolderMove,
   uniqueAssetTypes,
   classParentLookup,
   visualForIndexedAsset,
@@ -96,12 +98,30 @@ import {
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 import { ContentBrowserFolderTree } from "./content-browser-folder-tree";
+import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 
 const PROJECT_ROOT_ID = "project";
 
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
   | { kind: "folder"; path: string; guids: string[] };
+
+type MoveTarget =
+  | {
+      kind: "asset";
+      guid: string;
+      name: string;
+      sourcePath: string;
+      folderPath: string;
+      typeVisual: TypeVisual;
+    }
+  | {
+      kind: "folder";
+      path: string;
+      name: string;
+      sourcePath: string;
+      folderPath: string;
+    };
 
 export function ContentBrowserWorkspace() {
   const {
@@ -126,7 +146,6 @@ export function ContentBrowserWorkspace() {
   }, [diagnostics]);
 
   const [selectedFolderPath, setSelectedFolderPath] = useState(ASSETS_ROOT);
-  const [dropPath, setDropPath] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [selectedGuids, setSelectedGuids] = useState<Set<string>>(new Set());
@@ -142,13 +161,7 @@ export function ContentBrowserWorkspace() {
     | { kind: "folder"; value: string }
     | null
   >(null);
-  const [moveTarget, setMoveTarget] = useState<{
-    guid: string;
-    folderPath: string;
-  } | null>(null);
-  const [moveCollapsed, setMoveCollapsed] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [refsSummary, setRefsSummary] = useState<{
     name: string;
     inbound: string;
@@ -167,6 +180,7 @@ export function ContentBrowserWorkspace() {
   const thumbnailUrlsRef = useRef(thumbnailUrls);
   thumbnailUrlsRef.current = thumbnailUrls;
   const menuTargetGuidsRef = useRef<string[]>([]);
+  const menuTargetFolderRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!pendingTarget) return;
@@ -354,9 +368,14 @@ export function ContentBrowserWorkspace() {
           const folderPath = asset.path.includes("/")
             ? asset.path.slice(0, asset.path.lastIndexOf("/"))
             : ASSETS_ROOT;
+          const sourcePath = folderPath || ASSETS_ROOT;
           setMoveTarget({
+            kind: "asset",
             guid,
-            folderPath: folderPath || ASSETS_ROOT,
+            name: displayAssetTitle(asset.header.name),
+            sourcePath,
+            folderPath: sourcePath,
+            typeVisual: visualForIndexedAsset(asset, classParentOf),
           });
         },
       },
@@ -415,18 +434,56 @@ export function ContentBrowserWorkspace() {
     ],
     [
       assetRegistry,
+      classParentOf,
       refreshAssetRegistry,
       requestDelete,
       selectedFolderPath,
     ],
   );
 
+  const folderContextItems = useMemo(
+    () => [
+      {
+        id: "move",
+        label: "Move…",
+        onSelect: () => {
+          const path = menuTargetFolderRef.current;
+          if (!path || path === ASSETS_ROOT) return;
+          setMoveTarget({
+            kind: "folder",
+            path,
+            name: path.slice(path.lastIndexOf("/") + 1),
+            sourcePath: path,
+            folderPath: parentFolderPath(path),
+          });
+        },
+      },
+      {
+        id: "delete",
+        label: "Delete",
+        onSelect: () => {
+          const path = menuTargetFolderRef.current;
+          if (path) requestDeleteFolder(path);
+        },
+      },
+    ],
+    [requestDeleteFolder],
+  );
+
   const { menu, closeMenu, openMenuAt } = useContextMenu({
     items: contextItems,
+  });
+  const {
+    menu: folderMenu,
+    closeMenu: closeFolderMenu,
+    openMenuAt: openFolderMenuAt,
+  } = useContextMenu({
+    items: folderContextItems,
   });
 
   const openTileMenu = useCallback(
     (guid: string, clientX: number, clientY: number) => {
+      closeFolderMenu();
       setSelectedGuids((current) => {
         const next = new Set(current);
         if (!next.has(guid)) {
@@ -437,7 +494,18 @@ export function ContentBrowserWorkspace() {
       });
       openMenuAt(clientX, clientY);
     },
-    [openMenuAt],
+    [closeFolderMenu, openMenuAt],
+  );
+
+  const openFolderMenu = useCallback(
+    (path: string, clientX: number, clientY: number) => {
+      if (path === ASSETS_ROOT) return;
+      closeMenu();
+      menuTargetFolderRef.current = path;
+      setSelectedFolderPath(path);
+      openFolderMenuAt(clientX, clientY);
+    },
+    [closeMenu, openFolderMenuAt],
   );
 
   const resolveAssetName = useCallback(
@@ -576,67 +644,54 @@ export function ContentBrowserWorkspace() {
     if (!assetRegistry || !moveTarget) return;
     setBusy(true);
     try {
-      const before = assetRegistry.getByGuid(moveTarget.guid);
-      if (!before) return;
-      const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
-      const folder = folderRelativePath(moveTarget.folderPath, ASSETS_ROOT);
-      const relative = folder ? `${folder}/${fileName}` : fileName;
-      const moved = await assetRegistry.moveAsset(
-        moveTarget.guid,
-        PROJECT_ROOT_ID,
-        relative,
-      );
-      repairDocumentPath(before.path, moved.path, moved.header.type);
+      if (moveTarget.kind === "folder") {
+        const fromPath = moveTarget.sourcePath;
+        const destPath = moveTarget.folderPath;
+        const folderName = fromPath.slice(fromPath.lastIndexOf("/") + 1);
+        const nextFolder = `${destPath}/${folderName}`;
+        const contained = allAssets.filter(
+          (asset) =>
+            asset.path === fromPath || asset.path.startsWith(`${fromPath}/`),
+        );
+        await assetRegistry.moveFolder(
+          PROJECT_ROOT_ID,
+          folderRelativePath(fromPath, ASSETS_ROOT),
+          folderRelativePath(destPath, ASSETS_ROOT),
+        );
+        for (const asset of contained) {
+          repairDocumentPath(
+            asset.path,
+            remapPathAfterFolderMove(asset.path, fromPath, nextFolder),
+            asset.header.type,
+          );
+        }
+        setSelectedFolderPath(nextFolder);
+      } else {
+        const before = assetRegistry.getByGuid(moveTarget.guid);
+        if (!before) return;
+        const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
+        const folder = folderRelativePath(moveTarget.folderPath, ASSETS_ROOT);
+        const relative = folder ? `${folder}/${fileName}` : fileName;
+        const moved = await assetRegistry.moveAsset(
+          moveTarget.guid,
+          PROJECT_ROOT_ID,
+          relative,
+        );
+        repairDocumentPath(before.path, moved.path, moved.header.type);
+        setSelectedFolderPath(moveTarget.folderPath);
+      }
       await refreshAssetRegistry();
       setMoveTarget(null);
     } finally {
       setBusy(false);
     }
-  }, [assetRegistry, moveTarget, refreshAssetRegistry, repairDocumentPath]);
-
-  const dropAssetOnFolder = useCallback(
-    async (guid: string, folderPath: string) => {
-      if (!assetRegistry) return;
-      const before = assetRegistry.getByGuid(guid);
-      if (!before) return;
-      const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
-      const folder = folderRelativePath(folderPath, ASSETS_ROOT);
-      const relative = folder ? `${folder}/${fileName}` : fileName;
-      if (relative === before.path.replace(/^assets\//, "") || `assets/${relative}` === before.path) {
-        return;
-      }
-      setBusy(true);
-      try {
-        const moved = await assetRegistry.moveAsset(
-          guid,
-          PROJECT_ROOT_ID,
-          relative,
-        );
-        repairDocumentPath(before.path, moved.path, moved.header.type);
-        await refreshAssetRegistry();
-      } finally {
-        setBusy(false);
-      }
-    },
-    [assetRegistry, refreshAssetRegistry, repairDocumentPath],
-  );
-
-  const dropFolderOnFolder = useCallback(
-    async (fromPath: string, toPath: string) => {
-      if (!assetRegistry || fromPath === ASSETS_ROOT || fromPath === toPath) return;
-      if (toPath === fromPath || toPath.startsWith(`${fromPath}/`)) return;
-      const relative = folderRelativePath(fromPath, ASSETS_ROOT);
-      const parent = folderRelativePath(toPath, ASSETS_ROOT);
-      setBusy(true);
-      try {
-        await assetRegistry.moveFolder(PROJECT_ROOT_ID, relative, parent);
-        await refreshAssetRegistry();
-      } finally {
-        setBusy(false);
-      }
-    },
-    [assetRegistry, refreshAssetRegistry],
-  );
+  }, [
+    allAssets,
+    assetRegistry,
+    moveTarget,
+    refreshAssetRegistry,
+    repairDocumentPath,
+  ]);
 
   const handleImport = useCallback(async () => {
     if (isMobilePlatform()) {
@@ -725,7 +780,6 @@ export function ContentBrowserWorkspace() {
     <div
       className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
       data-testid="content-browser-workspace"
-      onDragEnd={() => setDropPath(null)}
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <Button
@@ -853,16 +907,8 @@ export function ContentBrowserWorkspace() {
             <ContentBrowserFolderTree
               node={folderTree}
               selectedPath={selectedFolderPath}
-              dropPath={dropPath}
               onSelect={setSelectedFolderPath}
-              onRequestDelete={requestDeleteFolder}
-              onDropAsset={(guid, folderPath) => {
-                void dropAssetOnFolder(guid, folderPath);
-              }}
-              onDropFolder={(fromPath, toPath) => {
-                void dropFolderOnFolder(fromPath, toPath);
-              }}
-              onDropPathChange={setDropPath}
+              onContextMenu={openFolderMenu}
             />
           ) : null}
         </aside>
@@ -889,13 +935,6 @@ export function ContentBrowserWorkspace() {
                 }
                 onOpen={() => void openOrFocusDocument(asset)}
                 onLongPressMenu={(x, y) => openTileMenu(asset.header.guid, x, y)}
-                onArmedDrag={() => {
-                  setSelectedGuids(new Set([asset.header.guid]));
-                }}
-                onDropAsset={(guid, folderPath) => {
-                  void dropAssetOnFolder(guid, folderPath);
-                }}
-                onDropPathChange={setDropPath}
               />
             ))}
             {visibleAssets.length === 0 ? (
@@ -908,6 +947,7 @@ export function ContentBrowserWorkspace() {
       </div>
 
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+      <ContextMenuOverlay menu={folderMenu} onClose={closeFolderMenu} />
 
       <AlertDialog open={newAssetOpen} onOpenChange={setNewAssetOpen}>
         <AlertDialogContent data-testid="content-browser-new-asset-dialog">
@@ -1122,67 +1162,39 @@ export function ContentBrowserWorkspace() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog
+      <ContentBrowserMoveDialog
+        key={
+          moveTarget
+            ? `${moveTarget.kind}:${moveTarget.kind === "asset" ? moveTarget.guid : moveTarget.path}`
+            : "closed"
+        }
         open={moveTarget !== null}
         onOpenChange={(open) => {
           if (!open) setMoveTarget(null);
         }}
-      >
-        <DialogContent data-testid="content-browser-move-dialog">
-          <DialogHeader>
-            <DialogTitle>Move Asset</DialogTitle>
-            <DialogDescription>
-              Choose a destination folder in the project.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="h-64 min-h-0">
-            <TreeView
-              nodes={flattenFolderTree(folderTree, moveCollapsed).map(
-                (row) => ({
-                  id: row.id,
-                  label: row.label,
-                  depth: row.depth,
-                  hasChildren: row.hasChildren,
-                  expanded: row.expanded,
-                }),
-              )}
-              selectedId={moveTarget?.folderPath ?? null}
-              onSelect={(id) =>
-                setMoveTarget((current) =>
-                  current ? { ...current, folderPath: id } : current,
-                )
-              }
-              onToggleExpanded={(id) =>
-                setMoveCollapsed((current) => {
-                  const next = new Set(current);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                })
-              }
-              emptyLabel="No folders"
-              data-testid="content-browser-move-tree"
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setMoveTarget(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              data-testid="content-browser-move-confirm"
-              disabled={busy || !moveTarget}
-              onClick={() => void confirmMove()}
-            >
-              Move
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        kind={moveTarget?.kind ?? "asset"}
+        name={moveTarget?.name ?? ""}
+        currentFolderPath={
+          moveTarget
+            ? moveTarget.kind === "folder"
+              ? parentFolderPath(moveTarget.sourcePath)
+              : moveTarget.sourcePath
+            : ASSETS_ROOT
+        }
+        sourcePath={moveTarget?.sourcePath ?? ASSETS_ROOT}
+        folderTree={folderTree}
+        destinationPath={moveTarget?.folderPath ?? ASSETS_ROOT}
+        onDestinationChange={(path) =>
+          setMoveTarget((current) =>
+            current ? { ...current, folderPath: path } : current,
+          )
+        }
+        onConfirm={() => void confirmMove()}
+        busy={busy}
+        typeVisual={
+          moveTarget?.kind === "asset" ? moveTarget.typeVisual : null
+        }
+      />
 
       <AlertDialog
         open={refsSummary !== null}

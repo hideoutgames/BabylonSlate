@@ -128,6 +128,8 @@ export function startPlaySession(options: {
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
   onUiSetVisible?: (widgetId: string, visible: boolean) => void;
+  onUiApply?: (instanceId: string, assetGuid: string) => void;
+  onUiRemove?: (instanceId: string) => void;
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
 }): PlaySession {
@@ -217,6 +219,12 @@ export function startPlaySession(options: {
     }
     if (command.type === "uiSetVisible") {
       options.onUiSetVisible?.(command.widgetId, command.visible);
+    }
+    if (command.type === "uiApply") {
+      options.onUiApply?.(command.instanceId, command.assetGuid);
+    }
+    if (command.type === "uiRemove") {
+      options.onUiRemove?.(command.instanceId);
     }
   };
 

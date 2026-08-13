@@ -9,6 +9,49 @@ export function nestedUiGuidsOf(doc: UserInterfaceDocument): string[] {
   return guids;
 }
 
+function withNestedTrial(
+  doc: UserInterfaceDocument,
+  nestedGuid: string,
+): UserInterfaceDocument {
+  const trialId = "__nested-trial__";
+  const host = doc.widgets[doc.rootId];
+  if (!host) return doc;
+  return {
+    ...doc,
+    widgets: {
+      ...doc.widgets,
+      [trialId]: {
+        id: trialId,
+        name: "Nested",
+        kind: "UserInterface",
+        layout: host.layout,
+        visible: true,
+        children: [],
+        style: host.style,
+        props: {},
+        nestedUiGuid: nestedGuid,
+      },
+      [host.id]: { ...host, children: [...host.children, trialId] },
+    },
+  };
+}
+
+/**
+ * UserInterface guids that can be nested into `doc` without a self-cycle.
+ */
+export function nestedUiPickableGuids(
+  selfGuid: string,
+  candidateGuids: readonly string[],
+  doc: UserInterfaceDocument,
+  resolve: (guid: string) => UserInterfaceDocument | null,
+): string[] {
+  return candidateGuids.filter((guid) => {
+    if (guid === selfGuid) return false;
+    return uiDocumentWouldCycle(selfGuid, withNestedTrial(doc, guid), resolve) ===
+      null;
+  });
+}
+
 /**
  * Depth-first cycle check over nested UserInterface refs.
  * Returns the guid path that loops, or null when the graph is a DAG.

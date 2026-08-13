@@ -24,6 +24,17 @@ export type ConnectEndDecision = {
   thresholdPx?: number;
 };
 
+export type ConnectEndBreakDecision = ConnectEndDecision & {
+  pointerOverSourceHandle: boolean;
+};
+
+type PinEdgeRef = {
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+};
+
 export function displayNodeTitle(nodeType: string, title?: string): string {
   if (nodeType.startsWith("flow.event.")) {
     return formatEventTitle(
@@ -102,6 +113,35 @@ export function shouldOpenAddNodeOnConnectEnd({
   return !safePins.some((pin) => isNearSourcePin(pin, pointer, thresholdPx));
 }
 
+export function shouldBreakPinConnectionsOnConnectEnd(
+  decision: ConnectEndBreakDecision,
+): boolean {
+  if (decision.hasTargetHandle || decision.pointerOverSourceHandle) {
+    return false;
+  }
+  if (shouldOpenAddNodeOnConnectEnd(decision)) return false;
+  return true;
+}
+
+export function edgeTouchesPin(
+  edge: PinEdgeRef,
+  nodeId: string,
+  pinId: string,
+): boolean {
+  return (
+    (edge.source === nodeId && edge.sourceHandle === pinId) ||
+    (edge.target === nodeId && edge.targetHandle === pinId)
+  );
+}
+
+export function edgesTouchingPin<T extends PinEdgeRef>(
+  edges: readonly T[],
+  nodeId: string,
+  pinId: string,
+): T[] {
+  return edges.filter((edge) => edgeTouchesPin(edge, nodeId, pinId));
+}
+
 export function nodePinLists(
   nodes: Array<{ id: string; data?: Record<string, unknown> }>,
 ): Array<{ id: string; pins?: SerializedPin[] }> {
@@ -150,6 +190,28 @@ export function isClientPointOverGraphNode(
     }
   }
   return false;
+}
+
+export function isClientPointOverHandle(
+  pointer: { x: number; y: number },
+  nodeId: string,
+  pinId: string,
+  root: ParentNode = document,
+): boolean {
+  const handles = Array.from(root.querySelectorAll(".react-flow__handle"));
+  const handle = handles.find(
+    (entry) =>
+      entry.getAttribute("data-nodeid") === nodeId &&
+      entry.getAttribute("data-handleid") === pinId,
+  );
+  if (!handle) return false;
+  const rect = handle.getBoundingClientRect();
+  return (
+    pointer.x >= rect.left &&
+    pointer.x <= rect.right &&
+    pointer.y >= rect.top &&
+    pointer.y <= rect.bottom
+  );
 }
 
 export function containerPointerToClient(

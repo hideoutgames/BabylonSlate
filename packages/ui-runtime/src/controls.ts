@@ -20,7 +20,7 @@ export function describeUiControls(
   viewportHeight: number,
 ): UiControlDescriptor[] {
   return flattenLaidOut(layout.tree).map((node) => {
-    const widget = doc.widgets[node.id];
+    const widget = node.widget ?? doc.widgets[node.id];
     const text =
       typeof widget?.props.text === "string" ? widget.props.text : undefined;
     return {

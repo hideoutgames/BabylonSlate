@@ -8,7 +8,12 @@ import {
   writeGolden,
 } from "@babylonslate/test-kit";
 import { createEditorCamera } from "./editor-camera";
-import { meshNamesInCanvasRect, projectToCanvas, snapToGrid } from "./two-d";
+import {
+  meshNamesInCanvasRect,
+  orthoPanFromCanvasDelta,
+  projectToCanvas,
+  snapToGrid,
+} from "./two-d";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";
@@ -113,5 +118,48 @@ describe("snapToGrid", () => {
     expect(snapToGrid(1.6, 1)).toBe(2);
     expect(snapToGrid(0.3, 0.25)).toBeCloseTo(0.25, 6);
     expect(snapToGrid(1.234, 0)).toBe(1.234);
+  });
+});
+
+describe("orthoPanFromCanvasDelta", () => {
+  const frustum = {
+    orthoLeft: -4,
+    orthoRight: 4,
+    orthoTop: 4,
+    orthoBottom: -4,
+  };
+
+  it("maps a canvas delta to a 1:1 world pan", () => {
+    expect(
+      orthoPanFromCanvasDelta(-40, 40, frustum, { width: 800, height: 600 }),
+    ).toEqual({
+      deltaX: 40 * (8 / 800),
+      deltaY: 40 * (8 / 600),
+    });
+  });
+
+  it("returns a zero pan when the canvas has no size", () => {
+    expect(
+      orthoPanFromCanvasDelta(10, 10, frustum, { width: 0, height: 600 }),
+    ).toEqual({ deltaX: 0, deltaY: 0 });
+    expect(
+      orthoPanFromCanvasDelta(10, 10, frustum, { width: 800, height: 0 }),
+    ).toEqual({ deltaX: 0, deltaY: 0 });
+  });
+
+  it("returns a zero pan when ortho bounds are missing", () => {
+    expect(
+      orthoPanFromCanvasDelta(
+        10,
+        10,
+        {
+          orthoLeft: null,
+          orthoRight: 4,
+          orthoTop: 4,
+          orthoBottom: -4,
+        },
+        { width: 800, height: 600 },
+      ),
+    ).toEqual({ deltaX: 0, deltaY: 0 });
   });
 });

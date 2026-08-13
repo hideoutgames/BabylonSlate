@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { PanelFrame, ParameterListEditor, PropertyGrid, SelectableText, TreeView } from "@babylonslate/editor-kit";
+import {
+  AssetPicker,
+  PanelFrame,
+  ParameterListEditor,
+  PropertyGrid,
+  SelectableText,
+  TreeView,
+  NumberField,
+  humanizePropertyLabel,
+} from "@babylonslate/editor-kit";
 import type { ParameterRow, PropertyRow, TreeViewNode } from "@babylonslate/editor-kit";
 import {
   Tabs,
@@ -16,13 +25,20 @@ import {
 } from "@babylonslate/ui/components/select";
 import { Button } from "@babylonslate/ui/components/button";
 import {
+  Field,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
+import {
+  DESIRED_CANVAS_ID,
   DEVICE_PRESETS,
   WIDGET_KINDS,
   createWidget,
   describeUiControls,
+  designerViewport,
   glyphsFallingToFallback,
   layoutUserInterface,
-  type DevicePreset,
+  nestedUiPickableGuids,
+  type DesignerCanvasId,
   type WidgetKind,
 } from "@babylonslate/ui-runtime";
 import { normalizeFontPayload, type SpritePayload } from "@babylonslate/assets";
@@ -45,7 +61,7 @@ import { GraphEditor, type PaletteNode } from "@babylonslate/graph-ui";
 import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
-import { asUiDocument } from "../lib/play-content";
+import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import {
   createDefaultLogicGraphSerialized,
@@ -78,7 +94,15 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   const commit = (next: Record<string, unknown>) => {
     void applyAssetDocumentChange(documentId, next);
   };
-  if (doc.ref.kind === "ui") return <UiDesigner payload={payload} onChange={commit} />;
+  if (doc.ref.kind === "ui") {
+    return (
+      <UiDesigner
+        path={doc.ref.path}
+        payload={payload}
+        onChange={commit}
+      />
+    );
+  }
   if (doc.ref.kind === "font") {
     return (
       <FontEditor
@@ -116,25 +140,54 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
 }
 
 function UiDesigner({
+  path,
   payload,
   onChange,
 }: {
+  path: string;
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const { openDocuments, assetRegistry, collectPlayUiLibrary } = useDocuments();
   const ui = asUiDocument(payload);
   const logic = (payload.logic ??
     createDefaultLogicGraphSerialized()) as SerializedGraph;
-  const [presetId, setPresetId] = useState<DevicePreset["id"]>("ipad-landscape");
+  const [presetId, setPresetId] = useState<DesignerCanvasId>("ipad-landscape");
   const [selectedId, setSelectedId] = useState(ui.rootId);
-  const preset =
-    DEVICE_PRESETS.find((row) => row.id === presetId) ?? DEVICE_PRESETS[0]!;
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [uiLibrary, setUiLibrary] = useState<PlayUiLibrary>({});
+  const selfGuid =
+    assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
+    path;
+  useEffect(() => {
+    let cancelled = false;
+    void collectPlayUiLibrary()
+      .then((library) => {
+        if (!cancelled) setUiLibrary(library);
+      })
+      .catch(() => {
+        if (!cancelled) setUiLibrary({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [collectPlayUiLibrary, openDocuments]);
+  const resolveNested = (guid: string) => {
+    if (guid === selfGuid) return ui;
+    const asset = assetRegistry?.getByGuid(guid);
+    if (asset) {
+      const open = openDocuments.find((entry) => entry.ref.path === asset.path);
+      if (open?.content) return asUiDocument(open.content);
+    }
+    return uiLibrary[guid] ?? null;
+  };
+  const viewport = designerViewport(presetId, ui.desiredSize);
   const layout = layoutUserInterface(
     ui,
-    { width: preset.width, height: preset.height },
-    { safeArea: preset.safeArea },
+    { width: viewport.width, height: viewport.height },
+    { safeArea: viewport.safeArea, resolveNested },
   );
-  const controls = describeUiControls(ui, layout, preset.height);
+  const controls = describeUiControls(ui, layout, viewport.height);
   const treeNodes: TreeViewNode[] = [];
   const walk = (id: string, depth: number) => {
     const widget = ui.widgets[id];
@@ -150,6 +203,32 @@ function UiDesigner({
   };
   walk(ui.rootId, 0);
   const selected = ui.widgets[selectedId] ?? ui.widgets[ui.rootId];
+  const candidateGuids = (assetRegistry?.list() ?? [])
+    .filter((asset) => asset.header.type === "UserInterface")
+    .map((asset) => asset.header.guid);
+  const pickable = new Set(
+    nestedUiPickableGuids(selfGuid, candidateGuids, ui, resolveNested),
+  );
+  const pickerAssets = (assetRegistry?.list() ?? [])
+    .filter((asset) => pickable.has(asset.header.guid))
+    .map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+      path: asset.path,
+    }));
+
+  function patchWidget(
+    id: string,
+    patch: Partial<(typeof ui.widgets)[string]>,
+  ) {
+    onChange({
+      ...payload,
+      ...ui,
+      widgets: { ...ui.widgets, [id]: { ...ui.widgets[id]!, ...patch } },
+    });
+  }
+
   const rows: PropertyRow[] = selected
     ? [
         {
@@ -166,29 +245,36 @@ function UiDesigner({
           value: selected.visible,
           onChange: (value) => patchWidget(selected.id, { visible: value }),
         },
-        {
-          id: "text",
-          kind: "text",
-          label: "Text",
-          value: typeof selected.props.text === "string" ? selected.props.text : "",
-          onChange: (value) =>
-            patchWidget(selected.id, {
-              props: { ...selected.props, text: value },
-            }),
-        },
+        ...(selected.kind === "UserInterface"
+          ? [
+              {
+                id: "nestedUi",
+                kind: "asset" as const,
+                label: "User Interface",
+                value: selected.nestedUiGuid ?? null,
+                placeholder: "None",
+                onPick: () => setPickerOpen(true),
+                onChange: (value: string | null) =>
+                  patchWidget(selected.id, { nestedUiGuid: value }),
+              },
+            ]
+          : [
+              {
+                id: "text",
+                kind: "text" as const,
+                label: "Text",
+                value:
+                  typeof selected.props.text === "string"
+                    ? selected.props.text
+                    : "",
+                onChange: (value: string) =>
+                  patchWidget(selected.id, {
+                    props: { ...selected.props, text: value },
+                  }),
+              },
+            ]),
       ]
     : [];
-
-  function patchWidget(
-    id: string,
-    patch: Partial<(typeof ui.widgets)[string]>,
-  ) {
-    onChange({
-      ...payload,
-      ...ui,
-      widgets: { ...ui.widgets, [id]: { ...ui.widgets[id]!, ...patch } },
-    });
-  }
 
   const addWidget = (kind: WidgetKind) => {
     const id = `${kind.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -206,23 +292,29 @@ function UiDesigner({
     setSelectedId(widget.id);
   };
 
+  const previewScale =
+    viewport.id === DESIRED_CANVAS_ID
+      ? Math.min(1, 640 / viewport.width)
+      : 0.45;
+
   return (
     <Tabs defaultValue="design" className="flex min-h-0 flex-1 flex-col gap-0">
-      <div className="flex items-center gap-2 border-b border-border px-2 py-1">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-2 py-1">
         <TabsList variant="line">
           <TabsTrigger value="design">Design</TabsTrigger>
           <TabsTrigger value="logic">Logic</TabsTrigger>
         </TabsList>
         <Select
           value={presetId}
-          onValueChange={(value) =>
-            setPresetId(value as DevicePreset["id"])
-          }
+          onValueChange={(value) => setPresetId(value as DesignerCanvasId)}
         >
           <SelectTrigger className="w-48" data-testid="ui-device-preset">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value={DESIRED_CANVAS_ID} data-testid="ui-preset-desired">
+              Desired
+            </SelectItem>
             {DEVICE_PRESETS.map((row) => (
               <SelectItem
                 key={row.id}
@@ -234,6 +326,36 @@ function UiDesigner({
             ))}
           </SelectContent>
         </Select>
+        <Field className="w-28">
+          <FieldLabel>Desired Width</FieldLabel>
+          <NumberField
+            data-testid="ui-desired-width"
+            value={ui.desiredSize.width}
+            min={1}
+            onChange={(width) =>
+              onChange({
+                ...payload,
+                ...ui,
+                desiredSize: { ...ui.desiredSize, width },
+              })
+            }
+          />
+        </Field>
+        <Field className="w-28">
+          <FieldLabel>Desired Height</FieldLabel>
+          <NumberField
+            data-testid="ui-desired-height"
+            value={ui.desiredSize.height}
+            min={1}
+            onChange={(height) =>
+              onChange({
+                ...payload,
+                ...ui,
+                desiredSize: { ...ui.desiredSize, height },
+              })
+            }
+          />
+        </Field>
       </div>
       <TabsContent value="design" className="flex min-h-0 flex-1">
         <PanelFrame className="w-56 shrink-0 border-r border-border">
@@ -243,9 +365,10 @@ function UiDesigner({
                 key={kind}
                 size="sm"
                 variant="outline"
+                data-testid={`ui-add-widget-${kind}`}
                 onClick={() => addWidget(kind)}
               >
-                {kind}
+                {humanizePropertyLabel(kind)}
               </Button>
             ))}
           </div>
@@ -260,11 +383,11 @@ function UiDesigner({
           <div
             className="relative bg-background shadow-sm"
             data-testid="ui-design-canvas"
-            data-preset={preset.id}
+            data-preset={viewport.id}
             data-scale={String(layout.scale)}
             style={{
-              width: preset.width * 0.45,
-              height: preset.height * 0.45,
+              width: viewport.width * previewScale,
+              height: viewport.height * previewScale,
             }}
           >
             {controls.map((control) => (
@@ -278,12 +401,18 @@ function UiDesigner({
                 data-gui-y={String(Math.round(control.guiRect.y))}
                 className="absolute h-auto min-h-0 rounded-sm border-border/80 bg-card/80 px-0 py-0 text-[10px] text-foreground"
                 style={{
-                  left: `${(control.guiRect.x / preset.width) * 100}%`,
-                  top: `${(control.guiRect.y / preset.height) * 100}%`,
-                  width: `${(control.guiRect.width / preset.width) * 100}%`,
-                  height: `${(control.guiRect.height / preset.height) * 100}%`,
+                  left: `${(control.guiRect.x / viewport.width) * 100}%`,
+                  top: `${(control.guiRect.y / viewport.height) * 100}%`,
+                  width: `${(control.guiRect.width / viewport.width) * 100}%`,
+                  height: `${(control.guiRect.height / viewport.height) * 100}%`,
                 }}
-                onClick={() => setSelectedId(control.id)}
+                onClick={() => {
+                  if (ui.widgets[control.id]) {
+                    setSelectedId(control.id);
+                    return;
+                  }
+                  setSelectedId(control.id.split("/")[0] ?? ui.rootId);
+                }}
               >
                 {control.text ?? control.name}
               </Button>
@@ -300,6 +429,21 @@ function UiDesigner({
           onChange={(graph) => onChange({ ...payload, logic: graph })}
         />
       </TabsContent>
+      <AssetPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        assets={pickerAssets}
+        allowedTypes={["UserInterface"]}
+        allowNone
+        title="Pick User Interface"
+        data-testid="ui-nested-picker"
+        onPick={(guid) => {
+          if (selected?.kind === "UserInterface") {
+            patchWidget(selected.id, { nestedUiGuid: guid });
+          }
+          setPickerOpen(false);
+        }}
+      />
     </Tabs>
   );
 }

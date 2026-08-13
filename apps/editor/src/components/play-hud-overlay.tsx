@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef } from "react";
 import {
-  createDefaultPlayHud,
   describeUiControls,
   devicePresetForViewport,
   layoutUserInterface,
@@ -10,7 +9,11 @@ import { Button } from "@babylonslate/ui/components/button";
 import { playJoystickAxesFromPointer } from "../lib/play-hud-joystick";
 
 export interface PlayHudOverlayProps {
-  document?: UserInterfaceDocument;
+  instances?: ReadonlyArray<{
+    instanceId: string;
+    document: UserInterfaceDocument;
+  }>;
+  uiLibrary?: Record<string, UserInterfaceDocument>;
   width: number;
   height: number;
   hiddenWidgetIds?: ReadonlySet<string>;
@@ -36,37 +39,37 @@ function stringProp(
 }
 
 export function PlayHudOverlay({
-  document,
+  instances = [],
+  uiLibrary = {},
   width,
   height,
   hiddenWidgetIds,
   onTouchAxis,
 }: PlayHudOverlayProps) {
-  const hud = useMemo(
-    () => document ?? createDefaultPlayHud("HUD"),
-    [document],
-  );
   const pointerIdRef = useRef<number | null>(null);
   const preset = useMemo(
     () => devicePresetForViewport(Math.max(1, width), Math.max(1, height)),
     [width, height],
   );
-  const layout = useMemo(
-    () =>
-      layoutUserInterface(
-        hud,
-        {
-          width: Math.max(1, width),
-          height: Math.max(1, height),
-        },
-        { safeArea: preset.safeArea },
-      ),
-    [hud, width, height, preset],
+  const resolveNested = useCallback(
+    (guid: string) => uiLibrary[guid] ?? null,
+    [uiLibrary],
   );
-  const controls = useMemo(
-    () => describeUiControls(hud, layout, Math.max(1, height)),
-    [hud, layout, height],
-  );
+  const controls = useMemo(() => {
+    const viewport = { width: Math.max(1, width), height: Math.max(1, height) };
+    return instances.flatMap((entry) => {
+      const layout = layoutUserInterface(entry.document, viewport, {
+        safeArea: preset.safeArea,
+        resolveNested,
+      });
+      return describeUiControls(entry.document, layout, viewport.height).map(
+        (control) => ({
+          ...control,
+          id: `${entry.instanceId}:${control.id}`,
+        }),
+      );
+    });
+  }, [instances, width, height, preset, resolveNested]);
 
   const emitStick = useCallback(
     (

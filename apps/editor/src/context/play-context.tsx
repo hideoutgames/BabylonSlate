@@ -26,7 +26,7 @@ import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import { playPhysicsFromOpenDocuments, playSceneFromOpenDocuments } from "../services/play-physics";
-import { playAnimGraphsFromOpenDocuments, playHudFromOpenDocuments } from "../lib/play-content";
+import { playAnimGraphsFromOpenDocuments } from "../lib/play-content";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import {
@@ -36,6 +36,7 @@ import {
 import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
+import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -94,8 +95,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     "worker" | "in-process" | null
   >(null);
   const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
+  const [playUiLibrary, setPlayUiLibrary] = useState<
+    Record<string, UserInterfaceDocument>
+  >({});
   const {
     collectPlayPreviewScripts,
+    collectPlayUiLibrary,
     openDocuments,
     activeDocumentId,
     projectDocument,
@@ -114,7 +119,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     openDocuments,
     activeDocumentId,
   );
-  const playHud = playHudFromOpenDocuments(openDocuments, activeDocumentId);
   const playAnimGraphs = playAnimGraphsFromOpenDocuments(
     openDocuments,
     (path) =>
@@ -252,6 +256,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setScripts(nextScripts);
           setDiagnostics(nextDiagnostics);
         }
+        try {
+          setPlayUiLibrary(await collectPlayUiLibrary());
+        } catch (error) {
+          appendLog(
+            `UserInterface library failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayUiLibrary({});
+        }
 
         setPrepareState(null);
 
@@ -278,6 +290,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     [
       appendLog,
       collectPlayPreviewScripts,
+      collectPlayUiLibrary,
       diagnostics,
       dirtyDocuments,
       launchPlay,
@@ -397,7 +410,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             physics={playPhysics}
             sceneAssetGuid={playScene?.sceneAssetGuid}
             scene={playScene?.scene}
-            hudDocument={playHud}
+            uiLibrary={playUiLibrary}
             animGraphs={playAnimGraphs}
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP

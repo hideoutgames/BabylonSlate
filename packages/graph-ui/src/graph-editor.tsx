@@ -42,11 +42,14 @@ import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
 import {
   collectSafeConnectPins,
+  edgeTouchesPin,
   firstCompatiblePin,
   isClientPointOverGraphNode,
+  isClientPointOverHandle,
   nodePinLists,
   pinsAreCompatible,
   screenCentersForSafePins,
+  shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
 import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
@@ -402,37 +405,60 @@ function GraphEditorCanvas({
       const fromHandle = state.fromHandle;
       const fromNode = state.fromNode;
       if (!fromHandle?.id || !fromNode) return;
+      const pinId = fromHandle.id;
       const point = clientPoint(event);
       if (!point) return;
       const pin = pinOnNode(
         graphStateRef.current.nodes,
         fromNode.id,
-        fromHandle.id,
+        pinId,
       );
       if (!pin) return;
       const root = document;
+      const decision = {
+        hasTargetHandle: false,
+        pointerOverNode: isClientPointOverGraphNode(point, root),
+        pointer: point,
+        safePins: screenCentersForSafePins(
+          root,
+          collectSafeConnectPins(
+            nodePinLists(graphStateRef.current.nodes),
+            fromNode.id,
+            pin,
+          ),
+        ),
+      };
+      if (shouldOpenAddNodeOnConnectEnd(decision)) {
+        const position = screenToFlowPosition(point);
+        setPendingConnect({ pin, nodeId: fromNode.id, position });
+        setPaletteOpen(true);
+        return;
+      }
       if (
-        !shouldOpenAddNodeOnConnectEnd({
-          hasTargetHandle: false,
-          pointerOverNode: isClientPointOverGraphNode(point, root),
-          pointer: point,
-          safePins: screenCentersForSafePins(
+        !shouldBreakPinConnectionsOnConnectEnd({
+          ...decision,
+          pointerOverSourceHandle: isClientPointOverHandle(
+            point,
+            fromNode.id,
+            pinId,
             root,
-            collectSafeConnectPins(
-              nodePinLists(graphStateRef.current.nodes),
-              fromNode.id,
-              pin,
-            ),
           ),
         })
       ) {
         return;
       }
-      const position = screenToFlowPosition(point);
-      setPendingConnect({ pin, nodeId: fromNode.id, position });
-      setPaletteOpen(true);
+      setEdges((current) => {
+        const next = current.filter(
+          (edge) => !edgeTouchesPin(edge, fromNode.id, pinId),
+        );
+        if (next.length === current.length) return current;
+        emitChange(graphStateRef.current.nodes, next);
+        return next;
+      });
+      pendingPinRef.current = null;
+      setPendingPin(null);
     },
-    [screenToFlowPosition],
+    [emitChange, screenToFlowPosition],
   );
 
   const handleAddPaletteNode = useCallback(
@@ -610,6 +636,7 @@ function GraphEditorCanvas({
         source: edge.source,
         target: edge.target,
         sourceHandle: edge.sourceHandle ?? undefined,
+        targetHandle: edge.targetHandle ?? undefined,
       })),
       selected,
     );
@@ -797,7 +824,7 @@ function GraphEditorCanvas({
               size="sm"
               disabled={selectedNodes.length === 0}
               onClick={formatSelection}
-              title="Format selected nodes, or follow a single node’s then-chain to the right"
+              title="Format selected nodes, or follow a single node’s then-chain and its data inputs"
               data-testid="graph-format"
             >
               Format
