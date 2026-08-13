@@ -17,7 +17,7 @@ const leaf = (onSelect = vi.fn()): NestedMenuItem => ({
 describe("NestedMenu dropdown", () => {
   it("opens a submenu on tap and runs a leaf action", () => {
     const onSelect = vi.fn();
-    const { getByTestId, queryByTestId } = render(
+    const { getByTestId } = render(
       <NestedMenu
         items={[
           {

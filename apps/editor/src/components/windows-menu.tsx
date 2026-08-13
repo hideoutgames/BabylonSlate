@@ -40,10 +40,6 @@ export function WindowsMenu() {
     classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
       assetType: indexed.header.type,
     });
-  const windows = canToggleWindows
-    ? listDockWindows(activeKind, { actorPrefab })
-    : [];
-  const editorUtilities = listEditorUtilityWindows();
   const openDockWindowCount = getOpenDockWindowCount();
 
   useEffect(() => {
@@ -53,6 +49,10 @@ export function WindowsMenu() {
   }, [canToggleWindows, projectName]);
 
   const items = useMemo((): NestedMenuItem[] => {
+    const windows = canToggleWindows
+      ? listDockWindows(activeKind, { actorPrefab })
+      : [];
+    const editorUtilities = listEditorUtilityWindows();
     const checkbox = (entry: { id: string; title: string }): NestedMenuItem => {
       const open = isDockWindowOpen(entry.id);
       return {
@@ -91,11 +91,12 @@ export function WindowsMenu() {
       },
     ];
   }, [
-    editorUtilities,
+    activeKind,
+    actorPrefab,
+    canToggleWindows,
     isDockWindowOpen,
     openDockWindowCount,
     toggleDockWindow,
-    windows,
   ]);
 
   return (
