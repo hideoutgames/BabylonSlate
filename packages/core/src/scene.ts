@@ -28,7 +28,7 @@ export interface SerializedComponent {
   classId: string;
   properties: Record<string, unknown>;
   /** Prefab / actor component attach parent; missing documents normalize to null. */
-  parentId: string | null;
+  parentId?: string | null;
 }
 
 export interface SerializedActor {

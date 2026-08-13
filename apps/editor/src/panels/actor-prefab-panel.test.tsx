@@ -1,14 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { createMeshComponent } from "@babylonslate/core";
 import { flattenPrefabComponents } from "./actor-prefab-panel";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 
 describe("flattenPrefabComponents", () => {
-  afterEach(() => {
-    cleanup();
-  });
-
   it("nests children under a parentId", () => {
     const root = createMeshComponent("root", "box");
     const child = { ...createMeshComponent("child", "sphere"), parentId: "root" };

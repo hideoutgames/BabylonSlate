@@ -58,7 +58,9 @@ export function childrenOfPrefabParent(
   components: readonly SerializedComponent[],
   parentId: string | null,
 ): SerializedComponent[] {
-  return components.filter((component) => component.parentId === parentId);
+  return components.filter(
+    (component) => (component.parentId ?? null) === parentId,
+  );
 }
 
 export function componentSubtreeIds(

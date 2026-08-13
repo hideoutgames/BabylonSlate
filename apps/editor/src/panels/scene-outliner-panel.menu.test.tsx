@@ -14,7 +14,9 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const applySceneChange = vi.hoisted(() => vi.fn(async () => true));
+const applySceneChange = vi.hoisted(() =>
+  vi.fn(async (_id: string, _scene: SerializedScene) => true),
+);
 const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
 }));

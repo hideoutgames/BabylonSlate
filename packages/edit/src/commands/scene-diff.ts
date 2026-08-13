@@ -77,13 +77,13 @@ function diffComponents(
         ),
       );
     }
-    if (previous.parentId !== component.parentId) {
+    if ((previous.parentId ?? null) !== (component.parentId ?? null)) {
       commands.push(
         new ReparentComponentCommand(
           actorId,
           id,
-          previous.parentId,
-          component.parentId,
+          previous.parentId ?? null,
+          component.parentId ?? null,
         ),
       );
     }
