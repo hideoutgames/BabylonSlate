@@ -126,7 +126,7 @@ function preferredSize(
       widget.nestedUiGuid && resolveNested
         ? resolveNested(widget.nestedUiGuid)
         : null;
-    if (nested) return { ...nested.desiredSize };
+    if (nested) return contentDesiredSize(nested, { measurer, resolveNested });
     return { ...DEFAULT_DESIRED_SIZE };
   }
   if (widget.kind === "Spacer") {
@@ -142,6 +142,86 @@ function preferredSize(
     return { width: 160, height: 160 };
   }
   return { width: 80, height: 32 };
+}
+
+function intrinsicWidgetSize(
+  widget: WidgetNode,
+  doc: UserInterfaceDocument,
+  measurer: TextMeasurer,
+  resolveNested?: (guid: string) => UserInterfaceDocument | null,
+): { width: number; height: number } {
+  const childIds = widget.children.filter((id) => doc.widgets[id]);
+  const gap = numberProp(widget.props, "gap", 0);
+  if (widget.kind === "HorizontalBox" && childIds.length > 0) {
+    const sizes = childIds.map((id) =>
+      intrinsicWidgetSize(doc.widgets[id]!, doc, measurer, resolveNested),
+    );
+    return {
+      width:
+        sizes.reduce((sum, size) => sum + size.width, 0) +
+        gap * Math.max(0, sizes.length - 1),
+      height: sizes.reduce((max, size) => Math.max(max, size.height), 0),
+    };
+  }
+  if (widget.kind === "VerticalBox" && childIds.length > 0) {
+    const sizes = childIds.map((id) =>
+      intrinsicWidgetSize(doc.widgets[id]!, doc, measurer, resolveNested),
+    );
+    return {
+      width: sizes.reduce((max, size) => Math.max(max, size.width), 0),
+      height:
+        sizes.reduce((sum, size) => sum + size.height, 0) +
+        gap * Math.max(0, sizes.length - 1),
+    };
+  }
+  const layout = normalizeLayout(widget.layout);
+  const hint = preferredSize(widget, measurer, resolveNested);
+  return {
+    width: layout.widthUnit === "px" ? layout.width : hint.width,
+    height: layout.heightUnit === "px" ? layout.height : hint.height,
+  };
+}
+
+/**
+ * Authoring size for Desired mode and nested UserInterface slots.
+ * AABB of canvas children from the origin, using px sizes (or preferred
+ * size when a side is %). Empty documents keep {@link DEFAULT_DESIRED_SIZE}.
+ */
+export function contentDesiredSize(
+  doc: UserInterfaceDocument,
+  options: Pick<LayoutOptions, "measurer" | "resolveNested"> = {},
+): { width: number; height: number } {
+  const measurer = options.measurer ?? STUB_TEXT_MEASURER;
+  const root = doc.widgets[doc.rootId];
+  if (!root || root.children.length === 0) {
+    return { ...DEFAULT_DESIRED_SIZE };
+  }
+  let maxX = 0;
+  let maxY = 0;
+  for (const id of root.children) {
+    const child = doc.widgets[id];
+    if (!child) continue;
+    const layout = normalizeLayout(child.layout);
+    const size = intrinsicWidgetSize(
+      child,
+      doc,
+      measurer,
+      options.resolveNested,
+    );
+    maxX = Math.max(
+      maxX,
+      layout.left + layout.padding.left + size.width + layout.padding.right,
+    );
+    maxY = Math.max(
+      maxY,
+      layout.top + layout.padding.top + size.height + layout.padding.bottom,
+    );
+  }
+  if (maxX < 1 || maxY < 1) return { ...DEFAULT_DESIRED_SIZE };
+  return {
+    width: Math.max(1, Math.ceil(maxX)),
+    height: Math.max(1, Math.ceil(maxY)),
+  };
 }
 
 function mapRect(rect: Rect, canvas: Rect, scale: number): Rect {
@@ -201,7 +281,10 @@ function layoutNestedTree(
   const nestedLayout = layoutUserInterface(
     {
       ...nested,
-      designResolution: nested.desiredSize ?? nested.designResolution,
+      designResolution: contentDesiredSize(nested, {
+        measurer: options.measurer,
+        resolveNested: options.resolveNested,
+      }),
     },
     { width: Math.max(1, rect.width), height: Math.max(1, rect.height) },
     {

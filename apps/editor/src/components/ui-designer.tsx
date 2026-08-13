@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AssetPicker,
-  NumberField,
   PanelFrame,
   humanizePropertyLabel,
 } from "@babylonslate/editor-kit";
@@ -19,10 +18,10 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import { Button } from "@babylonslate/ui/components/button";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   DESIRED_CANVAS_ID,
+  contentDesiredSize,
   createWidget,
   defaultAddLayout,
   describeUiControls,
@@ -161,7 +160,11 @@ export function UiDesigner({
     }
     return uiLibrary[guid] ?? null;
   };
-  const viewport = designerViewport(presetId, ui.desiredSize, extras);
+  const viewport = designerViewport(
+    presetId,
+    contentDesiredSize(ui, { resolveNested }),
+    extras,
+  );
   const layout = layoutUserInterface(
     ui,
     { width: viewport.width, height: viewport.height },
@@ -300,40 +303,6 @@ export function UiDesigner({
             ))}
           </SelectContent>
         </Select>
-        {presetId === DESIRED_CANVAS_ID ? (
-          <>
-            <Field orientation="horizontal" className="w-auto items-center">
-              <FieldLabel className="text-xs">Width</FieldLabel>
-              <NumberField
-                data-testid="ui-desired-width"
-                value={ui.desiredSize.width}
-                min={1}
-                onChange={(width) =>
-                  commit({
-                    ...payload,
-                    ...ui,
-                    desiredSize: { ...ui.desiredSize, width },
-                  })
-                }
-              />
-            </Field>
-            <Field orientation="horizontal" className="w-auto items-center">
-              <FieldLabel className="text-xs">Height</FieldLabel>
-              <NumberField
-                data-testid="ui-desired-height"
-                value={ui.desiredSize.height}
-                min={1}
-                onChange={(height) =>
-                  commit({
-                    ...payload,
-                    ...ui,
-                    desiredSize: { ...ui.desiredSize, height },
-                  })
-                }
-              />
-            </Field>
-          </>
-        ) : null}
         <Select
           value={ui.scaleRule}
           onValueChange={(value) =>

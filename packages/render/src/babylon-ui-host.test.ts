@@ -161,6 +161,43 @@ describe("BabylonUiApplyHost", () => {
     control.dispose();
   });
 
+  it("paints Text and Button with a light color when the document omits color", () => {
+    const text = createBabylonControl(
+      guiSpecFromDescriptor(
+        descriptor({ id: "label", kind: "Text", text: "Score" }),
+        { interactive: false },
+      ),
+    );
+    expect(text.color.toLowerCase()).not.toBe("#000000");
+    expect(text.color.toLowerCase()).not.toBe("black");
+    expect(text.color).toBe("#ffffff");
+    text.dispose();
+    const button = createBabylonControl(
+      guiSpecFromDescriptor(
+        descriptor({ id: "btn", kind: "Button", text: "Play" }),
+        { interactive: false },
+      ),
+    );
+    expect(button.color).toBe("#ffffff");
+    button.dispose();
+  });
+
+  it("does not fill TouchJoystick with opaque black", () => {
+    const stick = createBabylonControl(
+      guiSpecFromDescriptor(
+        descriptor({
+          id: "stick",
+          kind: "TouchJoystick",
+          layout: pinLayout("left", "bottom", 160, 160, 40, 0),
+        }),
+        { interactive: false },
+      ),
+    ) as Ellipse;
+    expect(stick.background.toLowerCase()).not.toBe("#000000");
+    expect(stick.background.toLowerCase()).not.toBe("black");
+    stick.dispose();
+  });
+
   it("builds TouchDPad as a Rectangle with composed Ellipses", () => {
     const spec = guiSpecFromDescriptor(
       descriptor({

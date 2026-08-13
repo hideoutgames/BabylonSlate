@@ -191,8 +191,12 @@ describe("UiDesigner", () => {
     expect(next.widgets.stick).toBeUndefined();
   });
 
-  it("hides Desired Width and Height unless the Desired preset is selected", () => {
+  it("does not expose Desired Width and Height inputs", () => {
     renderHud();
+    expect(screen.queryByTestId("ui-desired-width")).toBeNull();
+    expect(screen.queryByTestId("ui-desired-height")).toBeNull();
+    fireEvent.click(screen.getByTestId("ui-device-preset"));
+    fireEvent.click(screen.getByTestId("ui-preset-desired"));
     expect(screen.queryByTestId("ui-desired-width")).toBeNull();
     expect(screen.queryByTestId("ui-desired-height")).toBeNull();
   });

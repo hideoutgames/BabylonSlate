@@ -101,7 +101,7 @@ export interface UserInterfaceDocument {
   name: string;
   rootId: string;
   designResolution: { width: number; height: number };
-  /** Authoring canvas for reusable elements (designer Desired mode). */
+  /** Kept on the payload for compatibility. Desired mode and nested slots use `contentDesiredSize`. */
   desiredSize: { width: number; height: number };
   scaleRule: ScaleRule;
   viewportLayer: boolean;

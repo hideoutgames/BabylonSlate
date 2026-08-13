@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_DESIRED_SIZE,
   createDefaultPlayHud,
   createDefaultUserInterface,
   createWidget,
+  contentDesiredSize,
   insetRect,
   layoutUserInterface,
   normalizeLayout,
@@ -179,13 +181,40 @@ describe("default play HUD", () => {
       height: 300,
     });
   });
+
+  it("sizes Desired to content instead of the authored canvas", () => {
+    expect(contentDesiredSize(createDefaultUserInterface())).toEqual(
+      DEFAULT_DESIRED_SIZE,
+    );
+    const chip = createDefaultUserInterface("Chip");
+    chip.desiredSize = { width: 1920, height: 1080 };
+    const label = createWidget(
+      "label",
+      "Text",
+      "HP",
+      pinLayout("left", "top", 80, 20, 8, 4),
+    );
+    label.props.text = "HP";
+    chip.widgets.canvas!.children = ["label"];
+    chip.widgets.label = label;
+    expect(contentDesiredSize(chip)).toEqual({ width: 88, height: 24 });
+    expect(contentDesiredSize(createDefaultPlayHud())).toEqual({
+      width: 200,
+      height: 160,
+    });
+  });
 });
 
 describe("nested UserInterface layout", () => {
-  it("lays a nested UserInterface into the host slot using its desired size", () => {
+  it("lays a nested UserInterface into the host slot using its content size", () => {
     const chip = createDefaultUserInterface("Chip");
-    chip.desiredSize = { width: 80, height: 20 };
-    const label = createWidget("label", "Text", "HP");
+    chip.desiredSize = { width: 1920, height: 1080 };
+    const label = createWidget(
+      "label",
+      "Text",
+      "HP",
+      pinLayout("left", "top", 80, 20),
+    );
     label.props.text = "HP";
     chip.widgets.canvas!.children = ["label"];
     chip.widgets.label = label;
@@ -209,6 +238,7 @@ describe("nested UserInterface layout", () => {
     const nested = result.tree?.children[0];
     expect(nested?.kind).toBe("UserInterface");
     expect(nested?.children[0]?.name).toBe("Canvas");
+    expect(nested?.children[0]?.rect).toMatchObject({ width: 80, height: 20 });
     const text = nested?.children[0]?.children[0];
     expect(text?.name).toBe("HP");
     expect(text?.id).toBe("chip/label");
