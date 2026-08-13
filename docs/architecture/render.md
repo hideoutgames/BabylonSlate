@@ -12,6 +12,8 @@ Play does **not** seed `createDefaultScene()` (the default Cube) into the Play B
 
 Play takes a `acquireContinuous("play")` lease for the session so every overlay blit is preceded by `scene.render()`. The editor stays dirty-driven; `syncEditorPlayState(handle, playing)` pauses it while Play is open and on close resizes (undoing Play’s `setSize`) and invalidates so the docked viewport redraws.
 
+Play overlay canvas layout comes from Project Settings `playPreview`. **Follow System** (default) fills the overlay. When off, the canvas is the largest centered rectangle of `aspectWidth:aspectHeight` (default 16:9); unused overlay space is black. Layout is applied before `startPlaySession`, and a ResizeObserver calls `engine.resize()` so the blit matches the letterboxed canvas. Editor viewports, Prefab Preview, and export are unchanged.
+
 ## Snapshot apply
 
 - Interpolate between the two most recent stable bridge snapshots.

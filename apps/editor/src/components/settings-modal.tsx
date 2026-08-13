@@ -29,6 +29,7 @@ import {
   EngineSettingsForm,
   type EngineSettingsCategoryId,
 } from "./engine-settings-form";
+import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
 
 export type SettingsScope = "project" | "engine";
 
@@ -60,7 +61,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "rendering",
     label: "Rendering",
-    keywords: "frame cap fps play preview",
+    keywords: "frame cap fps play preview aspect ratio letterbox follow system",
   },
   {
     id: "textures",
@@ -488,6 +489,12 @@ export function SettingsModal({
                 Settings.
               </FieldDescription>
             </Field>
+            <PlayPreviewSettingsFields
+              settings={projectDocument.settings.playPreview}
+              onChange={(playPreview) =>
+                updateProjectSettings({ playPreview })
+              }
+            />
           </FieldSet>
         </FieldGroup>
       ) : null}
