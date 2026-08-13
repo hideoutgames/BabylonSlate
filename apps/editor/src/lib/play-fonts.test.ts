@@ -34,6 +34,11 @@ describe("collectFontAssetEntries", () => {
     expect(entries[0]?.family).toBe("Display Face");
     expect(entries[0]?.weight).toBe(700);
     expect(entries[0]?.style).toBe("italic");
-    expect(new Uint8Array(entries[0]!.bytes)).toEqual(new Uint8Array([1, 2, 3]));
+    const source = entries[0]!.bytes;
+    const view =
+      source instanceof ArrayBuffer
+        ? new Uint8Array(source)
+        : new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+    expect(view).toEqual(new Uint8Array([1, 2, 3]));
   });
 });

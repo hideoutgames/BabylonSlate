@@ -19,10 +19,11 @@ export async function collectFontAssetEntries(
     const bytes = await readChunk(asset.path, "source");
     if (!bytes || bytes.byteLength === 0) continue;
     const payload = normalizeFontPayload(asset.payload, "Custom Font");
+    const copy = new Uint8Array(bytes);
     entries.push({
       guid: asset.guid,
       family: payload.family,
-      bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      bytes: copy.buffer,
       weight: payload.weight,
       style: payload.style,
     });
