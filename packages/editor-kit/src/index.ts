@@ -61,6 +61,23 @@ export {
   type ParameterListEditorProps,
 } from "./parameter-list-editor";
 export {
+  PinTypePicker,
+  type PinTypePickerProps,
+} from "./pin-type-picker";
+export {
+  PinListEditor,
+  type PinListEditorProps,
+  type PinListRow,
+} from "./pin-list-editor";
+export {
+  PIN_PICKER_TYPES,
+  PIN_PICKER_LABEL,
+  pinPickerColorVar,
+  pinPickerLabel,
+  isPinPickerType,
+  type PinPickerType,
+} from "./pin-types";
+export {
   NumericDragField,
   type NumericDragFieldProps,
 } from "./numeric-drag-field";

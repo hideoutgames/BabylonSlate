@@ -11,6 +11,9 @@ export const ASSET_DOCUMENT_KINDS = [
   "shader",
   "tileset",
   "tilemap",
+  "enum",
+  "structure",
+  "script-interface",
   "asset-settings",
 ] as const;
 
@@ -60,6 +63,12 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Tileset";
     case "tilemap":
       return "Tilemap";
+    case "enum":
+      return "Enum";
+    case "structure":
+      return "Structure";
+    case "script-interface":
+      return "ScriptInterface";
     case "asset-settings":
       return "Texture";
   }
@@ -86,14 +95,17 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "tileset";
     case "Tilemap":
       return "tilemap";
+    case "Enum":
+      return "enum";
+    case "Structure":
+      return "structure";
+    case "ScriptInterface":
+      return "script-interface";
     case "Texture":
     case "Material":
     case "Model":
     case "Audio":
     case "Animation":
-    case "Enum":
-    case "Structure":
-    case "ScriptInterface":
       return "asset-settings";
     default:
       return null;
@@ -124,6 +136,12 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Tileset";
     case "tilemap":
       return "Tilemap";
+    case "enum":
+      return "Enum";
+    case "structure":
+      return "Structure";
+    case "script-interface":
+      return "Script Interface";
     case "asset-settings":
       return "Settings";
   }

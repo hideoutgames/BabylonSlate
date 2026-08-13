@@ -12,8 +12,8 @@ import {
   DRAG_ARM_MS,
 } from "./use-context-menu";
 
-/** Row height for compact outliner / folder trees. */
-export const TREE_ROW_HEIGHT = 32;
+/** Row height matches `--chrome-row` (28px). */
+export const TREE_ROW_HEIGHT = 28;
 
 export interface TreeViewNode {
   id: string;
@@ -39,6 +39,8 @@ export interface TreeViewProps {
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
+  /** Immediate: pointer move past 8px starts a parent drag. Hold: 250ms arm (Content Browser). */
+  reparentArm?: "immediate" | "hold";
   rowHeight?: number;
   emptyLabel?: string;
   "data-testid"?: string;
@@ -68,6 +70,7 @@ export function TreeView({
   onReparent,
   onActivate,
   onContextMenu,
+  reparentArm = "hold",
   rowHeight = TREE_ROW_HEIGHT,
   emptyLabel = "Nothing here yet",
   "data-testid": testId,
@@ -135,26 +138,27 @@ export function TreeView({
             onContextMenu(nodeId, event.clientX, event.clientY);
           }, CONTEXT_MENU_LONG_PRESS_MS)
         : null;
-      const dragArmTimer = onReparent
-        ? setTimeout(() => {
-            const drag = dragRef.current;
-            if (!drag || drag.moved) return;
-            drag.canDrag = true;
-          }, DRAG_ARM_MS)
-        : null;
+      const dragArmTimer =
+        onReparent && reparentArm === "hold"
+          ? setTimeout(() => {
+              const drag = dragRef.current;
+              if (!drag || drag.moved) return;
+              drag.canDrag = true;
+            }, DRAG_ARM_MS)
+          : null;
       dragRef.current = {
         pointerId: event.pointerId,
         nodeId,
         startX: event.clientX,
         startY: event.clientY,
         armed: false,
-        canDrag: false,
+        canDrag: Boolean(onReparent) && reparentArm === "immediate",
         moved: false,
         dragArmTimer,
         longPressTimer,
       };
     },
-    [onContextMenu, onReparent],
+    [onContextMenu, onReparent, reparentArm],
   );
 
   const onPointerMove = useCallback(
@@ -258,23 +262,22 @@ export function TreeView({
                   onContextMenu(node.id, event.clientX, event.clientY);
                 }}
               >
-                <button
-                  type="button"
-                  aria-label={
-                    node.hasChildren
-                      ? `${node.expanded ? "Collapse" : "Expand"} ${node.label}`
-                      : undefined
-                  }
-                  className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"
-                  disabled={!node.hasChildren}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onToggleExpanded?.(node.id);
-                  }}
-                  data-testid={`tree-disclosure-${node.id}`}
-                >
-                  {node.hasChildren ? (node.expanded ? "▾" : "▸") : ""}
-                </button>
+                {node.hasChildren ? (
+                  <button
+                    type="button"
+                    aria-label={`${node.expanded ? "Collapse" : "Expand"} ${node.label}`}
+                    className="flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleExpanded?.(node.id);
+                    }}
+                    data-testid={`tree-disclosure-${node.id}`}
+                  >
+                    {node.expanded ? "▾" : "▸"}
+                  </button>
+                ) : (
+                  <span className="size-4 shrink-0" aria-hidden />
+                )}
                 {node.icon ? (
                   <span className="flex size-4 shrink-0 items-center justify-center text-primary [&_svg]:size-4">
                     {node.icon}
@@ -289,7 +292,11 @@ export function TreeView({
                   {node.label}
                 </span>
                 {node.trailing ? (
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div
+                    className="flex shrink-0 items-center gap-1"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     {node.trailing}
                   </div>
                 ) : null}

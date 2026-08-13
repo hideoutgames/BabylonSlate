@@ -33,13 +33,14 @@ describe("ParameterListEditor", () => {
     cleanup();
   });
 
-  it("changes a row type, optional flag, default, and enum values", () => {
+  it("changes a row type, optional flag, default, and enum values", async () => {
     const onChange = vi.fn();
     render(
       <ParameterListEditor rows={rows.slice(0, 1)} onChange={onChange} />,
     );
 
-    screen.getByTestId("parameter-a-type-string").click();
+    fireEvent.click(screen.getByTestId("parameter-a-type"));
+    fireEvent.click(await screen.findByTestId("search-item-string"));
     expect(onChange).toHaveBeenCalledWith([
       expect.objectContaining({ id: "a", name: "amount", type: "string" }),
     ]);
@@ -59,17 +60,17 @@ describe("ParameterListEditor", () => {
     ]);
   });
 
-  it("paints parameter type toggles with DataTypes pin colors", () => {
+  it("paints the type picker with DataTypes pin colors", () => {
     render(
       <ParameterListEditor rows={rows.slice(0, 1)} onChange={() => {}} />,
     );
-    const floatToggle = screen.getByTestId("parameter-a-type-float");
-    const swatch = floatToggle.querySelector("[data-type-color-swatch]");
+    const trigger = screen.getByTestId("parameter-a-type");
+    const swatch = trigger.querySelector("[data-type-color-swatch]");
     expect(swatch).not.toBeNull();
     expect((swatch as HTMLElement).style.backgroundColor).toBe(
       "var(--pin-float)",
     );
-    expect(floatToggle.textContent).toContain("Float");
+    expect(trigger.textContent).toContain("Float");
   });
 
   it("edits enum values as a named list", () => {
@@ -89,11 +90,10 @@ describe("ParameterListEditor", () => {
     ]);
   });
 
-  it("moves a row up and down with 44px targets", () => {
+  it("moves a row up and down", () => {
     const onChange = vi.fn();
     render(<ParameterListEditor rows={rows} onChange={onChange} />);
     const up = screen.getByTestId("parameter-b-move-up");
-    expect(up.className).toMatch(/touch-icon|min-h|size-\[var\(--touch-target/);
     up.click();
     expect(onChange.mock.calls[0]![0].map((row: ParameterRow) => row.id)).toEqual(
       ["b", "a"],

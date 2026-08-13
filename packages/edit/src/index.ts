@@ -34,6 +34,7 @@ export {
   ReorderActorCommand,
   ReorderComponentCommand,
   ReparentActorCommand,
+  ReparentComponentCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
   SetComponentPropertyCommand,

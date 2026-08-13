@@ -15,8 +15,8 @@ describe("TreeView", () => {
     cleanup();
   });
 
-  it("uses compact 32px rows", () => {
-    expect(TREE_ROW_HEIGHT).toBe(32);
+  it("uses compact chrome-row height", () => {
+    expect(TREE_ROW_HEIGHT).toBe(28);
   });
 
   it("renders one row per visible node with disclosure state", () => {
@@ -49,6 +49,7 @@ describe("TreeView", () => {
     );
     screen.getByTestId("tree-disclosure-root").click();
     expect(onToggleExpanded).toHaveBeenCalledWith("root");
+    expect(screen.queryByTestId("tree-disclosure-child")).toBeNull();
   });
 
   it("reparents when a row is held then dragged onto another row", () => {
@@ -70,6 +71,29 @@ describe("TreeView", () => {
 
     expect(onReparent).toHaveBeenCalledWith("child", "other");
     vi.useRealTimers();
+  });
+
+  it("reparents immediately when reparentArm is immediate", () => {
+    const onReparent = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onReparent={onReparent}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
+
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 70 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 70 });
+
+    expect(onReparent).toHaveBeenCalledWith("child", "other");
   });
 
   it("does not reparent when the pointer moves before the hold arms", () => {
@@ -158,5 +182,30 @@ describe("TreeView", () => {
       />,
     );
     expect(screen.getByTestId("row-icon")).toBeTruthy();
+  });
+
+  it("does not start a reparent from trailing controls", () => {
+    const onReparent = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <TreeView
+        nodes={[
+          {
+            ...nodes[2]!,
+            trailing: <button type="button" data-testid="row-menu">…</button>,
+          },
+        ]}
+        onReparent={onReparent}
+        onSelect={onSelect}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const menu = screen.getByTestId("row-menu");
+    dispatchPointerEvent(menu, "pointerdown", { clientX: 10, clientY: 10 });
+    dispatchPointerEvent(menu, "pointermove", { clientX: 10, clientY: 40 });
+    dispatchPointerEvent(menu, "pointerup", { clientX: 10, clientY: 40 });
+    expect(onReparent).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });
