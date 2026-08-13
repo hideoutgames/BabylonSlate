@@ -47,6 +47,28 @@ describe("PropertyGrid", () => {
     expect(screen.queryByTestId("property-position-z")).toBeNull();
   });
 
+  it("shows a W axis when four axes are supplied", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "vector3",
+            id: "offset",
+            label: "Offset",
+            value: [1, 2, 3, 4],
+            axes: ["X", "Y", "Z", "W"],
+            onChange,
+          },
+        ]}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("property-offset-w"), {
+      target: { value: "9" },
+    });
+    expect(onChange).toHaveBeenCalledWith([1, 2, 3, 9]);
+  });
+
   it("enables reset only when a row differs from its default", () => {
     const onChange = vi.fn();
     const rows: PropertyRow[] = [
@@ -320,5 +342,55 @@ describe("PropertyGrid", () => {
     expect(screen.getByTestId("property-position-z-scrub").className).toContain(
       "text-axis-z",
     );
+  });
+
+  it("renders a bounded slider beside the numeric field", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "slider",
+            id: "friction",
+            label: "Friction",
+            value: 0.5,
+            min: 0,
+            max: 1,
+            onChange,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("property-friction-slider")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("property-friction"), {
+      target: { value: "0.25" },
+    });
+    expect(onChange).toHaveBeenCalledWith(0.25);
+  });
+
+  it("renders flag bits and toggles a mask value", () => {
+    const onChange = vi.fn();
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "flags",
+            id: "layer",
+            label: "Layer",
+            value: 1,
+            bitCount: 4,
+            onChange,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("property-layer-bit-0").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getByTestId("property-layer-bit-1").getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    fireEvent.click(screen.getByTestId("property-layer-bit-1"));
+    expect(onChange).toHaveBeenCalledWith(3);
   });
 });

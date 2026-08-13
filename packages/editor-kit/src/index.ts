@@ -125,6 +125,13 @@ export {
   type ColorValue,
 } from "./color-field";
 export {
+  FlagsField,
+  DEFAULT_FLAG_BIT_COUNT,
+  hasFlagBit,
+  setFlagBit,
+  type FlagsFieldProps,
+} from "./flags-field";
+export {
   ASSET_COLOR_TOKENS,
   TypeVisualIcon,
   engineParentOf,

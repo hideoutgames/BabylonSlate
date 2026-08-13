@@ -50,6 +50,7 @@ import { Input } from "@babylonslate/ui/components/input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { Skeleton } from "@babylonslate/ui/components/skeleton";
+import { Slider } from "@babylonslate/ui/components/slider";
 import { Switch } from "@babylonslate/ui/components/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@babylonslate/ui/components/tabs";
 import {
@@ -67,6 +68,8 @@ const GALLERY_TREE_NODES: TreeViewNode[] = [
 function GalleryComposites() {
   const [position, setPosition] = useState<[number, number, number]>([0, 1, 0]);
   const [speed, setSpeed] = useState(4);
+  const [friction, setFriction] = useState(0.5);
+  const [physicsLayer, setPhysicsLayer] = useState(1);
   const [visible, setVisible] = useState(true);
   const [selectedId, setSelectedId] = useState("player");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -86,7 +89,7 @@ function GalleryComposites() {
       label: "Position",
       value: position,
       defaultValue: [0, 0, 0],
-      onChange: setPosition,
+      onChange: (value) => setPosition([value[0], value[1], value[2]]),
     },
     {
       kind: "number",
@@ -96,6 +99,26 @@ function GalleryComposites() {
       defaultValue: 4,
       sensitivity: 0.05,
       onChange: setSpeed,
+    },
+    {
+      kind: "slider",
+      id: "gallery-friction",
+      label: "Friction",
+      value: friction,
+      defaultValue: 0.5,
+      min: 0,
+      max: 1,
+      onChange: setFriction,
+    },
+    {
+      kind: "flags",
+      id: "gallery-layer",
+      label: "Layer",
+      value: physicsLayer,
+      defaultValue: 1,
+      bitCount: 4,
+      labels: ["Default", "Player", "World", "UI"],
+      onChange: setPhysicsLayer,
     },
     {
       kind: "boolean",
@@ -310,6 +333,53 @@ function GalleryTouchControls() {
   );
 }
 
+function GalleryForms() {
+  const [volume, setVolume] = useState(0.5);
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="text-lg font-medium">Forms</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>Field group</CardTitle>
+          <CardDescription>Engine Settings field pattern.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="gallery-name">Name</FieldLabel>
+              <Input id="gallery-name" defaultValue="Sample" />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="gallery-volume">Volume</FieldLabel>
+              <Slider
+                id="gallery-volume"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                data-testid="gallery-slider"
+                onValueChange={(next) => {
+                  const value = Array.isArray(next) ? next[0] : next;
+                  if (typeof value === "number") setVolume(value);
+                }}
+              />
+            </Field>
+            <Field orientation="horizontal">
+              <Switch id="gallery-switch" defaultChecked />
+              <FieldLabel htmlFor="gallery-switch">Enabled</FieldLabel>
+            </Field>
+            <Field orientation="horizontal">
+              <Checkbox id="gallery-check" defaultChecked />
+              <FieldLabel htmlFor="gallery-check">Generate thumbnails</FieldLabel>
+            </Field>
+          </FieldGroup>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
 export function ComponentGallery() {
   return (
     <div
@@ -362,31 +432,7 @@ export function ComponentGallery() {
             </Empty>
           </section>
 
-          <section className="flex flex-col gap-4">
-            <h2 className="text-lg font-medium">Forms</h2>
-            <Card>
-              <CardHeader>
-                <CardTitle>Field group</CardTitle>
-                <CardDescription>Engine Settings field pattern.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor="gallery-name">Name</FieldLabel>
-                    <Input id="gallery-name" defaultValue="Sample" />
-                  </Field>
-                  <Field orientation="horizontal">
-                    <Switch id="gallery-switch" defaultChecked />
-                    <FieldLabel htmlFor="gallery-switch">Enabled</FieldLabel>
-                  </Field>
-                  <Field orientation="horizontal">
-                    <Checkbox id="gallery-check" defaultChecked />
-                    <FieldLabel htmlFor="gallery-check">Generate thumbnails</FieldLabel>
-                  </Field>
-                </FieldGroup>
-              </CardContent>
-            </Card>
-          </section>
+          <GalleryForms />
 
           <section className="flex flex-col gap-4">
             <h2 className="text-lg font-medium">Tabs</h2>

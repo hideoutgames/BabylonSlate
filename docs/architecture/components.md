@@ -30,9 +30,10 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset; Project Settings global font fallback. |
 | **Separator** | Horizontal or vertical rule. | Toolbar strips, search dialog, catalog layout. |
 | **Sheet** (`SheetTitle`, `SheetContent`, `SheetHeader`, …) | Edge drawer. Title required. | SearchSheet (add-component / asset picker / gallery). |
+| **Slider** | Bounded numeric track (44px hit area). Accepts a scalar or range array. | PropertyGrid slider rows; Trace playback frame scrubber; gallery. |
 | **Switch** | On/off toggle. | Engine / Project Settings booleans. |
 | **Textarea** | Multi-line text. | Gallery; not used for Input mappings (structured `InputMappingEditor`). |
-| **Toggle** | Pressed/unpressed tool. Selected = accent fill + primary border + `aria-pressed`. | Viewport tools, Outliner filters, chrome Play-adjacent tools. |
+| **Toggle** | Pressed/unpressed tool. Selected = accent fill + primary border + `aria-pressed`. | Viewport tools, Outliner filters, chrome Play-adjacent tools; FlagsField bits. |
 | **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; Tilemap paint tools; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
 
@@ -46,11 +47,12 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | --- | --- | --- |
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
-| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color (`ColorField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis enums), UserInterface widget details, Sprite / Tileset / Tilemap / Structure settings. |
+| **PropertyGrid** | Typed Details rows: number, vector3 (2–4 axes), boolean, text, enum, color (`ColorField`), slider, flags (`FlagsField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis / enumRef defaults), UserInterface widget details, Sprite / Tileset / Tilemap / Structure settings. |
 | **ColorField** | Native color input wrapped for PropertyGrid. | Light color; Inspector color pin defaults; gallery. |
+| **FlagsField** | Compact 44px bitmask toggles (Layer 0–31 or named labels). | Collider `layer` / `mask`; gallery. |
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
-| **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; InputMappingEditor axis extras; gallery. |
-| **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings autosave, pixels-per-unit, play frame cap; UserInterface desired width/height. |
+| **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / slider / color; InputMappingEditor axis extras; gallery. |
+| **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings autosave, pixels-per-unit, play frame cap; UserInterface desired width/height; Trace playback frame. |
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search, Content Browser, Content Browser Move dialog. |
 | **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; ClassPicker; Tilemap tile palette; gallery. Add Component / Place Actors use CatalogDialog instead. |
 | **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | Scene Details mesh / sprite / tilemap / widget / animation-graph rows; Project Settings default font; Font fallbacks; Sprite and Tileset Texture; UserInterface nested UI, image, font, and visual override. |

@@ -16,9 +16,11 @@ import {
   pinDefaultAsNumber,
   pinDefaultAsString,
   pinDefaultAsVec3Tuple,
+  pinDefaultAsVec4Tuple,
   pinDefaultColorRgb,
   pinDefaultPropertyKey,
   vec3TupleToObject,
+  vec4TupleToObject,
 } from "@babylonslate/scripting";
 
 export function connectedInputPinIds(
@@ -56,12 +58,50 @@ export const LOG_SEVERITY_OPTIONS = [
   { value: "error", label: "Error" },
 ] as const;
 
+function memberNamesFromUnknown(members: unknown): string[] | null {
+  if (!Array.isArray(members)) return null;
+  const names: string[] = [];
+  for (const row of members) {
+    if (typeof row === "object" && row !== null) {
+      const name = (row as { name?: unknown }).name;
+      if (typeof name === "string" && name) names.push(name);
+    }
+  }
+  return names;
+}
+
+export function collectEnumMemberNames(
+  documents: ReadonlyArray<{ content: unknown }>,
+  assets: ReadonlyArray<{
+    header: { guid: string; type: string; payload?: Record<string, unknown> };
+  }> = [],
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const asset of assets) {
+    if (asset.header.type !== "Enum") continue;
+    const names = memberNamesFromUnknown(asset.header.payload?.members);
+    if (names) result[asset.header.guid] = names;
+  }
+  for (const doc of documents) {
+    const content = doc.content;
+    if (typeof content !== "object" || content === null) continue;
+    const record = content as Record<string, unknown>;
+    if (record.kind !== "enum" || typeof record.guid !== "string" || !record.guid) {
+      continue;
+    }
+    const names = memberNamesFromUnknown(record.members);
+    if (names) result[record.guid] = names;
+  }
+  return result;
+}
+
 export function pinDefaultPropertyRows(
   entries: readonly LiteralPinDefault[],
   onPatch: (patch: Record<string, unknown>) => void,
   mappingNames?: {
     actionNames?: readonly string[];
     axisNames?: readonly string[];
+    enumMembers?: Record<string, readonly string[]>;
   },
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
@@ -177,6 +217,36 @@ export function pinDefaultPropertyRows(
             onPatch({ [key]: colorRgbToPinDefault(value, entry.value) }),
         });
         break;
+      case "vec4":
+        rows.push({
+          kind: "vector3",
+          id: entry.pinId,
+          label: entry.name,
+          value: pinDefaultAsVec4Tuple(entry.value),
+          defaultValue: pinDefaultAsVec4Tuple(typeDefault),
+          axes: ["X", "Y", "Z", "W"],
+          onChange: (value) => onPatch({ [key]: vec4TupleToObject(value) }),
+        });
+        break;
+      case "enumRef": {
+        const current = pinDefaultAsString(entry.value);
+        const listed = mappingNames?.enumMembers?.[entry.type.guid] ?? [];
+        const options = listed.includes(current)
+          ? listed
+          : current
+            ? [...listed, current]
+            : listed;
+        rows.push({
+          kind: "enum",
+          id: entry.pinId,
+          label: entry.name,
+          value: current,
+          defaultValue: pinDefaultAsString(typeDefault),
+          options: options.map((name) => ({ value: name, label: name })),
+          onChange: (value) => onPatch({ [key]: value }),
+        });
+        break;
+      }
       default:
         break;
     }

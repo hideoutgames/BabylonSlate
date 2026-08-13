@@ -59,7 +59,7 @@ iPad projects grep `@ipad` so they only rerun tests that depend on touch, coarse
 
 `e2e/p7-physics.spec.ts` places a 2D Rapier rigid body, plays, and asserts the worker HUD `play-physics-ms` `data-ms` is non-zero (the rAF FPS pump must not clobber worker timings).
 
-`e2e/p9-content.spec.ts` covers UserInterface designer presets (built-ins, **Desired**, and a custom Engine Settings canvas), Play HUD empty until a class graph **Apply User Interface**, nested-UI picker excluding self, and Font / Sprite / AnimationGraph / Shader workspaces. `e2e/engine-settings.spec.ts` covers adding a custom preset in the User Interface category. `e2e/p10-tilemap.spec.ts` binds Tilemap / Sprite / AnimationGraph components through Details `AssetPicker` (not typed guid fields).
+`e2e/p9-content.spec.ts` covers UserInterface designer presets (built-ins, **Desired**, and a custom Engine Settings canvas), Play HUD empty until a class graph **Apply User Interface**, nested-UI picker excluding self, and Font / Sprite / AnimationGraph / Shader workspaces. `e2e/engine-settings.spec.ts` covers adding a custom preset in the User Interface category. `e2e/p10-tilemap.spec.ts` binds Tilemap / Sprite / AnimationGraph components through Details `AssetPicker` (not typed guid fields). `e2e/component-gallery.spec.ts` covers PropertyGrid slider / flags rows and the primitive Slider (44px track).
 
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
 

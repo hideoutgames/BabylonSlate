@@ -193,7 +193,13 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         value: scene.settings.gravity,
         defaultValue: defaults.gravity,
         onChange: (gravity) =>
-          mutate({ ...scene, settings: { ...scene.settings, gravity } }),
+          mutate({
+            ...scene,
+            settings: {
+              ...scene.settings,
+              gravity: [gravity[0], gravity[1], gravity[2]],
+            },
+          }),
       },
       {
         kind: "number",
@@ -331,7 +337,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       onChange: (position) =>
         updateActor((entry) => ({
           ...entry,
-          transform: { ...entry.transform, position },
+          transform: {
+            ...entry.transform,
+            position: [position[0], position[1], position[2]],
+          },
         })),
     },
     {
@@ -350,7 +359,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           transform: {
             ...entry.transform,
             rotation: eulerDegreesToQuaternion(
-              scene.viewportMode === "2d" ? [0, 0, next[0]] : next,
+              scene.viewportMode === "2d"
+                ? [0, 0, next[0]]
+                : [next[0], next[1], next[2]],
             ),
           },
         })),
@@ -365,7 +376,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       onChange: (scale) =>
         updateActor((entry) => ({
           ...entry,
-          transform: { ...entry.transform, scale },
+          transform: {
+            ...entry.transform,
+            scale: [scale[0], scale[1], scale[2]],
+          },
         })),
     },
     {

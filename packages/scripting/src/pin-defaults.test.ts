@@ -16,6 +16,7 @@ import {
   arrayOf,
   mapOf,
   objectRef,
+  enumRef,
 } from "./types";
 import {
   defaultJsValue,
@@ -25,11 +26,13 @@ import {
   pinDefaultAsNumber,
   pinDefaultAsString,
   pinDefaultAsVec3Tuple,
+  pinDefaultAsVec4Tuple,
   pinDefaultColorRgb,
   pinDefaultPropertyKey,
   readPinDefault,
   colorRgbToPinDefault,
   vec3TupleToObject,
+  vec4TupleToObject,
 } from "./pin-defaults";
 
 describe("pinAcceptsLiteralDefault", () => {
@@ -42,11 +45,12 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(VEC3)).toBe(true);
     expect(pinAcceptsLiteralDefault(ROTATOR)).toBe(true);
     expect(pinAcceptsLiteralDefault(COLOR)).toBe(true);
+    expect(pinAcceptsLiteralDefault(VEC4)).toBe(true);
+    expect(pinAcceptsLiteralDefault(enumRef("e1"))).toBe(true);
   });
 
-  it("rejects exec, refs, containers, vec4, transform, and wildcards", () => {
+  it("rejects exec, object refs, containers, transform, and wildcards", () => {
     expect(pinAcceptsLiteralDefault(EXEC)).toBe(false);
-    expect(pinAcceptsLiteralDefault(VEC4)).toBe(false);
     expect(pinAcceptsLiteralDefault(TRANSFORM)).toBe(false);
     expect(pinAcceptsLiteralDefault(arrayOf(FLOAT))).toBe(false);
     expect(pinAcceptsLiteralDefault(mapOf(STRING, FLOAT))).toBe(false);
@@ -65,6 +69,8 @@ describe("defaultJsValue", () => {
     expect(defaultJsValue(VEC3)).toEqual({ x: 0, y: 0, z: 0 });
     expect(defaultJsValue(ROTATOR)).toEqual({ pitch: 0, yaw: 0, roll: 0 });
     expect(defaultJsValue(COLOR)).toEqual({ x: 0, y: 0, z: 0, w: 0 });
+    expect(defaultJsValue(VEC4)).toEqual({ x: 0, y: 0, z: 0, w: 0 });
+    expect(defaultJsValue(enumRef("e1"))).toBe("");
   });
 });
 
@@ -161,6 +167,18 @@ describe("pin default editor conversions", () => {
       y: 1,
       z: 1,
       w: 0,
+    });
+  });
+
+  it("round-trips vec4 objects through XYZW tuples", () => {
+    expect(pinDefaultAsVec4Tuple({ x: 1, y: 2, z: 3, w: 4 })).toEqual([
+      1, 2, 3, 4,
+    ]);
+    expect(vec4TupleToObject([9, 8, 7, 6])).toEqual({
+      x: 9,
+      y: 8,
+      z: 7,
+      w: 6,
     });
   });
 });
