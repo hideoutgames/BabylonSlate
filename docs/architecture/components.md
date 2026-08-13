@@ -50,7 +50,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; gallery. |
 | **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields; Project Settings via CatalogDialog; UserInterface desired width/height. |
-| **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search. |
+| **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search, Content Browser, Content Browser Move dialog. |
 | **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; gallery. Add Component / Place Actors use CatalogDialog instead. |
 | **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks; UserInterface nested-UI picker (self and cycle partners excluded). |
 | **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
@@ -78,7 +78,8 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **IconActionButton** ([`icon-action-button.tsx`](../../apps/editor/src/components/icon-action-button.tsx)) | Icon-only `Button` with `aria-label` plus Tooltip. | Chrome bar, Outliner, Details, Prefab panel. |
-| **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: thumbnail or type glyph, selection, hold-to-drag, drop onto folders. | Content Browser grid. |
-| **ContentBrowserFolderTree** ([`content-browser-folder-tree.tsx`](../../apps/editor/src/components/content-browser-folder-tree.tsx)) | Nested folder rows with hold-drag move and asset drop targets. | Content Browser sidebar. |
+| **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: thumbnail or type glyph, selection, long-press / right-click menu. | Content Browser grid. |
+| **ContentBrowserFolderTree** ([`content-browser-folder-tree.tsx`](../../apps/editor/src/components/content-browser-folder-tree.tsx)) | Nested folder rows with tap-to-select and long-press / right-click menu. | Content Browser sidebar. |
+| **ContentBrowserMoveDialog** ([`content-browser-move-dialog.tsx`](../../apps/editor/src/components/content-browser-move-dialog.tsx)) | Destination picker: item preview, folder search, `TreeView` with muted illegal rows. | Content Browser **Move…** for assets and folders. |
 
 Not kit (single call site): `BrandLogo` (Homepage), `JsBodyEditor` (Inspector Execute JavaScript body).

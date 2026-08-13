@@ -86,7 +86,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 - **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`). Pin hit boxes are `--touch-target` (44px); visual pins are `--graph-pin-size` (22px). Wires use `--pin-*` colors and 4–5px strokes.
 - **Drag-to-connect:** shipped. React Flow `onConnect` / `isValidConnection` persist the same `addEdge` path as tap-to-connect. Connection preview uses the dragged pin’s color. `onConnectEnd` on empty pane opens Add Node (filtered to compatible opposite pins, placed at the drop, auto-wired) only when the pointer is **outside a 96px screen-space safe zone** around the **source pin** and **compatible opposite pins**, and is not over a node body. While the drop would open Add Node, a non-interactive **Add Node** badge floats beside the moving wire end (not a persistent FAB).
 - **Double-tap empty pane** opens the unfiltered Add Node catalog. There is no persistent floating Add node button.
-- Overlay toolbar: Copy / Paste / Delete on the selection; **Format** tidies selected nodes, or walks the exec/data then-chain to the right of a single selection.
+- Overlay toolbar: Copy / Paste / Delete on the selection; **Format** tidies selected nodes, or walks the exec/data then-chain to the right of a single selection and lays out data-input trees to the left of those nodes.
 - Node palette is a centered `CatalogDialog` (search **not** autofocused); long-press / secondary click for node context menus when enabled.
 
 ## Document tabs (chrome bar)
@@ -105,9 +105,9 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | Tap / click a tile | Select (replace selection) |
 | Tap / click empty grid (padding, gaps — not a tile) | Clear selection |
 | Double-tap / double-click a Scene or Graph | Open the document (`openOrFocusDocument`) |
-| Move before ~250ms | Scroll / ignore (do not open menu or start a move) |
-| Hold ~250ms, then move | Drag; drop on the folder tree (or another tile’s folder) to `moveAsset` / `moveFolder`. Mouse uses HTML5 `ASSET_DRAG_MIME` / `FOLDER_DRAG_MIME`. The `assets` root is a drop target only — it is not a drag source. |
-| Hold still ≥500ms, then **release** | Context menu (tiles and nested folders). The overlay does not open while the pointer is down, so a hold-then-drag is not blocked. |
-| Right-click | Same as long-press-release menu |
+| Move before ~500ms | Scroll (do not open the menu) |
+| Hold still ≥500ms | Context menu (tiles and nested folders). The `assets` root has no menu. |
+| Right-click | Same as long-press menu (except `assets` root) |
+| Context-menu **Move…** | Opens `ContentBrowserMoveDialog` to pick a destination folder (`moveAsset` / `moveFolder`) |
 
 Outliner `TreeView` uses the same hold-to-reorder vs menu split (`onReparent` already exists). **Double-tap** an outliner row frames that actor.
