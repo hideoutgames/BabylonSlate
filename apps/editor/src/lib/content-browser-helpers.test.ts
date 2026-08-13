@@ -9,10 +9,12 @@ import {
   filterAssets,
   flattenFolderTree,
   folderDropTargetFromElement,
+  filterFolderTreeRows,
   guidFromAssetDragData,
   isFolderNameTaken,
   isFolderTreeRoot,
   isNewAssetNameTaken,
+  isValidMoveDestination,
   matchesAssetSearch,
   newAssetFileName,
   textureCompressionState,
@@ -207,6 +209,106 @@ describe("content-browser-helpers", () => {
     expect(isFolderNameTaken(folders, "assets", "textures")).toBe(true);
     expect(isFolderNameTaken(folders, "assets", "audio")).toBe(false);
     expect(isFolderNameTaken(folders, "assets/textures", "ui")).toBe(false);
+  });
+
+  it("rejects a no-op asset move and accepts a different folder", () => {
+    expect(
+      isValidMoveDestination({
+        kind: "asset",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/textures",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "asset",
+        sourcePath: "assets/textures",
+        destinationPath: "assets",
+      }),
+    ).toBe(true);
+    expect(
+      isValidMoveDestination({
+        kind: "asset",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects moving a folder into itself, a descendant, or its current parent", () => {
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/textures",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/textures/ui",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps matching folders and their ancestors when searching the Move tree", () => {
+    const tree = {
+      name: "assets",
+      path: "assets",
+      assets: [],
+      children: [
+        {
+          name: "textures",
+          path: "assets/textures",
+          assets: [],
+          children: [
+            {
+              name: "ui",
+              path: "assets/textures/ui",
+              assets: [],
+              children: [],
+            },
+          ],
+        },
+        {
+          name: "fx",
+          path: "assets/fx",
+          assets: [],
+          children: [],
+        },
+      ],
+    };
+    const rows = flattenFolderTree(tree);
+    expect(filterFolderTreeRows(rows, "  ").map((row) => row.path)).toEqual([
+      "assets",
+      "assets/textures",
+      "assets/textures/ui",
+      "assets/fx",
+    ]);
+    expect(filterFolderTreeRows(rows, "ui").map((row) => row.path)).toEqual([
+      "assets",
+      "assets/textures",
+      "assets/textures/ui",
+    ]);
+    expect(filterFolderTreeRows(rows, "FX").map((row) => row.path)).toEqual([
+      "assets",
+      "assets/fx",
+    ]);
   });
 
   it("treats the registry tree root as immovable", () => {

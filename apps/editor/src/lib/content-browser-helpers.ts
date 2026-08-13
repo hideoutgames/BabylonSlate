@@ -212,18 +212,68 @@ export function collectFolderGuids(
   return guids;
 }
 
-export function flattenFolderTree(
-  node: FolderTreeLike,
-  collapsed: ReadonlySet<string> = new Set(),
-  depth = 0,
-): Array<{
+export type MoveKind = "asset" | "folder";
+
+export interface FlattenedFolderRow {
   id: string;
   label: string;
   depth: number;
   hasChildren: boolean;
   expanded: boolean;
   path: string;
-}> {
+}
+
+export function parentFolderPath(
+  path: string,
+  rootPath: string = ASSETS_ROOT,
+): string {
+  if (path === rootPath || !path.includes("/")) return rootPath;
+  return path.slice(0, path.lastIndexOf("/")) || rootPath;
+}
+
+export function isValidMoveDestination(options: {
+  kind: MoveKind;
+  sourcePath: string;
+  destinationPath: string;
+}): boolean {
+  const { kind, sourcePath, destinationPath } = options;
+  if (kind === "asset") {
+    return destinationPath !== sourcePath;
+  }
+  if (destinationPath === sourcePath) return false;
+  if (destinationPath.startsWith(`${sourcePath}/`)) return false;
+  return destinationPath !== parentFolderPath(sourcePath);
+}
+
+export function filterFolderTreeRows<T extends { path: string; label: string }>(
+  rows: T[],
+  query: string,
+): T[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return rows;
+  const matching = new Set<string>();
+  for (const row of rows) {
+    if (
+      row.label.toLowerCase().includes(needle) ||
+      row.path.toLowerCase().includes(needle)
+    ) {
+      matching.add(row.path);
+    }
+  }
+  return rows.filter((row) => {
+    if (matching.has(row.path)) return true;
+    for (const path of matching) {
+      if (path.startsWith(`${row.path}/`)) return true;
+    }
+    return false;
+  });
+}
+
+export function flattenFolderTree(
+  node: FolderTreeLike,
+  collapsed: ReadonlySet<string> = new Set(),
+  depth = 0,
+): FlattenedFolderRow[] {
   const hasChildren = node.children.length > 0;
   const expanded = !collapsed.has(node.path);
   const label =
