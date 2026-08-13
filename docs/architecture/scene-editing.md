@@ -49,7 +49,7 @@ Both systems are **mode-parametric** via `ViewportMode` from `@babylonslate/core
 | Mode | Camera | Gizmo |
 | --- | --- | --- |
 | `3d` | Fly/look: WASD + one-finger (or LMB) look-in-place, pinch/wheel zoom, three-finger pan | Full translate / rotate / scale |
-| `2d` | Orthographic; WASD/joystick XY pan, one-finger pan (hold-then-move marquee), pinch zoom, three-finger pan (look is a no-op) | XY translate, Z rotate, XY scale; unused axes hidden |
+| `2d` | Orthographic; WASD/joystick XY pan, one-finger pan 1:1 with the pointer (hold-then-move marquee), pinch zoom, three-finger pan at the same 1:1 scale (look is a no-op) | XY translate, Z rotate, XY scale; unused axes hidden |
 
 **2D convention** (fixed, left-handed Babylon): content on the **XY plane**, **+Y up**, **+X right**, editor camera at **−Z** looking toward **+Z**. `scene.useRightHandedSystem` stays `false`.
 
@@ -83,7 +83,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 ## 2D specifics
 
-- **Marquee**: hold ~250ms then drag in 2D selects actors whose origin falls inside the rect (`viewport-gestures.ts`, `two-d.ts`). Immediate one-finger drag **pans**. 3D one-finger drag looks the camera instead.
+- **Marquee**: hold ~250ms then drag in 2D selects actors whose origin falls inside the rect (`viewport-gestures.ts`, `two-d.ts`). Immediate one-finger drag **pans** 1:1 with the pointer (orthographic frustum over CSS canvas size, so hardware scaling does not change feel). 3D one-finger drag looks the camera instead.
 - **Tile grid**: major lines at `settings.grid.tileSize`; minor lines at `tileSubdivisions` between majors (`editor-grid.ts`).
 - **`cameraBounds2D`**: rectangle drawn in the viewport for the game camera frame.
 - **`pixelsPerUnit`**: project setting (default 100); drives pixel-perfect ortho bounds and grid snapping.

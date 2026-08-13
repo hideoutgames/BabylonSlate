@@ -1,4 +1,4 @@
-import { NullEngine, Scene } from "@babylonjs/core";
+import { NullEngine, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEditorCamera } from "./editor-camera";
 import { RenderScheduler } from "./render-scheduler";
@@ -116,6 +116,29 @@ describe("attachViewportGestures", () => {
     expect(controller.camera.target.equals(targetBefore)).toBe(false);
   });
 
+  it("pans 2D one-finger drags 1:1 with the orthographic frustum", () => {
+    const { controller } = attach("2d");
+    // FakeCanvas is 800×600; default 2D frustum is 8×8 (half-height 4, aspect 1).
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 60, 140));
+    canvas.emit("pointerup", pointer(1, 60, 140));
+
+    expect(controller.camera.target.x).toBeCloseTo(40 * (8 / 800), 5);
+    expect(controller.camera.target.y).toBeCloseTo(40 * (8 / 600), 5);
+  });
+
+  it("pans a larger world delta in 2D when the frustum is zoomed out", () => {
+    const { controller } = attach("2d");
+    controller.setOrthoHalfHeight(16);
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 60, 140));
+    canvas.emit("pointerup", pointer(1, 60, 140));
+
+    expect(controller.camera.target.x).toBeCloseTo(40 * (32 / 800), 5);
+    expect(controller.camera.target.y).toBeCloseTo(40 * (32 / 600), 5);
+  });
+
   it("marquees in 2D after a 250ms hold then move", () => {
     vi.useFakeTimers();
     const marquees: Array<{
@@ -230,7 +253,10 @@ describe("attachViewportGestures", () => {
 
   it("pans on a three-finger drag", () => {
     const { controller } = attach("3d");
+    controller.camera.getViewMatrix();
     const targetBefore = controller.camera.target.clone();
+    const right = controller.camera.getDirection(Vector3.Right()).clone();
+    const up = controller.camera.getDirection(Vector3.Up()).clone();
 
     canvas.emit("pointerdown", pointer(1, 100, 100));
     canvas.emit("pointerdown", pointer(2, 200, 100));
@@ -239,7 +265,27 @@ describe("attachViewportGestures", () => {
     canvas.emit("pointermove", pointer(2, 240, 100));
     canvas.emit("pointermove", pointer(3, 190, 180));
 
-    expect(controller.camera.target.equals(targetBefore)).toBe(false);
+    // Midpoint moved +40px in X; 3D still uses panScale 0.01.
+    const expected = targetBefore
+      .add(right.scale(-40 * 0.01))
+      .add(up.scale(0));
+    expect(controller.camera.target.x).toBeCloseTo(expected.x, 5);
+    expect(controller.camera.target.y).toBeCloseTo(expected.y, 5);
+    expect(controller.camera.target.z).toBeCloseTo(expected.z, 5);
+  });
+
+  it("pans 2D three-finger drags at the same 1:1 frustum scale", () => {
+    const { controller } = attach("2d");
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 200, 100));
+    canvas.emit("pointerdown", pointer(3, 150, 180));
+    canvas.emit("pointermove", pointer(1, 100, 160));
+    canvas.emit("pointermove", pointer(2, 200, 160));
+    canvas.emit("pointermove", pointer(3, 150, 240));
+
+    expect(controller.camera.target.x).toBeCloseTo(0, 5);
+    expect(controller.camera.target.y).toBeCloseTo(60 * (8 / 600), 5);
   });
 
   it("zooms when the pinch spread changes", () => {

@@ -61,7 +61,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | `editor-grid` | 3D XZ or 2D XY grid; tile spacing + subdivisions; `cameraBounds2D` overlay |
 | `selection-outline` | Highlight mesh(es) for selected actors |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
-| `viewport-gestures` | 3D one-finger look, 2D one-finger pan (hold-then-move marquee), pinch zoom, three-finger pan; tap pick |
+| `viewport-gestures` | 3D one-finger look, 2D one-finger pan 1:1 with the pointer (hold-then-move marquee), pinch zoom, three-finger pan (2D same 1:1 scale; 3D `panScale`); tap pick |
 | `viewport-fly-keys` | WASD fly/pan with rAF + continuous-render lease |
 | `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds, pixel-grid snap, and `applyPixelArtSamplingToScene` when pixel-perfect is on |
 
