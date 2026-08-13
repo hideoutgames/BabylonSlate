@@ -247,4 +247,5 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 | Play engine applies sprite-clip UVs from `animState` | `applySpriteAnimFrame` is unit-tested; `create-engine` seeks AnimationGroups only | Later polish |
 | World-space `WidgetComponent` (`CreateForMesh`) | Component is addable; viewport-layer HUD is the v1 Play path | Later polish |
 | Designer nested-UI guid field + cycle check UI | `uiDocumentWouldCycle` is tested in `ui-runtime`; PropertyGrid does not yet edit nested refs | Later polish |
+| Play HUD `FontRegistry.registerAll` from project Font assets | Font editor registers imported `source` bytes; Play HUD uses the compiled CSS stack + generic fallback without awaiting project FontFace loads | Later polish (same class as registry-wide UI hosting) |
 

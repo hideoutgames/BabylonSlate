@@ -35,10 +35,12 @@ Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `
 
 1. `new FontFace(family, bytes)` + `document.fonts.add`.
 2. **Await** `document.fonts.load` before the first UI draw (`register` / `registerAll`).
-3. Late resolve → `consumeDirty()` so the Play HUD / designer can `markAsDirty()`.
+3. Late resolve → `consumeDirty()` so a host can `markAsDirty()`.
 4. Failed load → editor warning, never a silent substitution.
 
 The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset fonts have payload only — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
+
+Play HUD uses the compiled CSS stack (generic fallback always present). Awaiting `FontRegistry.registerAll` for every project Font before the first Play frame is later polish — same class as registry-wide UI hosting.
 
 ## Editor
 

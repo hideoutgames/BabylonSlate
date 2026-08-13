@@ -188,17 +188,28 @@ test.describe("P9 content systems", () => {
 
   test("Play overlay stick is reachable on iPad", {
     tag: IPAD_TEST_TAG,
-  }, async ({ page }) => {
+  }, async ({ page }, testInfo) => {
     await openTestProject(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-hud-stick")).toBeVisible();
+    // Desktop-chrome also runs @ipad tests (see docs/architecture/testing.md).
+    // Only the iPad projects use 1194×834 / 834×1194, which map to iPad
+    // presets and non-zero safe-area insets.
     const preset = await page.getByTestId("play-hud").getAttribute("data-preset");
-    expect(preset === "ipad-landscape" || preset === "ipad-portrait").toBe(true);
     const safeTop = Number(
       await page.getByTestId("play-hud").getAttribute("data-safe-top"),
     );
-    expect(safeTop).toBeGreaterThan(0);
+    if (testInfo.project.name === "ipad-landscape") {
+      expect(preset).toBe("ipad-landscape");
+      expect(safeTop).toBeGreaterThan(0);
+    } else if (testInfo.project.name === "ipad-portrait") {
+      expect(preset).toBe("ipad-portrait");
+      expect(safeTop).toBeGreaterThan(0);
+    } else {
+      expect(preset).toBe("desktop-16-9");
+      expect(safeTop).toBe(0);
+    }
     await page.getByTestId("play-overlay-close").click();
   });
 });
