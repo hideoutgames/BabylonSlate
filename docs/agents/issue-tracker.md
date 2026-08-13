@@ -182,7 +182,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list (`mainCameraActorId` still later). May run beside P11. |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list. Remaining: **Default Camera** via kit `SceneComponentPicker` (`CameraComponent` only), **Possess Camera** node (global Play camera), `UniversalCamera`, shadows/IBL. May run beside P11. |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -326,10 +326,10 @@ Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P11 (
 
 | Slice | Checklist | Packages |
 | --- | --- | --- |
-| Schema + Details | `p-lighting-camera` | `core` SceneSettings + Light/Camera properties; `apps/editor` Details enums and scene-settings rows |
+| Schema + Details | `p-lighting-camera` | `core` SceneSettings Default Camera (actor+component ids); kit `SceneComponentPicker` with `allowedClassIds`; `apps/editor` Details enums and scene-settings rows |
 | Renderer | same | `render` incremental `scene-illumination`, detached UniversalCamera, one ShadowGenerator, fog/IBL/clear, dir/spot gizmos |
-| Play | same | `runtime` assign payload; `render` snapshot-apply parity |
-| Scripting | same | `scripting-nodes` get/set active camera, FOV, ortho size, light enabled/color/intensity |
+| Play | same | `runtime` assign payload; named Default Camera as `activeCamera`; `render` snapshot-apply parity |
+| Scripting | same | `scripting-nodes` **Possess Camera** (global `activeCamera`); get/set FOV, ortho size, light enabled/color/intensity |
 
 ## P11 behaviour trees / navigation
 

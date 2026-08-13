@@ -286,6 +286,7 @@ An actor scripted in the editor compiles and runs in the worker; a type mismatch
 | Behaviour-tree validation rules | P11 |
 | Shader / AnimationGraph validators | P9 |
 | Scene viewport Play badge on 3D viewport | P6 scene chrome (wire badge API in P5; host may be class-doc Play until then) |
+| Possess Camera / Default Camera pick | `p-lighting-camera` ([engineplan §2.5](../engineplan.md)) |
 
 ## Implementation order
 
