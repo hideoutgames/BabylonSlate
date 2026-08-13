@@ -1,8 +1,31 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
+
+async function showContentBrowser(page: Page): Promise<void> {
+  await page
+    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+    .click();
+  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+}
+
+async function createContentBrowserAsset(
+  page: Page,
+  type: "Enum" | "Scene",
+  name: string,
+): Promise<void> {
+  await showContentBrowser(page);
+  await page.getByTestId("content-browser-new-asset").click();
+  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+  await page.getByTestId("new-asset-type").click();
+  await page.getByTestId(`new-asset-type-${type}`).click();
+  await page.getByTestId("new-asset-name").fill(name);
+  await page.getByTestId("content-browser-new-asset-create").click();
+  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
+  await showContentBrowser(page);
+}
 
 test.describe("Editor density and IA", () => {
   test("chrome is compact, has no Add tab, and Focus is disabled on Content Browser", {
@@ -285,6 +308,8 @@ test.describe("Editor density and IA", () => {
     await openTestProject(page);
     await page.getByTestId("content-browser-new-asset").click();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+    await expect(page.getByTestId("new-asset-name")).toHaveValue("");
+    await expect(page.getByTestId("content-browser-new-asset-create")).toBeDisabled();
     await page.getByTestId("new-asset-type").click();
     await page.getByTestId("new-asset-type-Scene").click();
     await page.getByTestId("new-asset-name").fill("main");
@@ -348,6 +373,54 @@ test.describe("Editor density and IA", () => {
     await sceneTile.click({ button: "right" });
     await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
     await expect(page.getByTestId("context-menu-item-retry-encoding")).toHaveCount(
+      0,
+    );
+  });
+
+  test("multi-select Duplicate copies every asset; mixed menu hides Show References", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+
+    await createContentBrowserAsset(page, "Enum", "Alpha");
+    await expect(
+      page.locator('[data-asset-path="assets/Alpha.babasset"]'),
+    ).toBeVisible();
+
+    await createContentBrowserAsset(page, "Enum", "Beta");
+    await expect(
+      page.locator('[data-asset-path="assets/Beta.babasset"]'),
+    ).toBeVisible();
+
+    await page.locator('[data-asset-path="assets/Alpha.babasset"]').click();
+    await page.locator('[data-asset-path="assets/Beta.babasset"]').click();
+    await page
+      .locator('[data-asset-path="assets/Beta.babasset"]')
+      .click({ button: "right" });
+    await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
+      0,
+    );
+    await page.getByTestId("context-menu-item-duplicate").click();
+    await expect(
+      page.locator('[data-asset-path="assets/Alpha_1.babasset"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-asset-path="assets/Beta_1.babasset"]'),
+    ).toBeVisible();
+
+    await page.getByTestId("content-browser-new-folder").click();
+    await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
+    await page.getByTestId("content-browser-name-input").fill("fx");
+    await page.getByTestId("content-browser-name-confirm").click();
+    await page.getByTestId("tree-row-assets").click();
+    await expect(page.getByTestId("content-folder-assets/fx")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("content-folder-assets/fx").click();
+    await page.locator('[data-asset-path="assets/Alpha.babasset"]').click();
+    await page.getByTestId("content-folder-assets/fx").click({ button: "right" });
+    await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
+    await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
       0,
     );
   });
