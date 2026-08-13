@@ -13,7 +13,7 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **Alert** (`AlertTitle`, `AlertDescription`, `AlertAction`) | Inline status callout. | Boot / project errors in `App` and Homepage; gallery. |
-| **AlertDialog** (`AlertDialogTitle`, `AlertDialogAction`, `AlertDialogCancel`, …) | Modal confirm / blocking error. | Unsaved close, Play blocked, Content Browser destructive confirms. |
+| **AlertDialog** (`AlertDialogTitle`, `AlertDialogAction`, `AlertDialogCancel`, …) | Modal confirm / blocking error. | Unsaved close, Play blocked, Content Browser destructive confirms; NamePromptDialog. |
 | **Badge** | Compact status chip. | Compilation errors, Content Browser type tags, global-search result kinds, live-wire “Add Node”. |
 | **Button** | Pressable action. Sizes include `touch` / `touch-icon` (44px). Outline = visible action; ghost = tabs / close. | Chrome, panels, catalogs, overlays. |
 | **Card** (`CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`, `CardAction`) | Raised content block. | Homepage project tiles, settings field groups, Compiler Results rows. |
@@ -27,11 +27,11 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Label** | Accessible control caption. | Not imported by app code; Field wraps it. |
 | **Progress** (`ProgressTrack`, `ProgressIndicator`, `ProgressLabel`, `ProgressValue`) | Determinate progress. | Content Browser encode / import. |
 | **ScrollArea** (`ScrollBar`) | Overlay scrollbar region. | Gallery, Output Log, Compiler Results, SearchSheet body. |
-| **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset. |
+| **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset; Project Settings global font fallback. |
 | **Separator** | Horizontal or vertical rule. | Toolbar strips, search dialog, catalog layout. |
 | **Sheet** (`SheetTitle`, `SheetContent`, `SheetHeader`, …) | Edge drawer. Title required. | SearchSheet (add-component / asset picker / gallery). |
 | **Switch** | On/off toggle. | Engine / Project Settings booleans. |
-| **Textarea** | Multi-line text. | Project Settings notes. |
+| **Textarea** | Multi-line text. | Gallery; not used for Input mappings (structured `InputMappingEditor`). |
 | **Toggle** | Pressed/unpressed tool. Selected = accent fill + primary border + `aria-pressed`. | Viewport tools, Outliner filters, chrome Play-adjacent tools. |
 | **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; Tilemap paint tools; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
@@ -46,21 +46,27 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | --- | --- | --- |
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
-| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print), UserInterface widget details (name, nested UI, anchors / offsets / pivot / padding), Sprite / Tileset / Tilemap settings. |
+| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color (`ColorField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis enums), UserInterface widget details, Sprite / Tileset / Tilemap / Structure settings. |
+| **ColorField** | Native color input wrapped for PropertyGrid. | Light color; Inspector color pin defaults; gallery. |
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
-| **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; gallery. |
-| **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings via CatalogDialog; UserInterface desired width/height. |
+| **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; InputMappingEditor axis extras; gallery. |
+| **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings autosave, pixels-per-unit, play frame cap; UserInterface desired width/height. |
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search, Content Browser, Content Browser Move dialog. |
-| **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; Tilemap tile palette; gallery. Add Component / Place Actors use CatalogDialog instead. |
-| **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks; Sprite and Tileset Texture rows; UserInterface nested-UI picker (self and cycle partners excluded). |
+| **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; ClassPicker; Tilemap tile palette; gallery. Add Component / Place Actors use CatalogDialog instead. |
+| **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | Scene Details mesh / sprite / tilemap / widget / animation-graph rows; Project Settings default font; Font fallbacks; Sprite and Tileset Texture; UserInterface nested UI, image, font, and visual override. |
+| **ClassPicker** | Class-id picker on SearchSheet (engine + project Class assets). | Scene Game Instance (GameInstance lineage). |
+| **NamedListEditor** | Reorderable named string rows (add / remove / up / down, 44px). Optional custom item control or Add-only. | Project Settings sorting layers; Font `fallbackGuids`; ParameterListEditor enum values. |
+| **InputMappingEditor** | Actions/axes with bindings, listen-to-bind, device toggles, touch control ids. | Project Settings Input. |
+| **BindingCaptureButton** | Listen-to-bind: next keydown / mouse button / gamepad. | InputMappingEditor bindings. |
+| **NamePromptDialog** | AlertDialog + 44px name field. Replaces `window.prompt`. | Class panel member add; UserInterface Logic members. |
 | **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
 | **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component. |
-| **TypeVisualIcon** | Colored Lucide glyph for an asset / class family (`resolveTypeVisual`). | Outliner, Details, Prefab, Content Browser, global search, Place Actors, Add Component, AssetPicker, document tabs. |
-| **ParameterListEditor** | Named, typed, reorderable pin/parameter rows (type, optional, default, enum, up/down). | Inspector Execute JavaScript Inputs/Outputs; Event On Command Run / BDebugCommand; Class / ScriptInterface signatures. |
+| **TypeVisualIcon** | Colored Lucide glyph for an asset / class family (`resolveTypeVisual`). | Outliner, Details, Prefab, Content Browser, global search, Place Actors, Add Component, AssetPicker, ClassPicker, document tabs. |
+| **ParameterListEditor** | Named, typed, reorderable pin/parameter rows (type, optional, default, enum list, up/down). | Inspector Execute JavaScript Inputs/Outputs; Event On Command Run / BDebugCommand; Class / ScriptInterface signatures. |
 | **SelectableText** | Opt-in selectable span inside a `user-select: none` shell. | Logs, compiler messages, Play overlay copy, gallery code snippets. |
 | **ContextMenuOverlay** | Pointer-anchored menu driven by `useContextMenu` (500ms hold or `contextmenu`). | Viewport, Outliner, Content Browser. |
 
-Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`. Label helpers: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`. Type lookup: `resolveTypeVisual`, `resolveActorTypeVisual`.
+Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`. Label helpers: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`, `formatBindingLabel`. Type lookup: `resolveTypeVisual`, `resolveActorTypeVisual`.
 
 ## Graph (`@babylonslate/graph-ui`)
 

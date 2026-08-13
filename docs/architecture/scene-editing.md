@@ -72,13 +72,14 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 | `@babylonslate/core` | `SerializedScene`, `SceneSettings`, `ViewportMode`, normalisation |
 | `@babylonslate/edit` | Scene commands + `diffSceneCommands`; journal revivers |
 | `@babylonslate/render` | Editor tools: camera, gizmos, grid, outline, sync, gestures |
-| `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker |
+| `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker, class picker, input mapping editor |
 | `apps/editor` | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists these dock tabs and toggles them; reopen restores addPanel-relative last placement. |
 
 ## Outliner and Details visuals
 
 - **Outliner** (`TreeView`): 32px rows, type icon from `resolveActorTypeVisual` (Actor color; mesh/light/camera glyphs for engine `Actor` placeholders; user classes use the parent engine icon), selected row `bg-primary/20` + `border-l-primary`. **Search** and **+** share one row. Visibility/lock toggles are compact `sm` controls. Hold ~250ms arms reorder (`onReparent`); move before that scrolls. **Double-tap** frames the actor (`frameActor` via viewport context). **+** opens a **Place Actors** `CatalogDialog` (Shapes, Lights, Camera, Empty, Project assets) with the same type icons. Spawned lights are outliner/details-complete; the viewport still uses its default hemispheric light.
 - **Details** (`PropertyGrid`): stacked **title-above-control** rows (`Field` vertical) with compact inspector spacing. Labels are Title Cased (`meshKind` → `Mesh Kind`, `2D camera width` → `2D Camera Width`). Category headers use `--secondary`. Vector axes use `--axis-x/y/z` on one nowrap row under the title (letters live on `NumericDragField`). Scalar number rows keep a compact unlabeled scrub handle so the title is not repeated. Checkboxes are compact (`size-4`) under the title. Reset is a compact icon button (`↺`) on the title line, not the word Reset. Controls use `--chrome-row` (28px). **Add Component** uses the same catalog chrome, grouped Rendering / Camera / Physics. Numeric rows (`NumericDragField`) keep an empty typed draft; emptying does not commit `0` — blur restores the last committed number.
+- **Typed component rows** (`apps/editor/src/lib/component-property-rows.ts`): `MeshComponent.assetGuid` / Sprite / Tilemap / Widget / AnimationGraph open `AssetPicker` (button shows the asset name, stores the guid). Sprite/Tilemap `sortingLayer` is an enum from project `twoD.sortingLayers`. `RigidBodyComponent.motionType` is an enum. `ColliderComponent.shape` flattens to kind plus half-extents / radius (polygon / mesh point clouds are not JSON text). `LightComponent.color` is a color row. Scene **Game Instance** uses `ClassPicker` filtered to GameInstance lineage.
 - **Viewport overlay**: toolbar island on `--popover` with a shadow so it separates from the 3D view. Gizmo / snap / joystick / Focus pressed states use accent fill + primary border.
 
 ## 2D specifics
@@ -88,7 +89,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 - **`cameraBounds2D`**: rectangle drawn in the viewport for the game camera frame.
 - **`pixelsPerUnit`**: project setting (default 100); drives pixel-perfect ortho bounds and grid snapping.
 - **Pixel-perfect sampling**: when `twoD.pixelPerfect` is on in 2D mode, `setPixelPerfect` also runs `applyPixelArtSamplingToScene` (nearest sampling, clamp wrap, anisotropy 1) on every texture currently on the Babylon scene.
-- **Sorting layers**: ordered list in project settings; `(sortingLayer, orderInLayer)` compiled to one `alphaIndex` sort key; rendering groups reserved for coarse background / world / foreground / UI separation (`sorting.ts`).
+- **Sorting layers**: ordered list in Project Settings (`NamedListEditor`); `(sortingLayer, orderInLayer)` compiled to one `alphaIndex` sort key; rendering groups reserved for coarse background / world / foreground / UI separation (`sorting.ts`).
 - **Locked actors**: `isPickable = false` and the viewport gizmo attaches only to pickable meshes. **Locking an actor immediately drops it from `selectedActorIds`** (Outliner lock toggle and Details Locked). Unlock does not reselect. Details then shows scene settings when nothing remains selected.
 
 ## Actor Prefab tab

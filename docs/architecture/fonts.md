@@ -44,6 +44,6 @@ Play HUD uses the compiled CSS stack (generic fallback always present). Awaiting
 
 ## Editor
 
-Font document workspace: sample text that flags glyphs whose advance matches the generic-only stack (fall-through). The sample uses `compileFontStack` with per-asset `fallbackGuids`, the Project Settings default font family, and `globalFallback`. Project Settings → **Fonts** category for default font + global fallback.
+Font document workspace: sample text that flags glyphs whose advance matches the generic-only stack (fall-through). The sample uses `compileFontStack` with per-asset `fallbackGuids`, the Project Settings default font family, and `globalFallback`. Fallback guids are a `NamedListEditor` of Font `AssetPicker` rows (not typed guids). Project Settings → **Fonts** category: Default Font is an `AssetPicker`; Global Fallback is a `Select` of generic families (`sans-serif`, `serif`, `monospace`, `system-ui`).
 
 Playwright: Font editor sample preview (`data-fonts-ready`, compiled stack). Registry-ready is asserted in unit tests with a mock host; an imported font’s source bytes are registered before the sample paints.

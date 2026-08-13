@@ -163,9 +163,12 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("project-settings").click();
     await page.getByTestId("settings-modal-category-fonts").click();
-    await expect(page.getByTestId("settings-global-fallback")).toHaveValue(
+    await expect(page.getByTestId("settings-global-fallback")).toContainText(
       "sans-serif",
     );
+    await page.getByTestId("settings-modal-category-input").click();
+    await expect(page.getByTestId("settings-input-mapping")).toBeVisible();
+    await expect(page.getByTestId("settings-input-actions")).toHaveCount(0);
   });
 
   test("Play overlay stick drives the same Move.x as the gamepad path", async ({
