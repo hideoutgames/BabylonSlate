@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Vector3 } from "@babylonjs/core";
+import { Mesh, StandardMaterial, Vector3 } from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
@@ -304,6 +304,70 @@ describe("EditorSceneSync", () => {
       ]),
     );
     expect(sync.meshForActor("a")).not.toBe(before);
+  });
+
+  it("rebuilds a box proxy into a light billboard when LightComponent is added", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    const before = sync.meshForActor("a");
+    expect(before!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", {
+          components: [
+            {
+              id: "light",
+              classId: "LightComponent",
+              properties: { intensity: 1, color: [0, 1, 0.4], lightKind: "point" },
+            },
+          ],
+        }),
+      ]),
+    );
+    const after = sync.meshForActor("a");
+    expect(after).not.toBe(before);
+    expect(after!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(
+      (after!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("light");
+  });
+
+  it("tints an existing light billboard without rebuilding the mesh", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", {
+          components: [
+            {
+              id: "light",
+              classId: "LightComponent",
+              properties: { intensity: 1, color: [1, 1, 1], lightKind: "point" },
+            },
+          ],
+        }),
+      ]),
+    );
+    const mesh = sync.meshForActor("a");
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", {
+          components: [
+            {
+              id: "light",
+              classId: "LightComponent",
+              properties: { intensity: 1, color: [1, 0, 0], lightKind: "point" },
+            },
+          ],
+        }),
+      ]),
+    );
+    expect(sync.meshForActor("a")).toBe(mesh);
+    const material = mesh!.material as StandardMaterial;
+    expect(material.emissiveColor.r).toBeCloseTo(1);
+    expect(material.emissiveColor.g).toBeCloseTo(0);
+    expect(material.emissiveColor.b).toBeCloseTo(0);
   });
 
   it("rebuilds a box proxy into a sprite quad when SpriteComponent is added", () => {

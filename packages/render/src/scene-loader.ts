@@ -4,6 +4,12 @@ import type { SerializedActor, SerializedScene } from "@babylonslate/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { createMeshFromModelBytes } from "./model-mesh";
 import { syncAuthoredIllumination } from "./scene-illumination";
+import {
+  applyEditorBillboardFromActor,
+  createEditorBillboard,
+  editorBillboardKind,
+  parseEditorBillboardIcon,
+} from "./editor-billboard";
 import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 
@@ -120,6 +126,39 @@ function createTilemapActorMesh(
   return createPrimitiveMesh(scene, name, "tilemap");
 }
 
+/** Resolve the editor mesh kind, including billboard helpers for location-only components. */
+export function editorMeshKindOf(actor: SerializedActor): string | null {
+  const meshComponent = actor.components.find(
+    (component) => component.classId === "MeshComponent",
+  );
+  const spriteComponent = actor.components.find(
+    (component) => component.classId === "SpriteComponent",
+  );
+  const tilemapComponent = actor.components.find(
+    (component) => component.classId === "TilemapComponent",
+  );
+  const asset =
+    stringProp(meshComponent?.properties.assetGuid) ||
+    stringProp(spriteComponent?.properties.assetGuid) ||
+    stringProp(tilemapComponent?.properties.assetGuid) ||
+    "";
+  if (typeof meshComponent?.properties.meshKind === "string") {
+    return `${meshComponent.properties.meshKind}:${asset}`;
+  }
+  if (spriteComponent) return `sprite:${asset}`;
+  if (tilemapComponent) return `tilemap:${asset}`;
+  if (actor.components.some((component) => component.classId === "LightComponent")) {
+    return editorBillboardKind("light");
+  }
+  if (actor.components.some((component) => component.classId === "CameraComponent")) {
+    return editorBillboardKind("camera");
+  }
+  if (actor.components.some((component) => component.classId === "AudioComponent")) {
+    return editorBillboardKind("audio");
+  }
+  return null;
+}
+
 /** Build the Babylon mesh for an actor's first renderable component. */
 export function createActorMesh(
   scene: Scene,
@@ -150,6 +189,12 @@ export function createActorMesh(
       assets.modelBytes.get(assetGuid)!,
     );
     if (loaded) return loaded;
+  }
+  const icon = parseEditorBillboardIcon(editorMeshKindOf(actor));
+  if (icon) {
+    const mesh = createEditorBillboard(scene, name, icon);
+    applyEditorBillboardFromActor(mesh, actor);
+    return mesh;
   }
   const meshKind =
     typeof meshComponent?.properties.meshKind === "string"
