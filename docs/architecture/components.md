@@ -19,17 +19,17 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Card** (`CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`, `CardAction`) | Raised content block. | Homepage project tiles, settings field groups, Compiler Results rows. |
 | **Checkbox** | Boolean check control. | PropertyGrid booleans; gallery. |
 | **ContextMenu** (`ContextMenuTrigger`, `ContextMenuItem`, `ContextMenuGroup`, …) | Pointer-anchored menu (Radix/Base UI). | Homepage project tiles. Long-press editor menus use editor-kit `ContextMenuOverlay` instead. |
-| **Dialog** (`DialogTitle`, `DialogHeader`, `DialogContent`, …) | Centered modal. Title required. | Global search, Play prepare, Content Browser rename/move, CatalogDialog shell. |
-| **DropdownMenu** (`DropdownMenuTrigger`, `DropdownMenuItem`, `DropdownMenuGroup`, …) | Anchored menu. `DropdownMenuLabel` must sit in a `DropdownMenuGroup`. Chrome menus use `modal={false}` so they do not cover the viewport. | Windows, Debug, Settings, Add, Content Browser item menus. |
+| **Dialog** (`DialogTitle`, `DialogHeader`, `DialogContent`, …) | Centered modal. Title required. | Global search, Play prepare, Content Browser rename/move, CatalogDialog shell, SearchDialog, debug console, Preview session report. |
+| **DropdownMenu** (`DropdownMenuTrigger`, `DropdownMenuItem`, `DropdownMenuGroup`, …) | Anchored menu. `DropdownMenuLabel` must sit in a `DropdownMenuGroup`. Chrome menus use `modal={false}` so they do not cover the viewport. | Windows, Debug, Settings, Add, Content Browser item menus, SearchDropdown. |
 | **Empty** (`EmptyHeader`, `EmptyTitle`, `EmptyDescription`, `EmptyContent`, `EmptyMedia`) | Empty-state layout. | Homepage with no projects; global search with no hits; gallery. |
 | **Field** (`FieldGroup`, `FieldLabel`, `FieldSet`, `FieldLegend`, `FieldDescription`, `FieldError`, `FieldContent`, `FieldTitle`) | Form row layout. Uses **Label** internally — do not invent a parallel label. | Engine / Project Settings (including User Interface custom canvas presets), Homepage create, Content Browser forms, PropertyGrid, UserInterface desired size. |
 | **Input** | Single-line text. | Names, search fields, settings strings. |
 | **Label** | Accessible control caption. | Not imported by app code; Field wraps it. |
 | **Progress** (`ProgressTrack`, `ProgressIndicator`, `ProgressLabel`, `ProgressValue`) | Determinate progress. | Content Browser encode / import. |
-| **ScrollArea** (`ScrollBar`) | Overlay scrollbar region. | Gallery, Output Log, Compiler Results, SearchSheet body. |
-| **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset; Project Settings global font fallback. |
+| **ScrollArea** (`ScrollBar`) | Overlay scrollbar region. | Gallery, Output Log, Compiler Results, SearchDialog body. |
+| **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. Popup is at least the trigger width (`min-w-(--anchor-width)`), not stretched across the panel. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset; Project Settings global font fallback. |
 | **Separator** | Horizontal or vertical rule. | Toolbar strips, search dialog, catalog layout. |
-| **Sheet** (`SheetTitle`, `SheetContent`, `SheetHeader`, …) | Edge drawer. Title required. | SearchSheet (add-component / asset picker / gallery). |
+| **Sheet** (`SheetTitle`, `SheetContent`, `SheetHeader`, …) | Edge drawer. Title required. | Installed; unused in production chrome. Pick lists use SearchDialog / SearchDropdown; console and session report use Dialog. |
 | **Slider** | Bounded numeric track (44px hit area). Accepts a scalar or range array. | PropertyGrid slider rows; Trace playback frame scrubber; gallery. |
 | **Switch** | On/off toggle. | Engine / Project Settings booleans. |
 | **Textarea** | Multi-line text. | Gallery; not used for Input mappings (structured `InputMappingEditor`). |
@@ -53,10 +53,11 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / slider / color; InputMappingEditor axis extras; gallery. |
 | **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings autosave, pixels-per-unit, play frame cap; UserInterface desired width/height; Trace playback frame. |
-| **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search, Content Browser, Content Browser Move dialog. |
-| **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; ClassPicker; Tilemap tile palette; gallery. Add Component / Place Actors use CatalogDialog instead. |
-| **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | Scene Details mesh / sprite / tilemap / widget / animation-graph rows; Project Settings default font; Font fallbacks; Sprite and Tileset Texture; UserInterface nested UI, image, font, and visual override; AnimationGraph clip (Sprite or Animation). |
-| **ClassPicker** | Class-id picker on SearchSheet (engine + project Class assets). | Scene Game Instance (GameInstance lineage). |
+| **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchDialog, SearchDropdown, global search, Content Browser, Content Browser Move dialog. |
+| **SearchDialog** | Searchable item list in a compact centered Dialog. | AssetPicker; ClassPicker; gallery. Add Component / Place Actors use CatalogDialog instead. |
+| **SearchDropdown** | Searchable `DropdownMenu` (`modal={false}`) anchored to a trigger. Scrollable; width is content-sized, not full viewport. | Tilemap tile palette; gallery. |
+| **AssetPicker** | Asset-guid picker on SearchDialog, optional None row and type filter. | Scene Details mesh / sprite / tilemap / widget / animation-graph rows; Project Settings default font; Font fallbacks; Sprite and Tileset Texture; UserInterface nested UI, image, font, and visual override; AnimationGraph clip (Sprite or Animation). |
+| **ClassPicker** | Class-id picker on SearchDialog (engine + project Class assets). | Scene Game Instance (GameInstance lineage). |
 | **NamedListEditor** | Reorderable named string rows (add / remove / up / down, 44px). Optional custom item control or Add-only. | Project Settings sorting layers; Font `fallbackGuids`; ParameterListEditor enum values; AnimationGraph parameters. |
 | **InputMappingEditor** | Actions/axes with bindings, listen-to-bind, device toggles, touch control ids. | Project Settings Input. |
 | **BindingCaptureButton** | Listen-to-bind: next keydown / mouse button / gamepad. | InputMappingEditor bindings. |

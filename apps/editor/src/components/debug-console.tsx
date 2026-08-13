@@ -5,14 +5,14 @@ import {
 } from "@babylonslate/debugger";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@babylonslate/ui/components/dialog";
 import { Input } from "@babylonslate/ui/components/input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@babylonslate/ui/components/sheet";
 
 export type ConsoleExecuteResult = {
   success: boolean;
@@ -100,15 +100,14 @@ export function DebugConsole({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="h-[50vh]"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="flex max-h-[min(32rem,80vh)] w-full flex-col gap-3 overflow-hidden sm:max-w-lg"
         data-testid="debug-console"
       >
-        <SheetHeader>
-          <SheetTitle>Console</SheetTitle>
-        </SheetHeader>
+        <DialogHeader>
+          <DialogTitle>Console</DialogTitle>
+        </DialogHeader>
         <ScrollArea className="min-h-0 flex-1">
           <div
             className="flex flex-col gap-1 p-2 font-mono text-xs"
@@ -128,7 +127,7 @@ export function DebugConsole({
         </ScrollArea>
         {suggestions.length > 0 ? (
           <div
-            className="flex flex-wrap gap-1 px-2"
+            className="flex flex-wrap gap-1"
             data-testid="debug-console-suggestions"
           >
             {suggestions.slice(0, 8).map((name) => (
@@ -145,7 +144,7 @@ export function DebugConsole({
             ))}
           </div>
         ) : null}
-        <form className="flex gap-2 px-2" onSubmit={onSubmit}>
+        <form className="flex gap-2" onSubmit={onSubmit}>
           <Input
             className="min-h-11 flex-1 font-mono"
             value={draft}
@@ -162,7 +161,7 @@ export function DebugConsole({
           </Button>
         </form>
         <div
-          className="flex flex-wrap gap-1 px-2 pb-2"
+          className="flex flex-wrap gap-1"
           data-testid="debug-console-accessory"
         >
           {ACCESSORY.map((token) => (
@@ -178,7 +177,7 @@ export function DebugConsole({
             </Button>
           ))}
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

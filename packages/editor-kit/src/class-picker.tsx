@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { SearchSheet, type SearchSheetItem } from "./search-sheet";
+import { SearchDialog, type SearchDialogItem } from "./search-dialog";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 
 export interface ClassPickerEntry {
@@ -21,7 +21,7 @@ export interface ClassPickerProps {
 
 const NONE_ID = "__none__";
 
-/** Class id picker built on the shared search sheet. */
+/** Class id picker built on the shared search dialog. */
 export function ClassPicker({
   open,
   onOpenChange,
@@ -31,8 +31,8 @@ export function ClassPicker({
   allowNone = true,
   "data-testid": testId,
 }: ClassPickerProps) {
-  const items = useMemo<SearchSheetItem[]>(() => {
-    const rows: SearchSheetItem[] = classes.map((entry) => ({
+  const items = useMemo<SearchDialogItem[]>(() => {
+    const rows: SearchDialogItem[] = classes.map((entry) => ({
       id: entry.id,
       label: entry.name,
       description: entry.description ?? entry.group,
@@ -52,7 +52,7 @@ export function ClassPicker({
   }, [allowNone, classes]);
 
   return (
-    <SearchSheet
+    <SearchDialog
       open={open}
       onOpenChange={onOpenChange}
       title={title}
