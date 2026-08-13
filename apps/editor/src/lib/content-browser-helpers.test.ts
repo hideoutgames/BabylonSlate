@@ -18,6 +18,12 @@ import {
   isFolderTreeRoot,
   isNewAssetNameTaken,
   isValidMoveDestination,
+  isValidSelectionMoveDestination,
+  contentBrowserContextActions,
+  contentBrowserMoveDialogTitle,
+  contentBrowserMovePreviewName,
+  guidsOutsideSelectedFolders,
+  rootSelectedFolderPaths,
   listChildFolders,
   matchesAssetSearch,
   newAssetFileName,
@@ -757,5 +763,118 @@ describe("content-browser-helpers", () => {
     expect(accent.backgroundImage).toContain("radial-gradient");
     expect(accent.backgroundImage).toContain("var(--card)");
     expect(accent.boxShadow).toBe("inset 0 -3px 0 var(--asset-texture)");
+  });
+
+  it("intersects tile menu actions by selection counts", () => {
+    expect(
+      contentBrowserContextActions({ assetCount: 1, folderCount: 0 }),
+    ).toEqual([
+      "duplicate",
+      "rename",
+      "move",
+      "copy",
+      "show-references",
+      "delete",
+    ]);
+    expect(
+      contentBrowserContextActions({ assetCount: 2, folderCount: 0 }),
+    ).toEqual(["duplicate", "move", "copy", "delete"]);
+    expect(
+      contentBrowserContextActions({ assetCount: 0, folderCount: 1 }),
+    ).toEqual(["duplicate", "rename", "move", "copy", "delete"]);
+    expect(
+      contentBrowserContextActions({ assetCount: 1, folderCount: 1 }),
+    ).toEqual(["duplicate", "move", "copy", "delete"]);
+    expect(
+      contentBrowserContextActions({ assetCount: 0, folderCount: 0 }),
+    ).toEqual([]);
+  });
+
+  it("rejects a move destination that is any selected folder or a descendant", () => {
+    expect(
+      isValidSelectionMoveDestination({
+        destinationPath: "assets/fx",
+        folderSourcePaths: ["assets/textures", "assets/audio"],
+        assetSourcePaths: ["assets"],
+      }),
+    ).toBe(true);
+    expect(
+      isValidSelectionMoveDestination({
+        destinationPath: "assets/textures",
+        folderSourcePaths: ["assets/textures", "assets/audio"],
+      }),
+    ).toBe(false);
+    expect(
+      isValidSelectionMoveDestination({
+        destinationPath: "assets/textures/ui",
+        folderSourcePaths: ["assets/textures"],
+      }),
+    ).toBe(false);
+    expect(
+      isValidSelectionMoveDestination({
+        destinationPath: "assets",
+        operation: "move",
+        folderSourcePaths: ["assets/textures"],
+      }),
+    ).toBe(false);
+    expect(
+      isValidSelectionMoveDestination({
+        destinationPath: "assets",
+        operation: "copy",
+        folderSourcePaths: ["assets/textures"],
+        assetSourcePaths: ["assets"],
+      }),
+    ).toBe(true);
+  });
+
+  it("titles the move dialog for one item vs many", () => {
+    expect(
+      contentBrowserMoveDialogTitle({
+        operation: "move",
+        itemCount: 1,
+        folderCount: 0,
+        assetCount: 1,
+      }),
+    ).toBe("Move Asset");
+    expect(
+      contentBrowserMoveDialogTitle({
+        operation: "copy",
+        itemCount: 1,
+        folderCount: 1,
+        assetCount: 0,
+      }),
+    ).toBe("Copy Folder");
+    expect(
+      contentBrowserMoveDialogTitle({
+        operation: "move",
+        itemCount: 3,
+        folderCount: 1,
+        assetCount: 2,
+      }),
+    ).toBe("Move 3 items");
+    expect(contentBrowserMovePreviewName(["hero"])).toBe("hero");
+    expect(contentBrowserMovePreviewName(["hero", "fx", "albedo"])).toBe(
+      "3 items",
+    );
+  });
+
+  it("drops selected assets that already live under a selected folder", () => {
+    expect(
+      guidsOutsideSelectedFolders(
+        ["tex-1", "scene-1"],
+        ["assets/textures"],
+        (guid) =>
+          guid === "tex-1"
+            ? "assets/textures/albedo.babasset"
+            : "assets/main.scene.babasset",
+      ),
+    ).toEqual(["scene-1"]);
+    expect(
+      rootSelectedFolderPaths([
+        "assets/textures",
+        "assets/textures/ui",
+        "assets/fx",
+      ]),
+    ).toEqual(["assets/textures", "assets/fx"]);
   });
 });

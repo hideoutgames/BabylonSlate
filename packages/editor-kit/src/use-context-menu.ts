@@ -55,7 +55,7 @@ export interface UseContextMenuResult {
   menu: ContextMenuState | null;
   closeMenu: () => void;
   /** Open the menu at viewport coordinates (e.g. after tile long-press). */
-  openMenuAt: (clientX: number, clientY: number) => void;
+  openMenuAt: (clientX: number, clientY: number, itemsOverride?: ContextMenuItem[]) => void;
   bind: {
     onContextMenu: (event: ReactMouseEvent) => void;
     onPointerDown: (event: React.PointerEvent) => void;
@@ -86,6 +86,8 @@ export function useContextMenu(
   const { items, enabled = true, longPressMs = CONTEXT_MENU_LONG_PRESS_MS } =
     options;
   const pressRef = useRef<PressState | null>(null);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
 
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -99,11 +101,13 @@ export function useContextMenu(
   }, []);
 
   const openAt = useCallback(
-    (clientX: number, clientY: number) => {
-      if (!enabled || items.length === 0) return;
-      setMenu({ open: true, x: clientX, y: clientY, items });
+    (clientX: number, clientY: number, itemsOverride?: ContextMenuItem[]) => {
+      if (!enabled) return;
+      const nextItems = itemsOverride ?? itemsRef.current;
+      if (nextItems.length === 0) return;
+      setMenu({ open: true, x: clientX, y: clientY, items: nextItems });
     },
-    [enabled, items],
+    [enabled],
   );
 
   const onContextMenu = useCallback(

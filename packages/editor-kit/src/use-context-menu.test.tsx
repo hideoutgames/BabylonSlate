@@ -18,10 +18,19 @@ function TestHost({
   items: ContextMenuItem[];
   enabled?: boolean;
 }) {
-  const { menu, closeMenu, bind } = useContextMenu({ items, enabled });
+  const { menu, closeMenu, bind, openMenuAt } = useContextMenu({ items, enabled });
   return (
     <div data-testid="target" {...bind}>
       <span data-testid="state">{menu?.open ? "open" : "closed"}</span>
+      <button
+        type="button"
+        data-testid="open-override"
+        onClick={() =>
+          openMenuAt(12, 24, [{ id: "override", label: "Override", onSelect: vi.fn() }])
+        }
+      >
+        Override
+      </button>
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
     </div>
   );
@@ -194,6 +203,18 @@ describe("useContextMenu", () => {
     const panel = getByTestId("context-menu-panel");
     expect(panel.style.left).toBe("123px");
     expect(panel.style.top).toBe("45px");
+  });
+
+  it("opens with an items override instead of the hook default list", () => {
+    const { getByTestId } = renderHost([{ id: "a", label: "Action", onSelect: vi.fn() }]);
+    fireEvent.click(getByTestId("open-override"));
+    expect(getByTestId("state").textContent).toBe("open");
+    expect(getByTestId("context-menu-item-override")).toBeTruthy();
+    expect(
+      getByTestId("target").ownerDocument.querySelector(
+        '[data-testid="context-menu-item-a"]',
+      ),
+    ).toBeNull();
   });
 });
 
