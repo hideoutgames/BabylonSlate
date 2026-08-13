@@ -221,7 +221,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 ## P9 slice ownership
 
-P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9; residual ADT mesh HUD / NodeMaterial.Parse bind is later polish.
+P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9; residual ADT mesh HUD / NodeMaterial.Parse bind / registry-wide Play hosting is later polish.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -241,7 +241,10 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 | Gap vs engineplan §11–§14 | Reality | Owner |
 | --- | --- | --- |
 | Viewport-layer HUD as Babylon `AdvancedDynamicTexture` | Play hosts a DOM overlay (`PlayHudOverlay`); `applyUiControls` is injectable | Later polish / P14 player |
-| Project UserInterface assets loaded into Play | Default HUD is always shown; registry viewport-layer assets are not auto-hosted | Later polish |
+| Every UserInterface in the asset registry auto-hosted in Play | Open viewport-layer UI documents are hosted (same pattern as the open scene); default HUD if none are open | Later polish |
 | `NodeMaterial.Parse` + live Babylon preview | IR compile + throttle + `compileShaderGraphAtLoad` injection; host supplies `forceCompilationAsync` | Later polish |
 | Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
+| Play engine applies sprite-clip UVs from `animState` | `applySpriteAnimFrame` is unit-tested; `create-engine` seeks AnimationGroups only | Later polish |
+| World-space `WidgetComponent` (`CreateForMesh`) | Component is addable; viewport-layer HUD is the v1 Play path | Later polish |
+| Designer nested-UI guid field + cycle check UI | `uiDocumentWouldCycle` is tested in `ui-runtime`; PropertyGrid does not yet edit nested refs | Later polish |
 

@@ -4,10 +4,12 @@ import {
   decodeAssetDocument,
   DOCUMENT_CHUNK_ID,
   encodeAssetDocument,
+  extraChunksFromDecoded,
   isAssetDocumentPath,
   readAssetDocumentHeader,
 } from "./asset-document";
 import { createMemoryBlobStore, createVfsBlobStore } from "./blob-store";
+import { decodeBabasset, encodeBabasset } from "./babasset";
 import { BLOBS_DIR } from "./babproject";
 import { sha256Hex } from "./bytes";
 
@@ -43,13 +45,97 @@ describe("asset documents", () => {
     expect(a).toEqual(b);
   });
 
-  it("rejects assets without a document chunk", async () => {
-    const bytes = await encodeAssetDocument(scene);
-    const header = readAssetDocumentHeader(bytes);
-    expect(header.chunks).toHaveLength(1);
-    const emptyDoc = await encodeAssetDocument({ ...scene, payload: {} });
-    const decoded = await decodeAssetDocument(emptyDoc);
-    expect(decoded.payload).toEqual({});
+  it("rejects assets without a document chunk or header payload", async () => {
+    const bytes = await encodeBabasset({
+      header: {
+        guid: "font-1",
+        type: "Font",
+        name: "Ui",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: {},
+      },
+      chunks: [
+        {
+          id: "source",
+          kind: "font",
+          mime: "font/woff2",
+          data: new Uint8Array([1, 2, 3]),
+        },
+      ],
+    });
+    await expect(decodeAssetDocument(bytes)).rejects.toThrow(
+      /header payload/,
+    );
+  });
+
+  it("opens imported assets that store payload in the header (no document chunk)", async () => {
+    const bytes = await encodeBabasset({
+      header: {
+        guid: "font-1",
+        type: "Font",
+        name: "Ui",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: { family: "Ui", weight: 400, style: "normal" },
+      },
+      chunks: [
+        {
+          id: "source",
+          kind: "font",
+          mime: "font/woff2",
+          data: new Uint8Array([10, 11, 12]),
+        },
+      ],
+    });
+    const decoded = await decodeAssetDocument(bytes);
+    expect(decoded.payload.family).toBe("Ui");
+    expect(decoded.guid).toBe("font-1");
+  });
+
+  it("keeps non-document chunks when re-encoding an imported font", async () => {
+    const source = new Uint8Array([10, 11, 12]);
+    const imported = await encodeBabasset({
+      header: {
+        guid: "font-1",
+        type: "Font",
+        name: "Ui",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: { family: "Ui" },
+      },
+      chunks: [
+        { id: "source", kind: "font", mime: "font/woff2", data: source },
+      ],
+    });
+    const decoded = await decodeBabasset(imported);
+    const extra = extraChunksFromDecoded(decoded);
+    expect(extra).toHaveLength(1);
+    expect(extra[0]!.id).toBe("source");
+
+    const saved = await encodeAssetDocument(
+      {
+        type: "Font",
+        name: "Ui",
+        guid: "font-1",
+        version: 1,
+        payload: { family: "Ui Display" },
+      },
+      { extraChunks: extra },
+    );
+    const roundTrip = await decodeBabasset(saved);
+    expect(roundTrip.chunks.get("source")).toEqual(source);
+    const document = await decodeAssetDocument(saved);
+    expect(document.payload.family).toBe("Ui Display");
   });
 
   it("externalises large chunks to the blob store and reads them back", async () => {

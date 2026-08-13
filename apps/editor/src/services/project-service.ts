@@ -28,9 +28,11 @@ import {
   createVfsBlobStore,
   createWorkerEncodeFn,
   decodeAssetDocument,
+  decodeBabasset,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   EncodeQueue,
   encodeAssetDocument,
+  extraChunksFromDecoded,
   exportProjectZip,
   isAssetDocumentPath,
   loadPayloadWithMigration,
@@ -645,6 +647,7 @@ export class ProjectService {
     const version = this.migrations.currentVersion(type);
 
     if (isAssetDocumentPath(path)) {
+      const extraChunks = await this.extraChunksFor(path);
       const bytes = await encodeAssetDocument(
         {
           type,
@@ -653,7 +656,7 @@ export class ProjectService {
           version,
           payload: content as unknown as Record<string, unknown>,
         },
-        { blobs: this.blobs },
+        { blobs: this.blobs, extraChunks },
       );
       await this.storage.writeBinary(path, bytes);
     } else {
@@ -673,6 +676,39 @@ export class ProjectService {
       } else {
         await this.projectSearchIndex.upsertAsset(this.assetRegistry, path);
       }
+    }
+  }
+
+  /** Binary chunk (font source, pixels, …) without decoding the document JSON. */
+  async readAssetChunk(
+    path: string,
+    chunkId: string,
+  ): Promise<Uint8Array | null> {
+    if (!(await this.storage.exists(path))) return null;
+    const decoded = await decodeBabasset(
+      await this.storage.readBinary(path),
+      (hash) => this.blobs.readBlob(hash),
+    );
+    return decoded.chunks.get(chunkId) ?? null;
+  }
+
+  guidForPath(path: string): string | null {
+    const cached = this.assetGuids.get(path);
+    if (cached) return cached;
+    const indexed = this.assetRegistry?.list().find((asset) => asset.path === path);
+    return indexed?.header.guid ?? null;
+  }
+
+  private async extraChunksFor(path: string) {
+    if (!(await this.storage.exists(path))) return [];
+    try {
+      const decoded = await decodeBabasset(
+        await this.storage.readBinary(path),
+        (hash) => this.blobs.readBlob(hash),
+      );
+      return extraChunksFromDecoded(decoded);
+    } catch {
+      return [];
     }
   }
 

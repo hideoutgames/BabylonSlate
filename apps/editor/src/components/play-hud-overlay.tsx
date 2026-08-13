@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef } from "react";
 import {
   createDefaultPlayHud,
   describeUiControls,
+  devicePresetForViewport,
   layoutUserInterface,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
@@ -46,13 +47,21 @@ export function PlayHudOverlay({
     [document],
   );
   const pointerIdRef = useRef<number | null>(null);
+  const preset = useMemo(
+    () => devicePresetForViewport(Math.max(1, width), Math.max(1, height)),
+    [width, height],
+  );
   const layout = useMemo(
     () =>
-      layoutUserInterface(hud, {
-        width: Math.max(1, width),
-        height: Math.max(1, height),
-      }),
-    [hud, width, height],
+      layoutUserInterface(
+        hud,
+        {
+          width: Math.max(1, width),
+          height: Math.max(1, height),
+        },
+        { safeArea: preset.safeArea },
+      ),
+    [hud, width, height, preset],
   );
   const controls = useMemo(
     () => describeUiControls(hud, layout, Math.max(1, height)),
@@ -79,6 +88,9 @@ export function PlayHudOverlay({
     <div
       className="pointer-events-none absolute inset-0 z-[5]"
       data-testid="play-hud"
+      data-preset={preset.id}
+      data-safe-top={String(preset.safeArea.top)}
+      data-safe-bottom={String(preset.safeArea.bottom)}
     >
       {controls.map((control) => {
         if (!control.visible) return null;
@@ -96,13 +108,21 @@ export function PlayHudOverlay({
               isStick ? "play-hud-stick" : `play-hud-widget-${control.id}`
             }
             data-kind={control.kind}
+            data-gui-x={String(Math.round(control.guiRect.x))}
+            data-gui-y={String(Math.round(control.guiRect.y))}
             className="pointer-events-auto absolute h-auto min-h-0 border-white/40 bg-black/35 px-0 py-0 text-[11px] text-white hover:bg-black/50"
             style={{
               left: control.guiRect.x,
               top: control.guiRect.y,
               width: Math.max(8, control.guiRect.width),
               height: Math.max(8, control.guiRect.height),
-              borderRadius: isStick ? 999 : 6,
+              borderRadius: isStick
+                ? 999
+                : (control.style.borderRadius ?? 6),
+              fontFamily: control.style.fontFamily,
+              color: control.style.color,
+              background: control.style.background,
+              opacity: control.style.opacity,
             }}
             onPointerDown={
               isStick

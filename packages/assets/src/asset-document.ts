@@ -1,4 +1,10 @@
-import { decodeBabasset, encodeBabasset, readBabassetHeader } from "./babasset";
+import {
+  decodeBabasset,
+  encodeBabasset,
+  readBabassetHeader,
+  type ChunkInput,
+  type DecodedBabasset,
+} from "./babasset";
 import type { BlobStore } from "./blob-store";
 import { stableStringify } from "./bytes";
 
@@ -13,9 +19,35 @@ export interface AssetDocument {
   payload: Record<string, unknown>;
 }
 
+/**
+ * Non-document chunks (font source, pixels, audio, …) to keep when an editor
+ * document save rewrites the JSON body.
+ */
+export function extraChunksFromDecoded(
+  decoded: DecodedBabasset,
+): ChunkInput[] {
+  const extra: ChunkInput[] = [];
+  for (const entry of decoded.header.chunks) {
+    if (entry.id === DOCUMENT_CHUNK_ID) continue;
+    const data = decoded.chunks.get(entry.id);
+    if (!data) continue;
+    extra.push({
+      id: entry.id,
+      kind: entry.kind,
+      mime: entry.mime,
+      data,
+    });
+  }
+  return extra;
+}
+
 export async function encodeAssetDocument(
   document: AssetDocument,
-  options: { engineVersion?: string; blobs?: BlobStore } = {},
+  options: {
+    engineVersion?: string;
+    blobs?: BlobStore;
+    extraChunks?: readonly ChunkInput[];
+  } = {},
 ): Promise<Uint8Array> {
   const body = new TextEncoder().encode(stableStringify(document.payload));
   return encodeBabasset({
@@ -37,6 +69,7 @@ export async function encodeAssetDocument(
         mime: "application/json",
         data: body,
       },
+      ...(options.extraChunks ?? []),
     ],
     writeBlob: options.blobs
       ? (sha256, data) => options.blobs!.writeBlob(sha256, data)
@@ -53,18 +86,26 @@ export async function decodeAssetDocument(
     options.blobs ? (sha256) => options.blobs!.readBlob(sha256) : undefined,
   );
   const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
-  if (!body) {
-    throw new Error(`Asset is missing its "${DOCUMENT_CHUNK_ID}" chunk`);
+  const headerPayload = decoded.header.payload;
+  let payload: Record<string, unknown>;
+  if (body) {
+    payload = JSON.parse(new TextDecoder().decode(body)) as Record<
+      string,
+      unknown
+    >;
+  } else if (headerPayload && Object.keys(headerPayload).length > 0) {
+    payload = headerPayload;
+  } else {
+    throw new Error(
+      `Asset is missing its "${DOCUMENT_CHUNK_ID}" chunk or header payload`,
+    );
   }
   return {
     type: decoded.header.type,
     name: decoded.header.name,
     guid: decoded.header.guid,
     version: decoded.header.version,
-    payload: JSON.parse(new TextDecoder().decode(body)) as Record<
-      string,
-      unknown
-    >,
+    payload,
   };
 }
 

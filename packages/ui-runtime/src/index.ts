@@ -1,7 +1,7 @@
 export type {
   DevicePreset,
 } from "./presets";
-export { DEVICE_PRESETS, devicePresetById } from "./presets";
+export { DEVICE_PRESETS, devicePresetById, devicePresetForViewport } from "./presets";
 export type {
   EdgeInsets,
   LaidOutWidget,

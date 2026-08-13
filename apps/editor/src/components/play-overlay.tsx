@@ -25,6 +25,7 @@ import { playConsoleCommands } from "../lib/play-console";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
+import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { PlayHudOverlay } from "./play-hud-overlay";
 
 export interface PlayOverlayProps {
@@ -38,6 +39,8 @@ export interface PlayOverlayProps {
   frameCap?: number;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
+  hudDocument?: UserInterfaceDocument;
+  animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -61,6 +64,8 @@ export function PlayOverlay({
   scene,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+  hudDocument,
+  animGraphs,
   onClose,
 }: PlayOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -88,6 +93,8 @@ export function PlayOverlay({
   printRef.current = print;
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
+  const animGraphsRef = useRef(animGraphs);
+  animGraphsRef.current = animGraphs;
   const physicsRef = useRef(physics);
   physicsRef.current = physics;
   const sceneRef = useRef({ sceneAssetGuid, scene });
@@ -118,6 +125,7 @@ export function PlayOverlay({
       sceneAssetGuid: sceneRef.current.sceneAssetGuid,
       scene: sceneRef.current.scene,
       frameCap: initialFrameCapRef.current,
+      animGraphs: animGraphsRef.current,
       onUiSetVisible: (widgetId, visible) => {
         setHiddenWidgetIds((prev) => {
           const next = new Set(prev);
@@ -254,6 +262,7 @@ export function PlayOverlay({
         data-testid="play-canvas"
       />
       <PlayHudOverlay
+        document={hudDocument}
         width={overlaySize.width}
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}

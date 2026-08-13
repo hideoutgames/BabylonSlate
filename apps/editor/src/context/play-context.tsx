@@ -26,6 +26,7 @@ import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import { playPhysicsFromOpenDocuments, playSceneFromOpenDocuments } from "../services/play-physics";
+import { playAnimGraphsFromOpenDocuments, playHudFromOpenDocuments } from "../lib/play-content";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import {
@@ -102,6 +103,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     scriptsStale,
     migrationPending,
     saveAll,
+    assetRegistry,
   } = useDocuments();
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const playPhysics = playPhysicsFromOpenDocuments(
@@ -111,6 +113,13 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const playScene = playSceneFromOpenDocuments(
     openDocuments,
     activeDocumentId,
+  );
+  const playHud = playHudFromOpenDocuments(openDocuments, activeDocumentId);
+  const playAnimGraphs = playAnimGraphsFromOpenDocuments(
+    openDocuments,
+    (path) =>
+      assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
+      null,
   );
 
   const appendLog = useCallback((line: string) => {
@@ -388,6 +397,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             physics={playPhysics}
             sceneAssetGuid={playScene?.sceneAssetGuid}
             scene={playScene?.scene}
+            hudDocument={playHud}
+            animGraphs={playAnimGraphs}
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
             }

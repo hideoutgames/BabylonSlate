@@ -34,12 +34,14 @@ Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `
 `FontRegistry` takes an injectable `FontFaceHost` so Node tests mock `document.fonts`:
 
 1. `new FontFace(family, bytes)` + `document.fonts.add`.
-2. **Await** `document.fonts.load` before the first UI draw.
+2. **Await** `document.fonts.load` before the first UI draw (`register` / `registerAll`).
 3. Late resolve → `consumeDirty()` so the Play HUD / designer can `markAsDirty()`.
 4. Failed load → editor warning, never a silent substitution.
 
+The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset fonts have payload only — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
+
 ## Editor
 
-Font document workspace: sample text that flags glyphs whose advance matches the generic-only stack (fall-through). Project Settings → **Fonts** category for default font + global fallback.
+Font document workspace: sample text that flags glyphs whose advance matches the generic-only stack (fall-through). The sample uses `compileFontStack` with per-asset `fallbackGuids`, the Project Settings default font family, and `globalFallback`. Project Settings → **Fonts** category for default font + global fallback.
 
-Playwright: Font editor sample preview; registry-ready is asserted in unit tests with a mock host. Cold-load “custom font on first frame” is the registry await contract plus the UserInterface Play path.
+Playwright: Font editor sample preview (`data-fonts-ready`, compiled stack). Registry-ready is asserted in unit tests with a mock host; an imported font’s source bytes are registered before the sample paints.

@@ -145,6 +145,8 @@ interface DocumentContextValue {
     id: string,
     next: Record<string, unknown>,
   ) => Promise<boolean>;
+  /** Font source / other binary chunks. */
+  readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** Persist project.json settings (Input, 2D units, textures, …). */
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   undoActiveDocument: () => void;
@@ -950,6 +952,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
 
+  const readAssetChunk = useCallback(
+    (path: string, chunkId: string) =>
+      projectService.readAssetChunk(path, chunkId),
+    [projectService],
+  );
+
   const loadProjectGraphDocuments = useCallback(async (): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
@@ -1444,6 +1452,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyGraphChange,
       applySceneChange,
       applyAssetDocumentChange,
+      readAssetChunk,
       updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,
@@ -1537,6 +1546,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyGraphChange,
       applySceneChange,
       applyAssetDocumentChange,
+      readAssetChunk,
       updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,

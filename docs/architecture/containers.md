@@ -43,7 +43,7 @@ Inline locators point at byte ranges after the header. Blob locators name `asset
 
 ### Editor documents
 
-Scenes and graphs are `.babasset` files under `assets/` (`assets/main.scene.babasset`, `assets/main.graph.babasset`). `encodeAssetDocument` / `decodeAssetDocument` keep the JSON body in a single `document` chunk so type, schema version and guid stay header-only readable. Asset guids survive a re-save: an existing file's guid is read from its header rather than regenerated.
+Scenes and graphs are `.babasset` files under `assets/` (`assets/main.scene.babasset`, `assets/main.graph.babasset`). `encodeAssetDocument` / `decodeAssetDocument` keep the JSON body in a single `document` chunk so type, schema version and guid stay header-only readable. Importers (Font, Texture, Model, …) often store structured data on **`header.payload`** with binary `source` / `pixels` chunks and no document chunk; `decodeAssetDocument` falls back to that header payload so those assets open in document workspaces. A document save keeps extra chunks (`extraChunksFromDecoded`) so font bytes are not wiped. Asset guids survive a re-save: an existing file's guid is read from its header rather than regenerated.
 
 Projects authored before this move still load: `ProjectService` reads a `.json` document as an unversioned-or-versioned payload and writes it back in the same format. Nothing rewrites a legacy file into a container behind the user's back.
 

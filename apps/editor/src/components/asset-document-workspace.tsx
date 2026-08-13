@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PanelFrame, PropertyGrid, SelectableText, TreeView } from "@babylonslate/editor-kit";
 import type { PropertyRow, TreeViewNode } from "@babylonslate/editor-kit";
 import {
@@ -18,13 +18,11 @@ import { Button } from "@babylonslate/ui/components/button";
 import {
   DEVICE_PRESETS,
   WIDGET_KINDS,
-  compileFontStack,
   createWidget,
   describeUiControls,
   glyphsFallingToFallback,
   layoutUserInterface,
   type DevicePreset,
-  type UserInterfaceDocument,
   type WidgetKind,
 } from "@babylonslate/ui-runtime";
 import { normalizeFontPayload, type SpritePayload } from "@babylonslate/assets";
@@ -46,6 +44,9 @@ import {
 import { GraphEditor, type PaletteNode } from "@babylonslate/graph-ui";
 import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
+import { FontRegistry } from "@babylonslate/render";
+import { asUiDocument } from "../lib/play-content";
+import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
@@ -57,24 +58,6 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function asUiDocument(value: unknown): UserInterfaceDocument {
-  const record = asRecord(value);
-  return {
-    name: typeof record.name === "string" ? record.name : "HUD",
-    rootId: typeof record.rootId === "string" ? record.rootId : "canvas",
-    designResolution:
-      record.designResolution && typeof record.designResolution === "object"
-        ? (record.designResolution as UserInterfaceDocument["designResolution"])
-        : { width: 1920, height: 1080 },
-    scaleRule:
-      record.scaleRule === "fitWidth" || record.scaleRule === "fitHeight"
-        ? record.scaleRule
-        : "shortestSide",
-    viewportLayer: record.viewportLayer !== false,
-    widgets: asRecord(record.widgets) as UserInterfaceDocument["widgets"],
-  };
-}
-
 export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   const { openDocuments, applyAssetDocumentChange } = useDocuments();
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -84,7 +67,15 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
     void applyAssetDocumentChange(documentId, next);
   };
   if (doc.ref.kind === "ui") return <UiDesigner payload={payload} onChange={commit} />;
-  if (doc.ref.kind === "font") return <FontEditor payload={payload} onChange={commit} />;
+  if (doc.ref.kind === "font") {
+    return (
+      <FontEditor
+        path={doc.ref.path}
+        payload={payload}
+        onChange={commit}
+      />
+    );
+  }
   if (doc.ref.kind === "sprite") return <SpriteEditor payload={payload} onChange={commit} />;
   if (doc.ref.kind === "anim-graph") {
     return <AnimGraphEditor payload={payload} onChange={commit} />;
@@ -258,6 +249,8 @@ function UiDesigner({
                 variant="outline"
                 data-testid={`ui-widget-${control.id}`}
                 data-kind={control.kind}
+                data-gui-x={String(Math.round(control.guiRect.x))}
+                data-gui-y={String(Math.round(control.guiRect.y))}
                 className="absolute h-auto min-h-0 rounded-sm border-border/80 bg-card/80 px-0 py-0 text-[10px] text-foreground"
                 style={{
                   left: `${(control.guiRect.x / preset.width) * 100}%`,
@@ -287,24 +280,73 @@ function UiDesigner({
 }
 
 function FontEditor({
+  path,
   payload,
   onChange,
 }: {
+  path: string;
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const { projectDocument, assetRegistry, readAssetChunk } = useDocuments();
   const font = normalizeFontPayload(payload, "Custom Font");
   const [sample, setSample] = useState("The quick brown fox");
+  const [fontsReady, setFontsReady] = useState(false);
+  const familyForGuid = (guid: string): string | null => {
+    const asset = assetRegistry?.getByGuid(guid);
+    return familyFromAssetPayload(asset?.header.payload);
+  };
+  const stack = fontEditorStack({
+    family: font.family,
+    fallbackGuids: font.fallbackGuids,
+    defaultFontGuid: projectDocument?.settings.fonts.defaultFontGuid ?? null,
+    globalFallback: projectDocument?.settings.fonts.globalFallback ?? "sans-serif",
+    familyForGuid,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    const registry = new FontRegistry();
+    void (async () => {
+      const bytes = await readAssetChunk(path, "source");
+      if (bytes && bytes.byteLength > 0) {
+        const guid = assetRegistry?.list().find((asset) => asset.path === path)
+          ?.header.guid ?? path;
+        await registry.register({
+          guid,
+          family: font.family,
+          bytes: bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ),
+          weight: font.weight,
+          style: font.style,
+        });
+      }
+      if (!cancelled) setFontsReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    assetRegistry,
+    font.family,
+    font.style,
+    font.weight,
+    path,
+    readAssetChunk,
+  ]);
   const flagged = glyphsFallingToFallback(
     sample,
     font.family,
-    (text, stack) => {
+    (text, measureStack) => {
       if (typeof document === "undefined") {
-        return stack.includes(font.family) && /[A-Za-z]/.test(text) ? 10 : 7;
+        return measureStack.includes(font.family) && /[A-Za-z]/.test(text)
+          ? 10
+          : 7;
       }
       const ctx = document.createElement("canvas").getContext("2d");
       if (!ctx) return 0;
-      ctx.font = `16px ${stack}`;
+      ctx.font = `16px ${measureStack}`;
       return ctx.measureText(text).width;
     },
   );
@@ -332,7 +374,9 @@ function FontEditor({
         <p
           className="px-3 text-sm"
           data-testid="font-sample-preview"
-          style={{ fontFamily: compileFontStack({ family: font.family }) }}
+          data-fonts-ready={fontsReady ? "true" : "false"}
+          data-font-stack={stack}
+          style={{ fontFamily: stack }}
         >
           <SelectableText>{sample}</SelectableText>
         </p>
