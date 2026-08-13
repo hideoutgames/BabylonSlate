@@ -21,7 +21,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 
 - Chrome and dock tabs use `--chrome-row` (**28px**). Graph pin rows stay **44px** (`--touch-target`). Dockview tab strips are **18px** (fine pointer) / **26px** (coarse).
 - Use `@babylonslate/ui` and semantic tokens (`bg-background`, `text-muted-foreground`, `text-primary`, `bg-node-event`) — no raw hex colors in app code.
-- Compose forms from `Field` + shadcn inputs (`Input`, `Select`, `Switch`, `Checkbox`) — no raw `<input>`, `<select>`, or `<textarea>` with hand-rolled Tailwind in `apps/editor/src`.
+- Compose forms from `Field` + shadcn inputs (`Input`, `Select`, `Switch`, `Checkbox`) — no raw `<input>`, `<select>`, or `<textarea>` with hand-rolled Tailwind in `apps/editor/src`. Inventory: [architecture/components.md](architecture/components.md).
 - Use `@babylonslate/editor-kit` panel composites (`PanelFrame`, `ToolbarStrip`) for docked panel chrome.
 - Palette and token roles: [architecture/theming.md](architecture/theming.md). Edit tokens only in `packages/ui/src/styles/globals.css`. `--primary` is ink; saturated pin/node/axis/success tokens are the chromatic cues.
 - Use `flex` + `gap-*` for spacing, not `space-y-*`.

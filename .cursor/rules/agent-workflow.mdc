@@ -41,6 +41,7 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 
 ## shadcn/ui
 
+- Follow `.cursor/skills/editor-ui-components/SKILL.md` before composing Editor UI — read `docs/architecture/components.md` and reuse catalog components.
 - Follow `.cursor/skills/shadcn/SKILL.md` for all UI work.
 - Use `@babylonslate/ui` components; run `npx shadcn@latest add <component> -c apps/editor` to add new ones.
 
