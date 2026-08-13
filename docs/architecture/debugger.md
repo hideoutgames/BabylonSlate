@@ -49,7 +49,7 @@ The registry does not touch the world or renderer. Runtime implements:
 | Command | Host |
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
-| `renderquality` / `shadowquality` / `resolutionscale` / `volume` / `framecap` | typed setters (Play overlay / renderer consume later). `shadowquality` → one 1024 `ShadowGenerator` is parked polish, not a new lighting phase; P11 is next |
+| `renderquality` / `shadowquality` / `resolutionscale` / `volume` / `framecap` | typed setters (Play overlay / renderer consume later). `shadowquality` → one `ShadowGenerator` is [engineplan §2.5](../engineplan.md) / `p-lighting-camera`; the command is registered today and still succeeds as a typed setter until the renderer consumes it |
 | `quit` | `quit()` → runtime `stop` |
 | debug pause / step / slomo | `pause` / `step` / `setTimeDilation` |
 | `dumplog` | `dumpLog()` from the log ring |

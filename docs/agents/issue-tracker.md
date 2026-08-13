@@ -181,7 +181,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons |
-| Lighting polish (direction, Play color/intensity, `shadowquality` → one ShadowGenerator) | later polish | Authored lights shipped. Do **not** start a lighting/PBR/IBL rewrite; next engine slice is P11. Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates lights; range/cone/cast-shadow flags and spot cones later |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; game cameras are `ArcRotateCamera`; active camera is first in the list. May run beside P11. |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -314,13 +314,24 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 | Play loads startup/main scene + `gameInstanceClass` with no scene tab | Done |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
-| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (lighting polish parked — not P11) |
+| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract is §2.5 / `p-lighting-camera`, not P11) |
 | Play HUD TouchButton / TouchDPad / default Jump+dpad mappings | Done |
 | `playSound` command (logged; no mixer) | Done |
 | FunctionLibrary palette nodes | Parked (base class exists) |
 
+## Lighting and cameras (`p-lighting-camera`)
+
+Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P11 (owns `render` / `core` / `runtime` / `editor`, not AI packages).
+
+| Slice | Checklist | Packages |
+| --- | --- | --- |
+| Schema + Details | `p-lighting-camera` | `core` SceneSettings + Light/Camera properties; `apps/editor` Details enums and scene-settings rows |
+| Renderer | same | `render` incremental `scene-illumination`, detached UniversalCamera, one ShadowGenerator, fog/IBL/clear, dir/spot gizmos |
+| Play | same | `runtime` assign payload; `render` snapshot-apply parity |
+| Scripting | same | `scripting-nodes` get/set active camera, FOV, ortho size, light enabled/color/intensity |
+
 ## P11 behaviour trees / navigation
 
-Do not start until the foundation-hardening wave above is merged. Chrome polish (pin flash, multi-select gizmo, ADT HUD, lighting polish / ShadowGenerator) is not a reason to skip P11, and is not P11 work.
+Do not start until the foundation-hardening wave above is merged. Chrome polish (pin flash, multi-select gizmo, ADT HUD) is not a reason to skip P11, and is not P11 work. Lighting and cameras are section 2.5 / `p-lighting-camera` — parallel to P11, not P11 work.
 
 
