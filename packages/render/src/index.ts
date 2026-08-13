@@ -28,3 +28,4 @@ export * from "./tilemap-mesh";
 export * from "./shader-compile";
 export * from "./shader-preview";
 export * from "./anim-apply";
+export * from "./editor-billboard";

@@ -1,6 +1,12 @@
 import { MeshBuilder, Quaternion, Scene, Vector3 } from "@babylonjs/core";
 import type { Mesh } from "@babylonjs/core";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
+import {
+  applyEditorBillboardFromActor,
+  createEditorBillboard,
+  editorBillboardKind,
+  parseEditorBillboardIcon,
+} from "./editor-billboard";
 import { createSpriteQuad } from "./sprite-quad";
 
 /** Editor meshes are named so picking can map a hit back to an actor id. */
@@ -63,28 +69,43 @@ export function createPrimitiveMesh(
   }
 }
 
-/** Build the Babylon mesh for an actor's first renderable component. */
-export function createActorMesh(scene: Scene, actor: SerializedActor): Mesh {
+/** Resolve the editor mesh kind, including billboard helpers for location-only components. */
+export function editorMeshKindOf(actor: SerializedActor): string | null {
   const meshComponent = actor.components.find(
     (component) => component.classId === "MeshComponent",
   );
-  const spriteComponent = actor.components.find(
-    (component) => component.classId === "SpriteComponent",
-  );
-  const tilemapComponent = actor.components.find(
-    (component) => component.classId === "TilemapComponent",
-  );
-  if (!meshComponent && spriteComponent) {
-    return createPrimitiveMesh(scene, editorMeshName(actor.id), "sprite");
+  if (typeof meshComponent?.properties.meshKind === "string") {
+    return meshComponent.properties.meshKind;
   }
-  if (!meshComponent && !spriteComponent && tilemapComponent) {
-    return createPrimitiveMesh(scene, editorMeshName(actor.id), "tilemap");
+  if (actor.components.some((component) => component.classId === "SpriteComponent")) {
+    return "sprite";
   }
-  const meshKind =
-    typeof meshComponent?.properties.meshKind === "string"
-      ? meshComponent.properties.meshKind
-      : null;
-  return createPrimitiveMesh(scene, editorMeshName(actor.id), meshKind);
+  if (actor.components.some((component) => component.classId === "TilemapComponent")) {
+    return "tilemap";
+  }
+  if (actor.components.some((component) => component.classId === "LightComponent")) {
+    return editorBillboardKind("light");
+  }
+  if (actor.components.some((component) => component.classId === "CameraComponent")) {
+    return editorBillboardKind("camera");
+  }
+  if (actor.components.some((component) => component.classId === "AudioComponent")) {
+    return editorBillboardKind("audio");
+  }
+  return null;
+}
+
+/** Build the Babylon mesh for an actor's first renderable component. */
+export function createActorMesh(scene: Scene, actor: SerializedActor): Mesh {
+  const kind = editorMeshKindOf(actor);
+  const name = editorMeshName(actor.id);
+  const icon = parseEditorBillboardIcon(kind);
+  if (icon) {
+    const mesh = createEditorBillboard(scene, name, icon);
+    applyEditorBillboardFromActor(mesh, actor);
+    return mesh;
+  }
+  return createPrimitiveMesh(scene, name, kind);
 }
 
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {

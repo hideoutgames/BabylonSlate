@@ -179,7 +179,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies open class prefabs |
-| Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | SpriteComponent uses a UV-baked quad; light/camera gizmos still later |
+| Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | SpriteComponent uses a UV-baked quad; light/camera/audio icon billboards shipped; directional/spot cones and real Babylon lights still later |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
