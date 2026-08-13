@@ -28,6 +28,7 @@ import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type { FontAssetEntry } from "@babylonslate/render";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { PlayHudOverlay } from "./play-hud-overlay";
 import {
@@ -53,6 +54,7 @@ export interface PlayOverlayProps {
   /** Project render size; snapshotted when the session starts. */
   render?: RenderProjectSettings;
   uiLibrary?: Record<string, UserInterfaceDocument>;
+  fontEntries?: readonly FontAssetEntry[];
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
@@ -87,6 +89,7 @@ export function PlayOverlay({
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   uiLibrary = {},
+  fontEntries = [],
   animGraphs,
   spritePayloads,
   tilemapPayloads,
@@ -360,6 +363,7 @@ export function PlayOverlay({
       <PlayHudOverlay
         instances={resolvePlayHudDocuments(hudInstances, uiLibrary)}
         uiLibrary={uiLibrary}
+        fontEntries={fontEntries}
         width={overlaySize.width}
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}

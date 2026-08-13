@@ -232,6 +232,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
+      '@babylonslate/ui-runtime':
+        specifier: workspace:*
+        version: link:../ui-runtime
       fflate:
         specifier: ^0.8.3
         version: 0.8.3

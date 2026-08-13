@@ -106,7 +106,7 @@ export function devicePresetForViewport(
 
 export type DesignerCanvasId = string;
 
-/** Viewport used by the UserInterface designer, including Desired mode. */
+/** Viewport used by the UserInterface designer, including Desired mode (pass `contentDesiredSize`). */
 export function designerViewport(
   presetId: string,
   desiredSize: { width: number; height: number },

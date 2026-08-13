@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AssetPicker,
-  NumberField,
   PanelFrame,
   humanizePropertyLabel,
 } from "@babylonslate/editor-kit";
@@ -19,13 +18,14 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import { Button } from "@babylonslate/ui/components/button";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   DESIRED_CANVAS_ID,
+  contentDesiredSize,
   createWidget,
   defaultAddLayout,
   describeUiControls,
+  designScale,
   designerViewport,
   insertWidget,
   layoutUserInterface,
@@ -44,6 +44,8 @@ import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { familyFromAssetPayload } from "../lib/font-preview";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
+import { collectFontAssetEntries } from "../lib/play-fonts";
+import type { FontAssetEntry } from "@babylonslate/render";
 import {
   resolveDesignerCanvasId,
   useEngineUiDesignerPresets,
@@ -75,7 +77,7 @@ export function UiDesigner({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { openDocuments, assetRegistry, collectPlayUiLibrary, projectDocument } =
+  const { openDocuments, assetRegistry, collectPlayUiLibrary, projectDocument, readAssetChunk } =
     useDocuments();
   const play = useOptionalPlay();
   const ui = asUiDocument(payload);
@@ -102,6 +104,7 @@ export function UiDesigner({
     "nestedUi" | "image" | "font" | "visualOverride" | null
   >(null);
   const [uiLibrary, setUiLibrary] = useState<PlayUiLibrary>({});
+  const [fontEntries, setFontEntries] = useState<FontAssetEntry[]>([]);
   const [view, setView] = useState<DesignView>({ zoom: 1, panX: 0, panY: 0 });
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -117,6 +120,23 @@ export function UiDesigner({
   const selfGuid =
     assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
     path;
+  useEffect(() => {
+    let cancelled = false;
+    const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+      guid: asset.header.guid,
+      path: asset.path,
+      type: asset.header.type,
+      payload: asset.header.payload,
+    }));
+    void collectFontAssetEntries(assets, readAssetChunk ?? (async () => null)).then(
+      (entries) => {
+        if (!cancelled) setFontEntries(entries);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [assetRegistry, readAssetChunk]);
   useEffect(() => {
     let cancelled = false;
     void collectPlayUiLibrary()
@@ -140,13 +160,22 @@ export function UiDesigner({
     }
     return uiLibrary[guid] ?? null;
   };
-  const viewport = designerViewport(presetId, ui.desiredSize, extras);
+  const viewport = designerViewport(
+    presetId,
+    contentDesiredSize(ui, { resolveNested }),
+    extras,
+  );
   const layout = layoutUserInterface(
     ui,
     { width: viewport.width, height: viewport.height },
-    { safeArea: viewport.safeArea, resolveNested },
+    { safeArea: viewport.safeArea, resolveNested, designSpace: true },
   );
-  const controls = describeUiControls(ui, layout, viewport.height);
+  const bitmapScale = designScale(
+    { width: viewport.width, height: viewport.height },
+    ui.designResolution,
+    ui.scaleRule,
+  );
+  const controls = describeUiControls(ui, layout);
   const previewScale = previewScaleToFit(viewportSize, {
     width: viewport.width,
     height: viewport.height,
@@ -274,40 +303,6 @@ export function UiDesigner({
             ))}
           </SelectContent>
         </Select>
-        {presetId === DESIRED_CANVAS_ID ? (
-          <>
-            <Field orientation="horizontal" className="w-auto items-center">
-              <FieldLabel className="text-xs">Width</FieldLabel>
-              <NumberField
-                data-testid="ui-desired-width"
-                value={ui.desiredSize.width}
-                min={1}
-                onChange={(width) =>
-                  commit({
-                    ...payload,
-                    ...ui,
-                    desiredSize: { ...ui.desiredSize, width },
-                  })
-                }
-              />
-            </Field>
-            <Field orientation="horizontal" className="w-auto items-center">
-              <FieldLabel className="text-xs">Height</FieldLabel>
-              <NumberField
-                data-testid="ui-desired-height"
-                value={ui.desiredSize.height}
-                min={1}
-                onChange={(height) =>
-                  commit({
-                    ...payload,
-                    ...ui,
-                    desiredSize: { ...ui.desiredSize, height },
-                  })
-                }
-              />
-            </Field>
-          </>
-        ) : null}
         <Select
           value={ui.scaleRule}
           onValueChange={(value) =>
@@ -382,7 +377,9 @@ export function UiDesigner({
             selectedId={selectedId}
             view={view}
             previewScale={previewScale}
+            bitmapScale={bitmapScale}
             sharedEngine={sharedEngine}
+            fontEntries={fontEntries}
             onSelect={setSelectedId}
             onViewChange={setView}
             onLayoutChange={(id, nextLayout, mergeKey) =>

@@ -82,6 +82,7 @@ vi.mock("../context/document-context", () => ({
     },
     openDocuments: [],
     collectPlayUiLibrary: async () => ({}),
+    readAssetChunk: async () => null,
     projectDocument: {
       settings: {
         input: {
@@ -114,19 +115,19 @@ function renderHud() {
 }
 
 describe("UiDesigner", () => {
-  it("exposes adaptive layout fields, anchor presets, and padding in Details", () => {
+  it("exposes alignment, left/top, and size in Details", () => {
     renderHud();
     expect(screen.getByTestId("ui-anchor-preset")).toBeTruthy();
     expect(screen.getByTestId("property-left")).toBeTruthy();
-    expect(screen.getByTestId("property-right")).toBeTruthy();
     expect(screen.getByTestId("property-top")).toBeTruthy();
-    expect(screen.getByTestId("property-bottom")).toBeTruthy();
-    expect(screen.getByTestId("property-row-pivot")).toBeTruthy();
+    expect(screen.getByTestId("property-width")).toBeTruthy();
+    expect(screen.getByTestId("property-height")).toBeTruthy();
+    expect(screen.getByTestId("property-row-transform-center")).toBeTruthy();
     expect(screen.getByTestId("property-padding-left")).toBeTruthy();
     fireEvent.click(screen.getByTestId("ui-widget-header"));
     expect(screen.getByTestId("property-left")).toBeTruthy();
-    expect(screen.getByTestId("property-right")).toBeTruthy();
-    expect(screen.getByTestId("property-pos-y")).toBeTruthy();
+    expect(screen.getByTestId("property-top")).toBeTruthy();
+    expect(screen.getByTestId("property-width")).toBeTruthy();
     expect(screen.getByTestId("property-height")).toBeTruthy();
     expect(screen.queryByTestId("property-offset-min-x")).toBeNull();
     fireEvent.click(screen.getByTestId("ui-widget-stick"));
@@ -134,7 +135,7 @@ describe("UiDesigner", () => {
     expect(screen.getByTestId("ui-gizmo-canvas")).toBeTruthy();
   });
 
-  it("drags a widget to write offsets under one undo merge key", () => {
+  it("drags a widget to write left/top under one undo merge key", () => {
     const { onChange } = renderHud();
     const stick = screen.getByTestId("ui-widget-stick");
     dispatchPointerEvent(stick, "pointerdown", { clientX: 10, clientY: 10 });
@@ -147,10 +148,9 @@ describe("UiDesigner", () => {
     expect(mergeKey).toMatch(/^ui-design-stroke:/);
     const widgets = next.widgets as Record<
       string,
-      { layout: { offsetMin: { x: number }; offsetMax: { x: number } } }
+      { layout: { left: number; top: number } }
     >;
-    expect(widgets.stick.layout.offsetMin.x).toBeGreaterThan(-80);
-    expect(widgets.stick.layout.offsetMax.x).toBeGreaterThan(80);
+    expect(widgets.stick.layout.left).toBeGreaterThan(40);
   });
 
   it("zooms the design canvas with the wheel and still selects widgets", () => {
@@ -172,11 +172,12 @@ describe("UiDesigner", () => {
     fireEvent.click(screen.getByTestId("ui-add-widget-Button"));
     expect(onChange).toHaveBeenCalled();
     const next = onChange.mock.calls.at(-1)![0] as {
-      widgets: Record<string, { kind: string; layout: { anchorMin: { x: number }; anchorMax: { x: number } } }>;
+      widgets: Record<string, { kind: string; layout: { horizontalAlignment: string; verticalAlignment: string } }>;
     };
     const button = Object.values(next.widgets).find((row) => row.kind === "Button");
     expect(button).toBeTruthy();
-    expect(button!.layout.anchorMin.x).toBe(button!.layout.anchorMax.x);
+    expect(button!.layout.horizontalAlignment).toBe("center");
+    expect(button!.layout.verticalAlignment).toBe("center");
   });
 
   it("deletes a widget from the hierarchy context menu", () => {
@@ -190,8 +191,12 @@ describe("UiDesigner", () => {
     expect(next.widgets.stick).toBeUndefined();
   });
 
-  it("hides Desired Width and Height unless the Desired preset is selected", () => {
+  it("does not expose Desired Width and Height inputs", () => {
     renderHud();
+    expect(screen.queryByTestId("ui-desired-width")).toBeNull();
+    expect(screen.queryByTestId("ui-desired-height")).toBeNull();
+    fireEvent.click(screen.getByTestId("ui-device-preset"));
+    fireEvent.click(screen.getByTestId("ui-preset-desired"));
     expect(screen.queryByTestId("ui-desired-width")).toBeNull();
     expect(screen.queryByTestId("ui-desired-height")).toBeNull();
   });

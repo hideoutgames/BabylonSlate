@@ -1,12 +1,15 @@
-import { computeAnchoredRect, normalizeLayout } from "./layout";
+import { normalizeLayout } from "./layout";
+import { previewRect } from "./preview-rect";
 import type {
+  HorizontalAlignment,
   LayoutResult,
   Rect,
   UserInterfaceDocument,
-  Vec2,
+  VerticalAlignment,
   WidgetKind,
   WidgetLayout,
 } from "./types";
+import { pinLayout, stretchLayout, ZERO_INSETS } from "./types";
 import { widgetParentId } from "./widget-tree";
 
 const ANCHOR_EPS = 1e-4;
@@ -32,27 +35,29 @@ export type AnchorPresetId =
 export interface AnchorPreset {
   id: AnchorPresetId;
   label: string;
-  anchorMin: Vec2;
-  anchorMax: Vec2;
+  horizontalAlignment: HorizontalAlignment;
+  verticalAlignment: VerticalAlignment;
+  stretchX: boolean;
+  stretchY: boolean;
 }
 
 export const ANCHOR_PRESETS: readonly AnchorPreset[] = [
-  { id: "top-left", label: "Top Left", anchorMin: { x: 0, y: 1 }, anchorMax: { x: 0, y: 1 } },
-  { id: "top-center", label: "Top Center", anchorMin: { x: 0.5, y: 1 }, anchorMax: { x: 0.5, y: 1 } },
-  { id: "top-right", label: "Top Right", anchorMin: { x: 1, y: 1 }, anchorMax: { x: 1, y: 1 } },
-  { id: "middle-left", label: "Middle Left", anchorMin: { x: 0, y: 0.5 }, anchorMax: { x: 0, y: 0.5 } },
-  { id: "middle-center", label: "Middle Center", anchorMin: { x: 0.5, y: 0.5 }, anchorMax: { x: 0.5, y: 0.5 } },
-  { id: "middle-right", label: "Middle Right", anchorMin: { x: 1, y: 0.5 }, anchorMax: { x: 1, y: 0.5 } },
-  { id: "bottom-left", label: "Bottom Left", anchorMin: { x: 0, y: 0 }, anchorMax: { x: 0, y: 0 } },
-  { id: "bottom-center", label: "Bottom Center", anchorMin: { x: 0.5, y: 0 }, anchorMax: { x: 0.5, y: 0 } },
-  { id: "bottom-right", label: "Bottom Right", anchorMin: { x: 1, y: 0 }, anchorMax: { x: 1, y: 0 } },
-  { id: "top-stretch", label: "Top Stretch", anchorMin: { x: 0, y: 1 }, anchorMax: { x: 1, y: 1 } },
-  { id: "middle-stretch", label: "Middle Stretch", anchorMin: { x: 0, y: 0.5 }, anchorMax: { x: 1, y: 0.5 } },
-  { id: "bottom-stretch", label: "Bottom Stretch", anchorMin: { x: 0, y: 0 }, anchorMax: { x: 1, y: 0 } },
-  { id: "left-stretch", label: "Left Stretch", anchorMin: { x: 0, y: 0 }, anchorMax: { x: 0, y: 1 } },
-  { id: "center-stretch", label: "Center Stretch", anchorMin: { x: 0.5, y: 0 }, anchorMax: { x: 0.5, y: 1 } },
-  { id: "right-stretch", label: "Right Stretch", anchorMin: { x: 1, y: 0 }, anchorMax: { x: 1, y: 1 } },
-  { id: "stretch-stretch", label: "Stretch", anchorMin: { x: 0, y: 0 }, anchorMax: { x: 1, y: 1 } },
+  { id: "top-left", label: "Top Left", horizontalAlignment: "left", verticalAlignment: "top", stretchX: false, stretchY: false },
+  { id: "top-center", label: "Top Center", horizontalAlignment: "center", verticalAlignment: "top", stretchX: false, stretchY: false },
+  { id: "top-right", label: "Top Right", horizontalAlignment: "right", verticalAlignment: "top", stretchX: false, stretchY: false },
+  { id: "middle-left", label: "Middle Left", horizontalAlignment: "left", verticalAlignment: "center", stretchX: false, stretchY: false },
+  { id: "middle-center", label: "Middle Center", horizontalAlignment: "center", verticalAlignment: "center", stretchX: false, stretchY: false },
+  { id: "middle-right", label: "Middle Right", horizontalAlignment: "right", verticalAlignment: "center", stretchX: false, stretchY: false },
+  { id: "bottom-left", label: "Bottom Left", horizontalAlignment: "left", verticalAlignment: "bottom", stretchX: false, stretchY: false },
+  { id: "bottom-center", label: "Bottom Center", horizontalAlignment: "center", verticalAlignment: "bottom", stretchX: false, stretchY: false },
+  { id: "bottom-right", label: "Bottom Right", horizontalAlignment: "right", verticalAlignment: "bottom", stretchX: false, stretchY: false },
+  { id: "top-stretch", label: "Top Stretch", horizontalAlignment: "left", verticalAlignment: "top", stretchX: true, stretchY: false },
+  { id: "middle-stretch", label: "Middle Stretch", horizontalAlignment: "left", verticalAlignment: "center", stretchX: true, stretchY: false },
+  { id: "bottom-stretch", label: "Bottom Stretch", horizontalAlignment: "left", verticalAlignment: "bottom", stretchX: true, stretchY: false },
+  { id: "left-stretch", label: "Left Stretch", horizontalAlignment: "left", verticalAlignment: "top", stretchX: false, stretchY: true },
+  { id: "center-stretch", label: "Center Stretch", horizontalAlignment: "center", verticalAlignment: "top", stretchX: false, stretchY: true },
+  { id: "right-stretch", label: "Right Stretch", horizontalAlignment: "right", verticalAlignment: "top", stretchX: false, stretchY: true },
+  { id: "stretch-stretch", label: "Stretch", horizontalAlignment: "left", verticalAlignment: "top", stretchX: true, stretchY: true },
 ];
 
 const PRESET_BY_ID = new Map(ANCHOR_PRESETS.map((row) => [row.id, row]));
@@ -68,7 +73,6 @@ export function parentOwnsChildLayout(kind: WidgetKind): boolean {
   return SLOT_LAYOUT_PARENTS.has(kind);
 }
 
-/** Root and box/grid/SizeBox children cannot be moved or resized on the canvas. */
 export function widgetAllowsDesignerTransform(
   doc: UserInterfaceDocument,
   widgetId: string,
@@ -114,14 +118,7 @@ export function preferredWidgetSize(kind: WidgetKind): { width: number; height: 
 
 export function defaultAddLayout(kind: WidgetKind): WidgetLayout {
   const size = preferredWidgetSize(kind);
-  const pivot = { x: 0.5, y: 0.5 };
-  return {
-    anchorMin: { x: 0.5, y: 0.5 },
-    anchorMax: { x: 0.5, y: 0.5 },
-    offsetMin: { x: -size.width * pivot.x, y: -size.height * pivot.y },
-    offsetMax: { x: size.width * (1 - pivot.x), y: size.height * (1 - pivot.y) },
-    pivot,
-  };
+  return pinLayout("center", "center", size.width, size.height);
 }
 
 function nearlyEqual(a: number, b: number): boolean {
@@ -131,29 +128,39 @@ function nearlyEqual(a: number, b: number): boolean {
 export function layoutFromRect(
   parent: Rect,
   rect: Rect,
-  anchorMin: Vec2,
-  anchorMax: Vec2,
-  pivot: Vec2 = { x: 0.5, y: 0.5 },
+  presetId: AnchorPresetId = "top-left",
+  transformCenter = { x: 0.5, y: 0.5 },
 ): WidgetLayout {
-  const min = { x: anchorMin.x, y: anchorMin.y };
-  const max = { x: anchorMax.x, y: anchorMax.y };
-  const left = rect.x;
-  const bottom = rect.y;
-  const right = rect.x + rect.width;
-  const top = rect.y + rect.height;
-  return normalizeLayout({
-    anchorMin: min,
-    anchorMax: max,
-    offsetMin: {
-      x: left - parent.x - parent.width * min.x,
-      y: bottom - parent.y - parent.height * min.y,
-    },
-    offsetMax: {
-      x: right - parent.x - parent.width * max.x,
-      y: top - parent.y - parent.height * max.y,
-    },
-    pivot,
-  });
+  const preset = PRESET_BY_ID.get(presetId) ?? ANCHOR_PRESETS[0]!;
+  const padding = { ...ZERO_INSETS };
+  if (preset.stretchX) {
+    padding.left = Math.max(0, rect.x - parent.x);
+    padding.right = Math.max(0, parent.x + parent.width - (rect.x + rect.width));
+  }
+  if (preset.stretchY) {
+    padding.top = Math.max(0, rect.y - parent.y);
+    padding.bottom = Math.max(0, parent.y + parent.height - (rect.y + rect.height));
+  }
+  const width = preset.stretchX ? 100 : rect.width;
+  const height = preset.stretchY ? 100 : rect.height;
+  const layout: WidgetLayout = {
+    horizontalAlignment: preset.horizontalAlignment,
+    verticalAlignment: preset.verticalAlignment,
+    width,
+    height,
+    widthUnit: preset.stretchX ? "percent" : "px",
+    heightUnit: preset.stretchY ? "percent" : "px",
+    left: 0,
+    top: 0,
+    padding,
+    transformCenter: { ...transformCenter },
+  };
+  if (!preset.stretchX || !preset.stretchY) {
+    const preview = previewRect(parent, layout);
+    if (!preset.stretchX) layout.left = rect.x - preview.x;
+    if (!preset.stretchY) layout.top = rect.y - preview.y;
+  }
+  return normalizeLayout(layout);
 }
 
 export function applyAnchorPreset(
@@ -163,18 +170,20 @@ export function applyAnchorPreset(
 ): WidgetLayout {
   const preset = PRESET_BY_ID.get(presetId);
   if (!preset) return layout;
-  const rect = computeAnchoredRect(parent, layout);
-  return layoutFromRect(parent, rect, preset.anchorMin, preset.anchorMax, layout.pivot);
+  const rect = previewRect(parent, normalizeLayout(layout));
+  return layoutFromRect(parent, rect, presetId, layout.transformCenter);
 }
 
 export function matchAnchorPreset(layout: WidgetLayout): AnchorPresetId | null {
-  const normalized = normalizeLayout(layout);
+  const slot = normalizeLayout(layout);
+  const stretchX = slot.widthUnit === "percent" && nearlyEqual(slot.width, 100);
+  const stretchY = slot.heightUnit === "percent" && nearlyEqual(slot.height, 100);
   for (const preset of ANCHOR_PRESETS) {
     if (
-      nearlyEqual(normalized.anchorMin.x, preset.anchorMin.x) &&
-      nearlyEqual(normalized.anchorMin.y, preset.anchorMin.y) &&
-      nearlyEqual(normalized.anchorMax.x, preset.anchorMax.x) &&
-      nearlyEqual(normalized.anchorMax.y, preset.anchorMax.y)
+      preset.horizontalAlignment === slot.horizontalAlignment &&
+      preset.verticalAlignment === slot.verticalAlignment &&
+      preset.stretchX === stretchX &&
+      preset.stretchY === stretchY
     ) {
       return preset.id;
     }
@@ -193,40 +202,54 @@ export interface AuthoringFields {
   right: number;
   top: number;
   bottom: number;
+  widthUnit: WidgetLayout["widthUnit"];
+  heightUnit: WidgetLayout["heightUnit"];
+  horizontalAlignment: HorizontalAlignment;
+  verticalAlignment: VerticalAlignment;
 }
 
 export function authoringFieldsFromLayout(
   parent: Rect,
   layout: WidgetLayout,
 ): AuthoringFields {
+  void parent;
   const slot = normalizeLayout(layout);
-  const rect = computeAnchoredRect(parent, slot);
-  const pinX = nearlyEqual(slot.anchorMin.x, slot.anchorMax.x);
-  const pinY = nearlyEqual(slot.anchorMin.y, slot.anchorMax.y);
-  const left = rect.x - (parent.x + parent.width * slot.anchorMin.x);
-  const right = parent.x + parent.width * slot.anchorMax.x - (rect.x + rect.width);
-  const bottom = rect.y - (parent.y + parent.height * slot.anchorMin.y);
-  const top = parent.y + parent.height * slot.anchorMax.y - (rect.y + rect.height);
-  const posX =
-    rect.x + rect.width * slot.pivot.x - (parent.x + parent.width * slot.anchorMin.x);
-  const posY =
-    rect.y + rect.height * slot.pivot.y - (parent.y + parent.height * slot.anchorMin.y);
+  const pinX = slot.widthUnit === "px";
+  const pinY = slot.heightUnit === "px";
   return {
     pinX,
     pinY,
-    posX,
-    posY,
-    width: rect.width,
-    height: rect.height,
-    left,
-    right,
-    top,
-    bottom,
+    posX: slot.left,
+    posY: slot.top,
+    width: slot.width,
+    height: slot.height,
+    left: slot.padding.left,
+    right: slot.padding.right,
+    top: slot.padding.top,
+    bottom: slot.padding.bottom,
+    widthUnit: slot.widthUnit,
+    heightUnit: slot.heightUnit,
+    horizontalAlignment: slot.horizontalAlignment,
+    verticalAlignment: slot.verticalAlignment,
   };
 }
 
 export type AuthoringFieldPatch = Partial<
-  Pick<AuthoringFields, "posX" | "posY" | "width" | "height" | "left" | "right" | "top" | "bottom">
+  Pick<
+    AuthoringFields,
+    | "posX"
+    | "posY"
+    | "width"
+    | "height"
+    | "left"
+    | "right"
+    | "top"
+    | "bottom"
+    | "widthUnit"
+    | "heightUnit"
+    | "horizontalAlignment"
+    | "verticalAlignment"
+  >
 >;
 
 export function applyAuthoringFields(
@@ -235,48 +258,25 @@ export function applyAuthoringFields(
   patch: AuthoringFieldPatch,
 ): WidgetLayout {
   const slot = normalizeLayout(layout);
-  const fields = authoringFieldsFromLayout(parent, slot);
-  const next = { ...fields, ...patch };
-  const pinX = fields.pinX;
-  const pinY = fields.pinY;
-  let left: number;
-  let right: number;
-  let bottom: number;
-  let top: number;
-  if (pinX) {
-    const width = Math.max(0, next.width);
-    const pivotX = slot.pivot.x;
-    const anchorX = parent.x + parent.width * slot.anchorMin.x;
-    const pivotWorldX = anchorX + next.posX;
-    left = pivotWorldX - width * pivotX;
-    right = left + width;
-  } else {
-    left = parent.x + parent.width * slot.anchorMin.x + next.left;
-    right = parent.x + parent.width * slot.anchorMax.x - next.right;
-  }
-  if (pinY) {
-    const height = Math.max(0, next.height);
-    const pivotY = slot.pivot.y;
-    const anchorY = parent.y + parent.height * slot.anchorMin.y;
-    const pivotWorldY = anchorY + next.posY;
-    bottom = pivotWorldY - height * pivotY;
-    top = bottom + height;
-  } else {
-    bottom = parent.y + parent.height * slot.anchorMin.y + next.bottom;
-    top = parent.y + parent.height * slot.anchorMax.y - next.top;
-  }
-  return layoutFromRect(
-    parent,
-    {
-      x: left,
-      y: bottom,
-      width: Math.max(0, right - left),
-      height: Math.max(0, top - bottom),
+  const next: WidgetLayout = {
+    ...slot,
+    left: patch.posX ?? slot.left,
+    top: patch.posY ?? slot.top,
+    width: patch.width ?? slot.width,
+    height: patch.height ?? slot.height,
+    widthUnit: patch.widthUnit ?? slot.widthUnit,
+    heightUnit: patch.heightUnit ?? slot.heightUnit,
+    horizontalAlignment: patch.horizontalAlignment ?? slot.horizontalAlignment,
+    verticalAlignment: patch.verticalAlignment ?? slot.verticalAlignment,
+    padding: {
+      left: patch.left ?? slot.padding.left,
+      right: patch.right ?? slot.padding.right,
+      top: patch.top ?? slot.padding.top,
+      bottom: patch.bottom ?? slot.padding.bottom,
     },
-    slot.anchorMin,
-    slot.anchorMax,
-    slot.pivot,
-  );
+  };
+  void parent;
+  return normalizeLayout(next);
 }
 
 export interface ResizeEdges {
@@ -303,33 +303,36 @@ export function laidOutParentRect(
 export function applyWidgetResize(
   layout: WidgetLayout,
   parent: Rect,
-  delta: Vec2,
+  delta: { x: number; y: number },
   edges: ResizeEdges,
 ): WidgetLayout {
-  const rect = computeAnchoredRect(parent, layout);
+  const slot = normalizeLayout(layout);
+  const rect = previewRect(parent, slot);
   let left = rect.x;
-  let bottom = rect.y;
+  let top = rect.y;
   let right = rect.x + rect.width;
-  let top = rect.y + rect.height;
+  let bottom = rect.y + rect.height;
   if (edges.left) left += delta.x;
   if (edges.right) right += delta.x;
-  if (edges.bottom) bottom += delta.y;
   if (edges.top) top += delta.y;
+  if (edges.bottom) bottom += delta.y;
   if (right < left) {
     const mid = left;
     left = right;
     right = mid;
   }
-  if (top < bottom) {
-    const mid = bottom;
-    bottom = top;
-    top = mid;
+  if (bottom < top) {
+    const mid = top;
+    top = bottom;
+    bottom = mid;
   }
+  const preset = matchAnchorPreset(slot) ?? "top-left";
   return layoutFromRect(
     parent,
-    { x: left, y: bottom, width: right - left, height: top - bottom },
-    layout.anchorMin,
-    layout.anchorMax,
-    layout.pivot,
+    { x: left, y: top, width: right - left, height: bottom - top },
+    preset,
+    slot.transformCenter,
   );
 }
+
+export { stretchLayout, pinLayout };

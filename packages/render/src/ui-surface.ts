@@ -20,6 +20,7 @@ export interface UiSurfaceOptions extends BabylonUiHostOptions {
   scaleRule: ScaleRule;
   /** Screen-space overlay canvas (not CSS-transformed with the device frame). */
   gizmoCanvas?: HTMLCanvasElement;
+  safeArea?: { left: number; right: number; top: number; bottom: number };
 }
 
 export interface UiSurface {
@@ -76,6 +77,7 @@ export function createUiSurface(
   const factory = createAdtControlFactory(designAdt, {
     resolveImageUrl: options.resolveImageUrl,
     onTouchAxis: options.onTouchAxis,
+    safeArea: options.safeArea,
   });
   const host = new BabylonUiApplyHost(factory, {
     interactive: options.interactive,
@@ -100,7 +102,7 @@ export function createUiSurface(
     },
     resizeDesign: (width, height, scaleRule) => {
       designAdt.scaleTo(Math.max(1, width), Math.max(1, height));
-      applyAdtIdeal(designAdt, { width, height }, scaleRule);
+      applyAdtIdeal(designAdt, options.designResolution, scaleRule);
     },
     resizeGizmos: (width, height) => {
       gizmoAdt?.scaleTo(Math.max(1, width), Math.max(1, height));
@@ -117,16 +119,17 @@ export function createUiSurface(
 /** Attach a Play HUD ADT to an existing Play scene (no extra Engine/Scene). */
 export function attachFullscreenGui(
   scene: Scene,
-  options: Omit<UiSurfaceOptions, "designResolution" | "scaleRule" | "gizmoCanvas"> & {
+  options: Omit<UiSurfaceOptions, "gizmoCanvas"> & {
     width: number;
     height: number;
   },
 ): { adt: AdvancedDynamicTexture; host: BabylonUiApplyHost; dispose: () => void } {
   const adt = AdvancedDynamicTexture.CreateFullscreenUI(options.name, true, scene);
-  applyAdtIdeal(adt, { width: options.width, height: options.height }, "shortestSide");
+  applyAdtIdeal(adt, options.designResolution, options.scaleRule);
   const factory = createAdtControlFactory(adt, {
     resolveImageUrl: options.resolveImageUrl,
     onTouchAxis: options.onTouchAxis,
+    safeArea: options.safeArea,
   });
   const host = new BabylonUiApplyHost(factory, {
     interactive: options.interactive,
@@ -157,6 +160,8 @@ function createStandaloneAdt(
     height: Math.max(1, height),
   });
   adt.disablePicking = true;
+  adt.markAsDirty();
+  adt._checkUpdate(null);
   return adt;
 }
 
@@ -166,12 +171,24 @@ export function presentAdtToCanvas(
   canvas: HTMLCanvasElement,
 ): void {
   adt._checkUpdate(null);
-  const context = canvas.getContext("2d");
-  const source = (adt.getContext() as CanvasRenderingContext2D | null)?.canvas;
-  if (!context || !source) return;
+  let source = (adt.getContext() as CanvasRenderingContext2D | null)?.canvas;
+  if (!source) {
+    adt._checkUpdate(null);
+    source = (adt.getContext() as CanvasRenderingContext2D | null)?.canvas;
+  }
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    throw new Error("Designer canvas has no 2d context for ADT blit");
+  }
+  if (!source) {
+    throw new Error("ADT backing store is missing");
+  }
   const size = adt.getSize();
   const width = Math.max(1, size.width);
   const height = Math.max(1, size.height);
+  if (!(size.width > 0) || !(size.height > 0)) {
+    throw new Error("ADT blit size is 0");
+  }
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
   context.clearRect(0, 0, width, height);

@@ -21,7 +21,7 @@ export function clampDesignZoom(zoom: number): number {
   return Math.min(UI_DESIGN_ZOOM_MAX, Math.max(UI_DESIGN_ZOOM_MIN, zoom));
 }
 
-/** Screen Y-down to layout Y-up (ui-runtime parent bottom-left). */
+/** Screen Y-down to layout Y-down (Babylon GUI). */
 export function canvasDeltaToLayoutDelta(
   screenDelta: PointerPoint,
   viewScale: number,
@@ -30,25 +30,19 @@ export function canvasDeltaToLayoutDelta(
     !Number.isFinite(viewScale) || viewScale === 0 ? 1 : viewScale;
   return {
     x: screenDelta.x / scale,
-    y: -screenDelta.y / scale,
+    y: screenDelta.y / scale,
   };
 }
 
-/** Translate a widget in parent space without changing anchors or size. */
+/** Translate a widget in parent space without changing alignment or size. */
 export function applyWidgetDragOffset(
   layout: WidgetLayout,
   delta: PointerPoint,
 ): WidgetLayout {
   return {
     ...layout,
-    offsetMin: {
-      x: layout.offsetMin.x + delta.x,
-      y: layout.offsetMin.y + delta.y,
-    },
-    offsetMax: {
-      x: layout.offsetMax.x + delta.x,
-      y: layout.offsetMax.y + delta.y,
-    },
+    left: layout.left + delta.x,
+    top: layout.top + delta.y,
   };
 }
 
@@ -155,42 +149,33 @@ export function designRectToScreen(
 
 export type HandleEdge = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
-/** Pivot is layout Y-up inside the widget; screen space is Y-down. */
+/** Scale design-space rects onto the ADT bitmap (origin-aligned, no letterbox). */
+export function designRectToBitmap(
+  rect: ScreenRect,
+  bitmapScale: number,
+): ScreenRect {
+  const scale =
+    !Number.isFinite(bitmapScale) || bitmapScale === 0 ? 1 : bitmapScale;
+  return {
+    x: rect.x * scale,
+    y: rect.y * scale,
+    width: rect.width * scale,
+    height: rect.height * scale,
+  };
+}
+
+/** Transform center is Babylon 0–1 in Y-down GUI space. */
 export function pivotToScreen(
   guiRect: ScreenRect,
-  pivot: { x: number; y: number },
+  transformCenter: { x: number; y: number },
   view: DesignView,
   previewScale: number,
 ): PointerPoint {
   const screen = designRectToScreen(guiRect, view, previewScale);
   return {
-    x: screen.x + screen.width * pivot.x,
-    y: screen.y + screen.height * (1 - pivot.y),
+    x: screen.x + screen.width * transformCenter.x,
+    y: screen.y + screen.height * transformCenter.y,
   };
-}
-
-export function anchorPointsToScreen(
-  parentGui: ScreenRect,
-  anchorMin: { x: number; y: number },
-  anchorMax: { x: number; y: number },
-  view: DesignView,
-  previewScale: number,
-): PointerPoint[] {
-  const parent = designRectToScreen(parentGui, view, previewScale);
-  const points: PointerPoint[] = [];
-  const seen = new Set<string>();
-  for (const ax of [anchorMin.x, anchorMax.x]) {
-    for (const ay of [anchorMin.y, anchorMax.y]) {
-      const key = `${ax}:${ay}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      points.push({
-        x: parent.x + parent.width * ax,
-        y: parent.y + parent.height * (1 - ay),
-      });
-    }
-  }
-  return points;
 }
 
 export function resizeHandleRects(

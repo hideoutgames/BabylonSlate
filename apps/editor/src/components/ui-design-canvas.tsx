@@ -7,15 +7,22 @@ import {
 } from "react";
 import type { Engine } from "@babylonjs/core";
 import {
+  applyFontRegistryToHost,
   applyUiControls,
   createUiSurface,
+  FontRegistry,
   type DesignerGizmoState,
   type UiSurface,
 } from "@babylonslate/render";
 import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
+import {
   applyWidgetResize,
   laidOutParentRect,
-  toGuiRect,
   widgetAllowsDesignerTransform,
   type LayoutResult,
   type UiControlDescriptor,
@@ -24,10 +31,10 @@ import {
 } from "@babylonslate/ui-runtime";
 import {
   UI_DESIGN_HANDLE_SIZE_PX,
-  anchorPointsToScreen,
   applyWidgetDragOffset,
   canvasDeltaToLayoutDelta,
   clampDesignZoom,
+  designRectToBitmap,
   designRectToScreen,
   handleEdges,
   passedDragThreshold,
@@ -40,6 +47,7 @@ import {
   type DesignView,
   type HandleEdge,
   type PointerPoint,
+  type ScreenRect,
 } from "./ui-design-gestures";
 
 export function UiDesignCanvas({
@@ -51,6 +59,8 @@ export function UiDesignCanvas({
   view,
   previewScale,
   sharedEngine,
+  fontEntries = [],
+  bitmapScale,
   onSelect,
   onViewChange,
   onLayoutChange,
@@ -67,7 +77,9 @@ export function UiDesignCanvas({
   selectedId: string;
   view: DesignView;
   previewScale: number;
+  bitmapScale: number;
   sharedEngine: Engine | null;
+  fontEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
   onSelect: (id: string) => void;
   onViewChange: (view: DesignView) => void;
   onLayoutChange: (id: string, next: WidgetLayout, mergeKey: string) => void;
@@ -77,6 +89,8 @@ export function UiDesignCanvas({
   const viewportRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<UiSurface | null>(null);
   const [guiLive, setGuiLive] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [liveRects, setLiveRects] = useState<Record<string, ScreenRect>>({});
   const latestUiRef = useRef(ui);
   const viewRef = useRef(view);
   const pointersRef = useRef(new Map<number, PointerPoint>());
@@ -101,7 +115,7 @@ export function UiDesignCanvas({
   } | null>(null);
   latestUiRef.current = ui;
   viewRef.current = view;
-  const viewScale = previewScale * view.zoom;
+  const viewScale = previewScale * view.zoom * bitmapScale;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -113,27 +127,60 @@ export function UiDesignCanvas({
       surface = createUiSurface(canvas, engine, {
         name: "ui-designer",
         interactive: false,
-        designResolution: { width: viewport.width, height: viewport.height },
+        designResolution: ui.designResolution,
         scaleRule: ui.scaleRule,
         gizmoCanvas: gizmoCanvas ?? undefined,
+        safeArea: viewport.safeArea,
       });
-    } catch {
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to create GUI surface";
+      console.error("UI designer surface failed", error);
+      setPreviewError(message);
+      setGuiLive(false);
       return;
     }
     surfaceRef.current = surface;
+    setPreviewError(null);
     setGuiLive(true);
     return () => {
       surface?.dispose();
       surfaceRef.current = null;
       setGuiLive(false);
+      setLiveRects({});
     };
-  }, [sharedEngine, ui.scaleRule, viewport.height, viewport.width]);
+  }, [sharedEngine, ui.designResolution, ui.scaleRule, viewport.height, viewport.safeArea, viewport.width]);
+
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface || fontEntries.length === 0) return;
+    const registry = new FontRegistry();
+    void applyFontRegistryToHost(registry, fontEntries, () => {
+      surface.designAdt.markAsDirty();
+      try {
+        surface.present();
+      } catch (error) {
+        console.error("UI designer font present failed", error);
+      }
+    });
+  }, [fontEntries, guiLive]);
 
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
-    surface.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
-    applyUiControls(surface.host, controls);
+    try {
+      surface.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
+      applyUiControls(surface.host, controls);
+      surface.present();
+      setPreviewError(null);
+      setLiveRects(surface.host.measureControls());
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to present GUI";
+      console.error("UI designer present failed", error);
+      setPreviewError(message);
+      setGuiLive(false);
+    }
   }, [controls, guiLive, ui.scaleRule, viewport.height, viewport.width]);
 
   const selected = ui.widgets[selectedId];
@@ -141,26 +188,22 @@ export function UiDesignCanvas({
   const canTransform = selected
     ? widgetAllowsDesignerTransform(ui, selected.id)
     : false;
-  const selectedScreen = selectedControl
-    ? designRectToScreen(selectedControl.guiRect, view, previewScale)
+  const selectedHit = selectedControl
+    ? (liveRects[selectedControl.id] ??
+      designRectToBitmap(selectedControl.guiRect, bitmapScale))
+    : null;
+  const selectedScreen = selectedHit
+    ? designRectToScreen(selectedHit, view, previewScale)
     : null;
   const handles =
     canTransform && selectedScreen
       ? resizeHandleRects(selectedScreen, UI_DESIGN_HANDLE_SIZE_PX)
       : null;
-  const parentGui = selected
-    ? toGuiRect(laidOutParentRect(layout, selected.id), viewport.height)
-    : null;
   const pivotScreen =
-    selected && selectedControl
-      ? pivotToScreen(selectedControl.guiRect, selected.layout.pivot, view, previewScale)
-      : null;
-  const anchorScreens =
-    selected && parentGui
-      ? anchorPointsToScreen(
-          parentGui,
-          selected.layout.anchorMin,
-          selected.layout.anchorMax,
+    selected && selectedHit
+      ? pivotToScreen(
+          selectedHit,
+          selected.layout.transformCenter,
           view,
           previewScale,
         )
@@ -187,11 +230,13 @@ export function UiDesignCanvas({
       handles,
       safeArea: hasSafeArea ? safeScreen : null,
       pivot: canTransform ? pivotScreen : null,
-      anchors: canTransform ? anchorScreens : null,
     };
-    surface.presentGizmos(state);
+    try {
+      surface.presentGizmos(state);
+    } catch (error) {
+      console.error("UI designer gizmos failed", error);
+    }
   }, [
-    anchorScreens,
     canTransform,
     guiLive,
     handles,
@@ -406,7 +451,7 @@ export function UiDesignCanvas({
       onWheel={onViewportWheel}
     >
       <div
-        className="absolute bg-background shadow-sm"
+        className="absolute shadow-sm"
         data-testid="ui-design-canvas"
         data-preset={viewport.id}
         data-scale={String(layout.scale)}
@@ -420,6 +465,9 @@ export function UiDesignCanvas({
           height: viewport.height * previewScale,
           transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
           transformOrigin: "0 0",
+          backgroundImage:
+            "repeating-conic-gradient(var(--muted) 0% 25%, var(--background) 0% 50%)",
+          backgroundSize: "16px 16px",
         }}
       >
         <canvas
@@ -428,20 +476,24 @@ export function UiDesignCanvas({
           width={viewport.width}
           height={viewport.height}
         />
-        {controls.map((control) => (
+        {controls.map((control) => {
+          const hit =
+            liveRects[control.id] ??
+            designRectToBitmap(control.guiRect, bitmapScale);
+          return (
           <div
             key={control.id}
             data-testid={`ui-widget-${control.id}`}
             data-widget-id={control.id}
             data-kind={control.kind}
-            data-gui-x={String(Math.round(control.guiRect.x))}
-            data-gui-y={String(Math.round(control.guiRect.y))}
+            data-gui-x={String(Math.round(hit.x))}
+            data-gui-y={String(Math.round(hit.y))}
             className="absolute"
             style={{
-              left: `${(control.guiRect.x / viewport.width) * 100}%`,
-              top: `${(control.guiRect.y / viewport.height) * 100}%`,
-              width: `${(control.guiRect.width / viewport.width) * 100}%`,
-              height: `${(control.guiRect.height / viewport.height) * 100}%`,
+              left: `${(hit.x / viewport.width) * 100}%`,
+              top: `${(hit.y / viewport.height) * 100}%`,
+              width: `${(hit.width / viewport.width) * 100}%`,
+              height: `${(hit.height / viewport.height) * 100}%`,
             }}
             onClick={() => {
               if (ui.widgets[control.id]) {
@@ -451,7 +503,8 @@ export function UiDesignCanvas({
               onSelect(control.id.split("/")[0] ?? ui.rootId);
             }}
           />
-        ))}
+          );
+        })}
       </div>
       <canvas
         ref={gizmoCanvasRef}
@@ -512,6 +565,17 @@ export function UiDesignCanvas({
             )
           : null}
       </div>
+      {previewError ? (
+        <Empty
+          data-testid="ui-gui-preview-error"
+          className="pointer-events-none absolute inset-0 border-0"
+        >
+          <EmptyHeader>
+            <EmptyTitle>Babylon GUI Preview Unavailable</EmptyTitle>
+            <EmptyDescription>{previewError}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
     </div>
   );
 }

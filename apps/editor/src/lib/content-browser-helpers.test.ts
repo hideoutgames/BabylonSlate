@@ -663,6 +663,7 @@ describe("content-browser-helpers", () => {
       parentClass: null,
     });
     expect(hud.type).toBe("UserInterface");
+    expect(hud.version).toBe(2);
     expect(hud.payload.rootId).toBe("canvas");
     expect(hud.payload.viewportLayer).toBe(true);
     expect(hud.chunks.some((chunk) => chunk.id === "document")).toBe(true);

@@ -40,7 +40,7 @@ Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `
 
 The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset fonts have payload only — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
 
-Play HUD uses the compiled CSS stack (generic fallback always present). Awaiting `FontRegistry.registerAll` for every project Font before the first Play frame is later polish.
+Play HUD and the UserInterface designer both `FontRegistry.registerAll` project Font `source` bytes, then `consumeDirty()` → ADT `markAsDirty()` so a late face still redraws.
 
 ## Editor
 

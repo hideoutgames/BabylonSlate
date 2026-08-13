@@ -21,12 +21,12 @@ describe("UI apply", () => {
       "stick",
       "TouchJoystick",
       "Move Stick",
-      pinLayout({ x: 0.2, y: 0.2 }, { x: 160, y: 160 }),
+      pinLayout("left", "bottom", 160, 160, 40, 0),
     );
     doc.widgets.canvas!.children = ["stick"];
     doc.widgets.stick = stick;
     const layout = layoutUserInterface(doc, { width: 1920, height: 1080 });
-    const controls = describeUiControls(doc, layout, 1080);
+    const controls = describeUiControls(doc, layout);
     const host = new RecordingUiHost();
     applyUiControls(host, controls);
     expect(host.controls.some((row) => row.kind === "TouchJoystick")).toBe(true);
