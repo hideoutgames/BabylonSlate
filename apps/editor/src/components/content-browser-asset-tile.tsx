@@ -14,8 +14,10 @@ import {
 } from "@babylonslate/ui/components/card";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
-  assetTypeCardAccent,
-  assetTypeThumbAccent,
+  typeColorCardAccent,
+  typeColorThumbAccent,
+} from "@babylonslate/ui/lib/data-types";
+import {
   compressionBadgeLabel,
   displayAssetTitle,
   textureCompressionState,
@@ -44,8 +46,8 @@ export function ContentBrowserAssetTile({
   typeVisual,
 }: ContentBrowserAssetTileProps) {
   const compression = textureCompressionState(asset);
-  const cardAccent = assetTypeCardAccent(typeVisual.colorVar);
-  const thumbAccent = assetTypeThumbAccent(typeVisual.colorVar);
+  const cardAccent = typeColorCardAccent(typeVisual.colorVar);
+  const thumbAccent = typeColorThumbAccent(typeVisual.colorVar);
   const bind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
       onSelect();

@@ -19,6 +19,10 @@ import {
   type TypeVisual,
 } from "@babylonslate/editor-kit";
 import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
+import {
+  typeColorCardAccent,
+  typeColorThumbAccent,
+} from "@babylonslate/ui/lib/data-types";
 
 export const ASSETS_ROOT = "assets";
 
@@ -84,23 +88,20 @@ export function addSelectedAssetGuid(
   return next;
 }
 
-export function assetTypeCardAccent(colorVar: string): {
-  backgroundColor: string;
-  borderColor: string;
-} {
-  return {
-    backgroundColor: `color-mix(in oklch, ${colorVar} 16%, var(--card))`,
-    borderColor: `color-mix(in oklch, ${colorVar} 50%, var(--border))`,
-  };
+/** Additive Content Browser folder-tile selection. Click never replaces. */
+export function addSelectedFolderPath(
+  selected: ReadonlySet<string>,
+  path: string,
+): Set<string> {
+  const next = new Set(selected);
+  next.add(path);
+  return next;
 }
 
-export function assetTypeThumbAccent(colorVar: string): {
-  backgroundColor: string;
-} {
-  return {
-    backgroundColor: `color-mix(in oklch, ${colorVar} 28%, var(--muted))`,
-  };
-}
+export {
+  typeColorCardAccent as assetTypeCardAccent,
+  typeColorThumbAccent as assetTypeThumbAccent,
+};
 
 export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -172,7 +173,7 @@ export function collectFolderGuids(
   options: { recursive?: boolean } = {},
 ): Set<string> {
   const guids = new Set<string>();
-  const recursive = options.recursive ?? folderPath === "assets";
+  const recursive = options.recursive ?? false;
 
   const visit = (node: FolderTreeLike, includeChildren: boolean) => {
     for (const guid of node.assets) {
@@ -222,13 +223,15 @@ export function isValidMoveDestination(options: {
   kind: MoveKind;
   sourcePath: string;
   destinationPath: string;
+  operation?: "move" | "copy";
 }): boolean {
-  const { kind, sourcePath, destinationPath } = options;
+  const { kind, sourcePath, destinationPath, operation = "move" } = options;
   if (kind === "asset") {
-    return destinationPath !== sourcePath;
+    return operation === "copy" || destinationPath !== sourcePath;
   }
   if (destinationPath === sourcePath) return false;
   if (destinationPath.startsWith(`${sourcePath}/`)) return false;
+  if (operation === "copy") return true;
   return destinationPath !== parentFolderPath(sourcePath);
 }
 
@@ -265,6 +268,138 @@ export function remapPathAfterFolderMove(
     return `${toFolder}${path.slice(fromFolder.length)}`;
   }
   return path;
+}
+
+export interface ContentBrowserTreeRow {
+  id: string;
+  kind: MoveKind;
+  label: string;
+  depth: number;
+  hasChildren: boolean;
+  expanded: boolean;
+  path: string;
+  guid?: string;
+}
+
+export interface ContentBrowserDropMove {
+  kind: MoveKind;
+  sourcePath: string;
+  destinationPath: string;
+  id: string;
+  guid?: string;
+}
+
+function folderLabel(node: FolderTreeLike): string {
+  return (
+    node.name ??
+    (node.path.includes("/")
+      ? node.path.slice(node.path.lastIndexOf("/") + 1)
+      : node.path)
+  );
+}
+
+function findFolderNode(
+  node: FolderTreeLike,
+  folderPath: string,
+): FolderTreeLike | null {
+  if (node.path === folderPath) return node;
+  for (const child of node.children) {
+    const found = findFolderNode(child, folderPath);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function listChildFolders(
+  tree: FolderTreeLike,
+  folderPath: string,
+): Array<{ name: string; path: string }> {
+  const node = findFolderNode(tree, folderPath);
+  if (!node) return [];
+  return node.children.map((child) => ({
+    name: folderLabel(child),
+    path: child.path,
+  }));
+}
+
+export function flattenContentBrowserTree(
+  node: FolderTreeLike,
+  assets: ReadonlyArray<IndexedAsset>,
+  collapsed: ReadonlySet<string> = new Set(),
+  depth = 0,
+  byGuid?: ReadonlyMap<string, IndexedAsset>,
+): ContentBrowserTreeRow[] {
+  const map =
+    byGuid ?? new Map(assets.map((asset) => [asset.header.guid, asset]));
+  const hasChildren = node.children.length > 0 || node.assets.length > 0;
+  const expanded = !collapsed.has(node.path);
+  const rows: ContentBrowserTreeRow[] = [
+    {
+      id: node.path,
+      kind: "folder",
+      label: folderLabel(node),
+      depth,
+      hasChildren,
+      expanded,
+      path: node.path,
+    },
+  ];
+  if (!expanded) return rows;
+  for (const child of node.children) {
+    rows.push(
+      ...flattenContentBrowserTree(child, assets, collapsed, depth + 1, map),
+    );
+  }
+  for (const guid of node.assets) {
+    const asset = map.get(guid);
+    if (!asset) continue;
+    rows.push({
+      id: asset.path,
+      kind: "asset",
+      label: displayAssetTitle(asset.header.name),
+      depth: depth + 1,
+      hasChildren: false,
+      expanded: true,
+      path: asset.path,
+      guid: asset.header.guid,
+    });
+  }
+  return rows;
+}
+
+export function contentBrowserMoveFromDrop(
+  dragId: string,
+  targetId: string | null,
+  rows: ReadonlyArray<ContentBrowserTreeRow>,
+): ContentBrowserDropMove | null {
+  const source = rows.find((row) => row.id === dragId);
+  if (!source) return null;
+  if (source.kind === "folder" && isFolderTreeRoot(source.path)) return null;
+  let destinationPath = ASSETS_ROOT;
+  if (targetId !== null) {
+    const target = rows.find((row) => row.id === targetId);
+    if (!target) return null;
+    destinationPath =
+      target.kind === "folder" ? target.path : parentFolderPath(target.path);
+  }
+  const sourcePath =
+    source.kind === "asset" ? parentFolderPath(source.path) : source.path;
+  if (
+    !isValidMoveDestination({
+      kind: source.kind,
+      sourcePath,
+      destinationPath,
+    })
+  ) {
+    return null;
+  }
+  return {
+    kind: source.kind,
+    sourcePath,
+    destinationPath,
+    id: source.id,
+    ...(source.guid ? { guid: source.guid } : {}),
+  };
 }
 
 export function flattenFolderTree(

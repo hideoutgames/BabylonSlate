@@ -301,4 +301,53 @@ test.describe("Editor density and IA", () => {
       page.locator('[data-asset-path="assets/main_1.scene.babasset"]'),
     ).toBeVisible();
   });
+
+  test("Content Browser tree lists assets and folder tiles precede assets", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await expect(
+      page.getByTestId("tree-row-assets/main.scene.babasset"),
+    ).toBeVisible();
+
+    await page.getByTestId("content-browser-new-folder").click();
+    await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
+    await page.getByTestId("content-browser-name-input").fill("fx");
+    await page.getByTestId("content-browser-name-confirm").click();
+    await page.getByTestId("tree-row-assets").click();
+
+    const folderTile = page.getByTestId("content-folder-assets/fx");
+    await expect(folderTile).toBeVisible();
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await expect(sceneTile).toBeVisible();
+    const folderFollowedByScene = await folderTile.evaluate((folder, sceneSelector) => {
+      const scene = document.querySelector(sceneSelector);
+      if (!scene) return false;
+      return (folder.compareDocumentPosition(scene) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    }, '[data-asset-path="assets/main.scene.babasset"]');
+    expect(folderFollowedByScene).toBe(true);
+  });
+
+  test("Content Browser empty-grid menu items; asset menu has no Retry Encoding", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    const grid = page.getByTestId("content-browser-asset-grid");
+    await grid.click({ button: "right", position: { x: 4, y: 4 } });
+    await expect(page.getByTestId("context-menu-item-new-folder")).toBeVisible();
+    await expect(page.getByTestId("context-menu-item-new-asset")).toBeVisible();
+    await expect(page.getByTestId("context-menu-item-import")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await sceneTile.click({ button: "right" });
+    await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
+    await expect(page.getByTestId("context-menu-item-retry-encoding")).toHaveCount(
+      0,
+    );
+  });
 });

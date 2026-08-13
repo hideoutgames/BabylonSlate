@@ -50,7 +50,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **PropertyGrid** | Typed Details rows: number, vector3 (2–4 axes), boolean, text, enum, color (`ColorField`), slider, flags (`FlagsField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis / enumRef defaults), UserInterface widget details, Sprite / Tileset / Tilemap / Structure settings, AnimationGraph state and transition Details. |
 | **ColorField** | Native color swatch plus a pasteable `#rrggbb` field. | Light color; Inspector color pin defaults; gallery. |
 | **FlagsField** | Compact 44px bitmask toggles (Layer 0–31 or named labels). | Collider `layer` / `mask`; gallery. |
-| **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
+| **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser sidebar and Move dialog, UserInterface widget hierarchy. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / slider / color; InputMappingEditor axis extras; gallery. |
 | **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings autosave, pixels-per-unit, play frame cap; UserInterface desired width/height; Trace playback frame. |
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchDialog, SearchDropdown, global search, Content Browser, Content Browser Move dialog. |
@@ -65,6 +65,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
 | **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component. |
 | **TypeVisualIcon** | Colored Lucide glyph for an asset / class family (`resolveTypeVisual`). | Outliner, Details, Prefab, Content Browser, global search, Place Actors, Add Component, AssetPicker, ClassPicker, document tabs. |
+| **TypeColorMark** | Swatch + label for a DataTypes color token (`pinColorVar` / `assetColorVar`). | ParameterListEditor type toggles; Component Gallery Data Types section. |
 | **ParameterListEditor** | Named, typed, reorderable pin/parameter rows (type, optional, default, enum list, up/down). | Inspector Execute JavaScript Inputs/Outputs; Event On Command Run / BDebugCommand; Class / ScriptInterface signatures. |
 | **SelectableText** | Opt-in selectable span inside a `user-select: none` shell. | Logs, compiler messages, Play overlay copy, gallery code snippets. |
 | **ContextMenuOverlay** | Pointer-anchored menu driven by `useContextMenu` (500ms hold or `contextmenu`). | Viewport, Outliner, Content Browser. |
@@ -87,8 +88,8 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **IconActionButton** ([`icon-action-button.tsx`](../../apps/editor/src/components/icon-action-button.tsx)) | Icon-only `Button` with `aria-label` plus Tooltip. | Chrome bar, Outliner, Details, Prefab panel. |
-| **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: thumbnail or type glyph, selection, long-press / right-click menu. | Content Browser grid. |
-| **ContentBrowserFolderTree** ([`content-browser-folder-tree.tsx`](../../apps/editor/src/components/content-browser-folder-tree.tsx)) | Nested folder rows with tap-to-select and long-press / right-click menu. | Content Browser sidebar. |
-| **ContentBrowserMoveDialog** ([`content-browser-move-dialog.tsx`](../../apps/editor/src/components/content-browser-move-dialog.tsx)) | Destination picker: item preview, folder search, `TreeView` with muted illegal rows. | Content Browser **Move…** for assets and folders. |
+| **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: thumbnail or type glyph, selection, long-press / right-click menu. Pointer events do not bubble to the empty-grid menu. | Content Browser grid. |
+| **ContentBrowserFolderTile** ([`content-browser-folder-tile.tsx`](../../apps/editor/src/components/content-browser-folder-tile.tsx)) | Folder card with `--asset-folder` accent; click selects, double-click navigates. | Content Browser grid (child folders first). |
+| **ContentBrowserMoveDialog** ([`content-browser-move-dialog.tsx`](../../apps/editor/src/components/content-browser-move-dialog.tsx)) | Destination picker: item preview, folder search, `TreeView` with muted illegal rows. Move or copy. | Content Browser **Move…** / **Copy to Folder…** for assets and folders. |
 
 Not kit (single call site): `BrandLogo` (Homepage), `JsBodyEditor` (Inspector Execute JavaScript body).

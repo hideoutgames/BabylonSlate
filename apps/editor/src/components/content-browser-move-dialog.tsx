@@ -27,6 +27,7 @@ export interface ContentBrowserMoveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   kind: MoveKind;
+  operation?: "move" | "copy";
   name: string;
   currentFolderPath: string;
   sourcePath: string;
@@ -42,6 +43,7 @@ export function ContentBrowserMoveDialog({
   open,
   onOpenChange,
   kind,
+  operation = "move",
   name,
   currentFolderPath,
   sourcePath,
@@ -58,6 +60,7 @@ export function ContentBrowserMoveDialog({
     kind,
     sourcePath,
     destinationPath,
+    operation,
   });
 
   const nodes = useMemo(() => {
@@ -72,6 +75,7 @@ export function ContentBrowserMoveDialog({
         kind,
         sourcePath,
         destinationPath: row.path,
+        operation,
       });
       return {
         id: row.id,
@@ -83,7 +87,7 @@ export function ContentBrowserMoveDialog({
         icon: <FolderIcon />,
       };
     });
-  }, [collapsed, folderTree, kind, search, sourcePath]);
+  }, [collapsed, folderTree, kind, operation, search, sourcePath]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -93,7 +97,13 @@ export function ContentBrowserMoveDialog({
       >
         <DialogHeader>
           <DialogTitle>
-            {kind === "folder" ? "Move Folder" : "Move Asset"}
+            {operation === "copy"
+              ? kind === "folder"
+                ? "Copy Folder"
+                : "Copy Asset"
+              : kind === "folder"
+                ? "Move Folder"
+                : "Move Asset"}
           </DialogTitle>
           <DialogDescription>
             Choose a destination folder. Currently in {currentFolderPath}.
@@ -131,6 +141,7 @@ export function ContentBrowserMoveDialog({
                   kind,
                   sourcePath,
                   destinationPath: id,
+                  operation,
                 })
               ) {
                 return;
@@ -163,7 +174,7 @@ export function ContentBrowserMoveDialog({
             disabled={busy || !canConfirm}
             onClick={() => onConfirm()}
           >
-            Move
+            {operation === "copy" ? "Copy" : "Move"}
           </Button>
         </DialogFooter>
       </DialogContent>

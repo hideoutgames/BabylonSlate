@@ -7,14 +7,17 @@ import {
   classDocumentShowsPrefab,
   collectFolderGuids,
   compressionBadgeLabel,
+  contentBrowserMoveFromDrop,
   displayAssetTitle,
   filterAssets,
+  flattenContentBrowserTree,
   flattenFolderTree,
   filterFolderTreeRows,
   isFolderNameTaken,
   isFolderTreeRoot,
   isNewAssetNameTaken,
   isValidMoveDestination,
+  listChildFolders,
   matchesAssetSearch,
   newAssetFileName,
   remapPathAfterFolderMove,
@@ -22,6 +25,7 @@ import {
   visualForIndexedAsset,
   classParentLookup,
   addSelectedAssetGuid,
+  addSelectedFolderPath,
   assetTypeCardAccent,
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
@@ -143,12 +147,233 @@ describe("content-browser-helpers", () => {
       ],
     };
     expect([...collectFolderGuids("assets/textures", tree)]).toEqual(["child"]);
-    expect([...collectFolderGuids("assets", tree)].sort()).toEqual(
-      ["child", "nested", "root"].sort(),
-    );
+    expect([...collectFolderGuids("assets", tree)]).toEqual(["root"]);
     expect([
       ...collectFolderGuids("assets/textures", tree, { recursive: true }),
     ]).toEqual(["child", "nested"]);
+    expect(
+      [...collectFolderGuids("assets", tree, { recursive: true })].sort(),
+    ).toEqual(["child", "nested", "root"].sort());
+  });
+
+  it("lists only direct child folders of a path", () => {
+    const tree = {
+      name: "assets",
+      path: "assets",
+      assets: [],
+      children: [
+        {
+          name: "textures",
+          path: "assets/textures",
+          assets: [],
+          children: [
+            {
+              name: "ui",
+              path: "assets/textures/ui",
+              assets: [],
+              children: [],
+            },
+          ],
+        },
+        {
+          name: "fx",
+          path: "assets/fx",
+          assets: [],
+          children: [],
+        },
+      ],
+    };
+    expect(listChildFolders(tree, "assets")).toEqual([
+      { name: "textures", path: "assets/textures" },
+      { name: "fx", path: "assets/fx" },
+    ]);
+    expect(listChildFolders(tree, "assets/textures")).toEqual([
+      { name: "ui", path: "assets/textures/ui" },
+    ]);
+    expect(listChildFolders(tree, "assets/missing")).toEqual([]);
+  });
+
+  it("flattens folders first then assets under each parent", () => {
+    const tree = {
+      name: "assets",
+      path: "assets",
+      assets: ["hero-guid"],
+      children: [
+        {
+          name: "textures",
+          path: "assets/textures",
+          assets: ["dirt-guid"],
+          children: [
+            {
+              name: "ui",
+              path: "assets/textures/ui",
+              assets: ["icon-guid"],
+              children: [],
+            },
+          ],
+        },
+      ],
+    };
+    const assets = [
+      asset({
+        guid: "hero-guid",
+        name: "hero",
+        path: "assets/hero.babasset",
+      }),
+      asset({
+        guid: "dirt-guid",
+        name: "dirt",
+        path: "assets/textures/dirt.babasset",
+      }),
+      asset({
+        guid: "icon-guid",
+        name: "icon",
+        path: "assets/textures/ui/icon.babasset",
+      }),
+    ];
+    const rows = flattenContentBrowserTree(tree, assets);
+    expect(rows.map((row) => ({ id: row.id, kind: row.kind, depth: row.depth }))).toEqual([
+      { id: "assets", kind: "folder", depth: 0 },
+      { id: "assets/textures", kind: "folder", depth: 1 },
+      { id: "assets/textures/ui", kind: "folder", depth: 2 },
+      { id: "assets/textures/ui/icon.babasset", kind: "asset", depth: 3 },
+      { id: "assets/textures/dirt.babasset", kind: "asset", depth: 2 },
+      { id: "assets/hero.babasset", kind: "asset", depth: 1 },
+    ]);
+    expect(rows[0]).toMatchObject({
+      hasChildren: true,
+      expanded: true,
+      label: "assets",
+    });
+    expect(rows.find((row) => row.id === "assets/hero.babasset")).toMatchObject({
+      kind: "asset",
+      guid: "hero-guid",
+      label: "hero",
+      hasChildren: false,
+    });
+    const collapsed = flattenContentBrowserTree(
+      tree,
+      assets,
+      new Set(["assets/textures"]),
+    );
+    expect(collapsed.map((row) => row.id)).toEqual([
+      "assets",
+      "assets/textures",
+      "assets/hero.babasset",
+    ]);
+    expect(collapsed[1]).toMatchObject({
+      hasChildren: true,
+      expanded: false,
+    });
+  });
+
+  it("treats a folder with only assets as having children", () => {
+    const tree = {
+      name: "assets",
+      path: "assets",
+      assets: ["hero-guid"],
+      children: [],
+    };
+    const rows = flattenContentBrowserTree(tree, [
+      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+    ]);
+    expect(rows[0]?.hasChildren).toBe(true);
+  });
+
+  it("resolves a tree drop onto a folder or an asset parent", () => {
+    const tree = {
+      name: "assets",
+      path: "assets",
+      assets: ["hero-guid"],
+      children: [
+        {
+          name: "textures",
+          path: "assets/textures",
+          assets: ["dirt-guid"],
+          children: [],
+        },
+        {
+          name: "fx",
+          path: "assets/fx",
+          assets: [],
+          children: [],
+        },
+      ],
+    };
+    const rows = flattenContentBrowserTree(tree, [
+      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+      asset({
+        guid: "dirt-guid",
+        name: "dirt",
+        path: "assets/textures/dirt.babasset",
+      }),
+    ]);
+    expect(
+      contentBrowserMoveFromDrop("assets/hero.babasset", "assets/textures", rows),
+    ).toEqual({
+      kind: "asset",
+      sourcePath: "assets",
+      destinationPath: "assets/textures",
+      id: "assets/hero.babasset",
+      guid: "hero-guid",
+    });
+    expect(
+      contentBrowserMoveFromDrop(
+        "assets/hero.babasset",
+        "assets/textures/dirt.babasset",
+        rows,
+      ),
+    ).toEqual({
+      kind: "asset",
+      sourcePath: "assets",
+      destinationPath: "assets/textures",
+      id: "assets/hero.babasset",
+      guid: "hero-guid",
+    });
+    expect(contentBrowserMoveFromDrop("assets/textures", "assets/fx", rows)).toEqual({
+      kind: "folder",
+      sourcePath: "assets/textures",
+      destinationPath: "assets/fx",
+      id: "assets/textures",
+    });
+  });
+
+  it("rejects illegal tree drops including dragging the assets root", () => {
+    const tree = {
+      name: "assets",
+      path: "assets",
+      assets: ["hero-guid"],
+      children: [
+        {
+          name: "textures",
+          path: "assets/textures",
+          assets: [],
+          children: [
+            {
+              name: "ui",
+              path: "assets/textures/ui",
+              assets: [],
+              children: [],
+            },
+          ],
+        },
+      ],
+    };
+    const rows = flattenContentBrowserTree(tree, [
+      asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+    ]);
+    expect(contentBrowserMoveFromDrop("assets", "assets/textures", rows)).toBeNull();
+    expect(contentBrowserMoveFromDrop("assets/textures", "assets", rows)).toBeNull();
+    expect(
+      contentBrowserMoveFromDrop("assets/textures", "assets/textures/ui", rows),
+    ).toBeNull();
+    expect(
+      contentBrowserMoveFromDrop("assets/hero.babasset", "assets", rows),
+    ).toBeNull();
+    expect(
+      contentBrowserMoveFromDrop("assets/hero.babasset", null, rows),
+    ).toBeNull();
+    expect(contentBrowserMoveFromDrop("missing", "assets/textures", rows)).toBeNull();
   });
 
   it("flattens a folder tree for the Move picker", () => {
@@ -213,6 +438,33 @@ describe("content-browser-helpers", () => {
     expect(isFolderNameTaken(folders, "assets", "textures")).toBe(true);
     expect(isFolderNameTaken(folders, "assets", "audio")).toBe(false);
     expect(isFolderNameTaken(folders, "assets/textures", "ui")).toBe(false);
+  });
+
+  it("allows copying a folder into its current parent", () => {
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets",
+        operation: "copy",
+      }),
+    ).toBe(true);
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/textures",
+        operation: "copy",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/textures/ui",
+        operation: "copy",
+      }),
+    ).toBe(false);
   });
 
   it("rejects a no-op asset move and accepts a different folder", () => {
@@ -473,6 +725,11 @@ describe("content-browser-helpers", () => {
   it("adds a guid to the Content Browser selection without replacing others", () => {
     const selected = addSelectedAssetGuid(new Set(["scene-1"]), "class-1");
     expect([...selected]).toEqual(["scene-1", "class-1"]);
+  });
+
+  it("adds a folder path to the Content Browser selection without replacing others", () => {
+    const selected = addSelectedFolderPath(new Set(["assets/fx"]), "assets/textures");
+    expect([...selected]).toEqual(["assets/fx", "assets/textures"]);
   });
 
   it("does not drop a guid that is already selected", () => {

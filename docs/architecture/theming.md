@@ -47,25 +47,25 @@ BabylonSlate is a game engine editor: chrome should be quiet, but **types and ax
 
 ## Pin type colors
 
-Blueprint-style mapping in `globals.css`. `graph-ui` paints from the **display** pin type (`resolveWildcardPinTypes`) via [`node-theme.ts`](../../packages/graph-ui/src/node-theme.ts). `--vector` aliases `--pin-vector`. Pins keep `border-card` so they separate from the canvas.
+Unreal-like mapping. **oklch values** live in `:root` / `.dark` in `globals.css`. **Kind → token maps** live in [`packages/ui/src/lib/data-types.ts`](../../packages/ui/src/lib/data-types.ts) (`pinColorVar`, `PIN_COLOR_VAR`). `graph-ui` `pinCssVar` and editor-kit `TypeColorMark` read that module only — do not add a local color table. `--vector` aliases `--pin-vector`. Pins keep `border-card` so they separate from the canvas.
 
 | Token | Kinds |
 | --- | --- |
 | `--pin-exec` | exec — light ink `oklch(0.145 0 0)`, dark near-white `oklch(0.95 0 0)` |
-| `--pin-bool` | bool (red) |
+| `--pin-bool` | bool (saturated red) |
 | `--pin-int` | int (cyan) |
-| `--pin-float` | float (green) |
+| `--pin-float` | float (lime) |
 | `--pin-string` | string (magenta) |
-| `--pin-vector` | vec2 / vec3 / vec4 (yellow) |
-| `--pin-rotator` | rotator |
-| `--pin-transform` | transform |
+| `--pin-vector` | vec2 / vec3 / vec4 (gold) |
+| `--pin-rotator` | rotator (violet) |
+| `--pin-transform` | transform (orange) |
 | `--pin-color` | color |
-| `--pin-object` | objectRef |
-| `--pin-actor` | actorRef |
-| `--pin-struct` | structRef |
-| `--pin-enum` | enumRef |
-| `--pin-wildcard` | unbound resolvingWildcard / boxedWildcard / unknown |
-| `--pin-delegate` | delegate |
+| `--pin-object` | objectRef (blue) |
+| `--pin-actor` | actorRef (slightly cooler blue) |
+| `--pin-struct` | structRef (teal) |
+| `--pin-enum` | enumRef (olive) |
+| `--pin-wildcard` | unbound resolvingWildcard / boxedWildcard / unknown (gray) |
+| `--pin-delegate` | delegate (red) |
 
 Arrays use the element color; maps use the value color. Wildcard pins recolor when a concrete type is wired in: resolving groups adopt that type for display (Array Get `out` turns float-green when `array<float>` lands on `array`), and boxed pins (Print) keep `boxedWildcard` in `__pins` but paint from the connected peer. Disconnecting with no remaining constraint restores `--pin-wildcard`. Other pin/node values are shared across schemes (colored node title bars already contrast on both chromes).
 
@@ -87,25 +87,26 @@ Title-bar fills for Blueprint-like nodes:
 
 ## Asset type colors
 
-Content Browser, Outliner, catalogs, search, and document tabs resolve type chrome through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent). Graph pin/node tokens are unchanged.
+Content Browser, Outliner, catalogs, search, and document tabs resolve **icons** through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Colors** come from DataTypes (`assetColorVar` / `--asset-*`). Change a hue in `globals.css`; change which family uses which token in `data-types.ts`. **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent). Graph pin/node tokens stay on the same DataTypes maps.
 
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
-| `--asset-scene` | Scene | Scene |
-| `--asset-graph` | Graph | Graph |
-| `--asset-texture` | Texture | Texture |
-| `--asset-material` | Material | Material |
-| `--asset-model` | Model | Model |
-| `--asset-audio` | Audio | Audio |
+| `--asset-scene` | Scene (cyan-blue) | Scene |
+| `--asset-graph` | Graph / UserInterface | Graph |
+| `--asset-texture` | Texture, Sprite, Tileset, Tilemap (green) | Texture |
+| `--asset-material` | Material, Shader (red) | Material |
+| `--asset-model` | Model (orange) | Model |
+| `--asset-audio` | Audio (gold) | Audio |
 | `--asset-font` | Font | Font |
-| `--asset-animation` | Animation | Animation |
-| `--asset-class` | Class assets; Object / Actor / Widget identities | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
-| `--asset-script-type` | Enum, Structure, ScriptInterface | one icon each |
+| `--asset-animation` | Animation, AnimationGraph (yellow-orange) | Animation |
+| `--asset-class` | Class assets; Object / Actor / Widget identities (Blueprint cyan-blue) | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
+| `--asset-script-type` | Enum, Structure, ScriptInterface (olive) | one icon each |
 | `--asset-component` | Engine components in Details / Add Component | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
+| `--asset-folder` | Content Browser folders (gold) | Folder glyph |
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-class` (they spawn as Actors). Unknown types fall back to a file glyph and `--muted-foreground`.
 
-Content Browser tiles mix the type token into `--card` and `--muted` (`color-mix` via `assetTypeCardAccent` / `assetTypeThumbAccent`) so the card is a darker shade of the type color. Glyphs still use the raw `--asset-*` token. Selected tiles keep `border-primary` / `ring-primary` on top of the accent.
+Content Browser tiles mix the type token into `--card` and `--muted` (`color-mix` via `typeColorCardAccent` / `typeColorThumbAccent` in DataTypes) so the card is a darker shade of the type color. Glyphs still use the raw `--asset-*` token. Selected tiles keep `border-primary` / `ring-primary` on top of the accent. Inspector / Class / ScriptInterface pin-type toggles use `TypeColorMark` so they match graph pins.
 
 ## Graph sizing tokens
 
