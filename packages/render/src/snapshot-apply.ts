@@ -1,7 +1,7 @@
 import {
-  ArcRotateCamera,
   Color3,
   DirectionalLight,
+  FreeCamera,
   Matrix,
   Mesh,
   PointLight,
@@ -163,16 +163,17 @@ export function createPlayMesh(
   if (meshKind === "camera" && binding) {
     const mesh = createPrimitiveMesh(scene, name, null);
     mesh.isVisible = false;
-    const camera = new ArcRotateCamera(
+    const camera = new FreeCamera(
       `${AUTHORED_CAMERA_PREFIX}${slotId}`,
-      -Math.PI / 2,
-      Math.PI / 2.5,
-      8,
       Vector3.Zero(),
       scene,
     );
+    camera.minZ = 0.1;
+    camera.maxZ = 1000;
+    camera.rotationQuaternion = Quaternion.Identity();
+    const isFirst = binding.cameras.size === 0;
     binding.cameras.set(slotId, camera);
-    scene.activeCamera = camera;
+    if (isFirst) scene.activeCamera = camera;
     return mesh;
   }
   return createPrimitiveMesh(scene, name, meshKind);
@@ -213,8 +214,11 @@ export function applySnapshotToScene(
       const light = binding.lights.get(actor.slotId);
       if (light) updateAuthoredLightTransform(light, actor.position);
       const camera = binding.cameras.get(actor.slotId);
-      if (camera && "setPosition" in camera) {
-        (camera as ArcRotateCamera).setPosition(scratchPos);
+      if (camera) {
+        camera.position.copyFrom(scratchPos);
+        if (camera.rotationQuaternion) {
+          camera.rotationQuaternion.copyFrom(scratchQuat);
+        }
       }
     }
     for (const [slotId, mesh] of binding.meshes) {

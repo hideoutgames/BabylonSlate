@@ -11,6 +11,7 @@ import {
 import type { ProjectInputSettings } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
+import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import {
   Field,
   FieldDescription,
@@ -76,7 +77,8 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "rendering",
     label: "Rendering",
-    keywords: "frame cap fps play preview aspect ratio letterbox follow system",
+    keywords:
+      "frame cap fps play preview aspect ratio letterbox follow system custom resolution width height black bars",
   },
   {
     id: "textures",
@@ -86,7 +88,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "export",
     label: "Export",
-    keywords: "export project zip download",
+    keywords: "export project zip download startup scene packaged player",
   },
   {
     id: "project",
@@ -210,6 +212,7 @@ export function SettingsModal({
   } = useDocuments();
   const [search, setSearch] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
+  const [scenePickerOpen, setScenePickerOpen] = useState(false);
   const [activeCategoryId, setActiveCategoryId] = useState(
     scope === "engine" ? "appearance" : "general",
   );
@@ -566,6 +569,89 @@ export function SettingsModal({
                 Settings.
               </FieldDescription>
             </Field>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="setting-render-custom">
+                Custom Resolution
+              </FieldLabel>
+              <Switch
+                id="setting-render-custom"
+                checked={projectDocument.settings.render.customResolution}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({
+                    render: {
+                      ...projectDocument.settings.render,
+                      customResolution: checked === true,
+                    },
+                  })
+                }
+                data-testid="setting-render-custom"
+              />
+            </Field>
+            <FieldDescription>
+              Lock Play and packaged builds to a fixed framebuffer. Off keeps
+              Follow System fill. Editor viewports still fill the panel.
+            </FieldDescription>
+            <Field>
+              <FieldLabel htmlFor="setting-render-width">
+                Render Size
+              </FieldLabel>
+              <div className="flex items-center gap-2">
+                <NumberField
+                  id="setting-render-width"
+                  min={1}
+                  step={1}
+                  disabled={!projectDocument.settings.render.customResolution}
+                  className="min-h-[var(--touch-target,44px)]"
+                  value={projectDocument.settings.render.width}
+                  onChange={(width) =>
+                    updateProjectSettings({
+                      render: { ...projectDocument.settings.render, width },
+                    })
+                  }
+                  data-testid="setting-render-width"
+                  aria-label="Render Width"
+                />
+                <span aria-hidden="true">×</span>
+                <NumberField
+                  id="setting-render-height"
+                  min={1}
+                  step={1}
+                  disabled={!projectDocument.settings.render.customResolution}
+                  className="min-h-[var(--touch-target,44px)]"
+                  value={projectDocument.settings.render.height}
+                  onChange={(height) =>
+                    updateProjectSettings({
+                      render: { ...projectDocument.settings.render, height },
+                    })
+                  }
+                  data-testid="setting-render-height"
+                  aria-label="Render Height"
+                />
+              </div>
+            </Field>
+            <Field orientation="horizontal">
+              <Checkbox
+                id="setting-render-black-bars"
+                checked={projectDocument.settings.render.blackBars}
+                disabled={!projectDocument.settings.render.customResolution}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({
+                    render: {
+                      ...projectDocument.settings.render,
+                      blackBars: checked === true,
+                    },
+                  })
+                }
+                data-testid="setting-render-black-bars"
+              />
+              <FieldLabel htmlFor="setting-render-black-bars">
+                Black Bars
+              </FieldLabel>
+            </Field>
+            <FieldDescription>
+              Off stretches the framebuffer to fill Play. On letterboxes with
+              unused overlay space black.
+            </FieldDescription>
             <PlayPreviewSettingsFields
               settings={projectDocument.settings.playPreview}
               onChange={(playPreview) =>
@@ -608,6 +694,28 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Export</FieldLegend>
+            <Field>
+              <FieldLabel>Startup Scene</FieldLabel>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                onClick={() => setScenePickerOpen(true)}
+                data-testid="settings-startup-scene"
+              >
+                {assetRegistry
+                  ?.list()
+                  .find(
+                    (asset) =>
+                      asset.header.guid ===
+                      projectDocument.settings.startupSceneGuid,
+                  )?.header.name ?? "None"}
+              </Button>
+              <FieldDescription>
+                Packaged builds boot this scene. Editor Play uses the open scene
+                tab.
+              </FieldDescription>
+            </Field>
             <Field>
               <FieldLabel>Export Project</FieldLabel>
               <FieldDescription>
@@ -680,6 +788,29 @@ export function SettingsModal({
             setFontPickerOpen(false);
           }}
           data-testid="settings-default-font-picker"
+        />
+      ) : null}
+      {scope === "project" ? (
+        <AssetPicker
+          open={scenePickerOpen}
+          onOpenChange={setScenePickerOpen}
+          assets={(assetRegistry?.list() ?? [])
+            .filter((asset) => asset.header.type === "Scene")
+            .map((asset) => ({
+              guid: asset.header.guid,
+              name: asset.header.name,
+              type: asset.header.type,
+              path: asset.path,
+            }))}
+          allowedTypes={["Scene"]}
+          title="Pick Scene"
+          allowNone={false}
+          onPick={(guid) => {
+            if (!projectDocument || !guid) return;
+            updateProjectSettings({ startupSceneGuid: guid });
+            setScenePickerOpen(false);
+          }}
+          data-testid="settings-startup-scene-picker"
         />
       ) : null}
     </>

@@ -419,6 +419,15 @@ class InProcessRuntime implements RuntimeDriver {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
+      setRenderResolution: (width, height) => {
+        const nextWidth = Math.max(1, Math.round(Number(width) || 0));
+        const nextHeight = Math.max(1, Math.round(Number(height) || 0));
+        this.emit({
+          type: "setRenderResolution",
+          width: nextWidth,
+          height: nextHeight,
+        });
+      },
       playSound: (asset, volume) => {
         this.emit({
           type: "playSound",

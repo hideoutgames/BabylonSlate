@@ -13,7 +13,7 @@ import { usePlay } from "../context/play-context";
 import { useDocuments } from "../context/document-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
-import { previewSceneFor } from "../lib/prefab-preview";
+import { previewSceneFor, PREFAB_ROOT_ID } from "../lib/prefab-preview";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -31,9 +31,10 @@ function resizeCanvasIfSized(
 export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   void _props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
   const joystickLeaseRef = useRef<(() => void) | null>(null);
-  const { components } = usePrefabEditing();
+  const { components, selectedId } = usePrefabEditing();
   const {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
@@ -45,7 +46,6 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     gizmoTool,
     snapEnabled,
     viewportMode,
-    selectedActorIds,
     joystickEnabled,
   } = useSceneEditing();
   const { registerScheduler, playing } = usePlay();
@@ -59,6 +59,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
     });
     engineRef.current = handle;
+    handle.editor?.setPreviewCanvas(previewCanvasRef.current);
     const unregisterScheduler = registerScheduler({
       setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
       stats: () => handle.scheduler.stats(),
@@ -151,8 +152,17 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [snapEnabled]);
 
   useEffect(() => {
-    engineRef.current?.editor?.setSelectedActors(selectedActorIds);
-  }, [selectedActorIds]);
+    const handle = engineRef.current;
+    if (!handle?.editor) return;
+    handle.editor.setSelectedActors([PREFAB_ROOT_ID]);
+    const scene = previewSceneFor(components);
+    handle.editor.syncSelectionDebug({
+      sceneData: scene,
+      selectedActorIds: [PREFAB_ROOT_ID],
+      selectedComponentIds:
+        selectedId && selectedId !== PREFAB_ROOT_ID ? [selectedId] : undefined,
+    });
+  }, [components, selectedId]);
 
   return (
     <div
@@ -168,6 +178,12 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         ref={canvasRef}
         className="h-full min-h-0 w-full flex-1 touch-none"
         data-testid="prefab-preview-canvas"
+      />
+      <canvas
+        ref={previewCanvasRef}
+        hidden
+        data-testid="camera-preview"
+        className="pointer-events-none absolute bottom-3 right-3 z-10 h-[180px] w-[320px] rounded-md border border-border bg-black"
       />
       {joystickEnabled ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">

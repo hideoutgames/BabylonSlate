@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   applyPlayPreviewCanvasLayout,
   fitContainedRect,
+  playFramebufferSize,
 } from "./play-preview-aspect";
 
 afterEach(() => {
@@ -104,5 +105,127 @@ describe("applyPlayPreviewCanvasLayout", () => {
     expect(overlay.classList.contains("bg-background")).toBe(false);
     expect(overlay.classList.contains("items-center")).toBe(true);
     expect(overlay.classList.contains("justify-center")).toBe(true);
+  });
+});
+
+describe("custom render resolution layout", () => {
+  it("stretches the canvas to fill the overlay when black bars are off", () => {
+    const overlay = document.createElement("div");
+    overlay.className = "fixed inset-0 z-50 flex flex-col bg-background";
+    const canvas = document.createElement("canvas");
+    overlay.append(canvas);
+    document.body.append(overlay);
+    stubClientSize(overlay, 800, 600);
+
+    applyPlayPreviewCanvasLayout({
+      overlay,
+      canvas,
+      followSystem: true,
+      aspectWidth: 16,
+      aspectHeight: 9,
+      render: {
+        customResolution: true,
+        width: 1920,
+        height: 1080,
+        blackBars: false,
+      },
+    });
+
+    expect(canvas.style.width).toBe("100%");
+    expect(canvas.style.height).toBe("100%");
+    expect(canvas.style.objectFit).toBe("fill");
+    expect(overlay.classList.contains("bg-black")).toBe(false);
+    expect(overlay.classList.contains("items-center")).toBe(true);
+    expect(overlay.classList.contains("justify-center")).toBe(true);
+  });
+
+  it("letterboxes a custom framebuffer with black bars on", () => {
+    const overlay = document.createElement("div");
+    overlay.className = "fixed inset-0 z-50 flex flex-col bg-background";
+    const canvas = document.createElement("canvas");
+    overlay.append(canvas);
+    document.body.append(overlay);
+    stubClientSize(overlay, 1600, 1200);
+
+    applyPlayPreviewCanvasLayout({
+      overlay,
+      canvas,
+      followSystem: true,
+      aspectWidth: 16,
+      aspectHeight: 9,
+      render: {
+        customResolution: true,
+        width: 1920,
+        height: 1080,
+        blackBars: true,
+      },
+    });
+
+    expect(canvas.style.width).toBe("1600px");
+    expect(canvas.style.height).toBe("900px");
+    expect(overlay.classList.contains("bg-black")).toBe(true);
+    expect(overlay.classList.contains("items-center")).toBe(true);
+    expect(overlay.classList.contains("justify-center")).toBe(true);
+  });
+
+  it("uses a live size override without writing project settings", () => {
+    const overlay = document.createElement("div");
+    const canvas = document.createElement("canvas");
+    overlay.append(canvas);
+    document.body.append(overlay);
+    stubClientSize(overlay, 1600, 1200);
+
+    applyPlayPreviewCanvasLayout({
+      overlay,
+      canvas,
+      followSystem: true,
+      aspectWidth: 16,
+      aspectHeight: 9,
+      render: {
+        customResolution: true,
+        width: 1920,
+        height: 1080,
+        blackBars: true,
+      },
+      liveSize: { width: 1280, height: 720 },
+    });
+
+    expect(canvas.style.width).toBe("1600px");
+    expect(canvas.style.height).toBe("900px");
+  });
+});
+
+describe("playFramebufferSize", () => {
+  it("returns null when custom resolution is off so Play can fill", () => {
+    expect(
+      playFramebufferSize({
+        customResolution: false,
+        width: 1920,
+        height: 1080,
+        blackBars: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the locked WxH, preferring a live override", () => {
+    expect(
+      playFramebufferSize({
+        customResolution: true,
+        width: 1920,
+        height: 1080,
+        blackBars: false,
+      }),
+    ).toEqual({ width: 1920, height: 1080 });
+    expect(
+      playFramebufferSize(
+        {
+          customResolution: true,
+          width: 1920,
+          height: 1080,
+          blackBars: false,
+        },
+        { width: 800, height: 600 },
+      ),
+    ).toEqual({ width: 800, height: 600 });
   });
 });

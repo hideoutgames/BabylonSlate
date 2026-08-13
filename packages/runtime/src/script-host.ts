@@ -64,6 +64,7 @@ export interface ScriptHostServices {
   removeUserInterface?(instanceId: string): void;
   changeScene?(scene: string): void;
   playSound?(asset: string, volume?: number): void;
+  setRenderResolution?(width: number, height: number): void;
 }
 
 export interface ScriptContext {
@@ -140,6 +141,7 @@ export interface ScriptContext {
   applyUserInterface(assetGuid: string): string;
   removeUserInterface(instanceId: string): void;
   changeScene(scene: string): void;
+  setRenderResolution(width: number, height: number): void;
 }
 
 export type CompiledScript = ScriptBundleEntry;
@@ -407,6 +409,9 @@ export class ScriptHost {
       },
       changeScene: (scene) => {
         services.changeScene?.(scene);
+      },
+      setRenderResolution: (width, height) => {
+        services.setRenderResolution?.(Number(width), Number(height));
       },
     };
   }

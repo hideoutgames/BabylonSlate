@@ -66,6 +66,16 @@ describe("Add Component catalog", () => {
     });
   });
 
+  it("seeds light range and spot outer angle", () => {
+    expect(defaultPropertiesFor("LightComponent")).toEqual({
+      intensity: 1,
+      color: [1, 1, 1],
+      lightKind: "point",
+      range: 10,
+      outerAngle: 45,
+    });
+  });
+
   it("seeds a 3d box collider by default and a 2d box when the scene is 2d", () => {
     expect(defaultPropertiesFor("ColliderComponent", "3d")).toEqual({
       shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },

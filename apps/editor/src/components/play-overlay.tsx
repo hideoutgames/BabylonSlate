@@ -3,7 +3,9 @@ import { TerminalIcon, XIcon } from "lucide-react";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+  DEFAULT_RENDER_PROJECT_SETTINGS,
   type PlayPreviewProjectSettings,
+  type RenderProjectSettings,
   type SerializedScene,
 } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
@@ -23,7 +25,7 @@ import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
 import { playConsoleCommands } from "../lib/play-console";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
-import { applyPlayPreviewCanvasLayout } from "../lib/play-preview-aspect";
+import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
@@ -48,6 +50,8 @@ export interface PlayOverlayProps {
   frameCap?: number;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
+  /** Project render size; snapshotted when the session starts. */
+  render?: RenderProjectSettings;
   uiLibrary?: Record<string, UserInterfaceDocument>;
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
@@ -81,6 +85,7 @@ export function PlayOverlay({
   scenes,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+  render = DEFAULT_RENDER_PROJECT_SETTINGS,
   uiLibrary = {},
   animGraphs,
   spritePayloads,
@@ -146,21 +151,41 @@ export function PlayOverlay({
   sceneRef.current = { sceneAssetGuid, scene, gameInstanceClass, scenes };
   const initialFrameCapRef = useRef(frameCap);
   const initialPlayPreviewRef = useRef(playPreview);
+  const initialRenderRef = useRef(render);
+  const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
 
   useEffect(() => {
     const overlay = overlayRef.current;
     const canvas = canvasRef.current;
     if (!overlay || !canvas) return;
-    applyPlayPreviewCanvasLayout({
-      overlay,
-      canvas,
-      ...initialPlayPreviewRef.current,
-    });
-    setOverlaySize({
-      width: overlay.clientWidth || 1280,
-      height: overlay.clientHeight || 720,
-    });
+    const layoutPlay = () => {
+      applyPlayPreviewCanvasLayout({
+        overlay,
+        canvas,
+        ...initialPlayPreviewRef.current,
+        render: initialRenderRef.current,
+        liveSize: liveSizeRef.current,
+      });
+      setOverlaySize({
+        width: overlay.clientWidth || 1280,
+        height: overlay.clientHeight || 720,
+      });
+    };
+    const syncFramebuffer = (sessionHandle: { setSize: (w: number, h: number) => void; resize: () => void }) => {
+      const framebuffer = playFramebufferSize(
+        initialRenderRef.current,
+        liveSizeRef.current,
+      );
+      if (framebuffer) {
+        sessionHandle.setSize(framebuffer.width, framebuffer.height);
+        return;
+      }
+      if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+        sessionHandle.resize();
+      }
+    };
+    layoutPlay();
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -204,26 +229,28 @@ export function PlayOverlay({
       onLog: (message) =>
         setLogs((prev) => [...prev.slice(-200), message]),
       onPrint: (entry) => printRef.current(entry),
+      onSetRenderResolution: (width, height) => {
+        liveSizeRef.current = {
+          width: clampRenderResolution(width),
+          height: clampRenderResolution(height),
+        };
+        layoutPlay();
+        const current = sessionRef.current;
+        if (current) syncFramebuffer(current.handle);
+      },
     });
     sessionRef.current = session;
     setHudScene(session.handle.scene);
-    const resizePlayIfSized = () => {
-      if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-        session.handle.resize();
-      }
-    };
-    resizePlayIfSized();
+    syncFramebuffer(session.handle);
     const resizeObserver = new ResizeObserver(() => {
-      applyPlayPreviewCanvasLayout({
-        overlay,
-        canvas,
-        ...initialPlayPreviewRef.current,
-      });
-      setOverlaySize({
-        width: overlay.clientWidth || 1280,
-        height: overlay.clientHeight || 720,
-      });
-      resizePlayIfSized();
+      layoutPlay();
+      const framebuffer = playFramebufferSize(
+        initialRenderRef.current,
+        liveSizeRef.current,
+      );
+      if (!framebuffer) {
+        syncFramebuffer(session.handle);
+      }
     });
     resizeObserver.observe(overlay);
     const detachLifecycle = attachLifecyclePause((paused) => {

@@ -1,8 +1,9 @@
 import {
-  ArcRotateCamera,
   Color3,
   DirectionalLight,
+  FreeCamera,
   PointLight,
+  Quaternion,
   SpotLight,
   Vector3,
   type Camera,
@@ -10,7 +11,6 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
-import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";
 import { DEFAULT_LIGHT_INTENSITY } from "./viewport";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
@@ -65,6 +65,14 @@ function createAuthoredLight(
   if ("position" in light) {
     (light as PointLight).position.copyFrom(position);
   }
+  const range = Number(component.properties.range ?? 10);
+  if (light instanceof PointLight || light instanceof SpotLight) {
+    light.range = Number.isFinite(range) && range > 0 ? range : 10;
+  }
+  if (light instanceof SpotLight) {
+    const degrees = Number(component.properties.outerAngle ?? 45);
+    light.angle = ((Number.isFinite(degrees) ? degrees : 45) * Math.PI) / 180;
+  }
   return light;
 }
 
@@ -75,24 +83,20 @@ function createAuthoredCamera(
 ): Camera {
   const name = `${AUTHORED_CAMERA_PREFIX}${actor.id}`;
   const position = actorPosition(actor);
+  const camera = new FreeCamera(name, position, scene);
+  camera.minZ = 0.1;
+  camera.maxZ = 1000;
+  const [rx, ry, rz, rw] = actor.transform.rotation;
+  camera.rotationQuaternion = new Quaternion(rx, ry, rz, rw);
   const fovDeg = Number(component.properties.fieldOfView ?? 60);
-  const camera = new ArcRotateCamera(
-    name,
-    -Math.PI / 2,
-    Math.PI / 2.5,
-    Math.max(0.5, position.length() || DEFAULT_CAMERA_RADIUS),
-    Vector3.Zero(),
-    scene,
-  );
-  camera.setPosition(position);
-  camera.fov = (fovDeg * Math.PI) / 180;
+  camera.fov = ((Number.isFinite(fovDeg) ? fovDeg : 60) * Math.PI) / 180;
   const ortho = Number(component.properties.orthographicSize ?? 0);
   if (ortho > 0) {
     camera.mode = 1;
     camera.orthoTop = ortho;
     camera.orthoBottom = -ortho;
-    camera.orthoLeft = -ortho;
-    camera.orthoRight = ortho;
+    camera.orthoLeft = -ortho * (16 / 9);
+    camera.orthoRight = ortho * (16 / 9);
   }
   return camera;
 }

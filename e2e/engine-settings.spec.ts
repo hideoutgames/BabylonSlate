@@ -52,3 +52,12 @@ test("Focus keep-list can add a Class tab", async ({ page }) => {
   await page.getByTestId("focus-keep-graph-add-inspector").click();
   await expect(page.getByTestId("focus-keep-graph-inspector")).toBeVisible();
 });
+
+test("create project dialog defaults to 1920×1080 stretch", async ({ page }) => {
+  await page.goto("/?test=1");
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await page.getByTestId("create-project").click();
+  await expect(page.getByTestId("create-project-width")).toHaveValue("1920");
+  await expect(page.getByTestId("create-project-height")).toHaveValue("1080");
+  await expect(page.getByTestId("create-project-black-bars")).toBeVisible();
+});

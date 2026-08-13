@@ -32,6 +32,20 @@ describe("project documents as .babasset", () => {
     expect(await storage.exists(MAIN_CLASS_FILE)).toBe(true);
     expect(await storage.exists("assets/.blobs")).toBe(true);
     expect(await storage.exists(PROJECT_FILE)).toBe(true);
+    const sceneGuid = readAssetDocumentHeader(
+      await storage.readBinary(MAIN_SCENE_FILE),
+    ).guid;
+    expect(loaded.document.settings.startupSceneGuid).toBe(sceneGuid);
+  });
+
+  it("keeps startupSceneGuid after the default scene file is renamed", async () => {
+    const { storage, loaded } = await scaffolded();
+    const guid = loaded.document.settings.startupSceneGuid;
+    expect(guid).toBeTruthy();
+    const stored = JSON.parse(await storage.readText(PROJECT_FILE)) as {
+      settings: { startupSceneGuid: string | null };
+    };
+    expect(stored.settings.startupSceneGuid).toBe(guid);
   });
 
   it("writes headers the registry can read without decoding payloads", async () => {
@@ -40,7 +54,7 @@ describe("project documents as .babasset", () => {
       await storage.readBinary(MAIN_SCENE_FILE),
     );
     expect(header.type).toBe("Scene");
-    expect(header.version).toBe(2);
+    expect(header.version).toBe(3);
     expect(header.guid).toBeTruthy();
     expect(header.chunks[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -105,7 +119,7 @@ describe("project documents as .babasset", () => {
     await service.saveDocument("scene", "scenes/main.scene.json", scene);
     expect(
       JSON.parse(await storage.readText("scenes/main.scene.json")).version,
-    ).toBe(2);
+    ).toBe(3);
   });
 
   it("rebuilds a search index that finds the default Cube actor", async () => {

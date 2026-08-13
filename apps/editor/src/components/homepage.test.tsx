@@ -59,5 +59,8 @@ describe("Homepage branding", () => {
     screen.getByTestId("create-project").click();
     expect(await screen.findByTestId("create-project-empty")).toBeTruthy();
     expect(screen.getByTestId("create-project-2d")).toBeTruthy();
+    expect(screen.getByTestId("create-project-width")).toBeTruthy();
+    expect(screen.getByTestId("create-project-height")).toBeTruthy();
+    expect(screen.getByTestId("create-project-black-bars")).toBeTruthy();
   });
 });

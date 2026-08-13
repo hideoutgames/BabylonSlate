@@ -109,4 +109,19 @@ test.describe("P4 Play overlay and session report", () => {
     ).toHaveCount(1);
     await expect(page.getByTestId("play-preview")).toBeEnabled();
   });
+
+  test("Project Settings author render resolution and a packaged startup scene", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-rendering").click();
+    await expect(page.getByTestId("setting-render-custom")).toBeVisible();
+    await expect(page.getByTestId("setting-render-width")).toBeVisible();
+    await expect(page.getByTestId("setting-render-height")).toBeVisible();
+    await expect(page.getByTestId("setting-render-black-bars")).toBeVisible();
+    await page.getByTestId("settings-modal-category-export").click();
+    await expect(page.getByTestId("settings-startup-scene")).toBeVisible();
+  });
 });

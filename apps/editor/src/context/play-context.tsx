@@ -536,6 +536,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               projectDocument?.settings.playPreview ??
               DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS
             }
+            render={projectDocument?.settings.render}
             onClose={handleClose}
           />
         ) : null}

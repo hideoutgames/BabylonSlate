@@ -527,7 +527,8 @@ export function componentPropertyRows(
       ];
     case "LightComponent": {
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
-      return [
+      const lightKind = String(component.properties.lightKind ?? "point");
+      const rows: PropertyRow[] = [
         {
           kind: "color",
           id: rowId(actorId, component.id, "color"),
@@ -545,13 +546,47 @@ export function componentPropertyRows(
           16,
           update,
         ),
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "lightKind"),
+          label: "Light Kind",
+          value: lightKind,
+          options: [
+            { value: "point", label: "Point" },
+            { value: "spot", label: "Spot" },
+            { value: "directional", label: "Directional" },
+          ],
+          onChange: (next) => update("lightKind", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "range"),
+          label: "Range",
+          value: asNumber(component.properties.range, 10),
+          min: 0,
+          onChange: (next) => update("range", next),
+        },
+      ];
+      if (lightKind === "spot") {
+        rows.push({
+          kind: "number",
+          id: rowId(actorId, component.id, "outerAngle"),
+          label: "Outer Angle",
+          value: asNumber(component.properties.outerAngle, 45),
+          min: 1,
+          max: 179,
+          onChange: (next) => update("outerAngle", next),
+        });
+      }
+      rows.push(
         ...genericRows(
           actorId,
           component,
           update,
-          new Set(["color", "intensity"]),
+          new Set(["color", "intensity", "lightKind", "range", "outerAngle"]),
         ),
-      ];
+      );
+      return rows;
     }
     case "CameraComponent":
       return [

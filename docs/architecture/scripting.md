@@ -128,7 +128,7 @@ type Diagnostic = {
 | --- | --- |
 | Edit (≈300ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
-| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; Play also loads the startup/main scene and the scene `gameInstanceClass`. Plugin EUO sweep still later polish |
+| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; Play loads the **open scene tab** and the scene `gameInstanceClass`. No scene tab → Play disabled. Plugin EUO sweep still later polish |
 | Export | Hard gate + export-only rules (Print strip, debug-tier commands) |
 | CI | Golden fixture projects |
 
@@ -255,7 +255,7 @@ Play path: compile project graphs → worker `loadScripts` control message → `
 
 `ScriptHost.load(script)` loads a compiled module and `hooksFor(classId)` returns `LifecycleHooks` that run its entry points. `RuntimeDriver.loadScripts()` registers modules plus their anchors, and `spawnScriptedActor({ classId })` creates an actor driven by them. Throws inside a script become runtime diagnostics mapped back to the graph node through the anchor table.
 
-The `ctx` handed to compiled code copies the world's `TickContext`: `self`, `deltaSeconds`, `formatValue`, `log`, `print`, variable access, transform writes, tick-clock `delay` (pause-safe, not `setTimeout`), interface dispatch (`guid:method` keys), input (`isActionHeld` / `wasActionPressed` / `wasActionReleased` / `getAxis` / `getAxis2D` / `setGamepadRumble` / `gamepadConnections`), `addComponent`, `spawnActor`, synchronous physics queries (`lineTrace`, `sphereOverlap`, `shapeSweep`, `addImpulse`), UI helpers `setWidgetVisible`, `applyUserInterface` (returns an instance id), `removeUserInterface`, `changeScene` (loads a scene from the Play scene library, same as console `changescene`), and `playSound` (emits a `playSound` command; Play logs it — there is no mixer yet). Missing helpers must fail validation or emit a command; they must not silently no-op.
+The `ctx` handed to compiled code copies the world's `TickContext`: `self`, `deltaSeconds`, `formatValue`, `log`, `print`, variable access, transform writes, tick-clock `delay` (pause-safe, not `setTimeout`), interface dispatch (`guid:method` keys), input (`isActionHeld` / `wasActionPressed` / `wasActionReleased` / `getAxis` / `getAxis2D` / `setGamepadRumble` / `gamepadConnections`), `addComponent`, `spawnActor`, synchronous physics queries (`lineTrace`, `sphereOverlap`, `shapeSweep`, `addImpulse`), UI helpers `setWidgetVisible`, `applyUserInterface` (returns an instance id), `removeUserInterface`, `changeScene` (loads a scene from the Play scene library, same as console `changescene`), `playSound` (emits a `playSound` command; Play logs it — there is no mixer yet), and `setRenderResolution(width, height)` (emits `setRenderResolution`; Play applies `setSize` for the session only). Missing helpers must fail validation or emit a command; they must not silently no-op.
 
 `RuntimeDriver` constructs the session `GameInstance` from `gameInstanceClass` (scene/project picker), not a hardcoded `"GameInstance"` id, and binds compiled interface handlers onto spawned actors.
 
@@ -303,7 +303,7 @@ See [issue-tracker P5 slice ownership](../agents/issue-tracker.md#p5-slice-owner
 
 Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tree. Editor wires validation (Compiler Results, Play badge + Play Anyway `AlertDialog`), graph-ui tap-to-connect **and** drag-to-connect + CatalogDialog palette, Class panel, CodeMirror ExecuteJavaScript body editor, Enum/Structure/ScriptInterface creatable assets, `FunctionLibrary` engine base (no palette nodes), `formatValue`, and validator fixtures.
 
-Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, copies tick input into `ctx`, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers Tick→Print plus Tick→GetAxis2D (injected gamepad) and Play with no scene tab.
+Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, copies tick input into `ctx`, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers Tick→Print plus Tick→GetAxis2D (injected gamepad). Play with no scene tab is disabled.
 
 **Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (pin flash, richer type-asset field editors, project-wide validation sweep, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **compact type-asset settings tabs** are landed — do not reopen those as P5 gaps.
 

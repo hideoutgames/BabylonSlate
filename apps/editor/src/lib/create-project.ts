@@ -16,4 +16,7 @@ export type CreateProjectOptions = {
   pickFolder?: boolean;
   /** Built-in card: Empty (3D cube) or 2D (pixel-perfect, Rapier, no cube). */
   kind?: "empty" | "2d";
+  renderWidth?: number;
+  renderHeight?: number;
+  blackBars?: boolean;
 };

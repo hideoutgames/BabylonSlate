@@ -37,6 +37,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
   const panelRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
@@ -146,6 +147,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editorFlyEnabled: () => !playingRef.current,
     });
     engineRef.current = handle;
+    handle.editor?.setPreviewCanvas(previewCanvasRef.current);
     registerSharedEngine(handle.engine);
     const unregisterScheduler = registerScheduler({
       setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
@@ -261,7 +263,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(selectedActorIds);
-  }, [selectedActorIds]);
+    engineRef.current?.editor?.syncSelectionDebug({
+      sceneData: scene,
+      selectedActorIds,
+    });
+  }, [scene, selectedActorIds]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
@@ -369,6 +375,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         </div>
       </div>
       <canvas ref={canvasRef} className="h-full w-full flex-1 touch-none" />
+      <canvas
+        ref={previewCanvasRef}
+        hidden
+        data-testid="camera-preview"
+        className="pointer-events-none absolute bottom-3 right-3 z-10 h-[180px] w-[320px] rounded-md border border-border bg-black"
+      />
       {joystickEnabled ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
           <div className="pointer-events-auto">

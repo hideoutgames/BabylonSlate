@@ -801,4 +801,39 @@ describe("script host runs compiled graphs", () => {
     ]);
     runtime.stop();
   });
+
+  it("emits setRenderResolution when Begin Play runs render.setResolution", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "res", "render.setResolution", { width: 800, height: 600 }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "res", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "CameraRig", "render-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "CameraRig" });
+    runtime.start();
+    runtime.tick();
+    expect(
+      commands.filter((command) => command.type === "setRenderResolution"),
+    ).toEqual([
+      expect.objectContaining({
+        type: "setRenderResolution",
+        width: 800,
+        height: 600,
+      }),
+    ]);
+    runtime.stop();
+  });
 });

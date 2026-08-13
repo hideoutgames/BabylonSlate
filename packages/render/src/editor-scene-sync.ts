@@ -120,6 +120,10 @@ export class EditorSceneSync {
     syncAuthoredIllumination(this.scene, sceneData, { stealActiveCamera: false });
   }
 
+  serializedScene(): SerializedScene | null {
+    return this.lastScene;
+  }
+
   meshForActor(actorId: string): Mesh | null {
     return this.meshes.get(actorId) ?? null;
   }

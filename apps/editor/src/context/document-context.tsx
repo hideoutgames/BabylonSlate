@@ -64,6 +64,7 @@ import {
 import { ProjectService } from "../services/project-service";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { loadTemplateCards } from "../services/template-service";
+import type { CreateProjectOptions } from "../lib/create-project";
 import {
   compileGraphDocuments,
   graphCompileSignature,
@@ -139,7 +140,7 @@ interface DocumentContextValue {
   openProject: () => Promise<void>;
   createEmptyProject: (
     name: string,
-    options?: { pickFolder?: boolean; kind?: "empty" | "2d" },
+    options?: CreateProjectOptions,
   ) => Promise<void>;
   createFromTemplate: (
     templateId: string,
@@ -576,7 +577,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [enterEditor, projectService]);
 
   const createEmptyProject = useCallback(
-    async (name: string, options?: { pickFolder?: boolean; kind?: "empty" | "2d" }) => {
+    async (name: string, options?: CreateProjectOptions) => {
       const { document, layouts, migrationPending: pending } =
         await projectService.createEmptyProject(name, options);
       await enterEditor(document, layouts, pending);
@@ -934,6 +935,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             playPreview: {
               ...current.settings.playPreview,
               ...settings.playPreview,
+            },
+            render: {
+              ...current.settings.render,
+              ...settings.render,
+            },
+            fonts: {
+              ...current.settings.fonts,
+              ...settings.fonts,
             },
             input: settings.input
               ? settings.input

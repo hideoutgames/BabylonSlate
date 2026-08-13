@@ -13,6 +13,7 @@ import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { uiNodes } from "./ui";
 import { sceneNodes } from "./scene";
+import { renderNodes } from "./render";
 import { debugNodes } from "./debug";
 import { interfaceNodes } from "./interface";
 import { variableNodes } from "./variables";
@@ -33,6 +34,7 @@ export * from "./input";
 export * from "./audio";
 export * from "./ui";
 export * from "./scene";
+export * from "./render";
 export * from "./debug";
 export * from "./interface";
 export * from "./variables";
@@ -54,6 +56,7 @@ export const ALL_NODE_CATEGORIES = [
   "audio",
   "ui",
   "scene",
+  "render",
   "debug",
   "interface",
   "variables",
@@ -77,6 +80,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...audioNodes,
     ...uiNodes,
     ...sceneNodes,
+    ...renderNodes,
     ...debugNodes,
     ...interfaceNodes,
     ...variableNodes,
