@@ -4,6 +4,7 @@ import {
   createWidget,
   findUiReferenceCycle,
   nestedUiGuidsOf,
+  nestedUiPickableGuids,
   uiDocumentWouldCycle,
 } from "./index";
 
@@ -35,5 +36,28 @@ describe("UI reference cycle check", () => {
     doc.widgets.btn = button;
     expect(nestedUiGuidsOf(doc)).toEqual(["hud"]);
     expect(uiDocumentWouldCycle("hud", doc, () => null)).toEqual(["hud", "hud"]);
+  });
+
+  it("excludes self and cycle partners from nested UserInterface picks", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const panel = createDefaultUserInterface("Panel");
+    const chip = createDefaultUserInterface("Chip");
+    const nested = createWidget("child", "UserInterface", "Child");
+    nested.nestedUiGuid = "chip";
+    panel.widgets.canvas!.children = ["child"];
+    panel.widgets.child = nested;
+
+    const resolve = (guid: string) => {
+      if (guid === "panel") return panel;
+      if (guid === "chip") return chip;
+      return null;
+    };
+
+    expect(
+      nestedUiPickableGuids("hud", ["hud", "panel", "chip"], hud, resolve),
+    ).toEqual(["panel", "chip"]);
+    expect(
+      nestedUiPickableGuids("chip", ["hud", "panel", "chip"], chip, resolve),
+    ).toEqual(["hud"]);
   });
 });

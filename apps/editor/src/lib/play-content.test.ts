@@ -2,48 +2,84 @@ import { describe, expect, it } from "vitest";
 import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
+  applyPlayHudInstance,
   asUiDocument,
   playAnimGraphsFromOpenDocuments,
-  playHudFromOpenDocuments,
+  playUiLibraryFromAssets,
+  removePlayHudInstance,
+  resolvePlayHudDocuments,
 } from "./play-content";
 
-describe("playHudFromOpenDocuments", () => {
-  it("falls back to the default HUD when no UserInterface is open", () => {
-    const hud = playHudFromOpenDocuments([], null);
-    expect(hud.widgets.stick?.kind).toBe("TouchJoystick");
-    expect(hud.name).toBe(createDefaultPlayHud("HUD").name);
-  });
-
-  it("hosts the active viewport-layer UserInterface", () => {
-    const authored = createDefaultPlayHud("Score");
-    authored.widgets.header!.props.text = "Authored";
-    const hud = playHudFromOpenDocuments(
+describe("playUiLibraryFromAssets", () => {
+  it("indexes UserInterface assets by guid and ignores other types", () => {
+    const hud = createDefaultPlayHud("Score");
+    hud.widgets.header!.props.text = "Authored";
+    const library = playUiLibraryFromAssets(
       [
         {
-          id: "ui:assets/HUD.ui.babasset",
-          ref: { kind: "ui", path: "assets/HUD.ui.babasset" },
-          content: authored,
+          guid: "hud-guid",
+          path: "assets/HUD.ui.babasset",
+          type: "UserInterface",
+        },
+        {
+          guid: "font-guid",
+          path: "assets/Display.babasset",
+          type: "Font",
         },
       ],
-      "ui:assets/HUD.ui.babasset",
+      (path) => (path.endsWith("HUD.ui.babasset") ? hud : null),
     );
-    expect(hud.widgets.header?.props.text).toBe("Authored");
+    expect(library["hud-guid"]?.widgets.header?.props.text).toBe("Authored");
+    expect(library["font-guid"]).toBeUndefined();
+  });
+});
+
+describe("Play HUD instances", () => {
+  it("does not apply any UserInterface until a graph asks", () => {
+    expect(resolvePlayHudDocuments([], { "hud-guid": createDefaultPlayHud() })).toEqual(
+      [],
+    );
   });
 
-  it("skips a non-viewport-layer UI", () => {
-    const world = asUiDocument(createDefaultPlayHud("World"));
-    world.viewportLayer = false;
-    const hud = playHudFromOpenDocuments(
-      [
-        {
-          id: "ui:assets/World.ui.babasset",
-          ref: { kind: "ui", path: "assets/World.ui.babasset" },
-          content: world,
-        },
-      ],
-      "ui:assets/World.ui.babasset",
+  it("applies and removes instances by reference", () => {
+    const hud = createDefaultPlayHud("HUD");
+    const library = { "hud-guid": hud };
+    let instances = applyPlayHudInstance([], "ui-1", "hud-guid");
+    instances = applyPlayHudInstance(instances, "ui-2", "hud-guid");
+    expect(resolvePlayHudDocuments(instances, library)).toEqual([
+      { instanceId: "ui-1", document: hud },
+      { instanceId: "ui-2", document: hud },
+    ]);
+    instances = removePlayHudInstance(instances, "ui-1");
+    expect(resolvePlayHudDocuments(instances, library).map((row) => row.instanceId)).toEqual(
+      ["ui-2"],
     );
-    expect(hud.widgets.header?.props.text).toBe("Score");
+  });
+
+  it("skips instances whose asset is missing from the library", () => {
+    expect(
+      resolvePlayHudDocuments([{ instanceId: "ui-1", assetGuid: "missing" }], {}),
+    ).toEqual([]);
+  });
+});
+
+describe("asUiDocument", () => {
+  it("reads desired size from the payload", () => {
+    const doc = asUiDocument({
+      name: "Chip",
+      rootId: "canvas",
+      desiredSize: { width: 240, height: 64 },
+      widgets: {},
+    });
+    expect(doc.desiredSize).toEqual({ width: 240, height: 64 });
+  });
+
+  it("falls back desired size to design resolution when omitted", () => {
+    const doc = asUiDocument({
+      designResolution: { width: 1920, height: 1080 },
+      widgets: {},
+    });
+    expect(doc.desiredSize).toEqual({ width: 1920, height: 1080 });
   });
 });
 

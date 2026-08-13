@@ -10,7 +10,7 @@ import type {
   WidgetLayout,
   WidgetNode,
 } from "./types";
-import { CONTAINER_KINDS } from "./types";
+import { CONTAINER_KINDS, DEFAULT_DESIRED_SIZE } from "./types";
 
 export function clamp01(value: number): number {
   if (Number.isNaN(value) || value === Number.NEGATIVE_INFINITY) return 0;
@@ -115,6 +115,13 @@ export const STUB_TEXT_MEASURER: TextMeasurer = {
   },
 };
 
+export interface LayoutOptions {
+  measurer?: TextMeasurer;
+  safeArea?: EdgeInsets;
+  resolveNested?: (guid: string) => UserInterfaceDocument | null;
+  seenGuids?: ReadonlySet<string>;
+}
+
 function numberProp(props: Record<string, unknown>, key: string, fallback: number): number {
   const value = props[key];
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -123,6 +130,7 @@ function numberProp(props: Record<string, unknown>, key: string, fallback: numbe
 function preferredSize(
   widget: WidgetNode,
   measurer: TextMeasurer,
+  resolveNested?: (guid: string) => UserInterfaceDocument | null,
 ): { width: number; height: number } {
   const fontSize =
     typeof widget.style.fontSize === "number" ? widget.style.fontSize : 18;
@@ -136,6 +144,14 @@ function preferredSize(
       width: numberProp(widget.props, "width", 100),
       height: numberProp(widget.props, "height", 100),
     };
+  }
+  if (widget.kind === "UserInterface") {
+    const nested =
+      widget.nestedUiGuid && resolveNested
+        ? resolveNested(widget.nestedUiGuid)
+        : null;
+    if (nested) return { ...nested.desiredSize };
+    return { ...DEFAULT_DESIRED_SIZE };
   }
   if (widget.kind === "Spacer") {
     return { width: 0, height: 0 };
@@ -152,11 +168,29 @@ function preferredSize(
   return { width: 80, height: 32 };
 }
 
+function prefixAndOffset(
+  node: LaidOutWidget,
+  prefix: string,
+  dx: number,
+  dy: number,
+): LaidOutWidget {
+  return {
+    ...node,
+    id: `${prefix}/${node.id}`,
+    rect: { ...node.rect, x: node.rect.x + dx, y: node.rect.y + dy },
+    pivot: { x: node.pivot.x + dx, y: node.pivot.y + dy },
+    children: node.children.map((child) =>
+      prefixAndOffset(child, prefix, dx, dy),
+    ),
+  };
+}
+
 function layoutChildren(
   parent: WidgetNode,
   parentRect: Rect,
   doc: UserInterfaceDocument,
   measurer: TextMeasurer,
+  options: LayoutOptions,
 ): LaidOutWidget[] {
   const padding = parent.style.padding ?? {
     left: 0,
@@ -167,6 +201,7 @@ function layoutChildren(
   const inner = insetRect(parentRect, padding);
   const gap = numberProp(parent.props, "gap", 0);
   const childIds = parent.children.filter((id) => doc.widgets[id]);
+  const resolveNested = options.resolveNested;
 
   if (
     parent.kind === "Canvas" ||
@@ -175,12 +210,12 @@ function layoutChildren(
     parent.kind === "Border"
   ) {
     return childIds.map((id) =>
-      layoutWidget(doc.widgets[id]!, inner, doc, measurer),
+      layoutWidget(doc.widgets[id]!, inner, doc, measurer, options),
     );
   }
 
   if (parent.kind === "SizeBox") {
-    const size = preferredSize(parent, measurer);
+    const size = preferredSize(parent, measurer, resolveNested);
     const box: Rect = {
       x: inner.x,
       y: inner.y + inner.height - size.height,
@@ -188,7 +223,7 @@ function layoutChildren(
       height: size.height,
     };
     return childIds.map((id) =>
-      layoutWidget(doc.widgets[id]!, box, doc, measurer),
+      layoutWidget(doc.widgets[id]!, box, doc, measurer, options),
     );
   }
 
@@ -199,7 +234,7 @@ function layoutChildren(
     const available = inner.width - gap * Math.max(count - 1, 0);
     return childIds.map((id) => {
       const child = doc.widgets[id]!;
-      const hint = preferredSize(child, measurer);
+      const hint = preferredSize(child, measurer, resolveNested);
       const width = CONTAINER_KINDS.has(child.kind)
         ? available / flexTotal
         : hint.width;
@@ -210,7 +245,7 @@ function layoutChildren(
         height: inner.height,
       };
       x += width + gap;
-      return layoutWidget(child, slot, doc, measurer, true);
+      return layoutWidget(child, slot, doc, measurer, options, true);
     });
   }
 
@@ -221,7 +256,7 @@ function layoutChildren(
     const available = inner.height - gap * Math.max(count - 1, 0);
     return childIds.map((id) => {
       const child = doc.widgets[id]!;
-      const hint = preferredSize(child, measurer);
+      const hint = preferredSize(child, measurer, resolveNested);
       const height = CONTAINER_KINDS.has(child.kind)
         ? available / flexTotal
         : hint.height;
@@ -233,7 +268,7 @@ function layoutChildren(
         height,
       };
       y -= gap;
-      return layoutWidget(child, slot, doc, measurer, true);
+      return layoutWidget(child, slot, doc, measurer, options, true);
     });
   }
 
@@ -251,13 +286,43 @@ function layoutChildren(
         width: cellW,
         height: cellH,
       };
-      return layoutWidget(doc.widgets[id]!, slot, doc, measurer, true);
+      return layoutWidget(doc.widgets[id]!, slot, doc, measurer, options, true);
     });
   }
 
   return childIds.map((id) =>
-    layoutWidget(doc.widgets[id]!, inner, doc, measurer),
+    layoutWidget(doc.widgets[id]!, inner, doc, measurer, options),
   );
+}
+
+function layoutNestedTree(
+  widget: WidgetNode,
+  rect: Rect,
+  options: LayoutOptions,
+): LaidOutWidget[] {
+  const guid = widget.nestedUiGuid;
+  if (!guid || !options.resolveNested) return [];
+  const seen = options.seenGuids ?? new Set<string>();
+  if (seen.has(guid)) return [];
+  const nested = options.resolveNested(guid);
+  if (!nested) return [];
+  const nextSeen = new Set(seen);
+  nextSeen.add(guid);
+  const nestedLayout = layoutUserInterface(
+    {
+      ...nested,
+      designResolution: nested.desiredSize ?? nested.designResolution,
+    },
+    { width: Math.max(1, rect.width), height: Math.max(1, rect.height) },
+    {
+      measurer: options.measurer,
+      resolveNested: options.resolveNested,
+      seenGuids: nextSeen,
+    },
+  );
+  return nestedLayout.tree
+    ? [prefixAndOffset(nestedLayout.tree, widget.id, rect.x, rect.y)]
+    : [];
 }
 
 function layoutWidget(
@@ -265,12 +330,17 @@ function layoutWidget(
   parentRect: Rect,
   doc: UserInterfaceDocument,
   measurer: TextMeasurer,
+  options: LayoutOptions,
   fillSlot = false,
 ): LaidOutWidget {
   const rect = fillSlot
     ? parentRect
     : computeAnchoredRect(parentRect, widget.layout);
   const pivot = pivotPoint(rect, widget.layout.pivot);
+  const nestedChildren =
+    widget.kind === "UserInterface" || widget.nestedUiGuid
+      ? layoutNestedTree(widget, rect, options)
+      : [];
   return {
     id: widget.id,
     kind: widget.kind,
@@ -278,20 +348,21 @@ function layoutWidget(
     rect,
     pivot,
     visible: widget.visible,
-    children: widget.visible
-      ? layoutChildren(widget, rect, doc, measurer)
-      : [],
+    widget,
+    children: !widget.visible
+      ? []
+      : nestedChildren.length > 0
+        ? nestedChildren
+        : layoutChildren(widget, rect, doc, measurer, options),
   };
 }
 
 export function layoutUserInterface(
   doc: UserInterfaceDocument,
   viewport: { width: number; height: number },
-  options: {
-    measurer?: TextMeasurer;
-    safeArea?: EdgeInsets;
-  } = {},
+  options: LayoutOptions = {},
 ): LayoutResult {
+  const measurer = options.measurer ?? STUB_TEXT_MEASURER;
   const viewportRect: Rect = {
     x: 0,
     y: 0,
@@ -308,7 +379,7 @@ export function layoutUserInterface(
     canvas,
     scale,
     tree: root
-      ? layoutWidget(root, canvas, doc, options.measurer ?? STUB_TEXT_MEASURER)
+      ? layoutWidget(root, canvas, doc, measurer, options)
       : null,
   };
 }

@@ -29,6 +29,7 @@ export const WIDGET_KINDS = [
   "TouchJoystick",
   "TouchButton",
   "TouchDPad",
+  "UserInterface",
 ] as const;
 
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
@@ -42,6 +43,7 @@ export const CONTAINER_KINDS: ReadonlySet<WidgetKind> = new Set([
   "Overlay",
   "SizeBox",
   "Border",
+  "UserInterface",
 ]);
 
 export interface WidgetLayout {
@@ -90,6 +92,8 @@ export interface UserInterfaceDocument {
   name: string;
   rootId: string;
   designResolution: { width: number; height: number };
+  /** Authoring canvas for reusable elements (designer Desired mode). */
+  desiredSize: { width: number; height: number };
   scaleRule: ScaleRule;
   viewportLayer: boolean;
   widgets: Record<string, WidgetNode>;
@@ -111,6 +115,7 @@ export interface LaidOutWidget {
   pivot: Vec2;
   visible: boolean;
   children: LaidOutWidget[];
+  widget?: WidgetNode;
 }
 
 export interface LayoutResult {
@@ -127,6 +132,7 @@ export const ZERO_INSETS: EdgeInsets = {
 };
 
 export const DEFAULT_DESIGN_RESOLUTION = { width: 1920, height: 1080 };
+export const DEFAULT_DESIRED_SIZE = { width: 400, height: 300 };
 
 export function stretchLayout(insets: EdgeInsets = ZERO_INSETS): WidgetLayout {
   return {
@@ -229,6 +235,7 @@ export function createDefaultUserInterface(name = "HUD"): UserInterfaceDocument 
     name,
     rootId: root.id,
     designResolution: { ...DEFAULT_DESIGN_RESOLUTION },
+    desiredSize: { ...DEFAULT_DESIRED_SIZE },
     scaleRule: "shortestSide",
     viewportLayer: true,
     widgets: { [root.id]: root },
@@ -258,5 +265,6 @@ export function createDefaultPlayHud(name = "HUD"): UserInterfaceDocument {
   doc.widgets.canvas!.children = ["header", "stick"];
   doc.widgets.header = header;
   doc.widgets.stick = stick;
+  doc.desiredSize = { ...doc.designResolution };
   return doc;
 }

@@ -50,6 +50,8 @@ export interface ScriptHostServices {
     offset?: number,
   ): void;
   setWidgetVisible?(widget: string, visible: boolean): void;
+  applyUserInterface?(assetGuid: string): string;
+  removeUserInterface?(instanceId: string): void;
 }
 export interface ScriptContext {
   self: Actor | null;
@@ -110,6 +112,8 @@ export interface ScriptContext {
   ): void;
   playSound(): void;
   setWidgetVisible(widget: string, visible: boolean): void;
+  applyUserInterface(assetGuid: string): string;
+  removeUserInterface(instanceId: string): void;
   changeScene(scene: string): void;
 }
 
@@ -318,6 +322,11 @@ export class ScriptHost {
       playSound: () => {},
       setWidgetVisible: (widget, visible) => {
         services.setWidgetVisible?.(widget, visible);
+      },
+      applyUserInterface: (assetGuid) =>
+        services.applyUserInterface?.(assetGuid) ?? "",
+      removeUserInterface: (instanceId) => {
+        services.removeUserInterface?.(instanceId);
       },
       changeScene: () => {},
     };

@@ -133,10 +133,19 @@ export type CommandMessage =
       type: "trace";
       payload: Record<string, unknown>;
     }
-  | {
+    | {
       type: "uiSetVisible";
       widgetId: string;
       visible: boolean;
+    }
+    | {
+      type: "uiApply";
+      instanceId: string;
+      assetGuid: string;
+    }
+    | {
+      type: "uiRemove";
+      instanceId: string;
     }
   | {
       type: "animState";
