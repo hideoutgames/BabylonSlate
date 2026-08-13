@@ -105,8 +105,8 @@ test.describe("P10 tilemaps", () => {
     for (let i = 0; i < 8; i++) {
       await canvas.click({ position: { x: 8 + i * 16, y: 248 } });
     }
-    expect(await tileAt(page, 0, 0)).toBe(1);
-    expect(await tileAt(page, 7, 0)).toBe(1);
+    await expect.poll(async () => tileAt(page, 0, 0)).toBe(1);
+    await expect.poll(async () => tileAt(page, 7, 0)).toBe(1);
 
     await createAsset(page, "Sprite", "Hero");
     await createAsset(page, "AnimationGraph", "Loco");

@@ -58,6 +58,10 @@ export function TilemapEditor({
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const tilemap = normalizeTilemapPayload(payload);
+  const latestRef = useRef(tilemap);
+  useEffect(() => {
+    latestRef.current = normalizeTilemapPayload(payload);
+  }, [payload]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [tool, setTool] = useState<TilemapPaintTool>("brush");
@@ -189,7 +193,7 @@ export function TilemapEditor({
     if (pointerType === "down") {
       strokeRef.current = {
         id: newStrokeId(),
-        base: tilemap,
+        base: latestRef.current,
         start: cell,
         last: cell,
         cells: [cell],
@@ -225,6 +229,7 @@ export function TilemapEditor({
           ? { width: 2, height: 2, tiles: [tileId, tileId, tileId, tileId] }
           : undefined,
     });
+    latestRef.current = painted;
     commitStroke(painted, stroke.id);
   };
 
@@ -273,7 +278,8 @@ export function TilemapEditor({
           ref={canvasRef}
           width={CANVAS_SIZE}
           height={CANVAS_SIZE}
-          className="mx-2 mb-2 touch-none rounded-md border border-border bg-background"
+          className="mx-2 mb-2 shrink-0 touch-none rounded-md border border-border bg-background"
+          style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}
           data-testid="tilemap-paint-canvas"
           data-tool={tool}
           data-tile={String(tileId)}

@@ -977,6 +977,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const current = editSessionRef.current.apply(id, previous, command).doc;
       documentService.updateAssetDocument(id, current);
       projectService.indexOpenDocument(doc.ref.path, current);
+      scheduleDebouncedSave();
+      bump();
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
@@ -991,8 +993,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           }),
         );
       }
-      scheduleDebouncedSave();
-      bump();
       return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
