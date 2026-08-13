@@ -405,12 +405,13 @@ function GraphEditorCanvas({
       const fromHandle = state.fromHandle;
       const fromNode = state.fromNode;
       if (!fromHandle?.id || !fromNode) return;
+      const pinId = fromHandle.id;
       const point = clientPoint(event);
       if (!point) return;
       const pin = pinOnNode(
         graphStateRef.current.nodes,
         fromNode.id,
-        fromHandle.id,
+        pinId,
       );
       if (!pin) return;
       const root = document;
@@ -439,7 +440,7 @@ function GraphEditorCanvas({
           pointerOverSourceHandle: isClientPointOverHandle(
             point,
             fromNode.id,
-            fromHandle.id,
+            pinId,
             root,
           ),
         })
@@ -448,7 +449,7 @@ function GraphEditorCanvas({
       }
       setEdges((current) => {
         const next = current.filter(
-          (edge) => !edgeTouchesPin(edge, fromNode.id, fromHandle.id),
+          (edge) => !edgeTouchesPin(edge, fromNode.id, pinId),
         );
         if (next.length === current.length) return current;
         emitChange(graphStateRef.current.nodes, next);
