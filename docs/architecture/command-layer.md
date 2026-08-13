@@ -18,7 +18,7 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 | `replayJournalLines` | Replay journal onto open graph or scene documents |
 | `reviveCommand` / `registerCommandReviver` | Registry to rebuild commands from journal JSON |
 
-Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`, scene panels call `applySceneChange`, asset tabs call `applyAssetDocumentChange`; chrome **Undo** / **Redo** act on the active document only. `SetNodeDataCommand` and subtree-capturing scene commands (e.g. `RemoveActorCommand`) record `byteSize` so snapshot-style edits count toward the budget. Tilemap paint strokes pass `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`) so one undo restores the whole gesture.
+Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`, scene panels call `applySceneChange`, asset tabs call `applyAssetDocumentChange`; chrome **Undo** / **Redo** (and desktop Mod+Z / Mod+Shift+Z / Mod+Y) act on the active document only. `GraphEditor` reconciles that restored graph onto the canvas. `SetNodeDataCommand` and subtree-capturing scene commands (e.g. `RemoveActorCommand`) record `byteSize` so snapshot-style edits count toward the budget. Tilemap paint strokes pass `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`) so one undo restores the whole gesture.
 
 ## Ownership
 
