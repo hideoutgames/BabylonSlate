@@ -90,7 +90,7 @@ describe("Playwright iPad project filter", () => {
         "Windows menu › restores Outliner and Output Log to their default dock positions",
         "Editor density and IA › chrome is compact, has no Add tab, and Focus is disabled on Content Browser",
         "Editor density and IA › Focus hides the Outliner; Place Actors catalog does not focus search",
-        "Editor density and IA › gizmo tools look pressed and the joystick toggle is on the toolbar",
+        "Editor density and IA › gizmo tools look pressed and the joystick toggle is in viewport settings",
         "gallery composites meet the minimum touch target size",
         "Global project search › toolbar search opens a dialog and focuses a scene actor",
         "Global project search › dialog stays a fixed tall height and results scroll when they overflow",
