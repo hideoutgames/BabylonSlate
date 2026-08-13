@@ -22,7 +22,7 @@ Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButt
 | `component` | `"x"` \| `"y"` for `kind: "2d"` axes |
 | `digitalValue` | Constant while a digital binding is held |
 
-`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads; `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard, gamepad stick, and touch joystick (`joystick-x` / `joystick-y`) so an on-screen stick and a gamepad drive the same `GetAxis2D("Move")` with no script change. Default gamepad face bindings: Jump → `0:0` (A), Confirm → `0:1` (B) so both actions do not fire from one button.
+`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads; `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard, gamepad stick, touch joystick (`joystick-x` / `joystick-y`), and TouchDPad (`dpad-x` / `dpad-y`) so an on-screen stick, d-pad, and a gamepad drive the same `GetAxis2D("Move")` with no script change. Default **Jump** includes Space, gamepad A (`0:0`), and touch control id `Jump` (Play HUD `TouchButton`). Default Confirm → `0:1` (B) so both actions do not fire from one button.
 
 ## InputResolver
 
@@ -60,9 +60,9 @@ Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolv
 
 ## Project Settings
 
-**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` (add/remove/reorder actions and axes, per-binding device, listen-to-bind, modifiers, axis extras). Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-*`) plus `controlId*` from open UserInterface documents. Persists through `updateProjectSettings({ input })` + `normalizeInputMappings`. No JSON textarea.
+**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` (add/remove/reorder actions and axes, per-binding device, listen-to-bind, modifiers, axis extras). Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-x` / `dpad-y` / `Jump`) plus `controlId*` from open UserInterface documents. Persists through `updateProjectSettings({ input })` + `normalizeInputMappings`. No JSON textarea.
 
-Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchButton widgets pick an action the same way.
+Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchButton widgets pick an action the same way; Play HUD emits that action as a touch axis (1 while held, 0 on release). TouchDPad shares the analog-stick path with defaults `dpad-x` / `dpad-y`.
 
 Runtime receives mappings via `RuntimeDriverOptions.inputMappings` / `setInputMappings`.
 

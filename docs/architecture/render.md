@@ -20,8 +20,9 @@ Play overlay canvas layout comes from Project Settings `playPreview`. **Follow S
 - Reuse scratch `Vector3` / `Quaternion` / `Matrix`; no per-actor per-frame allocation.
 - Bulk apply / despawn wrapped in `blockMaterialDirtyMechanism` and `blockfreeActiveMeshesAndRenderingGroups`.
 - `skipPointerMovePicking: true` on every scene.
-- `applyAssignMesh` records `meshKind` and `meshAssetGuid` per slot and rebuilds the Play mesh via `createPrimitiveMesh` (shared with the editor loader). `meshKind: "tilemap"` builds chunk child meshes from Play-loaded Tilemap / Tileset payloads (`createTilemapMeshes`); picking walks the parent chain so a chunk child still resolves as `actor-N`.
+- `applyAssignMesh` records `meshKind` and `meshAssetGuid` per slot and rebuilds the Play mesh via `createPlayMesh` (shared with the editor loader). `meshKind: "sprite"` / `"tilemap"` build quads/chunks and bind `ResourceCache` textures from collected `textureBytes`. `MeshComponent.assetGuid` with model bytes builds the first GLB primitive instead of a box. `meshKind: "light:*"` / `"camera"` create authored lights/cameras that follow the snapshot transform.
 - `animState` with `clipKind: "sprite"` bakes clip UVs through `applySpriteAnimFrame` when `createEngine({ spritePayloads })` has the sprite asset for that guid.
+- Editor and Play pass `setMeshAssets` / `CreateEngineOptions.textureBytes` + `modelBytes` collected from scene component guids (`pixels` then `source` for textures; `source` for models).
 
 ## Render-on-demand
 

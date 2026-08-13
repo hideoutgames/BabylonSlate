@@ -48,7 +48,7 @@ The registry does not touch the world or renderer. Runtime implements:
 
 | Command | Host |
 | --- | --- |
-| `changescene` | `changeScene(guid)` → `World.loadScene` |
+| `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
 | `renderquality` / `shadowquality` / `resolutionscale` / `volume` / `framecap` | typed setters (Play overlay / renderer consume later) |
 | `quit` | `quit()` → runtime `stop` |
 | debug pause / step / slomo | `pause` / `step` / `setTimeDilation` |
