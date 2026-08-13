@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AssetPicker,
   CatalogDialog,
+  InputMappingEditor,
+  NamedListEditor,
   NumberField,
   type CatalogCategory,
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
+import { normalizeInputMappings } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Field,
@@ -14,9 +18,14 @@ import {
   FieldLegend,
   FieldSet,
 } from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
 import { Switch } from "@babylonslate/ui/components/switch";
-import { Textarea } from "@babylonslate/ui/components/textarea";
 import {
   createAppSettingsStore,
   defaultEngineSettings,
@@ -135,6 +144,13 @@ const ENGINE_CATEGORIES: Array<
   },
 ];
 
+const GENERIC_FONT_FALLBACKS = [
+  "sans-serif",
+  "serif",
+  "monospace",
+  "system-ui",
+] as const;
+
 const ENGINE_GROUPS: CatalogCategoryGroup[] = [
   { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "ui", "thumbnails", "focus"] },
   { label: "Projects", ids: ["templates"] },
@@ -146,6 +162,31 @@ function matchesSearch(
   needle: string,
 ): boolean {
   return !needle || `${label} ${keywords}`.toLowerCase().includes(needle);
+}
+
+function collectTouchControlIds(
+  documents: ReadonlyArray<{ ref: { kind: string }; content: unknown }>,
+): string[] {
+  const ids = new Set(["joystick-x", "joystick-y", "dpad-x", "dpad-y"]);
+  for (const doc of documents) {
+    if (doc.ref.kind !== "ui") continue;
+    const payload =
+      doc.content && typeof doc.content === "object"
+        ? (doc.content as Record<string, unknown>)
+        : {};
+    const widgets =
+      payload.widgets && typeof payload.widgets === "object"
+        ? (payload.widgets as Record<string, { props?: Record<string, unknown> }>)
+        : {};
+    for (const widget of Object.values(widgets)) {
+      const props = widget.props ?? {};
+      for (const key of ["controlId", "controlIdX", "controlIdY"] as const) {
+        const value = props[key];
+        if (typeof value === "string" && value.trim()) ids.add(value.trim());
+      }
+    }
+  }
+  return [...ids];
 }
 
 export function SettingsModal({
@@ -163,8 +204,11 @@ export function SettingsModal({
     exportProject,
     retryFailedTextureEncoding,
     updateProjectSettings,
+    assetRegistry,
+    openDocuments,
   } = useDocuments();
   const [search, setSearch] = useState("");
+  const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [activeCategoryId, setActiveCategoryId] = useState(
     scope === "engine" ? "appearance" : "general",
   );
@@ -232,6 +276,7 @@ export function SettingsModal({
   const showProjectBody = scope === "project" && Boolean(projectDocument);
 
   return (
+    <>
     <CatalogDialog
       open={open}
       onOpenChange={onOpenChange}
@@ -298,17 +343,14 @@ export function SettingsModal({
               <FieldLabel htmlFor="settings-autosave-interval">
                 Auto-save interval (seconds)
               </FieldLabel>
-              <Input
+              <NumberField
                 id="settings-autosave-interval"
-                type="number"
                 min={1}
                 className="min-h-[var(--chrome-row,28px)]"
                 value={Math.round(
                   projectDocument.settings.autoSaveIntervalMs / 1000,
                 )}
-                onChange={(event) => {
-                  const seconds = Number(event.target.value);
-                  if (!Number.isFinite(seconds) || seconds <= 0) return;
+                onChange={(seconds) => {
                   updateProjectSettings({
                     autoSaveIntervalMs: Math.round(seconds * 1000),
                   });
@@ -324,63 +366,16 @@ export function SettingsModal({
         <FieldGroup className="gap-4">
           <FieldSet>
             <FieldLegend>Input</FieldLegend>
-            <Field>
-              <FieldLabel>Actions</FieldLabel>
-              <FieldDescription>
-                Named actions resolve through the input mapping model. Edit the
-                JSON below; each binding needs a device and code.
-              </FieldDescription>
-              <Textarea
-                className="min-h-32 font-mono text-xs"
-                value={JSON.stringify(
-                  projectDocument.settings.input.actions,
-                  null,
-                  2,
-                )}
-                onChange={(event) => {
-                  try {
-                    const actions = JSON.parse(event.target.value) as unknown;
-                    if (!Array.isArray(actions)) return;
-                    updateProjectSettings({
-                      input: {
-                        ...projectDocument.settings.input,
-                        actions:
-                          actions as typeof projectDocument.settings.input.actions,
-                      },
-                    });
-                  } catch {
-                    // Keep typing until the JSON is valid again.
-                  }
-                }}
-                data-testid="settings-input-actions"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Axes</FieldLabel>
-              <Textarea
-                className="min-h-32 font-mono text-xs"
-                value={JSON.stringify(
-                  projectDocument.settings.input.axes,
-                  null,
-                  2,
-                )}
-                onChange={(event) => {
-                  try {
-                    const axes = JSON.parse(event.target.value) as unknown;
-                    if (!Array.isArray(axes)) return;
-                    updateProjectSettings({
-                      input: {
-                        ...projectDocument.settings.input,
-                        axes: axes as typeof projectDocument.settings.input.axes,
-                      },
-                    });
-                  } catch {
-                    // Keep typing until the JSON is valid again.
-                  }
-                }}
-                data-testid="settings-input-axes"
-              />
-            </Field>
+            <FieldDescription>
+              Named actions and axes bind keys, gamepad, and touch controls.
+              Tap Bind, then press a key or button.
+            </FieldDescription>
+            <InputMappingEditor
+              value={normalizeInputMappings(projectDocument.settings.input)}
+              onChange={(input) => updateProjectSettings({ input })}
+              touchControlIds={collectTouchControlIds(openDocuments)}
+              data-testid="settings-input-mapping"
+            />
           </FieldSet>
         </FieldGroup>
       ) : null}
@@ -446,27 +441,20 @@ export function SettingsModal({
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="sorting-layers">Sorting layers</FieldLabel>
-              <Input
-                id="sorting-layers"
-                className="min-h-[var(--touch-target,44px)]"
-                value={twoD.sortingLayers.join(", ")}
-                onChange={(event) =>
+              <FieldLabel>Sorting Layers</FieldLabel>
+              <NamedListEditor
+                values={twoD.sortingLayers}
+                onChange={(sortingLayers) =>
                   updateProjectSettings({
-                    twoD: {
-                      ...twoD,
-                      sortingLayers: event.target.value
-                        .split(",")
-                        .map((layer) => layer.trim())
-                        .filter(Boolean),
-                    },
+                    twoD: { ...twoD, sortingLayers },
                   })
                 }
+                addPlaceholder="Layer"
+                addLabel="Add Layer"
                 data-testid="settings-sorting-layers"
               />
               <FieldDescription>
-                Comma-separated, back to front. Compiles to one alphaIndex sort
-                key per sprite.
+                Back to front. Compiles to one alphaIndex sort key per sprite.
               </FieldDescription>
             </Field>
           </FieldSet>
@@ -478,26 +466,22 @@ export function SettingsModal({
           <FieldSet>
             <FieldLegend>Fonts</FieldLegend>
             <Field>
-              <FieldLabel htmlFor="settings-default-font-guid">
-                Default Font Guid
-              </FieldLabel>
-              <Input
-                id="settings-default-font-guid"
-                className="min-h-[var(--touch-target,44px)]"
-                value={projectDocument.settings.fonts.defaultFontGuid ?? ""}
-                onChange={(event) =>
-                  updateProjectSettings({
-                    fonts: {
-                      ...projectDocument.settings.fonts,
-                      defaultFontGuid:
-                        event.target.value.trim() === ""
-                          ? null
-                          : event.target.value.trim(),
-                    },
-                  })
-                }
-                data-testid="settings-default-font-guid"
-              />
+              <FieldLabel>Default Font</FieldLabel>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                onClick={() => setFontPickerOpen(true)}
+                data-testid="settings-default-font"
+              >
+                {assetRegistry
+                  ?.list()
+                  .find(
+                    (asset) =>
+                      asset.header.guid ===
+                      projectDocument.settings.fonts.defaultFontGuid,
+                  )?.header.name ?? "None"}
+              </Button>
               <FieldDescription>
                 Font asset used when a widget omits a family. Empty means the
                 compiled stack starts from the widget family plus the global
@@ -508,20 +492,39 @@ export function SettingsModal({
               <FieldLabel htmlFor="settings-global-fallback">
                 Global Fallback
               </FieldLabel>
-              <Input
-                id="settings-global-fallback"
-                className="min-h-[var(--touch-target,44px)]"
+              <Select
                 value={projectDocument.settings.fonts.globalFallback}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   updateProjectSettings({
                     fonts: {
                       ...projectDocument.settings.fonts,
-                      globalFallback: event.target.value.trim() || "sans-serif",
+                      globalFallback: String(value),
                     },
                   })
                 }
-                data-testid="settings-global-fallback"
-              />
+              >
+                <SelectTrigger
+                  id="settings-global-fallback"
+                  className="min-h-[var(--touch-target,44px)] w-full"
+                  data-testid="settings-global-fallback"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    ...GENERIC_FONT_FALLBACKS,
+                    projectDocument.settings.fonts.globalFallback,
+                  ]
+                    .filter(
+                      (family, index, all) => all.indexOf(family) === index,
+                    )
+                    .map((family) => (
+                      <SelectItem key={family} value={family}>
+                        {family}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
               <FieldDescription>
                 Generic CSS family appended to every compiled stack (never silent
                 Arial).
@@ -539,18 +542,14 @@ export function SettingsModal({
               <FieldLabel htmlFor="setting-play-frame-cap">
                 Play frame cap
               </FieldLabel>
-              <Input
+              <NumberField
                 id="setting-play-frame-cap"
-                type="number"
                 min={1}
-                step={1}
                 className="min-h-[var(--touch-target,44px)]"
                 data-testid="setting-play-frame-cap"
                 value={projectDocument.settings.playFrameCap}
-                onChange={(event) =>
-                  updateProjectSettings({
-                    playFrameCap: Number(event.target.value) || 60,
-                  })
+                onChange={(playFrameCap) =>
+                  updateProjectSettings({ playFrameCap })
                 }
               />
               <FieldDescription>
@@ -646,5 +645,34 @@ export function SettingsModal({
         </FieldGroup>
       ) : null}
     </CatalogDialog>
+      {scope === "project" ? (
+        <AssetPicker
+          open={fontPickerOpen}
+          onOpenChange={setFontPickerOpen}
+          assets={(assetRegistry?.list() ?? [])
+            .filter((asset) => asset.header.type === "Font")
+            .map((asset) => ({
+              guid: asset.header.guid,
+              name: asset.header.name,
+              type: asset.header.type,
+              path: asset.path,
+            }))}
+          allowedTypes={["Font"]}
+          title="Pick Font"
+          allowNone
+          onPick={(guid) => {
+            if (!projectDocument) return;
+            updateProjectSettings({
+              fonts: {
+                ...projectDocument.settings.fonts,
+                defaultFontGuid: guid,
+              },
+            });
+            setFontPickerOpen(false);
+          }}
+          data-testid="settings-default-font-picker"
+        />
+      ) : null}
+    </>
   );
 }
