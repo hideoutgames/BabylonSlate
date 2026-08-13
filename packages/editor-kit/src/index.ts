@@ -152,3 +152,4 @@ export {
   type TypeVisual,
   type TypeVisualQuery,
 } from "./type-visuals";
+export { TypeColorMark } from "./type-color-mark";

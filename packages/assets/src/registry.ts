@@ -454,16 +454,90 @@ export class AssetRegistry {
     return this.duplicateAsset(guid, rootId, targetFolderRelative);
   }
 
+  async copyFolder(
+    rootId: string,
+    relativeFolder: string,
+    targetParentRelative: string,
+  ): Promise<string> {
+    const root = this.getRootOrThrow(rootId);
+    const fromPath = joinRootPath(root, relativeFolder);
+    if (
+      !this.knownFolders.has(fromPath) &&
+      !(await this.storage.exists(fromPath))
+    ) {
+      throw new Error(`Unknown folder ${relativeFolder}`);
+    }
+    const folderName = relativeFolder.includes("/")
+      ? relativeFolder.slice(relativeFolder.lastIndexOf("/") + 1)
+      : relativeFolder;
+    const destParentPath = joinRootPath(root, targetParentRelative);
+    const siblingNames: string[] = [];
+    for (const folder of this.knownFolders) {
+      const parent = folder.includes("/")
+        ? folder.slice(0, folder.lastIndexOf("/"))
+        : "";
+      if (parent === destParentPath) {
+        siblingNames.push(folder.slice(folder.lastIndexOf("/") + 1));
+      }
+    }
+    const uniqueName = nextCopyName(folderName, siblingNames);
+    const destRelative = joinRelative(targetParentRelative, uniqueName);
+    const destPath = joinRootPath(root, destRelative);
+    if (destPath !== fromPath && isWithinFolder(destPath, fromPath)) {
+      throw new Error("Cannot copy a folder into itself");
+    }
+
+    await this.createFolder(rootId, destRelative);
+
+    const nested = [...this.knownFolders].filter(
+      (folder) => folder !== fromPath && isWithinFolder(folder, fromPath),
+    );
+    nested.sort((a, b) => a.length - b.length);
+    for (const folder of nested) {
+      const suffix = folder.slice(fromPath.length + 1);
+      await this.createFolder(rootId, joinRelative(destRelative, suffix));
+    }
+
+    const assets = [...this.byGuid.values()].filter(
+      (asset) =>
+        asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
+    );
+    for (const asset of assets) {
+      const parent = asset.path.includes("/")
+        ? asset.path.slice(0, asset.path.lastIndexOf("/"))
+        : "";
+      const suffix =
+        parent === fromPath ? "" : parent.slice(fromPath.length + 1);
+      const destFolder = suffix
+        ? joinRelative(destRelative, suffix)
+        : destRelative;
+      await this.duplicateAsset(asset.header.guid, rootId, destFolder);
+    }
+    return destRelative;
+  }
+
+  async duplicateFolder(
+    rootId: string,
+    relativeFolder: string,
+  ): Promise<string> {
+    const parent = relativeFolder.includes("/")
+      ? relativeFolder.slice(0, relativeFolder.lastIndexOf("/"))
+      : "";
+    return this.copyFolder(rootId, relativeFolder, parent);
+  }
+
   async moveFolder(
     rootId: string,
     relativeFolder: string,
     newParentRelative: string,
+    newName?: string,
   ): Promise<void> {
     const root = this.getRootOrThrow(rootId);
     const fromPath = joinRootPath(root, relativeFolder);
-    const folderName = relativeFolder.includes("/")
+    const currentName = relativeFolder.includes("/")
       ? relativeFolder.slice(relativeFolder.lastIndexOf("/") + 1)
       : relativeFolder;
+    const folderName = newName?.trim() || currentName;
     const toRelative = joinRelative(newParentRelative, folderName);
     const toPath = joinRootPath(root, toRelative);
     if (fromPath === toPath) return;

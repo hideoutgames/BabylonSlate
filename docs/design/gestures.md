@@ -104,12 +104,17 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | Gesture | Action |
 | --- | --- |
 | Tap / click a tile | Add to selection (does not replace) |
-| Tap / click empty grid (padding, gaps — not a tile) | Clear selection |
-| Toolbar **Deselect All** | Clear selection |
-| Double-tap / double-click a Scene or Graph | Open the document (`openOrFocusDocument`) |
-| Move before ~500ms | Scroll (do not open the menu) |
-| Hold still ≥500ms | Context menu (tiles and nested folders). The `assets` root has no menu. |
-| Right-click | Same as long-press menu (except `assets` root) |
-| Context-menu **Move…** | Opens `ContentBrowserMoveDialog` to pick a destination folder (`moveAsset` / `moveFolder`) |
+| Tap / click empty grid (padding, gaps — not a tile) | Clear asset and folder selection |
+| Toolbar **Deselect All** | Clear asset and folder selection |
+| Double-tap / double-click an asset tile | Open the document (`openOrFocusDocument`) |
+| Double-tap / double-click a folder tile | Navigate into that folder |
+| Move before ~500ms on the grid | Scroll (do not open the menu) |
+| Hold still ≥500ms or right-click on a **tile** | Asset or folder context menu. Tile pointer events do not bubble to the empty-grid menu. |
+| Hold still ≥500ms or right-click on **empty grid** | New Folder, New Asset, Import |
+| Left tree: tap folder | Set the grid’s current folder |
+| Left tree: tap asset | Set the grid to that asset’s parent and select the guid |
+| Left tree: double-tap asset | Open the asset |
+| Left tree: hold ~250ms then drag | Reparent (`moveAsset` / `moveFolder`). Early movement still scrolls. No context menu on the tree. Root `assets` is not draggable. |
+| Context-menu **Move…** / **Copy to Folder…** | Opens `ContentBrowserMoveDialog` (`moveAsset` / `moveFolder` / `copyFolder`) |
 
 Outliner `TreeView` uses the same hold-to-reorder vs menu split (`onReparent` already exists). **Double-tap** an outliner row frames that actor.
