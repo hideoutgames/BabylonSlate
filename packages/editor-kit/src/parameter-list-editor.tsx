@@ -12,6 +12,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
+import { NamedListEditor } from "./named-list-editor";
 
 export const PARAMETER_VALUE_TYPES = [
   "string",
@@ -66,13 +67,6 @@ function moveRow(
   next[index] = next[nextIndex]!;
   next[nextIndex] = current;
   return next;
-}
-
-function parseEnumValues(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
 }
 
 /** Shared typed named reorderable row list (ExecuteJavaScript, My Class, interfaces). */
@@ -196,25 +190,16 @@ export function ParameterListEditor({
             </Field>
           </div>
           {row.type === "enum" ? (
-            <Field>
-              <FieldLabel htmlFor={`parameter-${row.id}-enum-values`}>
-                Enum Values
-              </FieldLabel>
-              <Input
-                id={`parameter-${row.id}-enum-values`}
-                className="min-h-11"
-                value={(row.enumValues ?? []).join(", ")}
-                data-testid={`parameter-${row.id}-enum-values`}
-                placeholder="low, medium, high"
-                onChange={(event) =>
-                  onChange(
-                    patchRow(rows, row.id, {
-                      enumValues: parseEnumValues(event.target.value),
-                    }),
-                  )
-                }
-              />
-            </Field>
+            <NamedListEditor
+              values={[...(row.enumValues ?? [])]}
+              onChange={(enumValues) =>
+                onChange(patchRow(rows, row.id, { enumValues }))
+              }
+              title="Enum Values"
+              addPlaceholder="value"
+              addLabel="Add Value"
+              data-testid={`parameter-${row.id}-enum-values`}
+            />
           ) : null}
         </FieldGroup>
       ))}

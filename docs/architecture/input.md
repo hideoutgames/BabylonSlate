@@ -60,7 +60,9 @@ Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolv
 
 ## Project Settings
 
-**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): actions and axes authored as JSON, persisted in `project.json` under `settings.input`. Shape matches `ProjectInputSettings` in `@babylonslate/core`; normalisation in `@babylonslate/input`. Engine Settings is a separate modal and does not include input mappings.
+**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` (add/remove/reorder actions and axes, per-binding device, listen-to-bind, modifiers, axis extras). Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-*`) plus `controlId*` from open UserInterface documents. Persists through `updateProjectSettings({ input })` + `normalizeInputMappings`. No JSON textarea.
+
+Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchButton widgets pick an action the same way.
 
 Runtime receives mappings via `RuntimeDriverOptions.inputMappings` / `setInputMappings`.
 

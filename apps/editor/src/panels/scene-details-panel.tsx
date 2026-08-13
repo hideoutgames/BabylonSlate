@@ -1,6 +1,8 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useState } from "react";
 import {
+  AssetPicker,
+  ClassPicker,
   PanelFrame,
   PropertyGrid,
   TypeVisualIcon,
@@ -8,12 +10,12 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
+  DEFAULT_SORTING_LAYERS,
   createDefaultSceneSettings,
   eulerDegreesToQuaternion,
   findActor,
   quaternionToEulerDegrees,
   type SerializedActor,
-  type SerializedComponent,
   type SerializedScene,
 } from "@babylonslate/core";
 import { ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
@@ -23,69 +25,37 @@ import { useSceneEditing, selectionAfterLockChange } from "../context/scene-edit
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
 import { defaultPropertiesFor } from "./add-component-catalog";
-
-const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
-
-function componentPropertyRows(
-  actor: SerializedActor,
-  component: SerializedComponent,
-  update: (property: string, value: unknown) => void,
-): PropertyRow[] {
-  return Object.entries(component.properties).map(([key, value]) => {
-    const id = `${actor.id}-${component.id}-${key}`;
-    if (typeof value === "number") {
-      return {
-        kind: "number",
-        id,
-        label: key,
-        value,
-        onChange: (next) => update(key, next),
-      };
-    }
-    if (typeof value === "boolean") {
-      return {
-        kind: "boolean",
-        id,
-        label: key,
-        value,
-        onChange: (next) => update(key, next),
-      };
-    }
-    if (key === "meshKind") {
-      return {
-        kind: "enum",
-        id,
-        label: key,
-        value: String(value ?? "box"),
-        options: MESH_KINDS.map((kind) => ({ value: kind, label: kind })),
-        onChange: (next) => update(key, next),
-      };
-    }
-    if (Array.isArray(value) && value.length === 3) {
-      return {
-        kind: "vector3",
-        id,
-        label: key,
-        value: value as [number, number, number],
-        onChange: (next) => update(key, next),
-      };
-    }
-    return {
-      kind: "text",
-      id,
-      label: key,
-      value: value === null || value === undefined ? "" : String(value),
-      onChange: (next) => update(key, next === "" ? null : next),
-    };
-  });
-}
+import {
+  componentPropertyRows,
+  gameInstanceClassEntries,
+  type AssetPickRequest,
+} from "../lib/component-property-rows";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange } = useDocuments();
+  const { openDocuments, applySceneChange, projectDocument, assetRegistry } =
+    useDocuments();
   const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
   const [addComponentOpen, setAddComponentOpen] = useState(false);
+  const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
+  const [classPickerOpen, setClassPickerOpen] = useState(false);
+  const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
+    guid: asset.header.guid,
+    name: asset.header.name,
+    type: asset.header.type,
+    path: asset.path,
+  }));
+  const classEntries = gameInstanceClassEntries(assetRegistry?.list() ?? []);
+  const sortingLayers =
+    projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const assetLabel = (guid: string | null | undefined) => {
+    if (!guid) return undefined;
+    return (
+      assetRegistry?.getByGuid?.(guid)?.header.name ??
+      pickerAssets.find((asset) => asset.guid === guid)?.name
+    );
+  };
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const scene =
@@ -132,16 +102,24 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onChange: (name) => mutate({ ...scene, name }),
       },
       {
-        kind: "text",
+        kind: "asset",
         id: "scene-game-instance-class",
         label: "Game Instance",
-        value: scene.settings.gameInstanceClass ?? "",
+        value: scene.settings.gameInstanceClass,
+        displayLabel:
+          classEntries.find(
+            (entry) => entry.id === scene.settings.gameInstanceClass,
+          )?.name ??
+          scene.settings.gameInstanceClass ??
+          undefined,
+        placeholder: "None",
+        onPick: () => setClassPickerOpen(true),
         onChange: (gameInstanceClass) =>
           mutate({
             ...scene,
             settings: {
               ...scene.settings,
-              gameInstanceClass: gameInstanceClass.trim() || null,
+              gameInstanceClass,
             },
           }),
       },
@@ -316,6 +294,21 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           rows={settingsRows}
           data-testid="scene-settings-grid"
         />
+        <ClassPicker
+          open={classPickerOpen}
+          onOpenChange={setClassPickerOpen}
+          classes={classEntries}
+          title="Pick Game Instance"
+          allowNone
+          onPick={(gameInstanceClass) => {
+            mutate({
+              ...scene,
+              settings: { ...scene.settings, gameInstanceClass },
+            });
+            setClassPickerOpen(false);
+          }}
+          data-testid="scene-game-instance-picker"
+        />
       </PanelFrame>
     );
   }
@@ -464,26 +457,65 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               </div>
             </div>
             <PropertyGrid
-              rows={componentPropertyRows(actor, component, (property, value) =>
-                updateActor((entry) => ({
-                  ...entry,
-                  components: entry.components.map((candidate) =>
-                    candidate.id === component.id
-                      ? {
-                          ...candidate,
-                          properties: {
-                            ...candidate.properties,
-                            [property]: value,
-                          },
-                        }
-                      : candidate,
-                  ),
-                })),
+              rows={componentPropertyRows(
+                actor.id,
+                component,
+                (property, value) =>
+                  updateActor((entry) => ({
+                    ...entry,
+                    components: entry.components.map((candidate) =>
+                      candidate.id === component.id
+                        ? {
+                            ...candidate,
+                            properties: {
+                              ...candidate.properties,
+                              [property]: value,
+                            },
+                          }
+                        : candidate,
+                    ),
+                  })),
+                {
+                  sortingLayers,
+                  assetLabel,
+                  physicsWorld: scene.settings.physicsWorld,
+                  onPickAsset: setAssetPick,
+                },
               )}
             />
           </div>
         ))}
       </div>
+      <AssetPicker
+        open={assetPick !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssetPick(null);
+        }}
+        assets={pickerAssets}
+        allowedTypes={assetPick?.allowedTypes}
+        title={assetPick?.title ?? "Pick Asset"}
+        allowNone
+        onPick={(guid) => {
+          if (!assetPick) return;
+          const { componentId, property } = assetPick;
+          updateActor((entry) => ({
+            ...entry,
+            components: entry.components.map((candidate) =>
+              candidate.id === componentId
+                ? {
+                    ...candidate,
+                    properties: {
+                      ...candidate.properties,
+                      [property]: guid,
+                    },
+                  }
+                : candidate,
+            ),
+          }));
+          setAssetPick(null);
+        }}
+        data-testid="details-asset-picker"
+      />
       <AddComponentDialog
         open={addComponentOpen}
         onOpenChange={setAddComponentOpen}

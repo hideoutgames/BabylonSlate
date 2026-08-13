@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  STRUCTURE_FIELD_TYPES,
   addEnumMember,
   addScriptInterfaceMethod,
   addStructureField,
@@ -17,6 +18,16 @@ describe("asset settings payloads", () => {
     expect(next.members).toEqual([
       { name: "None", value: 0 },
       { name: "NewMember", value: 1 },
+    ]);
+  });
+
+  it("lists the Structure field type enum", () => {
+    expect(STRUCTURE_FIELD_TYPES).toEqual([
+      "float",
+      "int",
+      "bool",
+      "string",
+      "enum",
     ]);
   });
 

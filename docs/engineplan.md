@@ -15,7 +15,7 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 P0–P9 are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** P11 behaviour trees / navigation, **after** the authoring-surface wave. P10 tilemaps (codecs, chain colliders, painting, 2D template) is landed. Parked: `p1-device-spikes` (hardware-only). Do not start P11+ packages from leftover **chrome** polish (pin flash, JSON input textarea, multi-select gizmo, ADT HUD).
+**Next engine slice:** P11 behaviour trees / navigation, **after** the authoring-surface wave. P10 tilemaps (codecs, chain colliders, painting, 2D template) is landed. Parked: `p1-device-spikes` (hardware-only). Do not start P11+ packages from leftover **chrome** polish (pin flash, multi-select gizmo, ADT HUD).
 
 Appendix A `[x]` means the **package/slice** landed. It does not mean every Play or document-tab path matches the letter of the spec. Honest residuals:
 
@@ -42,7 +42,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | Shader preview | Throttled `compileShaderGraphForRender` → `applyShaderGraphPreview` / `NodeMaterial.Parse`; catalog pin hydration | Done (authoring-surface wave) |
 | Anim graph Add Node pins | `hydrateAnimGraphForEditor` / `animPaletteNodes` inject `in`/`out` | Done (authoring-surface wave) |
 | Anim blend / exit-time inspector | Play evaluator already works; inspector parked | Follow-up |
-| Pin flash, JSON input editor, multi-select gizmo | Chrome polish | Parked |
+| Pin flash, multi-select gizmo | Chrome polish | Parked |
 | CustomBlock GLSL IDE; assign shader to a live scene mesh | Preview canvas is the host | Parked |
 
 **Landed (do not rebuild):**

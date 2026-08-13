@@ -10,6 +10,22 @@ import {
 
 export type { GraphClassMember, GraphClassMemberKind };
 
+export function memberNamePromptCopy(kind: GraphClassMemberKind): {
+  title: string;
+  label: string;
+} {
+  switch (kind) {
+    case "function":
+      return { title: "Add Function", label: "Function Name" };
+    case "variable":
+      return { title: "Add Variable", label: "Variable Name" };
+    case "event":
+      return { title: "Add Event", label: "Event Name" };
+    default:
+      return { title: "Add Interface", label: "Interface Name" };
+  }
+}
+
 function nextId(factory?: () => string): string {
   return factory?.() ?? crypto.randomUUID();
 }

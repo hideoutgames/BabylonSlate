@@ -1,6 +1,7 @@
 import { useMemo, useState, type MouseEvent, type PointerEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  NamePromptDialog,
   PanelFrame,
   TreeView,
   formatEventTitle,
@@ -10,7 +11,7 @@ import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
-import { addClassMember } from "../lib/class-members";
+import { addClassMember, memberNamePromptCopy } from "../lib/class-members";
 import { defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 
@@ -109,21 +110,6 @@ export function blueprintTreeNodes(
   return rows;
 }
 
-function promptMemberName(kind: GraphClassMemberKind): string | null {
-  const label =
-    kind === "function"
-      ? "Function name"
-      : kind === "variable"
-        ? "Variable name"
-        : kind === "event"
-          ? "Event name"
-          : "Interface name";
-  const raw = window.prompt(label);
-  if (raw === null) return null;
-  const name = raw.trim();
-  return name.length > 0 ? name : null;
-}
-
 function stopRowGesture(event: MouseEvent | PointerEvent) {
   event.stopPropagation();
 }
@@ -135,6 +121,8 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   const { openDocuments, applyGraphChange } = useDocuments();
   const { setFocusDiagnostic } = useValidation();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [memberPromptKind, setMemberPromptKind] =
+    useState<GraphClassMemberKind | null>(null);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
@@ -159,13 +147,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
             onPointerDown={stopRowGesture}
             onClick={(event) => {
               stopRowGesture(event);
-              if (!graph) return;
-              const name = promptMemberName(section.kind);
-              if (!name) return;
-              void applyGraphChange(
-                documentId,
-                addClassMember(graph, section.kind, name),
-              );
+              setMemberPromptKind(section.kind);
             }}
           >
             +
@@ -173,7 +155,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
         ),
       };
     });
-  }, [applyGraphChange, collapsed, documentId, graph, members]);
+  }, [collapsed, members]);
 
   return (
     <PanelFrame data-testid="my-class-panel">
@@ -210,6 +192,29 @@ export function MyClassPanel(_props: MyClassPanelProps) {
         }}
         emptyLabel="No class members"
         data-testid="my-blueprint-tree"
+      />
+      <NamePromptDialog
+        open={memberPromptKind !== null}
+        onOpenChange={(open) => {
+          if (!open) setMemberPromptKind(null);
+        }}
+        title={
+          memberPromptKind
+            ? memberNamePromptCopy(memberPromptKind).title
+            : "Add Member"
+        }
+        label={
+          memberPromptKind
+            ? memberNamePromptCopy(memberPromptKind).label
+            : "Name"
+        }
+        onSubmit={(name) => {
+          if (!graph || !memberPromptKind) return;
+          void applyGraphChange(
+            documentId,
+            addClassMember(graph, memberPromptKind, name),
+          );
+        }}
       />
     </PanelFrame>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
 import {
   AssetPicker,
+  NamePromptDialog,
   PanelFrame,
   PropertyGrid,
   NumberField,
@@ -43,7 +44,9 @@ import {
 } from "@babylonslate/ui-runtime";
 import { GraphEditor } from "@babylonslate/graph-ui";
 import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
+import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "../context/document-context";
+import { familyFromAssetPayload } from "../lib/font-preview";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import {
   resolveDesignerCanvasId,
@@ -54,7 +57,7 @@ import {
   hydrateSerializedGraphForEditor,
   scriptPaletteNodes,
 } from "../services/graph-validation";
-import { addClassMember } from "../lib/class-members";
+import { addClassMember, memberNamePromptCopy } from "../lib/class-members";
 import {
   BLUEPRINT_SECTIONS,
   blueprintTreeNodes,
@@ -81,7 +84,8 @@ export function UiDesigner({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { openDocuments, assetRegistry, collectPlayUiLibrary } = useDocuments();
+  const { openDocuments, assetRegistry, collectPlayUiLibrary, projectDocument } =
+    useDocuments();
   const ui = asUiDocument(payload);
   const logic = (payload.logic ??
     createDefaultLogicGraphSerialized()) as SerializedGraph;
@@ -89,6 +93,8 @@ export function UiDesigner({
   const [memberCollapsed, setMemberCollapsed] = useState<Set<string>>(
     () => new Set(),
   );
+  const [memberPromptKind, setMemberPromptKind] =
+    useState<GraphClassMemberKind | null>(null);
   const logicMembers = useMemo(() => membersForGraph(logic), [logic]);
   const memberTree = useMemo(() => {
     return blueprintTreeNodes(logicMembers, memberCollapsed).map((row) => {
@@ -107,12 +113,7 @@ export function UiDesigner({
             onPointerDown={stopRowGesture}
             onClick={(event) => {
               stopRowGesture(event);
-              const name = promptMemberName(section.kind);
-              if (!name) return;
-              onChange({
-                ...payload,
-                logic: addClassMember(logic, section.kind, name),
-              });
+              setMemberPromptKind(section.kind);
             }}
           >
             +
@@ -120,7 +121,7 @@ export function UiDesigner({
         ),
       };
     });
-  }, [logic, logicMembers, memberCollapsed, onChange, payload]);
+  }, [logicMembers, memberCollapsed]);
   const [presetId, setPresetId] = useState<DesignerCanvasId>("ipad-landscape");
   const extras = useEngineUiDesignerPresets();
   const devicePresets = mergeDevicePresets(extras);
@@ -129,7 +130,9 @@ export function UiDesigner({
     if (next !== presetId) setPresetId(next);
   }, [presetId, extras]);
   const [selectedId, setSelectedId] = useState(ui.rootId);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [assetPick, setAssetPick] = useState<
+    "nestedUi" | "image" | "font" | "visualOverride" | null
+  >(null);
   const [uiLibrary, setUiLibrary] = useState<PlayUiLibrary>({});
   const [view, setView] = useState<DesignView>({ zoom: 1, panX: 0, panY: 0 });
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -264,26 +267,126 @@ export function UiDesigner({
                 label: "User Interface",
                 value: selected.nestedUiGuid ?? null,
                 placeholder: "None",
-                onPick: () => setPickerOpen(true),
+                onPick: () => setAssetPick("nestedUi"),
                 onChange: (value: string | null) =>
                   patchWidget(selected.id, { nestedUiGuid: value }),
               },
             ]
-          : [
+          : selected.kind === "Text" ||
+              selected.kind === "Button" ||
+              selected.kind === "TextInput"
+            ? [
+                {
+                  id: "text",
+                  kind: "text" as const,
+                  label: "Text",
+                  value:
+                    typeof selected.props.text === "string"
+                      ? selected.props.text
+                      : "",
+                  onChange: (value: string) =>
+                    patchWidget(selected.id, {
+                      props: { ...selected.props, text: value },
+                    }),
+                },
+              ]
+            : []),
+        ...(selected.kind === "Image"
+          ? [
               {
-                id: "text",
-                kind: "text" as const,
-                label: "Text",
+                id: "image",
+                kind: "asset" as const,
+                label: "Image",
                 value:
-                  typeof selected.props.text === "string"
-                    ? selected.props.text
-                    : "",
-                onChange: (value: string) =>
+                  typeof selected.props.imageGuid === "string"
+                    ? selected.props.imageGuid
+                    : (selected.style.imageGuid ?? null),
+                placeholder: "None",
+                displayLabel: (assetRegistry?.list() ?? []).find(
+                  (asset) =>
+                    asset.header.guid ===
+                    (typeof selected.props.imageGuid === "string"
+                      ? selected.props.imageGuid
+                      : selected.style.imageGuid),
+                )?.header.name,
+                onPick: () => setAssetPick("image"),
+                onChange: (value: string | null) =>
                   patchWidget(selected.id, {
-                    props: { ...selected.props, text: value },
+                    props: { ...selected.props, imageGuid: value },
                   }),
               },
-            ]),
+            ]
+          : []),
+        ...(selected.kind === "Text" ||
+        selected.kind === "Button" ||
+        selected.kind === "TextInput"
+          ? [
+              {
+                id: "font",
+                kind: "asset" as const,
+                label: "Font",
+                value:
+                  (assetRegistry?.list() ?? []).find(
+                    (asset) =>
+                      asset.header.type === "Font" &&
+                      familyFromAssetPayload(asset.header.payload) ===
+                        selected.style.fontFamily,
+                  )?.header.guid ?? null,
+                placeholder: "None",
+                displayLabel: selected.style.fontFamily,
+                onPick: () => setAssetPick("font"),
+                onChange: (value: string | null) => {
+                  const family = value
+                    ? familyFromAssetPayload(
+                        assetRegistry?.getByGuid(value)?.header.payload,
+                      ) ?? assetRegistry?.getByGuid(value)?.header.name
+                    : undefined;
+                  patchWidget(selected.id, {
+                    style: { ...selected.style, fontFamily: family },
+                  });
+                },
+              },
+            ]
+          : []),
+        ...(selected.kind === "Button" ||
+        selected.kind === "TouchJoystick" ||
+        selected.kind === "TouchButton"
+          ? [
+              {
+                id: "visual-override",
+                kind: "asset" as const,
+                label: "Visual Override",
+                value: selected.visualOverrideGuid ?? null,
+                placeholder: "None",
+                displayLabel: (assetRegistry?.list() ?? []).find(
+                  (asset) => asset.header.guid === selected.visualOverrideGuid,
+                )?.header.name,
+                onPick: () => setAssetPick("visualOverride"),
+                onChange: (value: string | null) =>
+                  patchWidget(selected.id, { visualOverrideGuid: value }),
+              },
+            ]
+          : []),
+        ...(selected.kind === "TouchButton"
+          ? [
+              {
+                id: "action",
+                kind: "enum" as const,
+                label: "Action",
+                value: String(selected.props.action ?? ""),
+                options: normalizeInputMappings(
+                  projectDocument?.settings.input,
+                ).actions.map((action) => ({
+                  value: action.name,
+                  label: action.name,
+                })),
+                onChange: (value: string) =>
+                  patchWidget(selected.id, {
+                    props: { ...selected.props, action: value },
+                  }),
+              },
+            ]
+          : []),
         {
           id: "anchor-min",
           kind: "vector3",
@@ -688,37 +791,100 @@ export function UiDesigner({
         />
       </TabsContent>
       <AssetPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        assets={pickerAssets}
-        allowedTypes={["UserInterface"]}
+        open={assetPick !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssetPick(null);
+        }}
+        assets={
+          assetPick === "image"
+            ? (assetRegistry?.list() ?? [])
+                .filter((asset) => asset.header.type === "Texture")
+                .map((asset) => ({
+                  guid: asset.header.guid,
+                  name: asset.header.name,
+                  type: asset.header.type,
+                  path: asset.path,
+                }))
+            : assetPick === "font"
+              ? (assetRegistry?.list() ?? [])
+                  .filter((asset) => asset.header.type === "Font")
+                  .map((asset) => ({
+                    guid: asset.header.guid,
+                    name: asset.header.name,
+                    type: asset.header.type,
+                    path: asset.path,
+                  }))
+              : pickerAssets
+        }
+        allowedTypes={
+          assetPick === "image"
+            ? ["Texture"]
+            : assetPick === "font"
+              ? ["Font"]
+              : ["UserInterface"]
+        }
         allowNone
-        title="Pick User Interface"
+        title={
+          assetPick === "image"
+            ? "Pick Image"
+            : assetPick === "font"
+              ? "Pick Font"
+              : assetPick === "visualOverride"
+                ? "Pick Visual Override"
+                : "Pick User Interface"
+        }
         data-testid="ui-nested-picker"
         onPick={(guid) => {
-          if (selected?.kind === "UserInterface") {
-            patchWidget(selected.id, { nestedUiGuid: guid });
+          if (!selected) {
+            setAssetPick(null);
+            return;
           }
-          setPickerOpen(false);
+          if (assetPick === "nestedUi") {
+            patchWidget(selected.id, { nestedUiGuid: guid });
+          } else if (assetPick === "visualOverride") {
+            patchWidget(selected.id, { visualOverrideGuid: guid });
+          } else if (assetPick === "image") {
+            patchWidget(selected.id, {
+              props: { ...selected.props, imageGuid: guid },
+            });
+          } else if (assetPick === "font") {
+            const family = guid
+              ? familyFromAssetPayload(
+                  assetRegistry?.getByGuid(guid)?.header.payload,
+                ) ?? assetRegistry?.getByGuid(guid)?.header.name
+              : undefined;
+            patchWidget(selected.id, {
+              style: { ...selected.style, fontFamily: family },
+            });
+          }
+          setAssetPick(null);
+        }}
+      />
+      <NamePromptDialog
+        open={memberPromptKind !== null}
+        onOpenChange={(open) => {
+          if (!open) setMemberPromptKind(null);
+        }}
+        title={
+          memberPromptKind
+            ? memberNamePromptCopy(memberPromptKind).title
+            : "Add Member"
+        }
+        label={
+          memberPromptKind
+            ? memberNamePromptCopy(memberPromptKind).label
+            : "Name"
+        }
+        onSubmit={(name) => {
+          if (!memberPromptKind) return;
+          onChange({
+            ...payload,
+            logic: addClassMember(logic, memberPromptKind, name),
+          });
         }}
       />
     </Tabs>
   );
-}
-
-function promptMemberName(kind: GraphClassMemberKind): string | null {
-  const label =
-    kind === "function"
-      ? "Function name"
-      : kind === "variable"
-        ? "Variable name"
-        : kind === "event"
-          ? "Event name"
-          : "Interface name";
-  const raw = window.prompt(label);
-  if (raw === null) return null;
-  const name = raw.trim();
-  return name.length > 0 ? name : null;
 }
 
 function stopRowGesture(event: { stopPropagation: () => void }) {
