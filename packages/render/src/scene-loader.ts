@@ -54,6 +54,8 @@ export function createPrimitiveMesh(
         width: 100,
         height: 100,
       });
+    case "tilemap":
+      return MeshBuilder.CreatePlane(name, { size: 1 }, scene);
     default:
       // Actors without a renderable component still need a pickable proxy so
       // they can be selected and transformed in the viewport.
@@ -69,8 +71,14 @@ export function createActorMesh(scene: Scene, actor: SerializedActor): Mesh {
   const spriteComponent = actor.components.find(
     (component) => component.classId === "SpriteComponent",
   );
+  const tilemapComponent = actor.components.find(
+    (component) => component.classId === "TilemapComponent",
+  );
   if (!meshComponent && spriteComponent) {
     return createPrimitiveMesh(scene, editorMeshName(actor.id), "sprite");
+  }
+  if (!meshComponent && !spriteComponent && tilemapComponent) {
+    return createPrimitiveMesh(scene, editorMeshName(actor.id), "tilemap");
   }
   const meshKind =
     typeof meshComponent?.properties.meshKind === "string"

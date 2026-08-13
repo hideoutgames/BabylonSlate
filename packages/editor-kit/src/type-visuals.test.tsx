@@ -87,17 +87,19 @@ describe("resolveTypeVisual", () => {
     );
   });
 
-  it("does not advertise unbuilt Tilemap, behaviour-tree, or nav as distinct component glyphs", () => {
+  it("does not advertise unbuilt behaviour-tree or nav as distinct component glyphs", () => {
     const actorComponent = resolveTypeVisual({ classId: "ActorComponent" });
-    for (const classId of [
-      "TilemapComponent",
-      "BehaviourTreeComponent",
-      "NavAgentComponent",
-    ]) {
+    for (const classId of ["BehaviourTreeComponent", "NavAgentComponent"]) {
       const visual = resolveTypeVisual({ classId });
       expect(visual.iconKey).not.toBe(classId);
       expect(visual.icon).toBe(actorComponent.icon);
     }
+  });
+
+  it("uses a distinct glyph for TilemapComponent now that P10 Play load exists", () => {
+    const visual = resolveTypeVisual({ classId: "TilemapComponent" });
+    expect(visual.iconKey).toBe("TilemapComponent");
+    expect(visual.family).toBe("component");
   });
 
   it("gives Tileset and Tilemap assets distinct glyphs", () => {

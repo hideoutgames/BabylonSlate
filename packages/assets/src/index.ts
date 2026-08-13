@@ -14,6 +14,7 @@ export * from "./sprite-payload";
 export * from "./tileset-payload";
 export * from "./tilemap-payload";
 export * from "./tilemap-chunk";
+export * from "./tilemap-chains";
 export * from "./importers";
 export * from "./migrate-on-load";
 export * from "./migration";

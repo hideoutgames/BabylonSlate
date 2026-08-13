@@ -1,5 +1,9 @@
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
-import type { SpritePayload } from "@babylonslate/assets";
+import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import {
+  normalizeTilemapPayload,
+  normalizeTilesetPayload,
+} from "@babylonslate/assets";
 import type { SerializedScene } from "@babylonslate/core";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
@@ -158,6 +162,13 @@ export function spriteAssetGuidsFromScene(
   return componentGuidsFromScene(scene, "SpriteComponent", ["assetGuid"]);
 }
 
+/** Tilemap asset guids referenced by scene TilemapComponents. */
+export function tilemapAssetGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "TilemapComponent", ["assetGuid"]);
+}
+
 export function playAnimGraphsFromGuids(
   guids: readonly string[],
   documentForGuid: (guid: string) => unknown | null,
@@ -200,4 +211,75 @@ export function playSpritePayloadsFromGuids(
     if (payload) map.set(guid, payload);
   }
   return map;
+}
+
+export function playTilemapPayloadsFromGuids(
+  guids: readonly string[],
+  payloadForGuid: (guid: string) => unknown | null,
+): Map<string, TilemapPayload> {
+  const map = new Map<string, TilemapPayload>();
+  for (const guid of guids) {
+    const content = payloadForGuid(guid);
+    if (!content) continue;
+    map.set(guid, normalizeTilemapPayload(content));
+  }
+  return map;
+}
+
+export function tilesetGuidsFromTilemaps(
+  tilemaps: ReadonlyMap<string, TilemapPayload>,
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const tilemap of tilemaps.values()) {
+    const guid = tilemap.tilesetGuid;
+    if (!guid || seen.has(guid)) continue;
+    seen.add(guid);
+    guids.push(guid);
+  }
+  return guids;
+}
+
+export function playTilesetPayloadsFromGuids(
+  guids: readonly string[],
+  payloadForGuid: (guid: string) => unknown | null,
+): Map<string, TilesetPayload> {
+  const map = new Map<string, TilesetPayload>();
+  for (const guid of guids) {
+    const content = payloadForGuid(guid);
+    if (!content) continue;
+    map.set(guid, normalizeTilesetPayload(content));
+  }
+  return map;
+}
+
+function guidDocuments<T>(
+  payloads: ReadonlyMap<string, T> | undefined,
+): Array<{ guid: string; document: unknown }> {
+  if (!payloads) return [];
+  return [...payloads.entries()].map(([guid, document]) => ({ guid, document }));
+}
+
+/** Worker `loadTilemaps` control, or null when Play has no tile content. */
+export function playLoadTilemapsControl(
+  tilemaps: ReadonlyMap<string, TilemapPayload> | undefined,
+  tilesets: ReadonlyMap<string, TilesetPayload> | undefined,
+  pixelsPerUnit?: number,
+): {
+  type: "loadTilemaps";
+  tilemaps: Array<{ guid: string; document: unknown }>;
+  tilesets: Array<{ guid: string; document: unknown }>;
+  pixelsPerUnit?: number;
+} | null {
+  if ((!tilemaps || tilemaps.size === 0) && (!tilesets || tilesets.size === 0)) {
+    return null;
+  }
+  return {
+    type: "loadTilemaps",
+    tilemaps: guidDocuments(tilemaps),
+    tilesets: guidDocuments(tilesets),
+    ...(typeof pixelsPerUnit === "number" && pixelsPerUnit > 0
+      ? { pixelsPerUnit }
+      : {}),
+  };
 }

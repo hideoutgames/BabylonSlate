@@ -275,8 +275,8 @@ Design note: [tilemaps.md](../architecture/tilemaps.md). Codecs first, then Rapi
 
 | Item | Status |
 | --- | --- |
-| Tileset / Tilemap payloads, UV math, golden chunk VertexData, document tabs | In progress (`cursor/play-path-harden-8678`) |
-| Merged chain colliders + `TilemapComponent` Play load | Next |
+| Tileset / Tilemap payloads, UV math, golden chunk VertexData, document tabs | Done (`cursor/play-path-harden-8678`) |
+| Merged chain colliders + `TilemapComponent` Play load | Done (`cursor/play-path-harden-8678`) |
 | Touch painting, one undo per stroke, 2D Create Project card, acceptance e2e | Next |
 | Autotile / terrain | Deferred |
 | A16 alpha-test vs blend profile | Record in tilemaps.md; do not lock a new default without numbers |

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import { createActor, createDefaultScene } from "@babylonslate/core";
-import { createDefaultSpritePayload } from "@babylonslate/assets";
+import {
+  createDefaultSpritePayload,
+  createDefaultTilemapPayload,
+  createDefaultTilesetPayload,
+} from "@babylonslate/assets";
 import {
   animationGraphGuidsFromScene,
   applyPlayHudInstance,
@@ -10,11 +14,14 @@ import {
   mergePlayAnimGraphs,
   playAnimGraphsFromOpenDocuments,
   playAnimGraphsFromGuids,
+  playLoadTilemapsControl,
   playSpritePayloadsFromGuids,
   playUiLibraryFromAssets,
   removePlayHudInstance,
   resolvePlayHudDocuments,
   spriteAssetGuidsFromScene,
+  tilemapAssetGuidsFromScene,
+  tilesetGuidsFromTilemaps,
 } from "./play-content";
 
 describe("playUiLibraryFromAssets", () => {
@@ -155,6 +162,22 @@ describe("scene-referenced Play content", () => {
     expect(spriteAssetGuidsFromScene(scene)).toEqual(["hero-sprite"]);
   });
 
+  it("collects TilemapComponent assetGuid values from a closed scene", () => {
+    const scene = createDefaultScene();
+    scene.actors.push(
+      createActor("map", "Map", {
+        components: [
+          {
+            id: "tiles",
+            classId: "TilemapComponent",
+            properties: { assetGuid: "overworld" },
+          },
+        ],
+      }),
+    );
+    expect(tilemapAssetGuidsFromScene(scene)).toEqual(["overworld"]);
+  });
+
   it("loads anim graphs by guid without an open tab", () => {
     const graph = createDefaultAnimGraph("Loco");
     expect(
@@ -184,5 +207,33 @@ describe("scene-referenced Play content", () => {
       guid === "hero-sprite" ? payload : null,
     );
     expect(map.get("hero-sprite")).toEqual(payload);
+  });
+
+  it("collects tileset guids from loaded tilemaps", () => {
+    const tilemap = {
+      ...createDefaultTilemapPayload(),
+      tilesetGuid: "overworld-set",
+    };
+    expect(tilesetGuidsFromTilemaps(new Map([["overworld", tilemap]]))).toEqual([
+      "overworld-set",
+    ]);
+  });
+
+  it("builds a worker loadTilemaps control from scene payloads", () => {
+    const tilemap = createDefaultTilemapPayload();
+    const tileset = createDefaultTilesetPayload();
+    expect(
+      playLoadTilemapsControl(
+        new Map([["overworld", tilemap]]),
+        new Map([["overworld-set", tileset]]),
+        16,
+      ),
+    ).toEqual({
+      type: "loadTilemaps",
+      tilemaps: [{ guid: "overworld", document: tilemap }],
+      tilesets: [{ guid: "overworld-set", document: tileset }],
+      pixelsPerUnit: 16,
+    });
+    expect(playLoadTilemapsControl(new Map(), new Map())).toBeNull();
   });
 });

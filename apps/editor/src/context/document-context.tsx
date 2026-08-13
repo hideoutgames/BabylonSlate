@@ -30,6 +30,8 @@ import {
   type ProjectSearchIndex,
   type ProjectTemplate,
   type SpritePayload,
+  type TilemapPayload,
+  type TilesetPayload,
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
@@ -89,8 +91,12 @@ import {
   playAnimGraphsFromGuids,
   playAnimGraphsFromOpenDocuments,
   playSpritePayloadsFromGuids,
+  playTilemapPayloadsFromGuids,
+  playTilesetPayloadsFromGuids,
   playUiLibraryFromAssets,
   spriteAssetGuidsFromScene,
+  tilemapAssetGuidsFromScene,
+  tilesetGuidsFromTilemaps,
   type PlayAnimGraphEntry,
 } from "../lib/play-content";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
@@ -202,6 +208,12 @@ interface DocumentContextValue {
   collectPlaySpritePayloads: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, SpritePayload>>;
+  collectPlayTilemapContent: (
+    scene?: SerializedScene | null,
+  ) => Promise<{
+    tilemaps: Map<string, TilemapPayload>;
+    tilesets: Map<string, TilesetPayload>;
+  }>;
   /** True when a compiled graph changed since the last successful compile (positions ignored). */
   scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
@@ -1066,7 +1078,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const loadPlayAssetContent = useCallback(
     async (
-      kind: "anim-graph" | "sprite" | "ui",
+      kind: "anim-graph" | "sprite" | "ui" | "tileset" | "tilemap",
       path: string,
     ): Promise<unknown | null> => {
       const openDoc = documentService
@@ -1136,6 +1148,53 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         [...loaded.keys()],
         (guid) => loaded.get(guid) ?? null,
       );
+    },
+    [loadPlayAssetContent, projectService],
+  );
+
+  const collectPlayTilemapContent = useCallback(
+    async (
+      scene?: SerializedScene | null,
+    ): Promise<{
+      tilemaps: Map<string, TilemapPayload>;
+      tilesets: Map<string, TilesetPayload>;
+    }> => {
+      const assets = projectService.registry?.list() ?? [];
+      const tilemapsByGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Tilemap")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const tilesetsByGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Tileset")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const loadedMaps = new Map<string, unknown>();
+      for (const guid of tilemapAssetGuidsFromScene(scene)) {
+        const asset = tilemapsByGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("tilemap", asset.path);
+        if (content) loadedMaps.set(guid, content);
+      }
+      const tilemaps = playTilemapPayloadsFromGuids(
+        [...loadedMaps.keys()],
+        (guid) => loadedMaps.get(guid) ?? null,
+      );
+      const loadedSets = new Map<string, unknown>();
+      for (const guid of tilesetGuidsFromTilemaps(tilemaps)) {
+        const asset = tilesetsByGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("tileset", asset.path);
+        if (content) loadedSets.set(guid, content);
+      }
+      return {
+        tilemaps,
+        tilesets: playTilesetPayloadsFromGuids(
+          [...loadedSets.keys()],
+          (guid) => loadedSets.get(guid) ?? null,
+        ),
+      };
     },
     [loadPlayAssetContent, projectService],
   );
@@ -1661,6 +1720,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayUiLibrary,
       collectPlayAnimGraphs,
       collectPlaySpritePayloads,
+      collectPlayTilemapContent,
       graphsNeedCompile: compileSignatureIsStale(
         currentGraphSignature,
         lastCompiledSignature,
@@ -1688,6 +1748,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayUiLibrary,
       collectPlayAnimGraphs,
       collectPlaySpritePayloads,
+      collectPlayTilemapContent,
       lastCompiledSignature,
       markScriptsCurrent,
       listedProjects,

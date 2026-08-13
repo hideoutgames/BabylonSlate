@@ -8,7 +8,8 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
-import type { SpritePayload } from "@babylonslate/assets";
+import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import { playLoadTilemapsControl } from "../lib/play-content";
 import {
   createEngine,
   type EngineHandle,
@@ -173,6 +174,10 @@ export function startPlaySession(options: {
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** Sprite payloads keyed by asset guid for Play clip UV seeks. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
+  tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
+  tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
+  pixelsPerUnit?: number;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
@@ -187,6 +192,9 @@ export function startPlaySession(options: {
     maxActors: 256,
     frameCap: resolvePlayFrameCap(options.frameCap),
     spritePayloads: options.spritePayloads,
+    tilemapPayloads: options.tilemapPayloads,
+    tilesetPayloads: options.tilesetPayloads,
+    pixelsPerUnit: options.pixelsPerUnit,
   });
   handle.scheduler.invalidate("play");
   liveBefore.meshes = handle.liveObjectCounts().meshes;
@@ -310,6 +318,14 @@ export function startPlaySession(options: {
         graphs: [...(options.animGraphs ?? [])],
       });
     }
+    const tilemapsControl = playLoadTilemapsControl(
+      options.tilemapPayloads,
+      options.tilesetPayloads,
+      options.pixelsPerUnit,
+    );
+    if (tilemapsControl) {
+      worker.postControl(tilemapsControl);
+    }
     worker.postControl({ type: "play" });
   } catch (err) {
     worker = null;
@@ -332,6 +348,16 @@ export function startPlaySession(options: {
     for (const entry of options.animGraphs ?? []) {
       const document = parseAnimGraphDocument(entry.document);
       if (document) inProcess.registerAnimGraph(entry.guid, document);
+    }
+    if (
+      (options.tilemapPayloads && options.tilemapPayloads.size > 0) ||
+      (options.tilesetPayloads && options.tilesetPayloads.size > 0)
+    ) {
+      inProcess.registerTileContent({
+        tilemaps: options.tilemapPayloads ?? new Map(),
+        tilesets: options.tilesetPayloads ?? new Map(),
+        pixelsPerUnit: options.pixelsPerUnit,
+      });
     }
     void boot.play(inProcess).catch((error) => {
       inProcess.reportError(error);

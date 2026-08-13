@@ -6,7 +6,7 @@ import {
 } from "@babylonjs/core";
 import type { SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
-import type { SpritePayload } from "@babylonslate/assets";
+import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
   createEditorCamera,
@@ -92,6 +92,10 @@ export interface CreateEngineOptions {
   frameCap?: number;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  /** Tilemap / tileset payloads for Play chunk meshes. */
+  tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
+  tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
+  pixelsPerUnit?: number;
 }
 
 export interface EditorTools {
@@ -176,6 +180,9 @@ export function createEngine(
   const scaling = new HardwareScalingController(engine);
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
+  binding.tilemaps = options.tilemapPayloads;
+  binding.tilesets = options.tilesetPayloads;
+  binding.pixelsPerUnit = options.pixelsPerUnit;
 
   const editorSync = options.editor ? new EditorSceneSync(scene, scheduler) : null;
 

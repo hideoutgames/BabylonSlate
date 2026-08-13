@@ -63,6 +63,12 @@ export type ControlMessage =
       type: "loadAnimGraphs";
       graphs: Array<{ guid: string; document: unknown }>;
     }
+  | {
+      type: "loadTilemaps";
+      tilemaps: Array<{ guid: string; document: unknown }>;
+      tilesets: Array<{ guid: string; document: unknown }>;
+      pixelsPerUnit?: number;
+    }
   | { type: "play" }
   | { type: "pause" }
   | { type: "step" }

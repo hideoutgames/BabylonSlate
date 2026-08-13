@@ -1,6 +1,6 @@
 # Tilemaps (P10)
 
-Tileset and Tilemap assets, chunked `VertexData`, and (later in the slice) merged Rapier chain colliders plus touch painting (engineplan §13.3). Not Babylon `SpriteMap` — that format cannot golden-test geometry or emit collision chains.
+Tileset and Tilemap assets, chunked `VertexData`, merged Rapier chain colliders, and (later in the slice) touch painting (engineplan §13.3). Not Babylon `SpriteMap` — that format cannot golden-test geometry or emit collision chains.
 
 Autotile and terrain rules are deferred.
 
@@ -41,9 +41,19 @@ Only **affected chunks** should be rebuilt on paint. Goldens live next to the pa
 
 Animated tiles (tileset `animation` frame lists) draw as a small separate set; they do not make every static tile dynamic.
 
+Play builds a parent `actor-N` mesh plus one child draw per non-empty chunk (`createTilemapMeshes`). The editor viewport keeps a plane proxy so picking still uses `editorActor:` names; Play picking walks the parent chain from a chunk child to `actor-N`.
+
+## Collision
+
+`tilemapChunkChains` (also Babylon-free) merges `full` tiles in a chunk: shared edges cancel, collinear outer edges collapse, so a solid rectangle is **one four-point loop** rather than a box per tile. Custom `chain` collision on a tile is emitted as an open polyline in world space.
+
+`PhysicsWorldSync` gives every `TilemapComponent` actor a **static** body (even without `RigidBodyComponent`) and attaches those chains for layers with `collision: true`. Software 2D treats a chain as its AABB (wasm-failure path); Rapier uses real chain colliders.
+
+Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` values (not only open tabs) and posts worker `loadTilemaps` before `play`. Project `twoD.pixelsPerUnit` sizes both meshes and chains.
+
 ## Placement
 
-`TilemapComponent` stays in `ENGINE_COMPONENT_CLASS_IDS`. Add Component / Search advertise it once Play loads chunk meshes and Rapier chain colliders (same PR wave). Properties: `assetGuid`, sorting layer / order.
+`TilemapComponent` is in Add Component (Rendering) and Search. Properties: `assetGuid`, sorting layer / order.
 
 ## Painting (follow-up in this phase)
 

@@ -92,6 +92,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   AnimationGraphComponent: FilmIcon,
   MeshComponent: BoxIcon,
   SpriteComponent: ImagesIcon,
+  TilemapComponent: Grid3x3Icon,
   CameraComponent: CameraIcon,
   LightComponent: LightbulbIcon,
   AudioComponent: Volume2Icon,
@@ -120,6 +121,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
 const COMPONENT_CLASS_IDS = new Set([
   "MeshComponent",
   "SpriteComponent",
+  "TilemapComponent",
   "CameraComponent",
   "LightComponent",
   "AudioComponent",

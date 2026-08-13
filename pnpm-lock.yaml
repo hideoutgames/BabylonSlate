@@ -409,6 +409,9 @@ importers:
       '@babylonslate/anim-graph':
         specifier: workspace:*
         version: link:../anim-graph
+      '@babylonslate/assets':
+        specifier: workspace:*
+        version: link:../assets
       '@babylonslate/bridge':
         specifier: workspace:*
         version: link:../bridge

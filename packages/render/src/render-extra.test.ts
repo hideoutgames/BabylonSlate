@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { NullEngine, Scene } from "@babylonjs/core";
+import {
+  createDefaultTilemapPayload,
+  normalizeTilesetPayload,
+  setTile,
+} from "@babylonslate/assets";
 import { HardwareScalingController } from "./hardware-scaling";
 import {
   applySnapshotToScene,
@@ -108,6 +113,51 @@ describe("snapshot apply under NullEngine", () => {
     });
     expect(binding.meshAssetGuids.get(2)).toBe("sprite-guid");
     expect(binding.meshKinds.get(2)).toBe("sprite");
+    disposeSnapshotBinding(binding);
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("builds chunk child meshes when assignMesh is a tilemap with payloads", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const tileset = normalizeTilesetPayload({
+      atlasWidth: 16,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+    });
+    let tilemap = createDefaultTilemapPayload();
+    tilemap = { ...tilemap, tilesetGuid: "set-1", chunkSize: 2 };
+    tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
+    const binding = createSnapshotSceneBinding();
+    binding.tilemaps = new Map([["map-1", tilemap]]);
+    binding.tilesets = new Map([["set-1", tileset]]);
+    binding.pixelsPerUnit = 16;
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: "map-1",
+      meshKind: "tilemap",
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    const mesh = binding.meshes.get(0);
+    expect(mesh?.name).toBe("actor-0");
+    expect(mesh?.getChildren()).toHaveLength(1);
     disposeSnapshotBinding(binding);
     scene.dispose();
     engine.dispose();

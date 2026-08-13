@@ -35,6 +35,9 @@ function meshKindOf(actor: SerializedActor): string | null {
   if (actor.components.some((entry) => entry.classId === "SpriteComponent")) {
     return "sprite";
   }
+  if (actor.components.some((entry) => entry.classId === "TilemapComponent")) {
+    return "tilemap";
+  }
   return null;
 }
 

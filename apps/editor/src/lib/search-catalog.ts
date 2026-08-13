@@ -6,6 +6,7 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   ...ENGINE_BASE_CLASSES,
   "MeshComponent",
   "SpriteComponent",
+  "TilemapComponent",
   "CameraComponent",
   "LightComponent",
   "AudioComponent",

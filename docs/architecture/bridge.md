@@ -56,7 +56,7 @@ Capacity is fixed at create time (`maxActors`). Writer fills slots `[0, actorCou
 
 | Channel | Direction | Payload |
 | --- | --- | --- |
-| Control | main → worker | `load` (`sceneAssetGuid`, optional authored `scene`, `seed`, `physicsWorld`, `gravity`, `havokWasmUrl`), `loadScripts`, `loadAnimGraphs`, `play`, `pause`, `step`, `stop`, `setPaused` |
+| Control | main → worker | `load` (`sceneAssetGuid`, optional authored `scene`, `seed`, `physicsWorld`, `gravity`, `havokWasmUrl`), `loadScripts`, `loadAnimGraphs`, `loadTilemaps` (tilemap + tileset payloads, optional `pixelsPerUnit`), `play`, `pause`, `step`, `stop`, `setPaused` |
 | Commands | worker → main (ordered) | `spawn`, `despawn`, `assignMesh` (`meshAssetGuid` + `meshKind`), `assignMaterial`, `log`, `diagnostic`, `stats`, `uiSetVisible`, `uiApply` (`instanceId`, `assetGuid`), `uiRemove` (`instanceId`), `animState` (`slotId`, `stateId`, `normalisedTime`, `blendWeights`, optional `clipName` / `clipKind`) |
 | Input ring | main → worker | Tick-stamped raw events (see `@babylonslate/input`) |
 | Snapshots | worker → main | Hot-path transform buffers (SAB or transferable) |

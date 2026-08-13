@@ -697,6 +697,31 @@ function TilesetEditor({
               value: tileset.atlasHeight,
               onChange: (value) => onChange({ ...tileset, atlasHeight: value }),
             },
+            {
+              id: "collision",
+              kind: "enum",
+              label: "Tile Collision",
+              value:
+                tileset.tiles[0]?.collision === "full"
+                  ? "full"
+                  : tileset.tiles[0]?.collision === "none" ||
+                      !tileset.tiles[0]
+                    ? "none"
+                    : "full",
+              options: [
+                { value: "none", label: "None" },
+                { value: "full", label: "Full" },
+              ],
+              onChange: (value) =>
+                onChange({
+                  ...tileset,
+                  tiles: tileset.tiles.map((tile, index) =>
+                    index === 0
+                      ? { ...tile, collision: value === "full" ? "full" : "none" }
+                      : tile,
+                  ),
+                }),
+            },
           ]}
         />
         <AssetPicker

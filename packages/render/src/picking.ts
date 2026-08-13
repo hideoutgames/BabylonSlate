@@ -17,11 +17,21 @@ export function pickAtCanvas(
   if (!pick?.hit || !pick.pickedMesh) {
     return null;
   }
-  const name = pick.pickedMesh.name;
-  const match = /^actor-(\d+)$/.exec(name);
+  let mesh: { name: string; parent: unknown } | null = pick.pickedMesh;
+  while (mesh) {
+    const match = /^actor-(\d+)$/.exec(mesh.name);
+    if (match) {
+      return {
+        meshName: mesh.name,
+        slotId: Number(match[1]),
+        hit: pick,
+      };
+    }
+    mesh = (mesh.parent as { name: string; parent: unknown } | null) ?? null;
+  }
   return {
-    meshName: name,
-    slotId: match ? Number(match[1]) : null,
+    meshName: pick.pickedMesh.name,
+    slotId: null,
     hit: pick,
   };
 }

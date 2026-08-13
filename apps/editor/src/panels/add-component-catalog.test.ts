@@ -9,7 +9,7 @@ describe("Add Component catalog", () => {
     const ids = ADDABLE_COMPONENT_CLASSES.map((entry) => entry.id);
     expect(ids).toContain("SpriteComponent");
     expect(ids).not.toContain("WidgetComponent");
-    expect(ids).not.toContain("TilemapComponent");
+    expect(ids).toContain("TilemapComponent");
     expect(ids).toContain("AnimationGraphComponent");
     expect(ids).toContain("RigidBodyComponent");
     expect(ids).toContain("ColliderComponent");
@@ -31,6 +31,7 @@ describe("Add Component catalog", () => {
     expect(byCategory.get("Rendering")).toEqual([
       "MeshComponent",
       "SpriteComponent",
+      "TilemapComponent",
       "LightComponent",
     ]);
     expect(byCategory.get("UI")).toBeUndefined();
@@ -49,6 +50,19 @@ describe("Add Component catalog", () => {
       linearDamping: 0,
       angularDamping: 0,
       gravityScale: 1,
+    });
+  });
+
+  it("seeds Sprite and Tilemap asset-guid defaults", () => {
+    expect(defaultPropertiesFor("SpriteComponent")).toEqual({
+      assetGuid: null,
+      sortingLayer: "Default",
+      orderInLayer: 0,
+    });
+    expect(defaultPropertiesFor("TilemapComponent")).toEqual({
+      assetGuid: null,
+      sortingLayer: "Default",
+      orderInLayer: 0,
     });
   });
 

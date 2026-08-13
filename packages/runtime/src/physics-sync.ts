@@ -4,6 +4,11 @@ import {
   parseRigidBodyProperties,
 } from "@babylonslate/physics";
 import type { Actor, World } from "@babylonslate/object-model";
+import {
+  tilemapChunkChains,
+  type TilemapPayload,
+  type TilesetPayload,
+} from "@babylonslate/assets";
 
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
@@ -14,6 +19,9 @@ export class PhysicsWorldSync {
   private readonly bodyByActor = new Map<string, string>();
   private readonly characterByActor = new Map<string, string>();
   private synced = false;
+  private tilemaps = new Map<string, TilemapPayload>();
+  private tilesets = new Map<string, TilesetPayload>();
+  private pixelsPerUnit = 100;
 
   constructor(backend: PhysicsBackend) {
     this.backend = backend;
@@ -21,6 +29,18 @@ export class PhysicsWorldSync {
 
   getBackend(): PhysicsBackend {
     return this.backend;
+  }
+
+  setTileContent(options: {
+    tilemaps: ReadonlyMap<string, TilemapPayload> | Readonly<Record<string, TilemapPayload>>;
+    tilesets: ReadonlyMap<string, TilesetPayload> | Readonly<Record<string, TilesetPayload>>;
+    pixelsPerUnit?: number;
+  }): void {
+    this.tilemaps = toMap(options.tilemaps);
+    this.tilesets = toMap(options.tilesets);
+    if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
+      this.pixelsPerUnit = options.pixelsPerUnit;
+    }
   }
 
   dispose(): void {
@@ -37,15 +57,17 @@ export class PhysicsWorldSync {
       const rigid = actor.components.find(
         (c) => c.classId === "RigidBodyComponent" && !c.destroyed,
       );
-      if (!rigid) continue;
+      const tilemap = actor.components.find(
+        (c) => c.classId === "TilemapComponent" && !c.destroyed,
+      );
+      if (!rigid && !tilemap) continue;
       live.add(actor.guid);
       if (!this.bodyByActor.has(actor.guid)) {
         this.createForActor(actor);
       } else {
-        // Keep kinematic/static transforms authored by scripts.
         const bodyId = this.bodyByActor.get(actor.guid)!;
         const props = parseRigidBodyProperties(
-          mapToRecord(rigid.variables),
+          rigid ? mapToRecord(rigid.variables) : { motionType: "static" },
         );
         if (props.motionType !== "dynamic") {
           this.backend.setBodyTransform(bodyId, actorTransform(actor));
@@ -141,17 +163,22 @@ export class PhysicsWorldSync {
     const rigid = actor.components.find(
       (c) => c.classId === "RigidBodyComponent" && !c.destroyed,
     );
-    if (!rigid) return;
+    const tilemap = actor.components.find(
+      (c) => c.classId === "TilemapComponent" && !c.destroyed,
+    );
+    if (!rigid && !tilemap) return;
     const bodyId = `body:${actor.guid}`;
-    const props = parseRigidBodyProperties(mapToRecord(rigid.variables));
+    const props = parseRigidBodyProperties(
+      rigid ? mapToRecord(rigid.variables) : { motionType: "static", mass: 0, gravityScale: 0 },
+    );
     this.backend.createBody({
       id: bodyId,
       actorId: actor.guid,
-      motionType: props.motionType,
-      mass: props.mass,
+      motionType: rigid ? props.motionType : "static",
+      mass: rigid ? props.mass : 0,
       linearDamping: props.linearDamping,
       angularDamping: props.angularDamping,
-      gravityScale: props.gravityScale,
+      gravityScale: rigid ? props.gravityScale : 0,
       transform: actorTransform(actor),
     });
     this.bodyByActor.set(actor.guid, bodyId);
@@ -174,6 +201,57 @@ export class PhysicsWorldSync {
         layer: collider.layer,
         mask: collider.mask,
       });
+    }
+
+    if (tilemap) this.createTilemapColliders(actor, bodyId, tilemap);
+  }
+
+  private createTilemapColliders(
+    actor: Actor,
+    bodyId: string,
+    component: Actor["components"][number],
+  ): void {
+    const guid =
+      component.assetGuid ??
+      (typeof component.getVariable("assetGuid") === "string"
+        ? String(component.getVariable("assetGuid"))
+        : null);
+    if (!guid) return;
+    const tilemap = this.tilemaps.get(guid);
+    if (!tilemap?.tilesetGuid) return;
+    const tileset = this.tilesets.get(tilemap.tilesetGuid);
+    if (!tileset) return;
+    const ppu = this.pixelsPerUnit > 0 ? this.pixelsPerUnit : 100;
+    const worldTileWidth = tilemap.tileWidth / ppu;
+    const worldTileHeight = tilemap.tileHeight / ppu;
+    let index = 0;
+    for (const layer of tilemap.layers) {
+      if (!layer.collision) continue;
+      for (const chunk of layer.chunks) {
+        const chains = tilemapChunkChains({
+          tiles: chunk.tiles,
+          chunkSize: tilemap.chunkSize,
+          chunkX: chunk.cx,
+          chunkY: chunk.cy,
+          tileset,
+          worldTileWidth,
+          worldTileHeight,
+        });
+        for (const chain of chains) {
+          if (chain.points.length < 2) continue;
+          this.backend.createCollider({
+            id: `tilemap:${actor.guid}:${layer.id}:${chunk.cx}:${chunk.cy}:${index}`,
+            bodyId,
+            shape: { kind: "chain", points: chain.points, loop: chain.loop },
+            friction: 0.5,
+            restitution: 0,
+            isTrigger: false,
+            layer: 1,
+            mask: 0xffffffff,
+          });
+          index += 1;
+        }
+      }
     }
   }
 }
@@ -200,4 +278,11 @@ function mapToRecord(
   const out: Record<string, unknown> = {};
   for (const [key, value] of variables) out[key] = value;
   return out;
+}
+
+function toMap<T>(
+  value: ReadonlyMap<string, T> | Readonly<Record<string, T>>,
+): Map<string, T> {
+  if (value instanceof Map) return new Map(value);
+  return new Map(Object.entries(value));
 }

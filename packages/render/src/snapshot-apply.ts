@@ -6,8 +6,10 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
+import type { TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { createPrimitiveMesh } from "./scene-loader";
+import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -23,6 +25,9 @@ export interface SnapshotSceneBinding {
   meshKinds: Map<number, string | null>;
   /** Sprite / mesh asset guid from assignMesh, keyed by slotId. */
   meshAssetGuids: Map<number, string | null>;
+  tilemaps?: ReadonlyMap<string, TilemapPayload>;
+  tilesets?: ReadonlyMap<string, TilesetPayload>;
+  pixelsPerUnit?: number;
 }
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
@@ -50,7 +55,13 @@ export function applyAssignMesh(
   existing.dispose();
   binding.meshes.set(
     command.slotId,
-    createPlayMesh(scene, command.slotId, meshKind),
+    createPlayMesh(
+      scene,
+      command.slotId,
+      meshKind,
+      command.meshAssetGuid,
+      binding,
+    ),
   );
 }
 
@@ -58,7 +69,26 @@ function createPlayMesh(
   scene: Scene,
   slotId: number,
   meshKind: string | null | undefined,
+  assetGuid?: string | null,
+  binding?: SnapshotSceneBinding,
 ): Mesh {
+  if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
+    const tilemap = binding.tilemaps.get(assetGuid);
+    const tileset = tilemap?.tilesetGuid
+      ? binding.tilesets?.get(tilemap.tilesetGuid)
+      : undefined;
+    if (tilemap && tileset) {
+      const size = worldTileSize(tilemap, binding.pixelsPerUnit ?? 100);
+      return createTilemapMeshes(
+        scene,
+        `actor-${slotId}`,
+        tilemap,
+        tileset,
+        size.width,
+        size.height,
+      );
+    }
+  }
   return createPrimitiveMesh(scene, `actor-${slotId}`, meshKind);
 }
 
@@ -87,6 +117,8 @@ export function applySnapshotToScene(
           scene,
           actor.slotId,
           binding.meshKinds.get(actor.slotId),
+          binding.meshAssetGuids.get(actor.slotId),
+          binding,
         );
         binding.meshes.set(actor.slotId, mesh);
       }

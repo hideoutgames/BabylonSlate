@@ -24,5 +24,6 @@ export * from "./pixel-perfect";
 export * from "./font-registry";
 export * from "./ui-apply";
 export * from "./sprite-quad";
+export * from "./tilemap-mesh";
 export * from "./shader-compile";
 export * from "./anim-apply";

@@ -4,6 +4,10 @@
  */
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
+  normalizeTilemapPayload,
+  normalizeTilesetPayload,
+} from "@babylonslate/assets";
+import {
   TransferablePingPong,
   type BridgeHostMessage,
   type CommandMessage,
@@ -56,6 +60,25 @@ function handleControl(msg: ControlMessage): void {
         const document = parseAnimGraphDocument(entry.document);
         if (document) rt.registerAnimGraph(entry.guid, document);
       }
+      return;
+    }
+    case "loadTilemaps": {
+      const rt = ensureRuntime();
+      const tilemaps: Record<string, ReturnType<typeof normalizeTilemapPayload>> =
+        {};
+      const tilesets: Record<string, ReturnType<typeof normalizeTilesetPayload>> =
+        {};
+      for (const entry of msg.tilemaps) {
+        tilemaps[entry.guid] = normalizeTilemapPayload(entry.document);
+      }
+      for (const entry of msg.tilesets) {
+        tilesets[entry.guid] = normalizeTilesetPayload(entry.document);
+      }
+      rt.registerTileContent({
+        tilemaps,
+        tilesets,
+        pixelsPerUnit: msg.pixelsPerUnit,
+      });
       return;
     }
     case "play": {
