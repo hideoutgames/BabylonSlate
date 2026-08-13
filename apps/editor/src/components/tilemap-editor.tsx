@@ -16,7 +16,7 @@ import {
   AssetPicker,
   PanelFrame,
   PropertyGrid,
-  SearchSheet,
+  SearchDropdown,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -264,15 +264,24 @@ export function TilemapEditor({
               );
             })}
           </ToggleGroup>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid="tilemap-palette-open"
-            onClick={() => setPaletteOpen(true)}
+          <SearchDropdown
+            open={paletteOpen}
+            onOpenChange={setPaletteOpen}
+            title="Tile Palette"
+            description="Choose a tile for brush, rect, bucket, and stamp."
+            items={paletteItems}
+            onSelect={(id) => setTileId(Number(id))}
+            data-testid="tilemap-palette-menu"
           >
-            Palette
-          </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="tilemap-palette-open"
+            >
+              Palette
+            </Button>
+          </SearchDropdown>
         </div>
         <canvas
           ref={canvasRef}
@@ -348,16 +357,6 @@ export function TilemapEditor({
             setPickerOpen(false);
           }}
           data-testid="tilemap-tileset-picker"
-        />
-        <SearchSheet
-          open={paletteOpen}
-          onOpenChange={setPaletteOpen}
-          title="Tile Palette"
-          description="Choose a tile for brush, rect, bucket, and stamp."
-          items={paletteItems}
-          onSelect={(id) => setTileId(Number(id))}
-          side="bottom"
-          data-testid="tilemap-palette-sheet"
         />
       </div>
     </PanelFrame>

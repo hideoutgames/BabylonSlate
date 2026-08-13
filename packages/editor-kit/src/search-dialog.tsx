@@ -1,16 +1,16 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
-import { SearchInput } from "./search-input";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@babylonslate/ui/components/sheet";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@babylonslate/ui/components/dialog";
+import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+import { SearchInput } from "./search-input";
 
-export interface SearchSheetItem {
+export interface SearchDialogItem {
   id: string;
   label: string;
   /** Secondary line, also matched by the filter. */
@@ -20,24 +20,22 @@ export interface SearchSheetItem {
   trailing?: ReactNode;
 }
 
-export interface SearchSheetProps {
+export interface SearchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: string;
-  items: SearchSheetItem[];
+  items: SearchDialogItem[];
   onSelect: (id: string) => void;
   placeholder?: string;
   emptyLabel?: string;
-  /** Bottom sheet on touch; right side reads better on desktop. */
-  side?: "bottom" | "right";
   "data-testid"?: string;
 }
 
 export function filterSearchItems(
-  items: SearchSheetItem[],
+  items: SearchDialogItem[],
   query: string,
-): SearchSheetItem[] {
+): SearchDialogItem[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return items;
   return items.filter((item) =>
@@ -47,8 +45,8 @@ export function filterSearchItems(
   );
 }
 
-/** Searchable bottom sheet used by the node palette, asset picker and add-component. */
-export function SearchSheet({
+/** Compact searchable dialog used by asset and class pickers. */
+export function SearchDialog({
   open,
   onOpenChange,
   title,
@@ -57,32 +55,30 @@ export function SearchSheet({
   onSelect,
   placeholder = "Search",
   emptyLabel = "No matches",
-  side = "bottom",
   "data-testid": testId,
-}: SearchSheetProps) {
+}: SearchDialogProps) {
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => filterSearchItems(items, query), [items, query]);
 
   return (
-    <Sheet
+    <Dialog
       open={open}
       onOpenChange={(next) => {
         if (!next) setQuery("");
         onOpenChange(next);
       }}
     >
-      <SheetContent
-        side={side}
-        className={side === "bottom" ? "h-[70vh]" : undefined}
+      <DialogContent
+        className="flex max-h-[min(24rem,70vh)] w-full max-w-md flex-col gap-3 overflow-hidden sm:max-w-md"
         data-testid={testId}
       >
-        <SheetHeader>
-          <SheetTitle>{title}</SheetTitle>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
           {description ? (
-            <SheetDescription>{description}</SheetDescription>
+            <DialogDescription>{description}</DialogDescription>
           ) : null}
-        </SheetHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 pb-4">
+        </DialogHeader>
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
           <SearchInput
             className="min-h-[var(--touch-target,44px)]"
             aria-label={placeholder}
@@ -126,7 +122,7 @@ export function SearchSheet({
             </div>
           </ScrollArea>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

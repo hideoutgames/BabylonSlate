@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { SearchSheet, type SearchSheetItem } from "./search-sheet";
+import { SearchDialog, type SearchDialogItem } from "./search-dialog";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 
 export interface AssetPickerEntry {
@@ -24,7 +24,7 @@ export interface AssetPickerProps {
 
 const NONE_ID = "__none__";
 
-/** Asset reference picker built on the shared search sheet. */
+/** Asset reference picker built on the shared search dialog. */
 export function AssetPicker({
   open,
   onOpenChange,
@@ -35,12 +35,12 @@ export function AssetPicker({
   allowNone = true,
   "data-testid": testId,
 }: AssetPickerProps) {
-  const items = useMemo<SearchSheetItem[]>(() => {
+  const items = useMemo<SearchDialogItem[]>(() => {
     const filtered =
       allowedTypes && allowedTypes.length > 0
         ? assets.filter((asset) => allowedTypes.includes(asset.type))
         : assets;
-    const rows: SearchSheetItem[] = filtered.map((asset) => ({
+    const rows: SearchDialogItem[] = filtered.map((asset) => ({
       id: asset.guid,
       label: asset.name,
       description: asset.path ?? asset.type,
@@ -55,7 +55,7 @@ export function AssetPicker({
   }, [allowNone, allowedTypes, assets]);
 
   return (
-    <SearchSheet
+    <SearchDialog
       open={open}
       onOpenChange={onOpenChange}
       title={title}

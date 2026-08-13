@@ -22,6 +22,10 @@ describe("DebugConsole", () => {
       />,
     );
 
+    const root = screen.getByTestId("debug-console");
+    expect(root.getAttribute("data-slot")).toBe("dialog-content");
+    expect(root.getAttribute("data-side")).toBeNull();
+
     fireEvent.change(screen.getByTestId("debug-console-input"), {
       target: { value: "ch" },
     });

@@ -79,11 +79,15 @@ export {
   type TreeViewProps,
 } from "./tree-view";
 export {
-  SearchSheet,
+  SearchDialog,
   filterSearchItems,
-  type SearchSheetItem,
-  type SearchSheetProps,
-} from "./search-sheet";
+  type SearchDialogItem,
+  type SearchDialogProps,
+} from "./search-dialog";
+export {
+  SearchDropdown,
+  type SearchDropdownProps,
+} from "./search-dropdown";
 export {
   AssetPicker,
   type AssetPickerEntry,

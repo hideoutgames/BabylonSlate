@@ -137,7 +137,7 @@ Scene, Prefab, and graph **canvases stay dark** regardless of Appearance → The
 
 `GraphEditor` takes `colorMode` (`"light" | "dark"`). The graph panel always passes `"dark"` and scopes dark graph tokens on the canvas wrapper so a light `html` does not wash nodes or wires. Per-edge `style.stroke` from the source pin color wins; the canvas must not force `--xy-edge-stroke` to `--pin-exec`. XYFlow chrome uses `--background` / `--border` under that dark scope.
 
-Toolbar `DropdownMenu`s (Debug, Settings, Add) default to `modal={false}` so they do not paint a full-viewport `position: fixed` backdrop over the Babylon canvas. On iPad WKWebView that overlay composites as a full black page. Dialog / Sheet / AlertDialog stay modal.
+Toolbar `DropdownMenu`s (Debug, Settings, Add) and picker `SearchDropdown`s default to `modal={false}` so they do not paint a full-viewport `position: fixed` backdrop over the Babylon canvas. On iPad WKWebView that overlay composites as a full black page. Dialog / AlertDialog stay modal. Do not use full-width bottom `Sheet`s for pick lists or Play chrome.
 
 `DropdownMenuLabel` is a Base UI `Menu.GroupLabel` and must sit inside `DropdownMenuGroup`. Opening Debug without that group throws (production error #31) and unmounts the editor to a black screen.
 

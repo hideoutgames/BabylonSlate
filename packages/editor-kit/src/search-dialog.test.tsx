@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { filterSearchItems, SearchSheet } from "./search-sheet";
+import { filterSearchItems, SearchDialog } from "./search-dialog";
 import { AssetPicker } from "./asset-picker";
 
 const items = [
@@ -21,26 +21,43 @@ describe("filterSearchItems", () => {
   });
 });
 
-describe("SearchSheet", () => {
+describe("SearchDialog", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("opens as a centered dialog, not a bottom sheet", () => {
+    render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Add Component"
+        items={items}
+        onSelect={() => {}}
+        data-testid="picker"
+      />,
+    );
+
+    const root = screen.getByTestId("picker");
+    expect(root.getAttribute("data-slot")).toBe("dialog-content");
+    expect(root.getAttribute("data-side")).toBeNull();
   });
 
   it("filters rows as the query changes and reports the selection", () => {
     const onSelect = vi.fn();
     const onOpenChange = vi.fn();
     render(
-      <SearchSheet
+      <SearchDialog
         open
         onOpenChange={onOpenChange}
-        title="Add component"
+        title="Add Component"
         items={items}
         onSelect={onSelect}
-        data-testid="sheet"
+        data-testid="picker"
       />,
     );
 
-    fireEvent.change(screen.getByTestId("sheet-query"), {
+    fireEvent.change(screen.getByTestId("picker-query"), {
       target: { value: "beta" },
     });
     expect(screen.queryByTestId("search-item-a")).toBeNull();
@@ -52,13 +69,13 @@ describe("SearchSheet", () => {
 
   it("renders a leading node on each row", () => {
     render(
-      <SearchSheet
+      <SearchDialog
         open
         onOpenChange={() => {}}
         title="Pick"
         items={[{ ...items[0]!, leading: <span data-testid="lead">*</span> }]}
         onSelect={() => {}}
-        data-testid="sheet"
+        data-testid="picker"
       />,
     );
     expect(screen.getByTestId("lead")).toBeTruthy();
@@ -66,17 +83,17 @@ describe("SearchSheet", () => {
 
   it("shows the empty label when nothing matches", () => {
     render(
-      <SearchSheet
+      <SearchDialog
         open
         onOpenChange={() => {}}
-        title="Add component"
+        title="Add Component"
         items={items}
         emptyLabel="No matches"
         onSelect={() => {}}
-        data-testid="sheet"
+        data-testid="picker"
       />,
     );
-    fireEvent.change(screen.getByTestId("sheet-query"), {
+    fireEvent.change(screen.getByTestId("picker-query"), {
       target: { value: "zzz" },
     });
     expect(screen.getByText("No matches")).toBeTruthy();
