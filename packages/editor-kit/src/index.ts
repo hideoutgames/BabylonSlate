@@ -121,6 +121,7 @@ export {
   ColorField,
   colorFromHex,
   colorToHex,
+  parseHexColor,
   type ColorFieldProps,
   type ColorValue,
 } from "./color-field";

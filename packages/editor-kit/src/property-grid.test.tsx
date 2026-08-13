@@ -161,6 +161,9 @@ describe("PropertyGrid", () => {
     expect((screen.getByTestId("property-tint") as HTMLInputElement).value).toBe(
       "#ff0000",
     );
+    expect((screen.getByTestId("property-tint-hex") as HTMLInputElement).value).toBe(
+      "#ff0000",
+    );
     screen.getByTestId("property-mesh").click();
     expect(onPick).toHaveBeenCalled();
   });
