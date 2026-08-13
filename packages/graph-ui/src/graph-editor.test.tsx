@@ -572,6 +572,73 @@ describe("GraphEditor", () => {
     });
   });
 
+  it("formats data inputs to the left of subsequent then-chain nodes", () => {
+    const onChange = vi.fn();
+    const getterPins = [
+      {
+        id: "value",
+        name: "value",
+        kind: "data" as const,
+        direction: "out" as const,
+        type: { kind: "string" },
+      },
+    ];
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "log-a",
+          type: "debug.log",
+          position: { x: 0, y: 40 },
+          data: { message: "A", __pins: debugLogPins },
+        },
+        {
+          id: "log-b",
+          type: "debug.log",
+          position: { x: 12, y: 180 },
+          data: { message: "B", __pins: debugLogPins },
+        },
+        {
+          id: "get",
+          type: "string.literal",
+          position: { x: 5, y: 300 },
+          data: { __pins: getterPins },
+        },
+      ],
+      edges: [
+        {
+          id: "e:log-a:execOut:log-b:execIn",
+          source: "log-a",
+          target: "log-b",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+        {
+          id: "e:get:value:log-b:message",
+          source: "get",
+          target: "log-b",
+          sourceHandle: "value",
+          targetHandle: "message",
+        },
+      ],
+    };
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+    fireEvent.click(container.querySelector(".react-flow__node")!);
+    fireEvent.click(getByTestId("graph-format"));
+
+    expect(onChange).toHaveBeenCalled();
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
+      x: MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X,
+      y: 40,
+    });
+    expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
+      x: (MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X) * 2,
+      y: 40,
+    });
+  });
+
   it("draws a marquee overlay after a stationary pane hold then move", () => {
     const { container, getByTestId } = render(
       <GraphEditor initialGraph={graphWithPins()} />,

@@ -610,6 +610,7 @@ function GraphEditorCanvas({
         source: edge.source,
         target: edge.target,
         sourceHandle: edge.sourceHandle ?? undefined,
+        targetHandle: edge.targetHandle ?? undefined,
       })),
       selected,
     );
@@ -797,7 +798,7 @@ function GraphEditorCanvas({
               size="sm"
               disabled={selectedNodes.length === 0}
               onClick={formatSelection}
-              title="Format selected nodes, or follow a single node’s then-chain to the right"
+              title="Format selected nodes, or follow a single node’s then-chain and its data inputs"
               data-testid="graph-format"
             >
               Format
