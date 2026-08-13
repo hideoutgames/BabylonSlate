@@ -275,7 +275,7 @@ An actor scripted in the editor compiles and runs in the worker; a type mismatch
 
 | Item | Owner |
 | --- | --- |
-| Full physics / input node behaviour | Queries + impulse done (P7); `physics.moveCharacter` is `p7-character-controller` |
+| Full physics / input node behaviour | Queries, impulse, and `physics.moveCharacter` done (P7) |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 (`p8-command-system` landed) |
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export |
 | Behaviour-tree validation rules | P11 |

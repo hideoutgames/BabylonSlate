@@ -179,15 +179,15 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 
 ## P7 slice ownership
 
-Backends and Play scene load have landed (`p7-physics`, `p7-2d-physics`, `p7-play-scene-load`). Remaining named follow-up: `p7-character-controller`.
+Backends, Play scene load, and character-controller scripting have landed (`p7-physics`, `p7-2d-physics`, `p7-play-scene-load`, `p7-character-controller`).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | Design notes | — | `docs/architecture/physics.md` | P6 complete |
 | Physics package + Havok V2 | `p7-physics` (done) | `physics`, `core` (scene `physicsWorld`), `object-model`, `runtime`, `scripting-nodes`, `bridge`, `test-kit`, `apps/editor` (Play overlay ms, Add Component, vendored wasm) | Design notes |
-| Rapier 2D | `p7-2d-physics` (done; CC scripting is `p7-character-controller`) | `physics`, `scripting-nodes`, `test-kit` | `p7-physics` interface + scene world field |
+| Rapier 2D | `p7-2d-physics` (done) | `physics`, `scripting-nodes`, `test-kit` | `p7-physics` interface + scene world field |
 | Play loads `SerializedScene` | `p7-play-scene-load` (done) | `runtime`, `object-model`, `bridge`, `render`, `apps/editor` | P6 scene docs + P7 backends |
-| Character-controller scripting | `p7-character-controller` | `scripting-nodes`, `runtime` | Play scene load |
+| Character-controller scripting | `p7-character-controller` (done) | `scripting-nodes`, `runtime` | Play scene load |
 
 Design notes: [physics.md](../architecture/physics.md).
 

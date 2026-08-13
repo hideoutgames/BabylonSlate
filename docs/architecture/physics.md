@@ -70,7 +70,7 @@ Spawn/attach creates bodies; destroy removes them. Transforms after `step` overw
 
 ## Scripting
 
-Sync nodes (exec pin continues same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`. Rapier (and V2) character controllers exist on the backend; the graph `physics.moveCharacter` node is still a log stub (`p7-character-controller`).
+Sync nodes (exec pin continues same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. `moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.
 
 `ScriptHost` binds `ctx.lineTrace` / overlap / sweep / impulse to the active backend.
 
@@ -82,7 +82,7 @@ Harness scenarios run on each backend where shapes overlap. Within-backend repro
 
 | Item | Owner |
 | --- | --- |
-| `physics.moveCharacter` scripting (backend CC exists) | `p7-character-controller` |
+| `physics.moveCharacter` scripting (backend CC exists) | Done (`p7-character-controller`) — Actor pin, lazy CC, no dedicated component |
 | Mixed 2D/3D collider diagnostic | P7 polish |
 | Rapier `shapeSweep` ≈ lineTrace; Havok `sphereOverlap` uses AABB | P7 polish / as needed by gameplay |
 | Tilemap merged chain colliders | P10 |

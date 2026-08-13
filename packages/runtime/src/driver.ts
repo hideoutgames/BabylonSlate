@@ -308,6 +308,11 @@ class InProcessRuntime implements RuntimeDriver {
           strength,
         );
       },
+      moveCharacter: (actor, translation, dt, offset) => {
+        const target = actor;
+        if (!target) return;
+        this.physicsSync.moveCharacter(target, translation, dt, offset);
+      },
     });
 
     if (options.seedDemoActors !== false && !options.playScene) {

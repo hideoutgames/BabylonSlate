@@ -119,6 +119,57 @@ describe("script host runs compiled graphs", () => {
     expect(String((logs[0] as { message: string }).message)).toContain("x: 1");
   });
 
+  it("ticks moveCharacter on a kinematic body through the compiled graph", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "move", "physics.moveCharacter", {
+          translation: { x: 1, y: 0, z: 0 },
+        }),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "move", "execIn"),
+        edge("e2", "self", "out", "move", "target"),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 2,
+      seedDemoActors: false,
+      dt: 1 / 60,
+      preferSoftwarePhysics: true,
+      physicsWorld: "2d",
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Walker", "walker-asset"),
+    ]);
+    const actor = runtime.spawnScriptedActor({ classId: "Walker" });
+    expect(actor).not.toBeNull();
+    actor!.attachComponent(
+      runtime.getWorld().createComponent({
+        classId: "RigidBodyComponent",
+        variables: { motionType: "kinematic", mass: 1, gravityScale: 0 },
+      }),
+    );
+    actor!.attachComponent(
+      runtime.getWorld().createComponent({
+        classId: "ColliderComponent",
+        variables: {
+          shape: { kind: "box2d", halfExtents: { x: 0.4, y: 0.4 } },
+        },
+      }),
+    );
+
+    runtime.start();
+    runtime.tick();
+
+    expect(actor!.transform.position.x).toBeCloseTo(1, 5);
+    runtime.stop();
+  });
+
   it("emits Begin Play prints once and maps runtime errors to graph nodes", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

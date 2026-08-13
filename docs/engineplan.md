@@ -15,7 +15,7 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 P0–P6 are landed. P7 physics backends and Play scene load are landed. The first P8 slice (`p8-command-system`) is landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** `p7-character-controller` — wire `physics.moveCharacter` to the existing Rapier / Havok / software character controllers. Then remaining P8: `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`. Parked: `p1-device-spikes` (hardware-only). Do not start P9+ packages.
+**Next engine slice:** remaining P8 — `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`. Parked: `p1-device-spikes` (hardware-only). Do not start P9+ packages.
 
 **Landed (do not rebuild):**
 - **Editor shell.** Two-row chrome in [apps/editor/src/components/editor-chrome-bar.tsx](apps/editor/src/components/editor-chrome-bar.tsx): title/tab bar (truncated project name with `.babproject` stripped, pinned Content Browser, no tab-bar Add) and a global toolbar (Save All with dirty dot, Undo, Redo, **Compile** plus **Compilation Error** on graph documents, Play, **Debug** with Always Render in DEV/test, **Windows** immediately left of Focus, Focus, Search, Settings). Per-document Dockview in [apps/editor/src/shell/dockview-shell.tsx](apps/editor/src/shell/dockview-shell.tsx); Windows restores last `layout.json` placements. Homepage owns create/open/close/recents; the shell runs only against an open project.
@@ -24,7 +24,7 @@ P0–P6 are landed. P7 physics backends and Play scene load are landed. The firs
 - **Assets and edit (P2).** Header-only registry, Content Browser, compressed texture pipeline, per-document undo, destructive-action confirmation.
 - **Object model and Play (P3–P4).** Headless World/tick; SAB + transferable bridge; game worker; snapshot-driven renderer; visibility-gated editor loop; LRU resource cache; fullscreen Play overlay; Preview session report.
 - **Scripting and scene editing (P5–P6).** Graph IR, validator, JS codegen, node catalog, touch graph UI; outliner/details/gizmos; 2D/3D viewport toggle; input mappings; global Search.
-- **Physics (P7).** `@babylonslate/physics` in the game worker (Havok 3D + Rapier 2D); Play loads authored `SerializedScene` actors. Character-controller **backends exist**; the graph node is still a log stub (`p7-character-controller`).
+- **Physics (P7).** `@babylonslate/physics` in the game worker (Havok 3D + Rapier 2D); Play loads authored `SerializedScene` actors. `physics.moveCharacter` takes an Actor, lazily creates a character controller on that actor’s rigid body, and applies the resolved transform the same tick.
 - **Debugger (partial P8).** `@babylonslate/debugger` command registry, parser, `ExecuteConsoleCommand`. Play overlay already shows FPS + `scriptMs` / `physicsMs`; Output Log, keyed Print, and the session report already shipped. Remaining P8 **extends** those — it does not replace them. See [architecture/debugger.md](architecture/debugger.md).
 - **CI.** `verify.yml` (typecheck, lint, Vitest with coverage, Playwright, VitePress docs) plus `preview.yml` (GitHub Pages: editor at `/`, docs at `/docs/`). A deployed URL is the practical iPad loop without a Mac.
 - **Touch chrome.** `--chrome-row` 28px, graph pin rows `--touch-target` 44px, [.cursor/rules/touch-editor.md](.cursor/rules/touch-editor.md).
@@ -1113,15 +1113,15 @@ Granular tasks tracked against the roadmap in section 18. Update checkboxes as s
 ### P7
 
 - [x] **p7-physics** — P7: physics hosted inside the game worker rather than a worker of its own, Babylon Physics V2 (`HavokPlugin` + `PhysicsAggregate`) on a worker-local NullEngine Scene, wasm loaded via locateFile into HavokPlugin, RigidBody and Collider components, stepped by the existing fixed-step scheduler, behind a transport-agnostic backend interface that keeps a future split possible; synchronous LineTrace, sweep and overlap nodes returning on the calling execution pin; physics step time reported separately from script time as `physicsMs` in the snapshot / Play overlay (full 5 Hz stats HUD is P8) since the two now share one tick budget
-- [x] **p7-2d-physics** — P7: Rapier 2D (`@dimforge/rapier2d-compat`) backend landing beside Havok rather than later, since the backend interface is being designed here and 2D is a flagship mode; Havok remains the primary backend; loaded only when a scene declares a 2D world; 2D collider shapes (box, circle, capsule, polygon, chain). Rapier kinematic character controller exists on the backend; graph `physics.moveCharacter` waits on `p7-character-controller`. Tilemap chain colliders follow in P10. Rejected alternative recorded: constraining Havok needs a companion anchor body and a 6DOF constraint per dynamic body plus inertia zeroing that distorts impulse scaling
+- [x] **p7-2d-physics** — P7: Rapier 2D (`@dimforge/rapier2d-compat`) backend landing beside Havok rather than later, since the backend interface is being designed here and 2D is a flagship mode; Havok remains the primary backend; loaded only when a scene declares a 2D world; 2D collider shapes (box, circle, capsule, polygon, chain). Rapier kinematic character controller exists on the backend; graph `physics.moveCharacter` is wired in `p7-character-controller`. Tilemap chain colliders follow in P10. Rejected alternative recorded: constraining Havok needs a companion anchor body and a 6DOF constraint per dynamic body plus inertia zeroing that distorts impulse scaling
 - [x] **p7-play-scene-load** — P7 follow-up (P6/P7): Play loads the active `SerializedScene` actors into the worker. `load` carries the authored scene; `realizePlayWorld` instantiates actors/components (no demo seeds), binds compiled graphs to matching class ids, and emits `assignMesh` so Play primitives match `MeshComponent`. Broader than physics — needed for any authored component to run in Play.
-- [ ] **p7-character-controller** — P7 follow-up, after Play scene load: wire `physics.moveCharacter` to the Rapier (and V2) character controller instead of the current log stub in `scripting-nodes`
+- [x] **p7-character-controller** — P7 follow-up: `physics.moveCharacter` takes an Actor (not a numeric handle), lazily creates a Rapier / Havok / software character controller on that actor’s rigid body (`id` = actor guid), optional `offset` pin (default 0.01), and writes the returned transform onto the actor the same tick. No `CharacterControllerComponent`; destroy follows the rigid body.
 
 > **P7 follow-ups** (named later slices, not silent incompleteness). Do not treat these as leftover architecture work on the V2/Rapier backends:
 > - Mixed 2D/3D collider diagnostic (docs claimed a diagnostic; load currently coerces/skips via `parseColliderProperties`).
 > - Query quality: Rapier `shapeSweep` approximates lineTrace; Havok `sphereOverlap` uses AABB.
 > - Per-backend **file** goldens are not required (Havok vs Rapier numeric drift); within-backend reproducibility stays in [physics.md](architecture/physics.md).
-> - Software AABB is the wasm-failure path; do not add `planck.js`.
+> - Software AABB is the wasm-failure path; do not add `planck.js`. Software character controllers now work in both 2D and 3D.
 > - Full 5 Hz stats HUD is **P8** `p8-console-hud`; tilemap merged chain colliders are **P10**.
 
 ### P8

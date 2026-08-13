@@ -42,6 +42,12 @@ export interface ScriptHostServices {
     impulse: Vec3,
     strength?: number,
   ): void;
+  moveCharacter?(
+    actor: Actor | null | undefined,
+    translation: Vec3,
+    dt: number,
+    offset?: number,
+  ): void;
 }
 
 /** The `ctx` object bound into every compiled graph invocation. */
@@ -94,6 +100,11 @@ export interface ScriptContext {
     actor: Actor | null | undefined,
     impulse: Vec3,
     strength?: number,
+  ): void;
+  moveCharacter(
+    actor: Actor | null | undefined,
+    translation: Vec3,
+    offset?: number,
   ): void;
   playSound(): void;
   setWidgetVisible(): void;
@@ -265,6 +276,14 @@ export class ScriptHost {
         },
       addImpulse: (actor, impulse, strength) => {
         services.addImpulse?.(actor ?? self, impulse, strength);
+      },
+      moveCharacter: (actor, translation, offset) => {
+        services.moveCharacter?.(
+          actor ?? self,
+          translation,
+          deltaSeconds,
+          offset,
+        );
       },
       playSound: () => {},
       setWidgetVisible: () => {},

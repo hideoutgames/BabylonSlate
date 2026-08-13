@@ -391,7 +391,6 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
-    if (this.kind !== "2d") return;
     this.characters.set(desc.id, { desc: { ...desc } });
   }
 
