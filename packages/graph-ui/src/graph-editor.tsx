@@ -42,11 +42,14 @@ import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
 import {
   collectSafeConnectPins,
+  edgeTouchesPin,
   firstCompatiblePin,
   isClientPointOverGraphNode,
+  isClientPointOverHandle,
   nodePinLists,
   pinsAreCompatible,
   screenCentersForSafePins,
+  shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
 import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
@@ -411,28 +414,50 @@ function GraphEditorCanvas({
       );
       if (!pin) return;
       const root = document;
+      const decision = {
+        hasTargetHandle: false,
+        pointerOverNode: isClientPointOverGraphNode(point, root),
+        pointer: point,
+        safePins: screenCentersForSafePins(
+          root,
+          collectSafeConnectPins(
+            nodePinLists(graphStateRef.current.nodes),
+            fromNode.id,
+            pin,
+          ),
+        ),
+      };
+      if (shouldOpenAddNodeOnConnectEnd(decision)) {
+        const position = screenToFlowPosition(point);
+        setPendingConnect({ pin, nodeId: fromNode.id, position });
+        setPaletteOpen(true);
+        return;
+      }
       if (
-        !shouldOpenAddNodeOnConnectEnd({
-          hasTargetHandle: false,
-          pointerOverNode: isClientPointOverGraphNode(point, root),
-          pointer: point,
-          safePins: screenCentersForSafePins(
+        !shouldBreakPinConnectionsOnConnectEnd({
+          ...decision,
+          pointerOverSourceHandle: isClientPointOverHandle(
+            point,
+            fromNode.id,
+            fromHandle.id,
             root,
-            collectSafeConnectPins(
-              nodePinLists(graphStateRef.current.nodes),
-              fromNode.id,
-              pin,
-            ),
           ),
         })
       ) {
         return;
       }
-      const position = screenToFlowPosition(point);
-      setPendingConnect({ pin, nodeId: fromNode.id, position });
-      setPaletteOpen(true);
+      setEdges((current) => {
+        const next = current.filter(
+          (edge) => !edgeTouchesPin(edge, fromNode.id, fromHandle.id),
+        );
+        if (next.length === current.length) return current;
+        emitChange(graphStateRef.current.nodes, next);
+        return next;
+      });
+      pendingPinRef.current = null;
+      setPendingPin(null);
     },
-    [screenToFlowPosition],
+    [emitChange, screenToFlowPosition],
   );
 
   const handleAddPaletteNode = useCallback(
