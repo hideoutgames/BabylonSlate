@@ -2,6 +2,7 @@ export {
   clipForState,
   createDefaultAnimGraph,
   defaultAnimStatePosition,
+  ANIM_STATE_LAYOUT_GAP_X,
   evaluateAnimGraph,
   parseAnimGraphDocument,
   validateAnimGraph,

@@ -32,6 +32,7 @@ export function animPaletteNodes(): Array<{
   title: string;
   category: string;
   pins: AnimGraphPin[];
+  defaultData: Record<string, unknown>;
 }> {
   return [
     {
@@ -39,6 +40,12 @@ export function animPaletteNodes(): Array<{
       title: "State",
       category: "Animation",
       pins: ANIM_STATE_PINS,
+      defaultData: {
+        clipId: null,
+        speed: 1,
+        loop: true,
+        entry: false,
+      },
     },
   ];
 }
