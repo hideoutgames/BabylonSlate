@@ -3,7 +3,6 @@ import {
   AssetPicker,
   NumberField,
   PanelFrame,
-  TreeView,
   humanizePropertyLabel,
 } from "@babylonslate/editor-kit";
 import {
