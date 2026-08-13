@@ -74,6 +74,34 @@ export function displayAssetTitle(name: string): string {
   return name.replace(/\.[A-Za-z][A-Za-z0-9]*$/, "");
 }
 
+/** Additive Content Browser tile selection. Click never replaces. */
+export function addSelectedAssetGuid(
+  selected: ReadonlySet<string>,
+  guid: string,
+): Set<string> {
+  const next = new Set(selected);
+  next.add(guid);
+  return next;
+}
+
+export function assetTypeCardAccent(colorVar: string): {
+  backgroundColor: string;
+  borderColor: string;
+} {
+  return {
+    backgroundColor: `color-mix(in oklch, ${colorVar} 16%, var(--card))`,
+    borderColor: `color-mix(in oklch, ${colorVar} 50%, var(--border))`,
+  };
+}
+
+export function assetTypeThumbAccent(colorVar: string): {
+  backgroundColor: string;
+} {
+  return {
+    backgroundColor: `color-mix(in oklch, ${colorVar} 28%, var(--muted))`,
+  };
+}
+
 export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;

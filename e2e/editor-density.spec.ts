@@ -238,6 +238,47 @@ test.describe("Editor density and IA", () => {
     );
   });
 
+  test("Content Browser click adds to the selection and Deselect All clears it", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    const classTile = page.locator(
+      '[data-asset-path="assets/main.class.babasset"]',
+    );
+    await sceneTile.click();
+    await classTile.click();
+    await expect(sceneTile).toHaveAttribute("data-selected", "true");
+    await expect(classTile).toHaveAttribute("data-selected", "true");
+    await expect(page.getByTestId("content-browser-delete-selected")).toHaveText(
+      /Delete \(2\)/,
+    );
+
+    await page.getByTestId("content-browser-deselect-all").click();
+    await expect(sceneTile).toHaveAttribute("data-selected", "false");
+    await expect(classTile).toHaveAttribute("data-selected", "false");
+    await expect(page.getByTestId("content-browser-delete-selected")).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId("content-browser-deselect-all")).toHaveCount(0);
+  });
+
+  test("Content Browser folder tree and asset grid scroll vertically", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await expect(page.getByTestId("content-browser-asset-grid")).toHaveCSS(
+      "overflow-y",
+      "auto",
+    );
+    await expect(page.getByTestId("content-browser-folder-tree")).toHaveCSS(
+      "overflow-y",
+      "auto",
+    );
+  });
+
   test("New Asset refuses a name that already exists; Duplicate uses stem_N", async ({
     page,
   }) => {
