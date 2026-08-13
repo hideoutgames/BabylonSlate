@@ -64,7 +64,7 @@ async function openMainScene(page: Page): Promise<void> {
   await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
   await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
   await expect(
-    page.getByTestId("document-workspace-scene").locator("canvas"),
+    page.getByTestId("viewport-canvas"),
   ).toBeVisible({ timeout: 15_000 });
 }
 

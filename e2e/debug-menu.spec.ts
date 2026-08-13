@@ -7,7 +7,7 @@ async function openSceneWithViewport(page: Page) {
   await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
   await expect(page.getByTestId("viewport-panel")).toBeVisible();
   await expect(
-    page.getByTestId("document-workspace-scene").locator("canvas"),
+    page.getByTestId("viewport-canvas"),
   ).toBeVisible({ timeout: 15_000 });
 }
 
@@ -65,9 +65,7 @@ test.describe("Debug menu", () => {
   }) => {
     await openSceneWithViewport(page);
 
-    const canvas = page
-      .getByTestId("document-workspace-scene")
-      .locator("canvas");
+    const canvas = page.getByTestId("viewport-canvas");
     const canvasBefore = await canvas.boundingBox();
     expect(canvasBefore, "viewport canvas should be sized").not.toBeNull();
     expect(canvasBefore!.width).toBeGreaterThan(0);

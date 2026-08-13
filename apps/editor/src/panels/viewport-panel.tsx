@@ -374,7 +374,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           <ViewportToolbar />
         </div>
       </div>
-      <canvas ref={canvasRef} className="h-full w-full flex-1 touch-none" />
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full flex-1 touch-none"
+        data-testid="viewport-canvas"
+      />
       <canvas
         ref={previewCanvasRef}
         hidden

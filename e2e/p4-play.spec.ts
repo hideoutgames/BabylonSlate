@@ -10,7 +10,7 @@ test.describe("P4 Play overlay and session report", () => {
     await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
     await expect(
-      page.getByTestId("document-workspace-scene").locator("canvas"),
+      page.getByTestId("viewport-canvas"),
     ).toBeVisible({ timeout: 15_000 });
 
     await page.getByTestId("play-preview").click();
