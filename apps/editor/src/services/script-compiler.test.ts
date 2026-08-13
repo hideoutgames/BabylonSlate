@@ -38,6 +38,8 @@ const tickToLog: SerializedGraph = {
 describe("script compiler service", () => {
   it("derives a stable class id from the graph path", () => {
     expect(classIdForGraphPath("assets/main.graph.babasset")).toBe("main");
+    expect(classIdForGraphPath("assets/main.class.babasset")).toBe("main");
+    expect(classIdForGraphPath("assets/hero.class.babasset")).toBe("hero");
     expect(classIdForGraphPath("graphs/My Enemy.graph.json")).toBe("My_Enemy");
     expect(classIdForGraphPath("")).toBe("Graph");
   });

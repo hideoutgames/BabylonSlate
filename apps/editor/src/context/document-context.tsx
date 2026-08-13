@@ -75,6 +75,10 @@ import {
 import { findDockWindow } from "../shell/window-catalog";
 import { listEditorUtilityWindows } from "../shell/editor-utility-windows";
 import {
+  classDocumentShowsPrefab,
+  classParentLookup,
+} from "../lib/content-browser-helpers";
+import {
   listedProjectsFromRecents,
   type ListedProject,
 } from "../lib/listed-projects";
@@ -213,9 +217,10 @@ function asDockWindowApi(api: DockviewApi): DockWindowApi {
 function findWindowDefinition(
   kind: "scene" | "graph",
   panelId: string,
+  actorPrefab = true,
 ) {
   return (
-    findDockWindow(kind, panelId) ??
+    findDockWindow(kind, panelId, { actorPrefab }) ??
     listEditorUtilityWindows().find((entry) => entry.id === panelId)
   );
 }
@@ -1102,12 +1107,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       },
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
       ensureMainGraphOpen: async () => {
-        const path = "assets/main.graph.babasset";
+        const candidates = [
+          "assets/main.class.babasset",
+          "assets/main.graph.babasset",
+        ];
+        const existing = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "graph",
+        );
+        if (existing) return true;
+        const registry = projectService.registry;
+        const path =
+          candidates.find((candidate) =>
+            registry?.list().some((asset) => asset.path === candidate),
+          ) ?? candidates[0]!;
         const id = `graph:${path}`;
         if (!documentService.getState().openDocuments.has(id)) {
           await documentService.openDocument(
             projectService,
-            { kind: "graph", path, label: "main.graph.babasset" },
+            { kind: "graph", path, label: path.split("/").pop() ?? path },
             null,
             false,
           );
@@ -1191,12 +1208,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       },
       /** Replace the main graph so Preview compiles a known script. */
       setMainGraphContent: async (graph: SerializedGraph) => {
-        const path = "assets/main.graph.babasset";
+        const candidates = [
+          "assets/main.class.babasset",
+          "assets/main.graph.babasset",
+        ];
+        const openGraph = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "graph",
+        );
+        const path =
+          openGraph?.ref.path ??
+          candidates.find((candidate) =>
+            projectService.registry
+              ?.list()
+              .some((asset) => asset.path === candidate),
+          ) ??
+          candidates[0]!;
         const id = `graph:${path}`;
         if (!documentService.getState().openDocuments.has(id)) {
           await documentService.openDocument(
             projectService,
-            { kind: "graph", path, label: "main.graph.babasset" },
+            { kind: "graph", path, label: path.split("/").pop() ?? path },
             null,
             false,
           );
@@ -1317,7 +1348,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     const api = dockviewApisRef.current.get(activeDocumentId);
     if (!api) return;
-    const def = findWindowDefinition(doc.ref.kind, panelId);
+    const indexed = projectService.registry
+      ?.list()
+      .find((asset) => asset.path === doc.ref.path);
+    const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+    const actorPrefab =
+      doc.ref.kind !== "graph" ||
+      !indexed ||
+      classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
+        assetType: indexed.header.type,
+      });
+    const def = findWindowDefinition(doc.ref.kind, panelId, actorPrefab);
     if (!def) return;
     const remembered =
       documentService.getPanelPlacements(activeDocumentId)[panelId] ?? null;
@@ -1334,7 +1375,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
     }
     bumpDockWindows();
-  }, [bumpDockWindows, documentService]);
+  }, [bumpDockWindows, documentService, projectService]);
 
   const isDockWindowOpen = useCallback((panelId: string) => {
     const { activeDocumentId } = documentService.getState();

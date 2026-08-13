@@ -621,7 +621,9 @@ export class AssetRegistry {
     const graphs: string[] = [];
     for (const asset of this.byGuid.values()) {
       if (asset.header.type === "Scene") scenes.push(asset.path);
-      else if (asset.header.type === "Graph") graphs.push(asset.path);
+      else if (asset.header.type === "Graph" || asset.header.type === "Class") {
+        graphs.push(asset.path);
+      }
     }
     return { scenes: scenes.sort(), graphs: graphs.sort() };
   }

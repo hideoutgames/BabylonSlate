@@ -5,7 +5,7 @@ import {
   createEmptyProject,
   createEmptyLayouts,
   documentId,
-  MAIN_GRAPH_FILE,
+  MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   migrateLegacyLayout,
 } from "@babylonslate/core";
@@ -42,7 +42,7 @@ describe("DocumentService", () => {
     const project = createEmptyProject("Test");
     const projectService = createMockProjectService();
     const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
-    const graphId = documentId({ kind: "graph", path: MAIN_GRAPH_FILE });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
 
     await service.initializeFromProject(projectService, project, {
       documents: {},
@@ -70,7 +70,7 @@ describe("DocumentService", () => {
     const service = new DocumentService();
     const project = createEmptyProject("Test");
     const projectService = createMockProjectService();
-    const graphId = documentId({ kind: "graph", path: MAIN_GRAPH_FILE });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
 
     await service.initializeFromProject(
       projectService,
@@ -96,7 +96,7 @@ describe("DocumentService", () => {
     const project = createEmptyProject("Test");
     const projectService = createMockProjectService();
     const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
-    const graphId = documentId({ kind: "graph", path: MAIN_GRAPH_FILE });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
 
     await service.initializeFromProject(projectService, project, {
       documents: {},
@@ -207,6 +207,36 @@ describe("DocumentService", () => {
     expect(service.getState().openDocuments.has(oldId)).toBe(false);
     expect(service.getState().openDocuments.get(newId)?.ref.path).toBe(newPath);
     expect(service.getState().tabOrder).toContain(newId);
+  });
+
+  it("marks asset-settings updates as dirty and keeps the Settings tab suffix", async () => {
+    const service = new DocumentService();
+    const project = createMockProjectService({
+      loadDocument: vi.fn(async () => ({
+        kind: "enum",
+        name: "Colors",
+        members: [{ name: "None", value: 0 }],
+      })),
+    });
+    const path = "assets/colors.babasset";
+    await service.openDocument(project, {
+      kind: "asset-settings",
+      path,
+      label: "colors",
+    });
+    const id = documentId({ kind: "asset-settings", path });
+    service.updateAssetDocument(id, {
+      kind: "enum",
+      name: "Palette",
+      members: [
+        { name: "None", value: 0 },
+        { name: "Red", value: 1 },
+      ],
+    });
+    const doc = service.getDocument(id);
+    expect(doc?.dirty).toBe(true);
+    expect(doc?.ref.label).toBe("Palette Settings");
+    expect((doc?.content as { members: unknown[] }).members).toHaveLength(2);
   });
 });
 

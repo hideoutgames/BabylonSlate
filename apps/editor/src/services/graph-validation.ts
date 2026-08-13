@@ -145,6 +145,15 @@ export function createDefaultLogicGraphSerialized(
   return logicToSerializedGraph(logic);
 }
 
+export function hydrateClassDocumentPayload(
+  payload: Record<string, unknown> | SerializedGraph,
+): SerializedGraph {
+  if (Array.isArray(payload.nodes) && Array.isArray(payload.edges)) {
+    return payload as unknown as SerializedGraph;
+  }
+  return createDefaultLogicGraphSerialized();
+}
+
 export function materializeLogicGraph(
   content: SerializedGraph | LogicGraph,
   graphId: string,

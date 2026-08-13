@@ -4,6 +4,7 @@ import {
   CLASS_PANEL_TITLE,
   listDockWindows,
   type DockviewDocumentKind,
+  type DockWindowOptions,
 } from "./window-catalog";
 
 export type { DockviewDocumentKind };
@@ -12,8 +13,9 @@ export { CLASS_PANEL_INITIAL_HEIGHT, CLASS_PANEL_TITLE };
 function applyCatalogLayout(
   api: DockviewApi,
   kind: DockviewDocumentKind,
+  options?: DockWindowOptions,
 ): void {
-  const windows = listDockWindows(kind);
+  const windows = listDockWindows(kind, options);
   let primary: ReturnType<DockviewApi["addPanel"]> | undefined;
   for (const def of windows) {
     const reference = def.defaultPosition
@@ -50,6 +52,7 @@ export function createGraphDefaultLayout(api: DockviewApi): void {
 export function createDefaultLayoutForKind(
   api: DockviewApi,
   kind: DockviewDocumentKind,
+  options?: DockWindowOptions,
 ): void {
-  applyCatalogLayout(api, kind);
+  applyCatalogLayout(api, kind, options);
 }

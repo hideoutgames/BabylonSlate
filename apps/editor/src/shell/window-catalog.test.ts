@@ -71,6 +71,22 @@ describe("listDockWindows", () => {
       initialHeight: CLASS_PANEL_INITIAL_HEIGHT,
     });
   });
+
+  it("omits Prefab and Components for non-Actor class documents", () => {
+    const windows = listDockWindows("graph", { actorPrefab: false });
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "graph",
+      "my-class",
+      "inspector",
+      "compiler-results",
+    ]);
+    const classPanel = windows.find((entry) => entry.id === "my-class");
+    expect(classPanel?.defaultPosition).toEqual({
+      referencePanelId: "graph",
+      direction: "left",
+      initialWidth: 260,
+    });
+  });
 });
 
 describe("listEditorUtilityWindows", () => {

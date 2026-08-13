@@ -7,6 +7,11 @@ export const CLASS_PANEL_TITLE = "Class";
 /** About half the left stack so Class is not a 180px stub under Components. */
 export const CLASS_PANEL_INITIAL_HEIGHT = 400;
 
+export type DockWindowOptions = {
+  /** Actor-lineage class documents get Prefab + Components. Default true. */
+  actorPrefab?: boolean;
+};
+
 export interface DockWindowDefaultPosition {
   referencePanelId: string;
   direction: DockWindowDirection;
@@ -108,15 +113,53 @@ const GRAPH_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const OBJECT_GRAPH_WINDOWS: DockWindowDefinition[] = [
+  { id: "graph", component: "graph", title: "Graph" },
+  {
+    id: "my-class",
+    component: "my-class",
+    title: CLASS_PANEL_TITLE,
+    defaultPosition: {
+      referencePanelId: "graph",
+      direction: "left",
+      initialWidth: 260,
+    },
+  },
+  {
+    id: "inspector",
+    component: "inspector",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "graph",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+  {
+    id: "compiler-results",
+    component: "compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "graph",
+      direction: "below",
+      initialHeight: 160,
+    },
+  },
+];
+
 export function listDockWindows(
   kind: DockviewDocumentKind,
+  options?: DockWindowOptions,
 ): DockWindowDefinition[] {
-  return kind === "scene" ? SCENE_WINDOWS : GRAPH_WINDOWS;
+  if (kind === "scene") return SCENE_WINDOWS;
+  if (options?.actorPrefab === false) return OBJECT_GRAPH_WINDOWS;
+  return GRAPH_WINDOWS;
 }
 
 export function findDockWindow(
   kind: DockviewDocumentKind,
   id: string,
+  options?: DockWindowOptions,
 ): DockWindowDefinition | undefined {
-  return listDockWindows(kind).find((entry) => entry.id === id);
+  return listDockWindows(kind, options).find((entry) => entry.id === id);
 }

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
@@ -13,7 +14,7 @@ async function showContentBrowser(
 
 async function createAsset(
   page: import("@playwright/test").Page,
-  type: "UserInterface" | "Font" | "Sprite" | "AnimationGraph" | "Shader",
+  type: "UserInterface" | "Sprite" | "AnimationGraph" | "Shader",
   name: string,
 ): Promise<void> {
   await showContentBrowser(page);
@@ -81,8 +82,14 @@ test.describe("P9 content systems", () => {
 
   test("Font editor sample preview uses the compiled stack", async ({ page }) => {
     await openTestProject(page);
-    await createAsset(page, "Font", "Display");
-    await page.locator('[data-asset-path="assets/Display.babasset"]').dblclick();
+    await showContentBrowser(page);
+    await page
+      .getByTestId("content-browser-import-input")
+      .setInputFiles([path.join(process.cwd(), "e2e/fixtures/display.woff2")]);
+    await expect(
+      page.locator('[data-asset-path="assets/display.babasset"]'),
+    ).toBeVisible({ timeout: 30_000 });
+    await page.locator('[data-asset-path="assets/display.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-font")).toBeVisible();
     const sample = page.getByTestId("font-sample-preview");
     await expect(sample).toBeVisible();

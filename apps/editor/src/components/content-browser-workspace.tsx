@@ -152,7 +152,7 @@ export function ContentBrowserWorkspace() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [newAssetOpen, setNewAssetOpen] = useState(false);
   const [newAssetType, setNewAssetType] =
-    useState<CreatableAssetType>("Texture");
+    useState<CreatableAssetType>("Scene");
   const [newAssetName, setNewAssetName] = useState("NewAsset");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [busy, setBusy] = useState(false);
@@ -320,7 +320,8 @@ export function ContentBrowserWorkspace() {
     (oldPath: string, newPath: string, type: string) => {
       if (oldPath === newPath) return;
       if (type === "Scene") repathDocument("scene", oldPath, newPath);
-      if (type === "Graph") repathDocument("graph", oldPath, newPath);
+      const kind = documentKindForAssetType(type);
+      if (kind && kind !== "scene") repathDocument(kind, oldPath, newPath);
     },
     [repathDocument],
   );

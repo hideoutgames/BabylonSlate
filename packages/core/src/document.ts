@@ -9,6 +9,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "sprite",
   "anim-graph",
   "shader",
+  "asset-settings",
 ] as const;
 
 export type AssetDocumentKind = (typeof ASSET_DOCUMENT_KINDS)[number];
@@ -42,7 +43,7 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
     case "scene":
       return "Scene";
     case "graph":
-      return "Graph";
+      return "Class";
     case "ui":
       return "UserInterface";
     case "font":
@@ -53,6 +54,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "AnimationGraph";
     case "shader":
       return "Shader";
+    case "asset-settings":
+      return "Texture";
   }
 }
 
@@ -61,6 +64,7 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Scene":
       return "scene";
     case "Graph":
+    case "Class":
       return "graph";
     case "UserInterface":
       return "ui";
@@ -72,9 +76,22 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "anim-graph";
     case "Shader":
       return "shader";
+    case "Texture":
+    case "Material":
+    case "Model":
+    case "Audio":
+    case "Animation":
+    case "Enum":
+    case "Structure":
+    case "ScriptInterface":
+      return "asset-settings";
     default:
       return null;
   }
+}
+
+export function isLogicGraphAssetType(type: string): boolean {
+  return type === "Class" || type === "Graph";
 }
 
 export function documentKindLabel(kind: AssetDocumentKind): string {
@@ -82,7 +99,7 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
     case "scene":
       return "Scene";
     case "graph":
-      return "Graph";
+      return "Class";
     case "ui":
       return "UI";
     case "font":
@@ -93,6 +110,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Anim Graph";
     case "shader":
       return "Shader";
+    case "asset-settings":
+      return "Settings";
   }
 }
 
@@ -162,7 +181,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|ui|sprite|anim|shader)\.(babasset|json)$/i,
+        /\.(scene|graph|ui|sprite|anim|shader|class)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "") ?? path;

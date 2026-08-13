@@ -14,6 +14,7 @@ import {
   documentId,
   isAssetDocumentKind,
   LAYOUT_FILE,
+  MAIN_CLASS_FILE,
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
   migrateLegacyLayout,
@@ -30,6 +31,7 @@ import {
   decodeAssetDocument,
   decodeBabasset,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  DOCUMENT_CHUNK_ID,
   EncodeQueue,
   encodeAssetDocument,
   extraChunksFromDecoded,
@@ -52,7 +54,7 @@ import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
-import { createDefaultLogicGraphSerialized } from "./graph-validation";
+import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
 
 export interface ProjectLoadResult {
   document: ProjectDocument;
@@ -436,12 +438,16 @@ export class ProjectService {
       scenes.push(MAIN_SCENE_FILE);
     }
     if (!graphs.length) {
-      await this.saveDocument(
-        "graph",
-        MAIN_GRAPH_FILE,
-        createDefaultLogicGraphSerialized(),
-      );
-      graphs.push(MAIN_GRAPH_FILE);
+      if (await this.storage.exists(MAIN_GRAPH_FILE)) {
+        graphs.push(MAIN_GRAPH_FILE);
+      } else {
+        await this.saveDocument(
+          "graph",
+          MAIN_CLASS_FILE,
+          createDefaultLogicGraphSerialized(),
+        );
+        graphs.push(MAIN_CLASS_FILE);
+      }
     }
     await this.mountAssetRegistry();
     return { ...document, scenes, graphs };
@@ -541,7 +547,7 @@ export class ProjectService {
     await this.storage.mkdir("assets/.blobs", true);
     await this.storage.mkdir("plugins", true);
     await this.saveDocument("scene", MAIN_SCENE_FILE, scene);
-    await this.saveDocument("graph", MAIN_GRAPH_FILE, graph);
+    await this.saveDocument("graph", MAIN_CLASS_FILE, graph);
     await this.saveProject(document, createEmptyLayouts());
     const stored = JSON.parse(
       await this.storage.readText(PROJECT_FILE),
@@ -564,7 +570,7 @@ export class ProjectService {
   ): Promise<SerializedScene | SerializedGraph | Record<string, unknown>> {
     const fallbackType = isAssetDocumentKind(kind)
       ? assetTypeForDocumentKind(kind)
-      : "Graph";
+      : "Class";
     const raw = isAssetDocumentPath(path)
       ? await this.readAssetDocument(path, fallbackType)
       : await this.readLegacyJsonDocument(path, fallbackType);
@@ -587,7 +593,9 @@ export class ProjectService {
       return content as unknown as SerializedScene;
     }
     if (kind === "graph") {
-      return content as unknown as SerializedGraph;
+      return hydrateClassDocumentPayload(
+        content as unknown as Record<string, unknown>,
+      );
     }
     return content;
   }
@@ -596,16 +604,27 @@ export class ProjectService {
     path: string,
     fallbackType: string,
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
-    const decoded = await decodeAssetDocument(
-      await this.storage.readBinary(path),
-      { blobs: this.blobs },
-    );
-    this.assetGuids.set(path, decoded.guid);
-    return {
-      type: decoded.type || fallbackType,
-      version: decoded.version,
-      payload: decoded.payload,
-    };
+    try {
+      const decoded = await decodeAssetDocument(
+        await this.storage.readBinary(path),
+        { blobs: this.blobs },
+      );
+      this.assetGuids.set(path, decoded.guid);
+      return {
+        type: decoded.type || fallbackType,
+        version: decoded.version,
+        payload: decoded.payload,
+      };
+    } catch (error) {
+      if (fallbackType === "Class") {
+        return {
+          type: "Class",
+          version: this.migrations.currentVersion("Class"),
+          payload: {},
+        };
+      }
+      throw error;
+    }
   }
 
   /** Projects authored before assets moved to .babasset still load from JSON. */
@@ -641,10 +660,22 @@ export class ProjectService {
     if (dir) {
       await this.storage.mkdir(dir, true);
     }
-    const type = isAssetDocumentKind(kind)
-      ? assetTypeForDocumentKind(kind)
-      : "Graph";
+    const existing = isAssetDocumentPath(path)
+      ? await this.readExistingAssetMeta(path)
+      : null;
+    const type =
+      kind === "asset-settings" && existing?.type
+        ? existing.type
+        : isAssetDocumentKind(kind)
+          ? assetTypeForDocumentKind(kind)
+          : "Class";
     const version = this.migrations.currentVersion(type);
+    const parentClass =
+      existing?.parentClass ?? (type === "Class" ? "Actor" : null);
+    const storeInHeader =
+      kind === "asset-settings" &&
+      existing !== null &&
+      !existing.hasDocumentChunk;
 
     if (isAssetDocumentPath(path)) {
       const extraChunks = await this.extraChunksFor(path);
@@ -656,7 +687,14 @@ export class ProjectService {
           version,
           payload: content as unknown as Record<string, unknown>,
         },
-        { blobs: this.blobs, extraChunks },
+        {
+          blobs: this.blobs,
+          extraChunks,
+          parentClass,
+          headerPayload: storeInHeader
+            ? (content as unknown as Record<string, unknown>)
+            : undefined,
+        },
       );
       await this.storage.writeBinary(path, bytes);
     } else {
@@ -697,6 +735,28 @@ export class ProjectService {
     if (cached) return cached;
     const indexed = this.assetRegistry?.list().find((asset) => asset.path === path);
     return indexed?.header.guid ?? null;
+  }
+
+  private async readExistingAssetMeta(path: string): Promise<{
+    type: string;
+    parentClass: string | null;
+    hasDocumentChunk: boolean;
+  } | null> {
+    if (!(await this.storage.exists(path))) return null;
+    try {
+      const header = readAssetDocumentHeader(
+        await this.storage.readBinary(path),
+      );
+      return {
+        type: header.type,
+        parentClass: header.parentClass ?? null,
+        hasDocumentChunk: header.chunks.some(
+          (chunk) => chunk.id === DOCUMENT_CHUNK_ID,
+        ),
+      };
+    } catch {
+      return null;
+    }
   }
 
   private async extraChunksFor(path: string) {

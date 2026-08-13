@@ -40,6 +40,14 @@ describe("focusKeepCandidates", () => {
       listDockWindows("graph").map((entry) => entry.id),
     );
   });
+
+  it("omits Prefab and Components from Focus keep lists for non-Actor classes", () => {
+    expect(
+      focusKeepCandidates("graph", { actorPrefab: false }).map((panel) => panel.id),
+    ).toEqual(
+      listDockWindows("graph", { actorPrefab: false }).map((entry) => entry.id),
+    );
+  });
 });
 
 describe("resolveFocusKeepPanelIds", () => {

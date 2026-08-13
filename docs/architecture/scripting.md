@@ -21,7 +21,7 @@ Add `scripting` / `scripting-nodes` to the ESLint pure-package allowlist beside 
 
 ## Graph IR
 
-Replace today's placeholder `SerializedGraph` (untyped nodes + edges without pin ends) with a typed IR stored in the owning class / function asset payload. Today's Content Browser `type: "Graph"` / `.graph.babasset` is an **in-editor Actor UI preview document** (Graph + Prefab + Components + Class), not the long-term catalog type. Import does not create Graph assets; migrating ownership onto Class documents is a P5 follow-up.
+Replace today's placeholder `SerializedGraph` (untyped nodes + edges without pin ends) with a typed IR stored on the **Class** asset payload (every class parent: `BObject`, `Actor`, `ActorComponent`, `GameInstance`, `FunctionLibrary`, `BDebugCommand`). New files use `.class.babasset`. Legacy `type: "Graph"` / `.graph.babasset` still loads and rewrites to Class on save. **UserInterface** keeps its own Design + Logic editor and is not a Class. Prefab + Components dock tabs appear only when Class ancestry includes **Actor**; other classes get Graph, Class, Inspector, and Compiler Results.
 
 ```ts
 type PinKind = "exec" | "data";
@@ -303,7 +303,7 @@ Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tr
 
 Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers both acceptance claims (a scripted actor running in Preview; a type mismatch blocking Preview with tap-to-navigate).
 
-**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (pin flash, type-asset row editors, project-wide validation sweep, class-owned graphs, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, and **hold-to-marquee** are landed — do not reopen those as P5 gaps.
+**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (pin flash, richer type-asset field editors, project-wide validation sweep, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **compact type-asset settings tabs** are landed — do not reopen those as P5 gaps.
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design Class panel UX against `ClassRegistry.reparent` from the start.

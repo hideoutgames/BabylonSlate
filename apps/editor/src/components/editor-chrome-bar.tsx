@@ -68,12 +68,12 @@ import { WindowsMenu } from "./windows-menu";
 import { displayProjectName } from "../lib/display-project-name";
 import "../shell/editor-chrome.css";
 
-function kindIcon(kind: DocumentKind) {
+function kindIcon(kind: DocumentKind, assetType?: string) {
   if (kind === "content-browser") {
     return <LayoutGridIcon className="size-4 shrink-0" />;
   }
   const visual = resolveTypeVisual({
-    assetType: assetTypeForDocumentKind(kind),
+    assetType: assetType ?? assetTypeForDocumentKind(kind),
   });
   return <TypeVisualIcon visual={visual} className="size-4 shrink-0" />;
 }
@@ -91,6 +91,10 @@ function SortableDocumentTab({
   onSelect,
   onClose,
 }: SortableTabProps) {
+  const { assetRegistry } = useDocuments();
+  const indexed = assetRegistry
+    ?.list()
+    .find((asset) => asset.path === doc.ref.path);
   const {
     attributes,
     listeners,
@@ -124,7 +128,7 @@ function SortableDocumentTab({
         className="chrome-tab-label"
         onClick={onSelect}
       >
-        {kindIcon(doc.ref.kind)}
+        {kindIcon(doc.ref.kind, indexed?.header.type)}
         <span>
           {doc.ref.label}
           {doc.dirty ? " *" : ""}

@@ -18,6 +18,10 @@ import {
 } from "../context/document-context";
 import { listEditorUtilityWindows } from "../shell/editor-utility-windows";
 import { listDockWindows } from "../shell/window-catalog";
+import {
+  classDocumentShowsPrefab,
+  classParentLookup,
+} from "../lib/content-browser-helpers";
 
 export function WindowsMenu() {
   const {
@@ -27,6 +31,7 @@ export function WindowsMenu() {
     toggleDockWindow,
     isDockWindowOpen,
     getOpenDockWindowCount,
+    assetRegistry,
   } = useDocuments();
   useDockWindowTick();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -34,7 +39,20 @@ export function WindowsMenu() {
   const activeKind = openDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
   const canToggleWindows = activeKind === "scene" || activeKind === "graph";
-  const windows = canToggleWindows ? listDockWindows(activeKind) : [];
+  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
+  const activeDoc = openDocuments.find((doc) => doc.id === activeDocumentId);
+  const indexed = assetRegistry
+    ?.list()
+    .find((asset) => asset.path === activeDoc?.ref.path);
+  const actorPrefab =
+    activeKind !== "graph" ||
+    !indexed ||
+    classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
+      assetType: indexed.header.type,
+    });
+  const windows = canToggleWindows
+    ? listDockWindows(activeKind, { actorPrefab })
+    : [];
   const editorUtilities = listEditorUtilityWindows();
   const openDockWindowCount = getOpenDockWindowCount();
 

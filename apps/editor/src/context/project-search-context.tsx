@@ -62,7 +62,7 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
         setPendingTarget(entry.target);
       }
 
-      if (dest.kind === "scene" || dest.kind === "graph") {
+      if (dest.kind !== "content-browser") {
         const id = documentId({ kind: dest.kind, path: dest.path });
         const alreadyOpen = openDocuments.some((doc) => doc.id === id);
         if (alreadyOpen) {

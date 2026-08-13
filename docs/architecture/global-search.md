@@ -4,22 +4,22 @@ Post-P6 editor discovery (engineplan §7.5). Implementation: `ProjectSearchIndex
 
 ## Why a second index
 
-The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): it must not open payloads to scan a project. Global search needs actor names, graph node titles, and variable strings that live in Scene/Graph **document** JSON chunks. Those chunks are small text; texture/mesh/audio bytes stay unloaded.
+The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): it must not open payloads to scan a project. Global search needs actor names, graph node titles, and variable strings that live in Scene/Class **document** JSON chunks. Those chunks are small text; texture/mesh/audio bytes stay unloaded.
 
 | Layer | Reads | Answers |
 | --- | --- | --- |
 | `AssetRegistry` | `.babasset` headers | guid, type, name, path, parentClass, dependencies |
-| `ProjectSearchIndex` | headers + Scene/Graph `document` chunks | substring query over assets, actors, components, graph nodes, classes, variables |
+| `ProjectSearchIndex` | headers + Scene/Class (and legacy Graph) `document` chunks | substring query over assets, actors, components, graph nodes, classes, variables |
 
 ## Entry kinds
 
 | Kind | Source | Open target |
 | --- | --- | --- |
-| `asset` | Header name, type, path, guid, parentClass | Scene/Graph → document tab; else Content Browser reveal |
+| `asset` | Header name, type, path, guid, parentClass | Scene/Class → document tab; import/type assets → Settings tab; else Content Browser reveal |
 | `actor` | Scene `actors[]` name, id, classId | Open scene + select actor |
 | `component` | Actor `components[]` classId, id, short string properties | Open scene + select parent actor |
-| `graph-node` | Graph `nodes[]` type, id, catalog title, short string properties | Open graph + focus node |
-| `class` | Class asset headers + catalog engine class ids | Class `.babasset` → CB reveal; catalog-only ids are informational |
+| `graph-node` | Graph `nodes[]` type, id, catalog title, short string properties | Open class graph + focus node |
+| `class` | Class asset headers + catalog engine class ids | Class `.class.babasset` → graph tab; catalog-only ids are informational |
 | `variable` | `variables.get` / `variables.set` name properties | Open containing graph at that node |
 
 Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache, plugin roots until P13 mounts them.

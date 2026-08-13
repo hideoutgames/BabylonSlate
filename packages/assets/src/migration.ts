@@ -106,18 +106,23 @@ function migrateSceneMeshesToActors(
   };
 }
 
-/** Default registry with a placeholder Graph type at v1 (one migration from v0). */
+/** Default registry with Graph/Class logic-graph chains and Scene/Project. */
 export function createDefaultMigrationRegistry(): MigrationRegistry {
   const registry = new MigrationRegistry();
+  const graphMigrations: MigrationFn[] = [
+    (payload) => ({
+      ...payload,
+      nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
+      edges: Array.isArray(payload.edges) ? payload.edges : [],
+    }),
+  ];
   registry.register({
     type: "Graph",
-    migrations: [
-      (payload) => ({
-        ...payload,
-        nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
-        edges: Array.isArray(payload.edges) ? payload.edges : [],
-      }),
-    ],
+    migrations: graphMigrations,
+  });
+  registry.register({
+    type: "Class",
+    migrations: graphMigrations,
   });
   registry.register({
     type: "Scene",

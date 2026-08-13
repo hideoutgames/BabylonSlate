@@ -1,4 +1,4 @@
-import { listDockWindows, type DockviewDocumentKind } from "./window-catalog";
+import { listDockWindows, type DockviewDocumentKind, type DockWindowOptions } from "./window-catalog";
 
 export type FocusDocumentKind = DockviewDocumentKind;
 
@@ -9,8 +9,9 @@ export interface FocusKeepCandidate {
 
 function catalogFocusCandidates(
   kind: FocusDocumentKind,
+  options?: DockWindowOptions,
 ): FocusKeepCandidate[] {
-  return listDockWindows(kind).map((entry) => ({
+  return listDockWindows(kind, options).map((entry) => ({
     id: entry.id,
     title: entry.title,
   }));
@@ -35,7 +36,11 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
  */
 export function focusKeepCandidates(
   kind: FocusDocumentKind,
+  options?: DockWindowOptions,
 ): FocusKeepCandidate[] {
+  if (options) {
+    return catalogFocusCandidates(kind, options);
+  }
   return kind === "scene"
     ? [...SCENE_FOCUS_CANDIDATES]
     : [...GRAPH_FOCUS_CANDIDATES];

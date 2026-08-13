@@ -10,12 +10,14 @@ const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
 
 /**
- * Class a graph's compiled script binds to. Graphs are not yet owned by a
- * class asset, so the file name is the stable key until class ownership lands.
+ * Class a graph's compiled script binds to. Class (and legacy Graph) files
+ * use the file stem as the stable key.
  */
 export function classIdForGraphPath(path: string): string {
   const file = path.split("/").pop() ?? path;
-  const base = file.replace(/\.graph\.(babasset|json)$/, "").replace(/\.babasset$/, "");
+  const base = file
+    .replace(/\.(graph|class)\.(babasset|json)$/, "")
+    .replace(/\.babasset$/, "");
   const cleaned = base.replace(/[^A-Za-z0-9_]+/g, "_");
   return cleaned.length > 0 ? cleaned : "Graph";
 }

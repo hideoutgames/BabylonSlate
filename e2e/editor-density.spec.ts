@@ -48,7 +48,7 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("content-browser-filter-menu")).toBeVisible();
     await page.getByTestId("content-browser-filter-Scene").click();
     await expect(
-      page.locator('[data-asset-path="assets/main.graph.babasset"]'),
+      page.locator('[data-asset-path="assets/main.class.babasset"]'),
     ).toHaveCount(0);
     await expect(
       page.locator('[data-asset-path="assets/main.scene.babasset"]'),
@@ -98,7 +98,7 @@ test.describe("Editor density and IA", () => {
   }) => {
     await openTestProject(page);
     await page
-      .locator('[data-asset-path="assets/main.graph.babasset"]')
+      .locator('[data-asset-path="assets/main.class.babasset"]')
       .dblclick();
     await expect(page.getByTestId("graph-panel")).toBeVisible({
       timeout: 15_000,
@@ -123,7 +123,7 @@ test.describe("Editor density and IA", () => {
   test("Add Node catalog does not focus search", async ({ page }) => {
     await openTestProject(page);
     await page
-      .locator('[data-asset-path="assets/main.graph.babasset"]')
+      .locator('[data-asset-path="assets/main.class.babasset"]')
       .dblclick();
     await expect(page.getByTestId("graph-panel")).toBeVisible({
       timeout: 15_000,

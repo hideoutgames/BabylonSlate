@@ -99,6 +99,34 @@ describe("asset documents", () => {
     expect(decoded.guid).toBe("font-1");
   });
 
+  it("writes settings payloads onto the header without a document chunk", async () => {
+    const pixels = new Uint8Array([1, 2, 3, 4]);
+    const bytes = await encodeAssetDocument(
+      {
+        type: "Texture",
+        name: "hero",
+        guid: "tex-1",
+        version: 1,
+        payload: { usage: "albedo", compressionState: "compressed" },
+      },
+      {
+        extraChunks: [
+          { id: "pixels", kind: "image", mime: "image/png", data: pixels },
+        ],
+        headerPayload: { usage: "pixelArt", compressionState: "compressed" },
+      },
+    );
+    const header = readAssetDocumentHeader(bytes);
+    expect(header.type).toBe("Texture");
+    expect(header.payload).toEqual({
+      usage: "pixelArt",
+      compressionState: "compressed",
+    });
+    expect(header.chunks.map((chunk) => chunk.id)).toEqual(["pixels"]);
+    const decoded = await decodeAssetDocument(bytes);
+    expect(decoded.payload.usage).toBe("pixelArt");
+  });
+
   it("keeps non-document chunks when re-encoding an imported font", async () => {
     const source = new Uint8Array([10, 11, 12]);
     const imported = await encodeBabasset({
