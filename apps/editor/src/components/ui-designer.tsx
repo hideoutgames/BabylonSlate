@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AssetPicker,
-  NamePromptDialog,
   NumberField,
   PanelFrame,
   TreeView,
@@ -40,7 +39,7 @@ import {
   type WidgetLayout,
 } from "@babylonslate/ui-runtime";
 import { GraphEditor } from "@babylonslate/graph-ui";
-import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
+import type { SerializedGraph } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
@@ -55,12 +54,7 @@ import {
   hydrateSerializedGraphForEditor,
   scriptPaletteNodes,
 } from "../services/graph-validation";
-import { addClassMember, memberNamePromptCopy } from "../lib/class-members";
-import {
-  BLUEPRINT_SECTIONS,
-  blueprintTreeNodes,
-  membersForGraph,
-} from "../panels/my-class-panel";
+import { ClassMembersView } from "../panels/my-class-panel";
 import { centeredFitView, previewScaleToFit, type DesignView } from "./ui-design-gestures";
 import { UiWidgetCatalog } from "./ui-widget-catalog";
 import { UiDesignCanvas } from "./ui-design-canvas";
@@ -89,38 +83,14 @@ export function UiDesigner({
   const logic = (payload.logic ??
     createDefaultLogicGraphSerialized()) as SerializedGraph;
   const paletteNodes = useMemo(() => scriptPaletteNodes(), []);
-  const [memberCollapsed, setMemberCollapsed] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [memberPromptKind, setMemberPromptKind] =
-    useState<GraphClassMemberKind | null>(null);
-  const logicMembers = useMemo(() => membersForGraph(logic), [logic]);
-  const memberTree = useMemo(() => {
-    return blueprintTreeNodes(logicMembers, memberCollapsed).map((row) => {
-      if (!row.id.startsWith("section-")) return row;
-      const sectionId = row.id.replace(/^section-/, "");
-      const section = BLUEPRINT_SECTIONS.find((entry) => entry.id === sectionId);
-      if (!section) return row;
-      return {
-        ...row,
-        trailing: (
-          <button
-            type="button"
-            className="flex size-7 items-center justify-center rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label={`Add ${section.label.slice(0, -1).toLowerCase()}`}
-            data-testid={`class-add-${section.id}`}
-            onPointerDown={stopRowGesture}
-            onClick={(event) => {
-              stopRowGesture(event);
-              setMemberPromptKind(section.kind);
-            }}
-          >
-            +
-          </button>
-        ),
-      };
-    });
-  }, [logicMembers, memberCollapsed]);
+  const [logicMemberId, setLogicMemberId] = useState<string | null>(null);
+  const interfaceAssets = (assetRegistry?.list() ?? [])
+    .filter((asset) => asset.header.type === "ScriptInterface")
+    .map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+    }));
   const [presetId, setPresetId] = useState<DesignerCanvasId>("ipad-landscape");
   const extras = useEngineUiDesignerPresets();
   const devicePresets = mergeDevicePresets(extras);
@@ -456,19 +426,17 @@ export function UiDesigner({
       <TabsContent value="logic" className="flex min-h-0 flex-1">
         <PanelFrame className="w-56 shrink-0 border-r border-border">
           <div data-testid="ui-logic-members">
-            <TreeView
-              nodes={memberTree}
-              onToggleExpanded={(id) => {
-                const sectionId = id.replace(/^section-/, "");
-                setMemberCollapsed((current) => {
-                  const next = new Set(current);
-                  if (next.has(sectionId)) next.delete(sectionId);
-                  else next.add(sectionId);
-                  return next;
-                });
-              }}
-              emptyLabel="No class members"
-              data-testid="my-blueprint-tree"
+            <ClassMembersView
+              graph={logic}
+              selectedId={logicMemberId}
+              interfaceAssets={interfaceAssets}
+              onGraphChange={(next) =>
+                onChange({
+                  ...payload,
+                  logic: next,
+                })
+              }
+              onSelectMember={(id) => setLogicMemberId(id || null)}
             />
           </div>
         </PanelFrame>
@@ -561,33 +529,6 @@ export function UiDesigner({
           setAssetPick(null);
         }}
       />
-      <NamePromptDialog
-        open={memberPromptKind !== null}
-        onOpenChange={(open) => {
-          if (!open) setMemberPromptKind(null);
-        }}
-        title={
-          memberPromptKind
-            ? memberNamePromptCopy(memberPromptKind).title
-            : "Add Member"
-        }
-        label={
-          memberPromptKind
-            ? memberNamePromptCopy(memberPromptKind).label
-            : "Name"
-        }
-        onSubmit={(name) => {
-          if (!memberPromptKind) return;
-          commit({
-            ...payload,
-            logic: addClassMember(logic, memberPromptKind, name),
-          });
-        }}
-      />
     </Tabs>
   );
-}
-
-function stopRowGesture(event: { stopPropagation: () => void }) {
-  event.stopPropagation();
 }

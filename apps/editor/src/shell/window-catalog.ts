@@ -1,7 +1,26 @@
 import type { DockWindowDirection } from "@babylonslate/core";
 
-export type DockviewDocumentKind = "scene" | "graph";
+export type DockviewDocumentKind =
+  | "scene"
+  | "graph"
+  | "enum"
+  | "structure"
+  | "script-interface";
 export type { DockWindowDirection };
+
+const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
+  "scene",
+  "graph",
+  "enum",
+  "structure",
+  "script-interface",
+]);
+
+export function isDockviewDocumentKind(
+  kind: string | undefined,
+): kind is DockviewDocumentKind {
+  return kind !== undefined && DOCKVIEW_KINDS.has(kind as DockviewDocumentKind);
+}
 
 export const CLASS_PANEL_TITLE = "Class";
 /** About half the left stack so Class is not a 180px stub under Components. */
@@ -147,11 +166,70 @@ const OBJECT_GRAPH_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const ENUM_WINDOWS: DockWindowDefinition[] = [
+  { id: "enum-members", component: "type-members", title: "Members" },
+  {
+    id: "enum-details",
+    component: "type-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "enum-members",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const STRUCTURE_WINDOWS: DockWindowDefinition[] = [
+  { id: "structure-members", component: "type-members", title: "Members" },
+  {
+    id: "structure-details",
+    component: "type-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "structure-members",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const SCRIPT_INTERFACE_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "script-interface-preview",
+    component: "script-interface-preview",
+    title: "Preview",
+  },
+  {
+    id: "script-interface-methods",
+    component: "script-interface-methods",
+    title: "Methods",
+    defaultPosition: {
+      referencePanelId: "script-interface-preview",
+      direction: "left",
+      initialWidth: 240,
+    },
+  },
+  {
+    id: "script-interface-details",
+    component: "script-interface-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "script-interface-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
 export function listDockWindows(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
 ): DockWindowDefinition[] {
   if (kind === "scene") return SCENE_WINDOWS;
+  if (kind === "enum") return ENUM_WINDOWS;
+  if (kind === "structure") return STRUCTURE_WINDOWS;
+  if (kind === "script-interface") return SCRIPT_INTERFACE_WINDOWS;
   if (options?.actorPrefab === false) return OBJECT_GRAPH_WINDOWS;
   return GRAPH_WINDOWS;
 }

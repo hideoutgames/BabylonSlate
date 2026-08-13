@@ -1,6 +1,7 @@
 import type {
   GraphClassMember,
   GraphClassMemberKind,
+  GraphClassMemberPin,
   SerializedGraph,
 } from "@babylonslate/core";
 import {
@@ -8,7 +9,7 @@ import {
   formatEventTitle,
 } from "@babylonslate/editor-kit";
 
-export type { GraphClassMember, GraphClassMemberKind };
+export type { GraphClassMember, GraphClassMemberKind, GraphClassMemberPin };
 
 export function memberNamePromptCopy(kind: GraphClassMemberKind): {
   title: string;
@@ -30,12 +31,29 @@ function nextId(factory?: () => string): string {
   return factory?.() ?? crypto.randomUUID();
 }
 
-/** Append a named class member; events and variables also drop a graph node. */
+function memberDefaults(
+  kind: GraphClassMemberKind,
+  extras?: Partial<GraphClassMember>,
+): Partial<GraphClassMember> {
+  if (kind === "variable") {
+    return { typeId: extras?.typeId ?? "float", defaultValue: extras?.defaultValue };
+  }
+  if (kind === "function") {
+    return { pins: extras?.pins ?? [] };
+  }
+  if (kind === "interface") {
+    return { assetGuid: extras?.assetGuid ?? "" };
+  }
+  return {};
+}
+
+/** Append a named class member. Events insert a custom event node; variables do not spawn Get nodes. */
 export function addClassMember(
   graph: SerializedGraph,
   kind: GraphClassMemberKind,
   name: string,
   idFactory?: () => string,
+  extras?: Partial<GraphClassMember>,
 ): SerializedGraph {
   const trimmed = name.trim();
   if (!trimmed) return graph;
@@ -46,17 +64,17 @@ export function addClassMember(
     id: nextId(idFactory),
     kind,
     name: displayName,
+    ...memberDefaults(kind, extras),
   };
   const members = [...(graph.members ?? []), member];
   if (kind === "event") {
-    const nodeId = nextId(idFactory);
     return {
       ...graph,
       members,
       nodes: [
         ...graph.nodes,
         {
-          id: nodeId,
+          id: member.id,
           type: "flow.event.custom",
           position: {
             x: 80,
@@ -71,28 +89,38 @@ export function addClassMember(
       ],
     };
   }
-  if (kind === "variable") {
-    const nodeId = nextId(idFactory);
-    return {
-      ...graph,
-      members,
-      nodes: [
-        ...graph.nodes,
-        {
-          id: nodeId,
-          type: "variables.get",
-          position: {
-            x: 80,
-            y: 80 + graph.nodes.length * 80,
-          },
-          data: {
-            title: `Get ${trimmed}`,
-            name: trimmed,
-            __nodeType: "variables.get",
-          },
-        },
-      ],
-    };
-  }
   return { ...graph, members };
+}
+
+export function patchClassMember(
+  graph: SerializedGraph,
+  memberId: string,
+  patch: Partial<GraphClassMember>,
+): SerializedGraph {
+  const members = (graph.members ?? []).map((member) =>
+    member.id === memberId ? { ...member, ...patch } : member,
+  );
+  return { ...graph, members };
+}
+
+export function removeClassMember(
+  graph: SerializedGraph,
+  memberId: string,
+): SerializedGraph {
+  const members = (graph.members ?? []).filter((member) => member.id !== memberId);
+  const eventMember = (graph.members ?? []).find(
+    (member) => member.id === memberId && member.kind === "event",
+  );
+  if (!eventMember) {
+    return { ...graph, members };
+  }
+  return {
+    ...graph,
+    members,
+    nodes: graph.nodes.filter((node) => {
+      if (!node.type.startsWith("flow.event.")) return true;
+      const named = node.data.name;
+      return named !== eventMember.name && node.id !== memberId;
+    }),
+  };
 }

@@ -206,6 +206,7 @@ describe("UiDesigner", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: "Logic" }));
     expect(screen.getByTestId("ui-logic-members")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("class-add-member"));
     expect(screen.getByTestId("class-add-variables")).toBeTruthy();
     expect(screen.getByTestId("class-add-events")).toBeTruthy();
     await waitFor(() => {
@@ -309,6 +310,7 @@ describe("UiDesigner", () => {
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Logic" }));
+    fireEvent.click(screen.getByTestId("class-add-member"));
     fireEvent.click(screen.getByTestId("class-add-functions"));
     fireEvent.change(screen.getByTestId("name-prompt-input"), {
       target: { value: "Jump" },

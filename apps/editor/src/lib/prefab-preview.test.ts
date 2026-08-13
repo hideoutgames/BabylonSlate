@@ -6,7 +6,8 @@ import {
   instantiatePrefabComponents,
   prefabComponentsFromGraph,
   previewSceneFor,
-  reorderPrefabComponents,
+  reparentPrefabComponents,
+  componentSubtreeIds,
 } from "./prefab-preview";
 
 describe("prefabComponentsFromGraph", () => {
@@ -30,26 +31,53 @@ describe("prefabComponentsFromGraph", () => {
         id: "actor-4-MeshComponent-1",
         classId: "MeshComponent",
         properties: { ...mesh.properties },
+        parentId: null,
       },
     ]);
   });
+
+  it("remaps nested parentIds onto the spawned actor", () => {
+    const root = createMeshComponent("root", "box");
+    const child = { ...createMeshComponent("child", "sphere"), parentId: "root" };
+    const spawned = instantiatePrefabComponents([root, child], "hero");
+    expect(spawned[1]?.parentId).toBe(spawned[0]?.id);
+  });
 });
 
-describe("reorderPrefabComponents", () => {
+describe("reparentPrefabComponents", () => {
   const a = createMeshComponent("a", "box");
   const b = createMeshComponent("b", "sphere");
   const c = createMeshComponent("c", "cylinder");
 
-  it("moves a component after the drop target", () => {
-    expect(reorderPrefabComponents([a, b, c], "a", "c").map((row) => row.id)).toEqual(
-      ["b", "c", "a"],
-    );
+  it("nests a component under the drop target", () => {
+    expect(reparentPrefabComponents([a, b, c], "a", "c")).toEqual([
+      { ...a, parentId: "c" },
+      b,
+      c,
+    ]);
   });
 
-  it("moves a component to the start when dropped on the prefab root", () => {
+  it("unparents when dropped on the prefab root", () => {
+    const nested = { ...c, parentId: "a" };
     expect(
-      reorderPrefabComponents([a, b, c], "c", PREFAB_ROOT_ID).map((row) => row.id),
-    ).toEqual(["c", "a", "b"]);
+      reparentPrefabComponents([a, b, nested], "c", PREFAB_ROOT_ID),
+    ).toEqual([a, b, { ...nested, parentId: null }]);
+  });
+
+  it("rejects a cycle", () => {
+    const child = { ...b, parentId: "a" };
+    expect(reparentPrefabComponents([a, child], "a", "b")).toEqual([a, child]);
+  });
+});
+
+describe("componentSubtreeIds", () => {
+  it("includes nested children", () => {
+    const root = createMeshComponent("root", "box");
+    const child = { ...createMeshComponent("child", "sphere"), parentId: "root" };
+    expect([...componentSubtreeIds([root, child], "root")].sort()).toEqual([
+      "child",
+      "root",
+    ]);
   });
 });
 

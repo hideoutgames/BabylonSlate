@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
-import { addClassMember, memberNamePromptCopy } from "./class-members";
+import { addClassMember, memberNamePromptCopy, patchClassMember, removeClassMember } from "./class-members";
 
 function emptyGraph(): SerializedGraph {
   return { nodes: [], edges: [] };
@@ -17,8 +17,8 @@ describe("addClassMember", () => {
     graph = addClassMember(graph, "function", "Jump", () => "fn-1");
     graph = addClassMember(graph, "interface", "Damageable", () => "if-1");
     expect(graph.members).toEqual([
-      { id: "fn-1", kind: "function", name: "Jump" },
-      { id: "if-1", kind: "interface", name: "Damageable" },
+      { id: "fn-1", kind: "function", name: "Jump", pins: [] },
+      { id: "if-1", kind: "interface", name: "Damageable", assetGuid: "" },
     ]);
     expect(graph.nodes).toEqual([]);
   });
@@ -32,6 +32,16 @@ describe("addClassMember", () => {
     expect(graph.nodes[0]?.type).toBe("flow.event.custom");
     expect(graph.nodes[0]?.data.title).toBe("Event On Hit");
     expect(graph.nodes[0]?.data.name).toBe("On Hit");
+  });
+
+  it("uses one id for the event member and node so Class tree remove matches", () => {
+    let n = 0;
+    const graph = addClassMember(emptyGraph(), "event", "On Hit", () => `id-${++n}`);
+    expect(graph.nodes[0]?.id).toBe(graph.members?.[0]?.id);
+    expect(graph.nodes[0]?.id).toBe("id-1");
+    const next = removeClassMember(graph, graph.nodes[0]!.id);
+    expect(next.nodes).toEqual([]);
+    expect(next.members).toEqual([]);
   });
 
   it("Title Cases typed event names and prefixes Event on the node", () => {
@@ -52,15 +62,26 @@ describe("addClassMember", () => {
     expect(graph.nodes[0]?.data.title).toBe("Event Begin Play");
   });
 
-  it("drops a Get Variable node when adding a variable", () => {
+  it("adds a variable with a pin type and does not spawn a Get node", () => {
     const graph = addClassMember(emptyGraph(), "variable", "Health", () => "id");
     expect(graph.members?.[0]).toEqual({
       id: "id",
       kind: "variable",
       name: "Health",
+      typeId: "float",
     });
-    expect(graph.nodes[0]?.type).toBe("variables.get");
-    expect(graph.nodes[0]?.data.name).toBe("Health");
+    expect(graph.nodes).toEqual([]);
+  });
+
+  it("patches and removes a declared member", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Health", () => "var-1");
+    graph = patchClassMember(graph, "var-1", { typeId: "bool", defaultValue: "true" });
+    expect(graph.members?.[0]).toMatchObject({
+      typeId: "bool",
+      defaultValue: "true",
+    });
+    graph = removeClassMember(graph, "var-1");
+    expect(graph.members).toEqual([]);
   });
 });
 

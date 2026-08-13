@@ -109,12 +109,4 @@ describe("AssetDocumentWorkspace authoring", () => {
       undefined,
     );
   });
-
-  it("edits Structure field types as an enum", () => {
-    render(
-      <AssetDocumentWorkspace documentId="asset-settings:assets/Stats.structure.babasset" />,
-    );
-    expect(screen.getByTestId("property-type-0")).toBeTruthy();
-    expect(screen.queryByTestId("property-type-0")?.tagName).not.toBe("INPUT");
-  });
 });

@@ -115,7 +115,7 @@ describe("ContentBrowserFolderTile", () => {
     const thumb = tile.querySelector(".aspect-square") as HTMLElement | null;
     expect(thumb).not.toBeNull();
     expect(thumb?.style.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-folder) 45%, var(--muted))",
+      "color-mix(in oklch, var(--asset-folder) 55%, var(--muted))",
     );
     expect(thumb?.style.boxShadow).toBe("inset 0 -3px 0 var(--asset-folder)");
   });

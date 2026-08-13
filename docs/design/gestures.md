@@ -117,4 +117,4 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | Left tree: hold ~250ms then drag | Reparent (`moveAsset` / `moveFolder`). Early movement still scrolls. No context menu on the tree. Root `assets` is not draggable. |
 | Context-menu **Move…** / **Copy to Folder…** | Opens `ContentBrowserMoveDialog` (`moveAsset` / `moveFolder` / `copyFolder`) |
 
-Outliner `TreeView` uses the same hold-to-reorder vs menu split (`onReparent` already exists). **Double-tap** an outliner row frames that actor.
+Outliner and Components `TreeView` use **immediate** drag-to-parent (pointer move past 8px; drop on a row makes that row the parent). Outliner Duplicate / Delete live on a trailing **⋯** button (no 500ms row long-press). **Double-tap** an outliner row frames that actor. Content Browser folder trees keep hold-to-drag so list scroll still works.
