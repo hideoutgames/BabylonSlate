@@ -1,13 +1,18 @@
 import { useState } from "react";
 import type { TracePayload } from "@babylonslate/debugger";
-import { SelectableText } from "@babylonslate/editor-kit";
+import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+import { Slider } from "@babylonslate/ui/components/slider";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 
 export type TracePlaybackProps = {
   payload: TracePayload;
 };
+
+function sliderNumber(next: number | readonly number[]): number | undefined {
+  const value = Array.isArray(next) ? next[0] : next;
+  return typeof value === "number" ? value : undefined;
+}
 
 /** Scrubbable recorded-session viewer (seed, frames, snapshot, log). */
 export function TracePlayback({ payload }: TracePlaybackProps) {
@@ -29,15 +34,31 @@ export function TracePlayback({ payload }: TracePlaybackProps) {
       </div>
       <Field>
         <FieldLabel htmlFor="trace-frame">Frame</FieldLabel>
-        <Input
-          id="trace-frame"
-          type="range"
-          min={0}
-          max={max}
-          value={index}
-          data-testid="trace-playback-scrubber"
-          onChange={(event) => setIndex(Number(event.target.value))}
-        />
+        <div className="flex min-w-0 items-center gap-2">
+          <Slider
+            className="min-w-0 flex-1"
+            min={0}
+            max={max}
+            step={1}
+            value={index}
+            aria-label="Frame"
+            data-testid="trace-playback-scrubber"
+            onValueChange={(next) => {
+              const value = sliderNumber(next);
+              if (value !== undefined) setIndex(value);
+            }}
+          />
+          <div className="w-20 shrink-0">
+            <NumberField
+              id="trace-frame"
+              value={index}
+              min={0}
+              max={max}
+              data-testid="trace-playback-frame"
+              onChange={setIndex}
+            />
+          </div>
+        </div>
       </Field>
       {frame ? (
         <ScrollArea className="max-h-48">

@@ -34,10 +34,11 @@ describe("TracePlayback", () => {
   it("shows seed and scrubs to a recorded snapshot", () => {
     render(<TracePlayback payload={payload} />);
     expect(screen.getByTestId("trace-playback-seed").textContent).toContain("7");
+    expect(screen.getByTestId("trace-playback-scrubber")).toBeTruthy();
     expect(screen.getByTestId("trace-playback-snapshot").textContent).toContain(
       "tick=2",
     );
-    fireEvent.change(screen.getByTestId("trace-playback-scrubber"), {
+    fireEvent.change(screen.getByTestId("trace-playback-frame"), {
       target: { value: "0" },
     });
     expect(screen.getByTestId("trace-playback-snapshot").textContent).toContain(

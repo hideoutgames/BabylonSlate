@@ -213,7 +213,7 @@ Unconnected data inputs can store a literal used at compile time when no wire is
 
 | Editable | Not in v1 |
 | --- | --- |
-| `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `rotator`, `color` (RGB; preserve `w`) | `exec`, refs, enum, delegate, wildcards, `array`, `map`, `vec4`, `transform` |
+| `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `vec4` (XYZW scrubs), `rotator`, `color` (RGB; preserve `w`), `enumRef` (member-name Select from open Enum documents / registry) | `exec`, `objectRef` / `actorRef`, delegate, wildcards, `array`, `map`, `structRef`, `transform` |
 
 Authored defaults also clear `pin.missing_input`.
 

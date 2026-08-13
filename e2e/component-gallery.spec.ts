@@ -34,6 +34,9 @@ test("component gallery renders every editor-kit composite", async ({
   await expect(page.getByTestId("gallery-tree-view")).toBeVisible();
   await expect(page.getByTestId("gallery-tree")).toBeVisible();
   await expect(page.getByTestId("property-gallery-position-x")).toBeVisible();
+  await expect(page.getByTestId("property-gallery-friction-slider")).toBeVisible();
+  await expect(page.getByTestId("property-gallery-layer-bit-0")).toBeVisible();
+  await expect(page.getByTestId("gallery-slider")).toBeVisible();
   await expect(page.getByTestId("gallery-numeric-drag")).toBeVisible();
   await expect(page.getByTestId("gallery-parameter-list")).toBeVisible();
 
@@ -50,14 +53,19 @@ test("gallery composites meet the minimum touch target size", {
   const targets = [
     "property-gallery-position-x",
     "property-gallery-speed",
+    "property-gallery-friction-slider",
+    "property-gallery-layer-bit-0",
     "property-gallery-mesh",
     "gallery-numeric-drag",
+    "gallery-slider",
   ];
 
   for (const testId of targets) {
     const box = await page.getByTestId(testId).boundingBox();
     expect(box, `${testId} should be laid out`).not.toBeNull();
-    expect(box!.height, `${testId} height`).toBeGreaterThanOrEqual(28);
+    expect(box!.height, `${testId} height`).toBeGreaterThanOrEqual(
+      testId.includes("slider") || testId.includes("layer-bit") ? 44 : 28,
+    );
   }
 
   const treeRow = page.getByTestId("tree-row-player");
