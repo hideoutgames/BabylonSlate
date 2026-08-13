@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { GameInstance } from "@babylonslate/object-model";
+import { interfaceHandlerKey } from "@babylonslate/object-model";
 import {
   compileGraph,
   pin,
   EXEC,
   FLOAT,
   STRING,
+  VEC2,
   VEC3,
   type GraphNode,
   type LogicGraph,
@@ -359,6 +361,342 @@ describe("script host runs compiled graphs", () => {
     const logs = commands.filter((c) => c.type === "log");
     expect(logs).toHaveLength(1);
     expect(String((logs[0] as { message: string }).message)).toContain("hit");
+    runtime.stop();
+  });
+
+  it("GetAxis2D Move from the resolver moves the actor on Tick", async () => {
+    const registry = createDefaultNodeRegistry();
+    const jsProps = {
+      inputs: [{ name: "stick", type: VEC2 }],
+      outputs: [{ name: "location", type: VEC3 }],
+      body: "location = { x: stick.x, y: 0, z: 0 };",
+    };
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "axis", "input.getAxis2D", { axis: "Move" }),
+        node(registry, "js", "debug.executeJavaScript", jsProps),
+        node(registry, "move", "transform.setLocation"),
+        node(registry, "self", "actor.getSelf"),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "js", "execIn"),
+        edge("e2", "axis", "out", "js", "in_stick"),
+        edge("e3", "js", "execOut", "move", "execIn"),
+        edge("e4", "js", "out_location", "move", "location"),
+        edge("e5", "self", "out", "move", "target"),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      dt: 0.1,
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Player", "player-asset"),
+    ]);
+    const actor = runtime.spawnScriptedActor({ classId: "Player" });
+    expect(actor).not.toBeNull();
+    runtime.start();
+    runtime.pushInput([
+      { kind: "key", tick: 0, code: "KeyD", phase: "down" },
+    ]);
+    runtime.tick();
+    expect(actor!.transform.position.x).toBeGreaterThan(0.5);
+    runtime.stop();
+  });
+
+  it("IsActionHeld Jump from the resolver is true while Space is down", async () => {
+    const registry = createDefaultNodeRegistry();
+    const jsProps = {
+      inputs: [{ name: "held", type: FLOAT }],
+      outputs: [{ name: "location", type: VEC3 }],
+      body: "location = { x: 0, y: held, z: 0 };",
+    };
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "held", "input.isActionHeld", { action: "Jump" }),
+        node(registry, "js", "debug.executeJavaScript", {
+          ...jsProps,
+          inputs: [{ name: "held", type: { kind: "bool" } }],
+        }),
+        node(registry, "move", "transform.setLocation"),
+        node(registry, "self", "actor.getSelf"),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "js", "execIn"),
+        edge("e2", "held", "out", "js", "in_held"),
+        edge("e3", "js", "execOut", "move", "execIn"),
+        edge("e4", "js", "out_location", "move", "location"),
+        edge("e5", "self", "out", "move", "target"),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "JumperHeld", "jumper-held-asset"),
+    ]);
+    const actor = runtime.spawnScriptedActor({ classId: "JumperHeld" });
+    runtime.start();
+    runtime.pushInput([
+      { kind: "key", tick: 0, code: "Space", phase: "down" },
+    ]);
+    runtime.tick();
+    expect(actor!.transform.position.y).toBe(1);
+    runtime.stop();
+  });
+
+  it("OnAction pressed Jump from the resolver runs the then-chain on Tick", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "onJump", "input.onAction", {
+          action: "Jump",
+          phase: "pressed",
+        }),
+        node(registry, "print", "debug.print", {
+          value: "jumped",
+          key: "jump",
+          duration: 1,
+        }),
+      ],
+      edges: [edge("e1", "onJump", "execOut", "print", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    const script = toScript(graph, registry, "Jumper", "jumper-asset");
+    expect(script.entryPoints[0]?.event).toBe("onTick");
+    await runtime.loadScripts([script]);
+    runtime.spawnScriptedActor({ classId: "Jumper" });
+    runtime.start();
+    runtime.pushInput([
+      { kind: "key", tick: 0, code: "Space", phase: "down" },
+    ]);
+    runtime.tick();
+    const prints = commands.filter((c) => c.type === "print");
+    expect(prints).toHaveLength(1);
+    expect(prints[0]).toMatchObject({ message: "jumped" });
+    runtime.stop();
+  });
+
+  it("Delay completes after tick time, not wall-clock, and does not advance while paused", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "delay", "timers.delay", { duration: 0.25 }),
+        node(registry, "log", "debug.log", { message: "after delay" }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "delay", "execIn"),
+        edge("e2", "delay", "execOut", "log", "execIn"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      dt: 0.1,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Waiter", "waiter-tick-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Waiter" });
+    runtime.start();
+    runtime.tick();
+    runtime.tick();
+    await Promise.resolve();
+    expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
+
+    runtime.pause();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await Promise.resolve();
+    expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
+    runtime.resume();
+
+    runtime.tick();
+    await Promise.resolve();
+    expect(commands.filter((c) => c.type === "log")).toHaveLength(1);
+    runtime.stop();
+  });
+
+  it("Add Component attaches a live component on the target actor", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "add", "component.add", { classId: "MeshComponent" }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "add", "execIn"),
+        edge("e2", "self", "out", "add", "actor"),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Holder", "holder-asset"),
+    ]);
+    const actor = runtime.spawnScriptedActor({ classId: "Holder" });
+    runtime.start();
+    runtime.tick();
+    expect(actor!.components.some((c) => c.classId === "MeshComponent")).toBe(
+      true,
+    );
+    runtime.stop();
+  });
+
+  it("Spawn Actor from a compiled graph creates the class with its Begin Play", async () => {
+    const registry = createDefaultNodeRegistry();
+    const childGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "print", "debug.print", {
+          value: "spawned",
+          key: "child",
+          duration: 1,
+        }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "print", "execIn")],
+    };
+    const spawnerGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "spawn", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(childGraph, registry, "Child", "child-asset"),
+      toScript(spawnerGraph, registry, "Spawner", "spawner-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Spawner" });
+    runtime.start();
+    runtime.tick();
+    expect(
+      runtime.getWorld().getActors().some((actor) => actor.classId === "Child"),
+    ).toBe(true);
+    expect(commands.filter((c) => c.type === "print")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "child" })]),
+    );
+    runtime.stop();
+  });
+
+  it("Call Interface uses colon handler keys and compiled custom events", async () => {
+    const registry = createDefaultNodeRegistry();
+    const implGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "hit", "flow.event.custom", { name: "ApplyDamage" }),
+        node(registry, "log", "debug.log", { message: "damaged" }),
+      ],
+      edges: [edge("e1", "hit", "execOut", "log", "execIn")],
+    };
+    const callerGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "call", "interface.call", {
+          interfaceGuid: "iface-damageable",
+          method: "ApplyDamage",
+        }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "call", "execIn"),
+        edge("e2", "self", "out", "call", "target"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 8,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(implGraph, registry, "Enemy", "enemy-asset"),
+      toScript(callerGraph, registry, "Enemy", "enemy-caller"),
+    ]);
+    const actor = runtime.spawnScriptedActor({
+      classId: "Enemy",
+      implementedInterfaces: ["iface-damageable"],
+    });
+    expect(actor).not.toBeNull();
+    runtime.start();
+    runtime.tick();
+    expect(
+      actor!.interfaceHandlers.has(
+        interfaceHandlerKey("iface-damageable", "ApplyDamage"),
+      ),
+    ).toBe(true);
+    expect(commands.filter((c) => c.type === "log")).toHaveLength(1);
+    runtime.stop();
+  });
+
+  it("runs GameInstance subclass Begin Play when gameInstanceClass is set", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "print", "debug.print", {
+          value: "gi-ready",
+          key: "gi",
+          duration: 1,
+        }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "print", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      gameInstanceClass: "MyGame",
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "MyGame", "gi-asset"),
+    ]);
+    runtime.start();
+    runtime.tick();
+    expect(commands.filter((c) => c.type === "print")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "gi" })]),
+    );
+    expect(runtime.getWorld().gameInstance?.classId).toBe("MyGame");
     runtime.stop();
   });
 });
