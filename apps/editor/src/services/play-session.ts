@@ -8,6 +8,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
+import type { SpritePayload } from "@babylonslate/assets";
 import {
   createEngine,
   type EngineHandle,
@@ -94,6 +95,44 @@ export function resolvePlayFrameCap(fps?: number): number {
   return typeof fps === "number" && fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
 }
 
+export interface PlayHudStats {
+  fps: number;
+  scriptMs: number;
+  physicsMs: number;
+  frameId: number;
+}
+
+/** Worker `stats` commands are the source of truth for script/physics ms. */
+export function applyWorkerPlayStats(
+  previous: PlayHudStats | undefined,
+  command: {
+    fps?: number;
+    scriptMs: number;
+    physicsMs: number;
+    frameId: number;
+  },
+): PlayHudStats {
+  return {
+    fps: command.fps && command.fps > 0 ? command.fps : (previous?.fps ?? 0),
+    scriptMs: command.scriptMs,
+    physicsMs: command.physicsMs,
+    frameId: command.frameId,
+  };
+}
+
+/** Main-thread FPS sample must not zero worker timings. */
+export function applyPlayFpsSample(
+  previous: PlayHudStats | undefined,
+  fps: number,
+): PlayHudStats {
+  return {
+    fps,
+    scriptMs: previous?.scriptMs ?? 0,
+    physicsMs: previous?.physicsMs ?? 0,
+    frameId: previous?.frameId ?? 0,
+  };
+}
+
 const FIXTURE_ASSET = "preview-fixture";
 const FIXTURE_NODE = "throw-node";
 
@@ -132,6 +171,8 @@ export function startPlaySession(options: {
   onUiRemove?: (instanceId: string) => void;
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
+  /** Sprite payloads keyed by asset guid for Play clip UV seeks. */
+  spritePayloads?: ReadonlyMap<string, SpritePayload>;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
@@ -145,6 +186,7 @@ export function startPlaySession(options: {
     playMode: true,
     maxActors: 256,
     frameCap: resolvePlayFrameCap(options.frameCap),
+    spritePayloads: options.spritePayloads,
   });
   handle.scheduler.invalidate("play");
   liveBefore.meshes = handle.liveObjectCounts().meshes;
@@ -163,6 +205,12 @@ export function startPlaySession(options: {
   let commandCount = 0;
   let commandWindowStart = performance.now();
   let bridgeRate = 0;
+  let hudStats: PlayHudStats | undefined;
+
+  const emitHudStats = (next: PlayHudStats) => {
+    hudStats = next;
+    options.onStats?.(next);
+  };
 
   const noteCommand = () => {
     commandCount += 1;
@@ -198,12 +246,14 @@ export function startPlaySession(options: {
       });
     }
     if (command.type === "stats") {
-      options.onStats?.({
-        fps: command.fps ?? 0,
-        scriptMs: command.scriptMs ?? 0,
-        physicsMs: command.physicsMs ?? 0,
-        frameId: command.frameId ?? 0,
-      });
+      emitHudStats(
+        applyWorkerPlayStats(hudStats, {
+          fps: command.fps,
+          scriptMs: command.scriptMs ?? 0,
+          physicsMs: command.physicsMs ?? 0,
+          frameId: command.frameId ?? 0,
+        }),
+      );
     }
     if (command.type === "diagnostic") {
       options.onLog?.(command.message, command.severity ?? "error");
@@ -343,12 +393,7 @@ export function startPlaySession(options: {
     // Worker pumps itself; host only feeds input + applies snapshots via onSnapshot.
     frames += 1;
     if (now - fpsWindowStart >= 1000) {
-      options.onStats?.({
-        fps: frames,
-        scriptMs: 0,
-        physicsMs: 0,
-        frameId: frames,
-      });
+      emitHudStats(applyPlayFpsSample(hudStats, frames));
       frames = 0;
       fpsWindowStart = now;
     }

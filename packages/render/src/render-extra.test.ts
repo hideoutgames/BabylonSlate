@@ -95,6 +95,23 @@ describe("snapshot apply under NullEngine", () => {
     scene.dispose();
     engine.dispose();
   });
+
+  it("records meshAssetGuid from assignMesh so sprite clips can look up payloads", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: "sprite-guid",
+      meshKind: "sprite",
+    });
+    expect(binding.meshAssetGuids.get(2)).toBe("sprite-guid");
+    expect(binding.meshKinds.get(2)).toBe("sprite");
+    disposeSnapshotBinding(binding);
+    scene.dispose();
+    engine.dispose();
+  });
 });
 
 describe("resource cache retain/release", () => {

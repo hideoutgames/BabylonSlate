@@ -365,6 +365,9 @@ class InProcessRuntime implements RuntimeDriver {
         if (!id) return;
         this.emit({ type: "uiRemove", instanceId: id });
       },
+      changeScene: (scene) => {
+        this.world.loadScene(scene);
+      },
     });
 
     if (options.seedDemoActors !== false && !options.playScene) {

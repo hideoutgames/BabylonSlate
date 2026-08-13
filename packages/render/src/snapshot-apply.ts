@@ -21,10 +21,17 @@ export interface SnapshotSceneBinding {
   liveSlots: Set<number>;
   /** meshKind from assignMesh, keyed by slotId. */
   meshKinds: Map<number, string | null>;
+  /** Sprite / mesh asset guid from assignMesh, keyed by slotId. */
+  meshAssetGuids: Map<number, string | null>;
 }
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
-  return { meshes: new Map(), liveSlots: new Set(), meshKinds: new Map() };
+  return {
+    meshes: new Map(),
+    liveSlots: new Set(),
+    meshKinds: new Map(),
+    meshAssetGuids: new Map(),
+  };
 }
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
@@ -37,6 +44,7 @@ export function applyAssignMesh(
 ): void {
   const meshKind = command.meshKind ?? null;
   binding.meshKinds.set(command.slotId, meshKind);
+  binding.meshAssetGuids.set(command.slotId, command.meshAssetGuid);
   const existing = binding.meshes.get(command.slotId);
   if (!existing) return;
   existing.dispose();
@@ -90,6 +98,7 @@ export function applySnapshotToScene(
         mesh.dispose();
         binding.meshes.delete(slotId);
         binding.meshKinds.delete(slotId);
+        binding.meshAssetGuids.delete(slotId);
       }
     }
   } finally {
@@ -104,6 +113,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   }
   binding.meshes.clear();
   binding.meshKinds.clear();
+  binding.meshAssetGuids.clear();
 }
 
 function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {

@@ -6,6 +6,7 @@ import {
 } from "@babylonjs/core";
 import type { SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
+import type { SpritePayload } from "@babylonslate/assets";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
   createEditorCamera,
@@ -36,7 +37,7 @@ import {
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
-import { applyAnimStateToScene } from "./anim-apply";
+import { applyAnimStateToScene, resolvePlaySpriteSlot } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
@@ -89,6 +90,8 @@ export interface CreateEngineOptions {
   colorScheme?: EditorColorScheme;
   /** Optional fps cap. Play sessions pass project `playFrameCap` (default 60). */
   frameCap?: number;
+  /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
+  spritePayloads?: ReadonlyMap<string, SpritePayload>;
 }
 
 export interface EditorTools {
@@ -408,7 +411,14 @@ export function createEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "animState") {
-        applyAnimStateToScene(scene, command);
+        applyAnimStateToScene(
+          {
+            animationGroups: scene.animationGroups,
+            getSpriteSlot: (slotId) =>
+              resolvePlaySpriteSlot(binding, options.spritePayloads, slotId),
+          },
+          command,
+        );
         scheduler.invalidate("snapshot");
       }
     },

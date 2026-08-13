@@ -255,7 +255,7 @@ Play path: compile project graphs → worker `loadScripts` control message → `
 
 `ScriptHost.load(script)` loads a compiled module and `hooksFor(classId)` returns `LifecycleHooks` that run its entry points. `RuntimeDriver.loadScripts()` registers modules plus their anchors, and `spawnScriptedActor({ classId })` creates an actor driven by them. Throws inside a script become runtime diagnostics mapped back to the graph node through the anchor table.
 
-The `ctx` handed to compiled code carries `self`, `deltaSeconds`, `formatValue`, `log`, `print`, variable access, transform writes, `delay`, interface dispatch, input queries, synchronous physics queries (`lineTrace`, `sphereOverlap`, `shapeSweep`, `addImpulse`), and UI helpers `setWidgetVisible`, `applyUserInterface` (returns an instance id), and `removeUserInterface`. Remaining later-phase helpers (audio) resolve to inert stubs so a graph that references them still runs instead of throwing.
+The `ctx` handed to compiled code carries `self`, `deltaSeconds`, `formatValue`, `log`, `print`, variable access, transform writes, `delay`, interface dispatch, input queries, synchronous physics queries (`lineTrace`, `sphereOverlap`, `shapeSweep`, `addImpulse`), UI helpers `setWidgetVisible`, `applyUserInterface` (returns an instance id), `removeUserInterface`, and `changeScene` (same `World.loadScene` path as the `changescene` console command). Remaining later-phase helpers (audio) resolve to inert stubs so a graph that references them still runs instead of throwing.
 
 ### Codegen invariants
 
