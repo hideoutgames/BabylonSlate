@@ -57,7 +57,7 @@ Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` va
 
 ## Painting
 
-Brush, eraser, rect, bucket, stamp, and picker live on the Tilemap document tab (`ToggleGroup` tools, `SearchSheet` palette as a bottom sheet). One finger paints; two fingers pan (`touch-none` on the canvas). **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
+Brush, eraser, rect, bucket, stamp, and picker live on the Tilemap document tab (`ToggleGroup` tools, `SearchDropdown` palette anchored to the Palette button). One finger paints; two fingers pan (`touch-none` on the canvas). **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
 
 Stamp places a 2×2 of the selected tile. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
 

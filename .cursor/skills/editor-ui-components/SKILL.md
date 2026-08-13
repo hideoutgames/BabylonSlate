@@ -22,7 +22,7 @@ Match the task to a row:
 | Docked panel chrome | `PanelFrame`, optional `ToolbarStrip` |
 | Details / typed properties | `PropertyGrid`, `NumericDragField`, `NumberField` |
 | Hierarchy / folders | `TreeView` |
-| Searchable pick lists | `SearchInput`, `SearchSheet`, `AssetPicker`, `CatalogDialog`, `CatalogItemButton` |
+| Searchable pick lists | `SearchInput`, `SearchDialog`, `SearchDropdown`, `AssetPicker`, `CatalogDialog`, `CatalogItemButton` |
 | Forms / settings | `Field` + `Input` / `Select` / `Switch` / `Checkbox` / `Textarea` |
 | Actions / pressed tools | `Button` (outline vs ghost), `Toggle` / `ToggleGroup`, `IconActionButton` |
 | Confirm / blocking | `AlertDialog`; inline status `Alert` |
