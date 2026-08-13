@@ -9,6 +9,8 @@ import {
   GameInstance,
   World,
   createActorsFromSerializedScene,
+  createWorldSnapshot,
+  stringifyWorldSnapshot,
   type Actor,
   type TickPhase,
 } from "@babylonslate/object-model";
@@ -31,8 +33,13 @@ import {
 } from "@babylonslate/physics";
 import {
   createCommandRegistry,
+  createUserCommand,
+  TraceRecorder,
   type CommandRegistry,
   type ConsoleCommandHost,
+  type RegisteredCommand,
+  type TracePayload,
+  type UserCommandDef,
 } from "@babylonslate/debugger";
 import { LogRingBuffer } from "./log-ring";
 import {
@@ -104,6 +111,12 @@ export interface RuntimeDriver {
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
+  registerUserCommand(def: UserCommandDef): void;
+  bindUserCommand(
+    def: Omit<UserCommandDef, "run"> & { classId: string },
+  ): void;
+  listConsoleCommands(): readonly RegisteredCommand[];
+  stopTrace(): TracePayload | null;
   readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
@@ -157,6 +170,10 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly playSceneGuid: string;
   private playWorldRealized = false;
   private readonly commands: CommandRegistry;
+  private readonly trace = new TraceRecorder();
+  private lastTrace: TracePayload | null = null;
+  private readonly seed: number;
+  private tickPrints: Array<{ message: string; key: string }> = [];
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -169,6 +186,7 @@ class InProcessRuntime implements RuntimeDriver {
   constructor(options: RuntimeDriverOptions, mode: TransportMode) {
     this.transportMode = mode;
     this.dt = options.dt ?? 1 / 60;
+    this.seed = options.seed;
     this.maxCatchUp = options.maxCatchUpSteps ?? 4;
     this.onCommand = options.onCommand;
     this.physicsWorldKind = options.physicsWorld ?? "3d";
@@ -274,6 +292,7 @@ class InProcessRuntime implements RuntimeDriver {
         });
       },
       print: (message, key, duration, color) => {
+        this.tickPrints.push({ message, key });
         this.emit({
           type: "print",
           message,
@@ -307,6 +326,11 @@ class InProcessRuntime implements RuntimeDriver {
           impulse,
           strength,
         );
+      },
+      moveCharacter: (actor, translation, dt, offset) => {
+        const target = actor;
+        if (!target) return;
+        this.physicsSync.moveCharacter(target, translation, dt, offset);
       },
     });
 
@@ -343,6 +367,12 @@ class InProcessRuntime implements RuntimeDriver {
       await this.scriptHost.load(script);
       if (script.anchors.length > 0) {
         this.registerAnchors(script.assetGuid, script.anchors);
+      }
+      if (script.command) {
+        this.bindUserCommand({
+          ...script.command,
+          classId: script.classId,
+        });
       }
     }
   }
@@ -398,6 +428,27 @@ class InProcessRuntime implements RuntimeDriver {
     return this.commands.execute(command, this.consoleHost());
   }
 
+  registerUserCommand(def: UserCommandDef): void {
+    this.commands.register(createUserCommand(def));
+  }
+
+  bindUserCommand(
+    def: Omit<UserCommandDef, "run"> & { classId: string },
+  ): void {
+    this.registerUserCommand({
+      ...def,
+      run: (args) => this.scriptHost.invokeCommand(def.classId, args),
+    });
+  }
+
+  listConsoleCommands(): readonly RegisteredCommand[] {
+    return this.commands.list();
+  }
+
+  stopTrace(): TracePayload | null {
+    return this.lastTrace;
+  }
+
   private consoleHost(): ConsoleCommandHost {
     const emitSetting = (key: string, value: string | number | boolean) => {
       this.emit({
@@ -437,8 +488,19 @@ class InProcessRuntime implements RuntimeDriver {
           .entries()
           .map((entry) => entry.message)
           .join("\n"),
-      startSnapshot: () => emitSetting("snapshot", "start"),
-      stopSnapshot: () => emitSetting("snapshot", "stop"),
+      startSnapshot: () => {
+        this.lastTrace = null;
+        this.trace.start({ seed: this.seed, dt: this.dt });
+      },
+      stopSnapshot: () => {
+        this.lastTrace = this.trace.stop();
+        if (this.lastTrace) {
+          this.emit({
+            type: "trace",
+            payload: this.lastTrace as unknown as Record<string, unknown>,
+          });
+        }
+      },
     };
   }
 
@@ -581,6 +643,7 @@ class InProcessRuntime implements RuntimeDriver {
     const pending = this.input.drain().filter((e) => e.tick <= tickIndex + 1);
     this.resolvedInput = this.resolver.resolve(pending);
     this.connectionBox.current = this.resolvedInput.gamepadConnections;
+    this.tickPrints = [];
     for (const connection of this.resolvedInput.gamepadConnections) {
       this.emit({
         type: "log",
@@ -613,6 +676,35 @@ class InProcessRuntime implements RuntimeDriver {
       scriptMs: this._lastScriptMs,
       physicsMs: this._lastPhysicsMs,
     });
+    if (this.trace.isRecording) {
+      const recordedTick = this.world.clock.tickIndex;
+      this.trace.recordFrame({
+        tickIndex: recordedTick,
+        scriptMs: this._lastScriptMs,
+        physicsMs: this._lastPhysicsMs,
+        logs: this.logs
+          .entries()
+          .filter((entry) => entry.frameId === this.frameId)
+          .map((entry) => ({
+            severity: entry.severity,
+            category: entry.category,
+            message: entry.message,
+          })),
+        prints: [...this.tickPrints],
+        snapshotText: stringifyWorldSnapshot(createWorldSnapshot(this.world)),
+        inputEvents: pending.map((event) => {
+          if (event.kind === "key") {
+            return {
+              type: "key",
+              code: event.code,
+              down: event.phase === "down",
+              tick: event.tick,
+            };
+          }
+          return { type: event.kind, tick: event.tick };
+        }),
+      });
+    }
   }
 
   advance(elapsedSeconds: number): void {

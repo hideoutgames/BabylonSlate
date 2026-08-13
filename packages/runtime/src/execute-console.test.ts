@@ -42,4 +42,28 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     });
     runtime.stop();
   });
+
+  it("runs a user BDebugCommand from the console without the debug tier", () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      includeDebugCommands: false,
+    });
+    runtime.registerUserCommand({
+      name: "heal",
+      description: "Heal the player",
+      category: "game",
+      parameters: [{ name: "amount", type: "float" }],
+      run: (args) => ({ success: true, output: `healed ${args.amount}` }),
+    });
+    expect(runtime.executeConsoleCommand("heal 10")).toEqual({
+      success: true,
+      output: "healed 10",
+    });
+    expect(runtime.listConsoleCommands().some((c) => c.name === "heal")).toBe(
+      true,
+    );
+    runtime.stop();
+  });
 });

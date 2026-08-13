@@ -4,6 +4,8 @@ import {
   ParameterListEditor,
   PropertyGrid,
 } from "@babylonslate/editor-kit";
+import { Field, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
+import { Input } from "@babylonslate/ui/components/input";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
@@ -17,9 +19,13 @@ import {
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import {
+  commandParameterRows,
+  commandParametersFromRows,
   inspectorLiteralPinDefaults,
   logNodePropertyRows,
+  parameterRowsFromPinList,
   pinDefaultPropertyRows,
+  pinListFromParameterRows,
 } from "../lib/graph-inspector";
 
 export function InspectorPanel(_props: IDockviewPanelProps) {
@@ -56,9 +62,22 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   }
 
   const isExecJs = selectedNode.type === "debug.executeJavaScript";
+  const isCommandRun = selectedNode.type === "flow.event.commandRun";
   const isLog = selectedNode.type === "debug.log";
   const inputs = Array.isArray(selectedNode.data.inputs)
     ? (selectedNode.data.inputs as Array<{ name: string; type?: unknown }>)
+    : [];
+  const outputs = Array.isArray(selectedNode.data.outputs)
+    ? (selectedNode.data.outputs as Array<{ name: string; type?: unknown }>)
+    : [];
+  const commandParams = Array.isArray(selectedNode.data.parameters)
+    ? (selectedNode.data.parameters as Array<{
+        name: string;
+        type?: unknown;
+        optional?: boolean;
+        defaultValue?: unknown;
+        enumValues?: unknown;
+      }>)
     : [];
   const title =
     typeof selectedNode.data.title === "string" && selectedNode.data.title
@@ -103,18 +122,24 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           <>
             <ParameterListEditor
               title="Inputs"
-              rows={inputs.map((row, i) => ({
-                id: `in-${i}-${row.name}`,
-                name: row.name,
-                typeLabel: "float",
-              }))}
+              rows={parameterRowsFromPinList(inputs, "in")}
               onChange={(rows) => {
                 const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
                 updateNodeData({
-                  inputs: rows.map((r) => ({
-                    name: r.name,
-                    type: { kind: "float" },
-                  })),
+                  inputs: pinListFromParameterRows(rows),
+                  ...(invalid
+                    ? { __identError: invalid.name }
+                    : { __identError: undefined }),
+                });
+              }}
+            />
+            <ParameterListEditor
+              title="Outputs"
+              rows={parameterRowsFromPinList(outputs, "out")}
+              onChange={(rows) => {
+                const invalid = rows.find((r) => !isValidJsIdentifier(r.name));
+                updateNodeData({
+                  outputs: pinListFromParameterRows(rows),
                   ...(invalid
                     ? { __identError: invalid.name }
                     : { __identError: undefined }),
@@ -125,6 +150,55 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               value={String(selectedNode.data.body ?? "")}
               bodyLine={focusDiagnostic?.bodyLine}
               onChange={(body) => updateNodeData({ body })}
+            />
+          </>
+        ) : null}
+        {isCommandRun ? (
+          <>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="command-name">Command Name</FieldLabel>
+                <Input
+                  id="command-name"
+                  className="min-h-11"
+                  value={String(selectedNode.data.commandName ?? "")}
+                  data-testid="command-name"
+                  onChange={(event) =>
+                    updateNodeData({ commandName: event.target.value })
+                  }
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="command-description">Description</FieldLabel>
+                <Input
+                  id="command-description"
+                  className="min-h-11"
+                  value={String(selectedNode.data.description ?? "")}
+                  data-testid="command-description"
+                  onChange={(event) =>
+                    updateNodeData({ description: event.target.value })
+                  }
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="command-category">Category</FieldLabel>
+                <Input
+                  id="command-category"
+                  className="min-h-11"
+                  value={String(selectedNode.data.category ?? "game")}
+                  data-testid="command-category"
+                  onChange={(event) =>
+                    updateNodeData({ category: event.target.value })
+                  }
+                />
+              </Field>
+            </FieldGroup>
+            <ParameterListEditor
+              title="Parameters"
+              rows={commandParameterRows(commandParams)}
+              onChange={(rows) =>
+                updateNodeData({ parameters: commandParametersFromRows(rows) })
+              }
             />
           </>
         ) : null}

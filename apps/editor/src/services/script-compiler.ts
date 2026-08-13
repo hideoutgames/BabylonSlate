@@ -1,7 +1,13 @@
 import type { SerializedGraph } from "@babylonslate/core";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type {
+  ScriptBundleEntry,
+  ScriptConsoleCommand,
+} from "@babylonslate/bridge";
 import { compileGraph, type LogicGraph } from "@babylonslate/scripting";
 import { defaultNodeRegistry, materializeLogicGraph } from "./graph-validation";
+
+const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
+const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
 
 /**
  * Class a graph's compiled script binds to. Graphs are not yet owned by a
@@ -12,6 +18,67 @@ export function classIdForGraphPath(path: string): string {
   const base = file.replace(/\.graph\.(babasset|json)$/, "").replace(/\.babasset$/, "");
   const cleaned = base.replace(/[^A-Za-z0-9_]+/g, "_");
   return cleaned.length > 0 ? cleaned : "Graph";
+}
+
+function paramType(
+  value: unknown,
+): "string" | "float" | "int" | "bool" | "enum" {
+  return typeof value === "string" && PARAM_TYPES.has(value)
+    ? (value as "string" | "float" | "int" | "bool" | "enum")
+    : "float";
+}
+
+export function consoleCommandFromGraph(
+  graph: LogicGraph,
+  classId: string,
+): ScriptConsoleCommand | undefined {
+  const node = graph.nodes.find((entry) => entry.typeId === "flow.event.commandRun");
+  if (!node) return undefined;
+  const properties = node.properties;
+  const rawParams = Array.isArray(properties.parameters)
+    ? properties.parameters
+    : [];
+  const name =
+    typeof properties.commandName === "string" && properties.commandName.trim()
+      ? properties.commandName.trim()
+      : classId.toLowerCase();
+  return {
+    name,
+    description:
+      typeof properties.description === "string" ? properties.description : "",
+    category:
+      typeof properties.category === "string" && properties.category.trim()
+        ? properties.category.trim()
+        : "game",
+    parameters: rawParams.flatMap((row) => {
+      if (!row || typeof row !== "object") return [];
+      const param = row as {
+        name?: unknown;
+        type?: unknown;
+        optional?: unknown;
+        defaultValue?: unknown;
+        enumValues?: unknown;
+      };
+      if (typeof param.name !== "string" || !param.name.trim()) return [];
+      return [
+        {
+          name: param.name.trim(),
+          type: paramType(param.type),
+          ...(param.optional === true ? { optional: true } : {}),
+          ...(param.defaultValue !== undefined
+            ? { defaultValue: param.defaultValue }
+            : {}),
+          ...(Array.isArray(param.enumValues)
+            ? {
+                enumValues: param.enumValues.filter(
+                  (value): value is string => typeof value === "string",
+                ),
+              }
+            : {}),
+        },
+      ];
+    }),
+  };
 }
 
 export function compileGraphDocument(
@@ -25,12 +92,14 @@ export function compileGraphDocument(
     assetGuid: options.path,
     registry: defaultNodeRegistry,
   });
+  const classId = classIdForGraphPath(options.path);
   return {
     assetGuid: options.path,
-    classId: classIdForGraphPath(options.path),
+    classId,
     source: compiled.source,
     anchors: compiled.anchors,
     entryPoints: compiled.entryPoints,
+    command: consoleCommandFromGraph(logic, classId),
   };
 }
 
@@ -41,7 +110,13 @@ export function spawnListForScripts(
   const seen = new Set<string>();
   const spawn: Array<{ classId: string }> = [];
   for (const script of scripts) {
-    if (!script.entryPoints.some((entry) => entry.event)) continue;
+    if (
+      !script.entryPoints.some(
+        (entry) => entry.event && ACTOR_LIFECYCLE_EVENTS.has(entry.event),
+      )
+    ) {
+      continue;
+    }
     if (seen.has(script.classId)) continue;
     seen.add(script.classId);
     spawn.push({ classId: script.classId });

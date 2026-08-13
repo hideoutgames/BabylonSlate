@@ -12,6 +12,7 @@ import type { Actor, World } from "@babylonslate/object-model";
 export class PhysicsWorldSync {
   private readonly backend: PhysicsBackend;
   private readonly bodyByActor = new Map<string, string>();
+  private readonly characterByActor = new Map<string, string>();
   private synced = false;
 
   constructor(backend: PhysicsBackend) {
@@ -25,6 +26,7 @@ export class PhysicsWorldSync {
   dispose(): void {
     this.backend.dispose();
     this.bodyByActor.clear();
+    this.characterByActor.clear();
   }
 
   /** Ensure every physics-bearing actor has backend bodies (idempotent). */
@@ -54,6 +56,7 @@ export class PhysicsWorldSync {
       if (live.has(actorId)) continue;
       this.backend.destroyBody(bodyId);
       this.bodyByActor.delete(actorId);
+      this.characterByActor.delete(actorId);
     }
     this.synced = true;
   }
@@ -97,6 +100,41 @@ export class PhysicsWorldSync {
     const bodyId = this.bodyByActor.get(actorId);
     if (!bodyId) return;
     this.backend.addImpulse(bodyId, impulse, strength);
+  }
+
+  /**
+   * Lazy character controller keyed by actor guid. Applies the resolved
+   * transform to the actor immediately so the next kinematic sync keeps it.
+   */
+  moveCharacter(
+    actor: Actor,
+    translation: Vec3,
+    dt: number,
+    offset?: number,
+  ): void {
+    if (!this.bodyByActor.has(actor.guid)) {
+      this.createForActor(actor);
+    }
+    const bodyId = this.bodyByActor.get(actor.guid);
+    if (!bodyId) return;
+    if (!this.characterByActor.has(actor.guid)) {
+      const skin = offset != null && offset > 0 ? offset : 0.01;
+      this.backend.createCharacterController({
+        id: actor.guid,
+        bodyId,
+        offset: skin,
+      });
+      this.characterByActor.set(actor.guid, actor.guid);
+    }
+    const moved = this.backend.moveCharacter(actor.guid, translation, dt);
+    if (!moved) return;
+    actor.transform.position.x = moved.position.x;
+    actor.transform.position.y = moved.position.y;
+    actor.transform.position.z = moved.position.z;
+    actor.transform.rotation.x = moved.rotation.x;
+    actor.transform.rotation.y = moved.rotation.y;
+    actor.transform.rotation.z = moved.rotation.z;
+    actor.transform.rotation.w = moved.rotation.w;
   }
 
   private createForActor(actor: Actor): void {

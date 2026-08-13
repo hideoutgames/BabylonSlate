@@ -94,15 +94,13 @@ export const physicsNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("controllerId", "controller", "in", FLOAT),
+      pin("target", "target", "in", actorRef("Actor")),
       pin("translation", "translation", "in", VEC3),
+      pin("offset", "offset", "in", FLOAT, "data", true),
     ],
     codegen: (ctx) => {
-      // Character controller ids are string keys in the backend; graphs pass a numeric
-      // handle that the runtime maps via ctx helpers in a later polish. For P7 the
-      // node emits a documented no-op log when the controller is missing.
       ctx.emit(
-        `ctx.log("log", "physics", "moveCharacter " + ${ctx.input("controllerId")} + " " + JSON.stringify(${ctx.input("translation")}));`,
+        `ctx.moveCharacter(${ctx.input("target")}, ${ctx.input("translation")}, ${ctx.input("offset")});`,
       );
     },
   },

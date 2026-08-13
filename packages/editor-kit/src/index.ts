@@ -44,7 +44,13 @@ export {
   type UseHoldDragMenuResult,
 } from "./use-hold-drag-menu";
 
-export { ParameterListEditor, type ParameterRow, type ParameterListEditorProps } from "./parameter-list-editor";
+export {
+  ParameterListEditor,
+  PARAMETER_VALUE_TYPES,
+  type ParameterRow,
+  type ParameterValueType,
+  type ParameterListEditorProps,
+} from "./parameter-list-editor";
 export {
   NumericDragField,
   type NumericDragFieldProps,

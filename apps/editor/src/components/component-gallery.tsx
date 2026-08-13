@@ -5,11 +5,13 @@ import {
   CatalogDialog,
   NumericDragField,
   PanelFrame,
+  ParameterListEditor,
   PropertyGrid,
   SearchSheet,
   SelectableText,
   ToolbarStrip,
   TreeView,
+  type ParameterRow,
   type PropertyRow,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
@@ -64,6 +66,9 @@ function GalleryComposites() {
   const [selectedId, setSelectedId] = useState("player");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [parameters, setParameters] = useState<ParameterRow[]>([
+    { id: "gallery-amount", name: "amount", type: "float" },
+  ]);
 
   const rows: PropertyRow[] = [
     {
@@ -118,6 +123,11 @@ function GalleryComposites() {
       <div className="rounded-lg border border-border">
         <PanelFrame title="Property grid" data-testid="gallery-property-grid">
           <PropertyGrid rows={rows} />
+        </PanelFrame>
+      </div>
+      <div className="rounded-lg border border-border">
+        <PanelFrame title="Parameter list" data-testid="gallery-parameter-list">
+          <ParameterListEditor rows={parameters} onChange={setParameters} />
         </PanelFrame>
       </div>
       <div className="h-40 overflow-hidden rounded-lg border border-border">

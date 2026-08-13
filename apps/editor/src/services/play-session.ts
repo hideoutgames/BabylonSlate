@@ -24,6 +24,7 @@ import {
   playLoadControl,
   type PlayPhysicsSettings,
 } from "./play-physics";
+import type { TracePayload } from "@babylonslate/debugger";
 
 /**
  * Extract a `RuntimeDiagnostic` from a worker `diagnostic` command so it can
@@ -73,6 +74,14 @@ export interface PlaySession {
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + unmatched scripts). */
   spawnedActorGuids: () => readonly string[];
+  executeConsoleCommand: (
+    line: string,
+  ) => Promise<{ success: boolean; output: string }>;
+  lastTrace: () => TracePayload | null;
+  accountedBytes: () => number;
+  liveObjectCounts: () => { meshes: number; textures: number };
+  drawCalls: () => number;
+  bridgeMessagesPerSec: () => number;
   stop: () => PlaySessionResult;
 }
 
@@ -139,7 +148,26 @@ export function startPlaySession(options: {
   const workerDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
+  const consoleWaiters: Array<(result: { success: boolean; output: string }) => void> =
+    [];
+  let recordedTrace: TracePayload | null = null;
+  let commandCount = 0;
+  let commandWindowStart = performance.now();
+  let bridgeRate = 0;
+
+  const noteCommand = () => {
+    commandCount += 1;
+    const now = performance.now();
+    const elapsed = (now - commandWindowStart) / 1000;
+    if (elapsed >= 0.2) {
+      bridgeRate = commandCount / elapsed;
+      commandCount = 0;
+      commandWindowStart = now;
+    }
+  };
+
   const onCommand = (command: CommandMessage) => {
+    noteCommand();
     if (command.type === "spawn") {
       spawnedActorGuids.push(command.actorGuid);
     }
@@ -169,6 +197,13 @@ export function startPlaySession(options: {
       options.onLog?.(command.message, command.severity ?? "error");
       const diagnostic = diagnosticFromCommand(command);
       if (diagnostic) workerDiagnostics.push(diagnostic);
+    }
+    if (command.type === "consoleResult") {
+      const waiter = consoleWaiters.shift();
+      waiter?.({ success: command.success, output: command.output });
+    }
+    if (command.type === "trace") {
+      recordedTrace = command.payload as unknown as TracePayload;
     }
   };
 
@@ -342,6 +377,38 @@ export function startPlaySession(options: {
       handle.scheduler.setFrameCap(fps);
     },
     spawnedActorGuids: () => spawnedActorGuids,
+    executeConsoleCommand: (line) => {
+      if (runtime) {
+        return Promise.resolve(runtime.executeConsoleCommand(line));
+      }
+      if (worker) {
+        return new Promise((resolve) => {
+          consoleWaiters.push(resolve);
+          worker.postControl({ type: "console", line });
+        });
+      }
+      return Promise.resolve({
+        success: false,
+        output: "runtime unavailable",
+      });
+    },
+    lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
+    accountedBytes: () => handle.resourceCache.accountedBytes(),
+    liveObjectCounts: () => handle.liveObjectCounts(),
+    drawCalls: () => {
+      const engine = handle.engine as { drawCalls?: number };
+      return engine.drawCalls ?? 0;
+    },
+    bridgeMessagesPerSec: () => {
+      const now = performance.now();
+      const elapsed = (now - commandWindowStart) / 1000;
+      if (elapsed >= 0.2) {
+        bridgeRate = commandCount / Math.max(elapsed, 0.001);
+        commandCount = 0;
+        commandWindowStart = now;
+      }
+      return Math.round(bridgeRate);
+    },
     stop: () => {
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", unlock);

@@ -8,10 +8,13 @@ describe("flow nodes", () => {
     expect(flowNodes[0]?.category).toBeTruthy();
   });
 
-  it("registers a custom event entry node", () => {
-    const custom = flowNodes.find((node) => node.id === "flow.event.custom");
-    expect(custom?.title).toBe("Event Custom");
-    expect(custom?.pins({}).some((pin) => pin.kind === "exec" && pin.direction === "out")).toBe(
+  it("registers On Command Run pins from the parameter list", () => {
+    const command = flowNodes.find((node) => node.id === "flow.event.commandRun");
+    expect(command?.title).toBe("Event On Command Run");
+    const pins = command?.pins({
+      parameters: [{ name: "amount", type: "float" }],
+    });
+    expect(pins?.some((pin) => pin.id === "amount" && pin.direction === "out")).toBe(
       true,
     );
   });

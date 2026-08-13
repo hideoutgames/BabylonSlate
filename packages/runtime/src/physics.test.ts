@@ -127,4 +127,93 @@ describe("runtime physics phase", () => {
     expect(hit.hit).toBe(true);
     runtime.stop();
   });
+
+  it("moveCharacter lazily creates a controller and moves a kinematic actor", () => {
+    const runtime = createInProcessRuntime({
+      seed: 7,
+      maxActors: 8,
+      preferSoftwarePhysics: true,
+      physicsWorld: "2d",
+      seedDemoActors: false,
+    });
+    const world = runtime.getWorld();
+    const actor = world.createActor({
+      classId: "Actor",
+      transform: {
+        position: { x: 0, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    actor.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        variables: { motionType: "kinematic", mass: 1, gravityScale: 0 },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        variables: {
+          shape: { kind: "box2d", halfExtents: { x: 0.4, y: 0.4 } },
+        },
+      }),
+    );
+    world.spawnActorNow(actor);
+
+    runtime.start();
+    runtime.tick();
+    runtime.getPhysicsSync()!.moveCharacter(
+      actor,
+      { x: 1, y: 0, z: 0 },
+      1 / 60,
+    );
+    expect(actor.transform.position.x).toBeCloseTo(1, 5);
+    expect(actor.transform.position.y).toBeCloseTo(1, 5);
+    runtime.stop();
+  });
+
+  it("moveCharacter works on software 3d kinematic actors", () => {
+    const runtime = createInProcessRuntime({
+      seed: 8,
+      maxActors: 8,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      seedDemoActors: false,
+    });
+    const world = runtime.getWorld();
+    const actor = world.createActor({
+      classId: "Actor",
+      transform: {
+        position: { x: 0, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    actor.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        variables: { motionType: "kinematic", mass: 1, gravityScale: 0 },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        variables: {
+          shape: { kind: "box", halfExtents: { x: 0.4, y: 0.4, z: 0.4 } },
+        },
+      }),
+    );
+    world.spawnActorNow(actor);
+
+    runtime.start();
+    runtime.tick();
+    runtime.getPhysicsSync()!.moveCharacter(
+      actor,
+      { x: 0, y: 0, z: 1 },
+      1 / 60,
+    );
+    expect(actor.transform.position.z).toBeCloseTo(1, 5);
+    runtime.stop();
+  });
 });

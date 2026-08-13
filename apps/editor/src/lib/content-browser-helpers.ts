@@ -37,6 +37,7 @@ export const ENGINE_BASE_CLASSES = [
   "ActorComponent",
   "GameInstance",
   "FunctionLibrary",
+  "BDebugCommand",
 ] as const;
 
 /** Asset types creatable from the Content Browser New Asset flow. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
+  ENGINE_BASE_CLASSES,
   collectFolderGuids,
   compressionBadgeLabel,
   displayAssetTitle,
@@ -244,5 +245,9 @@ describe("content-browser-helpers", () => {
     expect(visual.colorVar).toBe("var(--asset-class)");
     expect(visual.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
     expect(visual.icon).not.toBe(resolveTypeVisual({ classId: "BObject" }).icon);
+  });
+
+  it("offers BDebugCommand as a Class parent", () => {
+    expect(ENGINE_BASE_CLASSES).toContain("BDebugCommand");
   });
 });

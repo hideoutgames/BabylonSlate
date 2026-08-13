@@ -7,6 +7,8 @@ describe("ClassRegistry", () => {
     const registry = new ClassRegistry();
     expect(registry.has("BObject")).toBe(true);
     expect(registry.has("Actor")).toBe(true);
+    expect(registry.has("BDebugCommand")).toBe(true);
+    expect(registry.isA("BDebugCommand", "BObject")).toBe(true);
     expect(registry.isA("Actor", "BObject")).toBe(true);
     expect(registry.isA("MeshComponent", "ActorComponent")).toBe(true);
     for (const id of ENGINE_COMPONENT_CLASS_IDS) {
@@ -30,6 +32,21 @@ describe("ClassRegistry", () => {
     expect(registry.inheritedVariables("Enemy").map((v) => v.name)).toContain(
       "health",
     );
+  });
+
+  it("discovers user commands through the BDebugCommand parent chain", () => {
+    const registry = new ClassRegistry();
+    expect(
+      registry.register({
+        id: "HealCommand",
+        parentClassId: "BDebugCommand",
+        kind: "other",
+        variables: [],
+        implementedInterfaces: [],
+      }).ok,
+    ).toBe(true);
+    expect(registry.isA("HealCommand", "BDebugCommand")).toBe(true);
+    expect(registry.isA("HealCommand", "Actor")).toBe(false);
   });
 
   it("reparents with cycle detection and member invalidation", () => {

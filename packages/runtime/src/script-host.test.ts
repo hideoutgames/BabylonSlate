@@ -119,6 +119,57 @@ describe("script host runs compiled graphs", () => {
     expect(String((logs[0] as { message: string }).message)).toContain("x: 1");
   });
 
+  it("ticks moveCharacter on a kinematic body through the compiled graph", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "move", "physics.moveCharacter", {
+          translation: { x: 1, y: 0, z: 0 },
+        }),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "move", "execIn"),
+        edge("e2", "self", "out", "move", "target"),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 2,
+      seedDemoActors: false,
+      dt: 1 / 60,
+      preferSoftwarePhysics: true,
+      physicsWorld: "2d",
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Walker", "walker-asset"),
+    ]);
+    const actor = runtime.spawnScriptedActor({ classId: "Walker" });
+    expect(actor).not.toBeNull();
+    actor!.attachComponent(
+      runtime.getWorld().createComponent({
+        classId: "RigidBodyComponent",
+        variables: { motionType: "kinematic", mass: 1, gravityScale: 0 },
+      }),
+    );
+    actor!.attachComponent(
+      runtime.getWorld().createComponent({
+        classId: "ColliderComponent",
+        variables: {
+          shape: { kind: "box2d", halfExtents: { x: 0.4, y: 0.4 } },
+        },
+      }),
+    );
+
+    runtime.start();
+    runtime.tick();
+
+    expect(actor!.transform.position.x).toBeCloseTo(1, 5);
+    runtime.stop();
+  });
+
   it("emits Begin Play prints once and maps runtime errors to graph nodes", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
@@ -205,5 +256,45 @@ describe("script host runs compiled graphs", () => {
     void STRING;
     void EXEC;
     void pin;
+  });
+
+  it("runs OnCommandRun from the console and ExecuteConsoleCommand", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "run", "flow.event.commandRun", {
+          parameters: [{ name: "amount", type: "float" }],
+        }),
+        node(registry, "report", "debug.reportCommand", {
+          success: true,
+          output: "ok",
+        }),
+      ],
+      edges: [edge("e1", "run", "execOut", "report", "execIn")],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 4,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      includeDebugCommands: false,
+    });
+    await runtime.loadScripts([
+      {
+        ...toScript(graph, registry, "HealCommand", "heal-asset"),
+        command: {
+          name: "heal",
+          description: "Heal",
+          category: "game",
+          parameters: [{ name: "amount", type: "float" }],
+        },
+      },
+    ]);
+    expect(runtime.executeConsoleCommand("heal 3")).toEqual({
+      success: true,
+      output: "ok",
+    });
+    runtime.stop();
   });
 });

@@ -18,7 +18,7 @@ packages/object-model/ Headless BObject / Actor / World / tick / class registry
 packages/physics/     Body/shape protocol; Havok 3D + Rapier 2D backends (P7)
 packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
 packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader, script host
-packages/debugger/    Command registry, parser, core/debug tiers (P8)
+packages/debugger/    Command registry, parser, BDebugCommand helpers, stats budget, trace recorder (P8)
 packages/input/       Raw input ring + action/axis mapping model and `InputResolver`
 packages/render/      Snapshot sync, visibility-gated editor loop, resource cache, editor tools, KTX2 transcoder
 packages/scripting/   Graph IR, pin types, validator, JS codegen + anchors (P5)

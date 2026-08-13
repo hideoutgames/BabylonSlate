@@ -30,6 +30,7 @@ export interface ScriptHostServices {
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
   reportError(error: unknown): void;
+  reportCommand?(success: boolean, output: string): void;
   lineTrace?(start: Vec3, end: Vec3): HitResult;
   sphereOverlap?(center: Vec3, radius: number): OverlapResult;
   shapeSweep?(
@@ -41,6 +42,12 @@ export interface ScriptHostServices {
     actor: Actor | null | undefined,
     impulse: Vec3,
     strength?: number,
+  ): void;
+  moveCharacter?(
+    actor: Actor | null | undefined,
+    translation: Vec3,
+    dt: number,
+    offset?: number,
   ): void;
 }
 
@@ -66,6 +73,8 @@ export interface ScriptContext {
   ): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
+  commandArgs: Record<string, unknown>;
+  reportCommand(success: boolean, output: string): void;
   callInterface(
     target: Actor | null | undefined,
     interfaceGuid: string,
@@ -95,6 +104,11 @@ export interface ScriptContext {
     impulse: Vec3,
     strength?: number,
   ): void;
+  moveCharacter(
+    actor: Actor | null | undefined,
+    translation: Vec3,
+    offset?: number,
+  ): void;
   playSound(): void;
   setWidgetVisible(): void;
   changeScene(scene: string): void;
@@ -115,6 +129,7 @@ export class ScriptHost {
   private readonly byClassId = new Map<string, LoadedScript[]>();
   private readonly pending = new WeakMap<Actor, Set<string>>();
   private readonly services: ScriptHostServices;
+  private commandResult = { success: true, output: "" };
 
   constructor(services: ScriptHostServices) {
     this.services = services;
@@ -149,12 +164,26 @@ export class ScriptHost {
     };
   }
 
+  invokeCommand(
+    classId: string,
+    args: Record<string, unknown>,
+  ): { success: boolean; output: string } {
+    const loaded = this.byClassId.get(classId);
+    this.commandResult = { success: true, output: "" };
+    if (!loaded || loaded.length === 0) {
+      return { success: false, output: `unknown command class ${classId}` };
+    }
+    this.invokeEvent(loaded, "onCommandRun", null, 0, 0, args);
+    return this.commandResult;
+  }
+
   private invokeEvent(
     loaded: readonly LoadedScript[],
-    event: "onBeginPlay" | "onTick",
-    self: Actor,
+    event: "onBeginPlay" | "onTick" | "onCommandRun",
+    self: Actor | null,
     deltaSeconds: number,
     tickIndex: number,
+    commandArgs: Record<string, unknown> = {},
   ): void {
     for (const entry of loaded) {
       for (const point of entry.script.entryPoints) {
@@ -162,15 +191,22 @@ export class ScriptHost {
         const fn = entry.exports[point.name];
         if (typeof fn !== "function") continue;
         const key = `${entry.script.assetGuid}:${point.name}`;
-        if (point.isAsync && this.isPending(self, key)) continue;
-        const ctx = this.createContext(self, deltaSeconds, tickIndex);
+        if (self && point.isAsync && this.isPending(self, key)) continue;
+        const ctx = this.createContext(
+          self,
+          deltaSeconds,
+          tickIndex,
+          commandArgs,
+        );
         try {
           const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
           if (result instanceof Promise) {
-            this.markPending(self, key);
+            if (self) this.markPending(self, key);
             void result
               .catch((error) => this.services.reportError(error))
-              .finally(() => this.clearPending(self, key));
+              .finally(() => {
+                if (self) this.clearPending(self, key);
+              });
           }
         } catch (error) {
           this.services.reportError(error);
@@ -197,12 +233,18 @@ export class ScriptHost {
     self: Actor | null,
     deltaSeconds: number,
     tickIndex: number,
+    commandArgs: Record<string, unknown> = {},
   ): ScriptContext {
     const services = this.services;
     return {
       self,
       deltaSeconds,
       tickIndex,
+      commandArgs,
+      reportCommand: (success, output) => {
+        this.commandResult = { success: Boolean(success), output: String(output) };
+        services.reportCommand?.(Boolean(success), String(output));
+      },
       formatValue: (value) => formatValue(value),
       log: (severity, category, message) =>
         services.log(severity, category, message),
@@ -265,6 +307,14 @@ export class ScriptHost {
         },
       addImpulse: (actor, impulse, strength) => {
         services.addImpulse?.(actor ?? self, impulse, strength);
+      },
+      moveCharacter: (actor, translation, offset) => {
+        services.moveCharacter?.(
+          actor ?? self,
+          translation,
+          deltaSeconds,
+          offset,
+        );
       },
       playSound: () => {},
       setWidgetVisible: () => {},

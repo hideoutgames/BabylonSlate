@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import {
   TypeVisualIcon,
+  engineParentOf,
   resolveActorTypeVisual,
   resolveTypeVisual,
   walkAncestry,
@@ -49,7 +50,7 @@ describe("resolveTypeVisual", () => {
     expect(objectVisual.icon).not.toBe(widgetVisual.icon);
   });
 
-  it("reuses the Object icon for GameInstance, FunctionLibrary, and ActorComponent", () => {
+  it("reuses the Object icon for GameInstance, FunctionLibrary, ActorComponent, and BDebugCommand", () => {
     const objectIcon = resolveTypeVisual({ classId: "BObject" }).icon;
     expect(resolveTypeVisual({ classId: "GameInstance" }).icon).toBe(objectIcon);
     expect(resolveTypeVisual({ classId: "FunctionLibrary" }).icon).toBe(
@@ -58,6 +59,10 @@ describe("resolveTypeVisual", () => {
     expect(resolveTypeVisual({ classId: "ActorComponent" }).icon).toBe(
       objectIcon,
     );
+    expect(resolveTypeVisual({ classId: "BDebugCommand" }).icon).toBe(
+      objectIcon,
+    );
+    expect(engineParentOf("BDebugCommand")).toBe("BObject");
   });
 
   it("uses Class color and the parent icon for Class assets", () => {

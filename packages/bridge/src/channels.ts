@@ -12,6 +12,19 @@ export type ScriptAnchorPayload = {
   bodyLine?: number;
 };
 
+export type ScriptConsoleCommand = {
+  name: string;
+  description: string;
+  category: string;
+  parameters: Array<{
+    name: string;
+    type: "string" | "float" | "int" | "bool" | "enum";
+    optional?: boolean;
+    defaultValue?: unknown;
+    enumValues?: string[];
+  }>;
+};
+
 /** One compiled graph asset shipped to the runtime for a class. */
 export type ScriptBundleEntry = {
   assetGuid: string;
@@ -20,9 +33,11 @@ export type ScriptBundleEntry = {
   anchors: ScriptAnchorPayload[];
   entryPoints: Array<{
     name: string;
-    event?: "onBeginPlay" | "onTick";
+    event?: "onBeginPlay" | "onTick" | "onCommandRun";
     isAsync: boolean;
   }>;
+  /** Present when the graph is a BDebugCommand OnCommandRun handler. */
+  command?: ScriptConsoleCommand;
 };
 
 export type ControlMessage =
@@ -48,7 +63,8 @@ export type ControlMessage =
   | { type: "pause" }
   | { type: "step" }
   | { type: "stop" }
-  | { type: "setPaused"; paused: boolean };
+  | { type: "setPaused"; paused: boolean }
+  | { type: "console"; line: string };
 
 export type CommandMessage =
   | {
@@ -103,6 +119,15 @@ export type CommandMessage =
       duration: number;
       color: { x: number; y: number; z: number; w: number };
       frameId: number;
+    }
+  | {
+      type: "consoleResult";
+      success: boolean;
+      output: string;
+    }
+  | {
+      type: "trace";
+      payload: Record<string, unknown>;
     };
 
 export type BridgeHostMessage =

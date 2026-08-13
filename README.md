@@ -2,40 +2,48 @@
 
 BabylonJS Editor optimised for Touch Devices — an iPad-first game engine with a shadcn React UI, Dockview panel layout, React Flow visual scripting, and Capacitor native shells.
 
-**Engine plan:** [docs/engineplan.md](docs/engineplan.md) — architecture, roadmap, and delivery checklist.
+**Engine plan:** [docs/engineplan.md](docs/engineplan.md) — architecture, roadmap, and delivery checklist. Appendix A is the slice checklist.
 
 **Docs site:** [https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/) — VitePress site generated from `docs/`.
 
 ## Stack
 
 - **Monorepo**: pnpm workspaces
-- **App**: `apps/editor` — Vite + React + Capacitor 7
+- **App**: `apps/editor` — Vite + React + Capacitor 8
 - **UI**: shadcn/ui (`packages/ui`) + Dockview
-- **Engine**: BabylonJS (`packages/engine`)
-- **Graph**: React Flow (`packages/graph`)
-- **Storage**: `@daniele-rolli/capacitor-scoped-storage` on iOS/Android, web adapter for dev/CI
+- **Engine**: Babylon.js 9 (`packages/render`)
+- **Graph**: React Flow (`packages/graph-ui`) + `@babylonslate/scripting`
+- **Storage**: OPFS on web; Capacitor Filesystem / scoped storage on iOS (`packages/vfs`)
 
 ## Project structure
 
 ```
-apps/editor/          Capacitor shell, Dockview layout, panels
+apps/editor/          Capacitor shell, Homepage, Dockview, Play overlay
 apps/docs/            VitePress site (content lives in docs/)
-packages/engine/      Babylon scene lifecycle
-packages/graph/       React Flow editor + execution
-packages/shared/      Types, project schema, command bus
-packages/storage/     Platform file adapters
-packages/ui/          shadcn components
+packages/core/        GUIDs, schemas, command bus, storage port
+packages/vfs/         File adapters, platform detection, app settings
+packages/assets/      .babasset / .babproject, registry, importers
+packages/edit/        Per-document undo
+packages/object-model/ World, actors, tick, class registry
+packages/physics/     Havok 3D + Rapier 2D (game worker)
+packages/bridge/      SAB + transferable transports
+packages/runtime/     Game worker + in-process driver
+packages/debugger/    Console command registry, BDebugCommand, stats HUD helpers, trace recorder (P8)
+packages/input/       Action/axis mappings
+packages/render/      Snapshot sync, resource cache, editor tools
+packages/scripting/   Graph IR, validator, JS codegen
+packages/scripting-nodes/ Node catalog
+packages/graph-ui/    React Flow graph editor
+packages/ui/          shadcn primitives
+packages/editor-kit/  Property grid, tree view, sheets
+packages/test-kit/    Fixtures and deterministic harness
 ```
+
+See [docs/architecture/overview.md](docs/architecture/overview.md) for the live package map.
 
 ## Project file format
 
-```
-MyGame.babylonslate/
-  project.json
-  layout.json
-  graphs/main.graph.json
-  scenes/main.scene.json
-```
+Projects are `.babproject` containers (directory or zip). Editor scenes and graphs are `.babasset` files under `assets/`, with large payloads in `assets/.blobs/<sha256>`. Details: [docs/architecture/containers.md](docs/architecture/containers.md).
 
 ## Development
 
@@ -82,23 +90,23 @@ That builds the editor and the VitePress docs site, then copies docs into `apps/
 
 ### Manual checklist (~5 min)
 
-1. Toolbar and **Test mode** badge visible
-2. Dockview tabs: Viewport, Graph, Hierarchy, Inspector
-3. Spinning cube in Viewport
-4. Tap **Open** — project name shows `TestProject.babylonslate` (no prompt)
-5. Tap **Save** — no errors
+1. Homepage, then an open project with **Test mode** badge
+2. Toolbar: Save All, Undo/Redo, Play, Windows, Focus, Search, Settings
+3. Scene Viewport (2D/3D toggle) and Graph document tabs
+4. Content Browser lists project assets
+5. Play overlay opens and closes with the top-right X
 6. Long-press a tab header to drag panels
-7. Pan in Graph panel; touch-orbit in Viewport
+7. Two-finger pan/orbit in the Viewport; pan/pinch on a graph
 
 ### Automated coverage
 
 | Layer | Tool | What it tests |
 |-------|------|----------------|
-| BabylonJS engine | Vitest + NullEngine | Scene loading, mesh creation (no WebGL) |
-| Graph, storage, project | Vitest | Serialization, command bus, save/load |
-| App shell | Playwright (CI) | Toolbar, Open/Save, canvas mount |
+| Packages | Vitest (node / jsdom / babylon) | VFS, assets, object model, physics, bridge, runtime, scripting, render (`NullEngine`) |
+| Editor shell | Playwright (CI) | Homepage, chrome, Play, Content Browser, graph, scene editing |
+| Docs | VitePress build + sidebar tests | `docs/` pages listed in `apps/docs/src/sidebar.ts` |
 
-iOS Capacitor / Files App testing is deferred until Mac/Xcode is available.
+See [docs/architecture/testing.md](docs/architecture/testing.md). iOS Capacitor / Files App device spikes remain under `p1-device-spikes`.
 
 ## iOS (Capacitor) — requires Mac
 

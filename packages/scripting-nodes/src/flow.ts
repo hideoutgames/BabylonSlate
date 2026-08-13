@@ -1,9 +1,12 @@
 import {
   pin,
   type NodeDefinition,
+  type PinType,
   EXEC,
   BOOL,
   FLOAT,
+  INT,
+  STRING,
 } from "@babylonslate/scripting";
 
 export const flowNodes: NodeDefinition[] = [
@@ -27,6 +30,34 @@ export const flowNodes: NodeDefinition[] = [
       pin("deltaSeconds", "deltaSeconds", "out", FLOAT),
     ],
     codegen: () => ({ deltaSeconds: "ctx.deltaSeconds" }),
+  },
+  {
+    id: "flow.event.commandRun",
+    title: "Event On Command Run",
+    category: "flow",
+    pure: true,
+    pins: (properties) => {
+      const params = Array.isArray(properties.parameters)
+        ? (properties.parameters as Array<{ name: string; type?: string }>)
+        : [];
+      return [
+        pin("execOut", "then", "out", EXEC),
+        ...params.map((param) =>
+          pin(param.name, param.name, "out", pinTypeForCommandParam(param.type)),
+        ),
+      ];
+    },
+    codegen: (ctx) => {
+      const params = Array.isArray(ctx.node.properties.parameters)
+        ? (ctx.node.properties.parameters as Array<{ name: string }>)
+        : [];
+      const out: Record<string, string> = {};
+      for (const param of params) {
+        out[param.name] = `(ctx.commandArgs[${JSON.stringify(param.name)}])`;
+      }
+      if (Object.keys(out).length === 0) return;
+      return out;
+    },
   },
   {
     id: "flow.event.custom",
@@ -78,3 +109,17 @@ export const flowNodes: NodeDefinition[] = [
     },
   },
 ];
+
+function pinTypeForCommandParam(type: string | undefined): PinType {
+  switch (type) {
+    case "bool":
+      return BOOL;
+    case "int":
+      return INT;
+    case "string":
+    case "enum":
+      return STRING;
+    default:
+      return FLOAT;
+  }
+}

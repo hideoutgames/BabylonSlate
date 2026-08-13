@@ -54,6 +54,10 @@ Projects authored before this move still load: `ProjectService` reads a `.json` 
 
 Leaving a project (export / share) always produces a self-contained file (inline locators).
 
+## .babtrace
+
+Recorded Play sessions reuse the `.babasset` container with `type: "Trace"`. The JSON body is a `TracePayload` (seed, dt, frames with stats/logs/prints/snapshots/input). Files use the `.babtrace` extension; `encodeTraceDocument` / `decodeTraceDocument` wrap `encodeAssetDocument`. Debugger stays free of `@babylonslate/assets`.
+
 ## .babproject / .babplugin
 
 One logical tree, two backends behind one codec, parameterized by **manifest kind** (`project` | `plugin`):

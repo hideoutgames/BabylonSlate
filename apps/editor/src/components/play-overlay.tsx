@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { XIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { TerminalIcon, XIcon } from "lucide-react";
 import { DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import { SelectableText } from "@babylonslate/editor-kit";
+import type { TracePayload } from "@babylonslate/debugger";
 import type { Engine } from "@babylonjs/core";
 import {
   startPlaySession,
@@ -11,6 +12,10 @@ import {
 } from "../services/play-session";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
+import { DebugConsole } from "./debug-console";
+import { StatsHud } from "./stats-hud";
+import { TracePlayback } from "./trace-playback";
+import { playConsoleCommands } from "../lib/play-console";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { SerializedScene } from "@babylonslate/core";
 import type { PlayPhysicsSettings } from "../services/play-physics";
@@ -53,9 +58,16 @@ export function PlayOverlay({
   const [fps, setFps] = useState(0);
   const [scriptMs, setScriptMs] = useState(0);
   const [physicsMs, setPhysicsMs] = useState(0);
+  const [memoryBytes, setMemoryBytes] = useState(0);
+  const [meshCount, setMeshCount] = useState(0);
+  const [textureCount, setTextureCount] = useState(0);
+  const [draws, setDraws] = useState(0);
+  const [bridgeRate, setBridgeRate] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [moveX, setMoveX] = useState<number | null>(null);
   const [actorGuids, setActorGuids] = useState<string[]>([]);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [trace, setTrace] = useState<TracePayload | null>(null);
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -66,6 +78,7 @@ export function PlayOverlay({
   const sceneRef = useRef({ sceneAssetGuid, scene });
   sceneRef.current = { sceneAssetGuid, scene };
   const initialFrameCapRef = useRef(frameCap);
+  const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -94,9 +107,20 @@ export function PlayOverlay({
       sessionRef.current?.setPaused(paused);
     });
     const movePoll = window.setInterval(() => {
-      setMoveX(sessionRef.current?.lastMoveX() ?? null);
-      setActorGuids([...(sessionRef.current?.spawnedActorGuids() ?? [])]);
-    }, 100);
+      const current = sessionRef.current;
+      setMoveX(current?.lastMoveX() ?? null);
+      setActorGuids([...(current?.spawnedActorGuids() ?? [])]);
+      if (current) {
+        setMemoryBytes(current.accountedBytes());
+        const counts = current.liveObjectCounts();
+        setMeshCount(counts.meshes);
+        setTextureCount(counts.textures);
+        setDraws(current.drawCalls());
+        setBridgeRate(current.bridgeMessagesPerSec());
+        const recorded = current.lastTrace();
+        if (recorded) setTrace(recorded);
+      }
+    }, 200);
     return () => {
       window.clearInterval(movePoll);
       detachLifecycle();
@@ -112,19 +136,21 @@ export function PlayOverlay({
       className="fixed inset-0 z-50 flex flex-col bg-background"
       data-testid="play-overlay"
     >
-      <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-2 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground">
-        <span data-testid="play-fps">
-          <SelectableText>{fps} fps</SelectableText>
-        </span>
-        <span data-testid="play-script-ms">
-          <SelectableText>script {scriptMs.toFixed(2)} ms</SelectableText>
-        </span>
-        <span data-testid="play-physics-ms">
-          <SelectableText>physics {physicsMs.toFixed(2)} ms</SelectableText>
-        </span>
+      <div className="pointer-events-none absolute left-3 top-3 z-10">
+        <StatsHud
+          fps={fps}
+          scriptMs={scriptMs}
+          physicsMs={physicsMs}
+          memoryBytes={memoryBytes}
+          meshCount={meshCount}
+          textureCount={textureCount}
+          draws={draws}
+          bridgeMessagesPerSec={bridgeRate}
+        />
         <span
           data-testid="play-move-x"
           data-move-x={moveX === null ? "" : String(moveX)}
+          className="sr-only"
         >
           <SelectableText>
             move.x={moveX === null ? "—" : moveX.toFixed(2)}
@@ -135,20 +161,30 @@ export function PlayOverlay({
           data-guids={actorGuids.join(",")}
         />
       </div>
-      <Button
-        size="touch-icon"
-        variant="secondary"
-        className="absolute right-3 top-3 z-10"
-        data-testid="play-overlay-close"
-        aria-label="Stop Play"
-        onClick={() => {
-          const result = sessionRef.current?.stop() ?? emptyPlayResult();
-          sessionRef.current = null;
-          onClose(result);
-        }}
-      >
-        <XIcon />
-      </Button>
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+        <Button
+          size="touch-icon"
+          variant="secondary"
+          data-testid="play-console-open"
+          aria-label="Open Console"
+          onClick={() => setConsoleOpen(true)}
+        >
+          <TerminalIcon />
+        </Button>
+        <Button
+          size="touch-icon"
+          variant="secondary"
+          data-testid="play-overlay-close"
+          aria-label="Stop Play"
+          onClick={() => {
+            const result = sessionRef.current?.stop() ?? emptyPlayResult();
+            sessionRef.current = null;
+            onClose(result);
+          }}
+        >
+          <XIcon />
+        </Button>
+      </div>
       <canvas
         ref={canvasRef}
         className="h-full w-full touch-none"
@@ -165,6 +201,23 @@ export function PlayOverlay({
           </div>
         ))}
       </div>
+      <DebugConsole
+        open={consoleOpen}
+        onOpenChange={setConsoleOpen}
+        commands={commands}
+        onExecute={(line) =>
+          sessionRef.current?.executeConsoleCommand(line) ??
+          Promise.resolve({ success: false, output: "not playing" })
+        }
+      />
+      {trace ? (
+        <div
+          className="absolute bottom-3 right-3 z-10 max-h-64 w-80 overflow-auto rounded-md border border-border bg-background/95"
+          data-testid="play-trace-playback"
+        >
+          <TracePlayback payload={trace} />
+        </div>
+      ) : null}
     </div>
   );
 }
