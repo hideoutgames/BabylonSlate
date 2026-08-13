@@ -56,7 +56,7 @@ Pure with respect to the browser — feed synthetic streams from the determinist
 | `gamepadConnections` | connection transitions this tick |
 | `setGamepadRumble(index, intensity, durationMs)` | forwarded to main thread when supported |
 
-Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases.
+Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases. Each `tick()` consumes **all** events queued since the previous tick. Event `tick` is recorded on traces; it does not gate consumption. Play's worker host stamps canvas/gamepad samples with the last worker `stats.tickIndex` (not `performance.now() / 16.67`), so compiled `GetAxis` / `GetAxis2D` graphs see the same stick as the overlay HUD.
 
 ## Project Settings
 
@@ -68,7 +68,7 @@ Runtime receives mappings via `RuntimeDriverOptions.inputMappings` / `setInputMa
 
 ## Testing
 
-Per engineplan §11.1: input is tested through **synthetic event streams** replayed by the deterministic harness and `InputResolver` unit tests — not by driving a browser. P4 raw capture tests remain separate from mapping resolution.
+Per engineplan §11.1: input is tested through **synthetic event streams** replayed by the deterministic harness and `InputResolver` unit tests — not by driving a browser. P4 raw capture tests remain separate from mapping resolution. Runtime tests also cover live gamepad events stamped with a host wall-clock tick (the Play worker skew) so `GetAxis2D("Move")` cannot silently stay at `{x:0,y:0}`. E2e: `e2e/p5-scripting.spec.ts` injects a synthetic pad and asserts a compiled Tick → GetAxis2D → Print overlay.
 
 ## Scripting nodes (`@babylonslate/scripting-nodes`)
 

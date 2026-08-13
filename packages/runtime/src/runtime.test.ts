@@ -130,4 +130,27 @@ describe("in-process runtime driver", () => {
     expect(runtime.getResolvedInput().axes2D.Move!.x).toBeGreaterThan(0.5);
     runtime.stop();
   });
+
+  it("applies live gamepad events stamped with a host wall-clock tick", () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+    });
+    runtime.start();
+    // Play's worker path stamps events with Math.floor(performance.now() / (1000/60)),
+    // which is thousands while World.clock.tickIndex is still in the single digits.
+    runtime.pushInput([
+      {
+        kind: "gamepad",
+        tick: 50_000,
+        gamepadIndex: 0,
+        axes: [0.85, 0, 0, 0],
+        buttons: [0, 0, 0, 0],
+      },
+    ]);
+    runtime.tick();
+    expect(runtime.getResolvedInput().axes2D.Move!.x).toBeGreaterThan(0.5);
+    runtime.stop();
+  });
 });

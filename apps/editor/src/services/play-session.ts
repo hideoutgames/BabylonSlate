@@ -99,6 +99,18 @@ export function resolvePlayFrameCap(fps?: number): number {
   return typeof fps === "number" && fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
 }
 
+/**
+ * Tick stamp for Play canvas events. In-process Play uses World.clock;
+ * the worker host has no World on the main thread, so it must use the last
+ * `stats.tickIndex` rather than `performance.now() / (1000/60)`.
+ */
+export function playInputStampTick(
+  inProcessTickIndex: number | undefined,
+  lastWorkerTickIndex: number,
+): number {
+  return inProcessTickIndex ?? lastWorkerTickIndex;
+}
+
 export interface PlayHudStats {
   fps: number;
   scriptMs: number;
@@ -223,6 +235,7 @@ export function startPlaySession(options: {
   let commandWindowStart = performance.now();
   let bridgeRate = 0;
   let hudStats: PlayHudStats | undefined;
+  let lastWorkerTickIndex = 0;
 
   const emitHudStats = (next: PlayHudStats) => {
     hudStats = next;
@@ -263,6 +276,7 @@ export function startPlaySession(options: {
       });
     }
     if (command.type === "stats") {
+      lastWorkerTickIndex = command.tickIndex;
       emitHudStats(
         applyWorkerPlayStats(hudStats, {
           fps: command.fps,
@@ -417,8 +431,10 @@ export function startPlaySession(options: {
     const now = performance.now();
     const elapsed = (now - last) / 1000;
     last = now;
-    const tick =
-      runtime?.getWorld().clock.tickIndex ?? Math.floor(now / (1000 / 60));
+    const tick = playInputStampTick(
+      runtime?.getWorld().clock.tickIndex,
+      lastWorkerTickIndex,
+    );
     input.setTick(tick);
     input.pollGamepads();
     const drained = input.ring.drain();

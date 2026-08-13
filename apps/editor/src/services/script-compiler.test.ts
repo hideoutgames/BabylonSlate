@@ -45,6 +45,51 @@ describe("script compiler service", () => {
     expect(classIdForGraphPath("assets/HUD.ui.babasset")).toBe("HUD");
   });
 
+  it("compiles authored GetAxis2D pin data into getAxis2D(\"Move\")", () => {
+    const script = compileGraphDocument(
+      {
+        nodes: [
+          {
+            id: "tick",
+            type: "flow.event.tick",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+          {
+            id: "axis",
+            type: "input.getAxis2D",
+            position: { x: 0, y: 80 },
+            data: { axis: "Move" },
+          },
+          {
+            id: "print",
+            type: "debug.print",
+            position: { x: 200, y: 0 },
+            data: { key: "axis" },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "tick",
+            target: "print",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+          {
+            id: "e2",
+            source: "axis",
+            target: "print",
+            sourceHandle: "out",
+            targetHandle: "value",
+          },
+        ],
+      },
+      { path: "assets/main.class.babasset" },
+    );
+    expect(script?.source).toContain('ctx.getAxis2D?.("Move")');
+  });
+
   it("compiles a serialized graph into a runtime script bundle", () => {
     const script = compileGraphDocument(tickToLog, {
       path: "assets/main.graph.babasset",

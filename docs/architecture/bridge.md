@@ -58,7 +58,7 @@ Capacity is fixed at create time (`maxActors`). Writer fills slots `[0, actorCou
 | --- | --- | --- |
 | Control | main → worker | `load` (`sceneAssetGuid`, optional authored `scene`, `seed`, `physicsWorld`, `gravity`, `havokWasmUrl`), `loadScripts`, `loadAnimGraphs`, `loadTilemaps` (tilemap + tileset payloads, optional `pixelsPerUnit`), `play`, `pause`, `step`, `stop`, `setPaused` |
 | Commands | worker → main (ordered) | `spawn`, `despawn`, `assignMesh` (`meshAssetGuid` + `meshKind`), `assignMaterial`, `log`, `diagnostic`, `stats`, `uiSetVisible`, `uiApply` (`instanceId`, `assetGuid`), `uiRemove` (`instanceId`), `animState` (`slotId`, `stateId`, `normalisedTime`, `blendWeights`, optional `clipName` / `clipKind`), `playSound` (`assetGuid`, `volume`, `frameId`) |
-| Input ring | main → worker | Tick-stamped raw events (see `@babylonslate/input`) |
+| Input ring | main → worker | Tick-stamped raw events (see `@babylonslate/input`). Play stamps with the last worker `stats.tickIndex`; the driver applies every queued event each tick so a host/worker clock skew cannot drop sticks. |
 | Snapshots | worker → main | Hot-path transform buffers (SAB or transferable) |
 
 Structural and resource changes **never** go through the snapshot buffer.

@@ -256,7 +256,7 @@ Chrome polish (pin flash, multi-select gizmo, ADT HUD) stays parked. Remaining P
 | Enum / Structure / ScriptInterface editors | Already `asset-settings` tabs |
 | Prefab → class document persistence | Done (open tab **or** disk graph) |
 | Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
-| ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave) |
+| ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |
 | Play startup scene with no scene tab open | Done (foundation wave) |
 | Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
 | HUD TouchButton / TouchDPad → input | Done (foundation wave) |

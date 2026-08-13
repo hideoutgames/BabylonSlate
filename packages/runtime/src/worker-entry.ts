@@ -145,8 +145,9 @@ self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
     return;
   }
   if (msg.channel === "input") {
-    const rt = ensureRuntime();
-    rt.pushInputBuffer(msg.payload as ArrayBuffer);
+    // Do not ensureRuntime() here: a pre-load dummy World would eat the
+    // first stick samples and then be thrown away on `load`.
+    runtime?.pushInputBuffer(msg.payload as ArrayBuffer);
     return;
   }
   if (msg.channel === "recycleSnapshot") {

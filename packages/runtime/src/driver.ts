@@ -948,8 +948,12 @@ class InProcessRuntime implements RuntimeDriver {
 
   tick(): void {
     if (!this.running || this.paused) return;
-    const tickIndex = this.world.clock.tickIndex;
-    const pending = this.input.drain().filter((e) => e.tick <= tickIndex + 1);
+    // Consume every event queued since the last tick. Gating on event.tick
+    // dropped Play worker input: the host stamped with a wall-clock index
+    // (performance.now()/16.67) while World.clock.tickIndex stayed small,
+    // and drain() discarded the "future" events instead of deferring them.
+    // Replay still works because it feeds one tick of events at a time.
+    const pending = this.input.drain();
     this.resolvedInput = this.resolver.resolve(pending);
     this.connectionBox.current = this.resolvedInput.gamepadConnections;
     this.tickPrints = [];
