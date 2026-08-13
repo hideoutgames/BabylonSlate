@@ -29,6 +29,7 @@ import {
   type MigrationPending,
   type ProjectSearchIndex,
   type ProjectTemplate,
+  type SpritePayload,
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
@@ -82,7 +83,16 @@ import {
   listedProjectsFromRecents,
   type ListedProject,
 } from "../lib/listed-projects";
-import { playUiLibraryFromAssets } from "../lib/play-content";
+import {
+  animationGraphGuidsFromScene,
+  mergePlayAnimGraphs,
+  playAnimGraphsFromGuids,
+  playAnimGraphsFromOpenDocuments,
+  playSpritePayloadsFromGuids,
+  playUiLibraryFromAssets,
+  spriteAssetGuidsFromScene,
+  type PlayAnimGraphEntry,
+} from "../lib/play-content";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
 export type AppRoute = "home" | "editor";
@@ -184,6 +194,14 @@ interface DocumentContextValue {
   }>;
   /** UserInterface assets keyed by guid for Play apply/remove. */
   collectPlayUiLibrary: () => Promise<Record<string, UserInterfaceDocument>>;
+  /** AnimationGraphs referenced by the Play scene (plus any open graph tabs). */
+  collectPlayAnimGraphs: (
+    scene?: SerializedScene | null,
+  ) => Promise<PlayAnimGraphEntry[]>;
+  /** Sprite payloads referenced by the Play scene for clip UV seeks. */
+  collectPlaySpritePayloads: (
+    scene?: SerializedScene | null,
+  ) => Promise<Map<string, SpritePayload>>;
   /** True when a compiled graph changed since the last successful compile (positions ignored). */
   scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
@@ -1046,6 +1064,82 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return playUiLibraryFromAssets(assets, (path) => loaded.get(path) ?? null);
   }, [documentService, projectService]);
 
+  const loadPlayAssetContent = useCallback(
+    async (
+      kind: "anim-graph" | "sprite" | "ui",
+      path: string,
+    ): Promise<unknown | null> => {
+      const openDoc = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind, path }));
+      if (openDoc?.content) return openDoc.content;
+      try {
+        return await projectService.loadDocument(kind, path);
+      } catch (error) {
+        console.error(`[play] failed to load ${kind} ${path}`, error);
+        return null;
+      }
+    },
+    [documentService, projectService],
+  );
+
+  const collectPlayAnimGraphs = useCallback(
+    async (scene?: SerializedScene | null): Promise<PlayAnimGraphEntry[]> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "AnimationGraph")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const openEntries = playAnimGraphsFromOpenDocuments(
+        [...documentService.getState().openDocuments.values()],
+        (path) =>
+          assets.find((asset) => asset.path === path)?.header.guid ?? null,
+      );
+      const needed = new Set([
+        ...animationGraphGuidsFromScene(scene),
+        ...openEntries.map((entry) => entry.guid),
+      ]);
+      const loaded = new Map<string, unknown>();
+      for (const guid of needed) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("anim-graph", asset.path);
+        if (content) loaded.set(guid, content);
+      }
+      return mergePlayAnimGraphs(
+        openEntries,
+        playAnimGraphsFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
+      );
+    },
+    [documentService, loadPlayAssetContent, projectService],
+  );
+
+  const collectPlaySpritePayloads = useCallback(
+    async (
+      scene?: SerializedScene | null,
+    ): Promise<Map<string, SpritePayload>> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Sprite")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const loaded = new Map<string, unknown>();
+      for (const guid of spriteAssetGuidsFromScene(scene)) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("sprite", asset.path);
+        if (content) loaded.set(guid, content);
+      }
+      return playSpritePayloadsFromGuids(
+        [...loaded.keys()],
+        (guid) => loaded.get(guid) ?? null,
+      );
+    },
+    [loadPlayAssetContent, projectService],
+  );
+
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
       if (!thumbnailsEnabledRef.current) return null;
@@ -1565,6 +1659,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectScriptBundles,
       collectPlayPreviewScripts,
       collectPlayUiLibrary,
+      collectPlayAnimGraphs,
+      collectPlaySpritePayloads,
       graphsNeedCompile: compileSignatureIsStale(
         currentGraphSignature,
         lastCompiledSignature,
@@ -1590,6 +1686,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectScriptBundles,
       collectPlayPreviewScripts,
       collectPlayUiLibrary,
+      collectPlayAnimGraphs,
+      collectPlaySpritePayloads,
       lastCompiledSignature,
       markScriptsCurrent,
       listedProjects,

@@ -57,6 +57,8 @@ iPad projects grep `@ipad` so they only rerun tests that depend on touch, coarse
 
 `e2e/p5-scripting.spec.ts` holds the P5 acceptance proofs: a graph scripted in the editor compiles, loads, and ticks in Preview (its `Print` reaches the on-screen overlay), and a type mismatch raises the blocking dialog whose rows navigate to the offending node.
 
+`e2e/p7-physics.spec.ts` places a 2D Rapier rigid body, plays, and asserts the worker HUD `play-physics-ms` `data-ms` is non-zero (the rAF FPS pump must not clobber worker timings).
+
 `e2e/p9-content.spec.ts` covers UserInterface designer presets (built-ins, **Desired**, and a custom Engine Settings canvas), Play HUD empty until a class graph **Apply User Interface**, nested-UI picker excluding self, and Font / Sprite / AnimationGraph / Shader workspaces. `e2e/engine-settings.spec.ts` covers adding a custom preset in the User Interface category.
 
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.

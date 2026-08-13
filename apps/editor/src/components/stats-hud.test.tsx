@@ -29,5 +29,8 @@ describe("StatsHud", () => {
     render(<StatsHud fps={60} scriptMs={3} physicsMs={2} />);
     expect(screen.getByTestId("stats-hud-within-budget")).toBeTruthy();
     expect(screen.queryByTestId("stats-hud-over-budget")).toBeNull();
+    expect(screen.getByTestId("play-physics-ms").getAttribute("data-ms")).toBe(
+      "2",
+    );
   });
 });

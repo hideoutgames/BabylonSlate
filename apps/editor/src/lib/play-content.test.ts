@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createDefaultSpritePayload } from "@babylonslate/assets";
 import {
+  animationGraphGuidsFromScene,
   applyPlayHudInstance,
   asUiDocument,
+  mergePlayAnimGraphs,
   playAnimGraphsFromOpenDocuments,
+  playAnimGraphsFromGuids,
+  playSpritePayloadsFromGuids,
   playUiLibraryFromAssets,
   removePlayHudInstance,
   resolvePlayHudDocuments,
+  spriteAssetGuidsFromScene,
 } from "./play-content";
 
 describe("playUiLibraryFromAssets", () => {
@@ -112,5 +119,70 @@ describe("playAnimGraphsFromOpenDocuments", () => {
         () => "x",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("scene-referenced Play content", () => {
+  it("collects AnimationGraphComponent graphGuid values from a closed scene", () => {
+    const scene = createDefaultScene();
+    scene.actors.push(
+      createActor("hero", "Hero", {
+        components: [
+          {
+            id: "anim",
+            classId: "AnimationGraphComponent",
+            properties: { graphGuid: "loco-guid" },
+          },
+        ],
+      }),
+    );
+    expect(animationGraphGuidsFromScene(scene)).toEqual(["loco-guid"]);
+  });
+
+  it("collects SpriteComponent assetGuid values from a closed scene", () => {
+    const scene = createDefaultScene();
+    scene.actors.push(
+      createActor("hero", "Hero", {
+        components: [
+          {
+            id: "sprite",
+            classId: "SpriteComponent",
+            properties: { assetGuid: "hero-sprite" },
+          },
+        ],
+      }),
+    );
+    expect(spriteAssetGuidsFromScene(scene)).toEqual(["hero-sprite"]);
+  });
+
+  it("loads anim graphs by guid without an open tab", () => {
+    const graph = createDefaultAnimGraph("Loco");
+    expect(
+      playAnimGraphsFromGuids(["loco-guid"], (guid) =>
+        guid === "loco-guid" ? graph : null,
+      ),
+    ).toEqual([{ guid: "loco-guid", document: graph }]);
+  });
+
+  it("merges open-tab graphs with scene-referenced graphs by guid", () => {
+    const open = createDefaultAnimGraph("Open");
+    const scene = createDefaultAnimGraph("Scene");
+    expect(
+      mergePlayAnimGraphs(
+        [{ guid: "open", document: open }],
+        [{ guid: "scene", document: scene }],
+      ),
+    ).toEqual([
+      { guid: "open", document: open },
+      { guid: "scene", document: scene },
+    ]);
+  });
+
+  it("maps sprite guids to payloads for Play UV seeks", () => {
+    const payload = createDefaultSpritePayload();
+    const map = playSpritePayloadsFromGuids(["hero-sprite"], (guid) =>
+      guid === "hero-sprite" ? payload : null,
+    );
+    expect(map.get("hero-sprite")).toEqual(payload);
   });
 });

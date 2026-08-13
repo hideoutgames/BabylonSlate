@@ -1,4 +1,6 @@
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
+import type { SpritePayload } from "@babylonslate/assets";
+import type { SerializedScene } from "@babylonslate/core";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
 export interface PlayContentDocument {
@@ -112,4 +114,90 @@ export function playAnimGraphsFromOpenDocuments(
     graphs.push({ guid, document: parsed });
   }
   return graphs;
+}
+
+function stringGuid(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function componentGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+  classId: string,
+  keys: readonly string[],
+): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const actor of scene?.actors ?? []) {
+    for (const component of actor.components) {
+      if (component.classId !== classId) continue;
+      for (const key of keys) {
+        const guid = stringGuid(component.properties[key]);
+        if (!guid || seen.has(guid)) continue;
+        seen.add(guid);
+        found.push(guid);
+      }
+    }
+  }
+  return found;
+}
+
+/** AnimationGraph guids referenced by scene components (not only open tabs). */
+export function animationGraphGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "AnimationGraphComponent", [
+    "graphGuid",
+    "assetGuid",
+  ]);
+}
+
+/** Sprite asset guids referenced by scene SpriteComponents. */
+export function spriteAssetGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "SpriteComponent", ["assetGuid"]);
+}
+
+export function playAnimGraphsFromGuids(
+  guids: readonly string[],
+  documentForGuid: (guid: string) => unknown | null,
+): PlayAnimGraphEntry[] {
+  const graphs: PlayAnimGraphEntry[] = [];
+  for (const guid of guids) {
+    const content = documentForGuid(guid);
+    if (!content) continue;
+    const parsed = parseAnimGraphDocument(content);
+    if (!parsed) continue;
+    graphs.push({ guid, document: parsed });
+  }
+  return graphs;
+}
+
+export function mergePlayAnimGraphs(
+  ...groups: readonly PlayAnimGraphEntry[][]
+): PlayAnimGraphEntry[] {
+  const byGuid = new Map<string, PlayAnimGraphEntry>();
+  for (const group of groups) {
+    for (const entry of group) byGuid.set(entry.guid, entry);
+  }
+  return [...byGuid.values()];
+}
+
+function asSpritePayload(value: unknown): SpritePayload | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { frames?: unknown; clips?: unknown };
+  if (!Array.isArray(record.frames) || !Array.isArray(record.clips)) return null;
+  return value as SpritePayload;
+}
+
+export function playSpritePayloadsFromGuids(
+  guids: readonly string[],
+  payloadForGuid: (guid: string) => unknown | null,
+): Map<string, SpritePayload> {
+  const map = new Map<string, SpritePayload>();
+  for (const guid of guids) {
+    const payload = asSpritePayload(payloadForGuid(guid));
+    if (payload) map.set(guid, payload);
+  }
+  return map;
 }
