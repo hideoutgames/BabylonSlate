@@ -57,6 +57,18 @@ export function clampDimension(
   };
 }
 
+/** GPU/encode clamp: min(optional per-asset max, project max). Source size is applied in decode. */
+export function effectiveTextureMaxDimension(
+  assetMax: unknown,
+  projectMax: number,
+): number {
+  const parsed =
+    typeof assetMax === "number" && Number.isFinite(assetMax) && assetMax > 0
+      ? assetMax
+      : Number.POSITIVE_INFINITY;
+  return Math.min(parsed, projectMax);
+}
+
 /**
  * Deterministic settings hash used as the KTX2 chunk id suffix so changing
  * encode settings invalidates only the compressed variant.

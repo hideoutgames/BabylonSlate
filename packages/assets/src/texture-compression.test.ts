@@ -3,6 +3,7 @@ import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { EncodeQueue } from "./encode-queue";
 import {
   clampDimension,
+  effectiveTextureMaxDimension,
   encodeSettingsHash,
   ktx2ChunkId,
   shouldCompressTexture,
@@ -30,6 +31,12 @@ describe("texture compression policy", () => {
       clamped: true,
     });
     expect(clampDimension(1024, 512, 2048).clamped).toBe(false);
+  });
+
+  it("takes the min of source, asset max, and project max", () => {
+    expect(effectiveTextureMaxDimension(undefined, 2048)).toBe(2048);
+    expect(effectiveTextureMaxDimension(1024, 2048)).toBe(1024);
+    expect(effectiveTextureMaxDimension(4096, 2048)).toBe(2048);
   });
 });
 

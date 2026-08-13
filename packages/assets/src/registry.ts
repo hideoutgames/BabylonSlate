@@ -24,6 +24,7 @@ import {
 } from "./unique-names";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  effectiveTextureMaxDimension,
   encodeSettingsHash,
   ktx2ChunkId,
   shouldCompressTexture,
@@ -662,31 +663,46 @@ export class AssetRegistry {
     });
   }
 
-  async retryTextureEncoding(guid: string): Promise<boolean> {
+  async retryTextureEncoding(
+    guid: string,
+    options?: { maxDimension?: number; force?: boolean },
+  ): Promise<boolean> {
     const asset = this.byGuid.get(guid);
     if (!asset || asset.header.type !== "Texture" || !this.encodeQueue) {
       return false;
     }
     const state = asset.header.payload.compressionState;
-    if (
-      state !== "encode_failed" &&
-      state !== "fallback_uncompressed" &&
-      state !== "pending" &&
-      state !== "encoding"
-    ) {
+    const recoverable =
+      state === "encode_failed" ||
+      state === "fallback_uncompressed" ||
+      state === "pending" ||
+      state === "encoding";
+    if (!recoverable && options?.force !== true) {
       return false;
     }
+    const usage = String(asset.header.payload.usage ?? "albedo");
+    if (!shouldCompressTexture(usage)) return false;
     if (state !== "pending") {
       await this.setCompressionState(guid, "pending");
     }
     const latest = this.byGuid.get(guid) ?? asset;
     const source = await this.loadSourcePixels(latest);
     if (!source) return false;
+    const assetMax =
+      options && "maxDimension" in options
+        ? options.maxDimension
+        : latest.header.payload.maxDimension;
     this.encodeQueue.enqueue({
       assetGuid: guid,
       source: source.bytes,
       mime: source.mime,
-      settings: this.encodeSettingsFor(latest),
+      settings: {
+        ...this.encodeSettingsFor(latest),
+        maxDimension: effectiveTextureMaxDimension(
+          assetMax,
+          this.encodeSettings.maxDimension,
+        ),
+      },
     });
     return true;
   }
@@ -747,14 +763,12 @@ export class AssetRegistry {
   }
 
   private encodeSettingsFor(asset: IndexedAsset): TextureEncodeSettings {
-    const assetMax = asset.header.payload.maxDimension;
-    const parsed =
-      typeof assetMax === "number" && assetMax > 0
-        ? assetMax
-        : Number.POSITIVE_INFINITY;
     return {
       ...this.encodeSettings,
-      maxDimension: Math.min(parsed, this.encodeSettings.maxDimension),
+      maxDimension: effectiveTextureMaxDimension(
+        asset.header.payload.maxDimension,
+        this.encodeSettings.maxDimension,
+      ),
     };
   }
 

@@ -122,6 +122,10 @@ interface DocumentContextValue {
     newPath: string,
   ) => void;
   retryFailedTextureEncoding: () => Promise<number>;
+  retryTextureEncoding: (
+    guid: string,
+    options?: { maxDimension?: number; force?: boolean },
+  ) => Promise<boolean>;
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -466,6 +470,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump();
     return count;
   }, [bump, projectService]);
+
+  const retryTextureEncoding = useCallback(
+    async (
+      guid: string,
+      options?: { maxDimension?: number; force?: boolean },
+    ) => {
+      const ok = await projectService.retryTextureEncoding(guid, options);
+      bump();
+      return ok;
+    },
+    [bump, projectService],
+  );
 
   const replayRecoveryJournal = useCallback(async () => {
     const guid = projectService.guid;
@@ -1920,6 +1936,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       refreshAssetRegistry,
       repathDocument,
       retryFailedTextureEncoding,
+      retryTextureEncoding,
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,
@@ -1952,6 +1969,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       refreshAssetRegistry,
       repathDocument,
       retryFailedTextureEncoding,
+      retryTextureEncoding,
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,

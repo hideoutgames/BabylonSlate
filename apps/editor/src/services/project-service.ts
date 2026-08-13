@@ -197,8 +197,13 @@ export class ProjectService {
     this.encodeQueue.resume();
   }
 
-  async retryTextureEncoding(guid: string): Promise<boolean> {
-    return (await this.assetRegistry?.retryTextureEncoding(guid)) ?? false;
+  async retryTextureEncoding(
+    guid: string,
+    options?: { maxDimension?: number; force?: boolean },
+  ): Promise<boolean> {
+    return (
+      (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
+    );
   }
 
   async retryAllFailedTextureEncoding(): Promise<number> {
