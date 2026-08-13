@@ -8,13 +8,14 @@ import {
   displayAssetTitle,
   filterAssets,
   flattenFolderTree,
-  folderDropTargetFromElement,
-  guidFromAssetDragData,
+  filterFolderTreeRows,
   isFolderNameTaken,
   isFolderTreeRoot,
   isNewAssetNameTaken,
+  isValidMoveDestination,
   matchesAssetSearch,
   newAssetFileName,
+  remapPathAfterFolderMove,
   textureCompressionState,
   visualForIndexedAsset,
   classParentLookup,
@@ -209,29 +210,134 @@ describe("content-browser-helpers", () => {
     expect(isFolderNameTaken(folders, "assets/textures", "ui")).toBe(false);
   });
 
+  it("rejects a no-op asset move and accepts a different folder", () => {
+    expect(
+      isValidMoveDestination({
+        kind: "asset",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/textures",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "asset",
+        sourcePath: "assets/textures",
+        destinationPath: "assets",
+      }),
+    ).toBe(true);
+    expect(
+      isValidMoveDestination({
+        kind: "asset",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects moving a folder into itself, a descendant, or its current parent", () => {
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/textures",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/textures/ui",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets",
+      }),
+    ).toBe(false);
+    expect(
+      isValidMoveDestination({
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps matching folders and their ancestors when searching the Move tree", () => {
+    const tree = {
+      name: "assets",
+      path: "assets",
+      assets: [],
+      children: [
+        {
+          name: "textures",
+          path: "assets/textures",
+          assets: [],
+          children: [
+            {
+              name: "ui",
+              path: "assets/textures/ui",
+              assets: [],
+              children: [],
+            },
+          ],
+        },
+        {
+          name: "fx",
+          path: "assets/fx",
+          assets: [],
+          children: [],
+        },
+      ],
+    };
+    const rows = flattenFolderTree(tree);
+    expect(filterFolderTreeRows(rows, "  ").map((row) => row.path)).toEqual([
+      "assets",
+      "assets/textures",
+      "assets/textures/ui",
+      "assets/fx",
+    ]);
+    expect(filterFolderTreeRows(rows, "ui").map((row) => row.path)).toEqual([
+      "assets",
+      "assets/textures",
+      "assets/textures/ui",
+    ]);
+    expect(filterFolderTreeRows(rows, "FX").map((row) => row.path)).toEqual([
+      "assets",
+      "assets/fx",
+    ]);
+  });
+
+  it("remaps contained paths after a folder move", () => {
+    expect(
+      remapPathAfterFolderMove(
+        "assets/textures/ui/hero.babasset",
+        "assets/textures",
+        "assets/fx/textures",
+      ),
+    ).toBe("assets/fx/textures/ui/hero.babasset");
+    expect(
+      remapPathAfterFolderMove(
+        "assets/fx/boom.babasset",
+        "assets/textures",
+        "assets/fx/textures",
+      ),
+    ).toBe("assets/fx/boom.babasset");
+    expect(
+      remapPathAfterFolderMove(
+        "assets/textures",
+        "assets/textures",
+        "assets/fx/textures",
+      ),
+    ).toBe("assets/fx/textures");
+  });
+
   it("treats the registry tree root as immovable", () => {
     expect(isFolderTreeRoot("assets")).toBe(true);
     expect(isFolderTreeRoot("assets/textures")).toBe(false);
     expect(isFolderTreeRoot("content", "content")).toBe(true);
-  });
-
-  it("reads a drop folder from folder-path or asset-folder attributes", () => {
-    const tree = document.createElement("div");
-    tree.innerHTML = `<button data-folder-path="assets"><span>assets</span></button>`;
-    const span = tree.querySelector("span");
-    expect(folderDropTargetFromElement(span)).toBe("assets");
-
-    const tile = document.createElement("div");
-    tile.setAttribute("data-asset-folder", "assets/fx");
-    const inner = document.createElement("button");
-    tile.appendChild(inner);
-    expect(folderDropTargetFromElement(inner)).toBe("assets/fx");
-  });
-
-  it("parses HTML5 asset drag payloads, including raw guids", () => {
-    expect(guidFromAssetDragData(JSON.stringify({ guid: "abc" }))).toBe("abc");
-    expect(guidFromAssetDragData("plain-guid")).toBe("plain-guid");
-    expect(guidFromAssetDragData("")).toBeNull();
   });
 
   it("resolves Class tiles to the parent engine icon", () => {

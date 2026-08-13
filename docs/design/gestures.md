@@ -105,9 +105,9 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | Tap / click a tile | Select (replace selection) |
 | Tap / click empty grid (padding, gaps — not a tile) | Clear selection |
 | Double-tap / double-click a Scene or Graph | Open the document (`openOrFocusDocument`) |
-| Move before ~250ms | Scroll / ignore (do not open menu or start a move) |
-| Hold ~250ms, then move | Drag; drop on the folder tree (or another tile’s folder) to `moveAsset` / `moveFolder`. Mouse uses HTML5 `ASSET_DRAG_MIME` / `FOLDER_DRAG_MIME`. The `assets` root is a drop target only — it is not a drag source. |
-| Hold still ≥500ms, then **release** | Context menu (tiles and nested folders). The overlay does not open while the pointer is down, so a hold-then-drag is not blocked. |
-| Right-click | Same as long-press-release menu |
+| Move before ~500ms | Scroll (do not open the menu) |
+| Hold still ≥500ms | Context menu (tiles and nested folders). The `assets` root has no menu. |
+| Right-click | Same as long-press menu (except `assets` root) |
+| Context-menu **Move…** | Opens `ContentBrowserMoveDialog` to pick a destination folder (`moveAsset` / `moveFolder`) |
 
 Outliner `TreeView` uses the same hold-to-reorder vs menu split (`onReparent` already exists). **Double-tap** an outliner row frames that actor.
