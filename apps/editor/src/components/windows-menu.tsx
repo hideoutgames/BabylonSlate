@@ -96,7 +96,6 @@ export function WindowsMenu() {
   }, [
     activeKind,
     actorPrefab,
-    canToggleWindows,
     isDockWindowOpen,
     openDockWindowCount,
     toggleDockWindow,

@@ -15,7 +15,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const applySceneChange = vi.hoisted(() =>
-  vi.fn(async (_id: string, _scene: SerializedScene) => true),
+  vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(async () => true),
 );
 const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
