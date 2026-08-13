@@ -9,7 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import type { Engine } from "@babylonjs/core";
-import { DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
+import {
+  DEFAULT_PLAY_FRAME_CAP,
+  DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+} from "@babylonslate/core";
 import { createAppEngine } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
@@ -387,6 +390,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             scene={playScene?.scene}
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
+            }
+            playPreview={
+              projectDocument?.settings.playPreview ??
+              DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS
             }
             onClose={handleClose}
           />

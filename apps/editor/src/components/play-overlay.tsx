@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TerminalIcon, XIcon } from "lucide-react";
-import { DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
+import {
+  DEFAULT_PLAY_FRAME_CAP,
+  DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+  type PlayPreviewProjectSettings,
+  type SerializedScene,
+} from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
 import type { TracePayload } from "@babylonslate/debugger";
 import type { Engine } from "@babylonjs/core";
@@ -17,7 +23,7 @@ import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
 import { playConsoleCommands } from "../lib/play-console";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
-import type { SerializedScene } from "@babylonslate/core";
+import { applyPlayPreviewCanvasLayout } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 
 export interface PlayOverlayProps {
@@ -29,6 +35,8 @@ export interface PlayOverlayProps {
   scene?: SerializedScene;
   /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
+  /** Project Play Preview letterbox; snapshotted when the session starts. */
+  playPreview?: PlayPreviewProjectSettings;
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -51,8 +59,10 @@ export function PlayOverlay({
   sceneAssetGuid,
   scene,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
+  playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   onClose,
 }: PlayOverlayProps) {
+  const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
   const [fps, setFps] = useState(0);
@@ -78,11 +88,18 @@ export function PlayOverlay({
   const sceneRef = useRef({ sceneAssetGuid, scene });
   sceneRef.current = { sceneAssetGuid, scene };
   const initialFrameCapRef = useRef(frameCap);
+  const initialPlayPreviewRef = useRef(playPreview);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
 
   useEffect(() => {
+    const overlay = overlayRef.current;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!overlay || !canvas) return;
+    applyPlayPreviewCanvasLayout({
+      overlay,
+      canvas,
+      ...initialPlayPreviewRef.current,
+    });
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -103,6 +120,21 @@ export function PlayOverlay({
       onPrint: (entry) => printRef.current(entry),
     });
     sessionRef.current = session;
+    const resizePlayIfSized = () => {
+      if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+        session.handle.resize();
+      }
+    };
+    resizePlayIfSized();
+    const resizeObserver = new ResizeObserver(() => {
+      applyPlayPreviewCanvasLayout({
+        overlay,
+        canvas,
+        ...initialPlayPreviewRef.current,
+      });
+      resizePlayIfSized();
+    });
+    resizeObserver.observe(overlay);
     const detachLifecycle = attachLifecyclePause((paused) => {
       sessionRef.current?.setPaused(paused);
     });
@@ -122,6 +154,7 @@ export function PlayOverlay({
       }
     }, 200);
     return () => {
+      resizeObserver.disconnect();
       window.clearInterval(movePoll);
       detachLifecycle();
       if (sessionRef.current) {
@@ -133,7 +166,13 @@ export function PlayOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-background"
+      ref={overlayRef}
+      className={cn(
+        "fixed inset-0 z-50 flex flex-col",
+        playPreview.followSystem
+          ? "bg-background"
+          : "items-center justify-center bg-black",
+      )}
       data-testid="play-overlay"
     >
       <div className="pointer-events-none absolute left-3 top-3 z-10">
@@ -187,7 +226,10 @@ export function PlayOverlay({
       </div>
       <canvas
         ref={canvasRef}
-        className="h-full w-full touch-none"
+        className={cn(
+          "touch-none",
+          playPreview.followSystem && "h-full w-full",
+        )}
         data-testid="play-canvas"
       />
       <PrintOverlay entries={printEntries} />
