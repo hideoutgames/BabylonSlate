@@ -29,7 +29,7 @@ import { GraphEditorProvider } from "./graph-editor-context";
 import {
   createEdgeId,
   nodeChangesMutateGraph,
-  nodesMissingFromLocal,
+  reconcileCanvasGraph,
   toSerializedGraph,
 } from "./graph-model";
 import {
@@ -256,33 +256,72 @@ function GraphEditorCanvas({
     [errorDiagnostics],
   );
 
+  const lastEmittedRef = useRef<GraphDocument | null>(null);
+
   const emitChange = useCallback(
     (nextNodes: CanvasNode[], nextEdges: Edge[]) => {
-      onChange?.(
-        toSerializedGraph(
-          nextNodes,
-          nextEdges.map((edge) => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            sourceHandle: edge.sourceHandle ?? undefined,
-            targetHandle: edge.targetHandle ?? undefined,
-          })),
-          { members: membersRef.current, components: componentsRef.current },
-        ),
+      const graph = toSerializedGraph(
+        nextNodes,
+        nextEdges.map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle ?? undefined,
+          targetHandle: edge.targetHandle ?? undefined,
+        })),
+        { members: membersRef.current, components: componentsRef.current },
       );
+      lastEmittedRef.current = graph;
+      onChange?.(graph);
     },
     [onChange],
   );
 
   useEffect(() => {
-    const missing = nodesMissingFromLocal(
-      graphStateRef.current.nodes,
-      toCanvasNodes(initialGraph.nodes),
+    const next = reconcileCanvasGraph({
+      localNodes: graphStateRef.current.nodes,
+      localEdges: graphStateRef.current.edges,
+      incoming: initialGraph,
+      lastEmitted: lastEmittedRef.current,
+    });
+    if (!next) return;
+    lastEmittedRef.current = initialGraph;
+    setNodes(
+      next.nodes.map((node) => {
+        const data = {
+          ...((node.data ?? {}) as Record<string, unknown>),
+        };
+        if (typeof data.__nodeType !== "string" && node.type) {
+          data.__nodeType = node.type;
+        }
+        const typeId =
+          typeof data.__nodeType === "string"
+            ? data.__nodeType
+            : (node.type ?? "logMessage");
+        return {
+          id: node.id,
+          type: resolveNodeType(typeId, data),
+          position: node.position,
+          data,
+          selected: node.selected,
+          measured: node.measured,
+          width: node.width,
+          height: node.height,
+        };
+      }),
     );
-    if (missing.length === 0) return;
-    setNodes((current) => [...current, ...missing]);
-  }, [initialGraph.nodes]);
+    setEdges(
+      toFlowEdges(
+        next.edges.map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+          ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+        })),
+      ),
+    );
+  }, [initialGraph]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
