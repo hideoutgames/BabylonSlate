@@ -59,11 +59,13 @@ The P5 node already compiles to `ctx.executeConsoleCommand(command)` and binds `
 
 ## Later slices (not this package’s first commit)
 
+Reuse what already shipped. Do not rebuild Output Log, Print, the session report, or the command registry.
+
 | Slice | Notes |
 | --- | --- |
-| `p8-bdebugcommand` | `BDebugCommand` Object subclass; parameter-list editor in `editor-kit`; registry discovery via parent chain; user commands are **core** tier |
-| `p8-console-hud` | Console bottom sheet (history, autocomplete, `SelectableText`); stats HUD at ~5 Hz from snapshot `scriptMs` / `physicsMs` plus render/memory/draws |
-| `p8-trace-recorder` | Capped buffer → `.babtrace` (container format); playback tab; replay through the headless harness |
+| `p8-bdebugcommand` | `BDebugCommand` Object subclass; **expand** the existing `ParameterListEditor` in `editor-kit` (types, optional, defaults, enum, reorder; ExecuteJavaScript Outputs); registry discovery via parent chain; user commands are **core** tier |
+| `p8-console-hud` | Console bottom sheet (history, autocomplete, `SelectableText`); **extend** the Play overlay FPS/`scriptMs`/`physicsMs` strip into a ~5 Hz stats HUD (render/memory/draws/bridge traffic, tick-budget flag). Editor Always Render FPS stays on the chrome Debug menu |
+| `p8-trace-recorder` | Capped buffer → `.babtrace` (container format); playback tab; replay through the headless harness; fill in `snapshot start` / `snapshot stop` stubs |
 
 Print overlay, Output Log, and the Preview session report already shipped in P4/P5. Stats overlay FPS + ms shipped in P7. This package consumes those; it does not replace them.
 
