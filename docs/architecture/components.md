@@ -4,7 +4,7 @@ Reusable Editor chrome lives in `@babylonslate/ui` (shadcn / Base UI primitives)
 
 Tokens and action-vs-pressed rules: [theming.md](theming.md). Spec: [engineplan.md](../engineplan.md) (UI composition). Dev-only visual audit: `/?test=1&gallery=1`.
 
-This page lists **kit** components currently in the repo. Feature screens (Homepage, Play overlay, Settings modals, dock panels) are not listed.
+This page lists **kit** components currently in the repo. Feature screens (Homepage, Play overlay, Settings modals, dock panels) are not listed. When you add, change, or remove a reusable component, update this page in the same change (`.cursor/rules/editor-ui-components.mdc`).
 
 ## Primitives (`@babylonslate/ui`)
 
