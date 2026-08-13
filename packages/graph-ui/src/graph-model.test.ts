@@ -104,6 +104,12 @@ describe("toSerializedGraph", () => {
       }).members,
     ).toEqual([{ id: "fn-1", kind: "function", name: "Jump" }]);
   });
+
+  it("preserves empty prefab components so a cleared Class document stays empty", () => {
+    expect(
+      toSerializedGraph([], [], { components: [] }).components,
+    ).toEqual([]);
+  });
 });
 
 describe("nodesMissingFromLocal", () => {

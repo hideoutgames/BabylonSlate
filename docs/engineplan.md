@@ -27,8 +27,8 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | `ctx.changeScene` | Calls `World.loadScene` (same as console `changescene`) | Done (Play-path wave) |
 | Unbuilt components in catalogs | `TilemapComponent` / `BehaviourTreeComponent` / `NavAgentComponent` stay in `ENGINE_COMPONENT_CLASS_IDS` but are gated from Search and Add Component until those phases. `WidgetComponent` is hidden until `CreateForMesh` exists | Play-path / P10 / P11 |
 | Type-asset tabs | Enum / Structure / ScriptInterface open `asset-settings` editors | Done (`p5-types` follow-up) |
-| Actor Prefab persistence | Preview tab was session-local; class-document `components` is the Wave 2 fix | Wave 2 / P10 dogfood |
-| Map nodes | Pin `mapOf` exists; palette map get/set/has wait on Wave 2 | Wave 2 |
+| Actor Prefab persistence | Class documents store `components`; Place Actors copies them when the class tab is open | Done |
+| Map nodes | `map.get` / `set` / `has` / `remove` / `size` / `keys` with K/V wildcards | Done |
 | `playSound` / ADT HUD / `.babtrace` tab / §9.4 HUD completeness | Recorded P8/P9 polish — do not rebuild those packages | Parked |
 
 **Landed (do not rebuild):**
@@ -531,9 +531,9 @@ The document-tab plus Dockview model stays. Document kinds expand from content-b
 
 **Class document (Object, Actor, ActorComponent, EditorUtilityObject, BDebugCommand):**
 - *Graph*: event graph and per-function graphs. **Double-tap empty pane** opens the unfiltered Add Node catalog (search is **not** autofocused). There is no persistent floating Add node button. **Tap-to-connect** and **drag-to-connect** both persist edges (`onConnect` / `isValidConnection`). Dropping a wire on empty canvas opens Add Node **filtered to compatible opposite pins** only when the pointer is outside a **96px screen-space** safe zone around the source pin and compatible opposite pins (and not over a node body); a drag-wire **Add Node** hint appears in that same empty-canvas zone. Releasing a dragged pin without snapping a handle and without opening Add Node **breaks all wires on that pin** (a tap that stays on the source handle does not). Tap empty pane clears selection; hold empty pane ~250ms then move marquees (custom overlay; XYFlow `selectionOnDrag` is not used). Overlay toolbar: Copy, Paste, Delete, and **Format** (layout selected nodes, or if exactly one node is selected walk the exec/data chain to the right, pull data-input trees to the left of those nodes, and tidy that chain).
-- *Prefab* (Actor): **full-size center-group tab**, sibling of Graph (`direction: "within"`). Same unlit gizmos / fly-look camera / joystick as the Scene viewport. Not a fourth chrome `DocumentKind`. Persistence is preview-only. **Focus** defaults to Graph only (Engine Settings → Focus).
+- *Prefab* (Actor): **full-size center-group tab**, sibling of Graph (`direction: "within"`). Same unlit gizmos / fly-look camera / joystick as the Scene viewport. Not a fourth chrome `DocumentKind`. Components persist on `SerializedGraph.components`. **Focus** defaults to Graph only (Engine Settings → Focus).
 - *Class*: compact collapsible member tree (Functions, Variables, Events, Interfaces — **no Graphs section**) stacked **below** Components (`direction: "below"`). Initial height is about **50%** of the left stack. Inline **+** on each section prompts for a name and writes `SerializedGraph.members` (plus a `flow.event.custom` or Get Variable node where that kind needs a canvas node) until class documents store metadata. Inherited members are shown but marked when that data exists.
-- *Components* (Actor): component tree in the left dock **above** Class. Add Component uses the Place Actors catalog chrome (Rendering / Camera / Physics). TreeView `onReparent` reorders the session `components` array. Add/remove/reorder is session-local until prefab persistence lands.
+- *Components* (Actor): component tree in the left dock **above** Class. Add Component uses the Place Actors catalog chrome (Rendering / Camera / Physics). TreeView `onReparent` reorders `SerializedGraph.components` through the command layer.
 - *Details*: properties of the selected graph node (canvas selection; unconnected applicable data pins get literal defaults), variable or component.
 - *Compiler Results*: diagnostics with tap-to-navigate to the offending node.
 

@@ -10,7 +10,7 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 | `DocumentEditStack` | Per-document undo/redo stack with entry + byte budgets |
 | `EditSession` | Map of `docId → DocumentEditStack`; `apply` / `undo` / `redo` / `dropDocument` |
 | `diffGraphCommands` | Derives graph commands from before/after `SerializedGraph` snapshots |
-| `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand`, `SetGraphMembersCommand` | Graph document commands |
+| `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand`, `SetGraphMembersCommand`, `SetGraphComponentsCommand` | Graph document commands |
 | `AddActorCommand`, `RemoveActorCommand`, `SetActorTransformCommand`, `RenameActorCommand`, `ReparentActorCommand`, `ReorderActorCommand`, `SetActorFlagsCommand`, `AddComponentCommand`, `RemoveComponentCommand`, `ReorderComponentCommand`, `SetComponentPropertyCommand`, `SetSceneSettingCommand`, `SetViewportModeCommand` | Scene document commands |
 | `diffSceneCommands` | Derives scene commands from before/after `SerializedScene` snapshots |
 | `serializeJournalLine` / `parseJournalLine` | JSONL journal line codec |

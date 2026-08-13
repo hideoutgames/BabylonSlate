@@ -101,7 +101,7 @@ Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`
 | Left | **Components** above **Class** (compact member tree; inline **+** on Functions / Variables / Events / Interfaces). |
 | Right / bottom | Inspector, Compiler Results |
 
-The Prefab viewport reuses `ViewportToolbar` + `createEngine` (unlit gizmos, fly/look camera, joystick when enabled). The canvas is full-size, not a 160px sidebar strip, and stays dark like the Scene viewport. Component add/remove/reorder updates a local tree and 3D preview, but does **not** write the class document or the command layer. Persistence is tracked as a P6 deferral in [issue-tracker.md](../agents/issue-tracker.md).
+The Prefab viewport reuses `ViewportToolbar` + `createEngine` (unlit gizmos, fly/look camera, joystick when enabled). The canvas is full-size, not a 160px sidebar strip, and stays dark like the Scene viewport. Component add/remove/reorder writes `SerializedGraph.components` through `applyGraphChange` (`graph.setComponents`). Place Actors instantiates those components when spawning a Class asset whose document is open.
 
 **Focus** (toolbar toggle) closes dock tabs that are not on the Engine Settings Focus keep-list. Class default is Graph only; Scene default is Viewport. Keep-listed tabs stay only if they were already open.
 

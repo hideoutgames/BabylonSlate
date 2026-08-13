@@ -12,6 +12,35 @@ export function defaultPrefabComponents(): SerializedComponent[] {
   return [createMeshComponent("prefab-mesh", "box")];
 }
 
+export function nextPrefabComponentId(
+  components: readonly SerializedComponent[],
+): string {
+  let index = components.length + 1;
+  while (components.some((component) => component.id === `prefab-component-${index}`)) {
+    index += 1;
+  }
+  return `prefab-component-${index}`;
+}
+
+/** Authored list when present (including empty); otherwise the default mesh. */
+export function prefabComponentsFromGraph(
+  graph: { components?: SerializedComponent[] } | null | undefined,
+): SerializedComponent[] {
+  if (graph && Array.isArray(graph.components)) return graph.components;
+  return defaultPrefabComponents();
+}
+
+export function instantiatePrefabComponents(
+  components: readonly SerializedComponent[],
+  actorId: string,
+): SerializedComponent[] {
+  return components.map((component, index) => ({
+    id: `${actorId}-${component.classId}-${index + 1}`,
+    classId: component.classId,
+    properties: { ...component.properties },
+  }));
+}
+
 /** Reorder session-local prefab components; drop on root moves to the start. */
 export function reorderPrefabComponents(
   components: SerializedComponent[],

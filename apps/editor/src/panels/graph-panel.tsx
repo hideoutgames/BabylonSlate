@@ -130,6 +130,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           void applyGraphChange(documentId, {
             ...next,
             members: next.members ?? current?.members,
+            components: next.components ?? current?.components,
           } as SerializedGraph);
         }}
       />

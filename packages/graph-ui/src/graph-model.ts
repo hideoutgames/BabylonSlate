@@ -36,7 +36,7 @@ function serializedNodeData(data: unknown): Record<string, unknown> {
 export function toSerializedGraph(
   nodes: CanvasNode[],
   edges: GraphEdge[],
-  extras?: Pick<GraphDocument, "members">,
+  extras?: Pick<GraphDocument, "members" | "components">,
 ): GraphDocument {
   return {
     nodes: nodes.map((node) => ({
@@ -54,6 +54,9 @@ export function toSerializedGraph(
     })),
     ...(extras?.members && extras.members.length > 0
       ? { members: extras.members }
+      : {}),
+    ...(Array.isArray(extras?.components)
+      ? { components: extras.components }
       : {}),
   };
 }

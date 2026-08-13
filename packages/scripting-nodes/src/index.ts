@@ -4,6 +4,7 @@ import { mathNodes } from "./math";
 import { vectorNodes } from "./vector";
 import { stringNodes } from "./string";
 import { arrayMapNodes } from "./array-map";
+import { mapNodes } from "./map";
 import { actorNodes } from "./actor";
 import { componentNodes } from "./component";
 import { transformNodes } from "./transform";
@@ -23,6 +24,7 @@ export * from "./math";
 export * from "./vector";
 export * from "./string";
 export * from "./array-map";
+export * from "./map";
 export * from "./actor";
 export * from "./component";
 export * from "./transform";
@@ -43,6 +45,7 @@ export const ALL_NODE_CATEGORIES = [
   "vector",
   "string",
   "array",
+  "map",
   "actor",
   "component",
   "transform",
@@ -65,6 +68,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...vectorNodes,
     ...stringNodes,
     ...arrayMapNodes,
+    ...mapNodes,
     ...actorNodes,
     ...componentNodes,
     ...transformNodes,

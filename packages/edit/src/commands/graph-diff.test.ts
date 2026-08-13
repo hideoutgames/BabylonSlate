@@ -5,6 +5,7 @@ import {
   MoveNodeCommand,
   RemoveNodeCommand,
   SetGraphMembersCommand,
+  SetGraphComponentsCommand,
 } from "./graph";
 import { diffGraphCommands } from "./graph-diff";
 
@@ -61,6 +62,20 @@ describe("diffGraphCommands", () => {
     };
     const commands = diffGraphCommands(before, after);
     expect(commands.some((c) => c instanceof SetGraphMembersCommand)).toBe(
+      true,
+    );
+  });
+
+  it("emits SetGraphComponentsCommand when prefab components change", () => {
+    const before = createDefaultGraph();
+    const after = {
+      ...before,
+      components: [
+        { id: "mesh-1", classId: "MeshComponent", properties: { meshKind: "box" } },
+      ],
+    };
+    const commands = diffGraphCommands(before, after);
+    expect(commands.some((c) => c instanceof SetGraphComponentsCommand)).toBe(
       true,
     );
   });

@@ -177,7 +177,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 
 | Item | Owner | Notes |
 | --- | --- | --- |
-| Actor Prefab tab → class document persistence | Wave 2 / P10 dogfood | Preview-only UI shipped in P6; edits are session-local until class-document `components` lands |
+| Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies open class prefabs |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | SpriteComponent uses a UV-baked quad; light/camera gizmos still later |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
@@ -252,8 +252,8 @@ Chrome polish (pin flash, JSON input textarea, multi-select gizmo, ADT HUD) stay
 | `ctx.changeScene` → `World.loadScene` | Done |
 | Catalog honesty (Tilemap / BT / Nav / Widget) | This wave |
 | Enum / Structure / ScriptInterface editors | Already `asset-settings` tabs |
-| Prefab → class document persistence | Wave 2 |
-| Map nodes | Wave 2 |
+| Prefab → class document persistence | Done (`SerializedGraph.components`) |
+| Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
 | `playSound` mixer, ADT HUD, `.babtrace` tab, §9.4 HUD | Parked |
 
 ### P9 follow-ups / open deferrals

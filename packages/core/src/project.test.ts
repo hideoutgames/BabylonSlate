@@ -9,6 +9,7 @@ import {
   MAIN_SCENE_FILE,
   PROJECT_FILE,
   normalizeGraphMembers,
+  normalizeGraphComponents,
   normalizeProjectSettings,
 } from "./project";
 
@@ -59,6 +60,23 @@ describe("project schema", () => {
   });
 
   it("normalizes graph class members and drops invalid rows", () => {
+    expect(normalizeGraphComponents(undefined)).toEqual([]);
+    expect(
+      normalizeGraphComponents([
+        { id: "mesh-1", classId: "MeshComponent", properties: { meshKind: "box" } },
+        { id: "", classId: "LightComponent", properties: {} },
+        { id: "light-1", classId: "  ", properties: {} },
+        { classId: "CameraComponent", properties: {} },
+        { id: "sprite-1", classId: "SpriteComponent" },
+      ]),
+    ).toEqual([
+      {
+        id: "mesh-1",
+        classId: "MeshComponent",
+        properties: { meshKind: "box" },
+      },
+      { id: "sprite-1", classId: "SpriteComponent", properties: {} },
+    ]);
     expect(normalizeGraphMembers(undefined)).toEqual([]);
     expect(
       normalizeGraphMembers([

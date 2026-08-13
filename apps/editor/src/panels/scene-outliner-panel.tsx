@@ -16,6 +16,7 @@ import {
   actorSubtree,
   wouldCreateCycle,
   type SerializedActor,
+  type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -32,6 +33,7 @@ import {
   type PlaceActorItem,
 } from "../lib/place-actors";
 import { classParentLookup } from "../lib/content-browser-helpers";
+import { prefabComponentsFromGraph } from "../lib/prefab-preview";
 
 /** Depth-first walk so children follow their parent in the flattened list. */
 export function flattenActors(
@@ -140,10 +142,18 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [applySceneChange, documentId],
   );
 
-  const projectItems = useMemo(
-    () => projectPlaceActors(assetRegistry?.list() ?? []),
-    [assetRegistry],
-  );
+  const projectItems = useMemo(() => {
+    const assets = assetRegistry?.list() ?? [];
+    return projectPlaceActors(assets, (guid) => {
+      const asset = assets.find((entry) => entry.header.guid === guid);
+      if (!asset) return undefined;
+      const open = openDocuments.find(
+        (entry) => entry.ref.kind === "graph" && entry.ref.path === asset.path,
+      );
+      if (!open?.content) return undefined;
+      return prefabComponentsFromGraph(open.content as SerializedGraph);
+    });
+  }, [assetRegistry, openDocuments]);
 
   const addActor = useCallback(
     (item: PlaceActorItem) => {
