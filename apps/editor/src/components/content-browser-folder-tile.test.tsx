@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { IndexedAsset } from "@babylonslate/assets";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
-  resolveTypeVisual,
 } from "@babylonslate/editor-kit";
-import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
+import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
 
 function dispatchPointerEvent(
   target: Element,
@@ -35,38 +33,17 @@ function dispatchPointerEvent(
   target.dispatchEvent(event);
 }
 
-function asset(): IndexedAsset {
-  return {
-    rootId: "project",
-    path: "assets/hero.babasset",
-    header: {
-      guid: "hero-1",
-      type: "Texture",
-      name: "hero",
-      engineVersion: "0.0.0",
-      version: 1,
-      mode: "thin",
-      dependencies: [],
-      parentClass: null,
-      payload: {},
-      chunks: [],
-    },
-  };
-}
-
 function renderTile(
-  overrides: Partial<Parameters<typeof ContentBrowserAssetTile>[0]> = {},
+  overrides: Partial<Parameters<typeof ContentBrowserFolderTile>[0]> = {},
 ) {
   const onOpen = vi.fn();
   const onSelect = vi.fn();
   const onLongPressMenu = vi.fn();
-  const item = asset();
   const utils = render(
-    <ContentBrowserAssetTile
-      asset={item}
+    <ContentBrowserFolderTile
+      path="assets/fx"
+      name="fx"
       selected={false}
-      thumbnailUrl={null}
-      typeVisual={resolveTypeVisual({ assetType: item.header.type })}
       onOpen={onOpen}
       onSelect={onSelect}
       onLongPressMenu={onLongPressMenu}
@@ -78,18 +55,18 @@ function renderTile(
     onOpen,
     onSelect,
     onLongPressMenu,
-    tile: screen.getByTestId("content-item-assets/hero.babasset"),
+    tile: screen.getByTestId("content-folder-assets/fx"),
   };
 }
 
-describe("ContentBrowserAssetTile", () => {
+describe("ContentBrowserFolderTile", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it("opens the context menu after a stationary long press while the pointer is down", async () => {
+  it("opens the context menu after a stationary long press", async () => {
     vi.useFakeTimers();
     const { tile, onLongPressMenu } = renderTile();
     dispatchPointerEvent(tile, "pointerdown", { clientX: 5, clientY: 5 });
@@ -127,42 +104,40 @@ describe("ContentBrowserAssetTile", () => {
   it("is not an HTML5 drag source", () => {
     const { tile } = renderTile();
     expect(tile.getAttribute("draggable")).not.toBe("true");
-    const setData = vi.fn();
-    fireEvent.dragStart(tile, {
-      dataTransfer: { setData, effectAllowed: "copyMove" },
-    });
-    expect(setData).not.toHaveBeenCalled();
   });
 
-  it("renders a type-colored glyph when there is no thumbnail", () => {
-    renderTile();
-    const glyph = screen.getByTestId("content-item-type-icon-hero-1");
-    expect(glyph.getAttribute("data-type-icon")).toBe("Texture");
-    expect(glyph.style.color).toBe("var(--asset-texture)");
-  });
-
-  it("keeps the type glyph compact instead of filling the thumb", () => {
-    renderTile();
-    const glyph = screen.getByTestId("content-item-type-icon-hero-1");
-    const className = glyph.getAttribute("class") ?? "";
-    expect(className).toContain("size-10");
-    expect(className).not.toContain("size-full");
-    expect(className).not.toContain("p-4");
-  });
-
-  it("tints the card and thumb well with a darker type accent", () => {
+  it("tints the card with the folder type token", () => {
     const { tile } = renderTile();
     const card = tile.closest('[data-slot="card"]');
     expect(card).not.toBeNull();
     expect((card as HTMLElement).style.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 16%, var(--card))",
+      "color-mix(in oklch, var(--asset-folder) 16%, var(--card))",
     );
     expect((card as HTMLElement).style.borderColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 50%, var(--border))",
+      "color-mix(in oklch, var(--asset-folder) 50%, var(--border))",
     );
-    const glyph = screen.getByTestId("content-item-type-icon-hero-1");
-    expect((glyph.parentElement as HTMLElement).style.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 28%, var(--muted))",
+  });
+
+  it("does not bubble pointer events to an empty-grid listener", () => {
+    const onGridPointerDown = vi.fn();
+    const onOpen = vi.fn();
+    const onSelect = vi.fn();
+    const onLongPressMenu = vi.fn();
+    render(
+      <div onPointerDown={onGridPointerDown}>
+        <ContentBrowserFolderTile
+          path="assets/fx"
+          name="fx"
+          selected={false}
+          onOpen={onOpen}
+          onSelect={onSelect}
+          onLongPressMenu={onLongPressMenu}
+        />
+      </div>,
     );
+    fireEvent.pointerDown(screen.getByTestId("content-folder-assets/fx"), {
+      pointerType: "touch",
+    });
+    expect(onGridPointerDown).not.toHaveBeenCalled();
   });
 });

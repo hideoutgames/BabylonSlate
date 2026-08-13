@@ -79,17 +79,21 @@ describe("ContentBrowserMoveDialog", () => {
     ).toBe(true);
   });
 
-  it("titles the picker for a folder", () => {
+  it("titles the picker for copying a folder into its current parent", () => {
     renderDialog({
       kind: "folder",
+      operation: "copy",
       name: "textures",
       currentFolderPath: "assets",
       sourcePath: "assets/textures",
       destinationPath: "assets",
     });
-    expect(screen.getByText("Move Folder")).toBeTruthy();
-    expect(screen.getByTestId("content-browser-move-item").textContent).toContain(
-      "textures",
+    expect(screen.getByText("Copy Folder")).toBeTruthy();
+    expect(
+      screen.getByTestId("content-browser-move-confirm").hasAttribute("disabled"),
+    ).toBe(false);
+    expect(screen.getByTestId("content-browser-move-confirm").textContent).toBe(
+      "Copy",
     );
   });
 

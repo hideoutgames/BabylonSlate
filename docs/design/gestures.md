@@ -33,6 +33,8 @@ iOS 13+ standalone / Add to Home Screen maps three-finger swipe and tap to syste
 
 `useContextMenu` cancels a pending long-press when the pointer moves past 8px or on scroll (captured document-wide, since `scroll` does not bubble). The 500ms delay and 8px tolerance deliberately match Dockview's `LongPressDetector` defaults, so a panel drag and a context menu can never both fire from one gesture.
 
+Nested `NestedMenu` submenus open on **tap / click**, not hover-only. Large catalogs still use `CatalogDialog` / `SearchDialog` rather than nested menus.
+
 ## Document scroll lock
 
 The editor shell is a full-viewport IDE, not a scrollable web page. Document rubber-band overscroll is disabled so drags on the viewport, dock chrome, and other non-scrollable areas do not bounce the whole page (especially on iOS Safari).
@@ -71,7 +73,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 ## Viewport (Babylon)
 
 - **One finger**: tap to pick/select. In **3D**, drag looks in place (yaw/pitch; camera position stays put). In **2D**, drag **pans** 1:1 with the pointer (the world point under the finger stays put; same scale/axes as three-finger pan). **Hold ~250ms then move** marquees (actors whose origin falls inside the rect). Gizmo handle hits skip look/pan so transform drags still win.
-- **Pinch** (two fingers, spread change) zooms / dollies. Two-finger translation does not orbit or pan.
+- **Pinch** (two fingers, spread change) zooms / dollies. Two-finger translation does not orbit or pan. 2D pinch and wheel are continuous, including when pixel-perfect integer zoom steps is on.
 - **Three fingers** pan (move the camera). In 2D this is the same 1:1 frustum / CSS-pixel mapping as one-finger pan; in 3D it uses a fixed world-units-per-pixel scale.
 - **WASD** flies in 3D (look-relative) and pans on XY in 2D. Ignored while typing, while Play is open, or when the canvas is hidden.
 - **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Scene and Prefab toolbars expose a joystick toggle; Scene persists the setting, Prefab uses live context. Not the P9 game `TouchJoystick`.
@@ -101,12 +103,18 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 | Gesture | Action |
 | --- | --- |
-| Tap / click a tile | Select (replace selection) |
-| Tap / click empty grid (padding, gaps — not a tile) | Clear selection |
-| Double-tap / double-click a Scene or Graph | Open the document (`openOrFocusDocument`) |
-| Move before ~500ms | Scroll (do not open the menu) |
-| Hold still ≥500ms | Context menu (tiles and nested folders). The `assets` root has no menu. |
-| Right-click | Same as long-press menu (except `assets` root) |
-| Context-menu **Move…** | Opens `ContentBrowserMoveDialog` to pick a destination folder (`moveAsset` / `moveFolder`) |
+| Tap / click a tile | Add to selection (does not replace) |
+| Tap / click empty grid (padding, gaps — not a tile) | Clear asset and folder selection |
+| Toolbar **Deselect All** | Clear asset and folder selection |
+| Double-tap / double-click an asset tile | Open the document (`openOrFocusDocument`) |
+| Double-tap / double-click a folder tile | Navigate into that folder |
+| Move before ~500ms on the grid | Scroll (do not open the menu) |
+| Hold still ≥500ms or right-click on a **tile** | Asset or folder context menu. Tile pointer events do not bubble to the empty-grid menu. |
+| Hold still ≥500ms or right-click on **empty grid** | New Folder, New Asset, Import |
+| Left tree: tap folder | Set the grid’s current folder |
+| Left tree: tap asset | Set the grid to that asset’s parent and select the guid |
+| Left tree: double-tap asset | Open the asset |
+| Left tree: hold ~250ms then drag | Reparent (`moveAsset` / `moveFolder`). Early movement still scrolls. No context menu on the tree. Root `assets` is not draggable. |
+| Context-menu **Move…** / **Copy to Folder…** | Opens `ContentBrowserMoveDialog` (`moveAsset` / `moveFolder` / `copyFolder`) |
 
 Outliner `TreeView` uses the same hold-to-reorder vs menu split (`onReparent` already exists). **Double-tap** an outliner row frames that actor.

@@ -1,3 +1,5 @@
+import { pinColorVar } from "@babylonslate/ui/lib/data-types";
+
 export type PinTypeRef = {
   kind: string;
   [key: string]: unknown;
@@ -12,27 +14,6 @@ export type NodeVisualRole =
   | "variable-set"
   | "latent"
   | "debug";
-
-const PIN_VAR: Record<string, string> = {
-  exec: "var(--pin-exec)",
-  bool: "var(--pin-bool)",
-  int: "var(--pin-int)",
-  float: "var(--pin-float)",
-  string: "var(--pin-string)",
-  vec2: "var(--pin-vector)",
-  vec3: "var(--pin-vector)",
-  vec4: "var(--pin-vector)",
-  rotator: "var(--pin-rotator)",
-  transform: "var(--pin-transform)",
-  color: "var(--pin-color)",
-  objectRef: "var(--pin-object)",
-  actorRef: "var(--pin-actor)",
-  structRef: "var(--pin-struct)",
-  enumRef: "var(--pin-enum)",
-  resolvingWildcard: "var(--pin-wildcard)",
-  boxedWildcard: "var(--pin-wildcard)",
-  delegate: "var(--pin-delegate)",
-};
 
 const ROLE_CLASS: Record<NodeVisualRole, string> = {
   event: "bg-node-event",
@@ -54,7 +35,7 @@ export function pinCssVar(type: PinTypeRef): string {
   if (type.kind === "map" && isPinTypeRef(type.value)) {
     return pinCssVar(type.value);
   }
-  return PIN_VAR[type.kind] ?? "var(--pin-wildcard)";
+  return pinColorVar(type.kind);
 }
 
 export function pinVisualShape(type: PinTypeRef): PinVisualShape {

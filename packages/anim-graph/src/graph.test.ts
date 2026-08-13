@@ -29,6 +29,7 @@ describe("anim graph evaluator", () => {
       clipId: "run-clip",
       speed: 1,
       loop: true,
+      position: { x: 300, y: 80 },
     });
     doc.clips.push({
       id: "run-clip",
@@ -114,5 +115,124 @@ describe("anim graph evaluator", () => {
     expect(pins.some((pin) => pin.id === "out" && pin.direction === "out")).toBe(
       true,
     );
+  });
+
+  it("round-trips dragged node positions through the graph-ui serialized shape", () => {
+    const doc = createDefaultAnimGraph();
+    const serialized = animGraphToSerialized(doc);
+    serialized.nodes[0]!.position = { x: 420, y: 160 };
+    const next = serializedToAnimGraph(serialized, doc);
+    expect(next.states[0]!.position).toEqual({ x: 420, y: 160 });
+    expect(animGraphToSerialized(next).nodes[0]!.position).toEqual({
+      x: 420,
+      y: 160,
+    });
+  });
+
+  it("preserves transition condition and blend fields across a graph-ui round-trip", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: "run-clip",
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    doc.clips.push({
+      id: "run-clip",
+      kind: "sprite",
+      assetGuid: "sprite-1",
+      clipName: "Run",
+      durationMs: 400,
+    });
+    doc.transitions.push({
+      id: "idle-to-run",
+      fromStateId: "idle",
+      toStateId: "run",
+      condition: "moving",
+      blendSeconds: 0.25,
+      hasExitTime: true,
+      exitTime: 0.8,
+    });
+    const next = serializedToAnimGraph(animGraphToSerialized(doc), doc);
+    expect(next.transitions[0]).toMatchObject({
+      fromStateId: "idle",
+      toStateId: "run",
+      condition: "moving",
+      blendSeconds: 0.25,
+      hasExitTime: true,
+      exitTime: 0.8,
+    });
+  });
+
+  it("keeps transition fields when the canvas edge id changes", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    doc.transitions.push({
+      id: "idle-to-run",
+      fromStateId: "idle",
+      toStateId: "run",
+      condition: "moving",
+      blendSeconds: 0.25,
+      hasExitTime: true,
+      exitTime: 0.8,
+    });
+    const serialized = animGraphToSerialized(doc);
+    serialized.edges[0] = { ...serialized.edges[0]!, id: "canvas-edge-1" };
+    const next = serializedToAnimGraph(serialized, doc);
+    expect(next.transitions[0]).toMatchObject({
+      id: "canvas-edge-1",
+      fromStateId: "idle",
+      toStateId: "run",
+      condition: "moving",
+      blendSeconds: 0.25,
+      hasExitTime: true,
+      exitTime: 0.8,
+    });
+  });
+
+  it("assigns fallback layout when a document-chunk omits position", () => {
+    const parsed = parseAnimGraphDocument({
+      name: "Loco",
+      entryStateId: "idle",
+      states: [
+        { id: "idle", name: "Idle", clipId: null, speed: 1, loop: true },
+        { id: "run", name: "Run", clipId: null, speed: 1, loop: true },
+      ],
+      transitions: [],
+      clips: [],
+      parameters: [],
+    });
+    expect(parsed?.states[0]!.position).toEqual({ x: 80, y: 80 });
+    expect(parsed?.states[1]!.position).toEqual({ x: 300, y: 80 });
+  });
+
+  it("round-trips stored positions through parse", () => {
+    const parsed = parseAnimGraphDocument({
+      name: "Loco",
+      entryStateId: "idle",
+      states: [
+        {
+          id: "idle",
+          name: "Idle",
+          clipId: null,
+          speed: 1,
+          loop: true,
+          position: { x: 12, y: 34 },
+        },
+      ],
+      transitions: [],
+      clips: [],
+      parameters: [],
+    });
+    expect(parsed?.states[0]!.position).toEqual({ x: 12, y: 34 });
   });
 });

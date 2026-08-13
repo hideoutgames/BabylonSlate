@@ -5,6 +5,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import type { NestedMenuItem } from "./nested-menu";
 
 /** Matches dockview's own long-press drag timing so the two never disagree. */
 export const CONTEXT_MENU_LONG_PRESS_MS = 500;
@@ -35,11 +36,7 @@ export function resolveHoldPointerPhase(options: {
   return "drag";
 }
 
-export interface ContextMenuItem {
-  id: string;
-  label: string;
-  onSelect: () => void;
-}
+export type ContextMenuItem = NestedMenuItem;
 
 export interface ContextMenuState {
   open: boolean;

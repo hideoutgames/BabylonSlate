@@ -20,6 +20,7 @@ export default defineConfig({
             "packages/anim-graph/**/*.test.ts",
             "packages/shader-graph/**/*.test.ts",
             "packages/input/**/*.test.ts",
+            "packages/ui/**/*.test.ts",
             "packages/scripting/**/*.test.ts",
             "packages/scripting-nodes/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",

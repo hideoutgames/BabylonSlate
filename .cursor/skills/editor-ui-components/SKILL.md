@@ -22,7 +22,7 @@ Match the task to a row:
 | Docked panel chrome | `PanelFrame`, optional `ToolbarStrip` |
 | Details / typed properties | `PropertyGrid`, `NumericDragField`, `NumberField` |
 | Hierarchy / folders | `TreeView` |
-| Searchable pick lists | `SearchInput`, `SearchSheet`, `AssetPicker`, `CatalogDialog`, `CatalogItemButton` |
+| Searchable pick lists | `SearchInput`, `SearchDialog`, `SearchDropdown`, `AssetPicker`, `CatalogDialog`, `CatalogItemButton` |
 | Forms / settings | `Field` + `Input` / `Select` / `Switch` / `Checkbox` / `Textarea` |
 | Actions / pressed tools | `Button` (outline vs ghost), `Toggle` / `ToggleGroup`, `IconActionButton` |
 | Confirm / blocking | `AlertDialog`; inline status `Alert` |
@@ -30,6 +30,7 @@ Match the task to a row:
 | Type glyphs | `TypeVisualIcon` |
 | Graph canvas | `GraphEditor`, `NodePalette` |
 | Readable copy in the shell | `SelectableText` |
+| Nested chrome / context menus | `NestedMenu` (not hand-rolled `DropdownMenuSub`) |
 | Long-press menus | `ContextMenuOverlay` + `useContextMenu` (not raw `ContextMenu`, except Homepage tiles) |
 
 If several rows could fit, prefer the **more specific composite** (`CatalogDialog` over a one-off `Dialog` + search field).

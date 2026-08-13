@@ -12,6 +12,11 @@ export { PanelFrame } from "./panel-frame";
 export { ToolbarStrip } from "./toolbar-strip";
 export { SelectableText } from "./selectable-text";
 export { ContextMenuOverlay } from "./context-menu-overlay";
+export {
+  NestedMenu,
+  type NestedMenuItem,
+  type NestedMenuProps,
+} from "./nested-menu";
 export { useSuppressNativeContextMenu } from "./use-suppress-native-context-menu";
 export { useSuppressIosEditingGestures } from "./use-suppress-ios-editing-gestures";
 export {
@@ -79,11 +84,15 @@ export {
   type TreeViewProps,
 } from "./tree-view";
 export {
-  SearchSheet,
+  SearchDialog,
   filterSearchItems,
-  type SearchSheetItem,
-  type SearchSheetProps,
-} from "./search-sheet";
+  type SearchDialogItem,
+  type SearchDialogProps,
+} from "./search-dialog";
+export {
+  SearchDropdown,
+  type SearchDropdownProps,
+} from "./search-dropdown";
 export {
   AssetPicker,
   type AssetPickerEntry,
@@ -143,3 +152,4 @@ export {
   type TypeVisual,
   type TypeVisualQuery,
 } from "./type-visuals";
+export { TypeColorMark } from "./type-color-mark";

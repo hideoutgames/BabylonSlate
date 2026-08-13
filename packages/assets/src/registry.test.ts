@@ -447,6 +447,68 @@ describe("AssetRegistry", () => {
     );
     expect(await storage.exists("assets/fx/spark.babasset")).toBe(false);
   });
+
+  it("duplicates a folder as a sibling with new asset guids", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", {
+      guid: "spark-1",
+      type: "Texture",
+      name: "spark",
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.createFolder("project", "fx/nested");
+
+    const copied = await registry.duplicateFolder("project", "fx");
+    expect(copied).toBe("fx_1");
+    expect(registry.folderTree("project").children.map((c) => c.name).sort()).toEqual(
+      ["fx", "fx_1"],
+    );
+    const copyAsset = registry.list().find((a) => a.path === "assets/fx_1/spark.babasset");
+    expect(copyAsset).toBeDefined();
+    expect(copyAsset?.header.guid).not.toBe("spark-1");
+    expect(copyAsset?.header.name).toBe("spark");
+    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.babasset");
+    const nested = registry
+      .folderTree("project")
+      .children.find((c) => c.path === "assets/fx_1")
+      ?.children.find((c) => c.name === "nested");
+    expect(nested).toBeDefined();
+  });
+
+  it("renames a folder in place through moveFolder with a new name", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", {
+      guid: "spark-1",
+      type: "Texture",
+      name: "spark",
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.moveFolder("project", "fx", "", "vfx");
+    expect(registry.getByGuid("spark-1")?.path).toBe(
+      "assets/vfx/spark.babasset",
+    );
+    expect(await storage.exists("assets/fx/spark.babasset")).toBe(false);
+  });
+
+  it("copies a folder into another parent", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/fx/spark.babasset", {
+      guid: "spark-1",
+      type: "Texture",
+      name: "spark",
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.createFolder("project", "effects");
+    const copied = await registry.copyFolder("project", "fx", "effects");
+    expect(copied).toBe("effects/fx");
+    expect(registry.list().some((a) => a.path === "assets/effects/fx/spark.babasset")).toBe(
+      true,
+    );
+    expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.babasset");
+  });
 });
 
 describe("ThumbnailDecodeLru", () => {

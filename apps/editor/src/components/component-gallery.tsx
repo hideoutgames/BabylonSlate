@@ -4,22 +4,29 @@ import {
   AssetPicker,
   CatalogDialog,
   ClassPicker,
+  ContextMenuOverlay,
   InputMappingEditor,
   NamedListEditor,
   NamePromptDialog,
+  NestedMenu,
   NumericDragField,
   PanelFrame,
   ParameterListEditor,
   PropertyGrid,
-  SearchSheet,
+  SearchDialog,
+  SearchDropdown,
   SelectableText,
   ToolbarStrip,
   TreeView,
+  TypeColorMark,
+  useContextMenu,
+  type NestedMenuItem,
   type ParameterRow,
   type PropertyRow,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import { createDefaultInputMappings } from "@babylonslate/input";
+import { ASSET_COLOR_VAR, PIN_COLOR_VAR } from "@babylonslate/ui/lib/data-types";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
@@ -58,6 +65,55 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@babylonslate/ui/components/tooltip";
+
+const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
+  { id: "rename", label: "Rename", onSelect: () => {} },
+  {
+    id: "more",
+    type: "submenu",
+    label: "More",
+    items: [
+      { id: "duplicate", label: "Duplicate", onSelect: () => {} },
+      {
+        id: "export",
+        type: "submenu",
+        label: "Export",
+        items: [{ id: "gltf", label: "glTF", onSelect: () => {} }],
+      },
+    ],
+  },
+];
+
+function GalleryNestedMenus() {
+  const { menu, closeMenu, openMenuAt } = useContextMenu({
+    items: GALLERY_NESTED_ITEMS,
+  });
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium">Nested menu</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <NestedMenu
+          items={GALLERY_NESTED_ITEMS}
+          trigger={
+            <Button variant="outline" data-testid="gallery-nested-menu">
+              Nested Menu
+            </Button>
+          }
+          contentTestId="gallery-nested-menu-content"
+        />
+        <Button
+          variant="outline"
+          data-testid="gallery-nested-overlay"
+          onClick={(event) => openMenuAt(event.clientX, event.clientY)}
+        >
+          Open Context Overlay
+        </Button>
+      </div>
+      <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+    </div>
+  );
+}
 
 const GALLERY_TREE_NODES: TreeViewNode[] = [
   { id: "root", label: "Scene Root", depth: 0, hasChildren: true, expanded: true },
@@ -171,6 +227,18 @@ function GalleryComposites() {
           <ParameterListEditor rows={parameters} onChange={setParameters} />
         </PanelFrame>
       </div>
+      <div className="rounded-lg border border-border p-3" data-testid="gallery-data-types">
+        <div className="mb-2 text-sm font-medium">Data Types</div>
+        <div className="flex flex-wrap gap-3">
+          <TypeColorMark colorVar={PIN_COLOR_VAR.bool} label="Bool" />
+          <TypeColorMark colorVar={PIN_COLOR_VAR.float} label="Float" />
+          <TypeColorMark colorVar={PIN_COLOR_VAR.vector} label="Vector" />
+          <TypeColorMark colorVar={PIN_COLOR_VAR.object} label="Object" />
+          <TypeColorMark colorVar={ASSET_COLOR_VAR.texture} label="Texture" />
+          <TypeColorMark colorVar={ASSET_COLOR_VAR.class} label="Class" />
+          <TypeColorMark colorVar={ASSET_COLOR_VAR.folder} label="Folder" />
+        </div>
+      </div>
       <div className="h-40 overflow-hidden rounded-lg border border-border">
         <PanelFrame title="Tree view" data-testid="gallery-tree-view">
           <TreeView
@@ -191,8 +259,19 @@ function GalleryComposites() {
           />
         </div>
         <Button variant="outline" onClick={() => setSearchOpen(true)}>
-          Open search sheet
+          Open search dialog
         </Button>
+        <SearchDropdown
+          title="Tile Palette"
+          items={[
+            { id: "0", label: "Empty", description: "Tile 0" },
+            { id: "1", label: "Tile 1", description: "Full" },
+          ]}
+          onSelect={() => {}}
+          data-testid="gallery-search-dropdown"
+        >
+          <Button variant="outline">Open search dropdown</Button>
+        </SearchDropdown>
         <Button variant="outline" onClick={() => setPickerOpen(true)}>
           Open asset picker
         </Button>
@@ -203,6 +282,7 @@ function GalleryComposites() {
           Open name prompt
         </Button>
       </div>
+      <GalleryNestedMenus />
       <div className="rounded-lg border border-border p-3">
         <NamedListEditor
           title="Named List"
@@ -218,16 +298,16 @@ function GalleryComposites() {
           data-testid="gallery-input-mapping"
         />
       </div>
-      <SearchSheet
+      <SearchDialog
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        title="Add component"
+        title="Add Component"
         items={[
           { id: "mesh", label: "MeshComponent", description: "Renderable mesh" },
           { id: "camera", label: "CameraComponent", description: "Scene camera" },
         ]}
         onSelect={() => {}}
-        data-testid="gallery-search-sheet"
+        data-testid="gallery-search-dialog"
       />
       <AssetPicker
         open={pickerOpen}

@@ -238,6 +238,47 @@ test.describe("Editor density and IA", () => {
     );
   });
 
+  test("Content Browser click adds to the selection and Deselect All clears it", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    const classTile = page.locator(
+      '[data-asset-path="assets/main.class.babasset"]',
+    );
+    await sceneTile.click();
+    await classTile.click();
+    await expect(sceneTile).toHaveAttribute("data-selected", "true");
+    await expect(classTile).toHaveAttribute("data-selected", "true");
+    await expect(page.getByTestId("content-browser-delete-selected")).toHaveText(
+      /Delete \(2\)/,
+    );
+
+    await page.getByTestId("content-browser-deselect-all").click();
+    await expect(sceneTile).toHaveAttribute("data-selected", "false");
+    await expect(classTile).toHaveAttribute("data-selected", "false");
+    await expect(page.getByTestId("content-browser-delete-selected")).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId("content-browser-deselect-all")).toHaveCount(0);
+  });
+
+  test("Content Browser folder tree and asset grid scroll vertically", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await expect(page.getByTestId("content-browser-asset-grid")).toHaveCSS(
+      "overflow-y",
+      "auto",
+    );
+    await expect(page.getByTestId("content-browser-folder-tree")).toHaveCSS(
+      "overflow-y",
+      "auto",
+    );
+  });
+
   test("New Asset refuses a name that already exists; Duplicate uses stem_N", async ({
     page,
   }) => {
@@ -259,5 +300,55 @@ test.describe("Editor density and IA", () => {
     await expect(
       page.locator('[data-asset-path="assets/main_1.scene.babasset"]'),
     ).toBeVisible();
+  });
+
+  test("Content Browser tree lists assets and folder tiles precede assets", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await expect(
+      page.getByTestId("tree-row-assets/main.scene.babasset"),
+    ).toBeVisible();
+
+    await page.getByTestId("content-browser-new-folder").click();
+    await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
+    await page.getByTestId("content-browser-name-input").fill("fx");
+    await page.getByTestId("content-browser-name-confirm").click();
+    await page.getByTestId("tree-row-assets").click();
+
+    const folderTile = page.getByTestId("content-folder-assets/fx");
+    await expect(folderTile).toBeVisible();
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await expect(sceneTile).toBeVisible();
+    const folderFollowedByScene = await folderTile.evaluate((folder, sceneSelector) => {
+      const scene = document.querySelector(sceneSelector);
+      if (!scene) return false;
+      return (folder.compareDocumentPosition(scene) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    }, '[data-asset-path="assets/main.scene.babasset"]');
+    expect(folderFollowedByScene).toBe(true);
+  });
+
+  test("Content Browser empty-grid menu items; asset menu has no Retry Encoding", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    const grid = page.getByTestId("content-browser-asset-grid");
+    await grid.click({ button: "right", position: { x: 4, y: 4 } });
+    await expect(page.getByTestId("context-menu-item-new-folder")).toBeVisible();
+    await expect(page.getByTestId("context-menu-item-new-asset")).toBeVisible();
+    await expect(page.getByTestId("context-menu-item-import")).toBeVisible();
+    await page.getByTestId("context-menu-backdrop").click();
+    await expect(page.getByTestId("context-menu-panel")).toHaveCount(0);
+
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await sceneTile.click({ button: "right" });
+    await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
+    await expect(page.getByTestId("context-menu-item-retry-encoding")).toHaveCount(
+      0,
+    );
   });
 });

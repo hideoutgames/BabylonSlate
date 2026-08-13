@@ -14,6 +14,10 @@ import {
 } from "@babylonslate/ui/components/card";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
+  typeColorCardAccent,
+  typeColorThumbAccent,
+} from "@babylonslate/ui/lib/data-types";
+import {
   compressionBadgeLabel,
   displayAssetTitle,
   textureCompressionState,
@@ -42,6 +46,8 @@ export function ContentBrowserAssetTile({
   typeVisual,
 }: ContentBrowserAssetTileProps) {
   const compression = textureCompressionState(asset);
+  const cardAccent = typeColorCardAccent(typeVisual.colorVar);
+  const thumbAccent = typeColorThumbAccent(typeVisual.colorVar);
   const bind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
       onSelect();
@@ -53,9 +59,13 @@ export function ContentBrowserAssetTile({
     <Card
       size="sm"
       className={cn(
-        "relative w-full gap-0 overflow-hidden py-0",
+        "relative w-full gap-0 overflow-hidden border py-0",
         selected ? "border-primary ring-1 ring-primary" : "",
       )}
+      style={{
+        backgroundColor: cardAccent.backgroundColor,
+        borderColor: selected ? undefined : cardAccent.borderColor,
+      }}
     >
       <button
         type="button"
@@ -71,7 +81,10 @@ export function ContentBrowserAssetTile({
         onDoubleClick={onOpen}
         {...bind}
       >
-        <div className="aspect-square w-full bg-muted">
+        <div
+          className="flex aspect-square w-full items-center justify-center"
+          style={thumbAccent}
+        >
           {thumbnailUrl ? (
             <img
               src={thumbnailUrl}
@@ -82,7 +95,7 @@ export function ContentBrowserAssetTile({
           ) : (
             <TypeVisualIcon
               visual={typeVisual}
-              className="size-full p-4"
+              className="size-10"
               data-testid={`content-item-type-icon-${asset.header.guid}`}
             />
           )}

@@ -58,6 +58,7 @@ export function useLongPressMenu(options: {
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent) => {
+      event.stopPropagation();
       if (!enabled || event.pointerType === "mouse") return;
       clearPress();
       const { clientX, clientY, pointerId } = event;
@@ -77,6 +78,7 @@ export function useLongPressMenu(options: {
 
   const onPointerMove = useCallback(
     (event: ReactPointerEvent) => {
+      event.stopPropagation();
       const press = pressRef.current;
       if (!press || press.pointerId !== event.pointerId) return;
       if (
@@ -91,6 +93,7 @@ export function useLongPressMenu(options: {
 
   const onPointerUp = useCallback(
     (event: ReactPointerEvent) => {
+      event.stopPropagation();
       const press = pressRef.current;
       if (press && press.pointerId === event.pointerId) {
         clearPress();
@@ -101,6 +104,7 @@ export function useLongPressMenu(options: {
 
   const onPointerCancel = useCallback(
     (event: ReactPointerEvent) => {
+      event.stopPropagation();
       const press = pressRef.current;
       if (press && press.pointerId === event.pointerId) {
         clearPress();

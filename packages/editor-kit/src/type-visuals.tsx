@@ -25,6 +25,7 @@ import {
   Volume2Icon,
 } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { ASSET_COLOR_TOKENS, assetColorVar } from "@babylonslate/ui/lib/data-types";
 
 export type AssetVisualFamily =
   | "scene"
@@ -38,6 +39,7 @@ export type AssetVisualFamily =
   | "class"
   | "scriptType"
   | "component"
+  | "folder"
   | "unknown";
 
 export type TypeVisual = {
@@ -152,34 +154,23 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   ScriptInterface: "scriptType",
 };
 
-const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
-  scene: "var(--asset-scene)",
-  graph: "var(--asset-graph)",
-  texture: "var(--asset-texture)",
-  material: "var(--asset-material)",
-  model: "var(--asset-model)",
-  audio: "var(--asset-audio)",
-  font: "var(--asset-font)",
-  animation: "var(--asset-animation)",
-  class: "var(--asset-class)",
-  scriptType: "var(--asset-script-type)",
-  component: "var(--asset-component)",
-  unknown: "var(--muted-foreground)",
-};
+export { ASSET_COLOR_TOKENS };
 
-export const ASSET_COLOR_TOKENS = [
-  "--asset-scene",
-  "--asset-graph",
-  "--asset-texture",
-  "--asset-material",
-  "--asset-model",
-  "--asset-audio",
-  "--asset-font",
-  "--asset-animation",
-  "--asset-class",
-  "--asset-script-type",
-  "--asset-component",
-] as const;
+const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
+  scene: assetColorVar("scene"),
+  graph: assetColorVar("graph"),
+  texture: assetColorVar("texture"),
+  material: assetColorVar("material"),
+  model: assetColorVar("model"),
+  audio: assetColorVar("audio"),
+  font: assetColorVar("font"),
+  animation: assetColorVar("animation"),
+  class: assetColorVar("class"),
+  scriptType: assetColorVar("scriptType"),
+  component: assetColorVar("component"),
+  folder: assetColorVar("folder"),
+  unknown: assetColorVar("unknown"),
+};
 
 export function engineParentOf(classId: string): string | null | undefined {
   if (classId in ENGINE_PARENT) return ENGINE_PARENT[classId];

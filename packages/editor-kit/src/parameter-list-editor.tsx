@@ -13,6 +13,8 @@ import {
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
 import { NamedListEditor } from "./named-list-editor";
+import { TypeColorMark } from "./type-color-mark";
+import { pinColorVar } from "@babylonslate/ui/lib/data-types";
 
 export const PARAMETER_VALUE_TYPES = [
   "string",
@@ -37,6 +39,14 @@ export type ParameterListEditorProps = {
   rows: ParameterRow[];
   onChange: (rows: ParameterRow[]) => void;
   title?: string;
+};
+
+const PARAMETER_PIN_KIND: Record<ParameterValueType, string> = {
+  string: "string",
+  float: "float",
+  int: "int",
+  bool: "bool",
+  enum: "enumRef",
 };
 
 const TYPE_LABEL: Record<ParameterValueType, string> = {
@@ -151,7 +161,10 @@ export function ParameterListEditor({
                   aria-label={TYPE_LABEL[type]}
                   data-testid={`parameter-${row.id}-type-${type}`}
                 >
-                  {TYPE_LABEL[type]}
+                  <TypeColorMark
+                    colorVar={pinColorVar(PARAMETER_PIN_KIND[type])}
+                    label={TYPE_LABEL[type]}
+                  />
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>

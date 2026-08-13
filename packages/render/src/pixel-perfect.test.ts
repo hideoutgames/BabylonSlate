@@ -67,6 +67,45 @@ describe("editor camera pixel-perfect framing", () => {
     scene.dispose();
     engine.dispose();
   });
+
+  it("zooms smoothly in sub-integer steps even when integer zoom steps is on", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = createEditorCamera(scene, { mode: "2d" });
+    camera.setCanvasHeight(600);
+    camera.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+
+    expect(camera.pixelZoom()).toBe(1);
+    expect(camera.orthoHalfHeight()).toBe(3);
+
+    camera.zoom(1.1);
+    expect(camera.pixelZoom()).toBeCloseTo(1.1, 5);
+    expect(camera.orthoHalfHeight()).toBeCloseTo(3 / 1.1, 5);
+
+    camera.zoom(1.1);
+    expect(camera.pixelZoom()).toBeCloseTo(1.21, 5);
+    expect(camera.orthoHalfHeight()).toBeCloseTo(3 / 1.21, 5);
+
+    camera.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("zooms out smoothly in sub-integer steps even when integer zoom steps is on", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = createEditorCamera(scene, { mode: "2d" });
+    camera.setCanvasHeight(600);
+    camera.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
+
+    camera.zoom(1 / 1.1);
+    expect(camera.pixelZoom()).toBeCloseTo(1 / 1.1, 5);
+    expect(camera.orthoHalfHeight()).toBeCloseTo(3 * 1.1, 5);
+
+    camera.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
 });
 
 describe("applyPixelArtSampling", () => {

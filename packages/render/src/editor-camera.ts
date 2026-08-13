@@ -3,7 +3,6 @@ import type { ViewportMode } from "@babylonslate/core";
 import type { RenderScheduler } from "./render-scheduler";
 import {
   pixelPerfectOrthoHalfHeight,
-  quantizeZoom,
   snapToPixelGrid,
   type PixelPerfectSettings,
 } from "./pixel-perfect";
@@ -39,7 +38,7 @@ export interface EditorCameraController {
   setPixelPerfect: (settings: PixelPerfectSettings | null) => void;
   /** Canvas height in device pixels, needed to derive pixel-perfect bounds. */
   setCanvasHeight: (heightPx: number) => void;
-  /** Zoom factor relative to the pixel-perfect 1:1 framing. */
+  /** Zoom factor relative to the pixel-perfect 1:1 framing (continuous). */
   pixelZoom: () => number;
   /**
    * Rotate look direction in place (camera position stays put). No-op in 2D.
@@ -84,6 +83,7 @@ export function createEditorCamera(
   let aspect = 1;
   let pixelPerfect: PixelPerfectSettings | null = null;
   let canvasHeightPx = 0;
+  /** Live pixel-perfect zoom; pinch and wheel stay continuous (not 1×/2× steps). */
   let pixelZoom = 1;
   let pose3d: {
     target: Vector3;
@@ -282,10 +282,7 @@ export function createEditorCamera(
       if (factor <= 0) return;
       if (mode === "2d") {
         if (pixelPerfect) {
-          const next = pixelZoom * factor;
-          pixelZoom = pixelPerfect.integerZoomSteps
-            ? quantizeZoom(next)
-            : Math.max(0.01, next);
+          pixelZoom = Math.max(0.01, pixelZoom * factor);
         } else {
           orthoHalfHeight = Math.max(0.01, orthoHalfHeight / factor);
         }

@@ -237,7 +237,7 @@ P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `
 | UserInterface + designer | `p9-ui-system` (done) | `ui-runtime`, `render`, `bridge`, `runtime`, `apps/editor`, `edit` | Anchoring + fonts |
 | Widget library + touch axis | `p9-widget-library` (done) | `ui-runtime`, `input`, `apps/editor` | UI system |
 | Sprite packer + quad | `p9-sprite` (done) | `assets`, `render`, `apps/editor` | Design notes |
-| AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `apps/editor` | Sprite (clips) + graph-ui host |
+| AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `apps/editor` | Sprite (clips) + graph-ui host with Parameters / States / Details |
 | Shader graph | `p9-shader-graph` (done) | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
 
 Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
@@ -273,8 +273,9 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | C — Sprite Texture picker | Done (`cursor/authoring-surface-8678`) |
 | D — Shader `NodeMaterial.Parse` preview + shader/anim catalog pin hydration | Done (`cursor/authoring-surface-8678`) |
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
+| F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 
-Parked with this wave: pin flash, multi-select gizmo, ADT Play HUD, `WidgetComponent` `CreateForMesh`, per-function graphs, FunctionLibrary palette, anim blend/exit-time inspector, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
+Parked with this wave: pin flash, multi-select gizmo, ADT Play HUD, `WidgetComponent` `CreateForMesh`, per-function graphs, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
 
 ### P9 follow-ups / open deferrals
 

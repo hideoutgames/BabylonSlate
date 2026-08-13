@@ -256,6 +256,8 @@ test.describe("P9 content systems", () => {
     await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-parameters")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-add-state")).toBeVisible();
 
     await createAsset(page, "Shader", "Surface");
     await page.locator('[data-asset-path="assets/Surface.shader.babasset"]').dblclick();

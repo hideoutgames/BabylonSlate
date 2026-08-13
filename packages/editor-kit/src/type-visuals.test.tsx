@@ -24,6 +24,12 @@ describe("resolveTypeVisual", () => {
     expect(classAsset.colorVar).toBe("var(--asset-class)");
   });
 
+  it("uses the folder asset color for folder visuals", () => {
+    expect(resolveTypeVisual({ family: "folder" }).colorVar).toBe(
+      "var(--asset-folder)",
+    );
+  });
+
   it("shares script-type color across Enum, Structure, and ScriptInterface", () => {
     const enumVisual = resolveTypeVisual({ assetType: "Enum" });
     const structVisual = resolveTypeVisual({ assetType: "Structure" });
