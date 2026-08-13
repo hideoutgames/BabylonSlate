@@ -32,6 +32,7 @@ import {
   playIsEnabled,
   resolvePlayScene,
 } from "../services/play-physics";
+import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
 import type { PlayAnimGraphEntry } from "../lib/play-content";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
@@ -139,6 +140,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlaySceneLibrary,
     openDocuments,
     activeDocumentId,
+    setActiveDocument,
     projectDocument,
     dirtyDocuments,
     scriptsStale,
@@ -496,6 +498,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           onOpenChange={setPlayBlockedOpen}
           onNavigate={(d) => {
             setFocusDiagnostic(d);
+            const revealId = documentIdToRevealForDiagnostic(
+              d,
+              openDocuments.map((doc) => doc.id),
+            );
+            if (revealId) setActiveDocument(revealId);
             setPlayBlockedOpen(false);
           }}
           onPlayAnyway={() => {
