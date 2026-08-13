@@ -21,6 +21,7 @@ export default defineConfig({
             "packages/scripting-nodes/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
             "apps/docs/**/*.test.ts",
+            "playwright.config.test.ts",
           ],
         },
       },

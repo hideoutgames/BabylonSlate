@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { IPAD_TEST_GREP } from "./e2e/ipad-tag";
 
 const IPAD_TOUCH = {
   hasTouch: true,
@@ -23,6 +24,8 @@ export default defineConfig({
     },
     {
       name: "ipad-landscape",
+      // Touch / coarse-pointer / orientation only. Tag those tests with IPAD_TEST_TAG.
+      grep: IPAD_TEST_GREP,
       use: {
         ...devices["iPad Pro 11 landscape"],
         ...IPAD_TOUCH,
@@ -31,6 +34,7 @@ export default defineConfig({
     },
     {
       name: "ipad-portrait",
+      grep: IPAD_TEST_GREP,
       use: {
         ...devices["iPad Pro 11"],
         ...IPAD_TOUCH,

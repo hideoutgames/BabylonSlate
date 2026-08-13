@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 
 test("component gallery renders shadcn primitives in test mode", async ({
   page,
@@ -40,7 +41,9 @@ test("component gallery renders every editor-kit composite", async ({
   await expect(page.getByTestId("gallery-search-sheet")).toBeVisible();
 });
 
-test("gallery composites meet the minimum touch target size", async ({
+test("gallery composites meet the minimum touch target size", {
+  tag: IPAD_TEST_TAG,
+}, async ({
   page,
 }) => {
   await page.goto("/?test=1&gallery=1");

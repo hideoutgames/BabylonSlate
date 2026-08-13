@@ -1,10 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
 test.describe("Editor density and IA", () => {
-  test("chrome is compact, has no Add tab, and Focus is disabled on Content Browser", async ({
+  test("chrome is compact, has no Add tab, and Focus is disabled on Content Browser", {
+    tag: IPAD_TEST_TAG,
+  }, async ({
     page,
   }) => {
     await openTestProject(page);
@@ -52,7 +55,9 @@ test.describe("Editor density and IA", () => {
     ).toBeVisible();
   });
 
-  test("Focus hides the Outliner; Place Actors catalog does not focus search", async ({
+  test("Focus hides the Outliner; Place Actors catalog does not focus search", {
+    tag: IPAD_TEST_TAG,
+  }, async ({
     page,
   }) => {
     await openTestProject(page);
@@ -182,7 +187,9 @@ test.describe("Editor density and IA", () => {
     );
   });
 
-  test("gizmo tools look pressed and the joystick toggle is on the toolbar", async ({
+  test("gizmo tools look pressed and the joystick toggle is on the toolbar", {
+    tag: IPAD_TEST_TAG,
+  }, async ({
     page,
   }) => {
     await openTestProject(page);
