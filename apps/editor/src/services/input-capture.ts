@@ -9,6 +9,8 @@ export interface InputCaptureHandle {
   setTick: (tick: number) => void;
   /** Poll gamepads once per frame (axes have no events). */
   pollGamepads: () => void;
+  /** Push a TouchJoystick / TouchDPad sample into the Play ring. */
+  pushTouchAxis: (controlId: string, value: number) => void;
   dispose: () => void;
 }
 
@@ -98,6 +100,21 @@ export function attachInputCapture(
           buttons: [...synthetic.buttons],
         });
       }
+      const touchAxes = (
+        globalThis as {
+          __babylonslateTestTouchAxes?: Record<string, number>;
+        }
+      ).__babylonslateTestTouchAxes;
+      if (touchAxes) {
+        for (const [controlId, value] of Object.entries(touchAxes)) {
+          if (typeof value === "number" && Number.isFinite(value)) {
+            ring.push({ kind: "touchAxis", tick, controlId, value });
+          }
+        }
+      }
+    },
+    pushTouchAxis: (controlId, value) => {
+      ring.push({ kind: "touchAxis", tick, controlId, value });
     },
     dispose: () => {
       canvas.removeEventListener("pointerdown", down);

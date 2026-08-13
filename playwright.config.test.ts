@@ -48,6 +48,7 @@ describe("Playwright iPad project filter", () => {
         "p4-play.spec.ts",
         "p5-scripting.spec.ts",
         "p6-scene-editing.spec.ts",
+        "p9-content.spec.ts",
         "touch-shell.spec.ts",
       ]),
     );
@@ -66,6 +67,7 @@ describe("Playwright iPad project filter", () => {
         "component-gallery.spec.ts",
         "global-search.spec.ts",
         "p6-scene-editing.spec.ts",
+        "p9-content.spec.ts",
       ]),
     );
     for (const file of [
@@ -93,7 +95,12 @@ describe("Playwright iPad project filter", () => {
         "Global project search › toolbar search opens a dialog and focuses a scene actor",
         "Global project search › dialog stays a fixed tall height and results scroll when they overflow",
         "P6 first-playable scene editing › scene panels expose touch-sized toolbar controls",
+        "P9 content systems › UserInterface designer on iPad shows the same HUD widgets",
+        "P9 content systems › Play overlay stick is reachable on iPad",
       ]),
+    );
+    expect(ipadTitles).not.toContain(
+      "P9 content systems › Play overlay stick drives the same Move.x as the gamepad path",
     );
     expect(ipadTitles).not.toContain(
       "P6 first-playable scene editing › build, save, reopen, play in 3D and 2D with gamepad and gizmo undo",

@@ -2,6 +2,7 @@
  * Game worker entry. Hosts create a Worker from this module URL and post
  * control / input messages. In-process Play uses `createInProcessRuntime`.
  */
+import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
   TransferablePingPong,
   type BridgeHostMessage,
@@ -47,6 +48,14 @@ function handleControl(msg: ControlMessage): void {
       const rt = ensureRuntime();
       const spawn = msg.spawn ?? msg.scripts.map((s) => ({ classId: s.classId }));
       boot.queueScripts(rt, msg.scripts, spawn);
+      return;
+    }
+    case "loadAnimGraphs": {
+      const rt = ensureRuntime();
+      for (const entry of msg.graphs) {
+        const document = parseAnimGraphDocument(entry.document);
+        if (document) rt.registerAnimGraph(entry.guid, document);
+      }
       return;
     }
     case "play": {

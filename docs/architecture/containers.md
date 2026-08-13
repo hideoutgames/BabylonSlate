@@ -83,7 +83,7 @@ App-private storage keyed by project guid: compiled scripts, thumbnails, import 
 ## Schema migration
 
 - Each asset type owns ordered migrations `N → N+1`, applied on load.
-- Future (unknown) versions refuse with a clear message.
+- Future (unknown) versions refuse with a clear message **when a chain is registered**. Types with no chain (P9 UserInterface / Font / Sprite / AnimationGraph / Shader) pass through so a version-1 document is not treated as “newer than current 0”.
 - Opening a project that needs migration prompts once; migrate-on-save; never silently rewrite untouched files. `ProjectService.saveDocument` / `saveProject` refuse a pending path until `approveMigrateOnSave()`.
 - Golden fixtures: one committed `.babasset` per historical version per type — `graph-v0.babasset` (payload in header), `scene-v0.babasset` (payload in the document chunk, the shape the editor writes), `graph-v1.babasset` at current.
 - The project manifest (`project.json`) migrates as type `Project` on load and is gated by the same approval.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
   ENGINE_BASE_CLASSES,
+  buildNewAssetResult,
   collectFolderGuids,
   compressionBadgeLabel,
   displayAssetTitle,
@@ -13,6 +14,7 @@ import {
   isFolderTreeRoot,
   isNewAssetNameTaken,
   matchesAssetSearch,
+  newAssetFileName,
   textureCompressionState,
   visualForIndexedAsset,
   classParentLookup,
@@ -249,5 +251,29 @@ describe("content-browser-helpers", () => {
 
   it("offers BDebugCommand as a Class parent", () => {
     expect(ENGINE_BASE_CLASSES).toContain("BDebugCommand");
+  });
+
+  it("seeds P9 document assets with typed suffixes", () => {
+    expect(newAssetFileName("UserInterface", "HUD")).toBe("HUD.ui.babasset");
+    expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
+    expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.babasset");
+    expect(newAssetFileName("Shader", "Surface")).toBe("Surface.shader.babasset");
+    const hud = buildNewAssetResult({
+      type: "UserInterface",
+      name: "HUD",
+      guid: "ui-1",
+      parentClass: null,
+    });
+    expect(hud.type).toBe("UserInterface");
+    expect(hud.payload.rootId).toBe("canvas");
+    expect(hud.payload.viewportLayer).toBe(true);
+    expect(hud.chunks.some((chunk) => chunk.id === "document")).toBe(true);
+    const font = buildNewAssetResult({
+      type: "Font",
+      name: "Display",
+      guid: "font-1",
+      parentClass: null,
+    });
+    expect(font.chunks.some((chunk) => chunk.id === "document")).toBe(true);
   });
 });

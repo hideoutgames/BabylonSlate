@@ -37,9 +37,20 @@ export function runtimeTransformFromSerialized(
   };
 }
 
-function componentAssetGuid(component: SerializedComponent): string | null {
-  const guid = component.properties.assetGuid;
+function stringProp(
+  properties: Record<string, unknown>,
+  key: string,
+): string | null {
+  const guid = properties[key];
   return typeof guid === "string" && guid.length > 0 ? guid : null;
+}
+
+function componentAssetGuid(component: SerializedComponent): string | null {
+  return (
+    stringProp(component.properties, "assetGuid") ??
+    stringProp(component.properties, "graphGuid") ??
+    stringProp(component.properties, "uiAssetGuid")
+  );
 }
 
 /**

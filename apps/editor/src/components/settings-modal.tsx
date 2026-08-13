@@ -59,6 +59,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords: "pixels per unit pixel perfect integer zoom sorting layers",
   },
   {
+    id: "fonts",
+    label: "Fonts",
+    keywords: "default font fallback family stack",
+  },
+  {
     id: "rendering",
     label: "Rendering",
     keywords: "frame cap fps play preview aspect ratio letterbox follow system",
@@ -81,7 +86,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Project", ids: ["general", "input", "twoD", "rendering", "textures", "export"] },
+  { label: "Project", ids: ["general", "input", "twoD", "fonts", "rendering", "textures", "export"] },
   { label: "Session", ids: ["project"] },
 ];
 
@@ -456,6 +461,64 @@ export function SettingsModal({
               <FieldDescription>
                 Comma-separated, back to front. Compiles to one alphaIndex sort
                 key per sprite.
+              </FieldDescription>
+            </Field>
+          </FieldSet>
+        </FieldGroup>
+      ) : null}
+
+      {showProjectBody && projectDocument && activeCategoryId === "fonts" ? (
+        <FieldGroup>
+          <FieldSet>
+            <FieldLegend>Fonts</FieldLegend>
+            <Field>
+              <FieldLabel htmlFor="settings-default-font-guid">
+                Default Font Guid
+              </FieldLabel>
+              <Input
+                id="settings-default-font-guid"
+                className="min-h-[var(--touch-target,44px)]"
+                value={projectDocument.settings.fonts.defaultFontGuid ?? ""}
+                onChange={(event) =>
+                  updateProjectSettings({
+                    fonts: {
+                      ...projectDocument.settings.fonts,
+                      defaultFontGuid:
+                        event.target.value.trim() === ""
+                          ? null
+                          : event.target.value.trim(),
+                    },
+                  })
+                }
+                data-testid="settings-default-font-guid"
+              />
+              <FieldDescription>
+                Font asset used when a widget omits a family. Empty means the
+                compiled stack starts from the widget family plus the global
+                fallback.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-global-fallback">
+                Global Fallback
+              </FieldLabel>
+              <Input
+                id="settings-global-fallback"
+                className="min-h-[var(--touch-target,44px)]"
+                value={projectDocument.settings.fonts.globalFallback}
+                onChange={(event) =>
+                  updateProjectSettings({
+                    fonts: {
+                      ...projectDocument.settings.fonts,
+                      globalFallback: event.target.value.trim() || "sans-serif",
+                    },
+                  })
+                }
+                data-testid="settings-global-fallback"
+              />
+              <FieldDescription>
+                Generic CSS family appended to every compiled stack (never silent
+                Arial).
               </FieldDescription>
             </Field>
           </FieldSet>

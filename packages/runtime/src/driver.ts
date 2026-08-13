@@ -47,6 +47,13 @@ import {
   type RuntimeDiagnostic,
 } from "./diagnostics";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
+import {
+  clipForState,
+  evaluateAnimGraph,
+  type AnimEvalState,
+  type AnimGraphDocument,
+  type AnimGraphInputs,
+} from "@babylonslate/anim-graph";
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { PhysicsWorldSync } from "./physics-sync";
 
@@ -74,6 +81,8 @@ export interface RuntimeDriverOptions {
   playSceneGuid?: string;
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
+  /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
+  animGraphs?: Readonly<Record<string, AnimGraphDocument>>;
 }
 
 export interface RuntimeDriver {
@@ -117,6 +126,7 @@ export interface RuntimeDriver {
   ): void;
   listConsoleCommands(): readonly RegisteredCommand[];
   stopTrace(): TracePayload | null;
+  registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
@@ -174,6 +184,8 @@ class InProcessRuntime implements RuntimeDriver {
   private lastTrace: TracePayload | null = null;
   private readonly seed: number;
   private tickPrints: Array<{ message: string; key: string }> = [];
+  private readonly animGraphs = new Map<string, AnimGraphDocument>();
+  private readonly animEvalBySlot = new Map<number, AnimEvalState>();
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -198,6 +210,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.commands = createCommandRegistry({
       includeDebug: options.includeDebugCommands ?? true,
     });
+    if (options.animGraphs) {
+      for (const [guid, document] of Object.entries(options.animGraphs)) {
+        this.animGraphs.set(guid, document);
+      }
+    }
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
 
@@ -332,6 +349,9 @@ class InProcessRuntime implements RuntimeDriver {
         if (!target) return;
         this.physicsSync.moveCharacter(target, translation, dt, offset);
       },
+      setWidgetVisible: (widget, visible) => {
+        this.emit({ type: "uiSetVisible", widgetId: widget, visible });
+      },
     });
 
     if (options.seedDemoActors !== false && !options.playScene) {
@@ -449,6 +469,67 @@ class InProcessRuntime implements RuntimeDriver {
     return this.lastTrace;
   }
 
+  registerAnimGraph(guid: string, document: AnimGraphDocument): void {
+    this.animGraphs.set(guid, document);
+  }
+
+  private animGraphGuid(component: {
+    assetGuid: string | null;
+    getVariable(name: string): unknown;
+  }): string | null {
+    const graphGuid = component.getVariable("graphGuid");
+    if (typeof graphGuid === "string" && graphGuid.length > 0) return graphGuid;
+    return component.assetGuid;
+  }
+
+  private animInputsFromComponent(component: {
+    getVariable(name: string): unknown;
+  }): AnimGraphInputs {
+    const conditions: Record<string, boolean> = {};
+    const raw = component.getVariable("conditions");
+    if (raw && typeof raw === "object") {
+      for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+        conditions[key] = value === true;
+      }
+    }
+    return { conditions };
+  }
+
+  private tickAnimGraphs(): void {
+    if (this.animGraphs.size === 0) return;
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (slotId === undefined) continue;
+      const component = actor.components.find(
+        (entry) =>
+          entry.classId === "AnimationGraphComponent" && !entry.destroyed,
+      );
+      if (!component) continue;
+      const guid = this.animGraphGuid(component);
+      if (!guid) continue;
+      const document = this.animGraphs.get(guid);
+      if (!document) continue;
+      const next = evaluateAnimGraph(
+        document,
+        this.animEvalBySlot.get(slotId) ?? null,
+        this.dt,
+        this.animInputsFromComponent(component),
+      );
+      this.animEvalBySlot.set(slotId, next);
+      const clip = clipForState(document, next.stateId);
+      this.emit({
+        type: "animState",
+        slotId,
+        stateId: next.stateId,
+        normalisedTime: next.normalisedTime,
+        blendWeights: next.blendWeights,
+        clipName: clip?.clipName,
+        clipKind: clip?.kind,
+      });
+    }
+  }
+
   private consoleHost(): ConsoleCommandHost {
     const emitSetting = (key: string, value: string | number | boolean) => {
       this.emit({
@@ -508,15 +589,30 @@ class InProcessRuntime implements RuntimeDriver {
     const mesh = actor.components.find(
       (component) => component.classId === "MeshComponent" && !component.destroyed,
     );
-    if (!mesh) return;
-    const meshKind = mesh.getVariable("meshKind");
-    const assetGuid = mesh.assetGuid ?? mesh.getVariable("assetGuid");
-    this.emit({
-      type: "assignMesh",
-      slotId,
-      meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
-      meshKind: typeof meshKind === "string" ? meshKind : null,
-    });
+    const sprite = actor.components.find(
+      (component) =>
+        component.classId === "SpriteComponent" && !component.destroyed,
+    );
+    if (mesh) {
+      const meshKind = mesh.getVariable("meshKind");
+      const assetGuid = mesh.assetGuid ?? mesh.getVariable("assetGuid");
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
+        meshKind: typeof meshKind === "string" ? meshKind : null,
+      });
+      return;
+    }
+    if (sprite) {
+      const assetGuid = sprite.assetGuid ?? sprite.getVariable("assetGuid");
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
+        meshKind: "sprite",
+      });
+    }
   }
 
   private guardScript(run: () => void): void {
@@ -662,6 +758,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.phaseMark = nowMs();
 
     this.world.tick();
+    this.tickAnimGraphs();
     this.closePhaseTiming();
 
     this._lastScriptMs = this.phaseScriptMs;

@@ -18,6 +18,11 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Input](input.md) | Action/axis mappings |
 | [Physics](physics.md) | Havok 3D and Rapier 2D |
 | [Debugger](debugger.md) | Command registry, console, stats HUD |
+| [UI runtime](ui-runtime.md) | UserInterface widget tree, layout, designer |
+| [Fonts](fonts.md) | Font payload, FontFace registry, fallback stacks |
+| [Sprites](sprites.md) | Sprite atlas, packer, SpriteComponent quad |
+| [Animation graph](anim-graph.md) | Worker animation graph evaluator |
+| [Shader graph](shader-graph.md) | Shader IR to NodeMaterial |
 | [Theming](theming.md) | UI color palette and semantic tokens |
 | [Components](components.md) | Reusable Editor UI primitives and composites |
 | [Testing](testing.md) | Vitest projects, coverage gates, Playwright |

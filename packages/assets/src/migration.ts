@@ -34,13 +34,16 @@ export class MigrationRegistry {
     payload: Record<string, unknown>,
   ): { version: number; payload: Record<string, unknown>; migrated: boolean } {
     const chain = this.chains.get(type);
-    const current = chain?.migrations.length ?? 0;
+    if (!chain) {
+      return { version, payload, migrated: false };
+    }
+    const current = chain.migrations.length;
     if (version > current) {
       throw new Error(
         `Asset type "${type}" version ${version} was made with a newer engine version (current ${current})`,
       );
     }
-    if (!chain || version === current) {
+    if (version === current) {
       return { version, payload, migrated: false };
     }
     let next = payload;

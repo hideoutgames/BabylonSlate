@@ -34,6 +34,15 @@ describe("project schema", () => {
     expect(jumpPad).toBe("0:0");
     expect(confirmPad).toBe("0:1");
     expect(jumpPad).not.toBe(confirmPad);
+    expect(
+      project.settings.input.axes
+        .find((axis) => axis.name === "Move")
+        ?.bindings.some((binding) => binding.device === "touch"),
+    ).toBe(true);
+    expect(project.settings.fonts).toEqual({
+      defaultFontGuid: null,
+      globalFallback: "sans-serif",
+    });
     expect(project.settings.playFrameCap).toBe(60);
     expect(project.settings.playPreview).toEqual({
       followSystem: true,

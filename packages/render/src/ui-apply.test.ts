@@ -1,0 +1,42 @@
+import { describe, expect, it } from "vitest";
+import {
+  createDefaultUserInterface,
+  createWidget,
+  describeUiControls,
+  layoutUserInterface,
+  pinLayout,
+} from "@babylonslate/ui-runtime";
+import {
+  applyUiControls,
+  applyWidgetVisible,
+  joystickAxisValue,
+  RecordingUiHost,
+} from "./ui-apply";
+
+describe("UI apply", () => {
+  it("pushes laid-out controls to the host and can hide a widget", () => {
+    const doc = createDefaultUserInterface();
+    const stick = createWidget(
+      "stick",
+      "TouchJoystick",
+      "Move Stick",
+      pinLayout({ x: 0.2, y: 0.2 }, { x: 160, y: 160 }),
+    );
+    doc.widgets.canvas!.children = ["stick"];
+    doc.widgets.stick = stick;
+    const layout = layoutUserInterface(doc, { width: 1920, height: 1080 });
+    const controls = describeUiControls(doc, layout, 1080);
+    const host = new RecordingUiHost();
+    applyUiControls(host, controls);
+    expect(host.controls.some((row) => row.kind === "TouchJoystick")).toBe(true);
+    applyWidgetVisible(host, "stick", false);
+    expect(host.visibility.get("stick")).toBe(false);
+    expect(host.dirtyCount).toBeGreaterThan(0);
+  });
+
+  it("applies the same dead zone the input resolver uses", () => {
+    expect(joystickAxisValue(0.1, 0.15)).toBe(0);
+    expect(joystickAxisValue(1, 0.15)).toBeCloseTo(1, 5);
+    expect(joystickAxisValue(-0.575, 0.15)).toBeCloseTo(-0.5, 5);
+  });
+});

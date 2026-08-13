@@ -36,6 +36,7 @@ import {
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
+import { applyAnimStateToScene } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
@@ -404,6 +405,10 @@ export function createEngine(
     applyCommand: (command: CommandMessage) => {
       if (command.type === "assignMesh") {
         applyAssignMesh(scene, binding, command);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "animState") {
+        applyAnimStateToScene(scene, command);
         scheduler.invalidate("snapshot");
       }
     },

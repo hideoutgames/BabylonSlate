@@ -25,6 +25,7 @@ import { playConsoleCommands } from "../lib/play-console";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
+import { PlayHudOverlay } from "./play-hud-overlay";
 
 export interface PlayOverlayProps {
   sharedEngine: Engine;
@@ -78,6 +79,10 @@ export function PlayOverlay({
   const [actorGuids, setActorGuids] = useState<string[]>([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [trace, setTrace] = useState<TracePayload | null>(null);
+  const [overlaySize, setOverlaySize] = useState({ width: 1280, height: 720 });
+  const [hiddenWidgetIds, setHiddenWidgetIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -100,6 +105,10 @@ export function PlayOverlay({
       canvas,
       ...initialPlayPreviewRef.current,
     });
+    setOverlaySize({
+      width: overlay.clientWidth || 1280,
+      height: overlay.clientHeight || 720,
+    });
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -109,6 +118,14 @@ export function PlayOverlay({
       sceneAssetGuid: sceneRef.current.sceneAssetGuid,
       scene: sceneRef.current.scene,
       frameCap: initialFrameCapRef.current,
+      onUiSetVisible: (widgetId, visible) => {
+        setHiddenWidgetIds((prev) => {
+          const next = new Set(prev);
+          if (visible) next.delete(widgetId);
+          else next.add(widgetId);
+          return next;
+        });
+      },
       onStats: (stats) => {
         setFps(stats.fps);
         setScriptMs(stats.scriptMs);
@@ -131,6 +148,10 @@ export function PlayOverlay({
         overlay,
         canvas,
         ...initialPlayPreviewRef.current,
+      });
+      setOverlaySize({
+        width: overlay.clientWidth || 1280,
+        height: overlay.clientHeight || 720,
       });
       resizePlayIfSized();
     });
@@ -231,6 +252,14 @@ export function PlayOverlay({
           playPreview.followSystem && "h-full w-full",
         )}
         data-testid="play-canvas"
+      />
+      <PlayHudOverlay
+        width={overlaySize.width}
+        height={overlaySize.height}
+        hiddenWidgetIds={hiddenWidgetIds}
+        onTouchAxis={(controlId, value) =>
+          sessionRef.current?.pushTouchAxis(controlId, value)
+        }
       />
       <PrintOverlay entries={printEntries} />
       <div

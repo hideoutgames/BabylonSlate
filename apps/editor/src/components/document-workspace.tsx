@@ -1,4 +1,4 @@
-import { CONTENT_BROWSER_ID, type SerializedScene } from "@babylonslate/core";
+import { CONTENT_BROWSER_ID, isAssetDocumentKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useState } from "react";
 import { useDocuments } from "../context/document-context";
@@ -12,6 +12,7 @@ import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
+import { AssetDocumentWorkspace } from "./asset-document-workspace";
 import { DockviewShell } from "../shell/dockview-shell";
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
@@ -125,6 +126,19 @@ export function DocumentWorkspace() {
               data-testid="document-workspace-content-browser"
             >
               <ContentBrowserWorkspace />
+            </div>
+          );
+        }
+
+        if (isAssetDocumentKind(doc.ref.kind) && doc.ref.kind !== "scene" && doc.ref.kind !== "graph") {
+          if (!shouldMount) return null;
+          return (
+            <div
+              key={id}
+              className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+              data-testid={`document-workspace-${doc.ref.kind}`}
+            >
+              <AssetDocumentWorkspace documentId={id} />
             </div>
           );
         }

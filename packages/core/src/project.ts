@@ -67,6 +67,18 @@ export interface PlayPreviewProjectSettings {
   aspectHeight: number;
 }
 
+export interface FontProjectSettings {
+  /** Font asset guid used when a widget omits a family. */
+  defaultFontGuid: string | null;
+  /** Generic CSS family appended to every compiled stack. */
+  globalFallback: string;
+}
+
+export const DEFAULT_FONT_PROJECT_SETTINGS: FontProjectSettings = {
+  defaultFontGuid: null,
+  globalFallback: "sans-serif",
+};
+
 export interface ProjectSettings {
   touchMinTargetPx: number;
   /** Play/Preview render cap in fps. Editor viewports use Engine Settings. */
@@ -80,6 +92,7 @@ export interface ProjectSettings {
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
   input: ProjectInputSettings;
+  fonts: FontProjectSettings;
 }
 
 export interface ProjectDocument {
@@ -201,6 +214,18 @@ export const DEFAULT_PROJECT_INPUT_SETTINGS: ProjectInputSettings = {
           deadZone: 0.15,
           invert: true,
         },
+        {
+          device: "touch",
+          code: "joystick-x",
+          component: "x",
+          deadZone: 0.15,
+        },
+        {
+          device: "touch",
+          code: "joystick-y",
+          component: "y",
+          deadZone: 0.15,
+        },
       ],
     },
     {
@@ -282,6 +307,18 @@ export function normalizeProjectSettings(
         DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
     },
     input: normalizeProjectInput(settings?.input),
+    fonts: {
+      defaultFontGuid:
+        typeof settings?.fonts?.defaultFontGuid === "string" &&
+        settings.fonts.defaultFontGuid !== ""
+          ? settings.fonts.defaultFontGuid
+          : DEFAULT_FONT_PROJECT_SETTINGS.defaultFontGuid,
+      globalFallback:
+        typeof settings?.fonts?.globalFallback === "string" &&
+        settings.fonts.globalFallback.trim() !== ""
+          ? settings.fonts.globalFallback.trim()
+          : DEFAULT_FONT_PROJECT_SETTINGS.globalFallback,
+    },
   };
 }
 

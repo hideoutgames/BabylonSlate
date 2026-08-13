@@ -23,7 +23,7 @@ import {
   resolveTypeVisual,
   useContextMenu,
 } from "@babylonslate/editor-kit";
-import { documentId, labelFromPath } from "@babylonslate/core";
+import { documentId, documentKindForAssetType, labelFromPath } from "@babylonslate/core";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -271,33 +271,19 @@ export function ContentBrowserWorkspace() {
 
   const openOrFocusDocument = useCallback(
     async (asset: IndexedAsset) => {
-      if (asset.header.type === "Scene") {
-        const path = asset.path;
-        const id = documentId({ kind: "scene", path });
-        if (openIds.has(id)) {
-          setActiveDocument(id);
-          return;
-        }
-        await openDocument({
-          kind: "scene",
-          path,
-          label: labelFromPath(path),
-        });
+      const kind = documentKindForAssetType(asset.header.type);
+      if (!kind) return;
+      const path = asset.path;
+      const id = documentId({ kind, path });
+      if (openIds.has(id)) {
+        setActiveDocument(id);
         return;
       }
-      if (asset.header.type === "Graph") {
-        const path = asset.path;
-        const id = documentId({ kind: "graph", path });
-        if (openIds.has(id)) {
-          setActiveDocument(id);
-          return;
-        }
-        await openDocument({
-          kind: "graph",
-          path,
-          label: labelFromPath(path),
-        });
-      }
+      await openDocument({
+        kind,
+        path,
+        label: labelFromPath(path),
+      });
     },
     [openDocument, openIds, setActiveDocument],
   );

@@ -58,4 +58,25 @@ describe("createActorsFromSerializedScene", () => {
     expect(actor.components[0]!.getVariable("meshKind")).toBe("sphere");
     expect(actor.components[1]!.getVariable("mass")).toBe(4);
   });
+
+  it("copies graphGuid onto AnimationGraphComponent assetGuid", () => {
+    const world = testWorld();
+    const actors = createActorsFromSerializedScene(world, {
+      name: "Anim",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [
+            {
+              id: "anim-1",
+              classId: "AnimationGraphComponent",
+              properties: { graphGuid: "graph-guid" },
+            },
+          ],
+        }),
+      ],
+    });
+    expect(actors[0]!.components[0]!.assetGuid).toBe("graph-guid");
+  });
 });

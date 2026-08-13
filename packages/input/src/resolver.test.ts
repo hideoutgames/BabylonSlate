@@ -186,4 +186,14 @@ describe("InputResolver", () => {
     expect(resolved.axes2D.Move!.x).toBeCloseTo(0.75, 5);
     expect(resolved.axes2D.Move!.y).toBe(0);
   });
+
+  it("default Move axis includes touch joystick bindings beside gamepad", () => {
+    const resolver = new InputResolver(createDefaultInputMappings());
+    const resolved = resolver.resolve([
+      { kind: "touchAxis", tick: 1, controlId: "joystick-x", value: 1 },
+      { kind: "touchAxis", tick: 1, controlId: "joystick-y", value: -1 },
+    ]);
+    expect(resolved.axes2D.Move!.x).toBeCloseTo(1, 5);
+    expect(resolved.axes2D.Move!.y).toBeCloseTo(-1, 5);
+  });
 });

@@ -6,11 +6,13 @@ import type {
   SerializedScene,
 } from "@babylonslate/core";
 import {
+  assetTypeForDocumentKind,
   createDefaultScene,
   createEmptyLayouts,
   createEmptyProject,
   normalizeProjectSettings,
   documentId,
+  isAssetDocumentKind,
   LAYOUT_FILE,
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
@@ -205,7 +207,7 @@ export class ProjectService {
 
   indexOpenDocument(
     path: string,
-    content: SerializedScene | SerializedGraph,
+    content: SerializedScene | SerializedGraph | Record<string, unknown>,
   ): void {
     const indexed = this.assetRegistry?.list().find((asset) => asset.path === path);
     if (!indexed || !this.projectSearchIndex) return;
@@ -557,8 +559,10 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
-  ): Promise<SerializedScene | SerializedGraph> {
-    const fallbackType = kind === "scene" ? "Scene" : "Graph";
+  ): Promise<SerializedScene | SerializedGraph | Record<string, unknown>> {
+    const fallbackType = isAssetDocumentKind(kind)
+      ? assetTypeForDocumentKind(kind)
+      : "Graph";
     const raw = isAssetDocumentPath(path)
       ? await this.readAssetDocument(path, fallbackType)
       : await this.readLegacyJsonDocument(path, fallbackType);
@@ -580,7 +584,10 @@ export class ProjectService {
     if (kind === "scene") {
       return content as unknown as SerializedScene;
     }
-    return content as unknown as SerializedGraph;
+    if (kind === "graph") {
+      return content as unknown as SerializedGraph;
+    }
+    return content;
   }
 
   private async readAssetDocument(
@@ -621,7 +628,7 @@ export class ProjectService {
   async saveDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
-    content: SerializedScene | SerializedGraph,
+    content: SerializedScene | SerializedGraph | Record<string, unknown>,
   ): Promise<void> {
     if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
       throw new Error(
@@ -632,7 +639,9 @@ export class ProjectService {
     if (dir) {
       await this.storage.mkdir(dir, true);
     }
-    const type = kind === "scene" ? "Scene" : "Graph";
+    const type = isAssetDocumentKind(kind)
+      ? assetTypeForDocumentKind(kind)
+      : "Graph";
     const version = this.migrations.currentVersion(type);
 
     if (isAssetDocumentPath(path)) {

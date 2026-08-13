@@ -54,7 +54,12 @@ export {
   commandToJournalPayload,
   registerGraphCommandRevivers,
   registerSceneCommandRevivers,
+  registerAssetDocumentCommandRevivers,
 } from "./journal";
+export {
+  SetAssetDocumentCommand,
+  createSetAssetDocumentCommandFromJson,
+} from "./commands/asset-document";
 export {
   replayJournalLines,
   type JournalReplayResult,

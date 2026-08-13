@@ -48,7 +48,7 @@ The world owns a seeded PRNG from `createSeededRng` in `@babylonslate/core`. Sim
 
 Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBodyComponent` / `ColliderComponent` are synced by `PhysicsWorldSync` in `@babylonslate/runtime`:
 
-`MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
+`MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `AnimationGraphComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
 
 See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
 

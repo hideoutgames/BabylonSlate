@@ -22,7 +22,7 @@ Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButt
 | `component` | `"x"` \| `"y"` for `kind: "2d"` axes |
 | `digitalValue` | Constant while a digital binding is held |
 
-`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads; `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default gamepad face bindings: Jump → `0:0` (A), Confirm → `0:1` (B) so both actions do not fire from one button.
+`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads; `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard, gamepad stick, and touch joystick (`joystick-x` / `joystick-y`) so an on-screen stick and a gamepad drive the same `GetAxis2D("Move")` with no script change. Default gamepad face bindings: Jump → `0:0` (A), Confirm → `0:1` (B) so both actions do not fire from one button.
 
 ## InputResolver
 

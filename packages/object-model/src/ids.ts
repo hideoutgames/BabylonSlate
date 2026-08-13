@@ -21,6 +21,7 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "RigidBodyComponent",
   "ColliderComponent",
   "WidgetComponent",
+  "AnimationGraphComponent",
   "BehaviourTreeComponent",
   "NavAgentComponent",
 ] as const;

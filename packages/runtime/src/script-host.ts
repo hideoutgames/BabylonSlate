@@ -49,9 +49,8 @@ export interface ScriptHostServices {
     dt: number,
     offset?: number,
   ): void;
+  setWidgetVisible?(widget: string, visible: boolean): void;
 }
-
-/** The `ctx` object bound into every compiled graph invocation. */
 export interface ScriptContext {
   self: Actor | null;
   deltaSeconds: number;
@@ -110,7 +109,7 @@ export interface ScriptContext {
     offset?: number,
   ): void;
   playSound(): void;
-  setWidgetVisible(): void;
+  setWidgetVisible(widget: string, visible: boolean): void;
   changeScene(scene: string): void;
 }
 
@@ -317,7 +316,9 @@ export class ScriptHost {
         );
       },
       playSound: () => {},
-      setWidgetVisible: () => {},
+      setWidgetVisible: (widget, visible) => {
+        services.setWidgetVisible?.(widget, visible);
+      },
       changeScene: () => {},
     };
   }

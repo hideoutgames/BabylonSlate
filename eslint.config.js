@@ -36,6 +36,9 @@ const pureNoReactNoBabylon = boundary(
     "packages/bridge/**/*.{ts,tsx}",
     "packages/runtime/**/*.{ts,tsx}",
     "packages/debugger/**/*.{ts,tsx}",
+    "packages/ui-runtime/**/*.{ts,tsx}",
+    "packages/anim-graph/**/*.{ts,tsx}",
+    "packages/shader-graph/**/*.{ts,tsx}",
     "packages/input/**/*.{ts,tsx}",
     "packages/scripting/**/*.{ts,tsx}",
     "packages/scripting-nodes/**/*.{ts,tsx}",
@@ -45,12 +48,12 @@ const pureNoReactNoBabylon = boundary(
     {
       group: REACT_PATTERNS,
       message:
-        "core, assets, edit, object-model, bridge, runtime, debugger, input, scripting, scripting-nodes, and test-kit must not import React (engineplan section 2.2).",
+        "core, assets, edit, object-model, bridge, runtime, debugger, ui-runtime, anim-graph, shader-graph, input, scripting, scripting-nodes, and test-kit must not import React (engineplan section 2.2).",
     },
     {
       group: BABYLON_PATTERNS,
       message:
-        "core, assets, edit, object-model, bridge, runtime, debugger, input, scripting, scripting-nodes, and test-kit must not import Babylon (engineplan section 2.2).",
+        "core, assets, edit, object-model, bridge, runtime, debugger, ui-runtime, anim-graph, shader-graph, input, scripting, scripting-nodes, and test-kit must not import Babylon (engineplan section 2.2).",
     },
     {
       group: CAPACITOR_PATTERNS,

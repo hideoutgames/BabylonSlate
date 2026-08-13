@@ -1,0 +1,180 @@
+import { expect, test } from "@playwright/test";
+import { IPAD_TEST_TAG } from "./ipad-tag";
+import { openTestProject } from "./open-test-project";
+
+async function showContentBrowser(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  await page
+    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+    .click();
+  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+}
+
+async function createAsset(
+  page: import("@playwright/test").Page,
+  type: "UserInterface" | "Font" | "Sprite" | "AnimationGraph" | "Shader",
+  name: string,
+): Promise<void> {
+  await showContentBrowser(page);
+  await page.getByTestId("content-browser-new-asset").click();
+  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+  await page.getByTestId("new-asset-type").click();
+  await page.getByTestId(`new-asset-type-${type}`).click();
+  await page.getByTestId("new-asset-name").fill(name);
+  await page.getByTestId("content-browser-new-asset-create").click();
+  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
+}
+
+test.describe("P9 content systems", () => {
+  test("UserInterface designer switches iPad and desktop presets", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
+    const canvas = page.getByTestId("ui-design-canvas");
+    await expect(canvas).toHaveAttribute("data-preset", "ipad-landscape");
+    await expect(page.getByTestId("ui-widget-stick")).toBeVisible();
+    await expect(page.getByTestId("ui-widget-header")).toBeVisible();
+
+    await page.getByTestId("ui-device-preset").click();
+    await page.getByTestId("ui-preset-ipad-portrait").click();
+    await expect(canvas).toHaveAttribute("data-preset", "ipad-portrait");
+
+    await page.getByTestId("ui-device-preset").click();
+    await page.getByTestId("ui-preset-desktop-16-9").click();
+    await expect(canvas).toHaveAttribute("data-preset", "desktop-16-9");
+  });
+
+  test("UserInterface designer on iPad shows the same HUD widgets", {
+    tag: IPAD_TEST_TAG,
+  }, async ({ page }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
+    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
+    await expect(page.getByTestId("ui-widget-stick")).toBeVisible();
+  });
+
+  test("Font editor sample preview uses the compiled stack", async ({ page }) => {
+    await openTestProject(page);
+    await createAsset(page, "Font", "Display");
+    await page.locator('[data-asset-path="assets/Display.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-font")).toBeVisible();
+    const sample = page.getByTestId("font-sample-preview");
+    await expect(sample).toBeVisible();
+    await expect(sample).toContainText("The quick brown fox");
+    const family = await sample.evaluate((el) => getComputedStyle(el).fontFamily);
+    expect(family.toLowerCase()).toMatch(/display|sans-serif/);
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-fonts").click();
+    await expect(page.getByTestId("settings-global-fallback")).toHaveValue(
+      "sans-serif",
+    );
+  });
+
+  test("Play overlay stick drives the same Move.x as the gamepad path", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect(page.getByTestId("play-hud")).toBeVisible();
+    await expect(page.getByTestId("play-hud-stick")).toBeVisible();
+
+    await page.evaluate(() => {
+      (
+        globalThis as {
+          __babylonslateTest: {
+            injectTestTouchAxis: (axes: Record<string, number> | null) => void;
+          };
+        }
+      ).__babylonslateTest.injectTestTouchAxis({
+        "joystick-x": 0.85,
+        "joystick-y": 0,
+      });
+    });
+    await expect
+      .poll(async () => {
+        const attr = await page
+          .getByTestId("play-move-x")
+          .getAttribute("data-move-x");
+        return Number(attr ?? "0");
+      })
+      .toBeGreaterThan(0.5);
+
+    await page.evaluate(() => {
+      (
+        globalThis as {
+          __babylonslateTest: {
+            injectTestTouchAxis: (axes: Record<string, number> | null) => void;
+            injectTestGamepad: (
+              pad: { axes: number[]; buttons?: number[] } | null,
+            ) => void;
+          };
+        }
+      ).__babylonslateTest.injectTestTouchAxis(null);
+    });
+    await page.getByTestId("play-overlay-close").click();
+
+    await page.evaluate(() => {
+      (
+        globalThis as {
+          __babylonslateTest: {
+            injectTestGamepad: (
+              pad: { axes: number[]; buttons?: number[] } | null,
+            ) => void;
+          };
+        }
+      ).__babylonslateTest.injectTestGamepad({
+        axes: [0.85, 0, 0, 0],
+        buttons: [0, 0, 0, 0],
+      });
+    });
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const attr = await page
+          .getByTestId("play-move-x")
+          .getAttribute("data-move-x");
+        return Number(attr ?? "0");
+      })
+      .toBeGreaterThan(0.5);
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("Sprite, AnimationGraph, and Shader open document workspaces", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "Sprite", "Hero");
+    await page.locator('[data-asset-path="assets/Hero.sprite.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-sprite")).toBeVisible();
+    await expect(page.getByTestId("sprite-editor")).toBeVisible();
+
+    await createAsset(page, "AnimationGraph", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+
+    await createAsset(page, "Shader", "Surface");
+    await page.locator('[data-asset-path="assets/Surface.shader.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-shader")).toBeVisible();
+    await expect(page.getByTestId("shader-graph-editor")).toBeVisible();
+  });
+
+  test("Play overlay stick is reachable on iPad", {
+    tag: IPAD_TEST_TAG,
+  }, async ({ page }) => {
+    await openTestProject(page);
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect(page.getByTestId("play-hud-stick")).toBeVisible();
+    await page.getByTestId("play-overlay-close").click();
+  });
+});

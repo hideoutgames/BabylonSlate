@@ -306,6 +306,29 @@ describe("EditorSceneSync", () => {
     expect(sync.meshForActor("a")).not.toBe(before);
   });
 
+  it("rebuilds a box proxy into a sprite quad when SpriteComponent is added", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    const before = sync.meshForActor("a");
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", {
+          components: [
+            {
+              id: "sprite",
+              classId: "SpriteComponent",
+              properties: { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 },
+            },
+          ],
+        }),
+      ]),
+    );
+    const after = sync.meshForActor("a");
+    expect(after).not.toBe(before);
+    expect(after?.name).toContain("a");
+  });
+
   it("applies and updates parenting", () => {
     const { scene } = createHandle();
     const sync = new EditorSceneSync(scene);
