@@ -1,24 +1,51 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  SAFE_AREA_CONTROL_ID,
   createDefaultUserInterface,
   createWidget,
   describeUiControls,
   guiSpecFromDescriptor,
   layoutUserInterface,
   pinLayout,
+  stretchLayout,
+  type UiControlDescriptor,
 } from "@babylonslate/ui-runtime";
 import { applyUiControls, RecordingUiHost } from "./ui-apply";
-import { Vector2 } from "@babylonjs/core/Maths/math.vector";
+import { Vector2 } from "@babylonjs/core";
+import { Control as GuiControl } from "@babylonjs/gui/2D/controls/control";
+import { Container } from "@babylonjs/gui/2D/controls/container";
+import { Ellipse } from "@babylonjs/gui/2D/controls/ellipse";
+import { Grid } from "@babylonjs/gui/2D/controls/grid";
+import { ScrollViewer } from "@babylonjs/gui/2D/controls/scrollViewers/scrollViewer";
+import { Slider } from "@babylonjs/gui/2D/controls/sliders/slider";
+import { StackPanel } from "@babylonjs/gui/2D/controls/stackPanel";
 import { Vector2WithInfo } from "@babylonjs/gui/2D/math2D";
 import {
   BabylonUiApplyHost,
   applyAdtIdeal,
   bindDescriptorTouchInput,
+  createAdtControlFactory,
   createBabylonControl,
   createDesignerGizmoControls,
   type GuiControlHandle,
   type GuiControlFactory,
 } from "./babylon-ui-host";
+
+function descriptor(
+  partial: Partial<UiControlDescriptor> & Pick<UiControlDescriptor, "id" | "kind">,
+): UiControlDescriptor {
+  return {
+    name: partial.kind,
+    parentId: null,
+    layoutMode: "absolute",
+    guiRect: { x: 0, y: 0, width: 40, height: 20 },
+    visible: true,
+    style: {},
+    props: {},
+    layout: pinLayout("left", "top", 40, 20),
+    ...partial,
+  };
+}
 
 class RecordingFactory implements GuiControlFactory {
   created: GuiControlHandle[] = [];
@@ -34,6 +61,27 @@ class RecordingFactory implements GuiControlFactory {
   }
 }
 
+function applyDocument(
+  doc: ReturnType<typeof createDefaultUserInterface>,
+  options: { safeArea?: { left: number; right: number; top: number; bottom: number } } = {},
+) {
+  const root = new Container("adt-root");
+  const factory = createAdtControlFactory(root, { safeArea: options.safeArea });
+  const host = new BabylonUiApplyHost(factory, { interactive: false });
+  const layout = layoutUserInterface(
+    doc,
+    { width: 800, height: 600 },
+    { safeArea: options.safeArea },
+  );
+  applyUiControls(host, describeUiControls(doc, layout));
+  return { root, host };
+}
+
+function named(root: Container, id: string) {
+  if (root.name === id) return root;
+  return root.getDescendants(false).find((row) => row.name === id);
+}
+
 describe("BabylonUiApplyHost", () => {
   it("creates one Babylon control spec per laid-out widget", () => {
     const doc = createDefaultUserInterface();
@@ -41,13 +89,13 @@ describe("BabylonUiApplyHost", () => {
       "btn",
       "Button",
       "Play",
-      pinLayout({ x: 0.5, y: 0.5 }, { x: 160, y: 40 }),
+      pinLayout("center", "center", 160, 40),
     );
     button.props.text = "Play";
     doc.widgets.canvas!.children = ["btn"];
     doc.widgets.btn = button;
     const layout = layoutUserInterface(doc, { width: 800, height: 600 });
-    const controls = describeUiControls(doc, layout, 600);
+    const controls = describeUiControls(doc, layout);
     const factory = new RecordingFactory();
     const host = new BabylonUiApplyHost(factory, { interactive: false });
     applyUiControls(host, controls);
@@ -65,27 +113,145 @@ describe("BabylonUiApplyHost", () => {
     const host = new RecordingUiHost();
     const doc = createDefaultUserInterface();
     const layout = layoutUserInterface(doc, { width: 400, height: 300 });
-    applyUiControls(host, describeUiControls(doc, layout, 300));
+    applyUiControls(host, describeUiControls(doc, layout));
     expect(host.controls.length).toBeGreaterThan(0);
   });
 
-  it("constructs a Babylon Button from a spec without an ADT", () => {
+  it("maps alignment, percent size, padding, and transform center onto a control", () => {
     const spec = guiSpecFromDescriptor(
-      {
+      descriptor({
         id: "btn",
         kind: "Button",
-        name: "Play",
-        guiRect: { x: 10, y: 20, width: 80, height: 32 },
-        visible: true,
-        text: "Play",
-        style: {},
-        props: {},
-      },
+        layout: {
+          ...pinLayout("center", "bottom", 50, 32),
+          widthUnit: "percent",
+          padding: { left: 8, right: 4, top: 2, bottom: 6 },
+          transformCenter: { x: 0.25, y: 0.75 },
+        },
+      }),
       { interactive: false },
     );
     const control = createBabylonControl(spec);
-    expect(control.name).toBe("btn");
+    expect(control.horizontalAlignment).toBe(GuiControl.HORIZONTAL_ALIGNMENT_CENTER);
+    expect(control.verticalAlignment).toBe(GuiControl.VERTICAL_ALIGNMENT_BOTTOM);
+    expect(control.width).toBe("50%");
+    expect(control.height).toBe("32px");
+    expect(control.paddingLeft).toBe("8px");
+    expect(control.paddingRight).toBe("4px");
+    expect(control.paddingTop).toBe("2px");
+    expect(control.paddingBottom).toBe("6px");
+    expect(control.transformCenterX).toBe(0.25);
+    expect(control.transformCenterY).toBe(0.75);
     control.dispose();
+  });
+
+  it("applies slider min and max from the spec", () => {
+    const spec = guiSpecFromDescriptor(
+      descriptor({
+        id: "slider",
+        kind: "Slider",
+        props: { value: 3, min: 1, max: 9 },
+      }),
+      { interactive: false },
+    );
+    const control = createBabylonControl(spec) as Slider;
+    expect(control.minimum).toBe(1);
+    expect(control.maximum).toBe(9);
+    expect(control.value).toBe(3);
+    control.dispose();
+  });
+
+  it("builds TouchDPad as a Rectangle with composed Ellipses", () => {
+    const spec = guiSpecFromDescriptor(
+      descriptor({
+        id: "pad",
+        kind: "TouchDPad",
+        layout: pinLayout("left", "bottom", 160, 160, 40, 0),
+      }),
+      { interactive: false },
+    );
+    const control = createBabylonControl(spec) as Container;
+    const ellipses = control.getDescendants(false).filter((row) => row instanceof Ellipse);
+    expect(ellipses.length).toBeGreaterThanOrEqual(4);
+    control.dispose();
+  });
+
+  it("parents StackPanel, Grid, and ScrollViewer children off the ADT root", () => {
+    const doc = createDefaultUserInterface();
+    const column = createWidget("column", "VerticalBox", "Col", stretchLayout());
+    const label = createWidget("label", "Text", "Label");
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.columns = 2;
+    grid.props.rows = 1;
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    const scroll = createWidget("scroll", "ScrollBox", "Scroll", stretchLayout());
+    const inner = createWidget(
+      "inner",
+      "Text",
+      "Inner",
+      pinLayout("left", "top", 200, 40),
+    );
+    doc.widgets.canvas!.children = ["column", "grid", "scroll"];
+    column.children = ["label"];
+    grid.children = ["cellA", "cellB"];
+    scroll.children = ["inner"];
+    doc.widgets.column = column;
+    doc.widgets.label = label;
+    doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    doc.widgets.scroll = scroll;
+    doc.widgets.inner = inner;
+
+    const { root } = applyDocument(doc);
+    const rootNames = root.children.map((row) => row.name);
+    expect(rootNames).not.toContain("label");
+    expect(rootNames).not.toContain("inner");
+    expect(rootNames).not.toContain("cellA");
+
+    const panel = named(root, "column");
+    expect(panel).toBeInstanceOf(StackPanel);
+    expect((panel as StackPanel).isVertical).toBe(true);
+    expect(panel?.getDescendants(false).some((row) => row.name === "label")).toBe(true);
+
+    const gridControl = named(root, "grid");
+    expect(gridControl).toBeInstanceOf(Grid);
+    const gridKids = (gridControl as Grid).getChildrenAt(0, 0);
+    expect(gridKids?.some((row) => row.name === "cellA")).toBe(true);
+    expect((gridControl as Grid).getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(
+      true,
+    );
+
+    const scroller = named(root, "scroll");
+    expect(scroller).toBeInstanceOf(ScrollViewer);
+    expect(scroller?.getDescendants(false).some((row) => row.name === "inner")).toBe(true);
+  });
+
+  it("parents default Canvas children into a padded SafeArea container", () => {
+    const doc = createDefaultUserInterface();
+    const pin = createWidget("pin", "Button", "Pin", pinLayout("left", "top", 80, 32));
+    const bleed = createWidget(
+      "bleed",
+      "Border",
+      "Bleed",
+      pinLayout("left", "top", 80, 32),
+    );
+    bleed.ignoreSafeArea = true;
+    doc.widgets.canvas!.children = ["pin", "bleed"];
+    doc.widgets.pin = pin;
+    doc.widgets.bleed = bleed;
+    const { root } = applyDocument(doc, {
+      safeArea: { left: 10, right: 12, top: 20, bottom: 24 },
+    });
+    const safe = named(root, SAFE_AREA_CONTROL_ID);
+    expect(safe).toBeInstanceOf(Container);
+    expect(safe?.paddingTop).toBe("20px");
+    expect(safe?.paddingBottom).toBe("24px");
+    expect(safe?.getDescendants(false).some((row) => row.name === "pin")).toBe(true);
+    expect(safe?.getDescendants(false).some((row) => row.name === "bleed")).toBe(false);
+    const canvas = named(root, "canvas") as Container;
+    expect(canvas.getDescendants(false).some((row) => row.name === "bleed")).toBe(true);
   });
 
   it("maps scale rules onto ADT ideal width/height", () => {
@@ -105,18 +271,17 @@ describe("BabylonUiApplyHost", () => {
 
   it("emits joystick axes from a Babylon pointer on a TouchJoystick", () => {
     const onTouchAxis = vi.fn();
-    const descriptor = {
+    const desc = descriptor({
       id: "stick",
-      kind: "TouchJoystick" as const,
+      kind: "TouchJoystick",
       name: "Move",
       guiRect: { x: 0, y: 0, width: 160, height: 160 },
-      visible: true,
-      style: {},
+      layout: pinLayout("left", "bottom", 160, 160, 40, 0),
       props: { deadZone: 0.15, controlIdX: "joystick-x", controlIdY: "joystick-y" },
-    };
-    const spec = guiSpecFromDescriptor(descriptor, { interactive: true });
+    });
+    const spec = guiSpecFromDescriptor(desc, { interactive: true });
     const control = createBabylonControl(spec);
-    bindDescriptorTouchInput(control, descriptor, onTouchAxis);
+    bindDescriptorTouchInput(control, desc, onTouchAxis);
     control.onPointerDownObservable.notifyObservers(
       new Vector2WithInfo(new Vector2(160, 80)),
     );
@@ -136,7 +301,6 @@ describe("BabylonUiApplyHost", () => {
       "TextInput",
       "Slider",
       "CheckBox",
-      "Image",
       "ProgressBar",
       "HorizontalBox",
       "Grid",
@@ -146,15 +310,12 @@ describe("BabylonUiApplyHost", () => {
     ] as const;
     for (const kind of kinds) {
       const spec = guiSpecFromDescriptor(
-        {
+        descriptor({
           id: kind,
           kind,
-          name: kind,
-          guiRect: { x: 0, y: 0, width: 40, height: 20 },
-          visible: true,
           style: { background: "#111111" },
           props: { value: 0.25, checked: true },
-        },
+        }),
         { interactive: false },
       );
       const control = createBabylonControl(spec);
@@ -169,80 +330,54 @@ describe("BabylonUiApplyHost", () => {
       handles: { se: { x: 80, y: 50, width: 44, height: 44 } },
       safeArea: { x: 8, y: 8, width: 200, height: 100 },
       pivot: { x: 50, y: 40 },
-      anchors: [{ x: 10, y: 20 }],
     });
     expect(controls.map((row) => row.name)).toEqual([
       "gizmo:safe",
       "gizmo:selection",
       "gizmo:handle:se",
       "gizmo:pivot",
-      "gizmo:anchor:0",
     ]);
     for (const control of controls) control.dispose();
   });
 
+  it("omits unmeasured controls from designer hit bounds", () => {
+    const doc = createDefaultUserInterface();
+    const { host } = applyDocument(doc);
+    expect(host.measureControls()).toEqual({});
+  });
+
   it("emits a TouchButton action and a Slider value from pointer observables", () => {
     const onTouchAxis = vi.fn();
+    const buttonDesc = descriptor({
+      id: "jump",
+      kind: "TouchButton",
+      name: "Jump",
+      guiRect: { x: 0, y: 0, width: 72, height: 72 },
+      layout: pinLayout("center", "center", 72, 72),
+      props: { action: "Jump" },
+    });
     const button = createBabylonControl(
-      guiSpecFromDescriptor(
-        {
-          id: "jump",
-          kind: "TouchButton",
-          name: "Jump",
-          guiRect: { x: 0, y: 0, width: 72, height: 72 },
-          visible: true,
-          style: {},
-          props: { action: "Jump" },
-        },
-        { interactive: true },
-      ),
+      guiSpecFromDescriptor(buttonDesc, { interactive: true }),
     );
-    bindDescriptorTouchInput(
-      button,
-      {
-        id: "jump",
-        kind: "TouchButton",
-        name: "Jump",
-        guiRect: { x: 0, y: 0, width: 72, height: 72 },
-        visible: true,
-        style: {},
-        props: { action: "Jump" },
-      },
-      onTouchAxis,
-    );
+    bindDescriptorTouchInput(button, buttonDesc, onTouchAxis);
     button.onPointerDownObservable.notifyObservers(
       new Vector2WithInfo(new Vector2(0, 0)),
     );
     expect(onTouchAxis).toHaveBeenCalledWith("Jump", 1);
     button.dispose();
 
+    const sliderDesc = descriptor({
+      id: "slider",
+      kind: "Slider",
+      name: "Slider",
+      guiRect: { x: 0, y: 0, width: 100, height: 20 },
+      layout: pinLayout("left", "top", 100, 20),
+      props: { controlId: "look" },
+    });
     const slider = createBabylonControl(
-      guiSpecFromDescriptor(
-        {
-          id: "slider",
-          kind: "Slider",
-          name: "Slider",
-          guiRect: { x: 0, y: 0, width: 100, height: 20 },
-          visible: true,
-          style: {},
-          props: { controlId: "look" },
-        },
-        { interactive: true },
-      ),
+      guiSpecFromDescriptor(sliderDesc, { interactive: true }),
     );
-    bindDescriptorTouchInput(
-      slider,
-      {
-        id: "slider",
-        kind: "Slider",
-        name: "Slider",
-        guiRect: { x: 0, y: 0, width: 100, height: 20 },
-        visible: true,
-        style: {},
-        props: { controlId: "look" },
-      },
-      onTouchAxis,
-    );
+    bindDescriptorTouchInput(slider, sliderDesc, onTouchAxis);
     slider.onPointerDownObservable.notifyObservers(
       new Vector2WithInfo(new Vector2(100, 0)),
     );
@@ -252,17 +387,16 @@ describe("BabylonUiApplyHost", () => {
 
   it("binds touch input when the factory returns a live control", () => {
     const onTouchAxis = vi.fn();
-    const descriptor = {
+    const desc = descriptor({
       id: "stick",
-      kind: "TouchJoystick" as const,
+      kind: "TouchJoystick",
       name: "Move",
       guiRect: { x: 0, y: 0, width: 160, height: 160 },
-      visible: true,
-      style: {},
+      layout: pinLayout("left", "bottom", 160, 160),
       props: { deadZone: 0.15, controlIdX: "joystick-x", controlIdY: "joystick-y" },
-    };
+    });
     const control = createBabylonControl(
-      guiSpecFromDescriptor(descriptor, { interactive: true }),
+      guiSpecFromDescriptor(desc, { interactive: true }),
     );
     const factory: GuiControlFactory = {
       create(spec) {
@@ -271,7 +405,7 @@ describe("BabylonUiApplyHost", () => {
       clear() {},
     };
     const host = new BabylonUiApplyHost(factory, { interactive: true, onTouchAxis });
-    host.addControl(descriptor);
+    host.addControl(desc);
     control.onPointerDownObservable.notifyObservers(
       new Vector2WithInfo(new Vector2(160, 80)),
     );

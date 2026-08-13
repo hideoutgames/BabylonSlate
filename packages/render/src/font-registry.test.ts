@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   FontRegistry,
+  applyFontRegistryToHost,
   type FontFaceHost,
   type FontFaceLike,
 } from "./font-registry";
@@ -90,5 +91,24 @@ describe("FontRegistry", () => {
     expect(ok).toBe(true);
     expect(registry.isReady("a")).toBe(true);
     expect(registry.isReady("b")).toBe(true);
+  });
+
+  it("marks the GUI host dirty after a successful font load", async () => {
+    const registry = new FontRegistry(mockHost());
+    const markDirty = vi.fn();
+    await applyFontRegistryToHost(
+      registry,
+      [
+        {
+          guid: "a",
+          family: "Display",
+          bytes: new Uint8Array([1]).buffer,
+        },
+      ],
+      markDirty,
+    );
+    expect(markDirty).toHaveBeenCalledTimes(1);
+    await applyFontRegistryToHost(registry, [], markDirty);
+    expect(markDirty).toHaveBeenCalledTimes(1);
   });
 });
