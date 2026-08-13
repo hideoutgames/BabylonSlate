@@ -26,4 +26,5 @@ export * from "./ui-apply";
 export * from "./sprite-quad";
 export * from "./tilemap-mesh";
 export * from "./shader-compile";
+export * from "./shader-preview";
 export * from "./anim-apply";

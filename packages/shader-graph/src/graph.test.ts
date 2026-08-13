@@ -6,6 +6,9 @@ import {
   validateShaderGraph,
   shaderGraphToSerialized,
   serializedToShaderGraph,
+  hydrateShaderGraphForEditor,
+  shaderPaletteNodes,
+  SHADER_CATALOG,
 } from "./index";
 
 describe("shader graph", () => {
@@ -74,5 +77,43 @@ describe("shader graph", () => {
     const compiled = compileShaderGraph(doc);
     expect(compiled.sampledTextures).toContain("tex-1");
     expect(compiled.customBlocks).toContain("float n = 1.0;");
+  });
+
+  it("hydrates catalog pins so Add Node is not an empty box", () => {
+    const hydrated = hydrateShaderGraphForEditor(
+      shaderGraphToSerialized(createDefaultShaderGraph()),
+    );
+    const uv = hydrated.nodes.find((node) => node.type === "input.uv");
+    const pins = uv?.data.__pins as Array<{ id: string; direction: string }>;
+    expect(pins.some((pin) => pin.id === "uv" && pin.direction === "out")).toBe(
+      true,
+    );
+    const frag = hydrated.nodes.find((node) => node.type === "output.fragment");
+    const fragPins = frag?.data.__pins as Array<{ id: string; direction: string }>;
+    expect(
+      fragPins.some((pin) => pin.id === "color" && pin.direction === "in"),
+    ).toBe(true);
+  });
+
+  it("embeds catalog pins on every Add Node palette entry", () => {
+    const palette = shaderPaletteNodes();
+    expect(palette.map((entry) => entry.id)).toEqual(
+      SHADER_CATALOG.map((entry) => entry.type),
+    );
+    const multiply = palette.find((entry) => entry.id === "math.multiply");
+    expect(
+      multiply?.pins.some((pin) => pin.id === "a" && pin.direction === "in"),
+    ).toBe(true);
+    expect(
+      multiply?.pins.some((pin) => pin.id === "out" && pin.direction === "out"),
+    ).toBe(true);
+  });
+
+  it("strips editor __pins when converting back to IR", () => {
+    const hydrated = hydrateShaderGraphForEditor(
+      shaderGraphToSerialized(createDefaultShaderGraph()),
+    );
+    const ir = serializedToShaderGraph(hydrated);
+    expect(ir.nodes[0]?.properties.__pins).toBeUndefined();
   });
 });

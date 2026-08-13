@@ -96,6 +96,7 @@ import {
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
   playUiLibraryFromAssets,
+  mergePlayScriptDocuments,
   spriteAssetGuidsFromScene,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
@@ -1026,7 +1027,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         console.error(`[play] failed to load graph ${path}`, error);
       }
     }
-    return documents;
+    const uiAssets = (projectService.registry?.list() ?? []).filter(
+      (asset) => asset.header.type === "UserInterface",
+    );
+    const uiPayloads: Array<{ path: string; payload: unknown }> = [];
+    for (const asset of uiAssets) {
+      const openDoc = open.get(documentId({ kind: "ui", path: asset.path }));
+      if (openDoc?.content) {
+        uiPayloads.push({ path: asset.path, payload: openDoc.content });
+        continue;
+      }
+      try {
+        uiPayloads.push({
+          path: asset.path,
+          payload: await projectService.loadDocument("ui", asset.path),
+        });
+      } catch (error) {
+        console.error(`[play] failed to load UserInterface logic ${asset.path}`, error);
+      }
+    }
+    return mergePlayScriptDocuments(documents, uiPayloads);
   }, [documentService, projectDocument, projectService]);
 
   const collectScriptBundles = useCallback(async (): Promise<

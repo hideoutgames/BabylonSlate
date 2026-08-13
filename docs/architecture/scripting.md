@@ -128,7 +128,7 @@ type Diagnostic = {
 | --- | --- |
 | Edit (≈300ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
-| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`); startup map / GameInstance / plugin EUO sweep still later polish |
+| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; startup map / GameInstance / plugin EUO sweep still later polish |
 | Export | Hard gate + export-only rules (Print strip, debug-tier commands) |
 | CI | Golden fixture projects |
 
@@ -183,7 +183,7 @@ AI / navigation categories wait for P11.
 ### Class document
 
 - **Graph** canvas (event + per-function graphs). **Double-tap empty pane** opens the unfiltered Add Node catalog (`Dialog` with categories + search; search is **not** autofocused). Drag-to-connect and tap-to-connect both persist. Pin-drag Add Node uses a 96px screen-space safe zone around the source pin and compatible pins; a live **Add Node** hint follows the wire when a drop would open the catalog. A cancelled pin drag (no snap, no Add Node, pointer left the source handle) breaks every wire on that pin.
-- **Class**: compact collapsible tree (Functions, Variables, Events, Interfaces — no Graphs section) stacked *under* Components, about 50% of the left stack. Inline **+** prompts for a name and writes `SerializedGraph.members` (normalized). Event names are Title Cased (`On Hit`; node title `Event On Hit`). Events also insert `flow.event.custom`; variables can drop a Get node. Clicking an event focuses that graph node. Class-owned documents remain a later follow-up.
+- **Class**: compact collapsible tree (Functions, Variables, Events, Interfaces — no Graphs section) stacked *under* Components, about 50% of the left stack. Inline **+** prompts for a name and writes `SerializedGraph.members` (normalized). Event names are Title Cased (`On Hit`; node title `Event On Hit`). Events also insert `flow.event.custom`; variables can drop a Get node. Clicking an event focuses that graph node. `flow.event.custom` compiles to a named export (`On_Hit` from "On Hit"); Play dispatches it with `ScriptHost.invokeEvent(classId, event)` / `RuntimeDriver.invokeScriptEvent`. Class-owned per-function graphs remain a later follow-up.
 - **Details** (dock title Inspector): canvas selection drives the target (first selected node; Compiler Results / Play focus as fallback). Empty selection shows an empty state — no ExecuteJavaScript fallback. Unconnected applicable data pins get literal defaults; ExecuteJavaScript still has pin lists + body; Log has severity / category.
 - **Compiler Results**: diagnostics grouped by graph; tap → select node, pan canvas, flash pin (or scroll CodeMirror to `bodyLine`).
 - **Prefab** (Actor): full-size center tab; 3D preview + gizmos; component tree writes `SerializedGraph.components` (undo via `graph.setComponents`). Place Actors copies those components onto spawned Class actors when the class document is open.
@@ -267,7 +267,7 @@ The `ctx` handed to compiled code carries `self`, `deltaSeconds`, `formatValue`,
 
 Play (`requestPlay`) saves dirty documents and compiles project graphs **before** the overlay launches. If anything still needs saving or compiling, a non-dismissible progress dialog (`play-prepare-dialog`) lists dirty names and the current phase (`Saving…` / `Compiling…`). A clean project with a current compile skips the dialog. After compile, blocking diagnostics open the existing Play Anyway dialog; Play Anyway launches with the bundles just produced and does not skip save/compile. Schema migrations abort prepare and reuse the migrate-on-save dialog; Play resumes after approval.
 
-`collectPlayPreviewScripts()` (document context) loads every graph in `ProjectDocument.graphs` (open in-memory documents first, else disk), validates that set, and compiles to `ScriptBundleEntry[]`. `startPlaySession({ scripts })` ships them to the worker, or loads them into the in-process runtime when no worker is available. Class ownership of graphs is not modelled yet, so a graph's class id is derived from its file name.
+`collectPlayPreviewScripts()` (document context) loads every graph in `ProjectDocument.graphs` (open in-memory documents first, else disk) **plus** `payload.logic` from every UserInterface asset, validates that set, and compiles to `ScriptBundleEntry[]`. `startPlaySession({ scripts })` ships them to the worker, or loads them into the in-process runtime when no worker is available. Class ownership of graphs is not modelled yet, so a graph's class id is derived from its file name (`HUD.ui.babasset` → `HUD`).
 
 ## Acceptance (phase)
 

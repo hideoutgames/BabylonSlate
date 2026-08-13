@@ -5,6 +5,7 @@ import {
   createDefaultLogicGraphSerialized,
   hydrateClassDocumentPayload,
   hydrateSerializedGraphForEditor,
+  scriptPaletteNodes,
   validateSerializedGraph,
 } from "./graph-validation";
 
@@ -172,5 +173,14 @@ describe("validateSerializedGraph", () => {
       { assetGuid: "g1", graphId: "event-graph" },
     );
     expect(diags.some((d) => d.code === "console.debug_tier")).toBe(true);
+  });
+});
+
+describe("scriptPaletteNodes", () => {
+  it("embeds registry pins so Add Node is not an empty box", () => {
+    const nodes = scriptPaletteNodes(registry);
+    const begin = nodes.find((node) => node.id === "flow.event.beginPlay");
+    expect(begin?.title).toBeTruthy();
+    expect(begin?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
   });
 });

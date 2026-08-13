@@ -4,7 +4,7 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
-import type { SerializedScene } from "@babylonslate/core";
+import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
 export interface PlayContentDocument {
@@ -47,6 +47,33 @@ export function asUiDocument(value: unknown): UserInterfaceDocument {
     viewportLayer: record.viewportLayer !== false,
     widgets: asRecord(record.widgets) as UserInterfaceDocument["widgets"],
   };
+}
+
+function isSerializedGraph(value: unknown): value is SerializedGraph {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { nodes?: unknown; edges?: unknown };
+  return Array.isArray(record.nodes) && Array.isArray(record.edges);
+}
+
+/** Play compiles UserInterface `logic` the same way as Class graphs. */
+export function logicGraphFromUiPayload(
+  path: string,
+  payload: unknown,
+): { path: string; content: SerializedGraph } | null {
+  const logic = asRecord(payload).logic;
+  if (!isSerializedGraph(logic) || logic.nodes.length === 0) return null;
+  return { path, content: logic };
+}
+
+export function mergePlayScriptDocuments(
+  classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
+  uiAssets: ReadonlyArray<{ path: string; payload: unknown }>,
+): Array<{ path: string; content: SerializedGraph }> {
+  const extra = uiAssets.flatMap((asset) => {
+    const graph = logicGraphFromUiPayload(asset.path, asset.payload);
+    return graph ? [graph] : [];
+  });
+  return [...classGraphs, ...extra];
 }
 
 export type PlayHudInstance = { instanceId: string; assetGuid: string };

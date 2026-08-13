@@ -336,4 +336,29 @@ describe("script host runs compiled graphs", () => {
     expect(loaded).toBe("Level2");
     runtime.stop();
   });
+
+  it("dispatches flow.event.custom through ScriptHost.invokeEvent", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "hit", "flow.event.custom", { name: "On Hit" }),
+        node(registry, "log", "debug.log", { message: "hit" }),
+      ],
+      edges: [edge("e1", "hit", "execOut", "log", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 5,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([toScript(graph, registry, "Hero", "hero-asset")]);
+    runtime.invokeScriptEvent("Hero", "On_Hit");
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("hit");
+    runtime.stop();
+  });
 });

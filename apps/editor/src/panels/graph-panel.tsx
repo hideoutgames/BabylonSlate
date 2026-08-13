@@ -17,6 +17,7 @@ import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
+  scriptPaletteNodes,
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
@@ -77,26 +78,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     return () => window.clearTimeout(handle);
   }, [graph, assetGuid, documentId, setDiagnostics]);
 
-  const paletteNodes = useMemo((): PaletteNode[] => {
-    return registry.list().map((d) => {
-      const defaultData: Record<string, unknown> = {};
-      if (d.id === "debug.log") {
-        defaultData.message = "";
-        defaultData.severity = "log";
-        defaultData.category = "Script";
-      }
-      return {
-        id: d.id,
-        title: d.title,
-        category: d.category,
-        pins: d.pins(defaultData),
-        pure: d.pure,
-        latent: d.latent,
-        defaultData:
-          Object.keys(defaultData).length > 0 ? defaultData : undefined,
-      };
-    });
-  }, []);
+  const paletteNodes = useMemo((): PaletteNode[] => scriptPaletteNodes(registry), []);
 
   const focusId = focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined;
   const graphDiagnostics = useMemo(

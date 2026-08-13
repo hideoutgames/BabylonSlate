@@ -160,10 +160,10 @@ export class ScriptHost {
     if (!loaded || loaded.length === 0) return undefined;
     return {
       onCreation: (self) => {
-        this.invokeEvent(loaded, "onBeginPlay", self, 0, 0);
+        this.dispatchEvent(loaded, "onBeginPlay", self, 0, 0);
       },
       onTick: (self, ctx: TickContext) => {
-        this.invokeEvent(loaded, "onTick", self, ctx.dt, ctx.tickIndex);
+        this.dispatchEvent(loaded, "onTick", self, ctx.dt, ctx.tickIndex);
       },
     };
   }
@@ -177,13 +177,20 @@ export class ScriptHost {
     if (!loaded || loaded.length === 0) {
       return { success: false, output: `unknown command class ${classId}` };
     }
-    this.invokeEvent(loaded, "onCommandRun", null, 0, 0, args);
+    this.dispatchEvent(loaded, "onCommandRun", null, 0, 0, args);
     return this.commandResult;
   }
 
-  private invokeEvent(
+  /** Fire a compiled entry point (Begin Play, Tick, or a custom event name). */
+  invokeEvent(classId: string, event: string, self: Actor | null = null): void {
+    const loaded = this.byClassId.get(classId);
+    if (!loaded || loaded.length === 0) return;
+    this.dispatchEvent(loaded, event, self, 0, 0);
+  }
+
+  private dispatchEvent(
     loaded: readonly LoadedScript[],
-    event: "onBeginPlay" | "onTick" | "onCommandRun",
+    event: string,
     self: Actor | null,
     deltaSeconds: number,
     tickIndex: number,
