@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openTestProject } from "./open-test-project";
+import { openMainScene, openTestProject } from "./open-test-project";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -92,26 +92,23 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.scene.babasset"]')
-      .dblclick();
+    await openMainScene(page);
     await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
       timeout: 15_000,
     });
     await page.getByTestId("outliner-add-actor").click();
     await page.getByTestId("place-actors-item-shape-box").click();
+    await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
     await expect(page.getByTestId("tree-row-actor-2")).toBeVisible();
-    const before = await page.getByTestId("tree-row-actor-2").evaluate((el) =>
-      getComputedStyle(el).paddingLeft,
+    await expect(page.getByTestId("tree-row-actor-2")).toHaveAttribute(
+      "data-depth",
+      "0",
     );
     await dragTreeRow(page, "actor-2", "actor-1");
-    await expect
-      .poll(async () =>
-        page.getByTestId("tree-row-actor-2").evaluate((el) =>
-          getComputedStyle(el).paddingLeft,
-        ),
-      )
-      .not.toBe(before);
+    await expect(page.getByTestId("tree-row-actor-2")).toHaveAttribute(
+      "data-depth",
+      "1",
+    );
 
     await page.getByTestId("outliner-menu-actor-2").click();
     await page.getByTestId("outliner-delete-actor-2").click();
