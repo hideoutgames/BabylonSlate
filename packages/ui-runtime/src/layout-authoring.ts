@@ -1,5 +1,13 @@
 import { computeAnchoredRect, normalizeLayout } from "./layout";
-import type { Rect, Vec2, WidgetKind, WidgetLayout } from "./types";
+import type {
+  LayoutResult,
+  Rect,
+  UserInterfaceDocument,
+  Vec2,
+  WidgetKind,
+  WidgetLayout,
+} from "./types";
+import { widgetParentId } from "./widget-tree";
 
 const ANCHOR_EPS = 1e-4;
 
@@ -58,6 +66,19 @@ const SLOT_LAYOUT_PARENTS: ReadonlySet<WidgetKind> = new Set([
 
 export function parentOwnsChildLayout(kind: WidgetKind): boolean {
   return SLOT_LAYOUT_PARENTS.has(kind);
+}
+
+/** Root and box/grid/SizeBox children cannot be moved or resized on the canvas. */
+export function widgetAllowsDesignerTransform(
+  doc: UserInterfaceDocument,
+  widgetId: string,
+): boolean {
+  if (widgetId === doc.rootId || !doc.widgets[widgetId]) return false;
+  const parentId = widgetParentId(doc, widgetId);
+  if (!parentId) return false;
+  const parent = doc.widgets[parentId];
+  if (!parent) return false;
+  return !parentOwnsChildLayout(parent.kind);
 }
 
 export function preferredWidgetSize(kind: WidgetKind): { width: number; height: number } {
@@ -263,6 +284,20 @@ export interface ResizeEdges {
   right?: boolean;
   top?: boolean;
   bottom?: boolean;
+}
+
+export function laidOutParentRect(
+  result: LayoutResult,
+  widgetId: string,
+): Rect {
+  if (!result.tree || result.tree.id === widgetId) return result.canvas;
+  const stack = [result.tree];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node.children.some((child) => child.id === widgetId)) return node.rect;
+    for (const child of node.children) stack.push(child);
+  }
+  return result.canvas;
 }
 
 export function applyWidgetResize(

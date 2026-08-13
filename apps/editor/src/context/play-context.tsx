@@ -56,6 +56,7 @@ interface PlayContextValue {
   cancelPlayMigration: () => void;
   stopPlay: () => void;
   registerSharedEngine: (engine: Engine | null) => void;
+  ensureSharedEngine: () => Engine | null;
   registerScheduler: (scheduler: EditorLoopHandle) => () => void;
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
@@ -449,6 +450,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       cancelPlayMigration,
       stopPlay: () => setPlaying(false),
       registerSharedEngine,
+      ensureSharedEngine: ensureEngine,
       registerScheduler,
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
@@ -467,6 +469,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       resumePlayAfterMigration,
       cancelPlayMigration,
       registerSharedEngine,
+      ensureEngine,
       registerScheduler,
       focusedNodeId,
       appendLog,
@@ -577,6 +580,10 @@ export function usePlay(): PlayContextValue {
     throw new Error("usePlay requires PlayProvider");
   }
   return ctx;
+}
+
+export function useOptionalPlay(): PlayContextValue | null {
+  return useContext(PlayContext);
 }
 
 export function useOutputLog(): { lines: string[] } {

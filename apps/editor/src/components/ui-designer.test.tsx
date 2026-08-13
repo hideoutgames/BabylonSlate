@@ -114,20 +114,24 @@ function renderHud() {
 }
 
 describe("UiDesigner", () => {
-  it("exposes layout anchors, offsets, pivot, and padding in Details", () => {
+  it("exposes adaptive layout fields, anchor presets, and padding in Details", () => {
     renderHud();
-    expect(screen.getByTestId("property-row-anchor-min")).toBeTruthy();
-    expect(screen.getByTestId("property-anchor-min-x")).toBeTruthy();
-    expect(screen.getByTestId("property-row-anchor-max")).toBeTruthy();
-    expect(screen.getByTestId("property-row-offset-min")).toBeTruthy();
-    expect(screen.getByTestId("property-offset-min-x")).toBeTruthy();
-    expect(screen.getByTestId("property-row-offset-max")).toBeTruthy();
+    expect(screen.getByTestId("ui-anchor-preset")).toBeTruthy();
+    expect(screen.getByTestId("property-left")).toBeTruthy();
+    expect(screen.getByTestId("property-right")).toBeTruthy();
+    expect(screen.getByTestId("property-top")).toBeTruthy();
+    expect(screen.getByTestId("property-bottom")).toBeTruthy();
     expect(screen.getByTestId("property-row-pivot")).toBeTruthy();
-    expect(screen.getByTestId("property-pivot-x")).toBeTruthy();
     expect(screen.getByTestId("property-padding-left")).toBeTruthy();
-    expect(screen.getByTestId("property-padding-right")).toBeTruthy();
-    expect(screen.getByTestId("property-padding-top")).toBeTruthy();
-    expect(screen.getByTestId("property-padding-bottom")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("ui-widget-header"));
+    expect(screen.getByTestId("property-left")).toBeTruthy();
+    expect(screen.getByTestId("property-right")).toBeTruthy();
+    expect(screen.getByTestId("property-pos-y")).toBeTruthy();
+    expect(screen.getByTestId("property-height")).toBeTruthy();
+    expect(screen.queryByTestId("property-offset-min-x")).toBeNull();
+    fireEvent.click(screen.getByTestId("ui-widget-stick"));
+    expect(screen.getByTestId("ui-resize-se")).toBeTruthy();
+    expect(screen.getByTestId("ui-gizmo-canvas")).toBeTruthy();
   });
 
   it("drags a widget to write offsets under one undo merge key", () => {
@@ -160,6 +164,36 @@ describe("UiDesigner", () => {
     expect(
       (screen.getByTestId("property-name") as HTMLInputElement).value,
     ).toBe("Title");
+  });
+
+  it("adds a pinned Button from the widget catalog", () => {
+    const { onChange } = renderHud();
+    fireEvent.click(screen.getByTestId("ui-add-widget"));
+    fireEvent.click(screen.getByTestId("ui-add-widget-Button"));
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0] as {
+      widgets: Record<string, { kind: string; layout: { anchorMin: { x: number }; anchorMax: { x: number } } }>;
+    };
+    const button = Object.values(next.widgets).find((row) => row.kind === "Button");
+    expect(button).toBeTruthy();
+    expect(button!.layout.anchorMin.x).toBe(button!.layout.anchorMax.x);
+  });
+
+  it("deletes a widget from the hierarchy context menu", () => {
+    const { onChange } = renderHud();
+    fireEvent.contextMenu(screen.getByTestId("tree-row-stick"));
+    fireEvent.click(screen.getByTestId("ui-widget-delete"));
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0] as {
+      widgets: Record<string, unknown>;
+    };
+    expect(next.widgets.stick).toBeUndefined();
+  });
+
+  it("hides Desired Width and Height unless the Desired preset is selected", () => {
+    renderHud();
+    expect(screen.queryByTestId("ui-desired-width")).toBeNull();
+    expect(screen.queryByTestId("ui-desired-height")).toBeNull();
   });
 
   it("hosts a script palette and class members on the Logic tab", async () => {

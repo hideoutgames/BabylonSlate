@@ -48,6 +48,25 @@ export function joystickAxisValue(
   return Math.max(-1, Math.min(1, Math.sign(raw) * scaled));
 }
 
+/** Local pointer on a control (top-left origin) → dead-zoned stick axes. */
+export function joystickAxesFromLocal(
+  localX: number,
+  localY: number,
+  width: number,
+  height: number,
+  deadZone: number,
+): { x: number; y: number } {
+  const halfW = width / 2;
+  const halfH = height / 2;
+  if (halfW <= 0 || halfH <= 0) return { x: 0, y: 0 };
+  const nx = (localX - halfW) / halfW;
+  const ny = -((localY - halfH) / halfH);
+  return {
+    x: joystickAxisValue(nx, deadZone),
+    y: joystickAxisValue(ny, deadZone),
+  };
+}
+
 export class RecordingUiHost implements UiApplyHost {
   controls: UiControlDescriptor[] = [];
   visibility = new Map<string, boolean>();

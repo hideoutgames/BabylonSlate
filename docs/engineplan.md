@@ -15,7 +15,7 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 P0–P10 packages are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** P11 behaviour trees / navigation. The pre-P11 foundation-hardening wave closed Play/scripting contracts that Appendix A `[x]` had overstated (ScriptHost input, tick-clock Delay, spawn/addComponent, GameInstance singleton, startup scene without an open tab, closed-tab class prefabs, real `changescene` library load, ResourceCache textures on sprites/tilemaps, GLB `assetGuid`, authored lights/cameras, HUD TouchButton/DPad, `playSound` command). Do not start P11+ packages from leftover **chrome** polish (pin flash, multi-select gizmo, ADT HUD, lighting polish / ShadowGenerator). Parked: `p1-device-spikes` (hardware-only).
+**Next engine slice:** P11 behaviour trees / navigation. The pre-P11 foundation-hardening wave closed Play/scripting contracts that Appendix A `[x]` had overstated (ScriptHost input, tick-clock Delay, spawn/addComponent, GameInstance singleton, startup scene without an open tab, closed-tab class prefabs, real `changescene` library load, ResourceCache textures on sprites/tilemaps, GLB `assetGuid`, authored lights/cameras, HUD TouchButton/DPad, `playSound` command). Do not start P11+ packages from leftover **chrome** polish (pin flash, multi-select gizmo, lighting polish / ShadowGenerator). Parked: `p1-device-spikes` (hardware-only).
 
 Appendix A `[x]` means the **package/slice** landed. It does not mean every Play or document-tab path matches the letter of the spec. Honest residuals:
 
@@ -33,7 +33,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | Tileset / Tilemap documents | Codecs, UV math, golden chunk `VertexData`, Content Browser types, settings + paint tab, Rapier/software chain colliders, Play load from scene refs, textured chunks, 2D Create Project card; Play e2e asserts a falling actor settles on painted tiles | Done (`p10-tilemap` + foundation wave) |
 | Type-asset tabs | Enum / Structure / ScriptInterface open `asset-settings` editors. `FunctionLibrary` is an engine base class; it does **not** emit palette nodes | Done (`p5-types`); palette parked |
 | Map nodes | `map.get` / `set` / `has` / `remove` / `size` / `keys` with K/V wildcards | Done |
-| ADT HUD / `.babtrace` tab / §9.4 HUD completeness / full audio mixer | Recorded P8/P9 polish — `playSound` emits a command and Play logs it; no `AudioContext` mixer yet | Parked |
+| ADT HUD / `.babtrace` tab / §9.4 HUD completeness / full audio mixer | Viewport-layer HUD is Babylon `AdvancedDynamicTexture` via `BabylonUiApplyHost` (designer + Play). `.babtrace` tab and full `AudioContext` mixer remain parked — `playSound` emits a command and Play logs it | ADT HUD done; rest parked |
 | Lighting polish (direction, Play color, shadows, IBL) | Authored lights exist (`scene-illumination.ts`). No rotation-driven direction, Play still creates white lights, no `ShadowGenerator` / IBL. Do not start a lighting rewrite; a small residual ticket later is enough | Parked |
 
 **Authoring-surface residuals** (document-tab hosts, not a new engine phase; do not rebuild `ui-runtime` / `shader-graph` / `anim-graph` / `scripting`):
@@ -41,7 +41,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | Residual | Reality | Owner |
 | --- | --- | --- |
 | Sprite Texture picker | Sprite workspace `AssetPicker` (`allowedTypes={["Texture"]}`) writes `textureGuid` | Done (authoring-surface wave) |
-| UserInterface design canvas | Pan / pinch-zoom / drag-to-offset; Details anchors, offsets, pivot, padding | Done (authoring-surface wave) |
+| UserInterface design canvas | Babylon GUI design-space ADT + screen-space gizmos; CatalogDialog Add Widget; adaptive Pos/Size vs stretch insets; hierarchy reparent/delete | Done (`cursor/ui-designer-rework-138e`) |
 | UserInterface Logic tab | Script palette + members dock; Play compiles `payload.logic`; Class `flow.event.custom` dispatches | Done (authoring-surface wave) |
 | Shader preview | Throttled `compileShaderGraphForRender` → `applyShaderGraphPreview` / `NodeMaterial.Parse`; catalog pin hydration | Done (authoring-surface wave) |
 | Anim graph Add Node pins | `hydrateAnimGraphForEditor` / `animPaletteNodes` inject `in`/`out` | Done (authoring-surface wave) |
@@ -58,7 +58,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 - **Scripting and scene editing (P5–P6).** Graph IR, validator, JS codegen, node catalog, touch graph UI; outliner/details/gizmos; 2D/3D viewport toggle; input mappings; global Search.
 - **Physics (P7).** `@babylonslate/physics` in the game worker (Havok 3D + Rapier 2D); Play loads authored `SerializedScene` actors. `physics.moveCharacter` takes an Actor, lazily creates a character controller on that actor’s rigid body, and applies the resolved transform the same tick.
 - **Debugger (P8).** `@babylonslate/debugger` command registry, parser, `ExecuteConsoleCommand`, `BDebugCommand` (core-tier user commands), Play console + 5 Hz stats HUD, and `.babtrace` recorder/replay. Output Log, keyed Print, and the session report already shipped in P4/P5 and are consumed rather than replaced. See [architecture/debugger.md](architecture/debugger.md).
-- **Content systems (P9).** `@babylonslate/ui-runtime` layout goldens and widget catalog; Font payload + `FontRegistry`; UserInterface designer (design/logic tabs) and Play HUD overlay; TouchJoystick → P6 `touchAxis` / default `Move`; Sprite packer + quad; `@babylonslate/anim-graph` worker evaluator + `animState`; `@babylonslate/shader-graph` IR with throttled preview. See [architecture/ui-runtime.md](architecture/ui-runtime.md).
+- **Content systems (P9).** `@babylonslate/ui-runtime` layout goldens and widget catalog; Font payload + `FontRegistry`; UserInterface designer (design/logic tabs, Babylon GUI canvas) and Play ADT HUD; TouchJoystick → P6 `touchAxis` / default `Move`; Sprite packer + quad; `@babylonslate/anim-graph` worker evaluator + `animState`; `@babylonslate/shader-graph` IR with throttled preview. See [architecture/ui-runtime.md](architecture/ui-runtime.md).
 - **CI.** `verify.yml` (typecheck, lint, Vitest with coverage, Playwright, VitePress docs) plus `preview.yml` (GitHub Pages: editor at `/`, docs at `/docs/`). A deployed URL is the practical iPad loop without a Mac.
 - **Touch chrome.** `--chrome-row` 28px, graph pin rows `--touch-target` 44px, [.cursor/rules/touch-editor.md](.cursor/rules/touch-editor.md).
 

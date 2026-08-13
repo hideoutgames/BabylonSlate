@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AssetPicker,
   NamePromptDialog,
-  PanelFrame,
-  PropertyGrid,
   NumberField,
+  PanelFrame,
   TreeView,
   humanizePropertyLabel,
 } from "@babylonslate/editor-kit";
-import type { PropertyRow, TreeViewNode } from "@babylonslate/editor-kit";
 import {
   Tabs,
   TabsContent,
@@ -23,22 +21,21 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import { Button } from "@babylonslate/ui/components/button";
-import {
-  Field,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
+import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   DESIRED_CANVAS_ID,
-  WIDGET_KINDS,
-  ZERO_INSETS,
-  clamp01,
   createWidget,
+  defaultAddLayout,
   describeUiControls,
   designerViewport,
+  insertWidget,
   layoutUserInterface,
   mergeDevicePresets,
   nestedUiPickableGuids,
+  parentOwnsChildLayout,
   type DesignerCanvasId,
+  type ScaleRule,
   type WidgetKind,
   type WidgetLayout,
 } from "@babylonslate/ui-runtime";
@@ -46,6 +43,7 @@ import { GraphEditor } from "@babylonslate/graph-ui";
 import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "../context/document-context";
+import { useOptionalPlay } from "../context/play-context";
 import { familyFromAssetPayload } from "../lib/font-preview";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import {
@@ -63,17 +61,17 @@ import {
   blueprintTreeNodes,
   membersForGraph,
 } from "../panels/my-class-panel";
-import {
-  applyWidgetDragOffset,
-  canvasDeltaToLayoutDelta,
-  clampDesignZoom,
-  pointerCentroid,
-  pointerSpan,
-  uiDesignStrokeMergeKey,
-  zoomAtPoint,
-  type DesignView,
-  type PointerPoint,
-} from "./ui-design-gestures";
+import { centeredFitView, previewScaleToFit, type DesignView } from "./ui-design-gestures";
+import { UiWidgetCatalog } from "./ui-widget-catalog";
+import { UiDesignCanvas } from "./ui-design-canvas";
+import { UiDesignHierarchy } from "./ui-design-hierarchy";
+import { UiDesignDetails } from "./ui-design-details";
+
+const SCALE_RULES: Array<{ value: ScaleRule; label: string }> = [
+  { value: "shortestSide", label: "Shortest Side" },
+  { value: "fitWidth", label: "Fit Width" },
+  { value: "fitHeight", label: "Fit Height" },
+];
 
 export function UiDesigner({
   path,
@@ -86,6 +84,7 @@ export function UiDesigner({
 }) {
   const { openDocuments, assetRegistry, collectPlayUiLibrary, projectDocument } =
     useDocuments();
+  const play = useOptionalPlay();
   const ui = asUiDocument(payload);
   const logic = (payload.logic ??
     createDefaultLogicGraphSerialized()) as SerializedGraph;
@@ -135,28 +134,17 @@ export function UiDesigner({
   >(null);
   const [uiLibrary, setUiLibrary] = useState<PlayUiLibrary>({});
   const [view, setView] = useState<DesignView>({ zoom: 1, panX: 0, panY: 0 });
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [hierarchyOpen, setHierarchyOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [sharedEngine, setSharedEngine] = useState<
+    import("@babylonjs/core").Engine | null
+  >(null);
+  const viewportMeasureRef = useRef<HTMLDivElement>(null);
   const latestPayloadRef = useRef(payload);
-  const viewRef = useRef(view);
-  const pointersRef = useRef(new Map<number, PointerPoint>());
-  const panStartRef = useRef({
-    panX: 0,
-    panY: 0,
-    zoom: 1,
-    cx: 0,
-    cy: 0,
-    span: 0,
-  });
-  const dragRef = useRef<{
-    id: string;
-    lastX: number;
-    lastY: number;
-    strokeId: string;
-  } | null>(null);
-  viewRef.current = view;
-  useEffect(() => {
-    latestPayloadRef.current = payload;
-  }, [payload]);
+  latestPayloadRef.current = payload;
+
   const selfGuid =
     assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
     path;
@@ -173,6 +161,7 @@ export function UiDesigner({
       cancelled = true;
     };
   }, [collectPlayUiLibrary, openDocuments]);
+
   const resolveNested = (guid: string) => {
     if (guid === selfGuid) return ui;
     const asset = assetRegistry?.getByGuid(guid);
@@ -189,21 +178,39 @@ export function UiDesigner({
     { safeArea: viewport.safeArea, resolveNested },
   );
   const controls = describeUiControls(ui, layout, viewport.height);
-  const treeNodes: TreeViewNode[] = [];
-  const walk = (id: string, depth: number) => {
-    const widget = ui.widgets[id];
-    if (!widget) return;
-    treeNodes.push({
-      id,
-      label: widget.name,
-      depth,
-      hasChildren: widget.children.length > 0,
-      expanded: true,
-    });
-    for (const child of widget.children) walk(child, depth + 1);
-  };
-  walk(ui.rootId, 0);
-  const selected = ui.widgets[selectedId] ?? ui.widgets[ui.rootId];
+  const previewScale = previewScaleToFit(viewportSize, {
+    width: viewport.width,
+    height: viewport.height,
+  });
+
+  useEffect(() => {
+    const el = viewportMeasureRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      const rect = el.getBoundingClientRect();
+      setViewportSize({ width: rect.width, height: rect.height });
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    setSharedEngine(play?.ensureSharedEngine() ?? null);
+  }, [play]);
+
+  useEffect(() => {
+    if (viewportSize.width < 2 || viewportSize.height < 2) return;
+    setView(
+      centeredFitView(viewportSize, {
+        width: viewport.width,
+        height: viewport.height,
+      }).view,
+    );
+  }, [presetId, viewport.width, viewport.height, viewportSize]);
+
+  const selected = ui.widgets[selectedId] ?? ui.widgets[ui.rootId]!;
   const candidateGuids = (assetRegistry?.list() ?? [])
     .filter((asset) => asset.header.type === "UserInterface")
     .map((asset) => asset.header.guid);
@@ -219,401 +226,46 @@ export function UiDesigner({
       path: asset.path,
     }));
 
-  const previewScale =
-    viewport.id === DESIRED_CANVAS_ID
-      ? Math.min(1, 640 / viewport.width)
-      : 0.45;
-  const viewScale = previewScale * view.zoom;
+  function commit(next: Record<string, unknown>, mergeKey?: string) {
+    latestPayloadRef.current = next;
+    if (mergeKey !== undefined) onChange(next, mergeKey);
+    else onChange(next);
+  }
 
-  function patchWidget(
-    id: string,
-    patch: Partial<(typeof ui.widgets)[string]>,
-  ) {
-    onChange({
+  function patchWidget(id: string, patch: Partial<(typeof ui.widgets)[string]>) {
+    commit({
       ...payload,
       ...ui,
       widgets: { ...ui.widgets, [id]: { ...ui.widgets[id]!, ...patch } },
     });
   }
 
-  function patchLayout(id: string, layoutPatch: Partial<WidgetLayout>) {
-    const widget = ui.widgets[id];
+  function patchLayout(id: string, nextLayout: WidgetLayout, mergeKey?: string) {
+    const widget = asUiDocument(latestPayloadRef.current).widgets[id];
     if (!widget) return;
-    patchWidget(id, { layout: { ...widget.layout, ...layoutPatch } });
+    const current = asUiDocument(latestPayloadRef.current);
+    commit(
+      {
+        ...latestPayloadRef.current,
+        ...current,
+        widgets: {
+          ...current.widgets,
+          [id]: { ...widget, layout: nextLayout },
+        },
+      },
+      mergeKey,
+    );
   }
-
-  const padding = selected?.style.padding ?? ZERO_INSETS;
-  const rows: PropertyRow[] = selected
-    ? [
-        {
-          id: "name",
-          kind: "text",
-          label: "Name",
-          value: selected.name,
-          onChange: (value) => patchWidget(selected.id, { name: value }),
-        },
-        {
-          id: "visible",
-          kind: "boolean",
-          label: "Visible",
-          value: selected.visible,
-          onChange: (value) => patchWidget(selected.id, { visible: value }),
-        },
-        ...(selected.kind === "UserInterface"
-          ? [
-              {
-                id: "nestedUi",
-                kind: "asset" as const,
-                label: "User Interface",
-                value: selected.nestedUiGuid ?? null,
-                placeholder: "None",
-                onPick: () => setAssetPick("nestedUi"),
-                onChange: (value: string | null) =>
-                  patchWidget(selected.id, { nestedUiGuid: value }),
-              },
-            ]
-          : selected.kind === "Text" ||
-              selected.kind === "Button" ||
-              selected.kind === "TextInput"
-            ? [
-                {
-                  id: "text",
-                  kind: "text" as const,
-                  label: "Text",
-                  value:
-                    typeof selected.props.text === "string"
-                      ? selected.props.text
-                      : "",
-                  onChange: (value: string) =>
-                    patchWidget(selected.id, {
-                      props: { ...selected.props, text: value },
-                    }),
-                },
-              ]
-            : []),
-        ...(selected.kind === "Image"
-          ? [
-              {
-                id: "image",
-                kind: "asset" as const,
-                label: "Image",
-                value:
-                  typeof selected.props.imageGuid === "string"
-                    ? selected.props.imageGuid
-                    : (selected.style.imageGuid ?? null),
-                placeholder: "None",
-                displayLabel: (assetRegistry?.list() ?? []).find(
-                  (asset) =>
-                    asset.header.guid ===
-                    (typeof selected.props.imageGuid === "string"
-                      ? selected.props.imageGuid
-                      : selected.style.imageGuid),
-                )?.header.name,
-                onPick: () => setAssetPick("image"),
-                onChange: (value: string | null) =>
-                  patchWidget(selected.id, {
-                    props: { ...selected.props, imageGuid: value },
-                  }),
-              },
-            ]
-          : []),
-        ...(selected.kind === "Text" ||
-        selected.kind === "Button" ||
-        selected.kind === "TextInput"
-          ? [
-              {
-                id: "font",
-                kind: "asset" as const,
-                label: "Font",
-                value:
-                  (assetRegistry?.list() ?? []).find(
-                    (asset) =>
-                      asset.header.type === "Font" &&
-                      familyFromAssetPayload(asset.header.payload) ===
-                        selected.style.fontFamily,
-                  )?.header.guid ?? null,
-                placeholder: "None",
-                displayLabel: selected.style.fontFamily,
-                onPick: () => setAssetPick("font"),
-                onChange: (value: string | null) => {
-                  const family = value
-                    ? familyFromAssetPayload(
-                        assetRegistry?.getByGuid(value)?.header.payload,
-                      ) ?? assetRegistry?.getByGuid(value)?.header.name
-                    : undefined;
-                  patchWidget(selected.id, {
-                    style: { ...selected.style, fontFamily: family },
-                  });
-                },
-              },
-            ]
-          : []),
-        ...(selected.kind === "Button" ||
-        selected.kind === "TouchJoystick" ||
-        selected.kind === "TouchButton"
-          ? [
-              {
-                id: "visual-override",
-                kind: "asset" as const,
-                label: "Visual Override",
-                value: selected.visualOverrideGuid ?? null,
-                placeholder: "None",
-                displayLabel: (assetRegistry?.list() ?? []).find(
-                  (asset) => asset.header.guid === selected.visualOverrideGuid,
-                )?.header.name,
-                onPick: () => setAssetPick("visualOverride"),
-                onChange: (value: string | null) =>
-                  patchWidget(selected.id, { visualOverrideGuid: value }),
-              },
-            ]
-          : []),
-        ...(selected.kind === "TouchButton"
-          ? [
-              {
-                id: "action",
-                kind: "enum" as const,
-                label: "Action",
-                value: String(selected.props.action ?? ""),
-                options: normalizeInputMappings(
-                  projectDocument?.settings.input,
-                ).actions.map((action) => ({
-                  value: action.name,
-                  label: action.name,
-                })),
-                onChange: (value: string) =>
-                  patchWidget(selected.id, {
-                    props: { ...selected.props, action: value },
-                  }),
-              },
-            ]
-          : []),
-        {
-          id: "anchor-min",
-          kind: "vector3",
-          label: "Anchor Min",
-          value: [selected.layout.anchorMin.x, selected.layout.anchorMin.y, 0],
-          axes: ["X", "Y"],
-          onChange: ([x, y]) =>
-            patchLayout(selected.id, {
-              anchorMin: { x: clamp01(x), y: clamp01(y) },
-            }),
-        },
-        {
-          id: "anchor-max",
-          kind: "vector3",
-          label: "Anchor Max",
-          value: [selected.layout.anchorMax.x, selected.layout.anchorMax.y, 0],
-          axes: ["X", "Y"],
-          onChange: ([x, y]) =>
-            patchLayout(selected.id, {
-              anchorMax: { x: clamp01(x), y: clamp01(y) },
-            }),
-        },
-        {
-          id: "offset-min",
-          kind: "vector3",
-          label: "Offset Min",
-          value: [selected.layout.offsetMin.x, selected.layout.offsetMin.y, 0],
-          axes: ["X", "Y"],
-          onChange: ([x, y]) =>
-            patchLayout(selected.id, { offsetMin: { x, y } }),
-        },
-        {
-          id: "offset-max",
-          kind: "vector3",
-          label: "Offset Max",
-          value: [selected.layout.offsetMax.x, selected.layout.offsetMax.y, 0],
-          axes: ["X", "Y"],
-          onChange: ([x, y]) =>
-            patchLayout(selected.id, { offsetMax: { x, y } }),
-        },
-        {
-          id: "pivot",
-          kind: "vector3",
-          label: "Pivot",
-          value: [selected.layout.pivot.x, selected.layout.pivot.y, 0],
-          axes: ["X", "Y"],
-          onChange: ([x, y]) =>
-            patchLayout(selected.id, { pivot: { x: clamp01(x), y: clamp01(y) } }),
-        },
-        {
-          id: "padding-left",
-          kind: "number",
-          label: "Padding Left",
-          value: padding.left,
-          onChange: (left) =>
-            patchWidget(selected.id, {
-              style: { ...selected.style, padding: { ...padding, left } },
-            }),
-        },
-        {
-          id: "padding-right",
-          kind: "number",
-          label: "Padding Right",
-          value: padding.right,
-          onChange: (right) =>
-            patchWidget(selected.id, {
-              style: { ...selected.style, padding: { ...padding, right } },
-            }),
-        },
-        {
-          id: "padding-top",
-          kind: "number",
-          label: "Padding Top",
-          value: padding.top,
-          onChange: (top) =>
-            patchWidget(selected.id, {
-              style: { ...selected.style, padding: { ...padding, top } },
-            }),
-        },
-        {
-          id: "padding-bottom",
-          kind: "number",
-          label: "Padding Bottom",
-          value: padding.bottom,
-          onChange: (bottom) =>
-            patchWidget(selected.id, {
-              style: { ...selected.style, padding: { ...padding, bottom } },
-            }),
-        },
-      ]
-    : [];
 
   const addWidget = (kind: WidgetKind) => {
     const id = `${kind.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`;
-    const widget = createWidget(id, kind);
     const parent = ui.widgets[selectedId] ?? ui.widgets[ui.rootId]!;
-    onChange({
-      ...payload,
-      ...ui,
-      widgets: {
-        ...ui.widgets,
-        [widget.id]: widget,
-        [parent.id]: { ...parent, children: [...parent.children, widget.id] },
-      },
-    });
+    const widget = parentOwnsChildLayout(parent.kind)
+      ? createWidget(id, kind, humanizePropertyLabel(kind))
+      : createWidget(id, kind, humanizePropertyLabel(kind), defaultAddLayout(kind));
+    const next = insertWidget(ui, widget, parent.id);
+    commit({ ...payload, ...next });
     setSelectedId(widget.id);
-  };
-
-  const capturePointer = (event: PointerEvent<HTMLDivElement>) => {
-    if (typeof event.currentTarget.setPointerCapture !== "function") return;
-    try {
-      event.currentTarget.setPointerCapture(eventPointerId(event));
-    } catch {
-      /* jsdom */
-    }
-  };
-
-  const beginTwoFinger = () => {
-    dragRef.current = null;
-    const centroid = pointerCentroid(pointersRef.current);
-    panStartRef.current = {
-      panX: viewRef.current.panX,
-      panY: viewRef.current.panY,
-      zoom: viewRef.current.zoom,
-      cx: centroid.x,
-      cy: centroid.y,
-      span: pointerSpan(pointersRef.current),
-    };
-  };
-
-  const onViewportPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    capturePointer(event);
-    const pointerId = eventPointerId(event);
-    pointersRef.current.set(pointerId, {
-      x: event.clientX,
-      y: event.clientY,
-    });
-    if (pointersRef.current.size >= 2) {
-      beginTwoFinger();
-      return;
-    }
-    const host = (event.target as Element | null)?.closest(
-      "[data-widget-id]",
-    );
-    const widgetId = host?.getAttribute("data-widget-id");
-    if (!widgetId) return;
-    if (ui.widgets[widgetId]) {
-      setSelectedId(widgetId);
-      if (widgetId !== ui.rootId) {
-        dragRef.current = {
-          id: widgetId,
-          lastX: event.clientX,
-          lastY: event.clientY,
-          strokeId: newStrokeId(),
-        };
-      }
-      return;
-    }
-    setSelectedId(widgetId.split("/")[0] ?? ui.rootId);
-  };
-
-  const onViewportPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const pointerId = eventPointerId(event);
-    const tracked = pointersRef.current.get(pointerId);
-    if (!tracked) return;
-    pointersRef.current.set(pointerId, {
-      x: event.clientX,
-      y: event.clientY,
-    });
-    if (pointersRef.current.size >= 2) {
-      const centroid = pointerCentroid(pointersRef.current);
-      const span = pointerSpan(pointersRef.current);
-      const start = panStartRef.current;
-      setView({
-        zoom: clampDesignZoom(
-          start.span > 0 ? start.zoom * (span / start.span) : start.zoom,
-        ),
-        panX: start.panX + (centroid.x - start.cx),
-        panY: start.panY + (centroid.y - start.cy),
-      });
-      return;
-    }
-    const drag = dragRef.current;
-    if (!drag) return;
-    const screenDelta = {
-      x: event.clientX - drag.lastX,
-      y: event.clientY - drag.lastY,
-    };
-    if (screenDelta.x === 0 && screenDelta.y === 0) return;
-    const current = asUiDocument(latestPayloadRef.current);
-    const widget = current.widgets[drag.id];
-    if (!widget) return;
-    const delta = canvasDeltaToLayoutDelta(screenDelta, viewScale);
-    const nextLayout = applyWidgetDragOffset(widget.layout, delta);
-    const next = {
-      ...latestPayloadRef.current,
-      ...current,
-      widgets: {
-        ...current.widgets,
-        [drag.id]: { ...widget, layout: nextLayout },
-      },
-    };
-    latestPayloadRef.current = next;
-    drag.lastX = event.clientX;
-    drag.lastY = event.clientY;
-    onChange(next, uiDesignStrokeMergeKey(drag.strokeId));
-  };
-
-  const onViewportPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    pointersRef.current.delete(eventPointerId(event));
-    if (pointersRef.current.size < 2) {
-      dragRef.current = null;
-    }
-    if (pointersRef.current.size >= 2) beginTwoFinger();
-  };
-
-  const onViewportWheel = (event: WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
-    setView((current) =>
-      zoomAtPoint(current, current.zoom * factor, {
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
-      }),
-    );
   };
 
   return (
@@ -623,6 +275,14 @@ export function UiDesigner({
           <TabsTrigger value="design">Design</TabsTrigger>
           <TabsTrigger value="logic">Logic</TabsTrigger>
         </TabsList>
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid="ui-add-widget"
+          onClick={() => setCatalogOpen(true)}
+        >
+          Add Widget
+        </Button>
         <Select
           value={presetId}
           onValueChange={(value) => setPresetId(value as DesignerCanvasId)}
@@ -645,117 +305,153 @@ export function UiDesigner({
             ))}
           </SelectContent>
         </Select>
-        <Field className="w-28">
-          <FieldLabel>Desired Width</FieldLabel>
-          <NumberField
-            data-testid="ui-desired-width"
-            value={ui.desiredSize.width}
-            min={1}
-            onChange={(width) =>
-              onChange({
-                ...payload,
-                ...ui,
-                desiredSize: { ...ui.desiredSize, width },
-              })
-            }
-          />
-        </Field>
-        <Field className="w-28">
-          <FieldLabel>Desired Height</FieldLabel>
-          <NumberField
-            data-testid="ui-desired-height"
-            value={ui.desiredSize.height}
-            min={1}
-            onChange={(height) =>
-              onChange({
-                ...payload,
-                ...ui,
-                desiredSize: { ...ui.desiredSize, height },
-              })
-            }
-          />
-        </Field>
+        {presetId === DESIRED_CANVAS_ID ? (
+          <>
+            <Field orientation="horizontal" className="w-auto items-center">
+              <FieldLabel className="text-xs">Width</FieldLabel>
+              <NumberField
+                data-testid="ui-desired-width"
+                value={ui.desiredSize.width}
+                min={1}
+                onChange={(width) =>
+                  commit({
+                    ...payload,
+                    ...ui,
+                    desiredSize: { ...ui.desiredSize, width },
+                  })
+                }
+              />
+            </Field>
+            <Field orientation="horizontal" className="w-auto items-center">
+              <FieldLabel className="text-xs">Height</FieldLabel>
+              <NumberField
+                data-testid="ui-desired-height"
+                value={ui.desiredSize.height}
+                min={1}
+                onChange={(height) =>
+                  commit({
+                    ...payload,
+                    ...ui,
+                    desiredSize: { ...ui.desiredSize, height },
+                  })
+                }
+              />
+            </Field>
+          </>
+        ) : null}
+        <Select
+          value={ui.scaleRule}
+          onValueChange={(value) =>
+            commit({ ...payload, ...ui, scaleRule: value as ScaleRule })
+          }
+        >
+          <SelectTrigger className="w-40" data-testid="ui-scale-rule">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SCALE_RULES.map((row) => (
+              <SelectItem key={row.value} value={row.value}>
+                {row.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid="ui-design-fit"
+          onClick={() =>
+            setView(
+              centeredFitView(viewportSize, {
+                width: viewport.width,
+                height: viewport.height,
+              }).view,
+            )
+          }
+        >
+          Fit
+        </Button>
+        <span className="text-xs text-muted-foreground" data-testid="ui-design-zoom">
+          {Math.round(view.zoom * 100)}%
+        </span>
+        <Toggle
+          size="sm"
+          pressed={hierarchyOpen}
+          onPressedChange={setHierarchyOpen}
+          data-testid="ui-toggle-hierarchy"
+          aria-label="Hierarchy"
+        >
+          Hierarchy
+        </Toggle>
+        <Toggle
+          size="sm"
+          pressed={detailsOpen}
+          onPressedChange={setDetailsOpen}
+          data-testid="ui-toggle-details"
+          aria-label="Details"
+        >
+          Details
+        </Toggle>
       </div>
       <TabsContent value="design" className="flex min-h-0 flex-1">
-        <PanelFrame className="w-56 shrink-0 border-r border-border">
-          <div className="flex flex-wrap gap-1 p-2">
-            {WIDGET_KINDS.filter((kind) => kind !== "Canvas").map((kind) => (
-              <Button
-                key={kind}
-                size="sm"
-                variant="outline"
-                data-testid={`ui-add-widget-${kind}`}
-                onClick={() => addWidget(kind)}
-              >
-                {humanizePropertyLabel(kind)}
-              </Button>
-            ))}
-          </div>
-          <TreeView
-            nodes={treeNodes}
+        {hierarchyOpen ? (
+          <PanelFrame className="w-56 shrink-0 border-r border-border" title="Hierarchy">
+            <UiDesignHierarchy
+              ui={ui}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onChange={(next) => commit({ ...payload, ...next })}
+            />
+          </PanelFrame>
+        ) : null}
+        <div ref={viewportMeasureRef} className="flex min-h-0 min-w-0 flex-1">
+          <UiDesignCanvas
+            ui={ui}
+            viewport={viewport}
+            layout={layout}
+            controls={controls}
             selectedId={selectedId}
+            view={view}
+            previewScale={previewScale}
+            sharedEngine={sharedEngine}
             onSelect={setSelectedId}
-            data-testid="ui-widget-tree"
+            onViewChange={setView}
+            onLayoutChange={(id, nextLayout, mergeKey) =>
+              patchLayout(id, nextLayout, mergeKey)
+            }
           />
-        </PanelFrame>
-        <div
-          ref={viewportRef}
-          className="flex min-h-0 min-w-0 flex-1 touch-none items-center justify-center overflow-hidden bg-muted/30 p-4"
-          data-testid="ui-design-viewport"
-          onPointerDown={onViewportPointerDown}
-          onPointerMove={onViewportPointerMove}
-          onPointerUp={onViewportPointerUp}
-          onPointerCancel={onViewportPointerUp}
-          onWheel={onViewportWheel}
-        >
-          <div
-            className="relative bg-background shadow-sm"
-            data-testid="ui-design-canvas"
-            data-preset={viewport.id}
-            data-scale={String(layout.scale)}
-            data-zoom={String(view.zoom)}
-            data-pan-x={String(view.panX)}
-            data-pan-y={String(view.panY)}
-            style={{
-              width: viewport.width * previewScale,
-              height: viewport.height * previewScale,
-              transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
-              transformOrigin: "0 0",
-            }}
-          >
-            {controls.map((control) => (
-              <Button
-                key={control.id}
-                type="button"
-                variant="outline"
-                data-testid={`ui-widget-${control.id}`}
-                data-widget-id={control.id}
-                data-kind={control.kind}
-                data-gui-x={String(Math.round(control.guiRect.x))}
-                data-gui-y={String(Math.round(control.guiRect.y))}
-                className="absolute h-auto min-h-0 rounded-sm border-border/80 bg-card/80 px-0 py-0 text-[10px] text-foreground"
-                style={{
-                  left: `${(control.guiRect.x / viewport.width) * 100}%`,
-                  top: `${(control.guiRect.y / viewport.height) * 100}%`,
-                  width: `${(control.guiRect.width / viewport.width) * 100}%`,
-                  height: `${(control.guiRect.height / viewport.height) * 100}%`,
-                }}
-                onClick={() => {
-                  if (ui.widgets[control.id]) {
-                    setSelectedId(control.id);
-                    return;
-                  }
-                  setSelectedId(control.id.split("/")[0] ?? ui.rootId);
-                }}
-              >
-                {control.text ?? control.name}
-              </Button>
-            ))}
-          </div>
         </div>
-        <PanelFrame className="w-72 shrink-0 border-l border-border" title="Details">
-          <PropertyGrid rows={rows} />
-        </PanelFrame>
+        {detailsOpen ? (
+          <PanelFrame className="w-72 shrink-0 border-l border-border" title="Details">
+            <UiDesignDetails
+              ui={ui}
+              selected={selected}
+              layout={layout}
+              actionNames={normalizeInputMappings(
+                projectDocument?.settings.input,
+              ).actions.map((action) => action.name)}
+              assetLabels={{
+                nestedUi: (assetRegistry?.list() ?? []).find(
+                  (asset) => asset.header.guid === selected.nestedUiGuid,
+                )?.header.name,
+                image: (assetRegistry?.list() ?? []).find(
+                  (asset) =>
+                    asset.header.guid ===
+                    (typeof selected.props.imageGuid === "string"
+                      ? selected.props.imageGuid
+                      : selected.style.imageGuid),
+                )?.header.name,
+                font: selected.style.fontFamily,
+                visualOverride: (assetRegistry?.list() ?? []).find(
+                  (asset) => asset.header.guid === selected.visualOverrideGuid,
+                )?.header.name,
+              }}
+              onPatchWidget={patchWidget}
+              onPatchLayout={(id, nextLayout) => patchLayout(id, nextLayout)}
+              onPickAsset={setAssetPick}
+            />
+          </PanelFrame>
+        ) : null}
       </TabsContent>
       <TabsContent value="logic" className="flex min-h-0 flex-1">
         <PanelFrame className="w-56 shrink-0 border-r border-border">
@@ -780,7 +476,7 @@ export function UiDesigner({
           initialGraph={hydrateSerializedGraphForEditor(logic)}
           paletteNodes={paletteNodes}
           onChange={(graph) =>
-            onChange({
+            commit({
               ...payload,
               logic: {
                 ...graph,
@@ -790,6 +486,11 @@ export function UiDesigner({
           }
         />
       </TabsContent>
+      <UiWidgetCatalog
+        open={catalogOpen}
+        onOpenChange={setCatalogOpen}
+        onSelect={addWidget}
+      />
       <AssetPicker
         open={assetPick !== null}
         onOpenChange={(open) => {
@@ -877,7 +578,7 @@ export function UiDesigner({
         }
         onSubmit={(name) => {
           if (!memberPromptKind) return;
-          onChange({
+          commit({
             ...payload,
             logic: addClassMember(logic, memberPromptKind, name),
           });
@@ -889,17 +590,4 @@ export function UiDesigner({
 
 function stopRowGesture(event: { stopPropagation: () => void }) {
   event.stopPropagation();
-}
-
-function eventPointerId(event: PointerEvent<Element>): number {
-  const native = event.nativeEvent as unknown as { pointerId?: number };
-  if (typeof native.pointerId === "number") return native.pointerId;
-  return event.pointerId;
-}
-
-function newStrokeId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

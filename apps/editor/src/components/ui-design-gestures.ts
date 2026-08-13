@@ -90,3 +90,155 @@ export function pointerSpan(
   const b = points[1]!;
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
+
+export const UI_DESIGN_DRAG_THRESHOLD_PX = 4;
+export const UI_DESIGN_HANDLE_SIZE_PX = 44;
+export const UI_DESIGN_FIT_PADDING_PX = 24;
+
+export function previewScaleToFit(
+  viewport: { width: number; height: number },
+  canvas: { width: number; height: number },
+  padding = UI_DESIGN_FIT_PADDING_PX,
+): number {
+  const width = Math.max(1, canvas.width);
+  const height = Math.max(1, canvas.height);
+  const availW = viewport.width - padding * 2;
+  const availH = viewport.height - padding * 2;
+  if (availW <= 0 || availH <= 0) {
+    return Math.min(1, 640 / width);
+  }
+  return Math.min(1, availW / width, availH / height);
+}
+
+export function centeredFitView(
+  viewport: { width: number; height: number },
+  canvas: { width: number; height: number },
+  padding = UI_DESIGN_FIT_PADDING_PX,
+): { previewScale: number; view: DesignView } {
+  const previewScale = previewScaleToFit(viewport, canvas, padding);
+  const width = canvas.width * previewScale;
+  const height = canvas.height * previewScale;
+  return {
+    previewScale,
+    view: {
+      zoom: 1,
+      panX: (viewport.width - width) / 2,
+      panY: (viewport.height - height) / 2,
+    },
+  };
+}
+
+export function passedDragThreshold(
+  start: PointerPoint,
+  current: PointerPoint,
+  threshold = UI_DESIGN_DRAG_THRESHOLD_PX,
+): boolean {
+  return Math.hypot(current.x - start.x, current.y - start.y) >= threshold;
+}
+
+export type ScreenRect = { x: number; y: number; width: number; height: number };
+
+/** Map a design-space GUI rect into viewport pixels (CSS transform of the canvas). */
+export function designRectToScreen(
+  guiRect: ScreenRect,
+  view: DesignView,
+  previewScale: number,
+): ScreenRect {
+  const scale = previewScale * view.zoom;
+  return {
+    x: view.panX + guiRect.x * scale,
+    y: view.panY + guiRect.y * scale,
+    width: guiRect.width * scale,
+    height: guiRect.height * scale,
+  };
+}
+
+export type HandleEdge = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+
+/** Pivot is layout Y-up inside the widget; screen space is Y-down. */
+export function pivotToScreen(
+  guiRect: ScreenRect,
+  pivot: { x: number; y: number },
+  view: DesignView,
+  previewScale: number,
+): PointerPoint {
+  const screen = designRectToScreen(guiRect, view, previewScale);
+  return {
+    x: screen.x + screen.width * pivot.x,
+    y: screen.y + screen.height * (1 - pivot.y),
+  };
+}
+
+export function anchorPointsToScreen(
+  parentGui: ScreenRect,
+  anchorMin: { x: number; y: number },
+  anchorMax: { x: number; y: number },
+  view: DesignView,
+  previewScale: number,
+): PointerPoint[] {
+  const parent = designRectToScreen(parentGui, view, previewScale);
+  const points: PointerPoint[] = [];
+  const seen = new Set<string>();
+  for (const ax of [anchorMin.x, anchorMax.x]) {
+    for (const ay of [anchorMin.y, anchorMax.y]) {
+      const key = `${ax}:${ay}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      points.push({
+        x: parent.x + parent.width * ax,
+        y: parent.y + parent.height * (1 - ay),
+      });
+    }
+  }
+  return points;
+}
+
+export function resizeHandleRects(
+  screen: ScreenRect,
+  size = UI_DESIGN_HANDLE_SIZE_PX,
+): Record<HandleEdge, ScreenRect> {
+  const half = size / 2;
+  const midX = screen.x + screen.width / 2 - half;
+  const midY = screen.y + screen.height / 2 - half;
+  return {
+    nw: { x: screen.x - half, y: screen.y - half, width: size, height: size },
+    n: { x: midX, y: screen.y - half, width: size, height: size },
+    ne: { x: screen.x + screen.width - half, y: screen.y - half, width: size, height: size },
+    e: { x: screen.x + screen.width - half, y: midY, width: size, height: size },
+    se: {
+      x: screen.x + screen.width - half,
+      y: screen.y + screen.height - half,
+      width: size,
+      height: size,
+    },
+    s: { x: midX, y: screen.y + screen.height - half, width: size, height: size },
+    sw: { x: screen.x - half, y: screen.y + screen.height - half, width: size, height: size },
+    w: { x: screen.x - half, y: midY, width: size, height: size },
+  };
+}
+
+export function handleEdges(handle: HandleEdge): {
+  left?: boolean;
+  right?: boolean;
+  top?: boolean;
+  bottom?: boolean;
+} {
+  switch (handle) {
+    case "e":
+      return { right: true };
+    case "w":
+      return { left: true };
+    case "n":
+      return { top: true };
+    case "s":
+      return { bottom: true };
+    case "ne":
+      return { top: true, right: true };
+    case "nw":
+      return { top: true, left: true };
+    case "se":
+      return { bottom: true, right: true };
+    case "sw":
+      return { bottom: true, left: true };
+  }
+}

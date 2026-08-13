@@ -66,6 +66,13 @@ export {
   type UiControlDescriptor,
 } from "./controls";
 export {
+  guiControlType,
+  guiSpecFromDescriptor,
+  type GuiAlignment,
+  type GuiControlSpec,
+  type GuiControlType,
+} from "./gui-spec";
+export {
   ANCHOR_PRESETS,
   applyAnchorPreset,
   applyAuthoringFields,
@@ -76,6 +83,8 @@ export {
   matchAnchorPreset,
   parentOwnsChildLayout,
   preferredWidgetSize,
+  laidOutParentRect,
+  widgetAllowsDesignerTransform,
 } from "./layout-authoring";
 export type {
   AnchorPreset,

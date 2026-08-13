@@ -245,7 +245,7 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 
 ### P9 Play-path residuals (do not rebuild P8/P9)
 
-Chrome polish (pin flash, multi-select gizmo, ADT HUD) stays parked. Remaining Play/scripting holes were closed by the pre-P11 foundation wave on `cursor/foundation-harden-e9a2` (do not rebuild P8/P9 packages).
+Chrome polish (pin flash, multi-select gizmo) stays parked. Remaining Play/scripting holes were closed by the pre-P11 foundation wave on `cursor/foundation-harden-e9a2` (do not rebuild P8/P9 packages).
 
 | Item | Status |
 | --- | --- |
@@ -261,7 +261,7 @@ Chrome polish (pin flash, multi-select gizmo, ADT HUD) stays parked. Remaining P
 | Play startup scene with no scene tab open | Done (foundation wave) |
 | Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
 | HUD TouchButton / TouchDPad → input | Done (foundation wave) |
-| `playSound` command (log, not a mixer), ADT HUD, `.babtrace` tab, §9.4 HUD | Command landed; mixer / ADT / trace tab parked |
+| `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer / trace tab parked. ADT HUD done |
 
 ### Authoring-surface wave (before P11)
 
@@ -276,13 +276,13 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 
-Parked with this wave: pin flash, multi-select gizmo, ADT Play HUD, `WidgetComponent` `CreateForMesh`, per-function graphs, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
+Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, per-function graphs, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
 
 ### P9 follow-ups / open deferrals
 
 | Gap vs engineplan §11–§14 | Reality | Owner |
 | --- | --- | --- |
-| Viewport-layer HUD as Babylon `AdvancedDynamicTexture` | Play hosts a DOM overlay (`PlayHudOverlay`); `applyUiControls` is injectable | Later polish / P14 player |
+| Viewport-layer HUD as Babylon `AdvancedDynamicTexture` | `BabylonUiApplyHost` + `attachFullscreenGui` (Play scene Layer). Designer uses the same host on a standalone ADT copied onto the document canvas (not `registerView`). DOM testid markers remain for jsdom / Playwright | Done (`cursor/ui-designer-rework-138e`) |
 | Every UserInterface in the asset registry auto-hosted in Play | Play does **not** auto-apply UI. Class graphs call `ui.applyToViewport` / `ui.removeFromViewport`; the host loads a guid-keyed library of all UserInterface assets | Done (`cursor/ui-apply-nested-8c7a`) |
 | `NodeMaterial.Parse` + live Babylon preview | `applyShaderGraphPreview` throttles `compileShaderGraphForRender` then `NodeMaterial.Parse` (injected `forceCompilationAsync` / parser in tests). Shader tab hosts a preview canvas; catalog `__pins` hydrated | Done (`cursor/authoring-surface-8678`) |
 | Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
@@ -321,6 +321,6 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 
 ## P11 behaviour trees / navigation
 
-Do not start until the foundation-hardening wave above is merged. Chrome polish (pin flash, multi-select gizmo, ADT HUD, lighting polish / ShadowGenerator) is not a reason to skip P11, and is not P11 work.
+Do not start until the foundation-hardening wave above is merged. Chrome polish (pin flash, multi-select gizmo, lighting polish / ShadowGenerator) is not a reason to skip P11, and is not P11 work.
 
 

@@ -113,6 +113,9 @@ export function PlayOverlay({
     () => new Set(),
   );
   const [hudInstances, setHudInstances] = useState<PlayHudInstance[]>([]);
+  const [hudScene, setHudScene] = useState<import("@babylonjs/core").Scene | null>(
+    null,
+  );
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -203,6 +206,7 @@ export function PlayOverlay({
       onPrint: (entry) => printRef.current(entry),
     });
     sessionRef.current = session;
+    setHudScene(session.handle.scene);
     const resizePlayIfSized = () => {
       if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
         session.handle.resize();
@@ -249,6 +253,7 @@ export function PlayOverlay({
         sessionRef.current.stop();
         sessionRef.current = null;
       }
+      setHudScene(null);
     };
   }, [sharedEngine, injectFixtureThrow]);
 
@@ -310,6 +315,7 @@ export function PlayOverlay({
           onClick={() => {
             const result = sessionRef.current?.stop() ?? emptyPlayResult();
             sessionRef.current = null;
+            setHudScene(null);
             onClose(result);
           }}
         >
@@ -330,6 +336,7 @@ export function PlayOverlay({
         width={overlaySize.width}
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}
+        scene={hudScene}
         onTouchAxis={(controlId, value) =>
           sessionRef.current?.pushTouchAxis(controlId, value)
         }

@@ -68,6 +68,8 @@ export default defineConfig({
         "**/node-adapter.ts",
         // Needs a real WebGL context; covered by the Playwright viewport specs.
         "**/create-engine.ts",
+        // Standalone CreateFullscreenUI + Canvas2D blit; covered by Playwright HUD / designer.
+        "**/ui-surface.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.
         "**/worker-entry.ts",
         // Physics wasm backends: HavokPlugin path is asserted in havok-v2.test.ts;

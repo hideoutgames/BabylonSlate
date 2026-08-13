@@ -5,14 +5,22 @@ import {
   applyWidgetResize,
   authoringFieldsFromLayout,
   defaultAddLayout,
+  laidOutParentRect,
   layoutFromRect,
   matchAnchorPreset,
   parentOwnsChildLayout,
   preferredWidgetSize,
+  widgetAllowsDesignerTransform,
   ANCHOR_PRESETS,
 } from "./layout-authoring";
-import { computeAnchoredRect } from "./layout";
-import { pinLayout, stretchLayout, type Rect } from "./types";
+import { computeAnchoredRect, layoutUserInterface } from "./layout";
+import {
+  createDefaultPlayHud,
+  createWidget,
+  pinLayout,
+  stretchLayout,
+  type Rect,
+} from "./types";
 
 const parent: Rect = { x: 0, y: 0, width: 800, height: 600 };
 
@@ -164,5 +172,28 @@ describe("default add layout", () => {
     expect(parentOwnsChildLayout("SizeBox")).toBe(true);
     expect(parentOwnsChildLayout("Canvas")).toBe(false);
     expect(parentOwnsChildLayout("Overlay")).toBe(false);
+  });
+
+  it("refuses designer move/resize on the canvas root and fill-slot children", () => {
+    const hud = createDefaultPlayHud("HUD");
+    expect(widgetAllowsDesignerTransform(hud, hud.rootId)).toBe(false);
+    expect(widgetAllowsDesignerTransform(hud, "stick")).toBe(true);
+    const box = createWidget("box", "HorizontalBox", "Row");
+    const child = createWidget("cell", "Button", "Cell");
+    hud.widgets.canvas!.children = [...hud.widgets.canvas!.children, "box"];
+    hud.widgets.box = box;
+    box.children = ["cell"];
+    hud.widgets.cell = child;
+    expect(widgetAllowsDesignerTransform(hud, "cell")).toBe(false);
+  });
+});
+
+describe("laidOutParentRect", () => {
+  it("returns the canvas for the root and the parent rect for children", () => {
+    const hud = createDefaultPlayHud("HUD");
+    const result = layoutUserInterface(hud, { width: 1920, height: 1080 });
+    expect(laidOutParentRect(result, hud.rootId)).toEqual(result.canvas);
+    const stickParent = laidOutParentRect(result, "stick");
+    expect(stickParent.width).toBe(result.tree?.rect.width);
   });
 });

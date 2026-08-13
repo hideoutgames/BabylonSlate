@@ -47,7 +47,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | --- | --- | --- |
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results; AnimationGraph Parameters / States / Details columns. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
-| **PropertyGrid** | Typed Details rows: number, vector3 (2–4 axes), boolean, text, enum, color (`ColorField`), slider, flags (`FlagsField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis / enumRef defaults), UserInterface widget details, Sprite / Tileset / Tilemap / Structure settings, AnimationGraph state and transition Details. |
+| **PropertyGrid** | Typed Details rows: number, vector3 (2–4 axes), boolean, text, enum, color (`ColorField`), slider, flags (`FlagsField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis / enumRef defaults), UserInterface widget details (adaptive Pos/Size or stretch insets), Sprite / Tileset / Tilemap / Structure settings, AnimationGraph state and transition Details. |
 | **ColorField** | Native color swatch plus a pasteable `#rrggbb` field. | Light color; Inspector color pin defaults; gallery. |
 | **FlagsField** | Compact 44px bitmask toggles (Layer 0–31 or named labels). | Collider `layer` / `mask`; gallery. |
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser sidebar and Move dialog, UserInterface widget hierarchy. |
@@ -61,9 +61,9 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **NamedListEditor** | Reorderable named string rows (add / remove / up / down, 44px). Optional custom item control or Add-only. | Project Settings sorting layers; Font `fallbackGuids`; ParameterListEditor enum values; AnimationGraph parameters. |
 | **InputMappingEditor** | Actions/axes with bindings, listen-to-bind, device toggles, touch control ids. | Project Settings Input. |
 | **BindingCaptureButton** | Listen-to-bind: next keydown / mouse button / gamepad. | InputMappingEditor bindings. |
-| **NamePromptDialog** | AlertDialog + 44px name field. Replaces `window.prompt`. | Class panel member add; UserInterface Logic members. |
-| **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
-| **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component. |
+| **NamePromptDialog** | AlertDialog + 44px name field. Replaces `window.prompt`. | Class panel member add; UserInterface Logic members; UserInterface widget rename. |
+| **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette, UserInterface Add Widget. |
+| **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component, UserInterface Add Widget. |
 | **TypeVisualIcon** | Colored Lucide glyph for an asset / class family (`resolveTypeVisual`). | Outliner, Details, Prefab, Content Browser, global search, Place Actors, Add Component, AssetPicker, ClassPicker, document tabs. |
 | **TypeColorMark** | Swatch + label for a DataTypes color token (`pinColorVar` / `assetColorVar`). | ParameterListEditor type toggles; Component Gallery Data Types section. |
 | **ParameterListEditor** | Named, typed, reorderable pin/parameter rows (type, optional, default, enum list, up/down). | Inspector Execute JavaScript Inputs/Outputs; Event On Command Run / BDebugCommand; Class / ScriptInterface signatures. |

@@ -9,6 +9,7 @@ import {
 import {
   applyUiControls,
   applyWidgetVisible,
+  joystickAxesFromLocal,
   joystickAxisValue,
   RecordingUiHost,
 } from "./ui-apply";
@@ -38,5 +39,12 @@ describe("UI apply", () => {
     expect(joystickAxisValue(0.1, 0.15)).toBe(0);
     expect(joystickAxisValue(1, 0.15)).toBeCloseTo(1, 5);
     expect(joystickAxisValue(-0.575, 0.15)).toBeCloseTo(-0.5, 5);
+  });
+
+  it("maps a local pointer on a stick into dead-zoned axes", () => {
+    expect(joystickAxesFromLocal(80, 80, 160, 160, 0.15)).toEqual({ x: 0, y: 0 });
+    const right = joystickAxesFromLocal(160, 80, 160, 160, 0.15);
+    expect(right.x).toBeCloseTo(1, 5);
+    expect(right.y).toBe(0);
   });
 });

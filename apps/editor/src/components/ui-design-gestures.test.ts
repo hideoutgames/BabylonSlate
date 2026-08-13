@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { pinLayout } from "@babylonslate/ui-runtime";
 import {
+  anchorPointsToScreen,
   applyWidgetDragOffset,
   canvasDeltaToLayoutDelta,
+  centeredFitView,
   clampDesignZoom,
+  designRectToScreen,
+  passedDragThreshold,
+  pivotToScreen,
+  previewScaleToFit,
+  resizeHandleRects,
   uiDesignStrokeMergeKey,
   zoomAtPoint,
 } from "./ui-design-gestures";
@@ -51,5 +58,64 @@ describe("ui-design-gestures", () => {
 
   it("uses one undo merge key per drag stroke", () => {
     expect(uiDesignStrokeMergeKey("abc")).toBe("ui-design-stroke:abc");
+  });
+
+  it("fits the canvas inside the viewport with padding and centers pan", () => {
+    const { previewScale, view } = centeredFitView(
+      { width: 400, height: 300 },
+      { width: 800, height: 600 },
+    );
+    expect(previewScale).toBeCloseTo((300 - 48) / 600);
+    expect(view.zoom).toBe(1);
+    expect(view.panY).toBeCloseTo(24);
+  });
+
+  it("maps a design GUI rect into screen space", () => {
+    const screen = designRectToScreen(
+      { x: 10, y: 20, width: 100, height: 50 },
+      { zoom: 2, panX: 5, panY: 7 },
+      0.5,
+    );
+    expect(screen).toEqual({ x: 15, y: 27, width: 100, height: 50 });
+  });
+
+  it("maps pivot and unique anchor corners into screen space", () => {
+    const view = { zoom: 1, panX: 0, panY: 0 };
+    expect(
+      pivotToScreen({ x: 0, y: 0, width: 100, height: 40 }, { x: 0.5, y: 0 }, view, 1),
+    ).toEqual({ x: 50, y: 40 });
+    expect(
+      anchorPointsToScreen(
+        { x: 0, y: 0, width: 200, height: 100 },
+        { x: 0, y: 1 },
+        { x: 1, y: 1 },
+        view,
+        1,
+      ),
+    ).toEqual([
+      { x: 0, y: 0 },
+      { x: 200, y: 0 },
+    ]);
+  });
+
+  it("falls back to a readable scale when the viewport is unmeasured", () => {
+    expect(previewScaleToFit({ width: 0, height: 0 }, { width: 1920, height: 1080 })).toBeCloseTo(
+      640 / 1920,
+    );
+  });
+
+  it("places 44px resize handles around a screen rect", () => {
+    const handles = resizeHandleRects({ x: 100, y: 50, width: 200, height: 80 });
+    expect(handles.se.width).toBe(44);
+    expect(handles.se.height).toBe(44);
+    expect(handles.nw.x).toBe(100 - 22);
+    expect(handles.nw.y).toBe(50 - 22);
+    expect(handles.e.x).toBe(100 + 200 - 22);
+    expect(handles.e.y).toBe(50 + 40 - 22);
+  });
+
+  it("arms a drag only after the movement threshold", () => {
+    expect(passedDragThreshold({ x: 0, y: 0 }, { x: 2, y: 0 })).toBe(false);
+    expect(passedDragThreshold({ x: 0, y: 0 }, { x: 4, y: 0 })).toBe(true);
   });
 });
