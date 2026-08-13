@@ -84,7 +84,13 @@ export function createEditorCamera(
   let aspect = 1;
   let pixelPerfect: PixelPerfectSettings | null = null;
   let canvasHeightPx = 0;
+  /** Applied (quantized when integer steps are on) pixel-perfect zoom. */
   let pixelZoom = 1;
+  /**
+   * Unquantized product of zoom factors. Pinch and wheel send ~1.1 steps;
+   * quantizing each one back to 1× would make integer zoom a no-op.
+   */
+  let pixelZoomRaw = 1;
   let pose3d: {
     target: Vector3;
     alpha: number;
@@ -101,6 +107,9 @@ export function createEditorCamera(
 
   const applyPixelPerfectFraming = () => {
     if (!pixelPerfect || mode !== "2d" || canvasHeightPx <= 0) return;
+    pixelZoom = pixelPerfect.integerZoomSteps
+      ? quantizeZoom(pixelZoomRaw)
+      : Math.max(0.01, pixelZoomRaw);
     orthoHalfHeight = pixelPerfectOrthoHalfHeight(
       canvasHeightPx,
       pixelPerfect.pixelsPerUnit,
@@ -171,6 +180,7 @@ export function createEditorCamera(
     camera.target.copyFrom(pose2d.target);
     orthoHalfHeight = pose2d.orthoHalfHeight;
     pixelZoom = pose2d.pixelZoom;
+    pixelZoomRaw = pose2d.pixelZoom;
     applyOrthoBounds();
   };
 
@@ -248,6 +258,9 @@ export function createEditorCamera(
     fly,
     setPixelPerfect: (settings: PixelPerfectSettings | null) => {
       pixelPerfect = settings;
+      if (settings) {
+        pixelZoomRaw = pixelZoom;
+      }
       if (mode === "2d") {
         applyOrthoBounds();
         invalidate();
@@ -282,10 +295,7 @@ export function createEditorCamera(
       if (factor <= 0) return;
       if (mode === "2d") {
         if (pixelPerfect) {
-          const next = pixelZoom * factor;
-          pixelZoom = pixelPerfect.integerZoomSteps
-            ? quantizeZoom(next)
-            : Math.max(0.01, next);
+          pixelZoomRaw = Math.max(0.01, pixelZoomRaw * factor);
         } else {
           orthoHalfHeight = Math.max(0.01, orthoHalfHeight / factor);
         }
