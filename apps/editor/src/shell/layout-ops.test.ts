@@ -54,6 +54,10 @@ describe("resolveFocusKeepPanelIds", () => {
   it("uses the primary surface when the keep list is empty", () => {
     expect(resolveFocusKeepPanelIds("scene", [])).toEqual(["viewport"]);
     expect(resolveFocusKeepPanelIds("graph", undefined)).toEqual(["graph"]);
+    expect(resolveFocusKeepPanelIds("enum", [])).toEqual(["enum-members"]);
+    expect(resolveFocusKeepPanelIds("script-interface", undefined)).toEqual([
+      "script-interface-preview",
+    ]);
   });
 
   it("keeps an explicit list as-is", () => {

@@ -16,6 +16,7 @@ import {
   ReorderActorCommand,
   ReorderComponentCommand,
   ReparentActorCommand,
+  ReparentComponentCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
   SetComponentPropertyCommand,
@@ -162,6 +163,18 @@ describe("scene commands", () => {
     const scene = baseScene();
     scene.actors[0]!.components.push(createMeshComponent("c2", "sphere"));
     expectRoundTrip(scene, new ReorderComponentCommand("a", "c1", 0, 1));
+  });
+
+  it("ReparentComponentCommand apply-then-invert restores the document", () => {
+    const scene = baseScene();
+    scene.actors[0]!.components.push({
+      ...createMeshComponent("c2", "sphere"),
+      parentId: "c1",
+    });
+    expectRoundTrip(
+      scene,
+      new ReparentComponentCommand("a", "c2", "c1", null),
+    );
   });
 
   it("SetComponentPropertyCommand apply-then-invert restores the document", () => {

@@ -337,6 +337,46 @@ export class ReorderComponentCommand implements EditCommand<SerializedScene> {
   }
 }
 
+export class ReparentComponentCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.reparentComponent";
+  readonly actorId: string;
+  readonly componentId: string;
+  readonly from: string | null;
+  readonly to: string | null;
+
+  constructor(
+    actorId: string,
+    componentId: string,
+    from: string | null,
+    to: string | null,
+  ) {
+    this.actorId = actorId;
+    this.componentId = componentId;
+    this.from = from;
+    this.to = to;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return replaceActor(doc, this.actorId, (actor) => ({
+      ...actor,
+      components: actor.components.map((component) =>
+        component.id === this.componentId
+          ? { ...component, parentId: this.to }
+          : component,
+      ),
+    }));
+  }
+
+  invert(): ReparentComponentCommand {
+    return new ReparentComponentCommand(
+      this.actorId,
+      this.componentId,
+      this.to,
+      this.from,
+    );
+  }
+}
+
 export class SetComponentPropertyCommand
   implements EditCommand<SerializedScene>
 {
@@ -467,6 +507,7 @@ export type SceneEditCommand =
   | AddComponentCommand
   | RemoveComponentCommand
   | ReorderComponentCommand
+  | ReparentComponentCommand
   | SetComponentPropertyCommand
   | SetSceneSettingCommand
   | SetViewportModeCommand
@@ -483,6 +524,7 @@ export const SCENE_COMMAND_TYPES = [
   "scene.addComponent",
   "scene.removeComponent",
   "scene.reorderComponent",
+  "scene.reparentComponent",
   "scene.setComponentProperty",
   "scene.setSceneSetting",
   "scene.setViewportMode",
@@ -585,6 +627,17 @@ export function createReorderComponentCommandFromJson(
     String(payload.componentId),
     Number(payload.from),
     Number(payload.to),
+  );
+}
+
+export function createReparentComponentCommandFromJson(
+  payload: Record<string, unknown>,
+): ReparentComponentCommand {
+  return new ReparentComponentCommand(
+    String(payload.actorId),
+    String(payload.componentId),
+    (payload.from as string | null) ?? null,
+    (payload.to as string | null) ?? null,
   );
 }
 

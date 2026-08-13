@@ -27,6 +27,8 @@ export interface SerializedComponent {
   id: string;
   classId: string;
   properties: Record<string, unknown>;
+  /** Prefab / actor component attach parent; missing documents normalize to null. */
+  parentId?: string | null;
 }
 
 export interface SerializedActor {
@@ -127,6 +129,7 @@ export function createMeshComponent(
     id,
     classId: "MeshComponent",
     properties: { meshKind, assetGuid: null },
+    parentId: null,
   };
 }
 
@@ -192,6 +195,7 @@ function normalizeComponent(
       typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
+    parentId: typeof source.parentId === "string" ? source.parentId : null,
   };
 }
 
@@ -333,6 +337,25 @@ export function wouldCreateCycle(
   while (cursor !== null) {
     if (cursor === actorId) return true;
     cursor = findActor(scene, cursor)?.parentId ?? null;
+  }
+  return false;
+}
+
+/** True when moving `componentId` under `parentId` would create a cycle. */
+export function wouldCreateComponentCycle(
+  components: readonly SerializedComponent[],
+  componentId: string,
+  parentId: string | null,
+): boolean {
+  if (!parentId) return false;
+  const byId = new Map(components.map((component) => [component.id, component]));
+  let cursor: string | null = parentId;
+  const seen = new Set<string>();
+  while (cursor !== null) {
+    if (cursor === componentId) return true;
+    if (seen.has(cursor)) return true;
+    seen.add(cursor);
+    cursor = byId.get(cursor)?.parentId ?? null;
   }
   return false;
 }

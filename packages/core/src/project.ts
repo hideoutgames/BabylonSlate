@@ -149,10 +149,23 @@ export type GraphClassMemberKind =
   | "interface";
 
 /** Lightweight Class panel rows stored on the graph until class documents exist. */
+export interface GraphClassMemberPin {
+  name: string;
+  typeId: string;
+  direction: "in" | "out";
+}
+
 export interface GraphClassMember {
   id: string;
   kind: GraphClassMemberKind;
   name: string;
+  /** Variable pin type (bool, float, …). */
+  typeId?: string;
+  defaultValue?: unknown;
+  /** Function signature pins. */
+  pins?: GraphClassMemberPin[];
+  /** ScriptInterface asset guid. */
+  assetGuid?: string;
 }
 
 export interface SerializedGraph {
@@ -461,6 +474,25 @@ const MEMBER_KINDS = new Set<GraphClassMemberKind>([
   "interface",
 ]);
 
+function normalizeMemberPins(value: unknown): GraphClassMemberPin[] {
+  if (!Array.isArray(value)) return [];
+  const pins: GraphClassMemberPin[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    if (!name) continue;
+    pins.push({
+      name,
+      typeId: typeof row.typeId === "string" && row.typeId.trim()
+        ? row.typeId.trim()
+        : "float",
+      direction: row.direction === "out" ? "out" : "in",
+    });
+  }
+  return pins;
+}
+
 export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
   if (!Array.isArray(value)) return [];
   const members: GraphClassMember[] = [];
@@ -480,7 +512,20 @@ export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
       continue;
     }
     if (!MEMBER_KINDS.has(kind)) continue;
-    members.push({ id, kind, name });
+    const member: GraphClassMember = { id, kind, name };
+    if (kind === "variable") {
+      member.typeId =
+        typeof row.typeId === "string" && row.typeId.trim()
+          ? row.typeId.trim()
+          : "float";
+      if ("defaultValue" in row) member.defaultValue = row.defaultValue;
+    } else if (kind === "function") {
+      member.pins = normalizeMemberPins(row.pins);
+    } else if (kind === "interface") {
+      member.assetGuid =
+        typeof row.assetGuid === "string" ? row.assetGuid.trim() : "";
+    }
+    members.push(member);
   }
   return members;
 }
@@ -498,7 +543,12 @@ export function normalizeGraphComponents(value: unknown): SerializedComponent[] 
       row.properties && typeof row.properties === "object"
         ? { ...(row.properties as Record<string, unknown>) }
         : {};
-    components.push({ id, classId, properties });
+    components.push({
+      id,
+      classId,
+      properties,
+      parentId: typeof row.parentId === "string" ? row.parentId : null,
+    });
   }
   return components;
 }

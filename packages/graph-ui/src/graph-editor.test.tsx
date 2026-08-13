@@ -1115,5 +1115,22 @@ describe("GraphEditor", () => {
     });
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("hides editing chrome and stays read-only", () => {
+    const onChange = vi.fn();
+    const { queryByTestId, getByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        onChange={onChange}
+        readOnly
+      />,
+    );
+    expect(queryByTestId("graph-toolbar")).toBeNull();
+    expect(queryByTestId("graph-delete")).toBeNull();
+    expect(getByTestId("graph-editor").getAttribute("data-readonly")).toBe(
+      "true",
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
 

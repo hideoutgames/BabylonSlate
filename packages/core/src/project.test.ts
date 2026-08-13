@@ -98,8 +98,14 @@ describe("project schema", () => {
         id: "mesh-1",
         classId: "MeshComponent",
         properties: { meshKind: "box" },
+        parentId: null,
       },
-      { id: "sprite-1", classId: "SpriteComponent", properties: {} },
+      {
+        id: "sprite-1",
+        classId: "SpriteComponent",
+        properties: {},
+        parentId: null,
+      },
     ]);
     expect(normalizeGraphMembers(undefined)).toEqual([]);
     expect(
@@ -111,8 +117,46 @@ describe("project schema", () => {
         { id: "var-1", kind: "variable", name: "Health" },
       ]),
     ).toEqual([
-      { id: "fn-1", kind: "function", name: "Jump" },
-      { id: "var-1", kind: "variable", name: "Health" },
+      { id: "fn-1", kind: "function", name: "Jump", pins: [] },
+      { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
+    ]);
+    expect(
+      normalizeGraphMembers([
+        {
+          id: "var-2",
+          kind: "variable",
+          name: "Speed",
+          typeId: "vec3",
+          defaultValue: "1",
+        },
+        {
+          id: "fn-2",
+          kind: "function",
+          name: "Hit",
+          pins: [{ name: "amount", typeId: "float", direction: "in" }],
+        },
+        { id: "if-1", kind: "interface", name: "Damageable", assetGuid: "guid-1" },
+      ]),
+    ).toEqual([
+      {
+        id: "var-2",
+        kind: "variable",
+        name: "Speed",
+        typeId: "vec3",
+        defaultValue: "1",
+      },
+      {
+        id: "fn-2",
+        kind: "function",
+        name: "Hit",
+        pins: [{ name: "amount", typeId: "float", direction: "in" }],
+      },
+      {
+        id: "if-1",
+        kind: "interface",
+        name: "Damageable",
+        assetGuid: "guid-1",
+      },
     ]);
   });
 

@@ -144,7 +144,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
-| Full Enum / Structure / ScriptInterface row editors | later polish (`apps/editor`, `editor-kit`) | Compact settings tabs landed (member/field/method rows + `ParameterListEditor`); richer designers not in scope |
+| Full Enum / Structure / ScriptInterface row editors | `apps/editor`, `editor-kit` | DockView member tables, ScriptInterface method preview, `PinListEditor` / `PinTypePicker` |
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Play now validates the compiled project graph set (`collectPlayPreviewScripts`); startup-map / GameInstance / plugin EUO sweep still deferred |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed (`p8-command-system`) |
@@ -157,7 +157,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (selection tidy / then-chain); **hold-to-marquee** (`attachGraphPaneMarquee`).
 
-**Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface and import data types open compact `asset-settings` tabs (not new Shader/UI editors). Legacy Graph files still load.
+**Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface open DockView documents (import data types stay compact `asset-settings` tabs). Legacy Graph files still load.
 
 ## P6 slice ownership
 
@@ -225,7 +225,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 | Core quality commands “mutate real engine settings” | `consoleHost` still `emitSetting` logs ([debugger.md](../architecture/debugger.md) already says this) | Later polish / P14 player |
 | §9.4 HUD (render ms, invalidations/s, HW scale, texture/geometry/compressed bytes, LRU evictions, actors, per-channel bytes) | `StatsHud` shows fps, script/physics ms, tick-budget flag, one accounted-byte total, mesh/texture counts, draws, aggregate bridge msgs/s | `p8-hud-polish` |
 | Trace as document tab + graphs + derived-data `.babtrace` spill | In-memory + overlay `TracePlayback`; `encodeTraceDocument` exists, editor does not write it | `p8-trace-playback` (P11 needs real input replay) |
-| `ParameterListEditor` on Class / ScriptInterface | Used for ExecuteJavaScript + `OnCommandRun` only | Later polish |
+| `PinListEditor` on Class / ScriptInterface | Done (Class Inspector function pins + ScriptInterface method Details; ExecuteJavaScript / OnCommandRun keep the `ParameterListEditor` wrapper) | — |
 
 ## P9 slice ownership
 
@@ -255,7 +255,7 @@ Chrome polish (pin flash, multi-select gizmo) stays parked. Remaining Play/scrip
 | Play loads anim graphs / sprites from scene refs | Done |
 | `ctx.changeScene` / `changescene` loads a scene from the Play scene library | Done (foundation wave) |
 | Catalog honesty (Tilemap / BT / Nav / Widget / AudioComponent) | Done (Tilemap addable; BT/Nav gated; Widget hidden; AudioComponent not in Search/Add) |
-| Enum / Structure / ScriptInterface editors | Already `asset-settings` tabs |
+| Enum / Structure / ScriptInterface editors | DockView Members / Methods / Preview / Details |
 | Prefab → class document persistence | Done (open tab **or** disk graph) |
 | Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
 | ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |

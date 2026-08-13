@@ -10,6 +10,7 @@ import {
 } from "../context/scene-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
+import { TypeAssetEditingProvider } from "../context/type-asset-editing-context";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
@@ -18,6 +19,10 @@ import {
   classDocumentShowsPrefab,
   classParentLookup,
 } from "../lib/content-browser-helpers";
+import {
+  isDockviewDocumentKind,
+  type DockviewDocumentKind,
+} from "../shell/window-catalog";
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
@@ -47,7 +52,7 @@ function RegisteredDockviewShell({
   actorPrefab,
 }: {
   id: string;
-  documentKind: "scene" | "graph";
+  documentKind: DockviewDocumentKind;
   initialLayout: Record<string, unknown> | null;
   actorPrefab?: boolean;
 }) {
@@ -138,7 +143,10 @@ export function DocumentWorkspace() {
           );
         }
 
-        if (isAssetDocumentKind(doc.ref.kind) && doc.ref.kind !== "scene" && doc.ref.kind !== "graph") {
+        if (
+          isAssetDocumentKind(doc.ref.kind) &&
+          !isDockviewDocumentKind(doc.ref.kind)
+        ) {
           if (!shouldMount) return null;
           return (
             <div
@@ -148,6 +156,31 @@ export function DocumentWorkspace() {
             >
               <AssetDocumentWorkspace documentId={id} />
             </div>
+          );
+        }
+
+        const isTypeAsset =
+          doc.ref.kind === "enum" ||
+          doc.ref.kind === "structure" ||
+          doc.ref.kind === "script-interface";
+
+        if (isTypeAsset) {
+          if (!shouldMount) return null;
+          return (
+            <DocumentWorkspaceProvider key={id} documentId={id}>
+              <TypeAssetEditingProvider>
+                <div
+                  className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                  data-testid={`document-workspace-${doc.ref.kind}`}
+                >
+                  <RegisteredDockviewShell
+                    id={id}
+                    documentKind={doc.ref.kind}
+                    initialLayout={doc.layout}
+                  />
+                </div>
+              </TypeAssetEditingProvider>
+            </DocumentWorkspaceProvider>
           );
         }
 
@@ -188,7 +221,9 @@ export function DocumentWorkspace() {
                 {shouldMount ? (
                   <RegisteredDockviewShell
                     id={id}
-                    documentKind={doc.ref.kind === "scene" ? "scene" : "graph"}
+                    documentKind={
+                      doc.ref.kind === "scene" ? "scene" : "graph"
+                    }
                     initialLayout={doc.layout}
                     actorPrefab={actorPrefab}
                   />

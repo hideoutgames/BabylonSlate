@@ -265,7 +265,7 @@ describe("DocumentService", () => {
     expect(service.getState().tabOrder).toContain(newId);
   });
 
-  it("marks asset-settings updates as dirty and keeps the Settings tab suffix", async () => {
+  it("opens Enum documents with the Enum tab suffix", async () => {
     const service = new DocumentService();
     const project = createMockProjectService({
       loadDocument: vi.fn(async () => ({
@@ -276,11 +276,11 @@ describe("DocumentService", () => {
     });
     const path = "assets/colors.babasset";
     await service.openDocument(project, {
-      kind: "asset-settings",
+      kind: "enum",
       path,
       label: "colors",
     });
-    const id = documentId({ kind: "asset-settings", path });
+    const id = documentId({ kind: "enum", path });
     service.updateAssetDocument(id, {
       kind: "enum",
       name: "Palette",
@@ -291,7 +291,7 @@ describe("DocumentService", () => {
     });
     const doc = service.getDocument(id);
     expect(doc?.dirty).toBe(true);
-    expect(doc?.ref.label).toBe("Palette Settings");
+    expect(doc?.ref.label).toBe("Palette Enum");
     expect((doc?.content as { members: unknown[] }).members).toHaveLength(2);
   });
 });
