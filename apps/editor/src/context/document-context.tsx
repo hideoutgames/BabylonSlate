@@ -107,11 +107,6 @@ import {
   type PlayAnimGraphEntry,
 } from "../lib/play-content";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
-import {
-  playSceneFromOpenDocuments,
-  type PlaySceneLoad,
-} from "../services/play-physics";
-
 export type AppRoute = "home" | "editor";
 
 interface DocumentContextValue {
