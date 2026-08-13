@@ -91,22 +91,22 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
-| `--asset-scene` | Scene (cyan-blue) | Scene |
-| `--asset-graph` | Graph / UserInterface | Graph |
-| `--asset-texture` | Texture, Sprite, Tileset, Tilemap (green) | Texture |
+| `--asset-scene` | Scene (blue) | Scene |
+| `--asset-graph` | Graph / UserInterface (cyan) | Graph |
+| `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
 | `--asset-material` | Material, Shader (red) | Material |
 | `--asset-model` | Model (orange) | Model |
-| `--asset-audio` | Audio (gold) | Audio |
-| `--asset-font` | Font | Font |
-| `--asset-animation` | Animation, AnimationGraph (yellow-orange) | Animation |
-| `--asset-class` | Class assets; Object / Actor / Widget identities (Blueprint cyan-blue) | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
-| `--asset-script-type` | Enum, Structure, ScriptInterface (olive) | one icon each |
-| `--asset-component` | Engine components in Details / Add Component | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
-| `--asset-folder` | Content Browser folders (gold) | Folder glyph |
+| `--asset-audio` | Audio (green) | Audio |
+| `--asset-font` | Font (sky) | Font |
+| `--asset-animation` | Animation, AnimationGraph (yellow) | Animation |
+| `--asset-class` | Class assets; Object / Actor / Widget identities (indigo) | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
+| `--asset-script-type` | Enum, Structure, ScriptInterface (teal) | one icon each |
+| `--asset-component` | Engine components in Details / Add Component (purple) | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
+| `--asset-folder` | Content Browser folders (yellow-green) | Folder glyph |
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-class` (they spawn as Actors). Unknown types fall back to a file glyph and `--muted-foreground`.
 
-Content Browser tiles mix the type token into `--card` and `--muted` (`color-mix` via `typeColorCardAccent` / `typeColorThumbAccent` in DataTypes) so the card is a darker shade of the type color. Glyphs still use the raw `--asset-*` token. Selected tiles keep `border-primary` / `ring-primary` on top of the accent. Inspector / Class / ScriptInterface pin-type toggles use `TypeColorMark` so they match graph pins.
+Content Browser tiles mix the type token into the **thumbnail well only** (`color-mix` 45% into `--muted` plus a 3px inset bar via `typeColorThumbAccent`). The `Card` chrome and text panel stay `--card`. Glyphs still use the raw `--asset-*` token. Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Inspector / Class / ScriptInterface pin-type toggles use `TypeColorMark` so they match graph pins.
 
 ## Graph sizing tokens
 

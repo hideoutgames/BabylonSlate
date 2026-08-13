@@ -150,19 +150,17 @@ describe("ContentBrowserAssetTile", () => {
     expect(className).not.toContain("p-4");
   });
 
-  it("tints the card and thumb well with a darker type accent", () => {
+  it("tints only the thumb well, leaving the card and text panel on card chrome", () => {
     const { tile } = renderTile();
-    const card = tile.closest('[data-slot="card"]');
+    const card = tile.closest('[data-slot="card"]') as HTMLElement | null;
     expect(card).not.toBeNull();
-    expect((card as HTMLElement).style.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 16%, var(--card))",
-    );
-    expect((card as HTMLElement).style.borderColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 50%, var(--border))",
-    );
+    expect(card?.style.backgroundColor).toBe("");
+    expect(card?.style.borderColor).toBe("");
     const glyph = screen.getByTestId("content-item-type-icon-hero-1");
-    expect((glyph.parentElement as HTMLElement).style.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 28%, var(--muted))",
+    const thumb = glyph.parentElement as HTMLElement;
+    expect(thumb.style.backgroundColor).toBe(
+      "color-mix(in oklch, var(--asset-texture) 45%, var(--muted))",
     );
+    expect(thumb.style.boxShadow).toBe("inset 0 -3px 0 var(--asset-texture)");
   });
 });
