@@ -5,7 +5,9 @@ import {
   collectSafeConnectPins,
   containerPointerToClient,
   displayNodeTitle,
+  edgesTouchingNodes,
   edgesTouchingPin,
+  edgeTouchesNode,
   edgeTouchesPin,
   filterPaletteForPin,
   isClientPointOverGraphNode,
@@ -295,6 +297,78 @@ describe("edgesTouchingPin", () => {
 
   it("returns an empty list when the pin has no wires", () => {
     expect(edgesTouchingPin([exec], "begin", "value")).toEqual([]);
+  });
+});
+
+describe("edgeTouchesNode", () => {
+  const exec = {
+    id: "e:begin:execOut:log:execIn",
+    source: "begin",
+    target: "log",
+    sourceHandle: "execOut",
+    targetHandle: "execIn",
+  };
+
+  it("is true when the node is the source or the target", () => {
+    expect(edgeTouchesNode(exec, "begin")).toBe(true);
+    expect(edgeTouchesNode(exec, "log")).toBe(true);
+  });
+
+  it("is false when the node is neither endpoint", () => {
+    expect(edgeTouchesNode(exec, "print")).toBe(false);
+  });
+});
+
+describe("edgesTouchingNodes", () => {
+  const exec = {
+    id: "e:begin:execOut:log:execIn",
+    source: "begin",
+    target: "log",
+    sourceHandle: "execOut",
+    targetHandle: "execIn",
+  };
+  const data = {
+    id: "e:begin:value:log:message",
+    source: "begin",
+    target: "log",
+    sourceHandle: "value",
+    targetHandle: "message",
+  };
+  const fanOut = {
+    id: "e:begin:execOut:print:execIn",
+    source: "begin",
+    target: "print",
+    sourceHandle: "execOut",
+    targetHandle: "execIn",
+  };
+  const neighbor = {
+    id: "e:log:execOut:print:execIn",
+    source: "log",
+    target: "print",
+    sourceHandle: "execOut",
+    targetHandle: "execIn",
+  };
+
+  it("returns every incident edge on a fan-out node", () => {
+    expect(
+      edgesTouchingNodes([exec, data, fanOut, neighbor], new Set(["begin"])),
+    ).toEqual([exec, data, fanOut]);
+  });
+
+  it("returns the internal edge between two selected nodes", () => {
+    expect(
+      edgesTouchingNodes([exec, fanOut], new Set(["begin", "log"])),
+    ).toEqual([exec, fanOut]);
+  });
+
+  it("keeps a neighbor wire when only one endpoint is selected", () => {
+    expect(edgesTouchingNodes([exec, neighbor], new Set(["begin"]))).toEqual([
+      exec,
+    ]);
+  });
+
+  it("returns an empty list for an empty selection", () => {
+    expect(edgesTouchingNodes([exec, data, fanOut], new Set())).toEqual([]);
   });
 });
 

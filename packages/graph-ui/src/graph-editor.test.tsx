@@ -650,6 +650,60 @@ describe("GraphEditor", () => {
     expect(queryByRole("button", { name: "Add node" })).toBeNull();
     expect(getByTestId("graph-toolbar")).toBeTruthy();
     expect(getByTestId("graph-format")).toHaveProperty("disabled", true);
+    expect(getByTestId("graph-break-links")).toHaveProperty("disabled", true);
+  });
+
+  it("keeps Break Links disabled for an unwired selection", () => {
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graphWithPins()} />,
+    );
+    fireEvent.click(
+      container.querySelector('.react-flow__node[data-id="log-a"]')!,
+    );
+    expect(getByTestId("graph-break-links")).toHaveProperty("disabled", true);
+  });
+
+  it("breaks every pin link on a selected node and keeps the nodes", () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />,
+    );
+    fireEvent.click(
+      container.querySelector('.react-flow__node[data-id="log-a"]')!,
+    );
+    expect(getByTestId("graph-break-links")).toHaveProperty("disabled", false);
+    fireEvent.click(getByTestId("graph-break-links"));
+
+    expect(onChange).toHaveBeenCalled();
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.edges).toEqual([]);
+    expect(lastGraph.nodes.map((node) => node.id)).toEqual([
+      "log-a",
+      "log-b",
+      "log-c",
+    ]);
+  });
+
+  it("breaks only incident wires when a downstream node is selected", () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />,
+    );
+    fireEvent.click(
+      container.querySelector('.react-flow__node[data-id="log-b"]')!,
+    );
+    fireEvent.click(getByTestId("graph-break-links"));
+
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.edges).toEqual([
+      expect.objectContaining({
+        source: "log-a",
+        target: "log-c",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      }),
+    ]);
+    expect(lastGraph.nodes).toHaveLength(3);
   });
 
   it("reports selected node ids when a node is clicked", async () => {

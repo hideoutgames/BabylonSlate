@@ -79,7 +79,7 @@ Reusable by script, shader, animation, and behaviour-tree graphs.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, cancelled pin-drag disconnect, marquee, pin-filtered drop-to-add. Reconciles external `initialGraph` updates (undo/redo, Inspector) without emitting `onChange`. | Graph document panel; UserInterface Logic tab; Shader / AnimationGraph hosts (catalog `__pins` hydrated so Add Node is not an empty box; Anim Graph persists `AnimState.position`). |
+| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, cancelled pin-drag disconnect, Break Links on the selection, marquee, pin-filtered drop-to-add. Reconciles external `initialGraph` updates (undo/redo, Inspector) without emitting `onChange`. | Graph document panel; UserInterface Logic tab; Shader / AnimationGraph hosts (catalog `__pins` hydrated so Add Node is not an empty box; Anim Graph persists `AnimState.position`). |
 | **NodePalette** | CatalogDialog of nodes with role-color chips; optional pin compatibility filter. | Add Node from GraphEditor (empty-pane connect-end and Add Node). |
 
 ## App wrappers

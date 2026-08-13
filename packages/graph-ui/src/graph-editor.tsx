@@ -42,6 +42,7 @@ import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
 import {
   collectSafeConnectPins,
+  edgesTouchingNodes,
   edgeTouchesPin,
   firstCompatiblePin,
   isClientPointOverGraphNode,
@@ -569,6 +570,10 @@ function GraphEditorCanvas({
     () => nodes.filter((node) => node.selected),
     [nodes],
   );
+  const hasBreakableLinks = useMemo(() => {
+    const selected = new Set(selectedNodes.map((node) => node.id));
+    return edgesTouchingNodes(edges, selected).length > 0;
+  }, [edges, selectedNodes]);
 
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
@@ -657,6 +662,23 @@ function GraphEditorCanvas({
         return nextEdges;
       });
       return nextNodes;
+    });
+  }, [emitChange]);
+
+  const breakSelectionLinks = useCallback(() => {
+    const selected = new Set(
+      graphStateRef.current.nodes
+        .filter((node) => node.selected)
+        .map((node) => node.id),
+    );
+    if (selected.size === 0) return;
+    setEdges((current) => {
+      const touching = edgesTouchingNodes(current, selected);
+      if (touching.length === 0) return current;
+      const drop = new Set(touching.map((edge) => edge.id));
+      const next = current.filter((edge) => !drop.has(edge.id));
+      emitChange(graphStateRef.current.nodes, next);
+      return next;
     });
   }, [emitChange]);
 
@@ -860,6 +882,17 @@ function GraphEditorCanvas({
               data-testid="graph-delete"
             >
               Delete
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!hasBreakableLinks}
+              onClick={breakSelectionLinks}
+              title="Break all pin links on selected nodes"
+              data-testid="graph-break-links"
+            >
+              Break Links
             </Button>
             <Button
               type="button"
