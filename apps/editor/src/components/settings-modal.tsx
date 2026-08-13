@@ -114,6 +114,11 @@ const ENGINE_CATEGORIES: Array<
     keywords: "graph default zoom node canvas fit view",
   },
   {
+    id: "ui",
+    label: "User Interface",
+    keywords: "ui designer preset canvas size safe area",
+  },
+  {
     id: "thumbnails",
     label: "Thumbnails",
     keywords: "generate thumbnails",
@@ -131,7 +136,7 @@ const ENGINE_CATEGORIES: Array<
 ];
 
 const ENGINE_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "thumbnails", "focus"] },
+  { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "ui", "thumbnails", "focus"] },
   { label: "Projects", ids: ["templates"] },
 ];
 
@@ -186,6 +191,7 @@ export function SettingsModal({
         viewportFrameCap: next.viewportFrameCap,
         theme: next.appearance.theme,
         graphDefaultZoom: next.graphDefaultZoom,
+        uiDesignerPresets: next.uiDesignerPresets,
       });
       await onEngineSaved?.();
     },

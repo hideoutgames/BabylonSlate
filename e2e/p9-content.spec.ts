@@ -69,6 +69,34 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("ui-desired-height")).toBeVisible();
   });
 
+  test("UserInterface designer lists a custom Engine Settings preset", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
+    const canvas = page.getByTestId("ui-design-canvas");
+
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("engine-settings").click();
+    await page.getByTestId("engine-settings-modal-category-ui").click();
+    await page.getByTestId("ui-preset-add").click();
+    const customRow = page.locator('[data-testid^="ui-preset-custom-"]');
+    await expect(customRow).toBeVisible();
+    const rowTestId = await customRow.getAttribute("data-testid");
+    const presetId = rowTestId?.replace("ui-preset-custom-", "") ?? "";
+    expect(presetId).toMatch(/^custom-/);
+    await page.getByTestId(`ui-preset-label-${presetId}`).fill("Phone");
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByTestId("engine-settings-modal")).toHaveCount(0);
+
+    await page.getByTestId("ui-device-preset").click();
+    await expect(page.getByTestId(`ui-preset-${presetId}`)).toBeVisible();
+    await page.getByTestId(`ui-preset-${presetId}`).click();
+    await expect(canvas).toHaveAttribute("data-preset", presetId);
+  });
+
   test("UserInterface designer on iPad shows the same HUD widgets", {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {

@@ -2,7 +2,7 @@ import type { EdgeInsets } from "./types";
 import { ZERO_INSETS } from "./types";
 
 export interface DevicePreset {
-  id: "ipad-landscape" | "ipad-portrait" | "desktop-16-9";
+  id: string;
   label: string;
   width: number;
   height: number;
@@ -34,10 +34,40 @@ export const DEVICE_PRESETS: readonly DevicePreset[] = [
   },
 ];
 
+export const DESIRED_CANVAS_ID = "desired" as const;
+
+const BUILTIN_IDS = new Set(DEVICE_PRESETS.map((preset) => preset.id));
+
+export function mergeDevicePresets(
+  custom: readonly DevicePreset[] = [],
+): DevicePreset[] {
+  const merged: DevicePreset[] = [...DEVICE_PRESETS];
+  const seen = new Set<string>([...BUILTIN_IDS, DESIRED_CANVAS_ID]);
+  for (const preset of custom) {
+    const id = preset.id.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    merged.push({
+      ...preset,
+      id,
+      width: Math.max(1, preset.width),
+      height: Math.max(1, preset.height),
+      safeArea: {
+        left: Math.max(0, preset.safeArea.left),
+        right: Math.max(0, preset.safeArea.right),
+        top: Math.max(0, preset.safeArea.top),
+        bottom: Math.max(0, preset.safeArea.bottom),
+      },
+    });
+  }
+  return merged;
+}
+
 export function devicePresetById(
-  id: DevicePreset["id"],
+  id: string,
+  extras: readonly DevicePreset[] = [],
 ): DevicePreset | undefined {
-  return DEVICE_PRESETS.find((preset) => preset.id === id);
+  return mergeDevicePresets(extras).find((preset) => preset.id === id);
 }
 
 /**
@@ -47,16 +77,18 @@ export function devicePresetById(
 export function devicePresetForViewport(
   width: number,
   height: number,
+  extras: readonly DevicePreset[] = [],
 ): DevicePreset {
-  const exact = DEVICE_PRESETS.find(
+  const presets = mergeDevicePresets(extras);
+  const exact = presets.find(
     (preset) => preset.width === width && preset.height === height,
   );
   if (exact) return exact;
   const aspect = height > 0 ? width / height : 1;
-  let best = DEVICE_PRESETS[0]!;
+  let best = presets[0]!;
   let bestAspect = Number.POSITIVE_INFINITY;
   let bestSize = Number.POSITIVE_INFINITY;
-  for (const preset of DEVICE_PRESETS) {
+  for (const preset of presets) {
     const presetAspect = preset.height > 0 ? preset.width / preset.height : 1;
     const aspectDelta = Math.abs(presetAspect - aspect);
     const sizeDelta = Math.hypot(preset.width - width, preset.height - height);
@@ -72,14 +104,13 @@ export function devicePresetForViewport(
   return best;
 }
 
-export const DESIRED_CANVAS_ID = "desired" as const;
-
-export type DesignerCanvasId = DevicePreset["id"] | typeof DESIRED_CANVAS_ID;
+export type DesignerCanvasId = string;
 
 /** Viewport used by the UserInterface designer, including Desired mode. */
 export function designerViewport(
   presetId: string,
   desiredSize: { width: number; height: number },
+  extras: readonly DevicePreset[] = [],
 ): { id: string; width: number; height: number; safeArea: EdgeInsets } {
   if (presetId === DESIRED_CANVAS_ID) {
     return {
@@ -89,8 +120,7 @@ export function designerViewport(
       safeArea: { ...ZERO_INSETS },
     };
   }
-  const preset =
-    devicePresetById(presetId as DevicePreset["id"]) ?? DEVICE_PRESETS[0]!;
+  const preset = devicePresetById(presetId, extras) ?? DEVICE_PRESETS[0]!;
   return {
     id: preset.id,
     width: preset.width,
