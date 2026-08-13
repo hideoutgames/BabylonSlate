@@ -127,4 +127,13 @@ describe("My Class members", () => {
       { kind: "interface", name: "Damageable", detail: "if-1" },
     ]);
   });
+
+  it("exposes variable typeId for pin color in the tree", () => {
+    const members = membersForGraph({
+      nodes: [],
+      edges: [],
+      members: [{ id: "var-1", kind: "variable", name: "Health", typeId: "bool" }],
+    });
+    expect(members[0]?.typeId).toBe("bool");
+  });
 });

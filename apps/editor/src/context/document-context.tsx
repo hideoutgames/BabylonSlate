@@ -79,7 +79,7 @@ import {
   toggleDockWindow as toggleDockWindowOnApi,
   type DockWindowApi,
 } from "../shell/dock-window-ops";
-import { findDockWindow } from "../shell/window-catalog";
+import { findDockWindow, isDockviewDocumentKind } from "../shell/window-catalog";
 import { listEditorUtilityWindows } from "../shell/editor-utility-windows";
 import {
   classDocumentShowsPrefab,
@@ -270,10 +270,11 @@ function asDockWindowApi(api: DockviewApi): DockWindowApi {
 }
 
 function findWindowDefinition(
-  kind: "scene" | "graph",
+  kind: string,
   panelId: string,
   actorPrefab = true,
 ) {
+  if (!isDockviewDocumentKind(kind)) return undefined;
   return (
     findDockWindow(kind, panelId, { actorPrefab }) ??
     listEditorUtilityWindows().find((entry) => entry.id === panelId)
@@ -1664,10 +1665,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const dock = asDockWindowApi(api);
       const kind = documentService.getDocument(id)?.ref.kind;
       for (const panel of listDockPanels(dock)) {
-        const def =
-          kind === "scene" || kind === "graph"
-            ? findWindowDefinition(kind, panel.id)
-            : undefined;
+        const def = isDockviewDocumentKind(kind)
+          ? findWindowDefinition(kind, panel.id)
+          : undefined;
         const placement = capturePanelPlacement(dock, panel.id, def);
         if (placement) {
           documentService.setPanelPlacement(id, panel.id, placement);
@@ -1693,7 +1693,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const { activeDocumentId } = documentService.getState();
     if (!activeDocumentId) return;
     const doc = documentService.getDocument(activeDocumentId);
-    if (!doc || (doc.ref.kind !== "scene" && doc.ref.kind !== "graph")) {
+    if (!doc || !isDockviewDocumentKind(doc.ref.kind)) {
       return;
     }
     const api = dockviewApisRef.current.get(activeDocumentId);
@@ -1747,7 +1747,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const doc = documentService
       .getOpenDocumentsOrdered()
       .find((entry) => entry.id === activeDocumentId);
-    if (!doc || (doc.ref.kind !== "scene" && doc.ref.kind !== "graph")) {
+    if (!doc || !isDockviewDocumentKind(doc.ref.kind)) {
       return;
     }
     const api = dockviewApisRef.current.get(activeDocumentId);
@@ -1781,7 +1781,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     applyFocusLayout(
       doc.ref.kind,
       dock,
-      settings.focusKeepPanels[doc.ref.kind],
+      doc.ref.kind === "scene" || doc.ref.kind === "graph"
+        ? settings.focusKeepPanels[doc.ref.kind]
+        : undefined,
     );
     setFocusedLayoutIds((current) => {
       const next = new Set(current);

@@ -8,6 +8,7 @@ import {
   findActor,
   normalizeScene,
   normalizeTransform,
+  wouldCreateComponentCycle,
   wouldCreateCycle,
   type SerializedScene,
 } from "./scene";
@@ -119,6 +120,17 @@ describe("scene schema", () => {
     expect(wouldCreateCycle(scene, "root", "grandchild")).toBe(true);
     expect(wouldCreateCycle(scene, "root", "other")).toBe(false);
     expect(wouldCreateCycle(scene, "root", null)).toBe(false);
+  });
+
+  it("detects component reparent cycles", () => {
+    const components = [
+      createMeshComponent("root"),
+      { ...createMeshComponent("child"), parentId: "root" },
+      { ...createMeshComponent("leaf"), parentId: "child" },
+    ];
+    expect(wouldCreateComponentCycle(components, "root", "leaf")).toBe(true);
+    expect(wouldCreateComponentCycle(components, "leaf", "root")).toBe(false);
+    expect(wouldCreateComponentCycle(components, "child", null)).toBe(false);
   });
 
   it("creates mesh components with a mesh kind", () => {

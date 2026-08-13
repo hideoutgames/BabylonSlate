@@ -90,6 +90,7 @@ describe("spawnPlacedActor", () => {
         id: "actor-9-SpriteComponent-1",
         classId: "SpriteComponent",
         properties: { assetGuid: "sprite-1" },
+        parentId: null,
       },
     ]);
   });

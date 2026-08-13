@@ -7,7 +7,10 @@ import {
   useDockWindowTick,
 } from "../context/document-context";
 import { listEditorUtilityWindows } from "../shell/editor-utility-windows";
-import { listDockWindows } from "../shell/window-catalog";
+import {
+  isDockviewDocumentKind,
+  listDockWindows,
+} from "../shell/window-catalog";
 import {
   classDocumentShowsPrefab,
   classParentLookup,
@@ -28,7 +31,7 @@ export function WindowsMenu() {
 
   const activeKind = openDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
-  const canToggleWindows = activeKind === "scene" || activeKind === "graph";
+  const canToggleWindows = isDockviewDocumentKind(activeKind);
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const activeDoc = openDocuments.find((doc) => doc.id === activeDocumentId);
   const indexed = assetRegistry
@@ -49,7 +52,7 @@ export function WindowsMenu() {
   }, [canToggleWindows, projectName]);
 
   const items = useMemo((): NestedMenuItem[] => {
-    const windows = canToggleWindows
+    const windows = isDockviewDocumentKind(activeKind)
       ? listDockWindows(activeKind, { actorPrefab })
       : [];
     const editorUtilities = listEditorUtilityWindows();
@@ -93,7 +96,6 @@ export function WindowsMenu() {
   }, [
     activeKind,
     actorPrefab,
-    canToggleWindows,
     isDockWindowOpen,
     openDockWindowCount,
     toggleDockWindow,

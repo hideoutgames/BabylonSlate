@@ -12,6 +12,8 @@ import {
   NumericDragField,
   PanelFrame,
   ParameterListEditor,
+  PinListEditor,
+  PinTypePicker,
   PropertyGrid,
   SearchDialog,
   SearchDropdown,
@@ -22,6 +24,8 @@ import {
   useContextMenu,
   type NestedMenuItem,
   type ParameterRow,
+  type PinListRow,
+  type PinPickerType,
   type PropertyRow,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
@@ -138,6 +142,11 @@ function GalleryComposites() {
   const [parameters, setParameters] = useState<ParameterRow[]>([
     { id: "gallery-amount", name: "amount", type: "float" },
   ]);
+  const [pinType, setPinType] = useState<PinPickerType>("float");
+  const [pins, setPins] = useState<PinListRow[]>([
+    { id: "gallery-hit", name: "hit", type: "bool", direction: "out" },
+  ]);
+  const [selectedPinId, setSelectedPinId] = useState<string | null>("gallery-hit");
 
   const rows: PropertyRow[] = [
     {
@@ -225,6 +234,21 @@ function GalleryComposites() {
       <div className="rounded-lg border border-border">
         <PanelFrame title="Parameter list" data-testid="gallery-parameter-list">
           <ParameterListEditor rows={parameters} onChange={setParameters} />
+        </PanelFrame>
+      </div>
+      <div className="rounded-lg border border-border p-3" data-testid="gallery-pin-type-picker">
+        <div className="mb-2 text-sm font-medium">Pin Type Picker</div>
+        <PinTypePicker value={pinType} onChange={setPinType} />
+      </div>
+      <div className="rounded-lg border border-border">
+        <PanelFrame title="Pin list" data-testid="gallery-pin-list">
+          <PinListEditor
+            rows={pins}
+            onChange={setPins}
+            selectedId={selectedPinId}
+            onSelect={setSelectedPinId}
+            showDirection
+          />
         </PanelFrame>
       </div>
       <div className="rounded-lg border border-border p-3" data-testid="gallery-data-types">

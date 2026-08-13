@@ -1,7 +1,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ContextMenuOverlay,
+  NestedMenu,
   PanelFrame,
   SearchInput,
   TreeView,
@@ -9,7 +9,7 @@ import {
   engineParentOf,
   resolveActorTypeVisual,
   walkAncestry,
-  useContextMenu,
+  type NestedMenuItem,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import {
@@ -19,8 +19,14 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { Toggle } from "@babylonslate/ui/components/toggle";
-import { EyeIcon, EyeOffIcon, LockIcon, PlusIcon } from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
+import {
+  EyeIcon,
+  EyeOffIcon,
+  LockIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+} from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
@@ -112,7 +118,6 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     useSceneEditing();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
-  const [menuActorId, setMenuActorId] = useState<string | null>(null);
   const [placeOpen, setPlaceOpen] = useState(false);
   const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(
     () => new Map(),
@@ -272,14 +277,15 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [mutate, scene],
   );
 
-  const { menu, closeMenu, openMenuAt } = useContextMenu({
-    items: [
+  const actorMenuItems = useCallback(
+    (actorId: string): NestedMenuItem[] => [
       {
         id: "duplicate-actor",
         label: "Duplicate",
+        testId: `outliner-duplicate-${actorId}`,
         onSelect: () => {
-          if (!scene || !menuActorId) return;
-          const source = scene.actors.find((a) => a.id === menuActorId);
+          if (!scene) return;
+          const source = scene.actors.find((actor) => actor.id === actorId);
           if (!source) return;
           const id = nextActorId(scene);
           mutate({
@@ -295,17 +301,17 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       {
         id: "delete-actor",
         label: "Delete",
-        onSelect: () => {
-          if (menuActorId) removeActor(menuActorId);
-        },
+        testId: `outliner-delete-${actorId}`,
+        onSelect: () => removeActor(actorId),
       },
     ],
-  });
+    [mutate, removeActor, scene, selectActor],
+  );
 
   return (
     <PanelFrame data-testid="scene-outliner-panel">
-      <div className="flex h-full min-h-0 flex-col gap-2 p-2">
-        <div className="flex shrink-0 items-center gap-1">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex shrink-0 items-center gap-1 px-1 py-1">
           <SearchInput
             className="min-h-[var(--chrome-row,28px)]"
             placeholder="Search actors"
@@ -329,26 +335,37 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               ...node,
               trailing: (
                 <>
-                  <Toggle
-                    variant="default"
-                    size="sm"
-                    aria-label={`Toggle visibility of ${node.label}`}
-                    pressed={!node.muted}
-                    onPressedChange={() => toggleFlag(node.id, "visible")}
+                  <IconActionButton
+                    label={`Toggle visibility of ${node.label}`}
+                    variant="ghost"
+                    onClick={() => toggleFlag(node.id, "visible")}
                     data-testid={`outliner-visibility-${node.id}`}
                   >
                     {node.muted ? <EyeOffIcon /> : <EyeIcon />}
-                  </Toggle>
-                  <Toggle
-                    variant="default"
-                    size="sm"
-                    aria-label={`Toggle lock of ${node.label}`}
-                    pressed={lockedIds.has(node.id)}
-                    onPressedChange={() => toggleFlag(node.id, "locked")}
+                  </IconActionButton>
+                  <IconActionButton
+                    label={`Toggle lock of ${node.label}`}
+                    variant="ghost"
+                    onClick={() => toggleFlag(node.id, "locked")}
                     data-testid={`outliner-lock-${node.id}`}
+                    className={lockedIds.has(node.id) ? "text-primary" : undefined}
                   >
                     <LockIcon />
-                  </Toggle>
+                  </IconActionButton>
+                  <NestedMenu
+                    items={actorMenuItems(node.id)}
+                    trigger={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Actor menu for ${node.label}`}
+                        data-testid={`outliner-menu-${node.id}`}
+                      >
+                        <MoreHorizontalIcon />
+                      </Button>
+                    }
+                  />
                 </>
               ),
             }))}
@@ -364,17 +381,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               })
             }
             onReparent={reparent}
-            onContextMenu={(id, x, y) => {
-              setMenuActorId(id);
-              selectActor(id);
-              openMenuAt(x, y);
-            }}
+            reparentArm="immediate"
             emptyLabel={scene ? "No actors yet" : "Open a scene"}
             data-testid="outliner-tree"
           />
         </div>
       </div>
-      <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <PlaceActorsDialog
         open={placeOpen}
         onOpenChange={setPlaceOpen}

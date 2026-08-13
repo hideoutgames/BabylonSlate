@@ -87,6 +87,24 @@ describe("listDockWindows", () => {
       initialWidth: 260,
     });
   });
+
+  it("lists Enum, Structure, and ScriptInterface dock catalogs", () => {
+    expect(listDockWindows("enum").map((entry) => entry.id)).toEqual([
+      "enum-members",
+      "enum-details",
+    ]);
+    expect(listDockWindows("structure").map((entry) => entry.id)).toEqual([
+      "structure-members",
+      "structure-details",
+    ]);
+    expect(listDockWindows("script-interface").map((entry) => entry.id)).toEqual(
+      [
+        "script-interface-preview",
+        "script-interface-methods",
+        "script-interface-details",
+      ],
+    );
+  });
 });
 
 describe("listEditorUtilityWindows", () => {

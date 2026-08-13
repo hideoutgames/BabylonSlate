@@ -10,10 +10,11 @@ import type { SerializedComponent, SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import {
+  componentSubtreeIds,
   nextPrefabComponentId,
   prefabComponentsFromGraph,
   PREFAB_ROOT_ID,
-  reorderPrefabComponents,
+  reparentPrefabComponents,
 } from "../lib/prefab-preview";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 
@@ -59,6 +60,7 @@ export function PrefabEditingProvider({ children }: { children: ReactNode }) {
           id: nextPrefabComponentId(components),
           classId,
           properties: defaultPropertiesFor(classId),
+          parentId: null,
         },
       ]);
     },
@@ -67,13 +69,14 @@ export function PrefabEditingProvider({ children }: { children: ReactNode }) {
 
   const removeSelected = useCallback(() => {
     if (!selectedId || selectedId === PREFAB_ROOT_ID) return;
-    persist(components.filter((component) => component.id !== selectedId));
+    const doomed = componentSubtreeIds(components, selectedId);
+    persist(components.filter((component) => !doomed.has(component.id)));
     setSelectedId(PREFAB_ROOT_ID);
   }, [components, persist, selectedId]);
 
   const reparentComponent = useCallback(
     (dragId: string, targetId: string | null) => {
-      persist(reorderPrefabComponents(components, dragId, targetId));
+      persist(reparentPrefabComponents(components, dragId, targetId));
     },
     [components, persist],
   );

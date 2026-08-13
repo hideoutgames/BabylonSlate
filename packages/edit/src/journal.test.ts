@@ -14,6 +14,7 @@ import {
   ReorderActorCommand,
   ReorderComponentCommand,
   ReparentActorCommand,
+  ReparentComponentCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
   SetComponentPropertyCommand,
@@ -101,6 +102,7 @@ describe("journal", () => {
         0,
       ),
       new ReorderComponentCommand(actorId, componentId, 0, 0),
+      new ReparentComponentCommand(actorId, componentId, null, null),
       new SetComponentPropertyCommand(
         actorId,
         componentId,

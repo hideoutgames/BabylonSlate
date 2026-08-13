@@ -26,6 +26,7 @@ import {
   createReorderActorCommandFromJson,
   createReorderComponentCommandFromJson,
   createReparentActorCommandFromJson,
+  createReparentComponentCommandFromJson,
   createSetActorFlagsCommandFromJson,
   createSetActorTransformCommandFromJson,
   createSetComponentPropertyCommandFromJson,
@@ -234,6 +235,10 @@ export function registerSceneCommandRevivers(): void {
   registerCommandReviver(
     "scene.reorderComponent",
     createReorderComponentCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.reparentComponent",
+    createReparentComponentCommandFromJson,
   );
   registerCommandReviver(
     "scene.setComponentProperty",

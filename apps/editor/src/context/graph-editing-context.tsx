@@ -10,6 +10,8 @@ import {
 export interface GraphEditingContextValue {
   selectedNodeIds: string[];
   setSelectedNodeIds: (nodeIds: string[]) => void;
+  selectedMemberId: string | null;
+  setSelectedMemberId: (id: string | null) => void;
 }
 
 const GraphEditingContext = createContext<GraphEditingContextValue | null>(
@@ -36,18 +38,42 @@ export function resolveInspectorNodeId(
   );
 }
 
-export function GraphEditingProvider({ children }: { children: ReactNode }) {
+export function GraphEditingProvider({
+  children,
+  initialSelectedMemberId = null,
+}: {
+  children: ReactNode;
+  initialSelectedMemberId?: string | null;
+}) {
   const [selectedNodeIds, setSelectedNodeIdsState] = useState<string[]>([]);
+  const [selectedMemberId, setSelectedMemberIdState] = useState<string | null>(
+    initialSelectedMemberId,
+  );
 
   const setSelectedNodeIds = useCallback((nodeIds: string[]) => {
     setSelectedNodeIdsState((current) =>
       sameIds(current, nodeIds) ? current : nodeIds,
     );
+    if (nodeIds.length > 0) {
+      setSelectedMemberIdState(null);
+    }
+  }, []);
+
+  const setSelectedMemberId = useCallback((id: string | null) => {
+    setSelectedMemberIdState(id);
+    if (id) {
+      setSelectedNodeIdsState([]);
+    }
   }, []);
 
   const value = useMemo<GraphEditingContextValue>(
-    () => ({ selectedNodeIds, setSelectedNodeIds }),
-    [selectedNodeIds, setSelectedNodeIds],
+    () => ({
+      selectedNodeIds,
+      setSelectedNodeIds,
+      selectedMemberId,
+      setSelectedMemberId,
+    }),
+    [selectedMemberId, selectedNodeIds, setSelectedMemberId, setSelectedNodeIds],
   );
 
   return (

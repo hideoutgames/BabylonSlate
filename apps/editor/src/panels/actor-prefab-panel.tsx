@@ -7,11 +7,53 @@ import {
   resolveTypeVisual,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
+import type { SerializedComponent } from "@babylonslate/core";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
-import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import {
+  PREFAB_ROOT_ID,
+  childrenOfPrefabParent,
+} from "../lib/prefab-preview";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
+
+export function flattenPrefabComponents(
+  components: readonly SerializedComponent[],
+  collapsed: ReadonlySet<string>,
+): TreeViewNode[] {
+  const rows: TreeViewNode[] = [];
+  const roots = childrenOfPrefabParent(components, null);
+  rows.push({
+    id: PREFAB_ROOT_ID,
+    label: "Prefab Root",
+    depth: 0,
+    hasChildren: roots.length > 0,
+    expanded: !collapsed.has(PREFAB_ROOT_ID),
+  });
+  if (collapsed.has(PREFAB_ROOT_ID)) return rows;
+
+  const walk = (parentId: string | null, depth: number) => {
+    for (const component of childrenOfPrefabParent(components, parentId)) {
+      const kids = childrenOfPrefabParent(components, component.id);
+      const expanded = !collapsed.has(component.id);
+      rows.push({
+        id: component.id,
+        label: component.classId,
+        depth,
+        hasChildren: kids.length > 0,
+        expanded,
+        icon: (
+          <TypeVisualIcon
+            visual={resolveTypeVisual({ classId: component.classId })}
+          />
+        ),
+      });
+      if (expanded && kids.length > 0) walk(component.id, depth + 1);
+    }
+  };
+  walk(null, 1);
+  return rows;
+}
 
 /**
  * Actor component tree for class documents. The 3D preview lives in the
@@ -28,30 +70,11 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     reparentComponent,
   } = usePrefabEditing();
   const [addOpen, setAddOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
-  const nodes = useMemo<TreeViewNode[]>(
-    () => [
-      {
-        id: PREFAB_ROOT_ID,
-        label: "Prefab Root",
-        depth: 0,
-        hasChildren: components.length > 0,
-        expanded: true,
-      },
-      ...components.map((component) => ({
-        id: component.id,
-        label: component.classId,
-        depth: 1,
-        hasChildren: false,
-        expanded: false,
-        icon: (
-          <TypeVisualIcon
-            visual={resolveTypeVisual({ classId: component.classId })}
-          />
-        ),
-      })),
-    ],
-    [components],
+  const nodes = useMemo(
+    () => flattenPrefabComponents(components, collapsed),
+    [collapsed, components],
   );
 
   return (
@@ -77,20 +100,25 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         </>
       }
     >
-      <p
-        className="border-b border-border px-3 py-2 text-xs text-muted-foreground"
-        data-testid="prefab-saved-note"
-      >
-        Components save on the class document.
-      </p>
-      <TreeView
-        nodes={nodes}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onReparent={reparentComponent}
-        emptyLabel="No components"
-        data-testid="prefab-tree"
-      />
+      <div className="min-h-0 flex-1">
+        <TreeView
+          nodes={nodes}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onToggleExpanded={(id) =>
+            setCollapsed((current) => {
+              const next = new Set(current);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          onReparent={reparentComponent}
+          reparentArm="immediate"
+          emptyLabel="No components"
+          data-testid="prefab-tree"
+        />
+      </div>
       <AddComponentDialog
         open={addOpen}
         onOpenChange={setAddOpen}

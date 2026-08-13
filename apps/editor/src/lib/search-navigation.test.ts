@@ -85,7 +85,7 @@ describe("documentOpenForTarget", () => {
         guid: "enum-1",
         assetType: "Enum",
       }),
-    ).toEqual({ kind: "asset-settings", path: "assets/colors.babasset" });
+    ).toEqual({ kind: "enum", path: "assets/colors.babasset" });
     expect(
       documentOpenForTarget({ kind: "class", classId: "Actor" }),
     ).toEqual({ kind: "content-browser", path: "" });
