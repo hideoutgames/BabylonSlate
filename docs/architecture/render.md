@@ -6,6 +6,20 @@ Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.
 
 One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its overlay canvas with `registerView(canvas, undefined, true)` / `unRegisterView` — never a second `Engine` (WebGL context caps). The UserInterface designer uses the same shared Engine: `createUiSurface` builds a dedicated Scene + standalone `CreateFullscreenUI` (`@babylonjs/gui` is a `@babylonslate/render` dependency only) and **copies the ADT Canvas2D** onto the document canvas. It does not `registerView` that canvas — extra views blit the last 3D framebuffer (editor / Play) onto the tab. Play HUD is a foreground ADT Layer on the Play scene (`attachFullscreenGui`). Dispose the designer Scene + ADTs when the document tab closes so Play’s texture-cache invariant still holds.
 
+## Game UI apply (Babylon-native)
+
+UserInterface documents store Babylon GUI fields (alignment, px/%, left/top, layout padding, transform center). `packages/render` copies those fields onto nested controls — there is no RectTransform solver and no letterbox math in the Play path.
+
+- **ADT bitmap** is the device/canvas size. **ADT ideal** (`idealWidth` / `idealHeight` / `useSmallestIdeal`) is `document.designResolution` + `scaleRule` via `applyAdtIdeal`. Resize must not overwrite ideal with the bitmap size.
+- **Parenting is 1:1 with the widget tree.** Only roots go on the texture host. HorizontalBox/VerticalBox → `StackPanel`; Grid → `Grid` (`addControl(child, row, col)`); ScrollBox → `ScrollViewer`. Never `adt.addControl` for non-roots.
+- **SafeArea** is a host-injected `Container` (`__safeArea`) under the root Canvas, padded from the device-preset insets. Default Canvas children parent into it; `ignoreSafeArea` parents to the full-bleed canvas.
+- **TouchDPad** is a `Rectangle` plus composed `Ellipse`s; TouchButton is a `Rectangle`. Slider `min` / `max` copy onto the Babylon slider.
+- **Fonts:** `applyFontRegistryToHost` (`registerAll` then `consumeDirty` → `adt.markAsDirty()`) on Play HUD and the designer ADT so a custom face is dirty on the first frame after load.
+
+`ui-runtime` stays Babylon-free: it validates the GUI fields, migrates legacy RectTransform payloads (schema v2), and builds the nested spec. A `previewRect` helper mirrors Babylon’s published alignment/%/padding formulas for jsdom designer hit-tests; when a live Engine exists the designer prefers ADT `widthInPixels` / `centerX` bounds.
+
+See [ui-runtime.md](ui-runtime.md) and [fonts.md](fonts.md).
+
 `registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine.
 
 Play does **not** seed `createDefaultScene()` (the default Cube) into the Play Babylon scene. The Play scene is camera + light only; snapshot apply creates meshes for runtime actors. `assignMesh` commands carry `meshKind` from `MeshComponent` so Play primitives match the editor (sphere, box, …) instead of always being a unit box. Authored actors themselves come from the `load` message `scene` payload (`p7-play-scene-load`).

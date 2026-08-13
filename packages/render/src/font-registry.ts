@@ -123,3 +123,13 @@ export class FontRegistry {
     return ok;
   }
 }
+
+/** Register faces then dirty the ADT if any face resolved. */
+export async function applyFontRegistryToHost(
+  registry: FontRegistry,
+  entries: readonly FontAssetEntry[],
+  markDirty: () => void,
+): Promise<void> {
+  await registry.registerAll(entries);
+  if (registry.consumeDirty()) markDirty();
+}

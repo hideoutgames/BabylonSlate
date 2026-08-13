@@ -66,7 +66,7 @@ Static style rules that a running browser cannot prove (a hardcoded radius on an
 
 ## Golden files
 
-`readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots, P9 UI layout presets, sprite rectangle packing). `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
+`readGolden` / `writeGolden` / `normalizeGoldenText` in `@babylonslate/test-kit` back byte-exact surfaces (container formats, compiler output, P3 world snapshots, sprite rectangle packing). UserInterface layout uses `previewRect` tables rather than a RectTransform golden. `normalizeGoldenText` normalizes CRLF and trailing newlines so goldens do not churn across platforms.
 
 ## Deterministic runtime harness (P3 / P4)
 

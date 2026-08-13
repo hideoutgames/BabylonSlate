@@ -38,8 +38,8 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load | Spec | E2E asserts Play spawn guid `actor-1` rather than reading the snapshot buffer; spawn is how snapshot slots are assigned | Accepted |
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p8-command-system | Spec | `changescene` still only fires `GameInstance.onSceneLoaded`; core quality/volume/framecap setters emit console logs until the HUD/renderer consume them | Resolved (scene library load in foundation wave; quality setters still log) |
 | 2026-08-13 | cursor/foundation-harden-e9a2 | pre-P11 foundation | Spec | Play/scripting contracts that catalogs marked Done were host stubs (ScriptHost input, Delay wall-clock, closed-tab prefab/scene, GameInstance picker, untextured sprites, ignored GLB, HUD button no-ops, silent `playSound`) | Resolved |
-| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD does not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes). Cold-load Play first-frame is later polish | Accepted |
-| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; designer goldens cover layout | Accepted |
+| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD did not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes) | Resolved (`cursor/babylon-native-ui-138e` registers `source` bytes on Play + designer ADT) |
+| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; `previewRect` tables cover pin / percent / stretch-padding / safe-area | Accepted |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-system | Standards | Play HUD `borderRadius: 999` (stick) pre-existed; widget style passthrough still uses a numeric fallback | Accepted |
 | 2026-08-13 | cursor/startup-scene-play-cleanup-ebf7 | p14-export / Play | Spec | Unused `collectPlayStartupScene` still loaded `scenes[0]` / `main.scene.babasset` when no scene tab was open | Resolved |
 
@@ -270,7 +270,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 
 | Wave | Status |
 | --- | --- |
-| A — UI design canvas pan/zoom/drag + offset PropertyGrid | Done (`cursor/authoring-surface-8678`) |
+| A — UI design canvas pan/zoom/drag + alignment / left / top PropertyGrid | Done (`cursor/authoring-surface-8678`; Babylon-native fields on `cursor/babylon-native-ui-138e`) |
 | B — UI Logic palette + Play compile + Class `flow.event.custom` | Done (`cursor/authoring-surface-8678`) |
 | C — Sprite Texture picker | Done (`cursor/authoring-surface-8678`) |
 | D — Shader `NodeMaterial.Parse` preview + shader/anim catalog pin hydration | Done (`cursor/authoring-surface-8678`) |
@@ -290,7 +290,7 @@ Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateF
 | Play engine applies sprite-clip UVs from `animState` | `applyAnimStateToScene` calls `applySpriteAnimFrame` when `clipKind === "sprite"`; Play loads sprite payloads from scene `SpriteComponent` guids | Done (`cursor/play-path-harden-8678`) |
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
-| Play HUD `FontRegistry.registerAll` from project Font assets | Font editor registers imported `source` bytes; Play HUD uses the compiled CSS stack + generic fallback without awaiting project FontFace loads | Later polish |
+| Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
 
 ## P10 tilemaps
 

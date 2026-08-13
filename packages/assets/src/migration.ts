@@ -2,6 +2,7 @@ import {
   createDefaultSceneSettings,
   identitySerializedTransform,
 } from "@babylonslate/core";
+import { migrateUserInterfacePayload } from "@babylonslate/ui-runtime";
 
 export type MigrationFn = (
   payload: Record<string, unknown>,
@@ -146,5 +147,15 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
     type: "Project",
     migrations: [(payload) => ({ ...payload })],
   });
+  registry.register({
+    type: "UserInterface",
+    migrations: [
+      (payload) => ({ ...payload }),
+      (payload) => migrateUserInterfacePayload(payload),
+    ],
+  });
   return registry;
 }
+
+/** Current UserInterface payload version (Babylon alignment / size / padding). */
+export const USER_INTERFACE_SCHEMA_VERSION = 2;

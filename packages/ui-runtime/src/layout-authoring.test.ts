@@ -13,7 +13,7 @@ import {
   widgetAllowsDesignerTransform,
   ANCHOR_PRESETS,
 } from "./layout-authoring";
-import { computeAnchoredRect, layoutUserInterface } from "./layout";
+import { layoutUserInterface, previewRect } from "./layout";
 import {
   createDefaultPlayHud,
   createWidget,
@@ -21,77 +21,62 @@ import {
   stretchLayout,
   type Rect,
 } from "./types";
+import { roundRect } from "./preview-rect";
 
 const parent: Rect = { x: 0, y: 0, width: 800, height: 600 };
 
-function round(n: number): number {
-  return Math.round(n * 1000) / 1000;
-}
-
-function roundRect(rect: Rect): Rect {
-  return {
-    x: round(rect.x),
-    y: round(rect.y),
-    width: round(rect.width),
-    height: round(rect.height),
-  };
-}
-
 describe("layoutFromRect", () => {
-  it("recovers pinLayout offsets for a centered 200x100 widget", () => {
-    const layout = pinLayout({ x: 0.5, y: 0.5 }, { x: 200, y: 100 });
-    const rect = computeAnchoredRect(parent, layout);
-    const rebuilt = layoutFromRect(parent, rect, layout.anchorMin, layout.anchorMax, layout.pivot);
-    expect(rebuilt.offsetMin).toEqual(layout.offsetMin);
-    expect(rebuilt.offsetMax).toEqual(layout.offsetMax);
-    expect(roundRect(computeAnchoredRect(parent, rebuilt))).toEqual(roundRect(rect));
+  it("recovers a centered pin", () => {
+    const layout = pinLayout("center", "center", 200, 100);
+    const rect = previewRect(parent, layout);
+    const rebuilt = layoutFromRect(parent, rect, "middle-center", layout.transformCenter);
+    expect(roundRect(previewRect(parent, rebuilt))).toEqual(roundRect(rect));
   });
 
   it("recovers stretch insets", () => {
     const layout = stretchLayout({ left: 16, right: 24, top: 8, bottom: 12 });
-    const rect = computeAnchoredRect(parent, layout);
-    const rebuilt = layoutFromRect(parent, rect, layout.anchorMin, layout.anchorMax, layout.pivot);
-    expect(rebuilt.offsetMin).toEqual(layout.offsetMin);
-    expect(rebuilt.offsetMax).toEqual(layout.offsetMax);
+    const rect = previewRect(parent, layout);
+    const rebuilt = layoutFromRect(parent, rect, "stretch-stretch");
+    expect(rebuilt.widthUnit).toBe("percent");
+    expect(rebuilt.heightUnit).toBe("percent");
+    expect(roundRect(previewRect(parent, rebuilt))).toEqual(roundRect(rect));
   });
 });
 
 describe("anchor presets", () => {
-  it("lists the 16 Unity-style presets", () => {
+  it("lists the 16 alignment macros", () => {
     expect(ANCHOR_PRESETS).toHaveLength(16);
     expect(ANCHOR_PRESETS.map((row) => row.id)).toContain("middle-center");
     expect(ANCHOR_PRESETS.map((row) => row.id)).toContain("stretch-stretch");
   });
 
   it("changing preset keeps the on-screen rect", () => {
-    const layout = pinLayout({ x: 0.5, y: 0.5 }, { x: 120, y: 80 });
-    const before = computeAnchoredRect(parent, layout);
+    const layout = pinLayout("center", "center", 120, 80);
+    const before = previewRect(parent, layout);
     const next = applyAnchorPreset(layout, parent, "top-left");
-    expect(next.anchorMin).toEqual({ x: 0, y: 1 });
-    expect(next.anchorMax).toEqual({ x: 0, y: 1 });
-    expect(roundRect(computeAnchoredRect(parent, next))).toEqual(roundRect(before));
+    expect(next.horizontalAlignment).toBe("left");
+    expect(next.verticalAlignment).toBe("top");
+    expect(roundRect(previewRect(parent, next))).toEqual(roundRect(before));
   });
 
-  it("stretch-stretch preset fills via offsets without jumping", () => {
-    const layout = pinLayout({ x: 0.12, y: 0.18 }, { x: 160, y: 160 });
-    const before = computeAnchoredRect(parent, layout);
+  it("stretch-stretch preset fills via padding without jumping", () => {
+    const layout = pinLayout("left", "bottom", 160, 160, 40, 0);
+    const before = previewRect(parent, layout);
     const next = applyAnchorPreset(layout, parent, "stretch-stretch");
-    expect(next.anchorMin).toEqual({ x: 0, y: 0 });
-    expect(next.anchorMax).toEqual({ x: 1, y: 1 });
-    expect(roundRect(computeAnchoredRect(parent, next))).toEqual(roundRect(before));
+    expect(next.widthUnit).toBe("percent");
+    expect(next.heightUnit).toBe("percent");
+    expect(roundRect(previewRect(parent, next))).toEqual(roundRect(before));
   });
 
   it("matches the nearest named preset", () => {
-    expect(matchAnchorPreset(pinLayout({ x: 0, y: 1 }, { x: 10, y: 10 }))).toBe(
-      "top-left",
-    );
+    expect(matchAnchorPreset(pinLayout("left", "top", 10, 10))).toBe("top-left");
     expect(matchAnchorPreset(stretchLayout())).toBe("stretch-stretch");
   });
 });
 
 describe("authoring fields", () => {
-  it("exposes pos and size when pinned", () => {
-    const layout = pinLayout({ x: 0.5, y: 0.5 }, { x: 200, y: 100 });
+  it("exposes left/top and size when pinned", () => {
+    const layout = pinLayout("center", "center", 200, 100);
     const fields = authoringFieldsFromLayout(parent, layout);
     expect(fields.pinX).toBe(true);
     expect(fields.pinY).toBe(true);
@@ -101,7 +86,7 @@ describe("authoring fields", () => {
     expect(fields.posY).toBe(0);
   });
 
-  it("exposes left/right/top/bottom when stretching", () => {
+  it("exposes padding when stretching", () => {
     const layout = stretchLayout({ left: 16, right: 24, top: 8, bottom: 12 });
     const fields = authoringFieldsFromLayout(parent, layout);
     expect(fields.pinX).toBe(false);
@@ -112,44 +97,43 @@ describe("authoring fields", () => {
     expect(fields.bottom).toBe(12);
   });
 
-  it("writes width around the pivot when pinned", () => {
-    const layout = pinLayout({ x: 0.5, y: 0.5 }, { x: 200, y: 100 });
+  it("writes width when pinned", () => {
+    const layout = pinLayout("center", "center", 200, 100);
     const next = applyAuthoringFields(layout, parent, { width: 300 });
-    const rect = computeAnchoredRect(parent, next);
+    const rect = previewRect(parent, next);
     expect(rect.width).toBe(300);
-    expect(rect.x + rect.width * 0.5).toBe(400);
   });
 
-  it("writes left/right when stretching X", () => {
+  it("writes padding when stretching", () => {
     const layout = stretchLayout();
     const next = applyAuthoringFields(layout, parent, { left: 40, right: 60 });
     const fields = authoringFieldsFromLayout(parent, next);
     expect(fields.left).toBe(40);
     expect(fields.right).toBe(60);
-    expect(computeAnchoredRect(parent, next).width).toBe(700);
+    expect(previewRect(parent, next).width).toBe(700);
   });
 });
 
 describe("resize", () => {
   it("grows the right edge without moving the left", () => {
-    const layout = pinLayout({ x: 0, y: 0 }, { x: 100, y: 40 }, { x: 0, y: 0 });
-    const before = computeAnchoredRect(parent, layout);
+    const layout = pinLayout("left", "top", 100, 40, 0, 0);
+    const before = previewRect(parent, layout);
     const next = applyWidgetResize(layout, parent, { x: 20, y: 0 }, {
       right: true,
     });
-    const rect = computeAnchoredRect(parent, next);
+    const rect = previewRect(parent, next);
     expect(rect.x).toBe(before.x);
     expect(rect.width).toBe(before.width + 20);
   });
 
-  it("moves the top edge in engine Y-up", () => {
-    const layout = pinLayout({ x: 0, y: 0 }, { x: 100, y: 40 }, { x: 0, y: 0 });
-    const before = computeAnchoredRect(parent, layout);
-    const next = applyWidgetResize(layout, parent, { x: 0, y: 10 }, {
+  it("moves the top edge in GUI Y-down", () => {
+    const layout = pinLayout("left", "top", 100, 40, 0, 100);
+    const before = previewRect(parent, layout);
+    const next = applyWidgetResize(layout, parent, { x: 0, y: -10 }, {
       top: true,
     });
-    const rect = computeAnchoredRect(parent, next);
-    expect(rect.y).toBe(before.y);
+    const rect = previewRect(parent, next);
+    expect(rect.y).toBe(before.y - 10);
     expect(rect.height).toBe(before.height + 10);
   });
 });
@@ -157,9 +141,10 @@ describe("resize", () => {
 describe("default add layout", () => {
   it("pins a Button at parent center with a preferred size, not stretch-fill", () => {
     const layout = defaultAddLayout("Button");
-    expect(layout.anchorMin).toEqual(layout.anchorMax);
-    expect(layout.anchorMin).toEqual({ x: 0.5, y: 0.5 });
-    const rect = computeAnchoredRect(parent, layout);
+    expect(layout.horizontalAlignment).toBe("center");
+    expect(layout.verticalAlignment).toBe("center");
+    expect(layout.widthUnit).toBe("px");
+    const rect = previewRect(parent, layout);
     expect(rect.width).toBe(preferredWidgetSize("Button").width);
     expect(rect.height).toBe(preferredWidgetSize("Button").height);
     expect(rect.x + rect.width / 2).toBe(400);

@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Scene } from "@babylonjs/core/scene";
 import {
   applyAdtIdeal,
+  applyFontRegistryToHost,
   applyUiControls,
   attachFullscreenGui,
+  FontRegistry,
+  type FontAssetEntry,
 } from "@babylonslate/render";
 import {
   describeUiControls,
@@ -27,6 +30,7 @@ export interface PlayHudOverlayProps {
   onTouchAxis: (controlId: string, value: number) => void;
   /** Play scene; when set, widgets render through Babylon GUI. */
   scene?: Scene | null;
+  fontEntries?: readonly FontAssetEntry[];
 }
 
 function numberProp(
@@ -61,6 +65,7 @@ export function PlayHudOverlay({
   hiddenWidgetIds,
   onTouchAxis,
   scene = null,
+  fontEntries = [],
 }: PlayHudOverlayProps) {
   const pointerIdRef = useRef<number | null>(null);
   const onTouchAxisRef = useRef(onTouchAxis);
@@ -82,7 +87,7 @@ export function PlayHudOverlay({
         safeArea: preset.safeArea,
         resolveNested,
       });
-      return describeUiControls(entry.document, layout, viewport.height).map(
+      return describeUiControls(entry.document, layout).map(
         (control) => ({
           ...control,
           id: `${entry.instanceId}:${control.id}`,
@@ -111,11 +116,18 @@ export function PlayHudOverlay({
       return;
     }
     try {
+      const first = instances[0]?.document;
       const attached = attachFullscreenGui(scene, {
         name: "play-hud",
         interactive: true,
         width: Math.max(1, width),
         height: Math.max(1, height),
+        designResolution: first?.designResolution ?? {
+          width: Math.max(1, width),
+          height: Math.max(1, height),
+        },
+        scaleRule: first?.scaleRule ?? "shortestSide",
+        safeArea: preset.safeArea,
         onTouchAxis: (controlId, value) => onTouchAxisRef.current(controlId, value),
       });
       attachedRef.current = attached;
@@ -129,18 +141,28 @@ export function PlayHudOverlay({
       attachedRef.current = null;
       setGuiReady(false);
     }
-  }, [scene, width, height]);
+  }, [scene, width, height, instances, preset.safeArea]);
 
   useEffect(() => {
     const attached = attachedRef.current;
     if (!attached) return;
+    const first = instances[0]?.document;
     applyAdtIdeal(
       attached.adt,
-      { width: Math.max(1, width), height: Math.max(1, height) },
-      "shortestSide",
+      first?.designResolution ?? { width: Math.max(1, width), height: Math.max(1, height) },
+      first?.scaleRule ?? "shortestSide",
     );
     applyUiControls(attached.host, visibleControls);
-  }, [visibleControls, width, height, scene]);
+  }, [visibleControls, width, height, scene, instances]);
+
+  useEffect(() => {
+    const attached = attachedRef.current;
+    if (!attached || fontEntries.length === 0) return;
+    const registry = new FontRegistry();
+    void applyFontRegistryToHost(registry, fontEntries, () => {
+      attached.adt.markAsDirty();
+    });
+  }, [fontEntries, guiReady, scene]);
 
   const emitStick = useCallback(
     (

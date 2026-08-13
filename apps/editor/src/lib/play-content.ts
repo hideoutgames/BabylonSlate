@@ -5,7 +5,12 @@ import {
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
 import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
-import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
+import type { UserInterfaceDocument, WidgetNode } from "@babylonslate/ui-runtime";
+import {
+  migrateUserInterfacePayload,
+  normalizeLayout,
+  isBabylonWidgetLayout,
+} from "@babylonslate/ui-runtime";
 
 export interface PlayContentDocument {
   id: string;
@@ -31,7 +36,7 @@ function sizeFrom(value: unknown): { width: number; height: number } | null {
 
 /** Hydrate a UserInterface document from an open asset payload. */
 export function asUiDocument(value: unknown): UserInterfaceDocument {
-  const record = asRecord(value);
+  const record = migrateUserInterfacePayload(asRecord(value));
   const designResolution =
     sizeFrom(record.designResolution) ?? { width: 1920, height: 1080 };
   return {
@@ -45,8 +50,23 @@ export function asUiDocument(value: unknown): UserInterfaceDocument {
         ? record.scaleRule
         : "shortestSide",
     viewportLayer: record.viewportLayer !== false,
-    widgets: asRecord(record.widgets) as UserInterfaceDocument["widgets"],
+    widgets: asUiWidgets(asRecord(record.widgets)),
   };
+}
+
+function asUiWidgets(
+  widgets: Record<string, unknown>,
+): UserInterfaceDocument["widgets"] {
+  const next: UserInterfaceDocument["widgets"] = {};
+  for (const [id, widget] of Object.entries(widgets)) {
+    if (!widget || typeof widget !== "object") continue;
+    const record = widget as WidgetNode;
+    const layout = isBabylonWidgetLayout(record.layout)
+      ? normalizeLayout(record.layout)
+      : record.layout;
+    next[id] = { ...record, id: typeof record.id === "string" ? record.id : id, layout };
+  }
+  return next;
 }
 
 function isSerializedGraph(value: unknown): value is SerializedGraph {
