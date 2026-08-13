@@ -4,6 +4,7 @@ export {
   designerViewport,
   devicePresetById,
   devicePresetForViewport,
+  mergeDevicePresets,
 } from "./presets";
 export type { DesignerCanvasId, DevicePreset } from "./presets";
 export type {

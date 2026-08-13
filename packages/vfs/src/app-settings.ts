@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+function clampMin(value: unknown, min: number): unknown {
+  if (typeof value !== "number" || !Number.isFinite(value)) return value;
+  return Math.max(min, value);
+}
+
 export const engineSettingsSchema = z.object({
   templatesFolder: z.string().nullable().default(null),
   defaultProjectLocation: z.string().nullable().default(null),
@@ -40,6 +45,27 @@ export const engineSettingsSchema = z.object({
       graph: z.array(z.string()).default(["graph"]),
     })
     .default({ scene: ["viewport"], graph: ["graph"] }),
+  uiDesignerPresets: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        width: z.preprocess((value) => clampMin(value, 1), z.number().min(1)),
+        height: z.preprocess((value) => clampMin(value, 1), z.number().min(1)),
+        safeArea: z
+          .object({
+            left: z.preprocess((value) => clampMin(value, 0), z.number().min(0).default(0)),
+            right: z.preprocess((value) => clampMin(value, 0), z.number().min(0).default(0)),
+            top: z.preprocess((value) => clampMin(value, 0), z.number().min(0).default(0)),
+            bottom: z.preprocess(
+              (value) => clampMin(value, 0),
+              z.number().min(0).default(0),
+            ),
+          })
+          .default({ left: 0, right: 0, top: 0, bottom: 0 }),
+      }),
+    )
+    .default([]),
 });
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;

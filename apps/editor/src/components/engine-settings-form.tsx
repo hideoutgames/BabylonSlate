@@ -1,5 +1,6 @@
 import { NumberField } from "@babylonslate/editor-kit";
 import type { EngineSettings } from "@babylonslate/vfs";
+import { DEVICE_PRESETS } from "@babylonslate/ui-runtime";
 import { Button } from "@babylonslate/ui/components/button";
 import { Switch } from "@babylonslate/ui/components/switch";
 import {
@@ -38,7 +39,8 @@ export type EngineSettingsCategoryId =
   | "thumbnails"
   | "templates"
   | "focus"
-  | "graph";
+  | "graph"
+  | "ui";
 
 export function EngineSettingsForm({
   settings,
@@ -236,6 +238,13 @@ export function EngineSettingsForm({
         </FieldSet>
       ) : null}
 
+      {categoryId === "ui" ? (
+        <UiDesignerPresetList
+          presets={settings.uiDesignerPresets}
+          onChange={(uiDesignerPresets) => void onChange({ uiDesignerPresets })}
+        />
+      ) : null}
+
       {categoryId === "focus" ? (
         <>
           <FocusKeepPanelList
@@ -379,5 +388,210 @@ function FocusKeepPanelList({
         </Field>
       ) : null}
     </FieldSet>
+  );
+}
+
+type UiDesignerPreset = EngineSettings["uiDesignerPresets"][number];
+
+function newCustomPresetId(): string {
+  const suffix =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : String(Date.now());
+  return `custom-${suffix}`;
+}
+
+function UiDesignerPresetList({
+  presets,
+  onChange,
+}: {
+  presets: UiDesignerPreset[];
+  onChange: (presets: UiDesignerPreset[]) => void;
+}) {
+  const patchPreset = (id: string, patch: Partial<UiDesignerPreset>) => {
+    onChange(
+      presets.map((preset) =>
+        preset.id === id ? { ...preset, ...patch } : preset,
+      ),
+    );
+  };
+  return (
+    <>
+      <FieldSet>
+        <FieldLegend>Built-In</FieldLegend>
+        <Field>
+          <FieldDescription>
+            Stock UserInterface designer canvases. Add custom sizes below.
+          </FieldDescription>
+        </Field>
+        {DEVICE_PRESETS.map((preset) => (
+          <Field
+            key={preset.id}
+            orientation="horizontal"
+            data-testid={`ui-preset-builtin-${preset.id}`}
+          >
+            <FieldLabel>{preset.label}</FieldLabel>
+            <FieldDescription>
+              {preset.width} × {preset.height}
+            </FieldDescription>
+          </Field>
+        ))}
+      </FieldSet>
+      <FieldSet>
+        <FieldLegend>Custom</FieldLegend>
+        {presets.map((preset) => (
+          <FieldGroup key={preset.id} data-testid={`ui-preset-custom-${preset.id}`}>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor={`ui-preset-label-${preset.id}`}>
+                Name
+              </FieldLabel>
+              <Button
+                type="button"
+                variant="ghost"
+                size="touch-icon"
+                aria-label={`Remove ${preset.label}`}
+                data-testid={`ui-preset-remove-${preset.id}`}
+                onClick={() =>
+                  onChange(presets.filter((entry) => entry.id !== preset.id))
+                }
+              >
+                <XIcon />
+              </Button>
+            </Field>
+            <Field>
+              <Input
+                id={`ui-preset-label-${preset.id}`}
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid={`ui-preset-label-${preset.id}`}
+                value={preset.label}
+                onChange={(event) =>
+                  patchPreset(preset.id, {
+                    label: event.target.value.length > 0 ? event.target.value : "Custom",
+                  })
+                }
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`ui-preset-width-${preset.id}`}>
+                Width
+              </FieldLabel>
+              <NumberField
+                id={`ui-preset-width-${preset.id}`}
+                min={1}
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid={`ui-preset-width-${preset.id}`}
+                value={preset.width}
+                onChange={(width) => patchPreset(preset.id, { width })}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`ui-preset-height-${preset.id}`}>
+                Height
+              </FieldLabel>
+              <NumberField
+                id={`ui-preset-height-${preset.id}`}
+                min={1}
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid={`ui-preset-height-${preset.id}`}
+                value={preset.height}
+                onChange={(height) => patchPreset(preset.id, { height })}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`ui-preset-safe-top-${preset.id}`}>
+                Safe Top
+              </FieldLabel>
+              <NumberField
+                id={`ui-preset-safe-top-${preset.id}`}
+                min={0}
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid={`ui-preset-safe-top-${preset.id}`}
+                value={preset.safeArea.top}
+                onChange={(top) =>
+                  patchPreset(preset.id, {
+                    safeArea: { ...preset.safeArea, top },
+                  })
+                }
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`ui-preset-safe-right-${preset.id}`}>
+                Safe Right
+              </FieldLabel>
+              <NumberField
+                id={`ui-preset-safe-right-${preset.id}`}
+                min={0}
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid={`ui-preset-safe-right-${preset.id}`}
+                value={preset.safeArea.right}
+                onChange={(right) =>
+                  patchPreset(preset.id, {
+                    safeArea: { ...preset.safeArea, right },
+                  })
+                }
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`ui-preset-safe-bottom-${preset.id}`}>
+                Safe Bottom
+              </FieldLabel>
+              <NumberField
+                id={`ui-preset-safe-bottom-${preset.id}`}
+                min={0}
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid={`ui-preset-safe-bottom-${preset.id}`}
+                value={preset.safeArea.bottom}
+                onChange={(bottom) =>
+                  patchPreset(preset.id, {
+                    safeArea: { ...preset.safeArea, bottom },
+                  })
+                }
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`ui-preset-safe-left-${preset.id}`}>
+                Safe Left
+              </FieldLabel>
+              <NumberField
+                id={`ui-preset-safe-left-${preset.id}`}
+                min={0}
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid={`ui-preset-safe-left-${preset.id}`}
+                value={preset.safeArea.left}
+                onChange={(left) =>
+                  patchPreset(preset.id, {
+                    safeArea: { ...preset.safeArea, left },
+                  })
+                }
+              />
+            </Field>
+          </FieldGroup>
+        ))}
+        <Field>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-[var(--touch-target,44px)] w-full"
+            data-testid="ui-preset-add"
+            onClick={() =>
+              onChange([
+                ...presets,
+                {
+                  id: newCustomPresetId(),
+                  label: "Custom",
+                  width: 1280,
+                  height: 720,
+                  safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+                },
+              ])
+            }
+          >
+            <PlusIcon data-icon="inline-start" />
+            Add Preset
+          </Button>
+        </Field>
+      </FieldSet>
+    </>
   );
 }

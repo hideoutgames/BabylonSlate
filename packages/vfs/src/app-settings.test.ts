@@ -17,6 +17,37 @@ describe("app settings", () => {
       graph: ["graph"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
+    expect(settings.uiDesignerPresets).toEqual([]);
+  });
+
+  it("fills UserInterface designer presets when saved JSON omits the field", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.uiDesignerPresets).toEqual([]);
+  });
+
+  it("clamps custom UserInterface preset sizes and insets", () => {
+    const parsed = engineSettingsSchema.parse({
+      uiDesignerPresets: [
+        {
+          id: "custom-phone",
+          label: "Phone",
+          width: 0,
+          height: -10,
+          safeArea: { left: -2, right: 4, top: -1, bottom: 8 },
+        },
+      ],
+    });
+    expect(parsed.uiDesignerPresets).toEqual([
+      {
+        id: "custom-phone",
+        label: "Phone",
+        width: 1,
+        height: 1,
+        safeArea: { left: 0, right: 4, top: 0, bottom: 8 },
+      },
+    ]);
   });
 
   it("fills graph default zoom when saved JSON omits the field", () => {
