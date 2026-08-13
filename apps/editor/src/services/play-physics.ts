@@ -98,12 +98,27 @@ export function playSceneFromOpenDocuments(
   };
 }
 
+/** Open scene tab, else a project startup/main scene loaded from disk. */
+export function resolvePlayScene(options: {
+  documents: readonly PlaySceneDocument[];
+  activeDocumentId: string | null;
+  fallback?: PlaySceneLoad | null;
+}): PlaySceneLoad | null {
+  return (
+    playSceneFromOpenDocuments(options.documents, options.activeDocumentId) ??
+    options.fallback ??
+    null
+  );
+}
+
 export function playLoadControl(options: {
   sceneAssetGuid?: string;
   scene?: SerializedScene;
   seed?: number;
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
+  gameInstanceClass?: string;
+  scenes?: Array<{ guid: string; scene: SerializedScene }>;
 }): Extract<ControlMessage, { type: "load" }> {
   const physics = playPhysicsFromSceneSettings({
     physicsWorld: options.physicsWorld,
@@ -117,6 +132,8 @@ export function playLoadControl(options: {
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
     havokWasmUrl: editorHavokWasmUrl(),
+    gameInstanceClass: options.gameInstanceClass,
+    scenes: options.scenes,
   };
 }
 

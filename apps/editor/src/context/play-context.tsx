@@ -25,7 +25,12 @@ import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
-import { playPhysicsFromOpenDocuments, playSceneFromOpenDocuments } from "../services/play-physics";
+import {
+  playPhysicsFromOpenDocuments,
+  playPhysicsFromSceneSettings,
+  resolvePlayScene,
+  type PlaySceneLoad,
+} from "../services/play-physics";
 import type { PlayAnimGraphEntry } from "../lib/play-content";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
@@ -111,12 +116,18 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playTilesets, setPlayTilesets] = useState<Map<string, TilesetPayload>>(
     () => new Map(),
   );
+  const [playSceneLoad, setPlaySceneLoad] = useState<PlaySceneLoad | null>(null);
+  const [playSceneLibrary, setPlaySceneLibrary] = useState<
+    Array<{ guid: string; scene: import("@babylonslate/core").SerializedScene }>
+  >([]);
   const {
     collectPlayPreviewScripts,
     collectPlayUiLibrary,
     collectPlayAnimGraphs,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
+    collectPlayStartupScene,
+    collectPlaySceneLibrary,
     openDocuments,
     activeDocumentId,
     projectDocument,
@@ -126,14 +137,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     saveAll,
   } = useDocuments();
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
-  const playPhysics = playPhysicsFromOpenDocuments(
-    openDocuments,
+  const playScene = resolvePlayScene({
+    documents: openDocuments,
     activeDocumentId,
-  );
-  const playScene = playSceneFromOpenDocuments(
-    openDocuments,
-    activeDocumentId,
-  );
+    fallback: playSceneLoad,
+  });
+  const playPhysics = playScene
+    ? playPhysicsFromSceneSettings(playScene.scene.settings)
+    : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId);
 
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
@@ -265,6 +276,21 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setScripts(nextScripts);
           setDiagnostics(nextDiagnostics);
         }
+        const fallbackScene = await collectPlayStartupScene();
+        const resolvedScene = resolvePlayScene({
+          documents: openDocuments,
+          activeDocumentId,
+          fallback: fallbackScene,
+        });
+        setPlaySceneLoad(resolvedScene);
+        try {
+          setPlaySceneLibrary(await collectPlaySceneLibrary());
+        } catch (error) {
+          appendLog(
+            `Scene library failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlaySceneLibrary([]);
+        }
         try {
           setPlayUiLibrary(await collectPlayUiLibrary());
         } catch (error) {
@@ -274,7 +300,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayUiLibrary({});
         }
         try {
-          setPlayAnimGraphs(await collectPlayAnimGraphs(playScene?.scene));
+          setPlayAnimGraphs(await collectPlayAnimGraphs(resolvedScene?.scene));
         } catch (error) {
           appendLog(
             `AnimationGraph load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -283,7 +309,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         }
         try {
           setPlaySpritePayloads(
-            await collectPlaySpritePayloads(playScene?.scene),
+            await collectPlaySpritePayloads(resolvedScene?.scene),
           );
         } catch (error) {
           appendLog(
@@ -292,7 +318,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlaySpritePayloads(new Map());
         }
         try {
-          const tileContent = await collectPlayTilemapContent(playScene?.scene);
+          const tileContent = await collectPlayTilemapContent(resolvedScene?.scene);
           setPlayTilemaps(tileContent.tilemaps);
           setPlayTilesets(tileContent.tilesets);
         } catch (error) {
@@ -319,7 +345,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         );
         setPrepareState(null);
         setScripts([]);
-        launchPlay({ injectFixtureThrow: inject, scripts: [] });
+        if (inject) {
+          launchPlay({ injectFixtureThrow: true, scripts: [] });
+        }
       } finally {
         preparingRef.current = false;
         setPreparing(false);
@@ -332,12 +360,16 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayAnimGraphs,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
+      collectPlayStartupScene,
+      collectPlaySceneLibrary,
       diagnostics,
       dirtyDocuments,
       launchPlay,
       migrationPending.length,
       playing,
       playScene,
+      openDocuments,
+      activeDocumentId,
       saveAll,
       scripts,
       scriptsStale,
@@ -452,6 +484,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             physics={playPhysics}
             sceneAssetGuid={playScene?.sceneAssetGuid}
             scene={playScene?.scene}
+            gameInstanceClass={playScene?.scene.settings.gameInstanceClass ?? undefined}
+            scenes={playSceneLibrary}
             uiLibrary={playUiLibrary}
             animGraphs={playAnimGraphs}
             spritePayloads={playSpritePayloads}

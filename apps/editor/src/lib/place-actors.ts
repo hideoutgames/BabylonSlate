@@ -14,6 +14,7 @@ import { defaultPropertiesFor } from "../panels/add-component-catalog";
 import {
   defaultPrefabComponents,
   instantiatePrefabComponents,
+  prefabComponentsFromGraph,
 } from "./prefab-preview";
 
 export type PlaceActorKind =
@@ -67,6 +68,27 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
   },
 ];
 
+export const PLACEABLE_PROJECT_TYPES = new Set(["Class", "Model"]);
+
+export function prefabComponentsForGuid(
+  guid: string,
+  options: {
+    assets: Array<{
+      path?: string;
+      header: { guid: string; name: string; type?: string };
+    }>;
+    graphForPath: (
+      path: string,
+    ) => { components?: SerializedComponent[] } | undefined;
+  },
+): SerializedComponent[] | undefined {
+  const asset = options.assets.find((entry) => entry.header.guid === guid);
+  if (!asset?.path || asset.header.type !== "Class") return undefined;
+  const graph = options.graphForPath(asset.path);
+  if (!graph) return undefined;
+  return prefabComponentsFromGraph(graph);
+}
+
 export function projectPlaceActors(
   assets: Array<{
     path?: string;
@@ -74,20 +96,22 @@ export function projectPlaceActors(
   }>,
   prefabForGuid?: (guid: string) => SerializedComponent[] | undefined,
 ): PlaceActorItem[] {
-  return assets.map((asset) => ({
-    id: `asset-${asset.header.guid}`,
-    title: asset.header.name,
-    category: "Project",
-    kind: {
-      type: "asset",
-      name: asset.header.name,
-      guid: asset.header.guid,
-      assetType: asset.header.type,
-      classId:
-        asset.header.type === "Class" ? asset.header.name : undefined,
-      components: prefabForGuid?.(asset.header.guid),
-    },
-  }));
+  return assets
+    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? ""))
+    .map((asset) => ({
+      id: `asset-${asset.header.guid}`,
+      title: asset.header.name,
+      category: "Project",
+      kind: {
+        type: "asset" as const,
+        name: asset.header.name,
+        guid: asset.header.guid,
+        assetType: asset.header.type,
+        classId:
+          asset.header.type === "Class" ? asset.header.name : undefined,
+        components: prefabForGuid?.(asset.header.guid),
+      },
+    }));
 }
 
 export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {

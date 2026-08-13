@@ -3,6 +3,8 @@ import { createDefaultScene } from "@babylonslate/core";
 import {
   ENGINE_PLACE_ACTORS,
   nextActorId,
+  prefabComponentsForGuid,
+  projectPlaceActors,
   spawnPlacedActor,
   visualForPlaceActor,
   type PlaceActorItem,
@@ -100,5 +102,55 @@ describe("spawnPlacedActor", () => {
         actors: [spawnPlacedActor(empty, ENGINE_PLACE_ACTORS[0]!, "actor-1")],
       }),
     ).toBe("actor-2");
+  });
+});
+
+describe("projectPlaceActors", () => {
+  it("lists Class and Model assets, not sounds or textures", () => {
+    const items = projectPlaceActors([
+      { header: { guid: "hero", name: "Hero", type: "Class" } },
+      { header: { guid: "mesh", name: "Tree", type: "Model" } },
+      { header: { guid: "sfx", name: "Jump", type: "Sound" } },
+      { header: { guid: "tex", name: "Grass", type: "Texture" } },
+    ]);
+    expect(items.map((item) => item.title)).toEqual(["Hero", "Tree"]);
+  });
+
+  it("copies prefab components from a closed class graph payload", () => {
+    const assets = [
+      {
+        path: "assets/hero.class.babasset",
+        header: { guid: "hero-guid", name: "Hero", type: "Class" },
+      },
+    ];
+    const items = projectPlaceActors(assets, (guid) =>
+      prefabComponentsForGuid(guid, {
+        assets,
+        graphForPath: (path) =>
+          path === "assets/hero.class.babasset"
+            ? {
+                nodes: [],
+                edges: [],
+                components: [
+                  {
+                    id: "sprite",
+                    classId: "SpriteComponent",
+                    properties: { assetGuid: "sprite-1" },
+                  },
+                ],
+              }
+            : undefined,
+      }),
+    );
+    expect(items[0]?.kind).toMatchObject({
+      type: "asset",
+      components: [
+        {
+          id: "sprite",
+          classId: "SpriteComponent",
+          properties: { assetGuid: "sprite-1" },
+        },
+      ],
+    });
   });
 });

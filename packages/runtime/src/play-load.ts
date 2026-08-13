@@ -1,4 +1,5 @@
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
+import type { SerializedScene } from "@babylonslate/core";
 import {
   createInProcessRuntime,
   type RuntimeDriver,
@@ -22,7 +23,14 @@ export function runtimeOptionsFromLoadControl(
   | "playScene"
   | "playSceneGuid"
   | "seedDemoActors"
+  | "gameInstanceClass"
+  | "sceneLibrary"
 > {
+  const sceneLibrary: Record<string, SerializedScene> = {};
+  for (const entry of msg.scenes ?? []) {
+    sceneLibrary[entry.guid] = entry.scene;
+    if (entry.scene.name) sceneLibrary[entry.scene.name] = entry.scene;
+  }
   return {
     seed: msg.seed ?? 1,
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",
@@ -31,6 +39,8 @@ export function runtimeOptionsFromLoadControl(
     playScene: msg.scene,
     playSceneGuid: msg.sceneAssetGuid,
     seedDemoActors: msg.scene ? false : true,
+    gameInstanceClass: msg.gameInstanceClass,
+    sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
   };
 }
 

@@ -42,6 +42,8 @@ export interface PlayOverlayProps {
   physics?: PlayPhysicsSettings;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
+  gameInstanceClass?: string;
+  scenes?: Array<{ guid: string; scene: SerializedScene }>;
   /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
@@ -73,6 +75,8 @@ export function PlayOverlay({
   physics,
   sceneAssetGuid,
   scene,
+  gameInstanceClass,
+  scenes,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   uiLibrary = {},
@@ -121,8 +125,13 @@ export function PlayOverlay({
   pixelsPerUnitRef.current = pixelsPerUnit;
   const physicsRef = useRef(physics);
   physicsRef.current = physics;
-  const sceneRef = useRef({ sceneAssetGuid, scene });
-  sceneRef.current = { sceneAssetGuid, scene };
+  const sceneRef = useRef({
+    sceneAssetGuid,
+    scene,
+    gameInstanceClass,
+    scenes,
+  });
+  sceneRef.current = { sceneAssetGuid, scene, gameInstanceClass, scenes };
   const initialFrameCapRef = useRef(frameCap);
   const initialPlayPreviewRef = useRef(playPreview);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
@@ -148,6 +157,8 @@ export function PlayOverlay({
       physics: physicsRef.current,
       sceneAssetGuid: sceneRef.current.sceneAssetGuid,
       scene: sceneRef.current.scene,
+      gameInstanceClass: sceneRef.current.gameInstanceClass,
+      scenes: sceneRef.current.scenes,
       frameCap: initialFrameCapRef.current,
       animGraphs: animGraphsRef.current,
       spritePayloads: spritePayloadsRef.current,

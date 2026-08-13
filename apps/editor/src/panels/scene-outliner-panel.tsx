@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ContextMenuOverlay,
   PanelFrame,
@@ -28,6 +28,7 @@ import { IconActionButton } from "../components/icon-action-button";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
   nextActorId,
+  prefabComponentsForGuid,
   projectPlaceActors,
   spawnPlacedActor,
   type PlaceActorItem,
@@ -105,13 +106,17 @@ export function flattenActors(
 export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, assetRegistry } = useDocuments();
+  const { openDocuments, applySceneChange, assetRegistry, loadGraphDocument } =
+    useDocuments();
   const { selectedActorIds, selectActor, setSelectedActorIds, frameActor } =
     useSceneEditing();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [menuActorId, setMenuActorId] = useState<string | null>(null);
   const [placeOpen, setPlaceOpen] = useState(false);
+  const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(
+    () => new Map(),
+  );
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const scene =
@@ -144,29 +149,76 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   const projectItems = useMemo(() => {
     const assets = assetRegistry?.list() ?? [];
-    return projectPlaceActors(assets, (guid) => {
-      const asset = assets.find((entry) => entry.header.guid === guid);
-      if (!asset) return undefined;
-      const open = openDocuments.find(
-        (entry) => entry.ref.kind === "graph" && entry.ref.path === asset.path,
-      );
-      if (!open?.content) return undefined;
-      return prefabComponentsFromGraph(open.content as SerializedGraph);
-    });
-  }, [assetRegistry, openDocuments]);
+    return projectPlaceActors(assets, (guid) =>
+      prefabComponentsForGuid(guid, {
+        assets,
+        graphForPath: (path) => {
+          const open = openDocuments.find(
+            (entry) => entry.ref.kind === "graph" && entry.ref.path === path,
+          );
+          if (open?.content) return open.content as SerializedGraph;
+          return diskGraphs.get(path);
+        },
+      }),
+    );
+  }, [assetRegistry, diskGraphs, openDocuments]);
+
+  useEffect(() => {
+    if (!placeOpen) return;
+    let cancelled = false;
+    const assets = assetRegistry?.list() ?? [];
+    void (async () => {
+      const next = new Map<string, SerializedGraph>();
+      for (const asset of assets) {
+        if (asset.header.type !== "Class" || !asset.path) continue;
+        const graph = await loadGraphDocument(asset.path);
+        if (graph) next.set(asset.path, graph);
+      }
+      if (!cancelled) setDiskGraphs(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [assetRegistry, loadGraphDocument, placeOpen]);
 
   const addActor = useCallback(
     (item: PlaceActorItem) => {
       if (!scene) return;
-      const id = nextActorId(scene);
-      mutate({
-        ...scene,
-        actors: [...scene.actors, spawnPlacedActor(scene, item, id)],
-      });
-      selectActor(id);
-      setPlaceOpen(false);
+      const finish = (resolved: PlaceActorItem) => {
+        const id = nextActorId(scene);
+        mutate({
+          ...scene,
+          actors: [...scene.actors, spawnPlacedActor(scene, resolved, id)],
+        });
+        selectActor(id);
+        setPlaceOpen(false);
+      };
+      if (
+        item.kind.type === "asset" &&
+        item.kind.assetType === "Class" &&
+        !item.kind.components
+      ) {
+        const asset = (assetRegistry?.list() ?? []).find(
+          (entry) => entry.header.guid === item.kind.guid,
+        );
+        if (asset?.path) {
+          void loadGraphDocument(asset.path).then((graph) => {
+            finish({
+              ...item,
+              kind: {
+                ...item.kind,
+                components: graph
+                  ? prefabComponentsFromGraph(graph)
+                  : item.kind.components,
+              },
+            });
+          });
+          return;
+        }
+      }
+      finish(item);
     },
-    [mutate, scene, selectActor],
+    [assetRegistry, loadGraphDocument, mutate, scene, selectActor],
   );
 
   const removeActor = useCallback(

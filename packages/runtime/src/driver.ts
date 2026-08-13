@@ -82,6 +82,8 @@ export interface RuntimeDriverOptions {
   playSceneGuid?: string;
   /** Class id for the session GameInstance singleton. */
   gameInstanceClass?: string;
+  /** Extra authored scenes `changescene` can instantiate by guid or name. */
+  sceneLibrary?: Readonly<Record<string, SerializedScene>>;
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
@@ -189,9 +191,10 @@ class InProcessRuntime implements RuntimeDriver {
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
   private physicsSync: PhysicsWorldSync;
-  private readonly playScene: SerializedScene | undefined;
-  private readonly playSceneGuid: string;
+  private playScene: SerializedScene | undefined;
+  private playSceneGuid: string;
   private readonly gameInstanceClass: string;
+  private readonly sceneLibrary = new Map<string, SerializedScene>();
   private playWorldRealized = false;
   private readonly commands: CommandRegistry;
   private readonly trace = new TraceRecorder();
@@ -228,6 +231,17 @@ class InProcessRuntime implements RuntimeDriver {
     this.playScene = options.playScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
+    if (options.sceneLibrary) {
+      for (const [key, scene] of Object.entries(options.sceneLibrary)) {
+        this.sceneLibrary.set(key, scene);
+      }
+    }
+    if (options.playScene) {
+      this.sceneLibrary.set(this.playSceneGuid, options.playScene);
+      if (options.playScene.name) {
+        this.sceneLibrary.set(options.playScene.name, options.playScene);
+      }
+    }
     this.commands = createCommandRegistry({
       includeDebug: options.includeDebugCommands ?? true,
     });
@@ -403,7 +417,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emit({ type: "uiRemove", instanceId: id });
       },
       changeScene: (scene) => {
-        this.world.loadScene(scene);
+        this.applyChangeScene(scene);
       },
     });
 
@@ -506,6 +520,36 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.world.loadScene(this.playSceneGuid);
+  }
+
+  private applyChangeScene(sceneKey: string): void {
+    const key = String(sceneKey ?? "").trim();
+    const next = this.sceneLibrary.get(key);
+    if (!next) {
+      this.emit({
+        type: "log",
+        severity: "warning",
+        category: "scene",
+        message: `changeScene: no scene asset loaded for ${key}`,
+        frameId: this.frameId,
+      });
+      this.world.loadScene(key);
+      return;
+    }
+    for (const actor of [...this.world.getActors()]) {
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (slotId !== undefined) {
+        this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
+        this.slotByGuid.delete(actor.guid);
+      }
+      this.world.destroyActor(actor.guid);
+    }
+    this.world.flushPending();
+    this.animEvalBySlot.clear();
+    this.playScene = next;
+    this.playSceneGuid = key;
+    this.playWorldRealized = false;
+    this.realizePlayWorld();
   }
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
@@ -633,7 +677,7 @@ class InProcessRuntime implements RuntimeDriver {
     };
     return {
       changeScene: (scene) => {
-        this.world.loadScene(scene);
+        this.applyChangeScene(scene);
       },
       setRenderQuality: (level) => emitSetting("renderquality", level),
       setShadowQuality: (level) => emitSetting("shadowquality", level),

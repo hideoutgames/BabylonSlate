@@ -17,7 +17,7 @@ import type {
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, normalizeProjectSettings } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, MAIN_SCENE_FILE, normalizeProjectSettings, normalizeScene } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -103,6 +103,10 @@ import {
   type PlayAnimGraphEntry,
 } from "../lib/play-content";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
+import {
+  playSceneFromOpenDocuments,
+  type PlaySceneLoad,
+} from "../services/play-physics";
 
 export type AppRoute = "home" | "editor";
 
@@ -218,6 +222,14 @@ interface DocumentContextValue {
     tilemaps: Map<string, TilemapPayload>;
     tilesets: Map<string, TilesetPayload>;
   }>;
+  /** Startup/main scene when no scene tab is open; otherwise the open scene. */
+  collectPlayStartupScene: () => Promise<PlaySceneLoad | null>;
+  /** All project scenes so Play `changescene` can instantiate them. */
+  collectPlaySceneLibrary: () => Promise<
+    Array<{ guid: string; scene: SerializedScene }>
+  >;
+  /** Class graph payload from an open tab or disk. */
+  loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
   /** True when a compiled graph changed since the last successful compile (positions ignored). */
   scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
@@ -1226,6 +1238,69 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [loadPlayAssetContent, projectService],
   );
 
+  const loadGraphDocument = useCallback(
+    async (path: string): Promise<SerializedGraph | null> => {
+      const openDoc = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind: "graph", path }));
+      if (openDoc?.content) return openDoc.content as SerializedGraph;
+      try {
+        return (await projectService.loadDocument(
+          "graph",
+          path,
+        )) as SerializedGraph;
+      } catch (error) {
+        console.error(`[place] failed to load class ${path}`, error);
+        return null;
+      }
+    },
+    [documentService, projectService],
+  );
+
+  const collectPlayStartupScene = useCallback(async (): Promise<PlaySceneLoad | null> => {
+    const open = documentService.getOpenDocumentsOrdered().map((doc) => ({
+      id: doc.id,
+      ref: doc.ref,
+      content: doc.content,
+    }));
+    const fromOpen = playSceneFromOpenDocuments(
+      open,
+      documentService.getState().activeDocumentId,
+    );
+    if (fromOpen) return fromOpen;
+    const path = projectDocument?.scenes[0] ?? MAIN_SCENE_FILE;
+    try {
+      const content = await projectService.loadDocument("scene", path);
+      return {
+        sceneAssetGuid: documentId({ kind: "scene", path }),
+        scene: normalizeScene(content),
+      };
+    } catch (error) {
+      console.error(`[play] failed to load startup scene ${path}`, error);
+      return null;
+    }
+  }, [documentService, projectDocument, projectService]);
+
+  const collectPlaySceneLibrary = useCallback(async (): Promise<
+    Array<{ guid: string; scene: SerializedScene }>
+  > => {
+    const paths = projectDocument?.scenes ?? [];
+    const open = documentService.getState().openDocuments;
+    const scenes: Array<{ guid: string; scene: SerializedScene }> = [];
+    for (const path of paths) {
+      const id = documentId({ kind: "scene", path });
+      const openDoc = open.get(id);
+      try {
+        const content =
+          openDoc?.content ?? (await projectService.loadDocument("scene", path));
+        scenes.push({ guid: id, scene: normalizeScene(content) });
+      } catch (error) {
+        console.error(`[play] failed to load scene ${path}`, error);
+      }
+    }
+    return scenes;
+  }, [documentService, projectDocument, projectService]);
+
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
       if (!thumbnailsEnabledRef.current) return null;
@@ -1759,6 +1834,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayAnimGraphs,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
+      collectPlayStartupScene,
+      collectPlaySceneLibrary,
+      loadGraphDocument,
       graphsNeedCompile: compileSignatureIsStale(
         currentGraphSignature,
         lastCompiledSignature,
@@ -1787,6 +1865,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayAnimGraphs,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
+      collectPlayStartupScene,
+      collectPlaySceneLibrary,
+      loadGraphDocument,
       lastCompiledSignature,
       markScriptsCurrent,
       listedProjects,

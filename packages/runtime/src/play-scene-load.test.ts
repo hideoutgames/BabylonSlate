@@ -234,4 +234,50 @@ describe("p7-play-scene-load", () => {
     );
     runtime.stop();
   });
+
+  it("changeScene instantiates a registered scene and drops the previous actors", async () => {
+    const level2: SerializedScene = {
+      name: "Level2",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      actors: [createActor("other", "Other")],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "Level1",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        actors: [createActor("hero", "Hero")],
+      },
+      sceneLibrary: { Level2: level2 },
+    });
+    runtime.realizePlayWorld();
+    runtime.start();
+    expect(runtime.getWorld().getActors().map((a) => a.guid)).toEqual(["hero"]);
+    runtime.executeConsoleCommand("changescene Level2");
+    expect(runtime.getWorld().getActors().map((a) => a.guid)).toEqual(["other"]);
+    runtime.stop();
+  });
+
+  it("changeScene logs when the scene asset is not in the Play library", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.executeConsoleCommand("changescene missing-level");
+    expect(
+      commands.some(
+        (c) =>
+          c.type === "log" &&
+          String((c as { message: string }).message).includes("missing-level"),
+      ),
+    ).toBe(true);
+    runtime.stop();
+  });
 });

@@ -152,6 +152,8 @@ export function startPlaySession(options: {
   /** Authored scene instantiated in the worker instead of demo actors. */
   sceneAssetGuid?: string;
   scene?: SerializedScene;
+  gameInstanceClass?: string;
+  scenes?: Array<{ guid: string; scene: SerializedScene }>;
   onStats?: (stats: {
     fps: number;
     scriptMs: number;
@@ -297,6 +299,8 @@ export function startPlaySession(options: {
     scene: options.scene,
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
+    gameInstanceClass: options.gameInstanceClass,
+    scenes: options.scenes,
   });
 
   try {

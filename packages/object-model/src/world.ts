@@ -219,6 +219,11 @@ export class World {
     return tickIndex;
   }
 
+  /** Apply queued spawn/destroy immediately (scene swaps outside a tick). */
+  flushPending(): void {
+    this.flushDeferred();
+  }
+
   createActor(options: {
     classId: string;
     guid?: Guid;

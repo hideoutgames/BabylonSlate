@@ -29,6 +29,23 @@ describe("runtimeOptionsFromLoadControl", () => {
       playScene: undefined,
       playSceneGuid: "play-scene",
       seedDemoActors: true,
+      gameInstanceClass: undefined,
+      sceneLibrary: undefined,
+    });
+  });
+
+  it("forwards gameInstanceClass and a scene library for changescene", () => {
+    const scene = { name: "Level2", actors: [] };
+    expect(
+      runtimeOptionsFromLoadControl({
+        type: "load",
+        sceneAssetGuid: "play-scene",
+        gameInstanceClass: "MyGame",
+        scenes: [{ guid: "Level2", scene: scene as never }],
+      }),
+    ).toMatchObject({
+      gameInstanceClass: "MyGame",
+      sceneLibrary: { Level2: scene },
     });
   });
 
@@ -46,6 +63,8 @@ describe("runtimeOptionsFromLoadControl", () => {
       playScene: undefined,
       playSceneGuid: "play-scene",
       seedDemoActors: true,
+      gameInstanceClass: undefined,
+      sceneLibrary: undefined,
     });
   });
 });
