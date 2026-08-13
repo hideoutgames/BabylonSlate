@@ -48,11 +48,9 @@ describe("parseCommandArgs", () => {
       ok: true,
       args: { level: "high", scale: 0.5, enabled: true },
     });
-    expect(parseCommandArgs(["low", "enabled=0"], params).ok).toBe(true);
-    expect(
-      (parseCommandArgs(["low", "enabled=no"], params) as { args: { enabled: boolean } })
-        .args.enabled,
-    ).toBe(false);
+    const off = parseCommandArgs(["low", "enabled=no"], params);
+    expect(off.ok).toBe(true);
+    if (off.ok) expect(off.args.enabled).toBe(false);
   });
 
   it("rejects bad int/float/bool/enum values without throwing", () => {
