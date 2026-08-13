@@ -4,9 +4,11 @@ import {
   AssetPicker,
   CatalogDialog,
   ClassPicker,
+  ContextMenuOverlay,
   InputMappingEditor,
   NamedListEditor,
   NamePromptDialog,
+  NestedMenu,
   NumericDragField,
   PanelFrame,
   ParameterListEditor,
@@ -17,6 +19,8 @@ import {
   ToolbarStrip,
   TreeView,
   TypeColorMark,
+  useContextMenu,
+  type NestedMenuItem,
   type ParameterRow,
   type PropertyRow,
   type TreeViewNode,
@@ -61,6 +65,55 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@babylonslate/ui/components/tooltip";
+
+const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
+  { id: "rename", label: "Rename", onSelect: () => {} },
+  {
+    id: "more",
+    type: "submenu",
+    label: "More",
+    items: [
+      { id: "duplicate", label: "Duplicate", onSelect: () => {} },
+      {
+        id: "export",
+        type: "submenu",
+        label: "Export",
+        items: [{ id: "gltf", label: "glTF", onSelect: () => {} }],
+      },
+    ],
+  },
+];
+
+function GalleryNestedMenus() {
+  const { menu, closeMenu, openMenuAt } = useContextMenu({
+    items: GALLERY_NESTED_ITEMS,
+  });
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium">Nested menu</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <NestedMenu
+          items={GALLERY_NESTED_ITEMS}
+          trigger={
+            <Button variant="outline" data-testid="gallery-nested-menu">
+              Nested Menu
+            </Button>
+          }
+          contentTestId="gallery-nested-menu-content"
+        />
+        <Button
+          variant="outline"
+          data-testid="gallery-nested-overlay"
+          onClick={(event) => openMenuAt(event.clientX, event.clientY)}
+        >
+          Open Context Overlay
+        </Button>
+      </div>
+      <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+    </div>
+  );
+}
 
 const GALLERY_TREE_NODES: TreeViewNode[] = [
   { id: "root", label: "Scene Root", depth: 0, hasChildren: true, expanded: true },
@@ -229,6 +282,7 @@ function GalleryComposites() {
           Open name prompt
         </Button>
       </div>
+      <GalleryNestedMenus />
       <div className="rounded-lg border border-border p-3">
         <NamedListEditor
           title="Named List"

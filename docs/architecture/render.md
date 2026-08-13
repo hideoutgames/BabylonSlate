@@ -64,7 +64,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
 | `viewport-gestures` | 3D one-finger look, 2D one-finger pan 1:1 with the pointer (hold-then-move marquee), pinch zoom, three-finger pan (2D same 1:1 scale; 3D `panScale`); tap pick |
 | `viewport-fly-keys` | WASD fly/pan with rAF + continuous-render lease |
-| `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds, pixel-grid snap, and `applyPixelArtSamplingToScene` when pixel-perfect is on |
+| `sorting` / `pixel-perfect` | 2D sort keys via `alphaIndex`; PPU-driven ortho bounds, pixel-grid snap, and `applyPixelArtSamplingToScene` when pixel-perfect is on. Editor pinch/wheel zoom is continuous (integer zoom steps do not snap the frustum). |
 
 **Invalidation wiring**: `RenderScheduler.invalidate(reason)` — editor tools call `"camera"`, `"gizmo"`, and `"selection"`; scene sync uses `"asset"`. Gizmo drags, viewport gestures, WASD fly, and the editor joystick acquire continuous-render leases. See [scene-editing.md](scene-editing.md).
 

@@ -68,7 +68,8 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **TypeColorMark** | Swatch + label for a DataTypes color token (`pinColorVar` / `assetColorVar`). | ParameterListEditor type toggles; Component Gallery Data Types section. |
 | **ParameterListEditor** | Named, typed, reorderable pin/parameter rows (type, optional, default, enum list, up/down). | Inspector Execute JavaScript Inputs/Outputs; Event On Command Run / BDebugCommand; Class / ScriptInterface signatures. |
 | **SelectableText** | Opt-in selectable span inside a `user-select: none` shell. | Logs, compiler messages, Play overlay copy, gallery code snippets. |
-| **ContextMenuOverlay** | Pointer-anchored menu driven by `useContextMenu` (500ms hold or `contextmenu`). | Viewport, Outliner, Content Browser. |
+| **NestedMenu** | Data-driven dropdown or pointer-anchored menu with recursive submenus (actions, checkboxes, separators, labels). Submenus open on tap, not hover-only. | Windows (Editor Utilities); gallery. Long-press sites use it through `ContextMenuOverlay`. |
+| **ContextMenuOverlay** | Pointer-anchored menu driven by `useContextMenu` (500ms hold or `contextmenu`). Renders flat or nested `NestedMenu` items. | Viewport, Outliner, Content Browser; gallery. |
 
 Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`. Label helpers: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`, `formatBindingLabel`. Type lookup: `resolveTypeVisual`, `resolveActorTypeVisual`. History: `documentHistoryHotkey`.
 

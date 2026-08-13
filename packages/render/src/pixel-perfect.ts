@@ -2,6 +2,7 @@ import { Texture, type BaseTexture } from "@babylonjs/core";
 
 export interface PixelPerfectSettings {
   pixelsPerUnit: number;
+  /** Project flag; editor pinch and wheel stay continuous regardless. */
   integerZoomSteps: boolean;
 }
 
