@@ -101,8 +101,9 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 | Gesture | Action |
 | --- | --- |
-| Tap / click a tile | Select (replace selection) |
+| Tap / click a tile | Add to selection (does not replace) |
 | Tap / click empty grid (padding, gaps — not a tile) | Clear selection |
+| Toolbar **Deselect All** | Clear selection |
 | Double-tap / double-click a Scene or Graph | Open the document (`openOrFocusDocument`) |
 | Move before ~500ms | Scroll (do not open the menu) |
 | Hold still ≥500ms | Context menu (tiles and nested folders). The `assets` root has no menu. |

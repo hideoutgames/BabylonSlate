@@ -105,6 +105,8 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve type chro
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-class` (they spawn as Actors). Unknown types fall back to a file glyph and `--muted-foreground`.
 
+Content Browser tiles mix the type token into `--card` and `--muted` (`color-mix` via `assetTypeCardAccent` / `assetTypeThumbAccent`) so the card is a darker shade of the type color. Glyphs still use the raw `--asset-*` token. Selected tiles keep `border-primary` / `ring-primary` on top of the accent.
+
 ## Graph sizing tokens
 
 | Token | Value | Use |

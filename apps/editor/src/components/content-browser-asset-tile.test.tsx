@@ -140,4 +140,29 @@ describe("ContentBrowserAssetTile", () => {
     expect(glyph.getAttribute("data-type-icon")).toBe("Texture");
     expect(glyph.style.color).toBe("var(--asset-texture)");
   });
+
+  it("keeps the type glyph compact instead of filling the thumb", () => {
+    renderTile();
+    const glyph = screen.getByTestId("content-item-type-icon-hero-1");
+    const className = glyph.getAttribute("class") ?? "";
+    expect(className).toContain("size-10");
+    expect(className).not.toContain("size-full");
+    expect(className).not.toContain("p-4");
+  });
+
+  it("tints the card and thumb well with a darker type accent", () => {
+    const { tile } = renderTile();
+    const card = tile.closest('[data-slot="card"]');
+    expect(card).not.toBeNull();
+    expect((card as HTMLElement).style.backgroundColor).toBe(
+      "color-mix(in oklch, var(--asset-texture) 16%, var(--card))",
+    );
+    expect((card as HTMLElement).style.borderColor).toBe(
+      "color-mix(in oklch, var(--asset-texture) 50%, var(--border))",
+    );
+    const glyph = screen.getByTestId("content-item-type-icon-hero-1");
+    expect((glyph.parentElement as HTMLElement).style.backgroundColor).toBe(
+      "color-mix(in oklch, var(--asset-texture) 28%, var(--muted))",
+    );
+  });
 });

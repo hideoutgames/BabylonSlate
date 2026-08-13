@@ -21,6 +21,9 @@ import {
   textureCompressionState,
   visualForIndexedAsset,
   classParentLookup,
+  addSelectedAssetGuid,
+  assetTypeCardAccent,
+  assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
 
@@ -465,5 +468,31 @@ describe("content-browser-helpers", () => {
     expect(
       classDocumentShowsPrefab(null, parentOf, { assetType: "Graph" }),
     ).toBe(true);
+  });
+
+  it("adds a guid to the Content Browser selection without replacing others", () => {
+    const selected = addSelectedAssetGuid(new Set(["scene-1"]), "class-1");
+    expect([...selected]).toEqual(["scene-1", "class-1"]);
+  });
+
+  it("does not drop a guid that is already selected", () => {
+    const current = new Set(["scene-1"]);
+    const selected = addSelectedAssetGuid(current, "scene-1");
+    expect([...selected]).toEqual(["scene-1"]);
+    expect(selected).not.toBe(current);
+  });
+
+  it("mixes the type token into card and thumb accents", () => {
+    const colorVar = "var(--asset-texture)";
+    const card = assetTypeCardAccent(colorVar);
+    expect(card.backgroundColor).toBe(
+      "color-mix(in oklch, var(--asset-texture) 16%, var(--card))",
+    );
+    expect(card.borderColor).toBe(
+      "color-mix(in oklch, var(--asset-texture) 50%, var(--border))",
+    );
+    expect(assetTypeThumbAccent(colorVar).backgroundColor).toBe(
+      "color-mix(in oklch, var(--asset-texture) 28%, var(--muted))",
+    );
   });
 });

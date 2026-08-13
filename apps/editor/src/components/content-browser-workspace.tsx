@@ -11,6 +11,7 @@ import {
   PlusIcon,
   Trash2Icon,
   UploadIcon,
+  XIcon,
 } from "lucide-react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { newAssetGuid } from "@babylonslate/assets";
@@ -93,6 +94,7 @@ import {
   uniqueAssetTypes,
   classParentLookup,
   visualForIndexedAsset,
+  addSelectedAssetGuid,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
 import { revealAssetFromTarget } from "../lib/search-navigation";
@@ -859,17 +861,30 @@ export function ContentBrowserWorkspace() {
           </DropdownMenuContent>
         </DropdownMenu>
         {selectedGuids.size > 0 ? (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            data-testid="content-browser-delete-selected"
-            disabled={busy}
-            onClick={() => requestDelete([...selectedGuids])}
-          >
-            <Trash2Icon data-icon="inline-start" />
-            Delete ({selectedGuids.size})
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="content-browser-deselect-all"
+              disabled={busy}
+              onClick={() => setSelectedGuids(new Set())}
+            >
+              <XIcon data-icon="inline-start" />
+              Deselect All
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              data-testid="content-browser-delete-selected"
+              disabled={busy}
+              onClick={() => requestDelete([...selectedGuids])}
+            >
+              <Trash2Icon data-icon="inline-start" />
+              Delete ({selectedGuids.size})
+            </Button>
+          </>
         ) : null}
         <input
           ref={importInputRef}
@@ -886,7 +901,7 @@ export function ContentBrowserWorkspace() {
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside
-          className="flex w-56 shrink-0 flex-col gap-1 overflow-y-auto overscroll-y-contain border-r border-border p-2"
+          className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-y-auto overscroll-y-contain border-r border-border p-2"
           data-testid="content-browser-folder-tree"
         >
           <Button
@@ -915,33 +930,39 @@ export function ContentBrowserWorkspace() {
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
-            className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,7rem)] content-start gap-2 overflow-y-auto overscroll-y-contain p-3"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
             data-testid="content-browser-asset-grid"
             onClick={() => setSelectedGuids(new Set())}
           >
-            {visibleAssets.map((asset) => (
-              <ContentBrowserAssetTile
-                key={asset.header.guid}
-                asset={asset}
-                selected={selectedGuids.has(asset.header.guid)}
-                thumbnailUrl={thumbnailUrls[asset.header.guid] ?? null}
-                typeVisual={visualForIndexedAsset(asset, classParentOf)}
-                hasCompileError={
-                  compileErrorGuids.has(asset.header.guid) ||
-                  compileErrorGuids.has(asset.path)
-                }
-                onSelect={() =>
-                  setSelectedGuids(new Set([asset.header.guid]))
-                }
-                onOpen={() => void openOrFocusDocument(asset)}
-                onLongPressMenu={(x, y) => openTileMenu(asset.header.guid, x, y)}
-              />
-            ))}
-            {visibleAssets.length === 0 ? (
-              <p className="col-span-full text-sm text-muted-foreground">
-                No assets in this folder match the current filters.
-              </p>
-            ) : null}
+            <div className="grid grid-cols-[repeat(auto-fill,9rem)] content-start gap-2 p-3">
+              {visibleAssets.map((asset) => (
+                <ContentBrowserAssetTile
+                  key={asset.header.guid}
+                  asset={asset}
+                  selected={selectedGuids.has(asset.header.guid)}
+                  thumbnailUrl={thumbnailUrls[asset.header.guid] ?? null}
+                  typeVisual={visualForIndexedAsset(asset, classParentOf)}
+                  hasCompileError={
+                    compileErrorGuids.has(asset.header.guid) ||
+                    compileErrorGuids.has(asset.path)
+                  }
+                  onSelect={() =>
+                    setSelectedGuids((current) =>
+                      addSelectedAssetGuid(current, asset.header.guid),
+                    )
+                  }
+                  onOpen={() => void openOrFocusDocument(asset)}
+                  onLongPressMenu={(x, y) =>
+                    openTileMenu(asset.header.guid, x, y)
+                  }
+                />
+              ))}
+              {visibleAssets.length === 0 ? (
+                <p className="col-span-full text-sm text-muted-foreground">
+                  No assets in this folder match the current filters.
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
