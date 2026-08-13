@@ -59,6 +59,19 @@ describe("ParameterListEditor", () => {
     ]);
   });
 
+  it("paints parameter type toggles with DataTypes pin colors", () => {
+    render(
+      <ParameterListEditor rows={rows.slice(0, 1)} onChange={() => {}} />,
+    );
+    const floatToggle = screen.getByTestId("parameter-a-type-float");
+    const swatch = floatToggle.querySelector("[data-type-color-swatch]");
+    expect(swatch).not.toBeNull();
+    expect((swatch as HTMLElement).style.backgroundColor).toBe(
+      "var(--pin-float)",
+    );
+    expect(floatToggle.textContent).toContain("Float");
+  });
+
   it("edits enum values as a named list", () => {
     const onChange = vi.fn();
     render(

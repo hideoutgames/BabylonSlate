@@ -16,11 +16,13 @@ import {
   SelectableText,
   ToolbarStrip,
   TreeView,
+  TypeColorMark,
   type ParameterRow,
   type PropertyRow,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import { createDefaultInputMappings } from "@babylonslate/input";
+import { ASSET_COLOR_VAR, PIN_COLOR_VAR } from "@babylonslate/ui/lib/data-types";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
@@ -171,6 +173,18 @@ function GalleryComposites() {
         <PanelFrame title="Parameter list" data-testid="gallery-parameter-list">
           <ParameterListEditor rows={parameters} onChange={setParameters} />
         </PanelFrame>
+      </div>
+      <div className="rounded-lg border border-border p-3" data-testid="gallery-data-types">
+        <div className="mb-2 text-sm font-medium">Data Types</div>
+        <div className="flex flex-wrap gap-3">
+          <TypeColorMark colorVar={PIN_COLOR_VAR.bool} label="Bool" />
+          <TypeColorMark colorVar={PIN_COLOR_VAR.float} label="Float" />
+          <TypeColorMark colorVar={PIN_COLOR_VAR.vector} label="Vector" />
+          <TypeColorMark colorVar={PIN_COLOR_VAR.object} label="Object" />
+          <TypeColorMark colorVar={ASSET_COLOR_VAR.texture} label="Texture" />
+          <TypeColorMark colorVar={ASSET_COLOR_VAR.class} label="Class" />
+          <TypeColorMark colorVar={ASSET_COLOR_VAR.folder} label="Folder" />
+        </div>
       </div>
       <div className="h-40 overflow-hidden rounded-lg border border-border">
         <PanelFrame title="Tree view" data-testid="gallery-tree-view">

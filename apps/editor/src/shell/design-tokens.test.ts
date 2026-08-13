@@ -43,6 +43,7 @@ const ASSET_TOKENS = [
   "--asset-class",
   "--asset-script-type",
   "--asset-component",
+  "--asset-folder",
 ] as const;
 
 const NODE_TOKENS = [
