@@ -339,7 +339,8 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("context-menu-item-new-folder")).toBeVisible();
     await expect(page.getByTestId("context-menu-item-new-asset")).toBeVisible();
     await expect(page.getByTestId("context-menu-item-import")).toBeVisible();
-    await page.keyboard.press("Escape");
+    await page.getByTestId("context-menu-backdrop").click();
+    await expect(page.getByTestId("context-menu-panel")).toHaveCount(0);
 
     const sceneTile = page.locator(
       '[data-asset-path="assets/main.scene.babasset"]',
