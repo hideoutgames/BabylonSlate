@@ -15,11 +15,12 @@ describe("TraceRecorder", () => {
       inputEvents: [{ type: "key", code: "KeyW", down: true, tick: 1 }],
     });
     const payload = recorder.stop();
-    expect(payload.seed).toBe(7);
-    expect(payload.dt).toBeCloseTo(1 / 60);
-    expect(payload.frames).toHaveLength(1);
-    expect(payload.frames[0]?.snapshotText).toBe("tick=1");
-    expect(payload.frames[0]?.inputEvents?.[0]).toMatchObject({ code: "KeyW" });
+    expect(payload).not.toBeNull();
+    expect(payload!.seed).toBe(7);
+    expect(payload!.dt).toBeCloseTo(1 / 60);
+    expect(payload!.frames).toHaveLength(1);
+    expect(payload!.frames[0]?.snapshotText).toBe("tick=1");
+    expect(payload!.frames[0]?.inputEvents?.[0]).toMatchObject({ code: "KeyW" });
   });
 
   it("is a no-op when not recording", () => {
