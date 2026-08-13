@@ -68,7 +68,7 @@ describe("editor camera pixel-perfect framing", () => {
     engine.dispose();
   });
 
-  it("accumulates sub-step zoom-in until the next integer scale", () => {
+  it("zooms smoothly in sub-integer steps even when integer zoom steps is on", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const camera = createEditorCamera(scene, { mode: "2d" });
@@ -78,34 +78,29 @@ describe("editor camera pixel-perfect framing", () => {
     expect(camera.pixelZoom()).toBe(1);
     expect(camera.orthoHalfHeight()).toBe(3);
 
-    // 1.1^4 ≈ 1.46 still rounds to 1×; 1.1^5 ≈ 1.61 rounds to 2×.
-    for (let i = 0; i < 4; i++) camera.zoom(1.1);
-    expect(camera.pixelZoom()).toBe(1);
-    expect(camera.orthoHalfHeight()).toBe(3);
+    camera.zoom(1.1);
+    expect(camera.pixelZoom()).toBeCloseTo(1.1, 5);
+    expect(camera.orthoHalfHeight()).toBeCloseTo(3 / 1.1, 5);
 
     camera.zoom(1.1);
-    expect(camera.pixelZoom()).toBe(2);
-    expect(camera.orthoHalfHeight()).toBe(1.5);
+    expect(camera.pixelZoom()).toBeCloseTo(1.21, 5);
+    expect(camera.orthoHalfHeight()).toBeCloseTo(3 / 1.21, 5);
 
     camera.dispose();
     scene.dispose();
     engine.dispose();
   });
 
-  it("accumulates sub-step zoom-out until the next 1/n scale", () => {
+  it("zooms out smoothly in sub-integer steps even when integer zoom steps is on", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const camera = createEditorCamera(scene, { mode: "2d" });
     camera.setCanvasHeight(600);
     camera.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
 
-    for (let i = 0; i < 4; i++) camera.zoom(1 / 1.1);
-    expect(camera.pixelZoom()).toBe(1);
-    expect(camera.orthoHalfHeight()).toBe(3);
-
     camera.zoom(1 / 1.1);
-    expect(camera.pixelZoom()).toBe(0.5);
-    expect(camera.orthoHalfHeight()).toBe(6);
+    expect(camera.pixelZoom()).toBeCloseTo(1 / 1.1, 5);
+    expect(camera.orthoHalfHeight()).toBeCloseTo(3 * 1.1, 5);
 
     camera.dispose();
     scene.dispose();

@@ -300,24 +300,18 @@ describe("attachViewportGestures", () => {
     expect(controller.orthoHalfHeight()).toBeLessThan(halfHeightBefore);
   });
 
-  it("pinch-zooms a pixel-perfect 2D camera through integer steps", () => {
+  it("pinch-zooms a pixel-perfect 2D camera smoothly", () => {
     const { controller } = attach("2d");
     controller.setCanvasHeight(600);
     controller.setPixelPerfect({ pixelsPerUnit: 100, integerZoomSteps: true });
 
     canvas.emit("pointerdown", pointer(1, 0, 100));
     canvas.emit("pointerdown", pointer(2, 100, 100));
-    // 1.1^5 ≈ 1.61 crosses the integer-step threshold; one 2× jump would hide
-    // the accumulation bug that makes gradual pinch a no-op.
-    let spread = 100;
-    for (let i = 0; i < 5; i++) {
-      spread *= 1.1;
-      canvas.emit("pointermove", pointer(1, 0, 100));
-      canvas.emit("pointermove", pointer(2, spread, 100));
-    }
+    canvas.emit("pointermove", pointer(1, 0, 100));
+    canvas.emit("pointermove", pointer(2, 110, 100));
 
-    expect(controller.pixelZoom()).toBe(2);
-    expect(controller.orthoHalfHeight()).toBe(1.5);
+    expect(controller.pixelZoom()).toBeCloseTo(1.1, 5);
+    expect(controller.orthoHalfHeight()).toBeCloseTo(3 / 1.1, 5);
   });
 
   it("prevents default on touchstart and touchmove so iOS does not delay pointer events", () => {

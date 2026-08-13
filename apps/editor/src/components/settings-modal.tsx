@@ -445,6 +445,10 @@ export function SettingsModal({
                 data-testid="settings-integer-zoom"
               />
             </Field>
+            <FieldDescription>
+              Does not step the editor camera. Pinch and wheel stay continuous;
+              pixel-perfect still snaps pan to the pixel grid.
+            </FieldDescription>
             <Field>
               <FieldLabel>Sorting Layers</FieldLabel>
               <NamedListEditor
