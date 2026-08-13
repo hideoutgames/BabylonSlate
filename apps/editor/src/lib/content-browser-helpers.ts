@@ -352,7 +352,7 @@ export function buildNewAssetResult(options: {
       type,
       name,
       guid,
-      createDefaultSpritePayload(name) as unknown as Record<string, unknown>,
+      createDefaultSpritePayload() as unknown as Record<string, unknown>,
     );
   }
 

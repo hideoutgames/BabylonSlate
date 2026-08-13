@@ -25,7 +25,7 @@ export interface SpritePayload {
   clips: SpriteClip[];
 }
 
-export function createDefaultSpritePayload(_name = "Sprite"): SpritePayload {
+export function createDefaultSpritePayload(): SpritePayload {
   return {
     textureGuid: null,
     pixelsPerUnit: 100,

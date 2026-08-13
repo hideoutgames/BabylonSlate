@@ -10,7 +10,8 @@ export class SetAssetDocumentCommand implements EditCommand<Record<string, unkno
     this.to = to;
   }
 
-  apply(_doc?: Record<string, unknown>): Record<string, unknown> {
+  apply(doc: Record<string, unknown>): Record<string, unknown> {
+    void doc;
     return structuredClone(this.to);
   }
 
