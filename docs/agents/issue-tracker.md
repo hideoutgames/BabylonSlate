@@ -37,6 +37,9 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load / p8-command-system | Standards | Two Appendix A slices in one PR (`p7-play-scene-load` then `p8-command-system`); assigned plan required both | Accepted |
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load | Spec | E2E asserts Play spawn guid `actor-1` rather than reading the snapshot buffer; spawn is how snapshot slots are assigned | Accepted |
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p8-command-system | Spec | `changescene` still only fires `GameInstance.onSceneLoaded`; core quality/volume/framecap setters emit console logs until the HUD/renderer consume them | Accepted |
+| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD does not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes). Cold-load Play first-frame is later polish | Accepted |
+| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; designer goldens cover layout | Accepted |
+| 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-system | Standards | Play HUD `borderRadius: 999` (stick) pre-existed; widget style passthrough still uses a numeric fallback | Accepted |
 
 ## PR checklist
 
