@@ -46,13 +46,13 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | --- | --- | --- |
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
-| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print), UserInterface widget details (including nested UI asset), Tileset / Tilemap settings. |
+| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print), UserInterface widget details (including nested UI asset), Sprite / Tileset / Tilemap settings. |
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; gallery. |
 | **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings via CatalogDialog; UserInterface desired width/height. |
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search, Content Browser, Content Browser Move dialog. |
 | **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; Tilemap tile palette; gallery. Add Component / Place Actors use CatalogDialog instead. |
-| **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks; UserInterface nested-UI picker (self and cycle partners excluded). |
+| **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks; Sprite and Tileset Texture rows; UserInterface nested-UI picker (self and cycle partners excluded). |
 | **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
 | **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component. |
 | **TypeVisualIcon** | Colored Lucide glyph for an asset / class family (`resolveTypeVisual`). | Outliner, Details, Prefab, Content Browser, global search, Place Actors, Add Component, AssetPicker, document tabs. |

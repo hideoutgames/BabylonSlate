@@ -25,4 +25,4 @@ Golden: a sprite at world +X renders **right of origin** (Babylon left-handed 2D
 
 ## Editor
 
-Sprite document workspace: frame timeline, pivot, texture picker. Compose from [components.md](components.md).
+Sprite document workspace (`SpriteEditor`): `AssetPicker` filtered to Texture (`property-texture` / `sprite-texture-picker`), pixels per unit, first-frame pivot and duration, and the first clip name. Full frame timeline is still specified; this host is enough to bind a visible sprite in Play. Compose from [components.md](components.md).

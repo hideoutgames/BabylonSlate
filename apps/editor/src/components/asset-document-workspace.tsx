@@ -44,7 +44,6 @@ import {
 import {
   normalizeFontPayload,
   normalizeTilesetPayload,
-  type SpritePayload,
 } from "@babylonslate/assets";
 import {
   animGraphToSerialized,
@@ -67,6 +66,7 @@ import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import { TilemapEditor } from "./tilemap-editor";
+import { SpriteEditor } from "./sprite-editor";
 import {
   resolveDesignerCanvasId,
   useEngineUiDesignerPresets,
@@ -578,48 +578,6 @@ function FontEditor({
             ? `Fallback glyphs: ${flagged.join(" ")}`
             : "No fallback glyphs detected"}
         </p>
-      </div>
-    </PanelFrame>
-  );
-}
-
-function SpriteEditor({
-  payload,
-  onChange,
-}: {
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}) {
-  const sprite = payload as unknown as SpritePayload;
-  const frame = sprite.frames?.[0];
-  return (
-    <PanelFrame className="flex-1" title="Sprite">
-      <div data-testid="sprite-editor">
-        <PropertyGrid
-          rows={[
-            {
-              id: "ppu",
-              kind: "number",
-              label: "Pixels Per Unit",
-              value: sprite.pixelsPerUnit ?? 100,
-              onChange: (value) => onChange({ ...sprite, pixelsPerUnit: value }),
-            },
-            {
-              id: "pivot",
-              kind: "vector3",
-              label: "Pivot",
-              value: [frame?.pivot.x ?? 0.5, frame?.pivot.y ?? 0.5, 0],
-              axes: ["X", "Y"],
-              onChange: ([x, y]) => {
-                const frames = [...(sprite.frames ?? [])];
-                if (frames[0]) {
-                  frames[0] = { ...frames[0], pivot: { x, y } };
-                }
-                onChange({ ...sprite, frames });
-              },
-            },
-          ]}
-        />
       </div>
     </PanelFrame>
   );
