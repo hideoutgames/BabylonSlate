@@ -30,6 +30,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/ui-runtime.md](architecture/ui-runtime.md) | UserInterface widget tree, layout, designer |
 | [architecture/fonts.md](architecture/fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [architecture/sprites.md](architecture/sprites.md) | Sprite atlas, packer, SpriteComponent quad |
+| [architecture/tilemaps.md](architecture/tilemaps.md) | Tileset / Tilemap assets, chunk VertexData |
 | [architecture/anim-graph.md](architecture/anim-graph.md) | Worker animation graph evaluator |
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Shader IR to NodeMaterial |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |

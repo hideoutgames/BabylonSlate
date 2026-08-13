@@ -9,6 +9,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "sprite",
   "anim-graph",
   "shader",
+  "tileset",
+  "tilemap",
   "asset-settings",
 ] as const;
 
@@ -54,6 +56,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "AnimationGraph";
     case "shader":
       return "Shader";
+    case "tileset":
+      return "Tileset";
+    case "tilemap":
+      return "Tilemap";
     case "asset-settings":
       return "Texture";
   }
@@ -76,6 +82,10 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "anim-graph";
     case "Shader":
       return "shader";
+    case "Tileset":
+      return "tileset";
+    case "Tilemap":
+      return "tilemap";
     case "Texture":
     case "Material":
     case "Model":
@@ -110,6 +120,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Anim Graph";
     case "shader":
       return "Shader";
+    case "tileset":
+      return "Tileset";
+    case "tilemap":
+      return "Tilemap";
     case "asset-settings":
       return "Settings";
   }
@@ -181,7 +195,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|ui|sprite|anim|shader|class)\.(babasset|json)$/i,
+        /\.(scene|graph|ui|sprite|anim|shader|class|tileset|tilemap)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "") ?? path;

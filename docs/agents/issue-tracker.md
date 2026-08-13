@@ -250,7 +250,7 @@ Chrome polish (pin flash, JSON input textarea, multi-select gizmo, ADT HUD) stay
 | Worker HUD `scriptMs` / `physicsMs` not clobbered by rAF | Done |
 | Play loads anim graphs / sprites from scene refs | Done |
 | `ctx.changeScene` → `World.loadScene` | Done |
-| Catalog honesty (Tilemap / BT / Nav / Widget) | This wave |
+| Catalog honesty (Tilemap / BT / Nav / Widget) | Done (Tilemap returns in Search/Add when Play load lands) |
 | Enum / Structure / ScriptInterface editors | Already `asset-settings` tabs |
 | Prefab → class document persistence | Done (`SerializedGraph.components`) |
 | Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
@@ -268,4 +268,17 @@ Chrome polish (pin flash, JSON input textarea, multi-select gizmo, ADT HUD) stay
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Font editor registers imported `source` bytes; Play HUD uses the compiled CSS stack + generic fallback without awaiting project FontFace loads | Later polish |
+
+## P10 tilemaps
+
+Design note: [tilemaps.md](../architecture/tilemaps.md). Codecs first, then Rapier chains + Play, then painting / 2D template / acceptance e2e.
+
+| Item | Status |
+| --- | --- |
+| Tileset / Tilemap payloads, UV math, golden chunk VertexData, document tabs | In progress (`cursor/play-path-harden-8678`) |
+| Merged chain colliders + `TilemapComponent` Play load | Next |
+| Touch painting, one undo per stroke, 2D Create Project card, acceptance e2e | Next |
+| Autotile / terrain | Deferred |
+| A16 alpha-test vs blend profile | Record in tilemaps.md; do not lock a new default without numbers |
+
 

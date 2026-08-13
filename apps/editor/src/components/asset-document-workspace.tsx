@@ -41,7 +41,12 @@ import {
   type DesignerCanvasId,
   type WidgetKind,
 } from "@babylonslate/ui-runtime";
-import { normalizeFontPayload, type SpritePayload } from "@babylonslate/assets";
+import {
+  normalizeFontPayload,
+  normalizeTilemapPayload,
+  normalizeTilesetPayload,
+  type SpritePayload,
+} from "@babylonslate/assets";
 import {
   animGraphToSerialized,
   serializedToAnimGraph,
@@ -117,6 +122,12 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
     );
   }
   if (doc.ref.kind === "sprite") return <SpriteEditor payload={payload} onChange={commit} />;
+  if (doc.ref.kind === "tileset") {
+    return <TilesetEditor payload={payload} onChange={commit} />;
+  }
+  if (doc.ref.kind === "tilemap") {
+    return <TilemapSettingsEditor payload={payload} onChange={commit} />;
+  }
   if (doc.ref.kind === "anim-graph") {
     return <AnimGraphEditor payload={payload} onChange={commit} />;
   }
@@ -608,6 +619,195 @@ function SpriteEditor({
               },
             },
           ]}
+        />
+      </div>
+    </PanelFrame>
+  );
+}
+
+function TilesetEditor({
+  payload,
+  onChange,
+}: {
+  payload: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const tileset = normalizeTilesetPayload(payload);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const { assetRegistry } = useDocuments();
+  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+    guid: asset.header.guid,
+    name: asset.header.name,
+    type: asset.header.type,
+    path: asset.path,
+  }));
+  return (
+    <PanelFrame className="flex-1" title="Tileset">
+      <div data-testid="tileset-editor">
+        <PropertyGrid
+          rows={[
+            {
+              id: "texture",
+              kind: "asset",
+              label: "Texture",
+              value: tileset.textureGuid,
+              placeholder: "None",
+              onPick: () => setPickerOpen(true),
+              onChange: (value) => onChange({ ...tileset, textureGuid: value }),
+            },
+            {
+              id: "tileWidth",
+              kind: "number",
+              label: "Tile Width",
+              value: tileset.tileWidth,
+              onChange: (value) => onChange({ ...tileset, tileWidth: value }),
+            },
+            {
+              id: "tileHeight",
+              kind: "number",
+              label: "Tile Height",
+              value: tileset.tileHeight,
+              onChange: (value) => onChange({ ...tileset, tileHeight: value }),
+            },
+            {
+              id: "margin",
+              kind: "number",
+              label: "Margin",
+              value: tileset.margin,
+              onChange: (value) => onChange({ ...tileset, margin: value }),
+            },
+            {
+              id: "spacing",
+              kind: "number",
+              label: "Spacing",
+              value: tileset.spacing,
+              onChange: (value) => onChange({ ...tileset, spacing: value }),
+            },
+            {
+              id: "atlasWidth",
+              kind: "number",
+              label: "Atlas Width",
+              value: tileset.atlasWidth,
+              onChange: (value) => onChange({ ...tileset, atlasWidth: value }),
+            },
+            {
+              id: "atlasHeight",
+              kind: "number",
+              label: "Atlas Height",
+              value: tileset.atlasHeight,
+              onChange: (value) => onChange({ ...tileset, atlasHeight: value }),
+            },
+          ]}
+        />
+        <AssetPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          assets={assets}
+          allowedTypes={["Texture"]}
+          onPick={(guid) => {
+            onChange({ ...tileset, textureGuid: guid });
+            setPickerOpen(false);
+          }}
+          data-testid="tileset-texture-picker"
+        />
+      </div>
+    </PanelFrame>
+  );
+}
+
+function TilemapSettingsEditor({
+  payload,
+  onChange,
+}: {
+  payload: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const tilemap = normalizeTilemapPayload(payload);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const { assetRegistry } = useDocuments();
+  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+    guid: asset.header.guid,
+    name: asset.header.name,
+    type: asset.header.type,
+    path: asset.path,
+  }));
+  const layer = tilemap.layers[0];
+  const rows: PropertyRow[] = [
+    {
+      id: "tileset",
+      kind: "asset",
+      label: "Tileset",
+      value: tilemap.tilesetGuid,
+      placeholder: "None",
+      onPick: () => setPickerOpen(true),
+      onChange: (value) => onChange({ ...tilemap, tilesetGuid: value }),
+    },
+    {
+      id: "tileWidth",
+      kind: "number",
+      label: "Tile Width",
+      value: tilemap.tileWidth,
+      onChange: (value) => onChange({ ...tilemap, tileWidth: value }),
+    },
+    {
+      id: "tileHeight",
+      kind: "number",
+      label: "Tile Height",
+      value: tilemap.tileHeight,
+      onChange: (value) => onChange({ ...tilemap, tileHeight: value }),
+    },
+    {
+      id: "chunkSize",
+      kind: "number",
+      label: "Chunk Size",
+      value: tilemap.chunkSize,
+      onChange: (value) => onChange({ ...tilemap, chunkSize: value }),
+    },
+  ];
+  if (layer) {
+    rows.push(
+      {
+        id: "layer-name",
+        kind: "text",
+        label: "Layer Name",
+        value: layer.name,
+        onChange: (name) =>
+          onChange({
+            ...tilemap,
+            layers: tilemap.layers.map((entry) =>
+              entry.id === layer.id ? { ...entry, name } : entry,
+            ),
+          }),
+      },
+      {
+        id: "layer-collision",
+        kind: "boolean",
+        label: "Collision",
+        value: layer.collision,
+        onChange: (collision) =>
+          onChange({
+            ...tilemap,
+            layers: tilemap.layers.map((entry) =>
+              entry.id === layer.id ? { ...entry, collision } : entry,
+            ),
+          }),
+      },
+    );
+  }
+  return (
+    <PanelFrame className="flex-1" title="Tilemap">
+      <div data-testid="tilemap-editor">
+        <PropertyGrid rows={rows} />
+        <AssetPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          assets={assets}
+          allowedTypes={["Tileset"]}
+          onPick={(guid) => {
+            onChange({ ...tilemap, tilesetGuid: guid });
+            setPickerOpen(false);
+          }}
+          data-testid="tilemap-tileset-picker"
         />
       </div>
     </PanelFrame>

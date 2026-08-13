@@ -15,7 +15,7 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 P0–P9 are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** P10 tilemaps, after a short **Play-path hardening** wave (not a new phase, not a P8/P9 rebuild). Parked: `p1-device-spikes` (hardware-only). Do not start P11+ packages from leftover editor polish.
+**Next engine slice:** P10 tilemaps (codecs landed; Rapier chains, painting, and the 2D template are in the same wave). Parked: `p1-device-spikes` (hardware-only). Do not start P11+ packages from leftover editor polish.
 
 Appendix A `[x]` means the **package/slice** landed. It does not mean every Play or document-tab path matches the letter of the spec. Honest residuals:
 
@@ -25,7 +25,8 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | Worker HUD timings | rAF FPS pump merges fps into last worker `scriptMs` / `physicsMs` instead of zeroing them | Done (Play-path wave) |
 | Play content from closed tabs | AnimationGraph / Sprite payloads load from scene component guids; UserInterface library is every HUD asset | Done (Play-path wave) |
 | `ctx.changeScene` | Calls `World.loadScene` (same as console `changescene`) | Done (Play-path wave) |
-| Unbuilt components in catalogs | `TilemapComponent` / `BehaviourTreeComponent` / `NavAgentComponent` stay in `ENGINE_COMPONENT_CLASS_IDS` but are gated from Search and Add Component until those phases. `WidgetComponent` is hidden until `CreateForMesh` exists | Play-path / P10 / P11 |
+| Unbuilt components in catalogs | `BehaviourTreeComponent` / `NavAgentComponent` stay gated. `TilemapComponent` is addable once Play loads chunks + chains. `WidgetComponent` is hidden until `CreateForMesh` exists | P10 / P11 |
+| Tileset / Tilemap documents | Codecs, UV math, golden chunk `VertexData`, Content Browser types, settings tabs | P10 (in progress) |
 | Type-asset tabs | Enum / Structure / ScriptInterface open `asset-settings` editors | Done (`p5-types` follow-up) |
 | Actor Prefab persistence | Class documents store `components`; Place Actors copies them when the class tab is open | Done |
 | Map nodes | `map.get` / `set` / `has` / `remove` / `size` / `keys` with K/V wildcards | Done |

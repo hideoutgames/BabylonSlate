@@ -367,6 +367,29 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.babasset");
     expect(newAssetFileName("Shader", "Surface")).toBe("Surface.shader.babasset");
     expect(newAssetFileName("Class", "Hero")).toBe("Hero.class.babasset");
+    expect(newAssetFileName("Tileset", "Ground")).toBe(
+      "Ground.tileset.babasset",
+    );
+    expect(newAssetFileName("Tilemap", "Overworld")).toBe(
+      "Overworld.tilemap.babasset",
+    );
+    const tileset = buildNewAssetResult({
+      type: "Tileset",
+      name: "Ground",
+      guid: "ts-1",
+      parentClass: null,
+    });
+    expect(tileset.type).toBe("Tileset");
+    expect(tileset.payload.tileWidth).toBe(16);
+    expect(tileset.chunks.some((chunk) => chunk.id === "document")).toBe(true);
+    const tilemap = buildNewAssetResult({
+      type: "Tilemap",
+      name: "Overworld",
+      guid: "tm-1",
+      parentClass: null,
+    });
+    expect(tilemap.type).toBe("Tilemap");
+    expect(tilemap.payload.chunkSize).toBe(32);
     const hud = buildNewAssetResult({
       type: "UserInterface",
       name: "HUD",
@@ -387,6 +410,8 @@ describe("content-browser-helpers", () => {
       "Sprite",
       "AnimationGraph",
       "Shader",
+      "Tileset",
+      "Tilemap",
       "Enum",
       "Structure",
       "ScriptInterface",

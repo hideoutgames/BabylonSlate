@@ -100,6 +100,16 @@ describe("resolveTypeVisual", () => {
     }
   });
 
+  it("gives Tileset and Tilemap assets distinct glyphs", () => {
+    const tileset = resolveTypeVisual({ assetType: "Tileset" });
+    const tilemap = resolveTypeVisual({ assetType: "Tilemap" });
+    expect(tileset.family).toBe("texture");
+    expect(tilemap.family).toBe("texture");
+    expect(tileset.iconKey).toBe("Tileset");
+    expect(tilemap.iconKey).toBe("Tilemap");
+    expect(tileset.icon).not.toBe(tilemap.icon);
+  });
+
   it("uses component color for engine components unless family is overridden", () => {
     const mesh = resolveTypeVisual({ classId: "MeshComponent" });
     const light = resolveTypeVisual({ classId: "LightComponent" });

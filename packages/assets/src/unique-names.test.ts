@@ -41,6 +41,8 @@ describe("asset file suffix helpers", () => {
     expect(stripAssetFileSuffix("logic.graph.babasset")).toBe("logic");
     expect(stripAssetFileSuffix("hero.class.babasset")).toBe("hero");
     expect(stripAssetFileSuffix("hud.ui.babasset")).toBe("hud");
+    expect(stripAssetFileSuffix("ground.tileset.babasset")).toBe("ground");
+    expect(stripAssetFileSuffix("overworld.tilemap.babasset")).toBe("overworld");
     expect(stripAssetFileSuffix("tex.babasset")).toBe("tex");
     expect(stripAssetFileSuffix("Duplicate_1.babasset")).toBe("Duplicate_1");
   });
@@ -53,6 +55,10 @@ describe("asset file suffix helpers", () => {
     expect(assetFileSuffix("hero.sprite.babasset")).toBe(".sprite.babasset");
     expect(assetFileSuffix("loco.anim.babasset")).toBe(".anim.babasset");
     expect(assetFileSuffix("surface.shader.babasset")).toBe(".shader.babasset");
+    expect(assetFileSuffix("ground.tileset.babasset")).toBe(".tileset.babasset");
+    expect(assetFileSuffix("overworld.tilemap.babasset")).toBe(
+      ".tilemap.babasset",
+    );
     expect(assetFileSuffix("tex.babasset")).toBe(".babasset");
   });
 });

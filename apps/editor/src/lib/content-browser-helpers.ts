@@ -2,6 +2,8 @@ import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   createDefaultSpritePayload,
+  createDefaultTilemapPayload,
+  createDefaultTilesetPayload,
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
@@ -52,6 +54,8 @@ export const CREATABLE_ASSET_TYPES = [
   "Sprite",
   "AnimationGraph",
   "Shader",
+  "Tileset",
+  "Tilemap",
   "Enum",
   "Structure",
   "ScriptInterface",
@@ -401,6 +405,24 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "Tileset") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultTilesetPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "Tilemap") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultTilemapPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
   if (type === "Enum" || type === "Structure" || type === "ScriptInterface") {
     const payload: Record<string, unknown> =
       type === "Enum"
@@ -449,7 +471,11 @@ export function newAssetFileName(
               ? ".anim.babasset"
               : type === "Shader"
                 ? ".shader.babasset"
-                : ".babasset";
+                : type === "Tileset"
+                  ? ".tileset.babasset"
+                  : type === "Tilemap"
+                    ? ".tilemap.babasset"
+                    : ".babasset";
   return `${safe}${suffix}`;
 }
 
