@@ -718,7 +718,8 @@ export function newAssetFileName(
   type: CreatableAssetType,
   name: string,
 ): string {
-  const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_") || "NewAsset";
+  const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
+  if (!safe) return "";
   const suffix =
     type === "Scene"
       ? ".scene.babasset"
@@ -786,7 +787,9 @@ export function isNewAssetNameTaken(
   type: CreatableAssetType,
   name: string,
 ): boolean {
-  const path = joinAssetFolderPath(folderPath, newAssetFileName(type, name));
+  const fileName = newAssetFileName(type, name);
+  if (!fileName) return false;
+  const path = joinAssetFolderPath(folderPath, fileName);
   for (const existing of existingPaths) {
     if (existing === path) return true;
   }

@@ -172,7 +172,7 @@ export function ContentBrowserWorkspace() {
   const [newAssetOpen, setNewAssetOpen] = useState(false);
   const [newAssetType, setNewAssetType] =
     useState<CreatableAssetType>("Scene");
-  const [newAssetName, setNewAssetName] = useState("NewAsset");
+  const [newAssetName, setNewAssetName] = useState("");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
   const [busy, setBusy] = useState(false);
   const [nameDialog, setNameDialog] = useState<
@@ -879,7 +879,10 @@ export function ContentBrowserWorkspace() {
       {
         id: "new-asset",
         label: "New Asset",
-        onSelect: () => setNewAssetOpen(true),
+        onSelect: () => {
+          setNewAssetName("");
+          setNewAssetOpen(true);
+        },
       },
       {
         id: "import",
@@ -1063,12 +1066,14 @@ export function ContentBrowserWorkspace() {
 
   const handleCreateAsset = useCallback(async () => {
     if (!assetRegistry || newAssetNameTaken) return;
+    const name = newAssetName.trim();
+    if (!name) return;
     setBusy(true);
     try {
       const type = newAssetType;
-      const name = newAssetName.trim() || "NewAsset";
       const relative = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
       const fileName = newAssetFileName(type, name);
+      if (!fileName) return;
       const result = buildNewAssetResult({
         type,
         name,
@@ -1140,7 +1145,10 @@ export function ContentBrowserWorkspace() {
           size="sm"
           data-testid="content-browser-new-asset"
           disabled={busy}
-          onClick={() => setNewAssetOpen(true)}
+          onClick={() => {
+            setNewAssetName("");
+            setNewAssetOpen(true);
+          }}
         >
           <PlusIcon data-icon="inline-start" />
           New Asset
@@ -1352,7 +1360,13 @@ export function ContentBrowserWorkspace() {
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <ContextMenuOverlay menu={emptyGridMenu} onClose={closeEmptyGridMenu} />
 
-      <AlertDialog open={newAssetOpen} onOpenChange={setNewAssetOpen}>
+      <AlertDialog
+        open={newAssetOpen}
+        onOpenChange={(open) => {
+          setNewAssetOpen(open);
+          if (open) setNewAssetName("");
+        }}
+      >
         <AlertDialogContent data-testid="content-browser-new-asset-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>New Asset</AlertDialogTitle>

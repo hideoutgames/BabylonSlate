@@ -634,6 +634,11 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("Tilemap", "Overworld")).toBe(
       "Overworld.tilemap.babasset",
     );
+    expect(newAssetFileName("Scene", "")).toBe("");
+    expect(newAssetFileName("Scene", "   ")).toBe("");
+    expect(isNewAssetNameTaken(["assets/NewAsset.scene.babasset"], "assets", "Scene", "")).toBe(
+      false,
+    );
     const tileset = buildNewAssetResult({
       type: "Tileset",
       name: "Ground",
