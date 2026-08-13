@@ -9,13 +9,16 @@ export {
 export type { DesignerCanvasId, DevicePreset } from "./presets";
 export type {
   EdgeInsets,
+  HorizontalAlignment,
   LaidOutWidget,
   LayoutResult,
   Rect,
   ScaleRule,
+  SizeUnit,
   TextMeasurer,
   UserInterfaceDocument,
   Vec2,
+  VerticalAlignment,
   WidgetKind,
   WidgetLayout,
   WidgetNode,
@@ -31,25 +34,32 @@ export {
   createDefaultUserInterface,
   createWidget,
   defaultPropsFor,
+  defaultWidgetLayout,
   defaultWidgetStyle,
   pinLayout,
   stretchLayout,
 } from "./types";
 export {
+  SAFE_AREA_CONTROL_ID,
   STUB_TEXT_MEASURER,
   clamp01,
-  computeAnchoredRect,
-  designCanvasRect,
   designScale,
   flattenLaidOut,
   insetRect,
   layoutUserInterface,
   normalizeLayout,
   pivotPoint,
+  previewRect,
   roundRect,
   toGuiRect,
 } from "./layout";
 export type { LayoutOptions } from "./layout";
+export {
+  isBabylonWidgetLayout,
+  isLegacyRectTransform,
+  migrateLegacyLayout,
+  migrateUserInterfacePayload,
+} from "./migrate-layout";
 export {
   compileFontStack,
   glyphsFallingToFallback,
@@ -64,6 +74,7 @@ export {
 export {
   describeUiControls,
   type UiControlDescriptor,
+  type UiLayoutMode,
 } from "./controls";
 export {
   guiControlType,

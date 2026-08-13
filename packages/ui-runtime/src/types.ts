@@ -8,6 +8,9 @@ export type EdgeInsets = {
 };
 
 export type ScaleRule = "fitWidth" | "fitHeight" | "shortestSide";
+export type HorizontalAlignment = "left" | "center" | "right";
+export type VerticalAlignment = "top" | "center" | "bottom";
+export type SizeUnit = "px" | "percent";
 
 export const WIDGET_KINDS = [
   "Canvas",
@@ -47,16 +50,20 @@ export const CONTAINER_KINDS: ReadonlySet<WidgetKind> = new Set([
 ]);
 
 export interface WidgetLayout {
-  /** Normalised [0, 1] parent-space min corner (left, bottom). */
-  anchorMin: Vec2;
-  /** Normalised [0, 1] parent-space max corner (right, top). */
-  anchorMax: Vec2;
-  /** Pixel offset from min anchors (left, bottom). */
-  offsetMin: Vec2;
-  /** Pixel offset from max anchors (right, top). Negative insets when stretching. */
-  offsetMax: Vec2;
-  /** Local origin in [0, 1] of the computed rect. Separate from anchors. */
-  pivot: Vec2;
+  horizontalAlignment: HorizontalAlignment;
+  verticalAlignment: VerticalAlignment;
+  width: number;
+  height: number;
+  widthUnit: SizeUnit;
+  heightUnit: SizeUnit;
+  /** Offset from the aligned edge (Babylon `left`, always added). */
+  left: number;
+  /** Offset from the aligned edge (Babylon `top`, always added, Y-down). */
+  top: number;
+  /** Layout insets on the control (`Control.padding*`). */
+  padding: EdgeInsets;
+  /** Babylon `transformCenterX/Y` in [0, 1]. */
+  transformCenter: Vec2;
 }
 
 export interface WidgetStyle {
@@ -86,6 +93,8 @@ export interface WidgetNode {
   nestedUiGuid?: string | null;
   /** Visual override UserInterface for Button / TouchJoystick / TouchButton. */
   visualOverrideGuid?: string | null;
+  /** When true, a Canvas child parents to the full-bleed canvas, not the SafeArea container. */
+  ignoreSafeArea?: boolean;
 }
 
 export interface UserInterfaceDocument {
@@ -112,7 +121,7 @@ export interface LaidOutWidget {
   kind: WidgetKind;
   name: string;
   rect: Rect;
-  pivot: Vec2;
+  transformCenter: Vec2;
   visible: boolean;
   children: LaidOutWidget[];
   widget?: WidgetNode;
@@ -134,27 +143,44 @@ export const ZERO_INSETS: EdgeInsets = {
 export const DEFAULT_DESIGN_RESOLUTION = { width: 1920, height: 1080 };
 export const DEFAULT_DESIRED_SIZE = { width: 400, height: 300 };
 
+export function defaultWidgetLayout(): WidgetLayout {
+  return stretchLayout();
+}
+
 export function stretchLayout(insets: EdgeInsets = ZERO_INSETS): WidgetLayout {
   return {
-    anchorMin: { x: 0, y: 0 },
-    anchorMax: { x: 1, y: 1 },
-    offsetMin: { x: insets.left, y: insets.bottom },
-    offsetMax: { x: -insets.right, y: -insets.top },
-    pivot: { x: 0.5, y: 0.5 },
+    horizontalAlignment: "left",
+    verticalAlignment: "top",
+    width: 100,
+    height: 100,
+    widthUnit: "percent",
+    heightUnit: "percent",
+    left: 0,
+    top: 0,
+    padding: { ...insets },
+    transformCenter: { x: 0.5, y: 0.5 },
   };
 }
 
 export function pinLayout(
-  anchor: Vec2,
-  size: Vec2,
-  pivot: Vec2 = { x: 0.5, y: 0.5 },
+  horizontalAlignment: HorizontalAlignment,
+  verticalAlignment: VerticalAlignment,
+  width: number,
+  height: number,
+  left = 0,
+  top = 0,
 ): WidgetLayout {
   return {
-    anchorMin: { ...anchor },
-    anchorMax: { ...anchor },
-    offsetMin: { x: -size.x * pivot.x, y: -size.y * pivot.y },
-    offsetMax: { x: size.x * (1 - pivot.x), y: size.y * (1 - pivot.y) },
-    pivot: { ...pivot },
+    horizontalAlignment,
+    verticalAlignment,
+    width,
+    height,
+    widthUnit: "px",
+    heightUnit: "px",
+    left,
+    top,
+    padding: { ...ZERO_INSETS },
+    transformCenter: { x: 0.5, y: 0.5 },
   };
 }
 
@@ -245,22 +271,17 @@ export function createDefaultUserInterface(name = "HUD"): UserInterfaceDocument 
 /** Default viewport HUD used by New Asset → UserInterface (joystick + title). */
 export function createDefaultPlayHud(name = "HUD"): UserInterfaceDocument {
   const doc = createDefaultUserInterface(name);
-  const header = createWidget(
-    "header",
-    "Text",
-    "Title",
-    stretchLayout({ left: 24, right: 24, top: 16, bottom: 0 }),
-  );
+  const header = createWidget("header", "Text", "Title", {
+    ...stretchLayout({ left: 24, right: 24, top: 16, bottom: 0 }),
+    height: 40,
+    heightUnit: "px",
+  });
   header.props.text = "Score";
-  header.layout.anchorMin = { x: 0, y: 1 };
-  header.layout.anchorMax = { x: 1, y: 1 };
-  header.layout.offsetMin = { x: 24, y: -48 };
-  header.layout.offsetMax = { x: -24, y: -8 };
   const stick = createWidget(
     "stick",
     "TouchJoystick",
     "Move Stick",
-    pinLayout({ x: 0.12, y: 0.18 }, { x: 160, y: 160 }),
+    pinLayout("left", "bottom", 160, 160, 40, 0),
   );
   doc.widgets.canvas!.children = ["header", "stick"];
   doc.widgets.header = header;

@@ -59,4 +59,18 @@ describe("widget tree", () => {
     expect(next.widgets["btn-copy"]?.kind).toBe("Button");
     expect(next.widgets[doc.rootId]?.children).toEqual(["btn", "btn-copy"]);
   });
+
+  it("duplicates a container and its descendants", () => {
+    const doc = createDefaultUserInterface();
+    const box = createWidget("box", "VerticalBox", "Col");
+    const child = createWidget("child", "Text", "Label");
+    let next = insertWidget(doc, box, doc.rootId);
+    next = insertWidget(next, child, "box");
+    next = duplicateWidget(next, "box", "box-copy");
+    expect(next.widgets["box-copy"]?.children.length).toBe(1);
+    const copiedChildId = next.widgets["box-copy"]?.children[0];
+    expect(copiedChildId).toBeTruthy();
+    expect(next.widgets[copiedChildId!]?.kind).toBe("Text");
+    expect(next.widgets.child).toBeDefined();
+  });
 });

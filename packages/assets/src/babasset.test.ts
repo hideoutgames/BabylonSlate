@@ -196,9 +196,33 @@ describe("schema migration", () => {
 
   it("passes through types that have no migration chain", () => {
     const registry = createDefaultMigrationRegistry();
-    const result = registry.migrate("UserInterface", 1, { name: "HUD" });
+    const result = registry.migrate("Texture", 1, { name: "Icon" });
     expect(result.migrated).toBe(false);
     expect(result.version).toBe(1);
-    expect(result.payload).toEqual({ name: "HUD" });
+    expect(result.payload).toEqual({ name: "Icon" });
+  });
+
+  it("migrates UserInterface v1 RectTransform payloads to the Babylon layout", () => {
+    const registry = createDefaultMigrationRegistry();
+    const result = registry.migrate("UserInterface", 1, {
+      name: "HUD",
+      widgets: {
+        stick: {
+          id: "stick",
+          layout: {
+            anchorMin: { x: 0.5, y: 0.5 },
+            anchorMax: { x: 0.5, y: 0.5 },
+            offsetMin: { x: -80, y: -80 },
+            offsetMax: { x: 80, y: 80 },
+            pivot: { x: 0.5, y: 0.5 },
+          },
+        },
+      },
+    });
+    expect(result.migrated).toBe(true);
+    expect(result.version).toBe(2);
+    const stick = (result.payload.widgets as Record<string, { layout: { horizontalAlignment: string } }>)
+      .stick;
+    expect(stick.layout.horizontalAlignment).toBe("center");
   });
 });

@@ -4,6 +4,7 @@ import { describeUiControls } from "./controls";
 import { layoutUserInterface } from "./layout";
 import { createDefaultUserInterface } from "./types";
 import { guiControlType, guiSpecFromDescriptor } from "./gui-spec";
+import { SAFE_AREA_CONTROL_ID } from "./layout";
 
 describe("guiSpecFromDescriptor", () => {
   it("maps widget kinds onto Babylon GUI control types", () => {
@@ -21,18 +22,18 @@ describe("guiSpecFromDescriptor", () => {
     expect(guiControlType("ProgressBar")).toBe("ProgressBar");
     expect(guiControlType("Spacer")).toBe("Container");
     expect(guiControlType("TouchJoystick")).toBe("Ellipse");
-    expect(guiControlType("TouchButton")).toBe("Button");
+    expect(guiControlType("TouchButton")).toBe("Rectangle");
     expect(guiControlType("TouchDPad")).toBe("Rectangle");
     expect(guiControlType("UserInterface")).toBe("Rectangle");
   });
 
-  it("writes absolute left/top/width/height from the laid-out GUI rect", () => {
+  it("copies Babylon alignment and size from the widget layout", () => {
     const doc = createDefaultUserInterface();
     const button = createWidget(
       "btn",
       "Button",
       "Play",
-      pinLayout({ x: 0, y: 1 }, { x: 160, y: 40 }, { x: 0, y: 1 }),
+      pinLayout("left", "top", 160, 40, 8, 12),
     );
     button.props.text = "Play";
     button.style.background = "#336699";
@@ -42,15 +43,17 @@ describe("guiSpecFromDescriptor", () => {
     button.style.borderRadius = 8;
     doc.widgets.canvas!.children = ["btn"];
     doc.widgets.btn = button;
-    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
-    const controls = describeUiControls(doc, layout, 600);
+    const layout = layoutUserInterface(doc, { width: 1920, height: 1080 });
+    const controls = describeUiControls(doc, layout);
     const control = controls.find((row) => row.id === "btn")!;
     const spec = guiSpecFromDescriptor(control, {
       interactive: false,
     });
     expect(spec.type).toBe("Button");
-    expect(spec.left).toBe(control.guiRect.x);
-    expect(spec.top).toBe(control.guiRect.y);
+    expect(spec.horizontalAlignment).toBe("left");
+    expect(spec.verticalAlignment).toBe("top");
+    expect(spec.left).toBe(8);
+    expect(spec.top).toBe(12);
     expect(spec.width).toBe(160);
     expect(spec.height).toBe(40);
     expect(spec.text).toBe("Play");
@@ -60,8 +63,7 @@ describe("guiSpecFromDescriptor", () => {
     expect(spec.alpha).toBe(0.8);
     expect(spec.cornerRadius).toBe(8);
     expect(spec.hitTestVisible).toBe(false);
-    expect(spec.horizontalAlignment).toBe("left");
-    expect(spec.verticalAlignment).toBe("top");
+    expect(spec.parentId).toBe(SAFE_AREA_CONTROL_ID);
   });
 
   it("enables pointer hits in interactive Play mode", () => {
@@ -70,17 +72,61 @@ describe("guiSpecFromDescriptor", () => {
       "stick",
       "TouchJoystick",
       "Move",
-      pinLayout({ x: 0.2, y: 0.2 }, { x: 160, y: 160 }),
+      pinLayout("left", "bottom", 160, 160, 40, 0),
     );
     doc.widgets.canvas!.children = ["stick"];
     doc.widgets.stick = stick;
-    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
-    const controls = describeUiControls(doc, layout, 600);
+    const layout = layoutUserInterface(doc, { width: 1920, height: 1080 });
+    const controls = describeUiControls(doc, layout);
     const spec = guiSpecFromDescriptor(controls.find((row) => row.id === "stick")!, {
       interactive: true,
     });
     expect(spec.type).toBe("Ellipse");
     expect(spec.hitTestVisible).toBe(true);
     expect(spec.isPointerBlocker).toBe(true);
+  });
+
+  it("keeps percent size on Grid children instead of flattening to px", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid");
+    const cell = createWidget("cell", "Button", "Cell");
+    doc.widgets.canvas!.children = ["grid"];
+    doc.widgets.grid = grid;
+    grid.children = ["cell"];
+    doc.widgets.cell = cell;
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    const controls = describeUiControls(doc, layout);
+    const spec = guiSpecFromDescriptor(controls.find((row) => row.id === "cell")!, {
+      interactive: false,
+    });
+    expect(spec.layoutMode).toBe("grid");
+    expect(spec.left).toBe(0);
+    expect(spec.top).toBe(0);
+    expect(spec.widthUnit).toBe("percent");
+    expect(spec.heightUnit).toBe("percent");
+  });
+
+  it("copies slider min/max and ignoreSafeArea onto the spec", () => {
+    const doc = createDefaultUserInterface();
+    const slider = createWidget(
+      "slider",
+      "Slider",
+      "Look",
+      pinLayout("left", "top", 200, 24),
+    );
+    slider.props.min = 0.25;
+    slider.props.max = 0.75;
+    slider.props.value = 0.5;
+    slider.ignoreSafeArea = true;
+    doc.widgets.canvas!.children = ["slider"];
+    doc.widgets.slider = slider;
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    const spec = guiSpecFromDescriptor(
+      describeUiControls(doc, layout).find((row) => row.id === "slider")!,
+      { interactive: false },
+    );
+    expect(spec.sliderMin).toBe(0.25);
+    expect(spec.sliderMax).toBe(0.75);
+    expect(spec.ignoreSafeArea).toBe(true);
   });
 });

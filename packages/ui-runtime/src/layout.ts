@@ -7,45 +7,40 @@ import type {
   TextMeasurer,
   UserInterfaceDocument,
   Vec2,
-  WidgetLayout,
   WidgetNode,
 } from "./types";
-import { CONTAINER_KINDS, DEFAULT_DESIRED_SIZE } from "./types";
+import { CONTAINER_KINDS, DEFAULT_DESIRED_SIZE, ZERO_INSETS } from "./types";
+import { clamp01, previewRect } from "./preview-rect";
 
-export function clamp01(value: number): number {
-  if (Number.isNaN(value) || value === Number.NEGATIVE_INFINITY) return 0;
-  if (value === Number.POSITIVE_INFINITY) return 1;
-  return Math.max(0, Math.min(1, value));
-}
+export { clamp01, previewRect, roundRect } from "./preview-rect";
 
-export function normalizeLayout(slot: WidgetLayout): WidgetLayout {
-  const minX = clamp01(slot.anchorMin.x);
-  const minY = clamp01(slot.anchorMin.y);
+export const SAFE_AREA_CONTROL_ID = "__safeArea";
+
+export function normalizeLayout(
+  slot: import("./types").WidgetLayout,
+): import("./types").WidgetLayout {
+  const h = slot.horizontalAlignment;
+  const v = slot.verticalAlignment;
   return {
-    anchorMin: { x: minX, y: minY },
-    anchorMax: {
-      x: Math.max(minX, clamp01(slot.anchorMax.x)),
-      y: Math.max(minY, clamp01(slot.anchorMax.y)),
+    horizontalAlignment:
+      h === "center" || h === "right" || h === "left" ? h : "left",
+    verticalAlignment: v === "center" || v === "bottom" || v === "top" ? v : "top",
+    width: Number.isFinite(slot.width) ? slot.width : 0,
+    height: Number.isFinite(slot.height) ? slot.height : 0,
+    widthUnit: slot.widthUnit === "percent" ? "percent" : "px",
+    heightUnit: slot.heightUnit === "percent" ? "percent" : "px",
+    left: Number.isFinite(slot.left) ? slot.left : 0,
+    top: Number.isFinite(slot.top) ? slot.top : 0,
+    padding: {
+      left: Number.isFinite(slot.padding?.left) ? slot.padding.left : 0,
+      right: Number.isFinite(slot.padding?.right) ? slot.padding.right : 0,
+      top: Number.isFinite(slot.padding?.top) ? slot.padding.top : 0,
+      bottom: Number.isFinite(slot.padding?.bottom) ? slot.padding.bottom : 0,
     },
-    offsetMin: { ...slot.offsetMin },
-    offsetMax: { ...slot.offsetMax },
-    pivot: { x: clamp01(slot.pivot.x), y: clamp01(slot.pivot.y) },
-  };
-}
-
-export function computeAnchoredRect(parent: Rect, slot: WidgetLayout): Rect {
-  const layout = normalizeLayout(slot);
-  const left = parent.x + parent.width * layout.anchorMin.x + layout.offsetMin.x;
-  const bottom =
-    parent.y + parent.height * layout.anchorMin.y + layout.offsetMin.y;
-  const right =
-    parent.x + parent.width * layout.anchorMax.x + layout.offsetMax.x;
-  const top = parent.y + parent.height * layout.anchorMax.y + layout.offsetMax.y;
-  return {
-    x: left,
-    y: bottom,
-    width: Math.max(0, right - left),
-    height: Math.max(0, top - bottom),
+    transformCenter: {
+      x: clamp01(slot.transformCenter?.x ?? 0.5),
+      y: clamp01(slot.transformCenter?.y ?? 0.5),
+    },
   };
 }
 
@@ -59,9 +54,9 @@ export function pivotPoint(rect: Rect, pivot: Vec2): Vec2 {
 export function insetRect(rect: Rect, insets: EdgeInsets): Rect {
   return {
     x: rect.x + insets.left,
-    y: rect.y + insets.bottom,
+    y: rect.y + insets.top,
     width: Math.max(0, rect.width - insets.left - insets.right),
-    height: Math.max(0, rect.height - insets.bottom - insets.top),
+    height: Math.max(0, rect.height - insets.top - insets.bottom),
   };
 }
 
@@ -82,30 +77,9 @@ export function designScale(
   }
 }
 
-export function designCanvasRect(
-  viewport: Rect,
-  design: { width: number; height: number },
-  rule: ScaleRule,
-): Rect {
-  const scale = designScale(viewport, design, rule);
-  const width = design.width * scale;
-  const height = design.height * scale;
-  return {
-    x: viewport.x + (viewport.width - width) / 2,
-    y: viewport.y + (viewport.height - height) / 2,
-    width,
-    height,
-  };
-}
-
-/** Convert engine-space (Y-up, bottom-left) to Babylon GUI (Y-down, top-left). */
-export function toGuiRect(rect: Rect, parentHeight: number): Rect {
-  return {
-    x: rect.x,
-    y: parentHeight - rect.y - rect.height,
-    width: rect.width,
-    height: rect.height,
-  };
+/** Rects are already GUI (top-left, Y-down). */
+export function toGuiRect(rect: Rect): Rect {
+  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
 }
 
 export const STUB_TEXT_MEASURER: TextMeasurer = {
@@ -120,6 +94,8 @@ export interface LayoutOptions {
   safeArea?: EdgeInsets;
   resolveNested?: (guid: string) => UserInterfaceDocument | null;
   seenGuids?: ReadonlySet<string>;
+  /** When true, rects stay in design pixels (nested apply / host slots). */
+  designSpace?: boolean;
 }
 
 function numberProp(props: Record<string, unknown>, key: string, fallback: number): number {
@@ -168,6 +144,27 @@ function preferredSize(
   return { width: 80, height: 32 };
 }
 
+function mapRect(rect: Rect, canvas: Rect, scale: number): Rect {
+  return {
+    x: canvas.x + rect.x * scale,
+    y: canvas.y + rect.y * scale,
+    width: rect.width * scale,
+    height: rect.height * scale,
+  };
+}
+
+function mapTree(node: LaidOutWidget, canvas: Rect, scale: number): LaidOutWidget {
+  return {
+    ...node,
+    rect: mapRect(node.rect, canvas, scale),
+    transformCenter: {
+      x: canvas.x + node.transformCenter.x * scale,
+      y: canvas.y + node.transformCenter.y * scale,
+    },
+    children: node.children.map((child) => mapTree(child, canvas, scale)),
+  };
+}
+
 function prefixAndOffset(
   node: LaidOutWidget,
   prefix: string,
@@ -178,121 +175,14 @@ function prefixAndOffset(
     ...node,
     id: `${prefix}/${node.id}`,
     rect: { ...node.rect, x: node.rect.x + dx, y: node.rect.y + dy },
-    pivot: { x: node.pivot.x + dx, y: node.pivot.y + dy },
+    transformCenter: {
+      x: node.transformCenter.x + dx,
+      y: node.transformCenter.y + dy,
+    },
     children: node.children.map((child) =>
       prefixAndOffset(child, prefix, dx, dy),
     ),
   };
-}
-
-function layoutChildren(
-  parent: WidgetNode,
-  parentRect: Rect,
-  doc: UserInterfaceDocument,
-  measurer: TextMeasurer,
-  options: LayoutOptions,
-): LaidOutWidget[] {
-  const padding = parent.style.padding ?? {
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  };
-  const inner = insetRect(parentRect, padding);
-  const gap = numberProp(parent.props, "gap", 0);
-  const childIds = parent.children.filter((id) => doc.widgets[id]);
-  const resolveNested = options.resolveNested;
-
-  if (
-    parent.kind === "Canvas" ||
-    parent.kind === "Overlay" ||
-    parent.kind === "ScrollBox" ||
-    parent.kind === "Border"
-  ) {
-    return childIds.map((id) =>
-      layoutWidget(doc.widgets[id]!, inner, doc, measurer, options),
-    );
-  }
-
-  if (parent.kind === "SizeBox") {
-    const size = preferredSize(parent, measurer, resolveNested);
-    const box: Rect = {
-      x: inner.x,
-      y: inner.y + inner.height - size.height,
-      width: size.width,
-      height: size.height,
-    };
-    return childIds.map((id) =>
-      layoutWidget(doc.widgets[id]!, box, doc, measurer, options),
-    );
-  }
-
-  if (parent.kind === "HorizontalBox") {
-    let x = inner.x;
-    const count = childIds.length;
-    const flexTotal = Math.max(count, 1);
-    const available = inner.width - gap * Math.max(count - 1, 0);
-    return childIds.map((id) => {
-      const child = doc.widgets[id]!;
-      const hint = preferredSize(child, measurer, resolveNested);
-      const width = CONTAINER_KINDS.has(child.kind)
-        ? available / flexTotal
-        : hint.width;
-      const slot: Rect = {
-        x,
-        y: inner.y,
-        width,
-        height: inner.height,
-      };
-      x += width + gap;
-      return layoutWidget(child, slot, doc, measurer, options, true);
-    });
-  }
-
-  if (parent.kind === "VerticalBox") {
-    let y = inner.y + inner.height;
-    const count = childIds.length;
-    const flexTotal = Math.max(count, 1);
-    const available = inner.height - gap * Math.max(count - 1, 0);
-    return childIds.map((id) => {
-      const child = doc.widgets[id]!;
-      const hint = preferredSize(child, measurer, resolveNested);
-      const height = CONTAINER_KINDS.has(child.kind)
-        ? available / flexTotal
-        : hint.height;
-      y -= height;
-      const slot: Rect = {
-        x: inner.x,
-        y,
-        width: inner.width,
-        height,
-      };
-      y -= gap;
-      return layoutWidget(child, slot, doc, measurer, options, true);
-    });
-  }
-
-  if (parent.kind === "Grid") {
-    const columns = Math.max(1, Math.floor(numberProp(parent.props, "columns", 2)));
-    const rows = Math.max(1, Math.floor(numberProp(parent.props, "rows", 2)));
-    const cellW = (inner.width - gap * (columns - 1)) / columns;
-    const cellH = (inner.height - gap * (rows - 1)) / rows;
-    return childIds.map((id, index) => {
-      const col = index % columns;
-      const row = Math.floor(index / columns) % rows;
-      const slot: Rect = {
-        x: inner.x + col * (cellW + gap),
-        y: inner.y + inner.height - (row + 1) * cellH - row * gap,
-        width: cellW,
-        height: cellH,
-      };
-      return layoutWidget(doc.widgets[id]!, slot, doc, measurer, options, true);
-    });
-  }
-
-  return childIds.map((id) =>
-    layoutWidget(doc.widgets[id]!, inner, doc, measurer, options),
-  );
 }
 
 function layoutNestedTree(
@@ -300,7 +190,7 @@ function layoutNestedTree(
   rect: Rect,
   options: LayoutOptions,
 ): LaidOutWidget[] {
-  const guid = widget.nestedUiGuid;
+  const guid = widget.nestedUiGuid ?? widget.visualOverrideGuid;
   if (!guid || !options.resolveNested) return [];
   const seen = options.seenGuids ?? new Set<string>();
   if (seen.has(guid)) return [];
@@ -318,11 +208,109 @@ function layoutNestedTree(
       measurer: options.measurer,
       resolveNested: options.resolveNested,
       seenGuids: nextSeen,
+      designSpace: true,
     },
   );
   return nestedLayout.tree
     ? [prefixAndOffset(nestedLayout.tree, widget.id, rect.x, rect.y)]
     : [];
+}
+
+function layoutChildren(
+  parent: WidgetNode,
+  parentRect: Rect,
+  doc: UserInterfaceDocument,
+  measurer: TextMeasurer,
+  options: LayoutOptions,
+  childParent: Rect,
+): LaidOutWidget[] {
+  const padding = parent.style.padding ?? ZERO_INSETS;
+  const inner = insetRect(childParent, padding);
+  const gap = numberProp(parent.props, "gap", 0);
+  const childIds = parent.children.filter((id) => doc.widgets[id]);
+  const resolveNested = options.resolveNested;
+
+  if (
+    parent.kind === "Canvas" ||
+    parent.kind === "Overlay" ||
+    parent.kind === "ScrollBox" ||
+    parent.kind === "Border"
+  ) {
+    return childIds.map((id) => {
+      const child = doc.widgets[id]!;
+      const full = insetRect(parentRect, padding);
+      const slot =
+        parent.kind === "Canvas" && !child.ignoreSafeArea
+          ? insetRect(childParent, padding)
+          : parent.kind === "Canvas"
+            ? full
+            : full;
+      return layoutWidget(child, slot, doc, measurer, options);
+    });
+  }
+
+  if (parent.kind === "SizeBox") {
+    const size = preferredSize(parent, measurer, resolveNested);
+    const box: Rect = {
+      x: inner.x,
+      y: inner.y,
+      width: size.width,
+      height: size.height,
+    };
+    return childIds.map((id) =>
+      layoutWidget(doc.widgets[id]!, box, doc, measurer, options, true),
+    );
+  }
+
+  if (parent.kind === "HorizontalBox") {
+    let x = inner.x;
+    return childIds.map((id) => {
+      const child = doc.widgets[id]!;
+      const hint = preferredSize(child, measurer, resolveNested);
+      const width = CONTAINER_KINDS.has(child.kind)
+        ? Math.max(0, (inner.width - gap * Math.max(childIds.length - 1, 0)) / Math.max(childIds.length, 1))
+        : hint.width;
+      const slot: Rect = { x, y: inner.y, width, height: inner.height };
+      x += width + gap;
+      return layoutWidget(child, slot, doc, measurer, options, true);
+    });
+  }
+
+  if (parent.kind === "VerticalBox") {
+    let y = inner.y;
+    return childIds.map((id) => {
+      const child = doc.widgets[id]!;
+      const hint = preferredSize(child, measurer, resolveNested);
+      const height = CONTAINER_KINDS.has(child.kind)
+        ? Math.max(0, (inner.height - gap * Math.max(childIds.length - 1, 0)) / Math.max(childIds.length, 1))
+        : hint.height;
+      const slot: Rect = { x: inner.x, y, width: inner.width, height };
+      y += height + gap;
+      return layoutWidget(child, slot, doc, measurer, options, true);
+    });
+  }
+
+  if (parent.kind === "Grid") {
+    const columns = Math.max(1, Math.floor(numberProp(parent.props, "columns", 2)));
+    const rows = Math.max(1, Math.floor(numberProp(parent.props, "rows", 2)));
+    const cellW = (inner.width - gap * (columns - 1)) / columns;
+    const cellH = (inner.height - gap * (rows - 1)) / rows;
+    return childIds.map((id, index) => {
+      const col = index % columns;
+      const row = Math.floor(index / columns) % rows;
+      const slot: Rect = {
+        x: inner.x + col * (cellW + gap),
+        y: inner.y + row * (cellH + gap),
+        width: cellW,
+        height: cellH,
+      };
+      return layoutWidget(doc.widgets[id]!, slot, doc, measurer, options, true);
+    });
+  }
+
+  return childIds.map((id) =>
+    layoutWidget(doc.widgets[id]!, inner, doc, measurer, options),
+  );
 }
 
 function layoutWidget(
@@ -335,10 +323,10 @@ function layoutWidget(
 ): LaidOutWidget {
   const rect = fillSlot
     ? parentRect
-    : computeAnchoredRect(parentRect, widget.layout);
-  const pivot = pivotPoint(rect, widget.layout.pivot);
+    : previewRect(parentRect, normalizeLayout(widget.layout));
+  const transformCenter = pivotPoint(rect, widget.layout.transformCenter ?? { x: 0.5, y: 0.5 });
   const nestedChildren =
-    widget.kind === "UserInterface" || widget.nestedUiGuid
+    widget.kind === "UserInterface" || widget.nestedUiGuid || widget.visualOverrideGuid
       ? layoutNestedTree(widget, rect, options)
       : [];
   return {
@@ -346,14 +334,14 @@ function layoutWidget(
     kind: widget.kind,
     name: widget.name,
     rect,
-    pivot,
+    transformCenter,
     visible: widget.visible,
     widget,
     children: !widget.visible
       ? []
       : nestedChildren.length > 0
         ? nestedChildren
-        : layoutChildren(widget, rect, doc, measurer, options),
+        : layoutChildren(widget, rect, doc, measurer, options, rect),
   };
 }
 
@@ -369,18 +357,47 @@ export function layoutUserInterface(
     width: viewport.width,
     height: viewport.height,
   };
-  const safe = options.safeArea
-    ? insetRect(viewportRect, options.safeArea)
-    : viewportRect;
-  const scale = designScale(safe, doc.designResolution, doc.scaleRule);
-  const canvas = designCanvasRect(safe, doc.designResolution, doc.scaleRule);
+  const scale = designScale(viewport, doc.designResolution, doc.scaleRule);
+  const designParent: Rect = {
+    x: 0,
+    y: 0,
+    width: doc.designResolution.width,
+    height: doc.designResolution.height,
+  };
+  const safeDesign: EdgeInsets = options.safeArea
+    ? {
+        left: options.safeArea.left / scale,
+        right: options.safeArea.right / scale,
+        top: options.safeArea.top / scale,
+        bottom: options.safeArea.bottom / scale,
+      }
+    : ZERO_INSETS;
   const root = doc.widgets[doc.rootId];
+  if (!root) {
+    return { canvas: options.designSpace ? designParent : viewportRect, scale, tree: null };
+  }
+  const tree = layoutWidget(root, designParent, doc, measurer, {
+    ...options,
+    measurer,
+  });
+  if (root.kind === "Canvas" && (safeDesign.top || safeDesign.bottom || safeDesign.left || safeDesign.right)) {
+    const safeRect = insetRect(designParent, safeDesign);
+    tree.children = layoutChildren(
+      root,
+      tree.rect,
+      doc,
+      measurer,
+      { ...options, measurer },
+      safeRect,
+    );
+  }
+  if (options.designSpace) {
+    return { canvas: designParent, scale: 1, tree };
+  }
   return {
-    canvas,
+    canvas: viewportRect,
     scale,
-    tree: root
-      ? layoutWidget(root, canvas, doc, measurer, options)
-      : null,
+    tree: mapTree(tree, { x: 0, y: 0, width: 0, height: 0 }, scale),
   };
 }
 
@@ -391,14 +408,4 @@ export function flattenLaidOut(tree: LaidOutWidget | null): LaidOutWidget[] {
     out.push(...flattenLaidOut(child));
   }
   return out;
-}
-
-export function roundRect(rect: Rect, digits = 3): Rect {
-  const f = 10 ** digits;
-  return {
-    x: Math.round(rect.x * f) / f,
-    y: Math.round(rect.y * f) / f,
-    width: Math.round(rect.width * f) / f,
-    height: Math.round(rect.height * f) / f,
-  };
 }

@@ -105,6 +105,44 @@ export function reparentWidget(
   return next;
 }
 
+function cloneLayout(layout: WidgetNode["layout"]): WidgetNode["layout"] {
+  return {
+    ...layout,
+    padding: { ...layout.padding },
+    transformCenter: { ...layout.transformCenter },
+  };
+}
+
+function cloneSubtree(
+  doc: UserInterfaceDocument,
+  sourceId: string,
+  newId: string,
+  rename: boolean,
+): WidgetNode[] {
+  const source = doc.widgets[sourceId];
+  if (!source) return [];
+  const childCopies: WidgetNode[] = [];
+  const childIds: string[] = [];
+  for (const childId of source.children) {
+    const childNewId = `${newId}:${childId}`;
+    childIds.push(childNewId);
+    childCopies.push(...cloneSubtree(doc, childId, childNewId, false));
+  }
+  const copy: WidgetNode = {
+    ...source,
+    id: newId,
+    name: rename ? `${source.name} Copy` : source.name,
+    children: childIds,
+    layout: cloneLayout(source.layout),
+    style: {
+      ...source.style,
+      padding: source.style.padding ? { ...source.style.padding } : undefined,
+    },
+    props: { ...source.props },
+  };
+  return [copy, ...childCopies];
+}
+
 export function duplicateWidget(
   doc: UserInterfaceDocument,
   id: string,
@@ -113,21 +151,16 @@ export function duplicateWidget(
   const source = doc.widgets[id];
   const parentId = widgetParentId(doc, id);
   if (!source || !parentId || newId === id || doc.widgets[newId]) return doc;
-  const copy: WidgetNode = {
-    ...source,
-    id: newId,
-    name: `${source.name} Copy`,
-    children: [],
-    layout: {
-      ...source.layout,
-      anchorMin: { ...source.layout.anchorMin },
-      anchorMax: { ...source.layout.anchorMax },
-      offsetMin: { ...source.layout.offsetMin },
-      offsetMax: { ...source.layout.offsetMax },
-      pivot: { ...source.layout.pivot },
-    },
-    style: { ...source.style, padding: source.style.padding ? { ...source.style.padding } : undefined },
-    props: { ...source.props },
-  };
-  return insertWidget(doc, copy, parentId);
+  const copies = cloneSubtree(doc, id, newId, true);
+  const rootCopy = copies[0];
+  if (!rootCopy) return doc;
+  let next = insertWidget(doc, rootCopy, parentId);
+  for (const extra of copies.slice(1)) {
+    if (next.widgets[extra.id]) continue;
+    next = {
+      ...next,
+      widgets: { ...next.widgets, [extra.id]: extra },
+    };
+  }
+  return next;
 }
