@@ -1,17 +1,21 @@
 import type { EditorCameraController } from "./editor-camera";
 import type { RenderScheduler } from "./render-scheduler";
-import { orthoPanFromCanvasDelta } from "./two-d";
+import { orthoPanFromCanvasDelta, type CanvasRect } from "./two-d";
 
 export interface ViewportGestureOptions {
   /** Called for a stationary single-finger tap (selection pick). */
   onTap?: (canvasX: number, canvasY: number) => void;
   /** Hold ~250ms then drag in 2D mode: marquee select. Immediate drag pans. */
-  onMarquee?: (rect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }) => void;
+  onMarquee?: (rect: CanvasRect) => void;
+  /** Live marquee overlay while dragging; null when the overlay should hide. */
+  onMarqueeMove?: (rect: CanvasRect | null) => void;
+  /**
+   * When true at pointer-down, one-finger drag marquees immediately in 2D and
+   * 3D (no pan/look, no hold timer). Gizmo hits do not win.
+   */
+  dragSelectActive?: () => boolean;
+  /** Fired when an armed drag-select gesture ends (tap or marquee). */
+  onDragSelectEnd?: () => void;
   scheduler?: Pick<RenderScheduler, "acquireContinuous">;
   /**
    * World units panned per pixel of three-finger drag in 3D.
@@ -55,10 +59,20 @@ function spread(points: PointerSample[]): number {
   return Math.hypot(points[0]!.x - points[1]!.x, points[0]!.y - points[1]!.y);
 }
 
+function canvasRect(from: PointerSample, to: PointerSample): CanvasRect {
+  return {
+    x: Math.min(from.x, to.x),
+    y: Math.min(from.y, to.y),
+    width: Math.abs(to.x - from.x),
+    height: Math.abs(to.y - from.y),
+  };
+}
+
 /**
  * Gesture contract from docs/design/gestures.md: one-finger tap picks;
  * one-finger drag looks in 3D and pans in 2D; hold then move marquees in 2D;
- * pinch zooms; three fingers pan. Two-finger translation does not orbit or pan.
+ * drag-select marquees immediately in both modes; pinch zooms; three fingers
+ * pan. Two-finger translation does not orbit or pan.
  */
 export function attachViewportGestures(
   canvas: HTMLCanvasElement,
@@ -74,6 +88,7 @@ export function attachViewportGestures(
   let moved = false;
   let skipLook = false;
   let marqueeArmed = false;
+  let dragSelectGesture = false;
   let marqueeTimer: ReturnType<typeof setTimeout> | null = null;
   let releaseLease: (() => void) | null = null;
 
@@ -93,6 +108,10 @@ export function attachViewportGestures(
       clearTimeout(marqueeTimer);
       marqueeTimer = null;
     }
+  };
+
+  const clearMarqueeOverlay = () => {
+    options.onMarqueeMove?.(null);
   };
 
   const toCanvas = (event: PointerEvent): PointerSample => {
@@ -123,10 +142,12 @@ export function attachViewportGestures(
       downPoint = point;
       lastPoint = point;
       moved = false;
-      skipLook = options.blockLook?.(point.x, point.y) === true;
-      marqueeArmed = false;
+      dragSelectGesture = options.dragSelectActive?.() === true;
+      skipLook =
+        dragSelectGesture || options.blockLook?.(point.x, point.y) === true;
+      marqueeArmed = dragSelectGesture;
       clearMarqueeTimer();
-      if (controller.mode === "2d" && !skipLook) {
+      if (!dragSelectGesture && controller.mode === "2d" && !skipLook) {
         marqueeTimer = setTimeout(() => {
           marqueeArmed = true;
         }, MARQUEE_ARM_MS);
@@ -136,6 +157,11 @@ export function attachViewportGestures(
       lastMid = midpoint(samples);
       lastSpread = spread(samples);
       lastPoint = null;
+      if (dragSelectGesture) {
+        clearMarqueeOverlay();
+        dragSelectGesture = false;
+        marqueeArmed = false;
+      }
       acquireLease();
     }
   };
@@ -153,6 +179,11 @@ export function attachViewportGestures(
           TAP_TOLERANCE_PX
       ) {
         moved = true;
+      }
+      if (moved && (dragSelectGesture || marqueeArmed) && downPoint) {
+        options.onMarqueeMove?.(canvasRect(downPoint, point));
+        lastPoint = point;
+        return;
       }
       if (
         controller.mode === "3d" &&
@@ -225,30 +256,34 @@ export function attachViewportGestures(
         downPoint = null;
         skipLook = false;
         marqueeArmed = false;
+        dragSelectGesture = false;
         clearMarqueeTimer();
+        clearMarqueeOverlay();
       }
       return;
     }
     clearMarqueeTimer();
+    const wasDragSelect = dragSelectGesture;
     if (!moved) {
       options.onTap?.(point.x, point.y);
     } else if (
-      controller.mode === "2d" &&
-      marqueeArmed &&
-      !skipLook &&
-      options.onMarquee
+      options.onMarquee &&
+      (wasDragSelect ||
+        (controller.mode === "2d" && marqueeArmed && !skipLook))
     ) {
-      options.onMarquee({
-        x: Math.min(downPoint.x, point.x),
-        y: Math.min(downPoint.y, point.y),
-        width: Math.abs(point.x - downPoint.x),
-        height: Math.abs(point.y - downPoint.y),
-      });
+      options.onMarquee(canvasRect(downPoint, point));
+    }
+    if (wasDragSelect || marqueeArmed) {
+      clearMarqueeOverlay();
+    }
+    if (wasDragSelect) {
+      options.onDragSelectEnd?.();
     }
     downPoint = null;
     moved = false;
     skipLook = false;
     marqueeArmed = false;
+    dragSelectGesture = false;
   };
 
   const onWheel = (event: WheelEvent) => {

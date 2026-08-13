@@ -85,8 +85,16 @@ export interface CreateEngineOptions {
   viewportMode?: ViewportMode;
   /** Actor id under an explicit tap, or null when the tap missed. */
   onPickActor?: (actorId: string | null) => void;
-  /** Actors inside a 2D one-finger marquee drag. */
+  /** Actors inside a one-finger marquee drag (2D hold, or Drag Select). */
   onMarqueeSelect?: (actorIds: string[]) => void;
+  /** Live marquee overlay rect in CSS canvas pixels; null to hide. */
+  onMarqueeMove?: (
+    rect: { x: number; y: number; width: number; height: number } | null,
+  ) => void;
+  /** True while the viewport Drag Select tool is armed. */
+  dragSelectActive?: () => boolean;
+  /** Fired when an armed drag-select gesture ends so the tool can unpress. */
+  onDragSelectEnd?: () => void;
   /** Gizmo drag lifecycle so the editor can coalesce one undo entry. */
   onGizmoDragStart?: () => void;
   onGizmoDrag?: () => void;
@@ -264,18 +272,22 @@ export function createEngine(
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
       blockLook: (x, y) => gizmos.isDragging() || gizmos.hitTest(x, y),
+      dragSelectActive: () => options.dragSelectActive?.() === true,
       onTap: (x, y) => {
         const hit = pickAtCanvas(scene, x, y);
         const actorId = hit ? editorSync.actorForMesh(hit.meshName) : null;
         options.onPickActor?.(actorId);
       },
+      onMarqueeMove: options.onMarqueeMove,
+      onDragSelectEnd: options.onDragSelectEnd,
       onMarquee: (rect) => {
         if (!options.onMarqueeSelect) return;
+        const css = canvas.getBoundingClientRect();
         const names = meshNamesInCanvasRect(
           scene,
           rect,
-          engine.getRenderWidth(),
-          engine.getRenderHeight(),
+          css.width,
+          css.height,
         );
         const actorIds = names
           .map((name) => editorSync.actorForMesh(name))

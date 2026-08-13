@@ -345,4 +345,89 @@ describe("attachViewportGestures", () => {
 
     expect(taps).toHaveLength(0);
   });
+
+  it("marquees immediately in 3D when drag select is armed and does not look", () => {
+    const marquees: Array<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }> = [];
+    const moves: Array<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null> = [];
+    const ends: number[] = [];
+    const { controller } = attach("3d", {
+      dragSelectActive: () => true,
+      onMarquee: (rect) => marquees.push(rect),
+      onMarqueeMove: (rect) => moves.push(rect),
+      onDragSelectEnd: () => ends.push(1),
+    });
+    const alphaBefore = controller.camera.alpha;
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 140));
+    canvas.emit("pointerup", pointer(1, 160, 140));
+
+    expect(marquees).toEqual([{ x: 100, y: 100, width: 60, height: 40 }]);
+    expect(moves).toContainEqual({ x: 100, y: 100, width: 60, height: 40 });
+    expect(moves.at(-1)).toBeNull();
+    expect(ends).toEqual([1]);
+    expect(controller.camera.alpha).toBeCloseTo(alphaBefore, 6);
+  });
+
+  it("marquees immediately in 2D when drag select is armed and does not pan", () => {
+    const marquees: unknown[] = [];
+    const { controller } = attach("2d", {
+      dragSelectActive: () => true,
+      onMarquee: (rect) => marquees.push(rect),
+      onDragSelectEnd: () => {},
+    });
+    const targetBefore = controller.camera.target.clone();
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 60, 140));
+    canvas.emit("pointerup", pointer(1, 60, 140));
+
+    expect(marquees).toEqual([{ x: 60, y: 100, width: 40, height: 40 }]);
+    expect(controller.camera.target.equals(targetBefore)).toBe(true);
+  });
+
+  it("picks then ends drag select on a stationary tap while armed", () => {
+    const taps: Array<[number, number]> = [];
+    const marquees: unknown[] = [];
+    const ends: number[] = [];
+    attach("3d", {
+      dragSelectActive: () => true,
+      onTap: (x, y) => taps.push([x, y]),
+      onMarquee: (rect) => marquees.push(rect),
+      onDragSelectEnd: () => ends.push(1),
+    });
+
+    canvas.emit("pointerdown", pointer(1, 120, 90));
+    canvas.emit("pointerup", pointer(1, 120, 90));
+
+    expect(taps).toEqual([[120, 90]]);
+    expect(marquees).toHaveLength(0);
+    expect(ends).toEqual([1]);
+  });
+
+  it("ignores gizmo blockLook while drag select is armed", () => {
+    const marquees: unknown[] = [];
+    attach("3d", {
+      dragSelectActive: () => true,
+      blockLook: () => true,
+      onMarquee: (rect) => marquees.push(rect),
+      onDragSelectEnd: () => {},
+    });
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 140));
+    canvas.emit("pointerup", pointer(1, 160, 140));
+
+    expect(marquees).toHaveLength(1);
+  });
 });

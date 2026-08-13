@@ -48,7 +48,7 @@ export function rectContains(rect: CanvasRect, point: CanvasPoint): boolean {
 
 /**
  * Names of pickable meshes whose origin projects inside a canvas rectangle;
- * this is the marquee selection 2D mode uses for a one-finger drag.
+ * used by 2D hold-marquee and by Drag Select in both viewport modes.
  */
 export function meshNamesInCanvasRect(
   scene: Scene,
