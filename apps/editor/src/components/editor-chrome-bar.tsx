@@ -36,7 +36,11 @@ import {
   type DocumentKind,
   type SerializedGraph,
 } from "@babylonslate/core";
-import { TypeVisualIcon, resolveTypeVisual } from "@babylonslate/editor-kit";
+import {
+  TypeVisualIcon,
+  documentHistoryHotkey,
+  resolveTypeVisual,
+} from "@babylonslate/editor-kit";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -247,16 +251,38 @@ export function EditorChromeBar({
 
   useEffect(() => {
     if (!projectName) return;
+    const pointers = new Set<number>();
+    const onPointerDown = (event: PointerEvent) => {
+      pointers.add(event.pointerId);
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      pointers.delete(event.pointerId);
+    };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchOpen((current) => !current);
         return;
       }
+      const history = documentHistoryHotkey(event, {
+        activePointerCount: pointers.size,
+      });
+      if (!history) return;
       event.preventDefault();
-      setSearchOpen((current) => !current);
+      if (history === "undo") undoActiveDocument();
+      else redoActiveDocument();
     };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [projectName]);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [projectName, redoActiveDocument, undoActiveDocument]);
 
   return (
     <div className="editor-chrome-shell">

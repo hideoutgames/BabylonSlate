@@ -976,5 +976,90 @@ describe("GraphEditor", () => {
     );
     expect(getByText("Event Begin Play")).toBeTruthy();
   });
+
+  it("removes canvas nodes when initialGraph drops them without emitting onChange", async () => {
+    const onChange = vi.fn();
+    const graph = graphWithPins();
+    const { container, rerender } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+    expect(container.querySelectorAll(".react-flow__node")).toHaveLength(2);
+
+    onChange.mockClear();
+    rerender(
+      <GraphEditor
+        initialGraph={{ ...graph, nodes: graph.nodes.slice(0, 1) }}
+        onChange={onChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".react-flow__node")).toHaveLength(1);
+    });
+    expect(container.querySelector('[data-id="log-a"]')).not.toBeNull();
+    expect(container.querySelector('[data-id="log-b"]')).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("moves canvas nodes and drops edges when initialGraph changes without emitting onChange", async () => {
+    const onChange = vi.fn();
+    const graph = graphWithWiredPins();
+    const { container, rerender } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+    expect(container.querySelector('[data-id="log-a"]')).not.toBeNull();
+    expect(container.querySelector('[data-id="log-c"]')).not.toBeNull();
+
+    onChange.mockClear();
+    const moved: GraphDocument = {
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === "log-a"
+          ? { ...node, position: { x: 120, y: 48 } }
+          : node,
+      ),
+      edges: graph.edges.slice(0, 1),
+    };
+    rerender(<GraphEditor initialGraph={moved} onChange={onChange} />);
+
+    await waitFor(() => {
+      const node = container.querySelector(
+        '.react-flow__node[data-id="log-a"]',
+      ) as HTMLElement | null;
+      expect(node?.style.transform).toContain("120px");
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps a locally added node when the parent echoes the same graph", async () => {
+    const onChange = vi.fn();
+    const { getByText, container, rerender } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+        onChange={onChange}
+      />,
+    );
+
+    openPalette(container);
+    fireEvent.click(getByText("Log"));
+
+    const emitted = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(emitted.nodes).toHaveLength(1);
+    onChange.mockClear();
+
+    rerender(
+      <GraphEditor
+        initialGraph={emitted}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+        onChange={onChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".react-flow__node")).toHaveLength(1);
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
 
