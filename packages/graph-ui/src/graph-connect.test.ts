@@ -5,12 +5,16 @@ import {
   collectSafeConnectPins,
   containerPointerToClient,
   displayNodeTitle,
+  edgesTouchingPin,
+  edgeTouchesPin,
   filterPaletteForPin,
   isClientPointOverGraphNode,
+  isClientPointOverHandle,
   isNearSourcePin,
   nodePinLists,
   pinsAreCompatible,
   screenCentersForSafePins,
+  shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
 
@@ -239,6 +243,139 @@ describe("shouldOpenAddNodeOnConnectEnd", () => {
   });
 });
 
+describe("edgeTouchesPin", () => {
+  const wired = {
+    id: "e:begin:execOut:log:execIn",
+    source: "begin",
+    target: "log",
+    sourceHandle: "execOut",
+    targetHandle: "execIn",
+  };
+
+  it("matches the source pin and the target pin", () => {
+    expect(edgeTouchesPin(wired, "begin", "execOut")).toBe(true);
+    expect(edgeTouchesPin(wired, "log", "execIn")).toBe(true);
+  });
+
+  it("rejects other nodes or handles", () => {
+    expect(edgeTouchesPin(wired, "begin", "execIn")).toBe(false);
+    expect(edgeTouchesPin(wired, "other", "execOut")).toBe(false);
+  });
+});
+
+describe("edgesTouchingPin", () => {
+  const exec = {
+    id: "e:begin:execOut:log:execIn",
+    source: "begin",
+    target: "log",
+    sourceHandle: "execOut",
+    targetHandle: "execIn",
+  };
+  const data = {
+    id: "e:begin:value:log:message",
+    source: "begin",
+    target: "log",
+    sourceHandle: "value",
+    targetHandle: "message",
+  };
+  const fanOut = {
+    id: "e:begin:execOut:print:execIn",
+    source: "begin",
+    target: "print",
+    sourceHandle: "execOut",
+    targetHandle: "execIn",
+  };
+
+  it("returns every incident edge on a fan-out pin", () => {
+    expect(edgesTouchingPin([exec, data, fanOut], "begin", "execOut")).toEqual([
+      exec,
+      fanOut,
+    ]);
+  });
+
+  it("returns an empty list when the pin has no wires", () => {
+    expect(edgesTouchingPin([exec], "begin", "value")).toEqual([]);
+  });
+});
+
+describe("shouldBreakPinConnectionsOnConnectEnd", () => {
+  const source = { x: 0, y: 0 };
+  const far = { x: 200, y: 0 };
+  const near = { x: 40, y: 0 };
+
+  it("does not break when React Flow snapped to a target handle", () => {
+    expect(
+      shouldBreakPinConnectionsOnConnectEnd({
+        hasTargetHandle: true,
+        pointerOverNode: false,
+        pointerOverSourceHandle: false,
+        pointer: far,
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("does not break when the pointer is still over the source handle", () => {
+    expect(
+      shouldBreakPinConnectionsOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: true,
+        pointerOverSourceHandle: true,
+        pointer: { x: 0, y: 0 },
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("does not break when Add Node should open", () => {
+    expect(
+      shouldBreakPinConnectionsOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointerOverSourceHandle: false,
+        pointer: far,
+        safePins: [source],
+      }),
+    ).toBe(false);
+  });
+
+  it("breaks in the source-pin safe zone after leaving the handle", () => {
+    expect(
+      shouldBreakPinConnectionsOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointerOverSourceHandle: false,
+        pointer: near,
+        safePins: [source],
+      }),
+    ).toBe(true);
+  });
+
+  it("breaks when the pointer is over a node body but not the source handle", () => {
+    expect(
+      shouldBreakPinConnectionsOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: true,
+        pointerOverSourceHandle: false,
+        pointer: far,
+        safePins: [source],
+      }),
+    ).toBe(true);
+  });
+
+  it("breaks when the pointer is near a compatible pin that did not snap", () => {
+    expect(
+      shouldBreakPinConnectionsOnConnectEnd({
+        hasTargetHandle: false,
+        pointerOverNode: false,
+        pointerOverSourceHandle: false,
+        pointer: { x: 250, y: 0 },
+        safePins: [source, { x: 200, y: 0 }],
+      }),
+    ).toBe(true);
+  });
+});
+
 function mockRect(
   el: Element,
   rect: { left: number; top: number; width: number; height: number },
@@ -312,5 +449,31 @@ describe("screen-space connect helpers", () => {
       x: 60,
       y: 100,
     });
+  });
+
+  it("detects a client point over a specific pin handle", () => {
+    const handle = document.createElement("div");
+    handle.className = "react-flow__handle";
+    handle.dataset.nodeid = "source";
+    handle.dataset.handleid = "execOut";
+    mockRect(handle, { left: 10, top: 20, width: 44, height: 44 });
+    document.body.append(handle);
+
+    const other = document.createElement("div");
+    other.className = "react-flow__handle";
+    other.dataset.nodeid = "log";
+    other.dataset.handleid = "execIn";
+    mockRect(other, { left: 200, top: 20, width: 44, height: 44 });
+    document.body.append(other);
+
+    expect(
+      isClientPointOverHandle({ x: 32, y: 42 }, "source", "execOut", document),
+    ).toBe(true);
+    expect(
+      isClientPointOverHandle({ x: 32, y: 42 }, "log", "execIn", document),
+    ).toBe(false);
+    expect(
+      isClientPointOverHandle({ x: 10, y: 10 }, "source", "execOut", document),
+    ).toBe(false);
   });
 });
