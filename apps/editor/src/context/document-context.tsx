@@ -413,6 +413,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump();
   }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
 
+  useEffect(
+    () => projectService.onRegistryChange(bump),
+    [bump, projectService],
+  );
+
   const captureLayoutForId = useCallback(
     (id: string) => {
       const preFocus = preFocusLayoutsRef.current.get(id);

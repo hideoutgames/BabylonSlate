@@ -82,6 +82,7 @@ export class AssetRegistry {
     ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
   };
   private thumbnailWriter: ThumbnailWriter | null = null;
+  private readonly textureWriteChain = new Map<string, Promise<void>>();
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -631,29 +632,33 @@ export class AssetRegistry {
     guid: string,
     state: TextureCompressionState,
   ): Promise<void> {
-    await this.rewriteTexture(guid, async (header, chunks) => {
-      header.payload = { ...header.payload, compressionState: state };
-      return { header, chunks };
+    await this.enqueueTextureWrite(guid, async () => {
+      await this.rewriteTexture(guid, async (header, chunks) => {
+        header.payload = { ...header.payload, compressionState: state };
+        return { header, chunks };
+      });
     });
   }
 
   async commitCompressedTexture(result: EncodeJobResult): Promise<void> {
     const hash = await encodeSettingsHash(result.settings);
     const chunkId = ktx2ChunkId(hash);
-    await this.rewriteTexture(result.assetGuid, async (header, chunks) => {
-      chunks.set(chunkId, {
-        id: chunkId,
-        kind: "ktx2",
-        mime: "image/ktx2",
-        data: result.ktx2,
+    await this.enqueueTextureWrite(result.assetGuid, async () => {
+      await this.rewriteTexture(result.assetGuid, async (header, chunks) => {
+        chunks.set(chunkId, {
+          id: chunkId,
+          kind: "ktx2",
+          mime: "image/ktx2",
+          data: result.ktx2,
+        });
+        header.payload = {
+          ...header.payload,
+          compressionState: "compressed",
+          encodeWallMs: result.wallMs,
+          ktx2ChunkId: chunkId,
+        };
+        return { header, chunks };
       });
-      header.payload = {
-        ...header.payload,
-        compressionState: "compressed",
-        encodeWallMs: result.wallMs,
-        ktx2ChunkId: chunkId,
-      };
-      return { header, chunks };
     });
   }
 
@@ -663,16 +668,25 @@ export class AssetRegistry {
       return false;
     }
     const state = asset.header.payload.compressionState;
-    if (state !== "encode_failed" && state !== "fallback_uncompressed") {
+    if (
+      state !== "encode_failed" &&
+      state !== "fallback_uncompressed" &&
+      state !== "pending" &&
+      state !== "encoding"
+    ) {
       return false;
     }
-    const source = await this.loadSourcePixels(asset);
+    if (state !== "pending") {
+      await this.setCompressionState(guid, "pending");
+    }
+    const latest = this.byGuid.get(guid) ?? asset;
+    const source = await this.loadSourcePixels(latest);
     if (!source) return false;
-    await this.setCompressionState(guid, "pending");
     this.encodeQueue.enqueue({
       assetGuid: guid,
-      source,
-      settings: this.encodeSettings,
+      source: source.bytes,
+      mime: source.mime,
+      settings: this.encodeSettingsFor(latest),
     });
     return true;
   }
@@ -682,7 +696,12 @@ export class AssetRegistry {
     if (!this.encodeQueue) return 0;
     let count = 0;
     for (const asset of this.list({ type: "Texture" })) {
-      if (asset.header.payload.compressionState === "fallback_uncompressed") {
+      const state = asset.header.payload.compressionState;
+      if (
+        state === "fallback_uncompressed" ||
+        state === "pending" ||
+        state === "encoding"
+      ) {
         if (await this.retryTextureEncoding(asset.header.guid)) count += 1;
       }
     }
@@ -721,18 +740,51 @@ export class AssetRegistry {
     if (!source) return;
     this.encodeQueue.enqueue({
       assetGuid: asset.header.guid,
-      source,
-      settings: this.encodeSettings,
+      source: source.bytes,
+      mime: source.mime,
+      settings: this.encodeSettingsFor(asset),
     });
+  }
+
+  private encodeSettingsFor(asset: IndexedAsset): TextureEncodeSettings {
+    const assetMax = asset.header.payload.maxDimension;
+    const parsed =
+      typeof assetMax === "number" && assetMax > 0
+        ? assetMax
+        : Number.POSITIVE_INFINITY;
+    return {
+      ...this.encodeSettings,
+      maxDimension: Math.min(parsed, this.encodeSettings.maxDimension),
+    };
   }
 
   private async loadSourcePixels(
     asset: IndexedAsset,
-  ): Promise<Uint8Array | null> {
+  ): Promise<{ bytes: Uint8Array; mime?: string } | null> {
     const pixels = asset.header.chunks.find((chunk) => chunk.kind === "pixels");
     if (!pixels) return null;
     const fileBytes = await this.storage.readBinary(asset.path);
-    return this.loader.loadChunk(fileBytes, pixels);
+    const bytes = await this.loader.loadChunk(fileBytes, pixels);
+    if (!bytes) return null;
+    return { bytes, mime: pixels.mime };
+  }
+
+  private enqueueTextureWrite(
+    guid: string,
+    work: () => Promise<void>,
+  ): Promise<void> {
+    const next = (this.textureWriteChain.get(guid) ?? Promise.resolve()).then(
+      work,
+      work,
+    );
+    this.textureWriteChain.set(
+      guid,
+      next.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return next;
   }
 
   private async rewriteTexture(

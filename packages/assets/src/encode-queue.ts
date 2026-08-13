@@ -8,6 +8,7 @@ export interface EncodeJob {
   assetGuid: string;
   source: Uint8Array;
   settings: TextureEncodeSettings;
+  mime?: string;
 }
 
 export interface EncodeJobResult {
@@ -20,12 +21,17 @@ export interface EncodeJobResult {
 export type EncodeFn = (
   source: Uint8Array,
   settings: TextureEncodeSettings,
+  mime?: string,
 ) => Promise<{ ktx2: Uint8Array; wallMs: number }>;
+
+export const DEFAULT_ENCODE_JOB_TIMEOUT_MS = 120_000;
 
 export interface EncodeQueueOptions {
   encode?: EncodeFn;
   /** Recycle the worker/encoder after this many completed jobs (iOS wasm heap). */
   recycleAfter?: number;
+  /** Fail the in-flight job so a hung worker cannot deadlock the queue. */
+  jobTimeoutMs?: number;
   onState?: (
     assetGuid: string,
     state: "encoding" | "compressed" | "encode_failed",
@@ -42,6 +48,7 @@ export class EncodeQueue {
   private readonly queue: EncodeJob[] = [];
   private readonly encode: EncodeFn;
   private readonly recycleAfter: number;
+  private readonly jobTimeoutMs: number;
   private readonly onState?: EncodeQueueOptions["onState"];
   private readonly onComplete?: EncodeQueueOptions["onComplete"];
   private readonly onError?: EncodeQueueOptions["onError"];
@@ -53,6 +60,8 @@ export class EncodeQueue {
   constructor(options: EncodeQueueOptions = {}) {
     this.encode = options.encode ?? stubEncodeKtx2;
     this.recycleAfter = options.recycleAfter ?? 5;
+    this.jobTimeoutMs =
+      options.jobTimeoutMs ?? DEFAULT_ENCODE_JOB_TIMEOUT_MS;
     this.onState = options.onState;
     this.onComplete = options.onComplete;
     this.onError = options.onError;
@@ -83,6 +92,39 @@ export class EncodeQueue {
     void this.pump();
   }
 
+  private encodeWithTimeout(job: EncodeJob): Promise<{
+    ktx2: Uint8Array;
+    wallMs: number;
+  }> {
+    const encodePromise = this.encode(job.source, job.settings, job.mime);
+    const timeoutMs = this.jobTimeoutMs;
+    if (!timeoutMs || timeoutMs <= 0) return encodePromise;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(
+          new Error(`texture encode timed out for ${job.assetGuid}`),
+        );
+      }, timeoutMs);
+      encodePromise.then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  }
+
   private async pump(): Promise<void> {
     if (this.paused || this.running) return;
     const job = this.queue.shift();
@@ -91,7 +133,7 @@ export class EncodeQueue {
     this.running = true;
     this.onState?.(job.assetGuid, "encoding");
     try {
-      const { ktx2, wallMs } = await this.encode(job.source, job.settings);
+      const { ktx2, wallMs } = await this.encodeWithTimeout(job);
       this.onState?.(job.assetGuid, "compressed");
       await this.onComplete?.({
         assetGuid: job.assetGuid,

@@ -223,10 +223,7 @@ export function ContentBrowserWorkspace() {
     [assetRegistry],
   );
 
-  const allAssets = useMemo(
-    () => assetRegistry?.list({ rootId: PROJECT_ROOT_ID }) ?? [],
-    [assetRegistry],
-  );
+  const allAssets = assetRegistry?.list({ rootId: PROJECT_ROOT_ID }) ?? [];
   const classParentOf = useMemo(
     () => classParentLookup(allAssets),
     [allAssets],
