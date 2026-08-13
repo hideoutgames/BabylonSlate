@@ -8,6 +8,7 @@ import {
   RemoveEdgeCommand,
   RemoveNodeCommand,
   SetGraphMembersCommand,
+  SetGraphComponentsCommand,
   SetNodeDataCommand,
 } from "../commands/graph";
 
@@ -123,6 +124,17 @@ describe("graph commands", () => {
     const command = new SetGraphMembersCommand(undefined, members);
     const afterApply = command.apply(doc);
     expect(afterApply.members).toEqual(members);
+    expect(command.invert().apply(afterApply)).toEqual(doc);
+  });
+
+  it("SetGraphComponentsCommand apply-then-invert restores the document", () => {
+    const doc: SerializedGraph = { nodes: [], edges: [] };
+    const components = [
+      { id: "mesh-1", classId: "MeshComponent", properties: { meshKind: "box" } },
+    ];
+    const command = new SetGraphComponentsCommand(undefined, components);
+    const afterApply = command.apply(doc);
+    expect(afterApply.components).toEqual(components);
     expect(command.invert().apply(afterApply)).toEqual(doc);
   });
 });

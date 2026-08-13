@@ -2,7 +2,9 @@ import {
   createActor,
   createDefaultSceneSettings,
   createMeshComponent,
+  type SerializedComponent,
   type SerializedScene,
+  type ViewportMode,
 } from "./scene";
 
 export const PROJECT_FILE = "project.json";
@@ -131,6 +133,8 @@ export interface SerializedGraph {
     targetHandle?: string;
   }>;
   members?: GraphClassMember[];
+  /** Actor prefab components authored on Class documents. */
+  components?: SerializedComponent[];
 }
 
 
@@ -323,8 +327,19 @@ export function normalizeProjectSettings(
   };
 }
 
-export function createEmptyProject(name: string): ProjectDocument {
+export function createEmptyProject(
+  name: string,
+  options?: { kind?: "empty" | "2d" },
+): ProjectDocument {
   const now = new Date().toISOString();
+  const twoD =
+    options?.kind === "2d"
+      ? {
+          ...DEFAULT_TWO_D_PROJECT_SETTINGS,
+          pixelPerfect: true,
+          integerZoomSteps: true,
+        }
+      : undefined;
   return {
     metadata: {
       name,
@@ -332,22 +347,27 @@ export function createEmptyProject(name: string): ProjectDocument {
       createdAt: now,
       updatedAt: now,
     },
-    settings: normalizeProjectSettings(undefined),
+    settings: normalizeProjectSettings(twoD ? { twoD } : undefined),
     scenes: [MAIN_SCENE_FILE],
     graphs: [MAIN_CLASS_FILE],
   };
 }
 
-export function createDefaultScene(): SerializedScene {
+export function createDefaultScene(
+  viewportMode: ViewportMode = "3d",
+): SerializedScene {
   return {
     name: "Main",
-    viewportMode: "3d",
-    settings: createDefaultSceneSettings(),
-    actors: [
-      createActor("actor-1", "Cube", {
-        components: [createMeshComponent("component-1", "box")],
-      }),
-    ],
+    viewportMode,
+    settings: createDefaultSceneSettings(viewportMode),
+    actors:
+      viewportMode === "2d"
+        ? []
+        : [
+            createActor("actor-1", "Cube", {
+              components: [createMeshComponent("component-1", "box")],
+            }),
+          ],
   };
 }
 
@@ -380,6 +400,24 @@ export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
     members.push({ id, kind, name });
   }
   return members;
+}
+
+export function normalizeGraphComponents(value: unknown): SerializedComponent[] {
+  if (!Array.isArray(value)) return [];
+  const components: SerializedComponent[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const id = typeof row.id === "string" ? row.id.trim() : "";
+    const classId = typeof row.classId === "string" ? row.classId.trim() : "";
+    if (!id || !classId) continue;
+    const properties =
+      row.properties && typeof row.properties === "object"
+        ? { ...(row.properties as Record<string, unknown>) }
+        : {};
+    components.push({ id, classId, properties });
+  }
+  return components;
 }
 
 export function createDefaultGraph(): SerializedGraph {

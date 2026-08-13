@@ -6,6 +6,7 @@ import {
   RemoveEdgeCommand,
   RemoveNodeCommand,
   SetGraphMembersCommand,
+  SetGraphComponentsCommand,
   SetNodeDataCommand,
   createAddEdgeCommandFromJson,
   createAddNodeCommandFromJson,
@@ -13,6 +14,7 @@ import {
   createRemoveEdgeCommandFromJson,
   createRemoveNodeCommandFromJson,
   createSetGraphMembersCommandFromJson,
+  createSetGraphComponentsCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
 import {
@@ -151,6 +153,14 @@ export function commandToJournalPayload(
         to: members.to,
       };
     }
+    case "graph.setComponents": {
+      const components = command as SetGraphComponentsCommand;
+      return {
+        type: components.type,
+        from: components.from,
+        to: components.to,
+      };
+    }
     default: {
       if (
         command.type.startsWith("scene.") ||
@@ -186,6 +196,10 @@ export function registerGraphCommandRevivers(): void {
   registerCommandReviver(
     "graph.setMembers",
     createSetGraphMembersCommandFromJson,
+  );
+  registerCommandReviver(
+    "graph.setComponents",
+    createSetGraphComponentsCommandFromJson,
   );
 }
 

@@ -178,7 +178,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 
 | Item | Owner | Notes |
 | --- | --- | --- |
-| Actor Prefab tab → class document persistence | P7/P9 content systems | Preview-only UI shipped in P6; edits are session-local |
+| Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies open class prefabs |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | SpriteComponent uses a UV-baked quad; light/camera gizmos still later |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
@@ -241,6 +241,22 @@ P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `
 
 Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
 
+### P9 Play-path residuals (do not rebuild P8/P9)
+
+Chrome polish (pin flash, JSON input textarea, multi-select gizmo, ADT HUD) stays parked. Play-path holes that would fail P10 acceptance are the hardening wave on `cursor/play-path-harden-8678`.
+
+| Item | Status |
+| --- | --- |
+| Sprite `animState` UVs in Play | Done |
+| Worker HUD `scriptMs` / `physicsMs` not clobbered by rAF | Done |
+| Play loads anim graphs / sprites from scene refs | Done |
+| `ctx.changeScene` → `World.loadScene` | Done |
+| Catalog honesty (Tilemap / BT / Nav / Widget) | Done (Tilemap returns in Search/Add when Play load lands) |
+| Enum / Structure / ScriptInterface editors | Already `asset-settings` tabs |
+| Prefab → class document persistence | Done (`SerializedGraph.components`) |
+| Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
+| `playSound` mixer, ADT HUD, `.babtrace` tab, §9.4 HUD | Parked |
+
 ### P9 follow-ups / open deferrals
 
 | Gap vs engineplan §11–§14 | Reality | Owner |
@@ -249,8 +265,21 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 | Every UserInterface in the asset registry auto-hosted in Play | Play does **not** auto-apply UI. Class graphs call `ui.applyToViewport` / `ui.removeFromViewport`; the host loads a guid-keyed library of all UserInterface assets | Done (`cursor/ui-apply-nested-8c7a`) |
 | `NodeMaterial.Parse` + live Babylon preview | IR compile + throttle + `compileShaderGraphAtLoad` injection; host supplies `forceCompilationAsync` | Later polish |
 | Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
-| Play engine applies sprite-clip UVs from `animState` | `applySpriteAnimFrame` is unit-tested; `create-engine` seeks AnimationGroups only | Later polish |
-| World-space `WidgetComponent` (`CreateForMesh`) | Component is addable; viewport-layer HUD is the v1 Play path | Later polish |
+| Play engine applies sprite-clip UVs from `animState` | `applyAnimStateToScene` calls `applySpriteAnimFrame` when `clipKind === "sprite"`; Play loads sprite payloads from scene `SpriteComponent` guids | Done (`cursor/play-path-harden-8678`) |
+| World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Font editor registers imported `source` bytes; Play HUD uses the compiled CSS stack + generic fallback without awaiting project FontFace loads | Later polish |
+
+## P10 tilemaps
+
+Design note: [tilemaps.md](../architecture/tilemaps.md). Codecs first, then Rapier chains + Play, then painting / 2D template / acceptance e2e.
+
+| Item | Status |
+| --- | --- |
+| Tileset / Tilemap payloads, UV math, golden chunk VertexData, document tabs | Done (`cursor/play-path-harden-8678`) |
+| Merged chain colliders + `TilemapComponent` Play load | Done (`cursor/play-path-harden-8678`) |
+| Touch painting, one undo per stroke, 2D Create Project card, acceptance e2e | Done (`cursor/play-path-harden-8678`) |
+| Autotile / terrain | Deferred |
+| A16 alpha-test vs blend profile | Record in tilemaps.md; do not lock a new default without numbers |
+
 

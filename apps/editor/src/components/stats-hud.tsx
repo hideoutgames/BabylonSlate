@@ -62,10 +62,10 @@ export function StatsHud({
         <span data-testid="play-fps">
           <SelectableText>{fps} fps</SelectableText>
         </span>
-        <span data-testid="play-script-ms">
+        <span data-testid="play-script-ms" data-ms={String(scriptMs)}>
           <SelectableText>script {scriptMs.toFixed(2)} ms</SelectableText>
         </span>
-        <span data-testid="play-physics-ms">
+        <span data-testid="play-physics-ms" data-ms={String(physicsMs)}>
           <SelectableText>physics {physicsMs.toFixed(2)} ms</SelectableText>
         </span>
         {overBudget ? (

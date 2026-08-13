@@ -2,6 +2,7 @@ import {
   createActor,
   createMeshComponent,
   type SerializedActor,
+  type SerializedComponent,
   type SerializedScene,
 } from "@babylonslate/core";
 import {
@@ -10,13 +11,24 @@ import {
   type TypeVisual,
 } from "@babylonslate/editor-kit";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
+import {
+  defaultPrefabComponents,
+  instantiatePrefabComponents,
+} from "./prefab-preview";
 
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
   | { type: "light"; lightKind: string }
   | { type: "camera" }
   | { type: "empty" }
-  | { type: "asset"; name: string; guid: string; assetType?: string };
+  | {
+      type: "asset";
+      name: string;
+      guid: string;
+      assetType?: string;
+      classId?: string;
+      components?: SerializedComponent[];
+    };
 
 export type PlaceActorItem = {
   id: string;
@@ -56,7 +68,11 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
 ];
 
 export function projectPlaceActors(
-  assets: Array<{ header: { guid: string; name: string; type?: string } }>,
+  assets: Array<{
+    path?: string;
+    header: { guid: string; name: string; type?: string };
+  }>,
+  prefabForGuid?: (guid: string) => SerializedComponent[] | undefined,
 ): PlaceActorItem[] {
   return assets.map((asset) => ({
     id: `asset-${asset.header.guid}`,
@@ -67,6 +83,9 @@ export function projectPlaceActors(
       name: asset.header.name,
       guid: asset.header.guid,
       assetType: asset.header.type,
+      classId:
+        asset.header.type === "Class" ? asset.header.name : undefined,
+      components: prefabForGuid?.(asset.header.guid),
     },
   }));
 }
@@ -133,6 +152,15 @@ export function spawnPlacedActor(
     });
   }
   if (kind.type === "asset") {
+    if (kind.assetType === "Class") {
+      return createActor(id, kind.name, {
+        classId: kind.classId ?? kind.name,
+        components: instantiatePrefabComponents(
+          kind.components ?? defaultPrefabComponents(),
+          id,
+        ),
+      });
+    }
     const component = createMeshComponent(`${id}-mesh`, "box");
     component.properties.assetGuid = kind.guid;
     return createActor(id, kind.name, { components: [component] });

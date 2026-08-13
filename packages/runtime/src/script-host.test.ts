@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
+import { GameInstance } from "@babylonslate/object-model";
 import {
   compileGraph,
   pin,
@@ -295,6 +296,44 @@ describe("script host runs compiled graphs", () => {
       success: true,
       output: "ok",
     });
+    runtime.stop();
+  });
+
+  it("Change Scene graph node calls World.loadScene like the console host", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "change", "scene.change", { scene: "Level2" }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "change", "execIn")],
+    };
+    let loaded: string | undefined;
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+    });
+    runtime.getWorld().setGameInstance(
+      new GameInstance({
+        classId: "GameInstance",
+        guid: "gi",
+        hooks: {
+          onSceneLoaded: (_self, sceneName) => {
+            loaded = sceneName;
+          },
+        },
+      }),
+    );
+    await runtime.loadScripts([
+      toScript(graph, registry, "Loader", "loader-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Loader" });
+    runtime.start();
+    runtime.tick();
+    expect(loaded).toBe("Level2");
     runtime.stop();
   });
 });

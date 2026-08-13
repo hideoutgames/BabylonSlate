@@ -1,4 +1,10 @@
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
+import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import {
+  normalizeTilemapPayload,
+  normalizeTilesetPayload,
+} from "@babylonslate/assets";
+import type { SerializedScene } from "@babylonslate/core";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
 export interface PlayContentDocument {
@@ -112,4 +118,168 @@ export function playAnimGraphsFromOpenDocuments(
     graphs.push({ guid, document: parsed });
   }
   return graphs;
+}
+
+function stringGuid(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function componentGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+  classId: string,
+  keys: readonly string[],
+): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const actor of scene?.actors ?? []) {
+    for (const component of actor.components) {
+      if (component.classId !== classId) continue;
+      for (const key of keys) {
+        const guid = stringGuid(component.properties[key]);
+        if (!guid || seen.has(guid)) continue;
+        seen.add(guid);
+        found.push(guid);
+      }
+    }
+  }
+  return found;
+}
+
+/** AnimationGraph guids referenced by scene components (not only open tabs). */
+export function animationGraphGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "AnimationGraphComponent", [
+    "graphGuid",
+    "assetGuid",
+  ]);
+}
+
+/** Sprite asset guids referenced by scene SpriteComponents. */
+export function spriteAssetGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "SpriteComponent", ["assetGuid"]);
+}
+
+/** Tilemap asset guids referenced by scene TilemapComponents. */
+export function tilemapAssetGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "TilemapComponent", ["assetGuid"]);
+}
+
+export function playAnimGraphsFromGuids(
+  guids: readonly string[],
+  documentForGuid: (guid: string) => unknown | null,
+): PlayAnimGraphEntry[] {
+  const graphs: PlayAnimGraphEntry[] = [];
+  for (const guid of guids) {
+    const content = documentForGuid(guid);
+    if (!content) continue;
+    const parsed = parseAnimGraphDocument(content);
+    if (!parsed) continue;
+    graphs.push({ guid, document: parsed });
+  }
+  return graphs;
+}
+
+export function mergePlayAnimGraphs(
+  ...groups: readonly PlayAnimGraphEntry[][]
+): PlayAnimGraphEntry[] {
+  const byGuid = new Map<string, PlayAnimGraphEntry>();
+  for (const group of groups) {
+    for (const entry of group) byGuid.set(entry.guid, entry);
+  }
+  return [...byGuid.values()];
+}
+
+function asSpritePayload(value: unknown): SpritePayload | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { frames?: unknown; clips?: unknown };
+  if (!Array.isArray(record.frames) || !Array.isArray(record.clips)) return null;
+  return value as SpritePayload;
+}
+
+export function playSpritePayloadsFromGuids(
+  guids: readonly string[],
+  payloadForGuid: (guid: string) => unknown | null,
+): Map<string, SpritePayload> {
+  const map = new Map<string, SpritePayload>();
+  for (const guid of guids) {
+    const payload = asSpritePayload(payloadForGuid(guid));
+    if (payload) map.set(guid, payload);
+  }
+  return map;
+}
+
+export function playTilemapPayloadsFromGuids(
+  guids: readonly string[],
+  payloadForGuid: (guid: string) => unknown | null,
+): Map<string, TilemapPayload> {
+  const map = new Map<string, TilemapPayload>();
+  for (const guid of guids) {
+    const content = payloadForGuid(guid);
+    if (!content) continue;
+    map.set(guid, normalizeTilemapPayload(content));
+  }
+  return map;
+}
+
+export function tilesetGuidsFromTilemaps(
+  tilemaps: ReadonlyMap<string, TilemapPayload>,
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const tilemap of tilemaps.values()) {
+    const guid = tilemap.tilesetGuid;
+    if (!guid || seen.has(guid)) continue;
+    seen.add(guid);
+    guids.push(guid);
+  }
+  return guids;
+}
+
+export function playTilesetPayloadsFromGuids(
+  guids: readonly string[],
+  payloadForGuid: (guid: string) => unknown | null,
+): Map<string, TilesetPayload> {
+  const map = new Map<string, TilesetPayload>();
+  for (const guid of guids) {
+    const content = payloadForGuid(guid);
+    if (!content) continue;
+    map.set(guid, normalizeTilesetPayload(content));
+  }
+  return map;
+}
+
+function guidDocuments<T>(
+  payloads: ReadonlyMap<string, T> | undefined,
+): Array<{ guid: string; document: unknown }> {
+  if (!payloads) return [];
+  return [...payloads.entries()].map(([guid, document]) => ({ guid, document }));
+}
+
+/** Worker `loadTilemaps` control, or null when Play has no tile content. */
+export function playLoadTilemapsControl(
+  tilemaps: ReadonlyMap<string, TilemapPayload> | undefined,
+  tilesets: ReadonlyMap<string, TilesetPayload> | undefined,
+  pixelsPerUnit?: number,
+): {
+  type: "loadTilemaps";
+  tilemaps: Array<{ guid: string; document: unknown }>;
+  tilesets: Array<{ guid: string; document: unknown }>;
+  pixelsPerUnit?: number;
+} | null {
+  if ((!tilemaps || tilemaps.size === 0) && (!tilesets || tilesets.size === 0)) {
+    return null;
+  }
+  return {
+    type: "loadTilemaps",
+    tilemaps: guidDocuments(tilemaps),
+    tilesets: guidDocuments(tilesets),
+    ...(typeof pixelsPerUnit === "number" && pixelsPerUnit > 0
+      ? { pixelsPerUnit }
+      : {}),
+  };
 }

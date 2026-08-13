@@ -26,7 +26,8 @@ import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import { playPhysicsFromOpenDocuments, playSceneFromOpenDocuments } from "../services/play-physics";
-import { playAnimGraphsFromOpenDocuments } from "../lib/play-content";
+import type { PlayAnimGraphEntry } from "../lib/play-content";
+import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import {
@@ -98,9 +99,24 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playUiLibrary, setPlayUiLibrary] = useState<
     Record<string, UserInterfaceDocument>
   >({});
+  const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
+    [],
+  );
+  const [playSpritePayloads, setPlaySpritePayloads] = useState<
+    Map<string, SpritePayload>
+  >(() => new Map());
+  const [playTilemaps, setPlayTilemaps] = useState<Map<string, TilemapPayload>>(
+    () => new Map(),
+  );
+  const [playTilesets, setPlayTilesets] = useState<Map<string, TilesetPayload>>(
+    () => new Map(),
+  );
   const {
     collectPlayPreviewScripts,
     collectPlayUiLibrary,
+    collectPlayAnimGraphs,
+    collectPlaySpritePayloads,
+    collectPlayTilemapContent,
     openDocuments,
     activeDocumentId,
     projectDocument,
@@ -108,7 +124,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     scriptsStale,
     migrationPending,
     saveAll,
-    assetRegistry,
   } = useDocuments();
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const playPhysics = playPhysicsFromOpenDocuments(
@@ -118,12 +133,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const playScene = playSceneFromOpenDocuments(
     openDocuments,
     activeDocumentId,
-  );
-  const playAnimGraphs = playAnimGraphsFromOpenDocuments(
-    openDocuments,
-    (path) =>
-      assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
-      null,
   );
 
   const appendLog = useCallback((line: string) => {
@@ -264,6 +273,35 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayUiLibrary({});
         }
+        try {
+          setPlayAnimGraphs(await collectPlayAnimGraphs(playScene?.scene));
+        } catch (error) {
+          appendLog(
+            `AnimationGraph load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayAnimGraphs([]);
+        }
+        try {
+          setPlaySpritePayloads(
+            await collectPlaySpritePayloads(playScene?.scene),
+          );
+        } catch (error) {
+          appendLog(
+            `Sprite payload load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlaySpritePayloads(new Map());
+        }
+        try {
+          const tileContent = await collectPlayTilemapContent(playScene?.scene);
+          setPlayTilemaps(tileContent.tilemaps);
+          setPlayTilesets(tileContent.tilesets);
+        } catch (error) {
+          appendLog(
+            `Tilemap load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayTilemaps(new Map());
+          setPlayTilesets(new Map());
+        }
 
         setPrepareState(null);
 
@@ -291,11 +329,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       appendLog,
       collectPlayPreviewScripts,
       collectPlayUiLibrary,
+      collectPlayAnimGraphs,
+      collectPlaySpritePayloads,
+      collectPlayTilemapContent,
       diagnostics,
       dirtyDocuments,
       launchPlay,
       migrationPending.length,
       playing,
+      playScene,
       saveAll,
       scripts,
       scriptsStale,
@@ -412,6 +454,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             scene={playScene?.scene}
             uiLibrary={playUiLibrary}
             animGraphs={playAnimGraphs}
+            spritePayloads={playSpritePayloads}
+            tilemapPayloads={playTilemaps}
+            tilesetPayloads={playTilesets}
+            pixelsPerUnit={
+              projectDocument?.settings.twoD.pixelsPerUnit ?? 100
+            }
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
             }

@@ -56,6 +56,7 @@ import {
 } from "@babylonslate/anim-graph";
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { PhysicsWorldSync } from "./physics-sync";
+import type { TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 
 export type TransportMode = "in-process" | "sab" | "transferable";
 
@@ -83,6 +84,9 @@ export interface RuntimeDriverOptions {
   includeDebugCommands?: boolean;
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
   animGraphs?: Readonly<Record<string, AnimGraphDocument>>;
+  tilemaps?: Readonly<Record<string, TilemapPayload>>;
+  tilesets?: Readonly<Record<string, TilesetPayload>>;
+  pixelsPerUnit?: number;
 }
 
 export interface RuntimeDriver {
@@ -127,6 +131,11 @@ export interface RuntimeDriver {
   listConsoleCommands(): readonly RegisteredCommand[];
   stopTrace(): TracePayload | null;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
+  registerTileContent(options: {
+    tilemaps: Readonly<Record<string, TilemapPayload>> | ReadonlyMap<string, TilemapPayload>;
+    tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
+    pixelsPerUnit?: number;
+  }): void;
   readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
@@ -187,6 +196,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly animGraphs = new Map<string, AnimGraphDocument>();
   private readonly animEvalBySlot = new Map<number, AnimEvalState>();
   private uiInstanceSeq = 0;
+  private tilemaps = new Map<string, TilemapPayload>();
+  private tilesets = new Map<string, TilesetPayload>();
+  private pixelsPerUnit = 100;
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -216,6 +228,15 @@ class InProcessRuntime implements RuntimeDriver {
         this.animGraphs.set(guid, document);
       }
     }
+    if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
+      this.pixelsPerUnit = options.pixelsPerUnit;
+    }
+    if (options.tilemaps) {
+      this.tilemaps = new Map(Object.entries(options.tilemaps));
+    }
+    if (options.tilesets) {
+      this.tilesets = new Map(Object.entries(options.tilesets));
+    }
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
 
@@ -240,6 +261,13 @@ class InProcessRuntime implements RuntimeDriver {
         z: this.gravity[2],
       }),
     );
+    if (options.tilemaps || options.tilesets) {
+      this.physicsSync.setTileContent({
+        tilemaps: options.tilemaps ?? {},
+        tilesets: options.tilesets ?? {},
+        pixelsPerUnit: options.pixelsPerUnit,
+      });
+    }
 
     let guidSeq = 0;
     this.world = new World({
@@ -365,6 +393,9 @@ class InProcessRuntime implements RuntimeDriver {
         if (!id) return;
         this.emit({ type: "uiRemove", instanceId: id });
       },
+      changeScene: (scene) => {
+        this.world.loadScene(scene);
+      },
     });
 
     if (options.seedDemoActors !== false && !options.playScene) {
@@ -388,6 +419,11 @@ class InProcessRuntime implements RuntimeDriver {
     });
     this.physicsSync.dispose();
     this.physicsSync = new PhysicsWorldSync(backend);
+    this.physicsSync.setTileContent({
+      tilemaps: this.tilemaps,
+      tilesets: this.tilesets,
+      pixelsPerUnit: this.pixelsPerUnit,
+    });
     this.physicsSync.syncFromWorld(this.world);
   }
 
@@ -484,6 +520,29 @@ class InProcessRuntime implements RuntimeDriver {
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
     this.animGraphs.set(guid, document);
+  }
+
+  registerTileContent(options: {
+    tilemaps: Readonly<Record<string, TilemapPayload>> | ReadonlyMap<string, TilemapPayload>;
+    tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
+    pixelsPerUnit?: number;
+  }): void {
+    this.tilemaps =
+      options.tilemaps instanceof Map
+        ? new Map(options.tilemaps)
+        : new Map(Object.entries(options.tilemaps));
+    this.tilesets =
+      options.tilesets instanceof Map
+        ? new Map(options.tilesets)
+        : new Map(Object.entries(options.tilesets));
+    if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
+      this.pixelsPerUnit = options.pixelsPerUnit;
+    }
+    this.physicsSync.setTileContent({
+      tilemaps: this.tilemaps,
+      tilesets: this.tilesets,
+      pixelsPerUnit: this.pixelsPerUnit,
+    });
   }
 
   private animGraphGuid(component: {
@@ -624,6 +683,20 @@ class InProcessRuntime implements RuntimeDriver {
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind: "sprite",
+      });
+      return;
+    }
+    const tilemap = actor.components.find(
+      (component) =>
+        component.classId === "TilemapComponent" && !component.destroyed,
+    );
+    if (tilemap) {
+      const assetGuid = tilemap.assetGuid ?? tilemap.getVariable("assetGuid");
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
+        meshKind: "tilemap",
       });
     }
   }

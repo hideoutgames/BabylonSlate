@@ -10,15 +10,14 @@ import {
   FileIcon,
   FileJsonIcon,
   FilmIcon,
-  GitForkIcon,
   Grid3x3Icon,
   HexagonIcon,
   ImageIcon,
   ImagesIcon,
   LayersIcon,
+  LayoutGridIcon,
   LightbulbIcon,
   ListIcon,
-  NavigationIcon,
   PaintbrushIcon,
   PersonStandingIcon,
   PlugIcon,
@@ -99,8 +98,6 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   AudioComponent: Volume2Icon,
   RigidBodyComponent: CylinderIcon,
   ColliderComponent: CircleDashedIcon,
-  BehaviourTreeComponent: GitForkIcon,
-  NavAgentComponent: NavigationIcon,
   Scene: LayersIcon,
   Graph: FileJsonIcon,
   Texture: ImageIcon,
@@ -112,6 +109,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   AnimationGraph: FilmIcon,
   Shader: PaintbrushIcon,
   Sprite: ImagesIcon,
+  Tileset: LayoutGridIcon,
+  Tilemap: Grid3x3Icon,
   UserInterface: WIDGET_ICON,
   Class: OBJECT_ICON,
   Enum: ListIcon,
@@ -130,8 +129,6 @@ const COMPONENT_CLASS_IDS = new Set([
   "ColliderComponent",
   "WidgetComponent",
   "AnimationGraphComponent",
-  "BehaviourTreeComponent",
-  "NavAgentComponent",
 ]);
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
@@ -146,6 +143,8 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   AnimationGraph: "animation",
   Shader: "material",
   Sprite: "texture",
+  Tileset: "texture",
+  Tilemap: "texture",
   UserInterface: "graph",
   Class: "class",
   Enum: "scriptType",
@@ -213,6 +212,11 @@ function candidateIds(query: TypeVisualQuery): string[] {
   };
   for (const id of query.ancestry ?? []) push(id);
   push(query.classId);
+  let parent = query.classId ? engineParentOf(query.classId) : undefined;
+  while (parent) {
+    push(parent);
+    parent = engineParentOf(parent);
+  }
   push(query.parentClass);
   push(query.assetType);
   return ids;

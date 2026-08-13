@@ -10,7 +10,7 @@ Pure function: `(graph, dt, inputs, rng) → { stateId, normalisedTime, blendWei
 
 Snapshot / command payload per actor: current state id, normalised time in `[0, 1]`, blend weights, plus `clipName` / `clipKind` so render can seek without holding the graph. Protocol: extra command-channel `animState` messages (not a snapshot stride bump) so existing 16-float actor slots stay valid. See [bridge.md](bridge.md).
 
-`AnimationGraphComponent` (`graphGuid`) attaches a graph to an actor. `RuntimeDriver.registerAnimGraph` / worker `loadAnimGraphs` load documents; each tick `evaluateAnimGraph` runs in the game worker and emits `animState`. Play posts `loadAnimGraphs` for **open** AnimationGraph documents (same pattern as open scene / scripts). Scanning the whole registry at Play start is later polish. Render `seekGameplayAnimation` pauses the `AnimationGroup` and `goToFrame`s; sprite clips use `applySpriteAnimFrame` (UV bake) in unit tests — wiring sprite payloads through the Play engine handle is later polish. Babylon never auto-advances gameplay animation.
+`AnimationGraphComponent` (`graphGuid`) attaches a graph to an actor. `RuntimeDriver.registerAnimGraph` / worker `loadAnimGraphs` load documents; each tick `evaluateAnimGraph` runs in the game worker and emits `animState`. Play loads graphs referenced by scene `AnimationGraphComponent.graphGuid` (plus any open AnimationGraph tabs). Render `seekGameplayAnimation` pauses the `AnimationGroup` and `goToFrame`s; sprite clips use `applySpriteAnimFrame` via `applyAnimStateToScene` when `clipKind === "sprite"` and `createEngine` is given `spritePayloads` from scene `SpriteComponent` guids. Babylon never auto-advances gameplay animation.
 
 Drives:
 

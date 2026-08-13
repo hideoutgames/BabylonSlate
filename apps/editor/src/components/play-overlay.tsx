@@ -25,6 +25,7 @@ import { playConsoleCommands } from "../lib/play-console";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
+import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { PlayHudOverlay } from "./play-hud-overlay";
 import {
@@ -47,6 +48,10 @@ export interface PlayOverlayProps {
   playPreview?: PlayPreviewProjectSettings;
   uiLibrary?: Record<string, UserInterfaceDocument>;
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
+  spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
+  tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
+  pixelsPerUnit?: number;
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -72,6 +77,10 @@ export function PlayOverlay({
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   uiLibrary = {},
   animGraphs,
+  spritePayloads,
+  tilemapPayloads,
+  tilesetPayloads,
+  pixelsPerUnit,
   onClose,
 }: PlayOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -102,6 +111,14 @@ export function PlayOverlay({
   scriptsRef.current = scripts;
   const animGraphsRef = useRef(animGraphs);
   animGraphsRef.current = animGraphs;
+  const spritePayloadsRef = useRef(spritePayloads);
+  spritePayloadsRef.current = spritePayloads;
+  const tilemapPayloadsRef = useRef(tilemapPayloads);
+  tilemapPayloadsRef.current = tilemapPayloads;
+  const tilesetPayloadsRef = useRef(tilesetPayloads);
+  tilesetPayloadsRef.current = tilesetPayloads;
+  const pixelsPerUnitRef = useRef(pixelsPerUnit);
+  pixelsPerUnitRef.current = pixelsPerUnit;
   const physicsRef = useRef(physics);
   physicsRef.current = physics;
   const sceneRef = useRef({ sceneAssetGuid, scene });
@@ -133,6 +150,10 @@ export function PlayOverlay({
       scene: sceneRef.current.scene,
       frameCap: initialFrameCapRef.current,
       animGraphs: animGraphsRef.current,
+      spritePayloads: spritePayloadsRef.current,
+      tilemapPayloads: tilemapPayloadsRef.current,
+      tilesetPayloads: tilesetPayloadsRef.current,
+      pixelsPerUnit: pixelsPerUnitRef.current,
       onUiSetVisible: (widgetId, visible) => {
         setHiddenWidgetIds((prev) => {
           const next = new Set(prev);

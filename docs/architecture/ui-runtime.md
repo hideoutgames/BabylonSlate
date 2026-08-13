@@ -40,7 +40,7 @@ A `UserInterface` asset stores the widget tree in the `document` chunk. Nested U
 Placement:
 
 - **Viewport layer** — applied at runtime by `ctx.applyUserInterface(assetGuid)` (instance ids `ui-1`, `ui-2`, …). Not auto-hosted on Play.
-- **WidgetComponent** — world-space 2D prefab (`CreateForMesh`). Component class id already exists; P9 makes it addable and runtime-backed.
+- **WidgetComponent** — world-space 2D prefab (`CreateForMesh`). Class id exists; Add Component and Search hide it until a runtime `CreateForMesh` path exists. Viewport-layer HUD is the v1 Play path.
 
 `ctx.setWidgetVisible(widgetId, visible)`, `ctx.applyUserInterface(assetGuid)`, and `ctx.removeUserInterface(instanceId)` are real worker helpers: they emit UI commands; the Play overlay applies them. Scripts never touch Babylon GUI.
 

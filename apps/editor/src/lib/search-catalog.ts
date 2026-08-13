@@ -1,7 +1,7 @@
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { ENGINE_BASE_CLASSES } from "./content-browser-helpers";
 
-/** Engine class ids indexed as catalog hits (mirrors object-model ids). */
+/** Engine class ids indexed as catalog hits (shipped types only; unbuilt P10/P11 ids stay in object-model). */
 export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   ...ENGINE_BASE_CLASSES,
   "MeshComponent",
@@ -12,9 +12,7 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   "AudioComponent",
   "RigidBodyComponent",
   "ColliderComponent",
-  "WidgetComponent",
-  "BehaviourTreeComponent",
-  "NavAgentComponent",
+  "AnimationGraphComponent",
 ];
 
 const nodeRegistry = createDefaultNodeRegistry();

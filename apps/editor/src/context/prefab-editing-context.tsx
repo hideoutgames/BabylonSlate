@@ -6,10 +6,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SerializedComponent } from "@babylonslate/core";
+import type { SerializedComponent, SerializedGraph } from "@babylonslate/core";
+import { useDocuments } from "./document-context";
+import { useDocumentWorkspace } from "./document-workspace-context";
 import {
-  defaultPrefabComponents,
-  previewSceneFor,
+  nextPrefabComponentId,
+  prefabComponentsFromGraph,
+  PREFAB_ROOT_ID,
   reorderPrefabComponents,
 } from "../lib/prefab-preview";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
@@ -28,37 +31,51 @@ const PrefabEditingContext = createContext<PrefabEditingContextValue | null>(
 );
 
 export function PrefabEditingProvider({ children }: { children: ReactNode }) {
-  const [components, setComponents] = useState<SerializedComponent[]>(
-    defaultPrefabComponents,
-  );
+  const { documentId } = useDocumentWorkspace();
+  const { openDocuments, applyGraphChange } = useDocuments();
   const [selectedId, setSelectedId] = useState<string | null>("prefab-mesh");
 
-  const addComponent = useCallback((classId: string) => {
-    setComponents((current) => [
-      ...current,
-      {
-        id: `prefab-component-${current.length + 1}`,
-        classId,
-        properties: defaultPropertiesFor(classId),
-      },
-    ]);
-  }, []);
+  const graph = useMemo(() => {
+    const doc = openDocuments.find((entry) => entry.id === documentId);
+    if (doc?.ref.kind !== "graph" || !doc.content) return null;
+    return doc.content as SerializedGraph;
+  }, [documentId, openDocuments]);
+
+  const components = prefabComponentsFromGraph(graph);
+
+  const persist = useCallback(
+    (next: SerializedComponent[]) => {
+      if (!graph) return;
+      void applyGraphChange(documentId, { ...graph, components: next });
+    },
+    [applyGraphChange, documentId, graph],
+  );
+
+  const addComponent = useCallback(
+    (classId: string) => {
+      persist([
+        ...components,
+        {
+          id: nextPrefabComponentId(components),
+          classId,
+          properties: defaultPropertiesFor(classId),
+        },
+      ]);
+    },
+    [components, persist],
+  );
 
   const removeSelected = useCallback(() => {
-    setComponents((current) => {
-      if (!selectedId || selectedId === "prefab-root") return current;
-      return current.filter((component) => component.id !== selectedId);
-    });
-    setSelectedId("prefab-root");
-  }, [selectedId]);
+    if (!selectedId || selectedId === PREFAB_ROOT_ID) return;
+    persist(components.filter((component) => component.id !== selectedId));
+    setSelectedId(PREFAB_ROOT_ID);
+  }, [components, persist, selectedId]);
 
   const reparentComponent = useCallback(
     (dragId: string, targetId: string | null) => {
-      setComponents((current) =>
-        reorderPrefabComponents(current, dragId, targetId),
-      );
+      persist(reorderPrefabComponents(components, dragId, targetId));
     },
-    [],
+    [components, persist],
   );
 
   const value = useMemo(
@@ -89,5 +106,5 @@ export function usePrefabEditing(): PrefabEditingContextValue {
   return context;
 }
 
-export { previewSceneFor };
+export { previewSceneFor } from "../lib/prefab-preview";
 /* eslint-enable react-refresh/only-export-components */

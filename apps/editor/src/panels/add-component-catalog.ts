@@ -18,10 +18,10 @@ export const ADDABLE_COMPONENT_CLASSES = [
     category: "Rendering",
   },
   {
-    id: "WidgetComponent",
-    label: "Widget",
-    description: "World-space User Interface",
-    category: "UI",
+    id: "TilemapComponent",
+    label: "Tilemap",
+    description: "Chunked 2D tilemap",
+    category: "Rendering",
   },
   {
     id: "AnimationGraphComponent",
@@ -63,6 +63,8 @@ export function defaultPropertiesFor(
     case "MeshComponent":
       return { meshKind: "box", assetGuid: null };
     case "SpriteComponent":
+      return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
+    case "TilemapComponent":
       return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
     case "WidgetComponent":
       return { uiAssetGuid: null, viewportLayer: false };

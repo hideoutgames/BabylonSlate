@@ -52,6 +52,7 @@ export interface ScriptHostServices {
   setWidgetVisible?(widget: string, visible: boolean): void;
   applyUserInterface?(assetGuid: string): string;
   removeUserInterface?(instanceId: string): void;
+  changeScene?(scene: string): void;
 }
 export interface ScriptContext {
   self: Actor | null;
@@ -328,7 +329,9 @@ export class ScriptHost {
       removeUserInterface: (instanceId) => {
         services.removeUserInterface?.(instanceId);
       },
-      changeScene: () => {},
+      changeScene: (scene) => {
+        services.changeScene?.(scene);
+      },
     };
   }
 }

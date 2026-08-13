@@ -19,6 +19,24 @@ describe("P9 document kinds", () => {
     expect(isAssetDocumentKind("content-browser")).toBe(false);
   });
 
+  it("opens Tileset and Tilemap as their own document kinds", () => {
+    expect(documentKindForAssetType("Tileset")).toBe("tileset");
+    expect(documentKindForAssetType("Tilemap")).toBe("tilemap");
+    expect(assetTypeForDocumentKind("tileset")).toBe("Tileset");
+    expect(assetTypeForDocumentKind("tilemap")).toBe("Tilemap");
+    expect(documentKindLabel("tileset")).toBe("Tileset");
+    expect(documentKindLabel("tilemap")).toBe("Tilemap");
+    expect(isAssetDocumentKind("tileset")).toBe(true);
+    expect(isAssetDocumentKind("tilemap")).toBe(true);
+    expect(labelFromPath("assets/ground.tileset.babasset")).toBe("Ground");
+    expect(labelFromPath("assets/overworld.tilemap.babasset")).toBe("Overworld");
+    expect(
+      createDocumentRef("tileset", "assets/ground.tileset.babasset", {
+        name: "Ground",
+      }).label,
+    ).toBe("Ground Tileset");
+  });
+
   it("parses document ids and labels compound suffixes", () => {
     expect(parseDocumentId("ui:assets/hud.ui.babasset")).toEqual({
       kind: "ui",

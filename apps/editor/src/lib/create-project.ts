@@ -14,4 +14,6 @@ export function normalizeProjectFolderName(displayName: string): string {
 export type CreateProjectOptions = {
   /** Native only: pick an external folder, then scaffold into it. */
   pickFolder?: boolean;
+  /** Built-in card: Empty (3D cube) or 2D (pixel-perfect, Rapier, no cube). */
+  kind?: "empty" | "2d";
 };

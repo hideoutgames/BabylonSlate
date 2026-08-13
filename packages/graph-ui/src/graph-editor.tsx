@@ -228,6 +228,8 @@ function GraphEditorCanvas({
   const skipPaneClickRef = useRef(false);
   const membersRef = useRef(initialGraph.members);
   membersRef.current = initialGraph.members;
+  const componentsRef = useRef(initialGraph.components);
+  componentsRef.current = initialGraph.components;
   const { screenToFlowPosition } = useReactFlow();
   const graphStateRef = useRef({ nodes, edges });
   graphStateRef.current = { nodes, edges };
@@ -266,7 +268,7 @@ function GraphEditorCanvas({
             sourceHandle: edge.sourceHandle ?? undefined,
             targetHandle: edge.targetHandle ?? undefined,
           })),
-          { members: membersRef.current },
+          { members: membersRef.current, components: componentsRef.current },
         ),
       );
     },

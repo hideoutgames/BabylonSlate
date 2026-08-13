@@ -50,6 +50,8 @@ Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBod
 
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `AnimationGraphComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
 
+Search and Add Component advertise shipped behaviour: `TilemapComponent` is addable (P10 Play loads chunk meshes and Rapier chains). Behaviour-tree / nav stay registered here and wait for P11; `WidgetComponent` stays registered but is hidden until world-space `CreateForMesh` exists.
+
 See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
 
 `createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, transforms, and component properties — so Play can instantiate the authored document without the editor touching Babylon.

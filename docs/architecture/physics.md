@@ -52,7 +52,7 @@ Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, the
 
 The Play `load` control message carries `sceneAssetGuid`, optional authored `scene` (`SerializedScene`), `physicsWorld`, `gravity`, and `havokWasmUrl`. The editor vendors `HavokPhysics.wasm` at `/havok/HavokPhysics.wasm` (same self-host pattern as the KTX2 transcoder) so browser Play does not silently keep the AABB backend. Details / Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent`.
 
-Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld()` (after scripts load so Begin Play binds on spawn). Demo actors are not seeded when a scene payload is present. `PhysicsWorldSync` then creates bodies for authored `RigidBodyComponent` / `ColliderComponent`. Graph-only spawns skip class ids that already exist as scene actors.
+Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld()` (after scripts load so Begin Play binds on spawn). Demo actors are not seeded when a scene payload is present. `PhysicsWorldSync` then creates bodies for authored `RigidBodyComponent` / `ColliderComponent`, and a static body plus merged chain colliders for `TilemapComponent` (see [tilemaps.md](tilemaps.md)). Graph-only spawns skip class ids that already exist as scene actors.
 
 ## Components
 
@@ -66,7 +66,7 @@ Spawn/attach creates bodies; destroy removes them. Transforms after `step` overw
 ### Shapes
 
 - **3D:** box, sphere, capsule, convex hull, triangle mesh
-- **2D:** box, circle, capsule, polygon, chain (tilemap chain generation is **P10**)
+- **2D:** box, circle, capsule, polygon, chain (tilemap chunks emit merged chains via `tilemapChunkChains`)
 
 ## Scripting
 
@@ -85,7 +85,7 @@ Harness scenarios run on each backend where shapes overlap. Within-backend repro
 | `physics.moveCharacter` scripting (backend CC exists) | Done (`p7-character-controller`) — Actor pin, lazy CC, no dedicated component |
 | Mixed 2D/3D collider diagnostic | P7 polish |
 | Rapier `shapeSweep` ≈ lineTrace; Havok `sphereOverlap` uses AABB | P7 polish / as needed by gameplay |
-| Tilemap merged chain colliders | P10 |
+| Tilemap merged chain colliders | Done (`p10-tilemap`) — `tilemapChunkChains` + `PhysicsWorldSync` static body per `TilemapComponent` |
 | Full 5 Hz debugger stats HUD | P8 (`p8-console-hud`); P7 exposes `physicsMs` + Play overlay readout |
 | `planck.js` fallback | Not used; software AABB is the wasm-failure path |
 | Separate physics worker | Not planned for v1 |

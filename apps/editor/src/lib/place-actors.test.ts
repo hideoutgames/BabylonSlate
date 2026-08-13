@@ -60,6 +60,37 @@ describe("spawnPlacedActor", () => {
     expect(actor.components).toEqual([]);
   });
 
+  it("spawns a Class asset with the authored prefab components and classId", () => {
+    const item: PlaceActorItem = {
+      id: "asset-hero",
+      title: "Hero",
+      category: "Project",
+      kind: {
+        type: "asset",
+        name: "Hero",
+        guid: "hero-guid",
+        assetType: "Class",
+        classId: "Hero",
+        components: [
+          {
+            id: "sprite",
+            classId: "SpriteComponent",
+            properties: { assetGuid: "sprite-1" },
+          },
+        ],
+      },
+    };
+    const actor = spawnPlacedActor(scene, item, "actor-9");
+    expect(actor.classId).toBe("Hero");
+    expect(actor.components).toEqual([
+      {
+        id: "actor-9-SpriteComponent-1",
+        classId: "SpriteComponent",
+        properties: { assetGuid: "sprite-1" },
+      },
+    ]);
+  });
+
   it("allocates the next unused actor-N id", () => {
     const empty = { ...scene, actors: [] };
     expect(nextActorId(empty)).toBe("actor-1");

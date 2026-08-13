@@ -15,8 +15,7 @@ import { AddComponentDialog } from "../components/add-component-dialog";
 
 /**
  * Actor component tree for class documents. The 3D preview lives in the
- * sibling Prefab viewport tab. Persistence onto the class document is
- * deferred (docs/agents/issue-tracker.md — P6 prefab persistence).
+ * sibling Prefab viewport tab. Edits write `SerializedGraph.components`.
  */
 export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -80,9 +79,9 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     >
       <p
         className="border-b border-border px-3 py-2 text-xs text-muted-foreground"
-        data-testid="prefab-preview-only-note"
+        data-testid="prefab-saved-note"
       >
-        Preview only — component edits are not saved to the class document yet.
+        Components save on the class document.
       </p>
       <TreeView
         nodes={nodes}

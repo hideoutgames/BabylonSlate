@@ -20,7 +20,9 @@ import type {
 import { documentId, isAssetDocumentKind, normalizeProjectSettings } from "@babylonslate/core";
 import {
   appendJournalLine,
+  getTile,
   hasJournal,
+  normalizeTilemapPayload,
   readJournalLines,
   readThumbnail,
   ThumbnailDecodeLru,
@@ -29,6 +31,9 @@ import {
   type MigrationPending,
   type ProjectSearchIndex,
   type ProjectTemplate,
+  type SpritePayload,
+  type TilemapPayload,
+  type TilesetPayload,
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
@@ -82,7 +87,20 @@ import {
   listedProjectsFromRecents,
   type ListedProject,
 } from "../lib/listed-projects";
-import { playUiLibraryFromAssets } from "../lib/play-content";
+import {
+  animationGraphGuidsFromScene,
+  mergePlayAnimGraphs,
+  playAnimGraphsFromGuids,
+  playAnimGraphsFromOpenDocuments,
+  playSpritePayloadsFromGuids,
+  playTilemapPayloadsFromGuids,
+  playTilesetPayloadsFromGuids,
+  playUiLibraryFromAssets,
+  spriteAssetGuidsFromScene,
+  tilemapAssetGuidsFromScene,
+  tilesetGuidsFromTilemaps,
+  type PlayAnimGraphEntry,
+} from "../lib/play-content";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 
 export type AppRoute = "home" | "editor";
@@ -113,7 +131,7 @@ interface DocumentContextValue {
   openProject: () => Promise<void>;
   createEmptyProject: (
     name: string,
-    options?: { pickFolder?: boolean },
+    options?: { pickFolder?: boolean; kind?: "empty" | "2d" },
   ) => Promise<void>;
   createFromTemplate: (
     templateId: string,
@@ -150,6 +168,7 @@ interface DocumentContextValue {
   applyAssetDocumentChange: (
     id: string,
     next: Record<string, unknown>,
+    mergeKey?: string,
   ) => Promise<boolean>;
   /** Font source / other binary chunks. */
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
@@ -184,6 +203,20 @@ interface DocumentContextValue {
   }>;
   /** UserInterface assets keyed by guid for Play apply/remove. */
   collectPlayUiLibrary: () => Promise<Record<string, UserInterfaceDocument>>;
+  /** AnimationGraphs referenced by the Play scene (plus any open graph tabs). */
+  collectPlayAnimGraphs: (
+    scene?: SerializedScene | null,
+  ) => Promise<PlayAnimGraphEntry[]>;
+  /** Sprite payloads referenced by the Play scene for clip UV seeks. */
+  collectPlaySpritePayloads: (
+    scene?: SerializedScene | null,
+  ) => Promise<Map<string, SpritePayload>>;
+  collectPlayTilemapContent: (
+    scene?: SerializedScene | null,
+  ) => Promise<{
+    tilemaps: Map<string, TilemapPayload>;
+    tilesets: Map<string, TilesetPayload>;
+  }>;
   /** True when a compiled graph changed since the last successful compile (positions ignored). */
   scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
@@ -513,7 +546,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [enterEditor, projectService]);
 
   const createEmptyProject = useCallback(
-    async (name: string, options?: { pickFolder?: boolean }) => {
+    async (name: string, options?: { pickFolder?: boolean; kind?: "empty" | "2d" }) => {
       const { document, layouts, migrationPending: pending } =
         await projectService.createEmptyProject(name, options);
       await enterEditor(document, layouts, pending);
@@ -924,7 +957,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const applyAssetDocumentChange = useCallback(
-    async (id: string, next: Record<string, unknown>): Promise<boolean> => {
+    async (
+      id: string,
+      next: Record<string, unknown>,
+      mergeKey?: string,
+    ): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
       if (
         !doc ||
@@ -936,10 +973,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const previous = doc.content as Record<string, unknown>;
-      const command = new SetAssetDocumentCommand(previous, next);
+      const command = new SetAssetDocumentCommand(previous, next, mergeKey);
       const current = editSessionRef.current.apply(id, previous, command).doc;
       documentService.updateAssetDocument(id, current);
       projectService.indexOpenDocument(doc.ref.path, current);
+      scheduleDebouncedSave();
+      bump();
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
@@ -954,8 +993,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           }),
         );
       }
-      scheduleDebouncedSave();
-      bump();
       return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
@@ -1046,6 +1083,129 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return playUiLibraryFromAssets(assets, (path) => loaded.get(path) ?? null);
   }, [documentService, projectService]);
 
+  const loadPlayAssetContent = useCallback(
+    async (
+      kind: "anim-graph" | "sprite" | "ui" | "tileset" | "tilemap",
+      path: string,
+    ): Promise<unknown | null> => {
+      const openDoc = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind, path }));
+      if (openDoc?.content) return openDoc.content;
+      try {
+        return await projectService.loadDocument(kind, path);
+      } catch (error) {
+        console.error(`[play] failed to load ${kind} ${path}`, error);
+        return null;
+      }
+    },
+    [documentService, projectService],
+  );
+
+  const collectPlayAnimGraphs = useCallback(
+    async (scene?: SerializedScene | null): Promise<PlayAnimGraphEntry[]> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "AnimationGraph")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const openEntries = playAnimGraphsFromOpenDocuments(
+        [...documentService.getState().openDocuments.values()],
+        (path) =>
+          assets.find((asset) => asset.path === path)?.header.guid ?? null,
+      );
+      const needed = new Set([
+        ...animationGraphGuidsFromScene(scene),
+        ...openEntries.map((entry) => entry.guid),
+      ]);
+      const loaded = new Map<string, unknown>();
+      for (const guid of needed) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("anim-graph", asset.path);
+        if (content) loaded.set(guid, content);
+      }
+      return mergePlayAnimGraphs(
+        openEntries,
+        playAnimGraphsFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
+      );
+    },
+    [documentService, loadPlayAssetContent, projectService],
+  );
+
+  const collectPlaySpritePayloads = useCallback(
+    async (
+      scene?: SerializedScene | null,
+    ): Promise<Map<string, SpritePayload>> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Sprite")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const loaded = new Map<string, unknown>();
+      for (const guid of spriteAssetGuidsFromScene(scene)) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("sprite", asset.path);
+        if (content) loaded.set(guid, content);
+      }
+      return playSpritePayloadsFromGuids(
+        [...loaded.keys()],
+        (guid) => loaded.get(guid) ?? null,
+      );
+    },
+    [loadPlayAssetContent, projectService],
+  );
+
+  const collectPlayTilemapContent = useCallback(
+    async (
+      scene?: SerializedScene | null,
+    ): Promise<{
+      tilemaps: Map<string, TilemapPayload>;
+      tilesets: Map<string, TilesetPayload>;
+    }> => {
+      const assets = projectService.registry?.list() ?? [];
+      const tilemapsByGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Tilemap")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const tilesetsByGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Tileset")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const loadedMaps = new Map<string, unknown>();
+      for (const guid of tilemapAssetGuidsFromScene(scene)) {
+        const asset = tilemapsByGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("tilemap", asset.path);
+        if (content) loadedMaps.set(guid, content);
+      }
+      const tilemaps = playTilemapPayloadsFromGuids(
+        [...loadedMaps.keys()],
+        (guid) => loadedMaps.get(guid) ?? null,
+      );
+      const loadedSets = new Map<string, unknown>();
+      for (const guid of tilesetGuidsFromTilemaps(tilemaps)) {
+        const asset = tilesetsByGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("tileset", asset.path);
+        if (content) loadedSets.set(guid, content);
+      }
+      return {
+        tilemaps,
+        tilesets: playTilesetPayloadsFromGuids(
+          [...loadedSets.keys()],
+          (guid) => loadedSets.get(guid) ?? null,
+        ),
+      };
+    },
+    [loadPlayAssetContent, projectService],
+  );
+
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
       if (!thumbnailsEnabledRef.current) return null;
@@ -1081,6 +1241,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
         guidForPath: (path: string) => string | null;
+        activeTilemapTile: (gx: number, gy: number) => number | null;
       };
     };
     host.__babylonslateTest = {
@@ -1237,6 +1398,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      activeTilemapTile: (gx: number, gy: number) => {
+        const doc = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "tilemap" && entry.content,
+        );
+        if (!doc?.content) return null;
+        const map = normalizeTilemapPayload(doc.content);
+        const layerId = map.layers[0]?.id;
+        if (!layerId) return null;
+        return getTile(map, layerId, gx, gy);
+      },
     };
     return () => {
       delete host.__babylonslateTest;
@@ -1565,6 +1736,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectScriptBundles,
       collectPlayPreviewScripts,
       collectPlayUiLibrary,
+      collectPlayAnimGraphs,
+      collectPlaySpritePayloads,
+      collectPlayTilemapContent,
       graphsNeedCompile: compileSignatureIsStale(
         currentGraphSignature,
         lastCompiledSignature,
@@ -1590,6 +1764,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectScriptBundles,
       collectPlayPreviewScripts,
       collectPlayUiLibrary,
+      collectPlayAnimGraphs,
+      collectPlaySpritePayloads,
+      collectPlayTilemapContent,
       lastCompiledSignature,
       markScriptsCurrent,
       listedProjects,
