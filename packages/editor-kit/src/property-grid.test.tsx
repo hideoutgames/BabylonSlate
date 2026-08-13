@@ -396,4 +396,31 @@ describe("PropertyGrid", () => {
     fireEvent.click(screen.getByTestId("property-layer-bit-1"));
     expect(onChange).toHaveBeenCalledWith(3);
   });
+
+  it("opens enum options in a compact dropdown, not a full-width popup", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "enum",
+            id: "mode",
+            label: "Mode",
+            value: "a",
+            options: [
+              { value: "a", label: "Alpha" },
+              { value: "b", label: "Beta" },
+            ],
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("property-mode"));
+    const content = document.querySelector("[data-slot='select-content']");
+    expect(content).toBeTruthy();
+    const classes = content!.className.split(/\s+/);
+    expect(classes).toContain("min-w-(--anchor-width)");
+    expect(classes).not.toContain("w-(--anchor-width)");
+    expect(content!.getAttribute("data-align-trigger")).toBe("false");
+  });
 });
