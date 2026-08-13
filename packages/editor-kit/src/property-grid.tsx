@@ -13,11 +13,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@babylonslate/ui/components/select";
+import { Slider } from "@babylonslate/ui/components/slider";
 import { NumericDragField } from "./numeric-drag-field";
 import { humanizePropertyLabel } from "./humanize-property-label";
 import { ColorField } from "./color-field";
+import { FlagsField } from "./flags-field";
 
-export type Vector3Value = [number, number, number];
+export type Vector3Value = [number, number, number] | [number, number, number, number];
 
 interface PropertyRowBase {
   id: string;
@@ -73,6 +75,24 @@ export type PropertyRow =
       onChange: (value: Vector3Value) => void;
     })
   | (PropertyRowBase & {
+      kind: "slider";
+      value: number;
+      defaultValue?: number;
+      min: number;
+      max: number;
+      step?: number;
+      onChange: (value: number) => void;
+      onCommit?: (value: number) => void;
+    })
+  | (PropertyRowBase & {
+      kind: "flags";
+      value: number;
+      defaultValue?: number;
+      bitCount?: number;
+      labels?: readonly string[];
+      onChange: (value: number) => void;
+    })
+  | (PropertyRowBase & {
       kind: "asset";
       value: string | null;
       defaultValue?: string | null;
@@ -126,6 +146,13 @@ function resetRow(row: PropertyRow): void {
     case "color":
       row.onChange(row.defaultValue!);
       break;
+    case "slider":
+      row.onChange(row.defaultValue!);
+      row.onCommit?.(row.defaultValue!);
+      break;
+    case "flags":
+      row.onChange(row.defaultValue!);
+      break;
     case "asset":
       row.onChange(row.defaultValue ?? null);
       break;
@@ -164,9 +191,9 @@ function RowControl({ row }: { row: PropertyRow }) {
                 sensitivity={row.sensitivity}
                 disabled={row.disabled}
                 onChange={(next) => {
-                  const value: Vector3Value = [...row.value];
+                  const value = [...row.value];
                   value[index] = next;
-                  row.onChange(value);
+                  row.onChange(value as typeof row.value);
                 }}
                 onDragEnd={() => row.onCommit?.(row.value)}
                 data-testid={`property-${row.id}-${axis.toLowerCase()}`}
@@ -231,6 +258,48 @@ function RowControl({ row }: { row: PropertyRow }) {
           data-testid={`property-${row.id}`}
         />
       );
+    case "slider":
+      return (
+        <div className="flex min-w-0 items-center gap-2">
+          <Slider
+            className="min-w-0 flex-1"
+            value={row.value}
+            min={row.min}
+            max={row.max}
+            step={row.step ?? (row.max - row.min <= 1 ? 0.01 : 1)}
+            disabled={row.disabled}
+            onValueChange={(next) => {
+              const value = Array.isArray(next) ? next[0] : next;
+              if (typeof value === "number") row.onChange(value);
+            }}
+            data-testid={`property-${row.id}-slider`}
+          />
+          <div className="w-20 shrink-0">
+            <NumericDragField
+              id={`property-${row.id}`}
+              value={row.value}
+              min={row.min}
+              max={row.max}
+              disabled={row.disabled}
+              onChange={row.onChange}
+              onDragEnd={row.onCommit}
+              data-testid={`property-${row.id}`}
+            />
+          </div>
+        </div>
+      );
+    case "flags":
+      return (
+        <FlagsField
+          id={`property-${row.id}`}
+          value={row.value}
+          bitCount={row.bitCount}
+          labels={row.labels}
+          disabled={row.disabled}
+          onChange={row.onChange}
+          data-testid={`property-${row.id}`}
+        />
+      );
     case "asset":
       return (
         <Button
@@ -271,7 +340,9 @@ export function PropertyGrid({
             <div className="flex min-w-0 items-center gap-1">
               <FieldLabel
                 htmlFor={
-                  row.kind === "vector3" ? undefined : `property-${row.id}`
+                  row.kind === "vector3" || row.kind === "flags"
+                    ? undefined
+                    : `property-${row.id}`
                 }
                 className="w-auto min-w-0 flex-1 truncate"
               >

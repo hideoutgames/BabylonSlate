@@ -156,6 +156,36 @@ describe("componentPropertyRows", () => {
       kind: "color",
       value: [1, 0, 0],
     });
+    expect(light.rows.find((row) => row.id.endsWith("-intensity"))).toMatchObject({
+      kind: "slider",
+      value: 1,
+      min: 0,
+      max: 16,
+    });
+    const gravity = body.rows.find((row) => row.id.endsWith("-gravityScale"));
+    expect(gravity).toMatchObject({ kind: "slider", value: 1, min: 0, max: 10 });
+  });
+
+  it("uses sliders for camera field of view and orthographic size", () => {
+    const camera = rowsFor({
+      id: "cam",
+      classId: "CameraComponent",
+      properties: { fieldOfView: 60, orthographicSize: 5 },
+    });
+    expect(camera.rows.find((row) => row.id.endsWith("-fieldOfView"))).toMatchObject({
+      kind: "slider",
+      value: 60,
+      min: 1,
+      max: 179,
+    });
+    expect(
+      camera.rows.find((row) => row.id.endsWith("-orthographicSize")),
+    ).toMatchObject({
+      kind: "slider",
+      value: 5,
+      min: 0.1,
+      max: 50,
+    });
   });
 
   it("flattens collider shape kind and numeric extents instead of object text", () => {
@@ -191,6 +221,21 @@ describe("componentPropertyRows", () => {
     expect(rows.find((row) => row.id.endsWith("-shape-half-extents"))).toMatchObject({
       kind: "vector3",
       value: [0.5, 0.25, 0.5],
+    });
+    expect(rows.find((row) => row.id.endsWith("-friction"))).toMatchObject({
+      kind: "slider",
+      value: 0.5,
+      min: 0,
+      max: 1,
+    });
+    expect(rows.find((row) => row.id.endsWith("-layer"))).toMatchObject({
+      kind: "flags",
+      value: 1,
+      bitCount: 32,
+    });
+    expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({
+      kind: "flags",
+      value: 1,
     });
   });
 

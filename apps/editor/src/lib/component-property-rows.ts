@@ -15,6 +15,10 @@ const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
 const SHAPE_KINDS_3D = ["box", "sphere", "capsule"] as const;
 const SHAPE_KINDS_2D = ["box2d", "circle", "capsule2d"] as const;
 const POINT_CLOUD_KINDS = new Set(["convex", "mesh", "polygon", "chain"]);
+const PHYSICS_LAYER_LABELS = Array.from(
+  { length: 32 },
+  (_, bit) => `Layer ${bit}`,
+);
 
 export type AssetPickRequest = {
   componentId: string;
@@ -91,6 +95,52 @@ function defaultShape(kind: string): ColliderShape {
     default:
       return { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };
   }
+}
+
+function asNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function sliderRow(
+  actorId: string,
+  componentId: string,
+  key: string,
+  label: string,
+  value: number,
+  min: number,
+  max: number,
+  update: (property: string, value: unknown) => void,
+  step?: number,
+): PropertyRow {
+  return {
+    kind: "slider",
+    id: rowId(actorId, componentId, key),
+    label,
+    value,
+    min,
+    max,
+    step,
+    onChange: (next) => update(key, next),
+  };
+}
+
+function flagsRow(
+  actorId: string,
+  componentId: string,
+  key: string,
+  label: string,
+  value: number,
+  update: (property: string, value: unknown) => void,
+): PropertyRow {
+  return {
+    kind: "flags",
+    id: rowId(actorId, componentId, key),
+    label,
+    value,
+    bitCount: 32,
+    labels: PHYSICS_LAYER_LABELS,
+    onChange: (next) => update(key, next),
+  };
 }
 
 function asRgb(value: unknown): [number, number, number] | null {
@@ -382,7 +432,47 @@ export function componentPropertyRows(
           options: MOTION_TYPES.map((type) => ({ value: type, label: type })),
           onChange: (next) => update("motionType", next),
         },
-        ...genericRows(actorId, component, update, new Set(["motionType"])),
+        sliderRow(
+          actorId,
+          component.id,
+          "gravityScale",
+          "Gravity Scale",
+          asNumber(component.properties.gravityScale, 1),
+          0,
+          10,
+          update,
+        ),
+        sliderRow(
+          actorId,
+          component.id,
+          "linearDamping",
+          "Linear Damping",
+          asNumber(component.properties.linearDamping, 0),
+          0,
+          10,
+          update,
+        ),
+        sliderRow(
+          actorId,
+          component.id,
+          "angularDamping",
+          "Angular Damping",
+          asNumber(component.properties.angularDamping, 0),
+          0,
+          10,
+          update,
+        ),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set([
+            "motionType",
+            "gravityScale",
+            "linearDamping",
+            "angularDamping",
+          ]),
+        ),
       ];
     case "ColliderComponent":
       return [
@@ -392,7 +482,48 @@ export function componentPropertyRows(
           update,
           context.physicsWorld,
         ),
-        ...genericRows(actorId, component, update, new Set(["shape"])),
+        sliderRow(
+          actorId,
+          component.id,
+          "friction",
+          "Friction",
+          asNumber(component.properties.friction, 0.5),
+          0,
+          1,
+          update,
+        ),
+        sliderRow(
+          actorId,
+          component.id,
+          "restitution",
+          "Restitution",
+          asNumber(component.properties.restitution, 0),
+          0,
+          1,
+          update,
+        ),
+        flagsRow(
+          actorId,
+          component.id,
+          "layer",
+          "Layer",
+          asNumber(component.properties.layer, 1),
+          update,
+        ),
+        flagsRow(
+          actorId,
+          component.id,
+          "mask",
+          "Mask",
+          asNumber(component.properties.mask, 0xffffffff),
+          update,
+        ),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["shape", "friction", "restitution", "layer", "mask"]),
+        ),
       ];
     case "LightComponent": {
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
@@ -404,9 +535,54 @@ export function componentPropertyRows(
           value: color,
           onChange: (next) => update("color", next),
         },
-        ...genericRows(actorId, component, update, new Set(["color"])),
+        sliderRow(
+          actorId,
+          component.id,
+          "intensity",
+          "Intensity",
+          asNumber(component.properties.intensity, 1),
+          0,
+          16,
+          update,
+        ),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["color", "intensity"]),
+        ),
       ];
     }
+    case "CameraComponent":
+      return [
+        sliderRow(
+          actorId,
+          component.id,
+          "fieldOfView",
+          "Field Of View",
+          asNumber(component.properties.fieldOfView, 60),
+          1,
+          179,
+          update,
+          1,
+        ),
+        sliderRow(
+          actorId,
+          component.id,
+          "orthographicSize",
+          "Orthographic Size",
+          asNumber(component.properties.orthographicSize, 5),
+          0.1,
+          50,
+          update,
+        ),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["fieldOfView", "orthographicSize"]),
+        ),
+      ];
     default:
       return genericRows(actorId, component, update, new Set());
   }
