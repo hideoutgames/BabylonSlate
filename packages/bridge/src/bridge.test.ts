@@ -4,8 +4,11 @@ import {
   SNAPSHOT_HEADER_FLOATS,
   SNAPSHOT_LAYOUT_VERSION,
   SNAPSHOT_MAGIC_F32,
+  SNAPSHOT_MAGIC_U32,
   actorSlotOffset,
+  floatBitsToU32,
   snapshotFloatCount,
+  u32ToFloatBits,
 } from "./layout";
 import {
   readActorSlot,
@@ -26,6 +29,15 @@ describe("snapshot layout", () => {
     expect(actorSlotOffset(0)).toBe(16);
     expect(actorSlotOffset(2)).toBe(48);
     expect(snapshotFloatCount(8)).toBe(16 + 8 * 16);
+  });
+
+  it("round-trips u32 bit patterns through f32 slots (magic inclusive)", () => {
+    expect(floatBitsToU32(SNAPSHOT_MAGIC_F32)).toBe(SNAPSHOT_MAGIC_U32);
+    expect(u32ToFloatBits(SNAPSHOT_MAGIC_U32)).toBe(SNAPSHOT_MAGIC_F32);
+    const samples = [0, 1, 0xffffffff, 0x42534e50, 0x3f800000];
+    for (const value of samples) {
+      expect(floatBitsToU32(u32ToFloatBits(value)) >>> 0).toBe(value >>> 0);
+    }
   });
 
   it("round-trips header and actor slots in a Float32Array", () => {
