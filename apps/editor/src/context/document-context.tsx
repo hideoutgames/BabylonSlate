@@ -1015,7 +1015,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlayUiLibrary = useCallback(async (): Promise<
     Record<string, UserInterfaceDocument>
   > => {
-    const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+    const assets = (projectService.registry?.list() ?? []).map((asset) => ({
       guid: asset.header.guid,
       path: asset.path,
       type: asset.header.type,
@@ -1039,7 +1039,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
     return playUiLibraryFromAssets(assets, (path) => loaded.get(path) ?? null);
-  }, [assetRegistry, documentService, projectService]);
+  }, [documentService, projectService]);
 
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
