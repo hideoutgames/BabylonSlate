@@ -72,6 +72,149 @@ function graphWithPins(): GraphDocument {
   };
 }
 
+function graphWithWiredPins(): GraphDocument {
+  const graph = graphWithPins();
+  return {
+    ...graph,
+    nodes: [
+      ...graph.nodes,
+      {
+        id: "log-c",
+        type: "debug.log",
+        position: { x: 560, y: 0 },
+        data: { message: "C", __pins: debugLogPins },
+      },
+    ],
+    edges: [
+      {
+        id: "e:log-a:execOut:log-b:execIn",
+        source: "log-a",
+        target: "log-b",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+      {
+        id: "e:log-a:execOut:log-c:execIn",
+        source: "log-a",
+        target: "log-c",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+    ],
+  };
+}
+
+function stubMeasuredGraphLayout(): () => void {
+  const previousWidth = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetWidth",
+  );
+  const previousHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "offsetHeight",
+  );
+  Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+    configurable: true,
+    get() {
+      return 180;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get() {
+      return 80;
+    },
+  });
+
+  class ImmediateResizeObserver implements ResizeObserver {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element): void {
+      this.callback(
+        [
+          {
+            target,
+            contentRect: {
+              x: 0,
+              y: 0,
+              width: 180,
+              height: 80,
+              top: 0,
+              left: 0,
+              bottom: 80,
+              right: 180,
+              toJSON() {
+                return {};
+              },
+            },
+          } as ResizeObserverEntry,
+        ],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  const previousObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver =
+    ImmediateResizeObserver as unknown as typeof ResizeObserver;
+
+  const previousFromPoint = Document.prototype.elementFromPoint;
+  Document.prototype.elementFromPoint = () => null;
+
+  return () => {
+    if (previousWidth) {
+      Object.defineProperty(HTMLElement.prototype, "offsetWidth", previousWidth);
+    }
+    if (previousHeight) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "offsetHeight",
+        previousHeight,
+      );
+    }
+    globalThis.ResizeObserver = previousObserver;
+    Document.prototype.elementFromPoint = previousFromPoint;
+  };
+}
+
+function mockHandleRect(handle: Element, rect: {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}): void {
+  Object.defineProperty(handle, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      x: rect.left,
+      y: rect.top,
+      left: rect.left,
+      top: rect.top,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      width: rect.width,
+      height: rect.height,
+      toJSON() {
+        return {};
+      },
+    }),
+  });
+}
+
+function dragHandle(
+  handle: Element,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): void {
+  fireEvent.mouseDown(handle, {
+    clientX: from.x,
+    clientY: from.y,
+    button: 0,
+  });
+  fireEvent.mouseMove(document, { clientX: to.x, clientY: to.y });
+  fireEvent.mouseUp(document, { clientX: to.x, clientY: to.y });
+}
+
 function openPalette(container: HTMLElement) {
   const pane = container.querySelector(".react-flow__pane");
   expect(pane).not.toBeNull();
@@ -146,6 +289,117 @@ describe("GraphEditor", () => {
       sourceHandle: "execOut",
       targetHandle: "execIn",
     });
+  });
+
+  it("adds a tap-to-connect edge without stripping existing wires", () => {
+    const onChange = vi.fn();
+    const graph: GraphDocument = {
+      nodes: [
+        ...graphWithPins().nodes,
+        {
+          id: "log-c",
+          type: "debug.log",
+          position: { x: 560, y: 0 },
+          data: { message: "C", __pins: debugLogPins },
+        },
+      ],
+      edges: [
+        {
+          id: "e:log-a:execOut:log-b:execIn",
+          source: "log-a",
+          target: "log-b",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    const { container } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+
+    const source = container.querySelector(
+      '[data-id="log-a"] [data-handleid="execOut"][data-handlepos="right"]',
+    );
+    const target = container.querySelector(
+      '[data-id="log-c"] [data-handleid="execIn"][data-handlepos="left"]',
+    );
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    fireEvent.click(source!);
+    fireEvent.click(target!);
+
+    expect(onChange).toHaveBeenCalled();
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "log-a",
+          target: "log-b",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        }),
+        expect.objectContaining({
+          source: "log-a",
+          target: "log-c",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        }),
+      ]),
+    );
+    expect(lastGraph.edges).toHaveLength(2);
+  });
+
+  it("breaks all wires on a pin when a drag is released without connecting", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />,
+      );
+
+      const source = container.querySelector(
+        '[data-id="log-a"] [data-handleid="execOut"][data-handlepos="right"]',
+      );
+      expect(source).not.toBeNull();
+      mockHandleRect(source!, { left: 0, top: 0, width: 44, height: 44 });
+      onChange.mockClear();
+
+      act(() => {
+        dragHandle(source!, { x: 22, y: 22 }, { x: 80, y: 22 });
+      });
+
+      expect(onChange).toHaveBeenCalled();
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("does not break wires when the drag is released on the source handle", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor initialGraph={graphWithWiredPins()} onChange={onChange} />,
+      );
+
+      const source = container.querySelector(
+        '[data-id="log-a"] [data-handleid="execOut"][data-handlepos="right"]',
+      );
+      expect(source).not.toBeNull();
+      mockHandleRect(source!, { left: 0, top: 0, width: 44, height: 44 });
+      onChange.mockClear();
+
+      act(() => {
+        dragHandle(source!, { x: 22, y: 22 }, { x: 30, y: 22 });
+      });
+
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
   });
 
   it("shows an error badge on nodes referenced by diagnostics", () => {
