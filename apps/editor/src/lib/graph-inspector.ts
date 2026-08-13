@@ -59,6 +59,10 @@ export const LOG_SEVERITY_OPTIONS = [
 export function pinDefaultPropertyRows(
   entries: readonly LiteralPinDefault[],
   onPatch: (patch: Record<string, unknown>) => void,
+  mappingNames?: {
+    actionNames?: readonly string[];
+    axisNames?: readonly string[];
+  },
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
   for (const entry of entries) {
@@ -86,16 +90,41 @@ export function pinDefaultPropertyRows(
           onChange: (value) => onPatch({ [key]: value }),
         });
         break;
-      case "string":
+      case "string": {
+        const mapping =
+          entry.name === "action"
+            ? mappingNames?.actionNames
+            : entry.name === "axis"
+              ? mappingNames?.axisNames
+              : undefined;
+        const current = pinDefaultAsString(entry.value);
+        if (mapping && mapping.length > 0) {
+          const options = mapping.includes(current)
+            ? mapping
+            : current
+              ? [...mapping, current]
+              : mapping;
+          rows.push({
+            kind: "enum",
+            id: entry.pinId,
+            label: entry.name,
+            value: current,
+            defaultValue: pinDefaultAsString(typeDefault),
+            options: options.map((name) => ({ value: name, label: name })),
+            onChange: (value) => onPatch({ [key]: value }),
+          });
+          break;
+        }
         rows.push({
           kind: "text",
           id: entry.pinId,
           label: entry.name,
-          value: pinDefaultAsString(entry.value),
+          value: current,
           defaultValue: pinDefaultAsString(typeDefault),
           onChange: (value) => onPatch({ [key]: value }),
         });
         break;
+      }
       case "vec2":
         rows.push({
           kind: "vector3",

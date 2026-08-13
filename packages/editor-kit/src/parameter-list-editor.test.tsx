@@ -59,18 +59,19 @@ describe("ParameterListEditor", () => {
     ]);
   });
 
-  it("edits enum values when the row type is enum", () => {
+  it("edits enum values as a named list", () => {
     const onChange = vi.fn();
     render(
       <ParameterListEditor rows={rows.slice(1)} onChange={onChange} />,
     );
-    fireEvent.change(screen.getByTestId("parameter-b-enum-values"), {
-      target: { value: "low, high" },
+    expect(screen.getByTestId("parameter-b-enum-values")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("parameter-b-enum-values-0-value"), {
+      target: { value: "low" },
     });
     expect(onChange).toHaveBeenCalledWith([
       expect.objectContaining({
         id: "b",
-        enumValues: ["low", "high"],
+        enumValues: ["low", "b"],
       }),
     ]);
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
-import { addClassMember } from "./class-members";
+import { addClassMember, memberNamePromptCopy } from "./class-members";
 
 function emptyGraph(): SerializedGraph {
   return { nodes: [], edges: [] };
@@ -61,5 +61,17 @@ describe("addClassMember", () => {
     });
     expect(graph.nodes[0]?.type).toBe("variables.get");
     expect(graph.nodes[0]?.data.name).toBe("Health");
+  });
+});
+
+describe("memberNamePromptCopy", () => {
+  it("returns Title Case titles and labels for each member kind", () => {
+    expect(memberNamePromptCopy("function")).toEqual({
+      title: "Add Function",
+      label: "Function Name",
+    });
+    expect(memberNamePromptCopy("variable").title).toBe("Add Variable");
+    expect(memberNamePromptCopy("event").label).toBe("Event Name");
+    expect(memberNamePromptCopy("interface").title).toBe("Add Interface");
   });
 });

@@ -3,6 +3,10 @@ import { useState } from "react";
 import {
   AssetPicker,
   CatalogDialog,
+  ClassPicker,
+  InputMappingEditor,
+  NamedListEditor,
+  NamePromptDialog,
   NumericDragField,
   PanelFrame,
   ParameterListEditor,
@@ -15,6 +19,7 @@ import {
   type PropertyRow,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
+import { createDefaultInputMappings } from "@babylonslate/input";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
@@ -66,6 +71,10 @@ function GalleryComposites() {
   const [selectedId, setSelectedId] = useState("player");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [classPickerOpen, setClassPickerOpen] = useState(false);
+  const [namePromptOpen, setNamePromptOpen] = useState(false);
+  const [layers, setLayers] = useState(["Default", "Foreground"]);
+  const [mappings, setMappings] = useState(createDefaultInputMappings);
   const [parameters, setParameters] = useState<ParameterRow[]>([
     { id: "gallery-amount", name: "amount", type: "float" },
   ]);
@@ -155,6 +164,27 @@ function GalleryComposites() {
         <Button variant="outline" onClick={() => setPickerOpen(true)}>
           Open asset picker
         </Button>
+        <Button variant="outline" onClick={() => setClassPickerOpen(true)}>
+          Open class picker
+        </Button>
+        <Button variant="outline" onClick={() => setNamePromptOpen(true)}>
+          Open name prompt
+        </Button>
+      </div>
+      <div className="rounded-lg border border-border p-3">
+        <NamedListEditor
+          title="Named List"
+          values={layers}
+          onChange={setLayers}
+          data-testid="gallery-named-list"
+        />
+      </div>
+      <div className="rounded-lg border border-border p-3">
+        <InputMappingEditor
+          value={mappings}
+          onChange={setMappings}
+          data-testid="gallery-input-mapping"
+        />
       </div>
       <SearchSheet
         open={searchOpen}
@@ -173,6 +203,24 @@ function GalleryComposites() {
         assets={[{ guid: "gallery-asset", name: "Rock", type: "Mesh" }]}
         onPick={() => {}}
         data-testid="gallery-asset-picker"
+      />
+      <ClassPicker
+        open={classPickerOpen}
+        onOpenChange={setClassPickerOpen}
+        classes={[
+          { id: "GameInstance", name: "Game Instance", group: "Engine" },
+          { id: "MyGame", name: "My Game", group: "Project" },
+        ]}
+        onPick={() => {}}
+        data-testid="gallery-class-picker"
+      />
+      <NamePromptDialog
+        open={namePromptOpen}
+        onOpenChange={setNamePromptOpen}
+        title="Add Function"
+        label="Function Name"
+        onSubmit={() => {}}
+        data-testid="gallery-name-prompt"
       />
     </div>
   );

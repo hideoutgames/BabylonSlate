@@ -182,7 +182,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | SpriteComponent uses a UV-baked quad; light/camera gizmos still later |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
-| Structured Input mappings editor (vs raw JSON) | later polish | Project Settings Input tab is a JSON textarea |
+| Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
 | Multi-select gizmo (transform all selected) | later polish | Outline covers all; gizmo attaches to first pickable |
 
 ## P7 slice ownership
@@ -243,7 +243,7 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 
 ### P9 Play-path residuals (do not rebuild P8/P9)
 
-Chrome polish (pin flash, JSON input textarea, multi-select gizmo, ADT HUD) stays parked. Play-path holes that would fail P10 acceptance are the hardening wave on `cursor/play-path-harden-8678`.
+Chrome polish (pin flash, multi-select gizmo, ADT HUD) stays parked. Play-path holes that would fail P10 acceptance are the hardening wave on `cursor/play-path-harden-8678`.
 
 | Item | Status |
 | --- | --- |
@@ -267,8 +267,9 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | B — UI Logic palette + Play compile + Class `flow.event.custom` | Done (`cursor/authoring-surface-8678`) |
 | C — Sprite Texture picker | Done (`cursor/authoring-surface-8678`) |
 | D — Shader `NodeMaterial.Parse` preview + shader/anim catalog pin hydration | Done (`cursor/authoring-surface-8678`) |
+| E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 
-Parked with this wave: pin flash, JSON input textarea, multi-select gizmo, ADT Play HUD, `WidgetComponent` `CreateForMesh`, per-function graphs, FunctionLibrary palette, anim blend/exit-time inspector, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
+Parked with this wave: pin flash, multi-select gizmo, ADT Play HUD, `WidgetComponent` `CreateForMesh`, per-function graphs, FunctionLibrary palette, anim blend/exit-time inspector, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
 
 ### P9 follow-ups / open deferrals
 

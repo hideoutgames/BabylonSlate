@@ -272,7 +272,7 @@ export function uniqueAssetTypes(assets: IndexedAsset[]): string[] {
 }
 
 export function classParentLookup(
-  assets: Array<{
+  assets: ReadonlyArray<{
     header: { type: string; name: string; parentClass?: string | null };
   }>,
 ): (id: string) => string | null {
