@@ -3,10 +3,9 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
-  DRAG_ARM_MS,
+  CONTEXT_MENU_MOVE_TOLERANCE_PX,
   resolveTypeVisual,
 } from "@babylonslate/editor-kit";
-import { ASSET_DRAG_MIME } from "../lib/content-browser-helpers";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 
 function dispatchPointerEvent(
@@ -61,40 +60,25 @@ function renderTile(
   const onOpen = vi.fn();
   const onSelect = vi.fn();
   const onLongPressMenu = vi.fn();
-  const onArmedDrag = vi.fn();
-  const onDropAsset = vi.fn();
-  const onDropPathChange = vi.fn();
   const item = asset();
   const utils = render(
-    <div>
-      <button type="button" data-folder-path="assets/fx" data-testid="drop-folder">
-        fx
-      </button>
-      <ContentBrowserAssetTile
-        asset={item}
-        selected={false}
-        thumbnailUrl={null}
-        typeVisual={resolveTypeVisual({ assetType: item.header.type })}
-        onOpen={onOpen}
-        onSelect={onSelect}
-        onLongPressMenu={onLongPressMenu}
-        onArmedDrag={onArmedDrag}
-        onDropAsset={onDropAsset}
-        onDropPathChange={onDropPathChange}
-        {...overrides}
-      />
-    </div>,
+    <ContentBrowserAssetTile
+      asset={item}
+      selected={false}
+      thumbnailUrl={null}
+      typeVisual={resolveTypeVisual({ assetType: item.header.type })}
+      onOpen={onOpen}
+      onSelect={onSelect}
+      onLongPressMenu={onLongPressMenu}
+      {...overrides}
+    />,
   );
   return {
     ...utils,
     onOpen,
     onSelect,
     onLongPressMenu,
-    onArmedDrag,
-    onDropAsset,
-    onDropPathChange,
     tile: screen.getByTestId("content-item-assets/hero.babasset"),
-    folder: screen.getByTestId("drop-folder"),
   };
 }
 
@@ -105,81 +89,49 @@ describe("ContentBrowserAssetTile", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not open the context menu while the pointer is still down", async () => {
+  it("opens the context menu after a stationary long press while the pointer is down", async () => {
     vi.useFakeTimers();
     const { tile, onLongPressMenu } = renderTile();
     dispatchPointerEvent(tile, "pointerdown", { clientX: 5, clientY: 5 });
     await act(async () => {
       vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS);
     });
-    expect(onLongPressMenu).not.toHaveBeenCalled();
+    expect(onLongPressMenu).toHaveBeenCalledWith(5, 5);
   });
 
-  it("opens the context menu on release after a stationary long press", async () => {
+  it("does not open the context menu when the pointer moves before the delay", async () => {
     vi.useFakeTimers();
-    const { tile, onLongPressMenu, onDropAsset } = renderTile();
+    const { tile, onLongPressMenu } = renderTile();
     dispatchPointerEvent(tile, "pointerdown", { clientX: 5, clientY: 5 });
     await act(async () => {
+      dispatchPointerEvent(tile, "pointermove", {
+        clientX: 5 + CONTEXT_MENU_MOVE_TOLERANCE_PX + 1,
+        clientY: 5,
+      });
       vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS);
     });
-    dispatchPointerEvent(tile, "pointerup", { clientX: 5, clientY: 5 });
-    expect(onLongPressMenu).toHaveBeenCalledWith(5, 5);
-    expect(onDropAsset).not.toHaveBeenCalled();
-  });
-
-  it("drops onto a folder after hold-then-drag", async () => {
-    vi.useFakeTimers();
-    const { tile, folder, onDropAsset, onLongPressMenu, onArmedDrag } =
-      renderTile();
-    Object.defineProperty(document, "elementFromPoint", {
-      configurable: true,
-      value: () => folder,
-    });
-
-    dispatchPointerEvent(tile, "pointerdown", { clientX: 80, clientY: 80 });
-    await act(async () => {
-      vi.advanceTimersByTime(DRAG_ARM_MS);
-    });
-    expect(onArmedDrag).toHaveBeenCalledWith("hero-1");
-    await act(async () => {
-      dispatchPointerEvent(tile, "pointermove", { clientX: 10, clientY: 10 });
-    });
-    dispatchPointerEvent(tile, "pointerup", { clientX: 10, clientY: 10 });
-    expect(onDropAsset).toHaveBeenCalledWith("hero-1", "assets/fx");
     expect(onLongPressMenu).not.toHaveBeenCalled();
   });
 
-  it("can drop an asset onto the assets root folder", async () => {
-    vi.useFakeTimers();
-    const root = document.createElement("button");
-    root.setAttribute("data-folder-path", "assets");
-    const { tile, onDropAsset } = renderTile();
-    Object.defineProperty(document, "elementFromPoint", {
-      configurable: true,
-      value: () => root,
+  it("opens the context menu on right-click", () => {
+    const { tile, onLongPressMenu, onSelect } = renderTile();
+    const notPrevented = fireEvent.contextMenu(tile, {
+      clientX: 12,
+      clientY: 18,
     });
-
-    dispatchPointerEvent(tile, "pointerdown", { clientX: 80, clientY: 80 });
-    await act(async () => {
-      vi.advanceTimersByTime(DRAG_ARM_MS);
-    });
-    await act(async () => {
-      dispatchPointerEvent(tile, "pointermove", { clientX: 4, clientY: 4 });
-    });
-    dispatchPointerEvent(tile, "pointerup", { clientX: 4, clientY: 4 });
-    expect(onDropAsset).toHaveBeenCalledWith("hero-1", "assets");
+    expect(notPrevented).toBe(false);
+    expect(onSelect).toHaveBeenCalled();
+    expect(onLongPressMenu).toHaveBeenCalledWith(12, 18);
   });
 
-  it("starts an HTML5 asset drag with the asset MIME payload", () => {
+  it("is not an HTML5 drag source", () => {
     const { tile } = renderTile();
+    expect(tile.getAttribute("draggable")).not.toBe("true");
     const setData = vi.fn();
     fireEvent.dragStart(tile, {
       dataTransfer: { setData, effectAllowed: "copyMove" },
     });
-    expect(setData).toHaveBeenCalledWith(
-      ASSET_DRAG_MIME,
-      expect.stringContaining("hero-1"),
-    );
+    expect(setData).not.toHaveBeenCalled();
   });
 
   it("renders a type-colored glyph when there is no thumbnail", () => {
