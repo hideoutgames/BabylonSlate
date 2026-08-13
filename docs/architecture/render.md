@@ -63,6 +63,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 | `editor-grid` | 3D XZ or 2D XY grid; tile spacing + subdivisions; `cameraBounds2D` overlay |
 | `selection-outline` | Highlight mesh(es) for selected actors |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
+| `scene-illumination` | Authored `PointLight` / `DirectionalLight` / `SpotLight` and cameras from `LightComponent` / `CameraComponent`. Editor keeps the orbit camera; Play uses the first authored camera. Default hemi dims when any authored light exists. Parked: direction from transform, Play color/intensity, `shadowquality` → one `ShadowGenerator`, IBL |
 | `editor-billboard` | Camera-facing unlit icon quads for Light / Camera / Audio actors so they stay pickable. Mesh / sprite / tilemap still win when present. Play does not `assignMesh` these; authored lights/cameras come from `scene-illumination`. |
 | `viewport-gestures` | 3D one-finger look, 2D one-finger pan 1:1 with the pointer (hold-then-move marquee), pinch zoom, three-finger pan (2D same 1:1 scale; 3D `panScale`); tap pick |
 | `viewport-fly-keys` | WASD fly/pan with rAF + continuous-render lease |
