@@ -6,6 +6,7 @@ import {
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
 import { Button } from "@babylonslate/ui/components/button";
+import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
 import { playJoystickAxesFromPointer } from "../lib/play-hud-joystick";
 
 export interface PlayHudOverlayProps {
@@ -47,9 +48,11 @@ export function PlayHudOverlay({
   onTouchAxis,
 }: PlayHudOverlayProps) {
   const pointerIdRef = useRef<number | null>(null);
+  const extras = useEngineUiDesignerPresets();
   const preset = useMemo(
-    () => devicePresetForViewport(Math.max(1, width), Math.max(1, height)),
-    [width, height],
+    () =>
+      devicePresetForViewport(Math.max(1, width), Math.max(1, height), extras),
+    [width, height, extras],
   );
   const resolveNested = useCallback(
     (guid: string) => uiLibrary[guid] ?? null,

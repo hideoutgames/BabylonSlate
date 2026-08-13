@@ -191,6 +191,7 @@ export function SettingsModal({
         viewportFrameCap: next.viewportFrameCap,
         theme: next.appearance.theme,
         graphDefaultZoom: next.graphDefaultZoom,
+        uiDesignerPresets: next.uiDesignerPresets,
       });
       await onEngineSaved?.();
     },

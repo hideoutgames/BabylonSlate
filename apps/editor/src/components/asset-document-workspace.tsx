@@ -21,13 +21,13 @@ import {
 } from "@babylonslate/ui/components/field";
 import {
   DESIRED_CANVAS_ID,
-  DEVICE_PRESETS,
   WIDGET_KINDS,
   createWidget,
   describeUiControls,
   designerViewport,
   glyphsFallingToFallback,
   layoutUserInterface,
+  mergeDevicePresets,
   nestedUiPickableGuids,
   type DesignerCanvasId,
   type WidgetKind,
@@ -53,6 +53,10 @@ import type { SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
+import {
+  resolveDesignerCanvasId,
+  useEngineUiDesignerPresets,
+} from "../lib/engine-ui-presets";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import {
   createDefaultLogicGraphSerialized,
@@ -119,6 +123,12 @@ function UiDesigner({
   const logic = (payload.logic ??
     createDefaultLogicGraphSerialized()) as SerializedGraph;
   const [presetId, setPresetId] = useState<DesignerCanvasId>("ipad-landscape");
+  const extras = useEngineUiDesignerPresets();
+  const devicePresets = mergeDevicePresets(extras);
+  useEffect(() => {
+    const next = resolveDesignerCanvasId(presetId, extras);
+    if (next !== presetId) setPresetId(next);
+  }, [presetId, extras]);
   const [selectedId, setSelectedId] = useState(ui.rootId);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [uiLibrary, setUiLibrary] = useState<PlayUiLibrary>({});
@@ -147,7 +157,7 @@ function UiDesigner({
     }
     return uiLibrary[guid] ?? null;
   };
-  const viewport = designerViewport(presetId, ui.desiredSize);
+  const viewport = designerViewport(presetId, ui.desiredSize, extras);
   const layout = layoutUserInterface(
     ui,
     { width: viewport.width, height: viewport.height },
@@ -281,7 +291,7 @@ function UiDesigner({
             <SelectItem value={DESIRED_CANVAS_ID} data-testid="ui-preset-desired">
               Desired
             </SelectItem>
-            {DEVICE_PRESETS.map((row) => (
+            {devicePresets.map((row) => (
               <SelectItem
                 key={row.id}
                 value={row.id}

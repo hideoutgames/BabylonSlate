@@ -10,7 +10,7 @@ Shared surface for the widget tree, anchoring/layout, font-stack compilation, an
 
 UI mutations travel on the **command channel** ([bridge.md](bridge.md)), not the snapshot. The game worker drives widget properties; the main thread measures text, resolves layout, and applies an injectable GUI host. Worker code never calls `document.fonts`.
 
-v1 Play hosts a **DOM overlay** (`PlayHudOverlay`) so FontFace loads and joystick hit-testing stay on the main thread without mixing React into `@babylonslate/render`. Layout uses `devicePresetForViewport` so iPad Playwright sizes get the matching safe-area insets. The overlay starts **empty**: Play and the exported game do **not** auto-apply a UserInterface. A class graph must call **Apply User Interface** (`ui.applyToViewport`) with an asset guid; the node returns an instance ref. **Remove User Interface** (`ui.removeFromViewport`) takes that ref. The worker emits `uiApply` / `uiRemove`; the host looks up documents from a Play UI library (every UserInterface asset, open documents first). `applyUiControls` still takes an injectable `UiApplyHost` (recorder in tests; Babylon `AdvancedDynamicTexture` remains the long-term mesh/HUD apply target).
+v1 Play hosts a **DOM overlay** (`PlayHudOverlay`) so FontFace loads and joystick hit-testing stay on the main thread without mixing React into `@babylonslate/render`. Layout uses `devicePresetForViewport` with the merged preset list (built-ins plus Engine Settings custom) so iPad Playwright sizes and matching custom canvases get the right safe-area insets. The overlay starts **empty**: Play and the exported game do **not** auto-apply a UserInterface. A class graph must call **Apply User Interface** (`ui.applyToViewport`) with an asset guid; the node returns an instance ref. **Remove User Interface** (`ui.removeFromViewport`) takes that ref. The worker emits `uiApply` / `uiRemove`; the host looks up documents from a Play UI library (every UserInterface asset, open documents first). `applyUiControls` still takes an injectable `UiApplyHost` (recorder in tests; Babylon `AdvancedDynamicTexture` remains the long-term mesh/HUD apply target).
 
 ## Layout (pure function)
 
@@ -27,7 +27,7 @@ top    = parent.y + parent.h * anchorMax.y + offsetMax.y
 - `pivot` is separate from anchors (rotation / alignment origin inside the computed rect).
 - Safe-area insets are a first-class parent rect, not a widget flag.
 - Design resolution + scale rule: `fitWidth` | `fitHeight` | `shortestSide`.
-- Device presets (`ipad-landscape`, `ipad-portrait`, `desktop-16-9`) plus designer **Desired** (`desired` canvas id) are data consumed by the designer; Play overlay layout uses `devicePresetForViewport`.
+- Device presets: built-ins (`ipad-landscape`, `ipad-portrait`, `desktop-16-9`) plus designer **Desired** (`desired` canvas id). Custom sizes live in Engine Settings `uiDesignerPresets` and merge after the built-ins (`mergeDevicePresets`); reserved ids (`desired` and built-in ids) cannot be overridden. The designer dropdown and Play overlay (`devicePresetForViewport`) both consume the merged list so a custom 390×844 row can supply matching safe-area insets.
 
 Babylon GUI is top-left: `guiY = parentHeight - rect.y - rect.height`. Layout goldens stay in engine space; the apply step converts.
 
@@ -46,7 +46,7 @@ Placement:
 
 ## Designer
 
-Dedicated document workspace (not a Dockview Windows menu): **Design** tab (canvas, widget hierarchy `TreeView`, Details `PropertyGrid`, device-preset selector including **Desired**) + **Logic** tab (`GraphEditor` from `graph-ui`, same host as script graphs). Undo via `@babylonslate/edit`. Compose from [components.md](components.md) (`PanelFrame`, `Tabs`, `TreeView`, `PropertyGrid`, `NumberField`, `AssetPicker`).
+Dedicated document workspace (not a Dockview Windows menu): **Design** tab (canvas, widget hierarchy `TreeView`, Details `PropertyGrid`, device-preset selector: **Desired**, built-ins, then Engine Settings custom labels) + **Logic** tab (`GraphEditor` from `graph-ui`, same host as script graphs). Built-in canvases are read-only. If the selected custom id is deleted, the designer falls back to `ipad-landscape`. Undo via `@babylonslate/edit`. Compose from [components.md](components.md) (`PanelFrame`, `Tabs`, `TreeView`, `PropertyGrid`, `NumberField`, `AssetPicker`).
 
 - **Desired size** (`desiredSize`, default `{ width: 400, height: 300 }` on a blank UI; Play HUD template copies `designResolution`) is the authoring canvas for reusable elements. The Desired preset uses that size with zero safe-area insets. Nested layout treats the nested asset’s `desiredSize` as its design resolution inside the host slot.
 - **Nested UserInterface** is a widget kind. The Details asset picker lists other UserInterface assets and omits the document under edit and any guid that would close a cycle.

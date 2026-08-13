@@ -22,7 +22,7 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Dialog** (`DialogTitle`, `DialogHeader`, `DialogContent`, …) | Centered modal. Title required. | Global search, Play prepare, Content Browser rename/move, CatalogDialog shell. |
 | **DropdownMenu** (`DropdownMenuTrigger`, `DropdownMenuItem`, `DropdownMenuGroup`, …) | Anchored menu. `DropdownMenuLabel` must sit in a `DropdownMenuGroup`. Chrome menus use `modal={false}` so they do not cover the viewport. | Windows, Debug, Settings, Add, Content Browser item menus. |
 | **Empty** (`EmptyHeader`, `EmptyTitle`, `EmptyDescription`, `EmptyContent`, `EmptyMedia`) | Empty-state layout. | Homepage with no projects; global search with no hits; gallery. |
-| **Field** (`FieldGroup`, `FieldLabel`, `FieldSet`, `FieldLegend`, `FieldDescription`, `FieldError`, `FieldContent`, `FieldTitle`) | Form row layout. Uses **Label** internally — do not invent a parallel label. | Engine / Project Settings, Homepage create, Content Browser forms, PropertyGrid, UserInterface desired size. |
+| **Field** (`FieldGroup`, `FieldLabel`, `FieldSet`, `FieldLegend`, `FieldDescription`, `FieldError`, `FieldContent`, `FieldTitle`) | Form row layout. Uses **Label** internally — do not invent a parallel label. | Engine / Project Settings (including User Interface custom canvas presets), Homepage create, Content Browser forms, PropertyGrid, UserInterface desired size. |
 | **Input** | Single-line text. | Names, search fields, settings strings. |
 | **Label** | Accessible control caption. | Not imported by app code; Field wraps it. |
 | **Progress** (`ProgressTrack`, `ProgressIndicator`, `ProgressLabel`, `ProgressValue`) | Determinate progress. | Content Browser encode / import. |
@@ -49,7 +49,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print), UserInterface widget details (including nested UI asset). |
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; gallery. |
-| **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields; Project Settings via CatalogDialog; UserInterface desired width/height. |
+| **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings via CatalogDialog; UserInterface desired width/height. |
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search, Content Browser, Content Browser Move dialog. |
 | **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; gallery. Add Component / Place Actors use CatalogDialog instead. |
 | **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks; UserInterface nested-UI picker (self and cycle partners excluded). |
