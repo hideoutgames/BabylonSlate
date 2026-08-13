@@ -805,6 +805,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               ...current.settings.twoD,
               ...settings.twoD,
             },
+            playPreview: {
+              ...current.settings.playPreview,
+              ...settings.playPreview,
+            },
             input: settings.input
               ? settings.input
               : current.settings.input,

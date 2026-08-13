@@ -58,6 +58,15 @@ export interface ProjectInputSettings {
   }>;
 }
 
+export interface PlayPreviewProjectSettings {
+  /** When true, Play overlay fills the window (current behavior). */
+  followSystem: boolean;
+  /** Used when followSystem is false. Width of the letterboxed game view. */
+  aspectWidth: number;
+  /** Used when followSystem is false. Height of the letterboxed game view. */
+  aspectHeight: number;
+}
+
 export interface ProjectSettings {
   touchMinTargetPx: number;
   /** Play/Preview render cap in fps. Editor viewports use Engine Settings. */
@@ -66,6 +75,8 @@ export interface ProjectSettings {
   compileOnSave: boolean;
   /** Idle interval before dirty documents are written. */
   autoSaveIntervalMs: number;
+  /** Play overlay letterbox; Preview-only, does not affect export. */
+  playPreview: PlayPreviewProjectSettings;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
   input: ProjectInputSettings;
@@ -111,6 +122,15 @@ export interface SerializedGraph {
 
 export const DEFAULT_PLAY_FRAME_CAP = 60;
 export const DEFAULT_AUTO_SAVE_INTERVAL_MS = 120_000;
+export const DEFAULT_PLAY_PREVIEW_ASPECT_WIDTH = 16;
+export const DEFAULT_PLAY_PREVIEW_ASPECT_HEIGHT = 9;
+
+export const DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS: PlayPreviewProjectSettings =
+  {
+    followSystem: true,
+    aspectWidth: DEFAULT_PLAY_PREVIEW_ASPECT_WIDTH,
+    aspectHeight: DEFAULT_PLAY_PREVIEW_ASPECT_HEIGHT,
+  };
 
 export const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
   maxTextureDimension: 2048,
@@ -191,6 +211,26 @@ export const DEFAULT_PROJECT_INPUT_SETTINGS: ProjectInputSettings = {
   ],
 };
 
+function normalizePositiveAspect(value: unknown, fallback: number): number {
+  return typeof value === "number" && value > 0 ? value : fallback;
+}
+
+function normalizePlayPreview(
+  value: Partial<PlayPreviewProjectSettings> | undefined,
+): PlayPreviewProjectSettings {
+  return {
+    followSystem: value?.followSystem !== false,
+    aspectWidth: normalizePositiveAspect(
+      value?.aspectWidth,
+      DEFAULT_PLAY_PREVIEW_ASPECT_WIDTH,
+    ),
+    aspectHeight: normalizePositiveAspect(
+      value?.aspectHeight,
+      DEFAULT_PLAY_PREVIEW_ASPECT_HEIGHT,
+    ),
+  };
+}
+
 function normalizeProjectInput(value: unknown): ProjectInputSettings {
   const source = (value ?? {}) as Record<string, unknown>;
   const hasActions = Array.isArray(source.actions) && source.actions.length > 0;
@@ -223,6 +263,7 @@ export function normalizeProjectSettings(
       settings.autoSaveIntervalMs > 0
         ? settings.autoSaveIntervalMs
         : DEFAULT_AUTO_SAVE_INTERVAL_MS,
+    playPreview: normalizePlayPreview(settings?.playPreview),
     twoD: {
       pixelsPerUnit:
         typeof twoD?.pixelsPerUnit === "number" && twoD.pixelsPerUnit > 0

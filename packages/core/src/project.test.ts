@@ -35,6 +35,11 @@ describe("project schema", () => {
     expect(confirmPad).toBe("0:1");
     expect(jumpPad).not.toBe(confirmPad);
     expect(project.settings.playFrameCap).toBe(60);
+    expect(project.settings.playPreview).toEqual({
+      followSystem: true,
+      aspectWidth: 16,
+      aspectHeight: 9,
+    });
   });
 
   it("creates default scene and graph structures", () => {
@@ -79,6 +84,49 @@ describe("project schema", () => {
     expect(normalizeProjectSettings({}).playFrameCap).toBe(60);
     expect(normalizeProjectSettings({ playFrameCap: 0 }).playFrameCap).toBe(60);
     expect(normalizeProjectSettings({ playFrameCap: 30 }).playFrameCap).toBe(30);
+  });
+
+  it("defaults playPreview to follow-system 16:9 and keeps a positive override", () => {
+    expect(normalizeProjectSettings(undefined).playPreview).toEqual({
+      followSystem: true,
+      aspectWidth: 16,
+      aspectHeight: 9,
+    });
+    expect(normalizeProjectSettings({}).playPreview.followSystem).toBe(true);
+    expect(
+      normalizeProjectSettings({
+        playPreview: { followSystem: false, aspectWidth: 0, aspectHeight: 0 },
+      }).playPreview,
+    ).toEqual({
+      followSystem: false,
+      aspectWidth: 16,
+      aspectHeight: 9,
+    });
+    expect(
+      normalizeProjectSettings({
+        playPreview: { followSystem: false, aspectWidth: 21, aspectHeight: 9 },
+      }).playPreview,
+    ).toEqual({
+      followSystem: false,
+      aspectWidth: 21,
+      aspectHeight: 9,
+    });
+  });
+
+  it("preserves aspect when a followSystem-only patch is merged", () => {
+    const current = normalizeProjectSettings({
+      playPreview: { followSystem: true, aspectWidth: 4, aspectHeight: 3 },
+    });
+    expect(
+      normalizeProjectSettings({
+        ...current,
+        playPreview: { ...current.playPreview, followSystem: false },
+      }).playPreview,
+    ).toEqual({
+      followSystem: false,
+      aspectWidth: 4,
+      aspectHeight: 3,
+    });
   });
 
   it("defaults compile on save and a two-minute autosave interval", () => {
