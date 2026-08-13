@@ -111,6 +111,33 @@ function dispatchPointer(
   target.dispatchEvent(event);
 }
 
+function dispatchBubbling(
+  target: Element,
+  type: "touchmove" | "mousemove",
+  clientX: number,
+  clientY: number,
+): Event {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX,
+    clientY,
+  });
+  target.dispatchEvent(event);
+  return event;
+}
+
+function mountEmptyPane(): { wrapper: HTMLDivElement; pane: HTMLDivElement } {
+  const wrapper = document.createElement("div");
+  const pane = document.createElement("div");
+  pane.className = "react-flow__pane";
+  wrapper.appendChild(pane);
+  document.body.appendChild(wrapper);
+  wrapper.getBoundingClientRect = () =>
+    ({ left: 0, top: 0, right: 400, bottom: 400, width: 400, height: 400 }) as DOMRect;
+  return { wrapper, pane };
+}
+
 describe("attachGraphPaneMarquee", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -167,6 +194,65 @@ describe("attachGraphPaneMarquee", () => {
     dispatchPointer(pane, "pointermove", 140, 110);
     vi.advanceTimersByTime(DRAG_ARM_MS);
     expect(rects.filter((rect) => rect !== null)).toEqual([]);
+    handle.dispose();
+  });
+
+  it("lets pane touchmove through before the hold arms so one-finger pan still works", () => {
+    const { wrapper, pane } = mountEmptyPane();
+    const paneTouch = vi.fn();
+    pane.addEventListener("touchmove", paneTouch);
+    const handle = attachGraphPaneMarquee(wrapper, {
+      onMarqueeRect: () => {},
+      onMarqueeEnd: () => {},
+    });
+
+    vi.useFakeTimers();
+    dispatchPointer(pane, "pointerdown", 20, 20);
+    const event = dispatchBubbling(pane, "touchmove", 140, 110);
+
+    expect(paneTouch).toHaveBeenCalledOnce();
+    expect(event.defaultPrevented).toBe(false);
+    handle.dispose();
+  });
+
+  it("stops pane touchmove and mousemove after a stationary hold so React Flow cannot pan", () => {
+    const { wrapper, pane } = mountEmptyPane();
+    const paneMoves = vi.fn();
+    pane.addEventListener("touchmove", paneMoves);
+    pane.addEventListener("mousemove", paneMoves);
+    const handle = attachGraphPaneMarquee(wrapper, {
+      onMarqueeRect: () => {},
+      onMarqueeEnd: () => {},
+    });
+
+    vi.useFakeTimers();
+    dispatchPointer(pane, "pointerdown", 20, 20);
+    vi.advanceTimersByTime(DRAG_ARM_MS);
+    const touch = dispatchBubbling(pane, "touchmove", 140, 110);
+    const mouse = dispatchBubbling(pane, "mousemove", 140, 110);
+
+    expect(paneMoves).not.toHaveBeenCalled();
+    expect(touch.defaultPrevented).toBe(true);
+    expect(mouse.defaultPrevented).toBe(true);
+    handle.dispose();
+  });
+
+  it("notifies when the hold arms and when the gesture ends", () => {
+    const { wrapper, pane } = mountEmptyPane();
+    const armed: boolean[] = [];
+    const handle = attachGraphPaneMarquee(wrapper, {
+      onMarqueeRect: () => {},
+      onMarqueeEnd: () => {},
+      onArmedChange: (next) => armed.push(next),
+    });
+
+    vi.useFakeTimers();
+    dispatchPointer(pane, "pointerdown", 20, 20);
+    expect(armed).toEqual([]);
+    vi.advanceTimersByTime(DRAG_ARM_MS);
+    expect(armed).toEqual([true]);
+    dispatchPointer(pane, "pointerup", 20, 20);
+    expect(armed).toEqual([true, false]);
     handle.dispose();
   });
 });

@@ -215,6 +215,7 @@ function GraphEditorCanvas({
     width: number;
     height: number;
   } | null>(null);
+  const [marqueeArmed, setMarqueeArmed] = useState(false);
   const [hasClipboard, setHasClipboard] = useState(false);
   const clipboardRef = useRef<{ nodes: CanvasNode[]; edges: Edge[] } | null>(
     null,
@@ -659,6 +660,7 @@ function GraphEditorCanvas({
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const handle = attachGraphPaneMarquee(wrapper, {
+      onArmedChange: setMarqueeArmed,
       onMarqueeRect: setMarqueeScreen,
       onMarqueeEnd: (startClient, endClient) => {
         skipPaneClickRef.current = true;
@@ -816,7 +818,7 @@ function GraphEditorCanvas({
           onConnectEnd={handleConnectEnd}
           isValidConnection={isValidConnection}
           onPaneClick={handlePaneClick}
-          panOnDrag
+          panOnDrag={!marqueeArmed}
           connectionLineStyle={connectionLineStyle}
           connectionLineComponent={GraphConnectionLine}
           defaultEdgeOptions={{ type: "default" }}

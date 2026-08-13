@@ -119,7 +119,8 @@ function isEmptyPaneTarget(target: EventTarget | null): boolean {
 
 /**
  * Hold empty pane ~250ms then move to marquee. Immediate move pans (React Flow).
- * Listens on window capture so XYFlow cannot swallow the gesture.
+ * Once armed, window-capture mouse/touch/pointer moves are swallowed so d3-zoom
+ * cannot pan under the overlay. XYFlow `selectionOnDrag` is not used.
  */
 export function attachGraphPaneMarquee(
   wrapper: HTMLElement,
@@ -129,6 +130,7 @@ export function attachGraphPaneMarquee(
       startClient: { x: number; y: number },
       endClient: { x: number; y: number },
     ) => void;
+    onArmedChange?: (armed: boolean) => void;
   },
 ): GraphMarqueeGestureHandle {
   let gesture: {
@@ -138,12 +140,24 @@ export function attachGraphPaneMarquee(
     startTime: number;
     armed: boolean;
     moved: boolean;
+    captured: boolean;
   } | null = null;
 
   const clearGesture = () => {
     if (gesture?.timer) clearTimeout(gesture.timer);
+    if (gesture?.armed) options.onArmedChange?.(false);
     gesture = null;
     options.onMarqueeRect(null);
+  };
+
+  const captureIfArmed = () => {
+    if (!gesture?.armed || gesture.captured) return;
+    try {
+      wrapper.setPointerCapture?.(gesture.pointerId);
+      gesture.captured = true;
+    } catch {
+      // jsdom may not implement setPointerCapture.
+    }
   };
 
   const onDown = (event: Event) => {
@@ -159,21 +173,25 @@ export function attachGraphPaneMarquee(
       startTime: Date.now(),
       armed: false,
       moved: false,
+      captured: false,
     };
     next.timer = setTimeout(() => {
       if (!gesture || gesture.moved) return;
       gesture.armed = true;
-      try {
-        wrapper.setPointerCapture?.(gesture.pointerId);
-      } catch {
-        // jsdom may not implement setPointerCapture.
-      }
+      options.onArmedChange?.(true);
     }, DRAG_ARM_MS);
     gesture = next;
   };
 
   const onMove = (event: Event) => {
-    if (!gesture || pointerIdOf(event) !== gesture.pointerId) return;
+    if (!gesture) return;
+    if (
+      event.type === "pointermove" &&
+      pointerIdOf(event) !== gesture.pointerId
+    ) {
+      return;
+    }
+    captureIfArmed();
     const point = clientOf(event);
     if (pointerMovedPastTolerance(gesture.startClient, point)) {
       gesture.moved = true;
@@ -190,8 +208,11 @@ export function attachGraphPaneMarquee(
       }
       return;
     }
+    if (gesture.armed) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
     if (phase !== "marquee") return;
-    event.stopPropagation();
     const box = wrapper.getBoundingClientRect();
     options.onMarqueeRect({
       x: Math.min(gesture.startClient.x, point.x) - box.left,
@@ -214,7 +235,8 @@ export function attachGraphPaneMarquee(
     });
     const start = gesture.startClient;
     if (phase === "marquee") {
-      event.stopPropagation();
+      event.preventDefault();
+      event.stopImmediatePropagation();
       options.onMarqueeEnd(start, point);
     }
     try {
@@ -227,14 +249,22 @@ export function attachGraphPaneMarquee(
     clearGesture();
   };
 
+  const touchMoveOptions: AddEventListenerOptions = {
+    capture: true,
+    passive: false,
+  };
   window.addEventListener("pointerdown", onDown, true);
   window.addEventListener("pointermove", onMove, true);
+  window.addEventListener("mousemove", onMove, true);
+  window.addEventListener("touchmove", onMove, touchMoveOptions);
   window.addEventListener("pointerup", onUp, true);
   window.addEventListener("pointercancel", onUp, true);
   return {
     dispose: () => {
       window.removeEventListener("pointerdown", onDown, true);
       window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("mousemove", onMove, true);
+      window.removeEventListener("touchmove", onMove, true);
       window.removeEventListener("pointerup", onUp, true);
       window.removeEventListener("pointercancel", onUp, true);
       if (gesture?.timer) clearTimeout(gesture.timer);

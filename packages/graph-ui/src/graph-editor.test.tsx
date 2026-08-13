@@ -589,6 +589,54 @@ describe("GraphEditor", () => {
     expect(getByTestId("graph-marquee")).toBeTruthy();
   });
 
+  it("selects nodes inside a hold-then-drag marquee", () => {
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    vi.useFakeTimers();
+    act(() => {
+      dispatchPointerEvent(pane!, "pointerdown", { clientX: 20, clientY: 20 });
+      vi.advanceTimersByTime(DRAG_ARM_MS);
+    });
+    act(() => {
+      dispatchPointerEvent(pane!, "pointermove", { clientX: 140, clientY: 110 });
+      dispatchPointerEvent(pane!, "pointerup", { clientX: 140, clientY: 110 });
+    });
+    expect(onSelectionChange).toHaveBeenCalledWith(["log-a"]);
+  });
+
+  it("does not deliver pane touchmove after the marquee hold arms", () => {
+    const { container } = render(
+      <GraphEditor initialGraph={graphWithPins()} />,
+    );
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    const paneTouch = vi.fn();
+    pane!.addEventListener("touchmove", paneTouch);
+    vi.useFakeTimers();
+    act(() => {
+      dispatchPointerEvent(pane!, "pointerdown", { clientX: 20, clientY: 20 });
+      vi.advanceTimersByTime(DRAG_ARM_MS);
+    });
+    act(() => {
+      pane!.dispatchEvent(
+        new MouseEvent("touchmove", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 140,
+          clientY: 110,
+        }),
+      );
+    });
+    expect(paneTouch).not.toHaveBeenCalled();
+  });
+
   it("titles event nodes Event … when data.title is missing", () => {
     const { getByText } = render(
       <GraphEditor
