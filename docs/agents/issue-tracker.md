@@ -61,8 +61,9 @@ Operating model (engineplan §16.1):
 
 When a parent agent launches Task / subagents and chooses a model:
 
-- Prefer **Composer 2.5**. **Composer 2.5 Fast** (`composer-2.5-fast`) is an acceptable default.
-- Soft preference only — do not hard-require an explicit Composer model on every Task call. Omitting `model` (inherit parent) is fine.
+- Prefer **Composer 2.5** (`composer-2.5`) or **Grok 4.6** at any effort level (e.g. high / extra-high). These are equal preferred options.
+- Do **not** use Fast variants: `composer-2.5-fast`, `cursor-grok-4.6-high-fast`, or any other `*-fast` slug for these families.
+- Soft preference only — do not hard-require an explicit model on every Task call. Omitting `model` (inherit parent) is fine.
 - Honor an explicit user or task request for another model.
 - See [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (Subagent models).
 
