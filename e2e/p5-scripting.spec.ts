@@ -1,6 +1,35 @@
 import { expect, test } from "@playwright/test";
 import { openTestProject } from "./open-test-project";
 
+async function injectGamepad(
+  page: { evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown> },
+  pad: { axes: number[]; buttons?: number[] } | null,
+): Promise<void> {
+  await page.evaluate((next) => {
+    (
+      globalThis as {
+        __babylonslateTest: {
+          injectTestGamepad: (
+            pad: {
+              index?: number;
+              axes?: number[];
+              buttons?: number[];
+            } | null,
+          ) => void;
+        };
+      }
+    ).__babylonslateTest.injectTestGamepad(
+      next
+        ? {
+            index: 0,
+            axes: (next as { axes: number[] }).axes,
+            buttons: (next as { buttons?: number[] }).buttons ?? [0, 0, 0, 0],
+          }
+        : null,
+    );
+  }, pad);
+}
+
 /**
  * Event Tick → Print("P5 script running"), keyed so repeated ticks replace the
  * on-screen entry instead of appending.
@@ -67,6 +96,104 @@ test.describe("P5 visual scripting acceptance", () => {
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  });
+
+  test("Play without a scene tab loads the startup scene", async ({ page }) => {
+    await openTestProject(page);
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect
+      .poll(async () => {
+        return page.getByTestId("play-actor-guids").getAttribute("data-guids");
+      })
+      .toContain("actor-1");
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("GetAxis2D Move from a compiled graph prints the stick in Play", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+
+    const installed = await page.evaluate(async (graph) => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: {
+          setMainGraphContent: (g: unknown) => Promise<boolean>;
+        };
+      };
+      if (!host.__babylonslateTest) return false;
+      return host.__babylonslateTest.setMainGraphContent(graph);
+    }, {
+      nodes: [
+        {
+          id: "tick",
+          type: "flow.event.tick",
+          position: { x: 40, y: 80 },
+          data: {},
+        },
+        {
+          id: "axis",
+          type: "input.getAxis2D",
+          position: { x: 40, y: 200 },
+          data: { axis: "Move" },
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 320, y: 80 },
+          data: {
+            key: "axis",
+            duration: 30,
+            color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "tick",
+          target: "print",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+        {
+          id: "e2",
+          source: "axis",
+          target: "print",
+          sourceHandle: "out",
+          targetHandle: "value",
+        },
+      ],
+    });
+    expect(installed).toBe(true);
+
+    await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect(page.getByTestId("print-overlay")).toContainText("0.8", {
+      timeout: 15_000,
+    });
+    await page.getByTestId("play-overlay-close").click();
+    await injectGamepad(page, null);
+  });
+
+  test("the node palette can add Get Axis 2D on the Class graph", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .dblclick();
+    const graph = page.getByTestId("graph-panel");
+    await expect(graph).toBeVisible();
+    const nodes = graph.locator(".react-flow__node");
+    await expect(nodes).toHaveCount(2);
+
+    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+    await expect(page.getByTestId("node-palette")).toBeVisible();
+    await page.getByTestId("node-palette-search").fill("Get Axis 2D");
+    await page.getByTestId("node-palette-item-input.getAxis2D").click();
+    await expect(nodes).toHaveCount(3);
   });
 
   test("a type mismatch blocks Preview and tap-to-navigate focuses the node", async ({

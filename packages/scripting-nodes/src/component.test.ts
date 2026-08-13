@@ -1,10 +1,82 @@
 import { describe, expect, it } from "vitest";
-import { componentNodes } from "./component";
+import {
+  compileGraph,
+  type GraphNode,
+  type LogicGraph,
+  type NodeRegistry,
+} from "@babylonslate/scripting";
+import { componentNodes, createDefaultNodeRegistry } from "./index";
+
+function node(
+  registry: NodeRegistry,
+  id: string,
+  typeId: string,
+  properties: Record<string, unknown> = {},
+): GraphNode {
+  const def = registry.get(typeId);
+  if (!def) throw new Error(`missing node ${typeId}`);
+  return {
+    id,
+    typeId,
+    position: { x: 0, y: 0 },
+    pins: def.pins(properties),
+    properties,
+  };
+}
+
+function loadModule(source: string): Record<string, unknown> {
+  const body = source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+  return new Function(`${body}\nreturn { onBeginPlay };`)() as Record<
+    string,
+    unknown
+  >;
+}
 
 describe("component nodes", () => {
-  it("exports at least one node definition", () => {
-    expect(componentNodes.length).toBeGreaterThan(0);
-    expect(componentNodes[0]?.id).toBeTruthy();
-    expect(componentNodes[0]?.category).toBeTruthy();
+  it("registers Add Component", () => {
+    expect(componentNodes.map((n) => n.id)).toContain("component.add");
+  });
+
+  it("compiled Add Component calls ctx.addComponent", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "add", "component.add", { classId: "MeshComponent" }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "add",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "self",
+          sourcePinId: "out",
+          targetNodeId: "add",
+          targetPinId: "actor",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain("ctx.addComponent");
+    const self = { classId: "Holder" };
+    const added: string[] = [];
+    const mod = loadModule(compiled.source);
+    (mod.onBeginPlay as (ctx: unknown) => void)({
+      self,
+      addComponent: (actor: unknown, classId: string) => {
+        expect(actor).toBe(self);
+        added.push(classId);
+        return { classId };
+      },
+    });
+    expect(added).toEqual(["MeshComponent"]);
   });
 });

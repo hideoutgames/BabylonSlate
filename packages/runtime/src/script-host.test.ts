@@ -666,6 +666,75 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("LineTrace from a compiled graph returns a hit on the same tick", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "trace", "physics.lineTrace", {
+          start: { x: 0, y: 10, z: 0 },
+          end: { x: 0, y: -1, z: 0 },
+        }),
+        node(registry, "print", "debug.print", {
+          key: "hit",
+          duration: 1,
+        }),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "trace", "execIn"),
+        edge("e2", "trace", "execOut", "print", "execIn"),
+        edge("e3", "trace", "hit", "print", "value"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 11,
+      maxActors: 8,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    const world = runtime.getWorld();
+    const ground = world.createActor({
+      classId: "Actor",
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    ground.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        variables: { motionType: "static", mass: 0, gravityScale: 0 },
+      }),
+    );
+    ground.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        variables: {
+          shape: { kind: "box", halfExtents: { x: 5, y: 0.5, z: 5 } },
+        },
+      }),
+    );
+    world.spawnActorNow(ground);
+    await runtime.loadScripts([
+      toScript(graph, registry, "Tracer", "tracer-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Tracer" });
+    runtime.start();
+    runtime.tick();
+    runtime.tick();
+    const prints = commands.filter((c) => c.type === "print");
+    expect(
+      prints.some((c) => String((c as { message: string }).message) === "true"),
+    ).toBe(true);
+    runtime.stop();
+  });
+
   it("runs GameInstance subclass Begin Play when gameInstanceClass is set", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
