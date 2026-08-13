@@ -33,7 +33,7 @@ export type ScriptBundleEntry = {
   anchors: ScriptAnchorPayload[];
   entryPoints: Array<{
     name: string;
-    event?: "onBeginPlay" | "onTick" | "onCommandRun";
+    event?: string;
     isAsync: boolean;
   }>;
   /** Present when the graph is a BDebugCommand OnCommandRun handler. */

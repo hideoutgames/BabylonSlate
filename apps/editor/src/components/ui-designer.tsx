@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
 import {
   AssetPicker,
   PanelFrame,
@@ -42,7 +42,7 @@ import {
   type WidgetLayout,
 } from "@babylonslate/ui-runtime";
 import { GraphEditor } from "@babylonslate/graph-ui";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import {
@@ -52,7 +52,14 @@ import {
 import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
+  scriptPaletteNodes,
 } from "../services/graph-validation";
+import { addClassMember } from "../lib/class-members";
+import {
+  BLUEPRINT_SECTIONS,
+  blueprintTreeNodes,
+  membersForGraph,
+} from "../panels/my-class-panel";
 import {
   applyWidgetDragOffset,
   canvasDeltaToLayoutDelta,
@@ -78,6 +85,42 @@ export function UiDesigner({
   const ui = asUiDocument(payload);
   const logic = (payload.logic ??
     createDefaultLogicGraphSerialized()) as SerializedGraph;
+  const paletteNodes = useMemo(() => scriptPaletteNodes(), []);
+  const [memberCollapsed, setMemberCollapsed] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const logicMembers = useMemo(() => membersForGraph(logic), [logic]);
+  const memberTree = useMemo(() => {
+    return blueprintTreeNodes(logicMembers, memberCollapsed).map((row) => {
+      if (!row.id.startsWith("section-")) return row;
+      const sectionId = row.id.replace(/^section-/, "");
+      const section = BLUEPRINT_SECTIONS.find((entry) => entry.id === sectionId);
+      if (!section) return row;
+      return {
+        ...row,
+        trailing: (
+          <button
+            type="button"
+            className="flex size-7 items-center justify-center rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label={`Add ${section.label.slice(0, -1).toLowerCase()}`}
+            data-testid={`class-add-${section.id}`}
+            onPointerDown={stopRowGesture}
+            onClick={(event) => {
+              stopRowGesture(event);
+              const name = promptMemberName(section.kind);
+              if (!name) return;
+              onChange({
+                ...payload,
+                logic: addClassMember(logic, section.kind, name),
+              });
+            }}
+          >
+            +
+          </button>
+        ),
+      };
+    });
+  }, [logic, logicMembers, memberCollapsed, onChange, payload]);
   const [presetId, setPresetId] = useState<DesignerCanvasId>("ipad-landscape");
   const extras = useEngineUiDesignerPresets();
   const devicePresets = mergeDevicePresets(extras);
@@ -612,9 +655,36 @@ export function UiDesigner({
         </PanelFrame>
       </TabsContent>
       <TabsContent value="logic" className="flex min-h-0 flex-1">
+        <PanelFrame className="w-56 shrink-0 border-r border-border">
+          <div data-testid="ui-logic-members">
+            <TreeView
+              nodes={memberTree}
+              onToggleExpanded={(id) => {
+                const sectionId = id.replace(/^section-/, "");
+                setMemberCollapsed((current) => {
+                  const next = new Set(current);
+                  if (next.has(sectionId)) next.delete(sectionId);
+                  else next.add(sectionId);
+                  return next;
+                });
+              }}
+              emptyLabel="No class members"
+              data-testid="my-blueprint-tree"
+            />
+          </div>
+        </PanelFrame>
         <GraphEditor
           initialGraph={hydrateSerializedGraphForEditor(logic)}
-          onChange={(graph) => onChange({ ...payload, logic: graph })}
+          paletteNodes={paletteNodes}
+          onChange={(graph) =>
+            onChange({
+              ...payload,
+              logic: {
+                ...graph,
+                members: graph.members ?? logic.members,
+              },
+            })
+          }
         />
       </TabsContent>
       <AssetPicker
@@ -634,6 +704,25 @@ export function UiDesigner({
       />
     </Tabs>
   );
+}
+
+function promptMemberName(kind: GraphClassMemberKind): string | null {
+  const label =
+    kind === "function"
+      ? "Function name"
+      : kind === "variable"
+        ? "Variable name"
+        : kind === "event"
+          ? "Event name"
+          : "Interface name";
+  const raw = window.prompt(label);
+  if (raw === null) return null;
+  const name = raw.trim();
+  return name.length > 0 ? name : null;
+}
+
+function stopRowGesture(event: { stopPropagation: () => void }) {
+  event.stopPropagation();
 }
 
 function eventPointerId(event: PointerEvent<Element>): number {

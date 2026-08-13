@@ -13,13 +13,23 @@ export type CompileAnchor = {
 };
 
 /** Lifecycle events an entry node can bind to at runtime. */
-export type ScriptEventName = "onBeginPlay" | "onTick" | "onCommandRun";
+export type ScriptEventName = "onBeginPlay" | "onTick" | "onCommandRun" | string;
 
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
   "flow.event.commandRun": "onCommandRun",
 };
+
+/** Custom events use the member name; catalog events use EVENT_BY_TYPE_ID. */
+export function eventNameForEntry(entry: GraphNode): ScriptEventName | undefined {
+  if (entry.typeId === "flow.event.custom") {
+    const raw = entry.properties.name ?? entry.properties.title ?? "";
+    const ident = jsIdent(String(raw));
+    return ident.length > 0 ? ident : undefined;
+  }
+  return EVENT_BY_TYPE_ID[entry.typeId];
+}
 
 export type CompiledEntryPoint = {
   /** Exported function name. */
@@ -380,7 +390,7 @@ export function compileGraph(
     compiledEntries.push({
       entry: {
         name,
-        event: entry ? EVENT_BY_TYPE_ID[entry.typeId] : undefined,
+        event: entry ? eventNameForEntry(entry) : undefined,
         nodeId: entry?.id,
         isAsync,
       },
@@ -425,5 +435,5 @@ function uniqueName(base: string, used: Set<string>): string {
 }
 
 function entryExportName(entry: GraphNode, fallback: string): string {
-  return EVENT_BY_TYPE_ID[entry.typeId] ?? fallback;
+  return eventNameForEntry(entry) ?? fallback;
 }

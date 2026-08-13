@@ -42,6 +42,7 @@ describe("script compiler service", () => {
     expect(classIdForGraphPath("assets/hero.class.babasset")).toBe("hero");
     expect(classIdForGraphPath("graphs/My Enemy.graph.json")).toBe("My_Enemy");
     expect(classIdForGraphPath("")).toBe("Graph");
+    expect(classIdForGraphPath("assets/HUD.ui.babasset")).toBe("HUD");
   });
 
   it("compiles a serialized graph into a runtime script bundle", () => {

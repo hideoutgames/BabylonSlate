@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
 import { UiDesigner } from "./ui-designer";
 
@@ -102,6 +102,29 @@ describe("UiDesigner", () => {
     expect(
       (screen.getByTestId("property-name") as HTMLInputElement).value,
     ).toBe("Title");
+  });
+
+  it("hosts a script palette and class members on the Logic tab", async () => {
+    const { container } = render(
+      <UiDesigner
+        path="assets/HUD.ui.babasset"
+        payload={createDefaultPlayHud("HUD") as unknown as Record<string, unknown>}
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Logic" }));
+    expect(screen.getByTestId("ui-logic-members")).toBeTruthy();
+    expect(screen.getByTestId("class-add-variables")).toBeTruthy();
+    expect(screen.getByTestId("class-add-events")).toBeTruthy();
+    await waitFor(() => {
+      expect(container.querySelector(".react-flow__pane")).not.toBeNull();
+    });
+    const pane = container.querySelector(".react-flow__pane");
+    fireEvent.click(pane!);
+    fireEvent.click(pane!);
+    await waitFor(() => {
+      expect(screen.getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
+    });
   });
 
   it("pans the design canvas with two pointers", () => {

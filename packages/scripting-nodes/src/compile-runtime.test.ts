@@ -254,4 +254,23 @@ describe("compiler emits runnable JavaScript", () => {
     });
     expect(logs).toEqual(["14"]);
   });
+
+  it("binds flow.event.custom to a named entry point", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "hit", "flow.event.custom", { name: "On Hit" }),
+        node(registry, "log", "debug.log", { message: "hit" }),
+      ],
+      edges: [edge("e1", "hit", "execOut", "log", "execIn")],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "hero", registry });
+    const custom = compiled.entryPoints.find(
+      (entry) => entry.nodeId === "hit",
+    );
+    expect(custom?.event).toBe("On_Hit");
+    expect(compiled.source).toContain("function On_Hit(ctx)");
+  });
 });

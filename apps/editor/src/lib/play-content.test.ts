@@ -11,6 +11,8 @@ import {
   animationGraphGuidsFromScene,
   applyPlayHudInstance,
   asUiDocument,
+  logicGraphFromUiPayload,
+  mergePlayScriptDocuments,
   mergePlayAnimGraphs,
   playAnimGraphsFromOpenDocuments,
   playAnimGraphsFromGuids,
@@ -235,5 +237,60 @@ describe("scene-referenced Play content", () => {
       pixelsPerUnit: 16,
     });
     expect(playLoadTilemapsControl(new Map(), new Map())).toBeNull();
+  });
+});
+
+describe("UI logic Play compile", () => {
+  it("extracts a UserInterface payload.logic graph for Play", () => {
+    const logic = {
+      nodes: [
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [],
+    };
+    expect(
+      logicGraphFromUiPayload("assets/HUD.ui.babasset", { logic }),
+    ).toEqual({
+      path: "assets/HUD.ui.babasset",
+      content: logic,
+    });
+    expect(logicGraphFromUiPayload("assets/HUD.ui.babasset", {})).toBeNull();
+  });
+
+  it("merges UI logic graphs onto the Class graph set", () => {
+    const classGraph = {
+      path: "assets/Hero.class.babasset",
+      content: { nodes: [], edges: [] },
+    };
+    const merged = mergePlayScriptDocuments(
+      [classGraph],
+      [
+        {
+          path: "assets/HUD.ui.babasset",
+          payload: {
+            logic: {
+              nodes: [
+                {
+                  id: "begin",
+                  type: "flow.event.beginPlay",
+                  position: { x: 0, y: 0 },
+                  data: {},
+                },
+              ],
+              edges: [],
+            },
+          },
+        },
+      ],
+    );
+    expect(merged.map((doc) => doc.path)).toEqual([
+      "assets/Hero.class.babasset",
+      "assets/HUD.ui.babasset",
+    ]);
   });
 });

@@ -12,6 +12,7 @@ import {
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { warnDebugTierConsoleCommands } from "@babylonslate/debugger";
+import type { PaletteNode } from "@babylonslate/graph-ui";
 
 const registry = createDefaultNodeRegistry();
 
@@ -143,6 +144,30 @@ export function createDefaultLogicGraphSerialized(
   };
 
   return logicToSerializedGraph(logic);
+}
+
+/** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
+export function scriptPaletteNodes(
+  nodeRegistry: NodeRegistry = registry,
+): PaletteNode[] {
+  return nodeRegistry.list().map((def) => {
+    const defaultData: Record<string, unknown> = {};
+    if (def.id === "debug.log") {
+      defaultData.message = "";
+      defaultData.severity = "log";
+      defaultData.category = "Script";
+    }
+    return {
+      id: def.id,
+      title: def.title,
+      category: def.category,
+      pins: def.pins(defaultData),
+      pure: def.pure,
+      latent: def.latent,
+      defaultData:
+        Object.keys(defaultData).length > 0 ? defaultData : undefined,
+    };
+  });
 }
 
 export function hydrateClassDocumentPayload(
