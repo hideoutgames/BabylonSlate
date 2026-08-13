@@ -752,11 +752,10 @@ describe("content-browser-helpers", () => {
     expect(selected).not.toBe(current);
   });
 
-  it("re-exports a thumb-only type accent", () => {
-    expect(assetTypeThumbAccent("var(--asset-texture)")).toEqual({
-      backgroundColor:
-        "color-mix(in oklch, var(--asset-texture) 55%, var(--muted))",
-      boxShadow: "inset 0 -3px 0 var(--asset-texture)",
-    });
+  it("re-exports a radial thumb type accent", () => {
+    const accent = assetTypeThumbAccent("var(--asset-texture)");
+    expect(accent.backgroundImage).toContain("radial-gradient");
+    expect(accent.backgroundImage).toContain("var(--card)");
+    expect(accent.boxShadow).toBe("inset 0 -3px 0 var(--asset-texture)");
   });
 });
