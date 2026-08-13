@@ -36,4 +36,28 @@ describe("Homepage branding", () => {
     expect(screen.getByTestId("brand-logo")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "BabylonSlate" })).toBeTruthy();
   });
+
+  it("offers a built-in 2D Create Project card next to Empty", async () => {
+    render(
+      <Homepage
+        projects={[]}
+        templates={[]}
+        needsReconnect={false}
+        recoveryAvailable={false}
+        onCreateEmpty={noop}
+        onCreateFromTemplate={noop}
+        onOpenExternal={noop}
+        onOpenProject={noop}
+        onRenameProject={noop}
+        onRemoveFromList={noop}
+        onReconnect={noop}
+        onRecover={noop}
+        onDismissRecovery={() => {}}
+        onSettingsChanged={noop}
+      />,
+    );
+    screen.getByTestId("create-project").click();
+    expect(await screen.findByTestId("create-project-empty")).toBeTruthy();
+    expect(screen.getByTestId("create-project-2d")).toBeTruthy();
+  });
 });

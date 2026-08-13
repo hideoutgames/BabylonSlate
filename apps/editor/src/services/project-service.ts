@@ -248,7 +248,7 @@ export class ProjectService {
 
   async createEmptyProject(
     name?: string,
-    options?: { pickFolder?: boolean },
+    options?: { pickFolder?: boolean; kind?: "empty" | "2d" },
   ): Promise<ProjectLoadResult> {
     const projectName =
       name && name.trim()
@@ -263,13 +263,13 @@ export class ProjectService {
       if (await this.storage.exists(PROJECT_FILE)) {
         return this.loadCurrentProject();
       }
-      return this.scaffoldNewProject(projectName);
+      return this.scaffoldNewProject(projectName, options.kind);
     }
     await this.storage.openDocumentsProject(projectName);
     if (await this.storage.exists(PROJECT_FILE)) {
       return this.loadCurrentProject();
     }
-    return this.scaffoldNewProject(projectName);
+    return this.scaffoldNewProject(projectName, options?.kind);
   }
 
   async createFromTemplate(options: {
@@ -538,12 +538,15 @@ export class ProjectService {
     return { scenes: scenes.sort(), graphs: graphs.sort() };
   }
 
-  private async scaffoldNewProject(name: string): Promise<ProjectLoadResult> {
-    const document = createEmptyProject(name);
+  private async scaffoldNewProject(
+    name: string,
+    kind: "empty" | "2d" = "empty",
+  ): Promise<ProjectLoadResult> {
+    const document = createEmptyProject(name, { kind });
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
     const graph = createDefaultLogicGraphSerialized();
-    const scene = createDefaultScene();
+    const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");
     await this.storage.mkdir("assets/.blobs", true);
     await this.storage.mkdir("plugins", true);
     await this.saveDocument("scene", MAIN_SCENE_FILE, scene);

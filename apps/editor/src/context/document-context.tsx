@@ -20,7 +20,9 @@ import type {
 import { documentId, isAssetDocumentKind, normalizeProjectSettings } from "@babylonslate/core";
 import {
   appendJournalLine,
+  getTile,
   hasJournal,
+  normalizeTilemapPayload,
   readJournalLines,
   readThumbnail,
   ThumbnailDecodeLru,
@@ -129,7 +131,7 @@ interface DocumentContextValue {
   openProject: () => Promise<void>;
   createEmptyProject: (
     name: string,
-    options?: { pickFolder?: boolean },
+    options?: { pickFolder?: boolean; kind?: "empty" | "2d" },
   ) => Promise<void>;
   createFromTemplate: (
     templateId: string,
@@ -166,6 +168,7 @@ interface DocumentContextValue {
   applyAssetDocumentChange: (
     id: string,
     next: Record<string, unknown>,
+    mergeKey?: string,
   ) => Promise<boolean>;
   /** Font source / other binary chunks. */
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
@@ -543,7 +546,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [enterEditor, projectService]);
 
   const createEmptyProject = useCallback(
-    async (name: string, options?: { pickFolder?: boolean }) => {
+    async (name: string, options?: { pickFolder?: boolean; kind?: "empty" | "2d" }) => {
       const { document, layouts, migrationPending: pending } =
         await projectService.createEmptyProject(name, options);
       await enterEditor(document, layouts, pending);
@@ -954,7 +957,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const applyAssetDocumentChange = useCallback(
-    async (id: string, next: Record<string, unknown>): Promise<boolean> => {
+    async (
+      id: string,
+      next: Record<string, unknown>,
+      mergeKey?: string,
+    ): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
       if (
         !doc ||
@@ -966,7 +973,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const previous = doc.content as Record<string, unknown>;
-      const command = new SetAssetDocumentCommand(previous, next);
+      const command = new SetAssetDocumentCommand(previous, next, mergeKey);
       const current = editSessionRef.current.apply(id, previous, command).doc;
       documentService.updateAssetDocument(id, current);
       projectService.indexOpenDocument(doc.ref.path, current);
@@ -1234,6 +1241,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
         guidForPath: (path: string) => string | null;
+        activeTilemapTile: (gx: number, gy: number) => number | null;
       };
     };
     host.__babylonslateTest = {
@@ -1390,6 +1398,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      activeTilemapTile: (gx: number, gy: number) => {
+        const doc = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "tilemap" && entry.content,
+        );
+        if (!doc?.content) return null;
+        const map = normalizeTilemapPayload(doc.content);
+        const layerId = map.layers[0]?.id;
+        if (!layerId) return null;
+        return getTile(map, layerId, gx, gy);
+      },
     };
     return () => {
       delete host.__babylonslateTest;

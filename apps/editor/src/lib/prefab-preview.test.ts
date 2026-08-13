@@ -17,7 +17,7 @@ describe("prefabComponentsFromGraph", () => {
   });
 
   it("falls back to the default mesh when the class has no prefab field", () => {
-    expect(prefabComponentsFromGraph({ nodes: [], edges: [] })).toEqual(
+    expect(prefabComponentsFromGraph({})).toEqual(
       defaultPrefabComponents(),
     );
     expect(prefabComponentsFromGraph(null)).toEqual(defaultPrefabComponents());

@@ -55,9 +55,13 @@ Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` va
 
 `TilemapComponent` is in Add Component (Rendering) and Search. Properties: `assetGuid`, sorting layer / order.
 
-## Painting (follow-up in this phase)
+## Painting
 
-Brush, eraser, rect, bucket, stamp, picker; palette as a bottom `Sheet`; one-finger paint / two-finger pan; **one undo per stroke** via `SetAssetDocumentCommand.mergeKey`. See [command-layer.md](command-layer.md).
+Brush, eraser, rect, bucket, stamp, and picker live on the Tilemap document tab (`ToggleGroup` tools, `SearchSheet` palette as a bottom sheet). One finger paints; two fingers pan (`touch-none` on the canvas). **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
+
+Stamp places a 2×2 of the selected tile. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
+
+The Create Project dialog has a built-in **2D** card (`create-project-2d`) next to Empty: `viewportMode` / `physicsWorld` 2d, no default cube, `pixelPerfect` + `integerZoomSteps` on.
 
 ## Alpha test vs blend
 

@@ -309,7 +309,7 @@ export function Homepage({
           <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
             <DialogDescription>
-              Name the project, pick Empty or a template, then create.
+              Name the project, pick Empty, 2D, or a template, then create.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -349,7 +349,30 @@ export function Homepage({
                 >
                   <CardHeader>
                     <CardTitle>Empty</CardTitle>
-                    <CardDescription>Blank project</CardDescription>
+                    <CardDescription>Blank 3D project</CardDescription>
+                  </CardHeader>
+                </Card>
+                <Card
+                  size="sm"
+                  role="button"
+                  tabIndex={0}
+                  data-testid="create-project-2d"
+                  data-selected={createTemplateId === "2d" ? "true" : "false"}
+                  className={cn(
+                    "min-w-28 cursor-pointer",
+                    createTemplateId === "2d" ? "ring-2 ring-primary" : "",
+                  )}
+                  onClick={() => setCreateTemplateId("2d")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setCreateTemplateId("2d");
+                    }
+                  }}
+                >
+                  <CardHeader>
+                    <CardTitle>2D</CardTitle>
+                    <CardDescription>Pixel-perfect Rapier</CardDescription>
                   </CardHeader>
                 </Card>
                 {templates.map((template) => (
@@ -427,8 +450,13 @@ export function Homepage({
                 if (!folderName) return;
                 const options: CreateProjectOptions = { pickFolder };
                 setCreateOpen(false);
-                if (createTemplateId === "empty") {
-                  void run(() => onCreateEmpty(folderName, options));
+                if (createTemplateId === "empty" || createTemplateId === "2d") {
+                  void run(() =>
+                    onCreateEmpty(folderName, {
+                      ...options,
+                      kind: createTemplateId,
+                    }),
+                  );
                 } else {
                   void run(() =>
                     onCreateFromTemplate(

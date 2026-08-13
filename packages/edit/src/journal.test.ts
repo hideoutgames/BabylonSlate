@@ -21,6 +21,7 @@ import {
   SetSceneSettingCommand,
   SetViewportModeCommand,
 } from "./commands/scene";
+import { SetAssetDocumentCommand } from "./commands/asset-document";
 import {
   commandToJournalPayload,
   parseJournalLine,
@@ -121,5 +122,19 @@ describe("journal", () => {
         command.apply(createDefaultScene()),
       );
     }
+  });
+
+  it("round-trips asset document merge keys", () => {
+    const command = new SetAssetDocumentCommand(
+      { n: 1 },
+      { n: 2 },
+      "tilemap-stroke:abc",
+    );
+    const payload = commandToJournalPayload(command);
+    expect(payload.mergeKey).toBe("tilemap-stroke:abc");
+    const revived = reviveCommand(payload) as SetAssetDocumentCommand | null;
+    expect(revived).toBeInstanceOf(SetAssetDocumentCommand);
+    expect(revived!.mergeKey).toBe("tilemap-stroke:abc");
+    expect(revived!.apply({ n: 1 })).toEqual({ n: 2 });
   });
 });

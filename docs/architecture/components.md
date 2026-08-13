@@ -33,7 +33,7 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Switch** | On/off toggle. | Engine / Project Settings booleans. |
 | **Textarea** | Multi-line text. | Project Settings notes. |
 | **Toggle** | Pressed/unpressed tool. Selected = accent fill + primary border + `aria-pressed`. | Viewport tools, Outliner filters, chrome Play-adjacent tools. |
-| **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; gallery. |
+| **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; Tilemap paint tools; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
 
 Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder). **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`) is used by UserInterface / Font / Sprite / graph asset workspaces (design vs logic).
@@ -51,7 +51,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; gallery. |
 | **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings via CatalogDialog; UserInterface desired width/height. |
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search, Content Browser, Content Browser Move dialog. |
-| **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; gallery. Add Component / Place Actors use CatalogDialog instead. |
+| **SearchSheet** | Searchable item list in a Sheet (bottom on touch, right on desktop). | AssetPicker; Tilemap tile palette; gallery. Add Component / Place Actors use CatalogDialog instead. |
 | **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks; UserInterface nested-UI picker (self and cycle partners excluded). |
 | **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
 | **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component. |
