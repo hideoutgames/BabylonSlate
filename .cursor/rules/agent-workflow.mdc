@@ -51,8 +51,9 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 
 ## Subagent models
 
-- Prefer Composer 2.5 for Task / subagents when choosing a model. Composer 2.5 Fast (`composer-2.5-fast`) is fine.
-- Preference only — not a hard requirement. Omitting `model` so the subagent inherits the parent is OK; do not force an explicit Composer slug on every Task call.
+- Prefer Composer 2.5 (`composer-2.5`) or Grok 4.6 at any effort level (e.g. high / extra-high) for Task / subagents when choosing a model. These are equal preferred options.
+- Do **not** use Fast variants: `composer-2.5-fast`, `cursor-grok-4.6-high-fast`, or any other `*-fast` slug for these families.
+- Preference only — not a hard requirement. Omitting `model` so the subagent inherits the parent is OK; do not force an explicit slug on every Task call.
 - If the user or task asks for a different model, follow that request.
 
 ## Git: commit and push
