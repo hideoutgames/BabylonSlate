@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
 
 async function openWindowsMenu(page: Page) {
@@ -8,7 +9,7 @@ async function openWindowsMenu(page: Page) {
   await expect(content).toBeVisible();
 }
 
-test.describe("Windows menu", () => {
+test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
   test("sits left of Focus and is disabled on Content Browser", async ({
     page,
   }) => {

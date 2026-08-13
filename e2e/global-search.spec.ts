@@ -1,8 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
 
 test.describe("Global project search", () => {
-  test("toolbar search opens a dialog and focuses a scene actor", async ({
+  test("toolbar search opens a dialog and focuses a scene actor", {
+    tag: IPAD_TEST_TAG,
+  }, async ({
     page,
   }) => {
     await openTestProject(page);
@@ -47,7 +50,9 @@ test.describe("Global project search", () => {
     ).toBeVisible({ timeout: 10_000 });
   });
 
-  test("dialog stays a fixed tall height and results scroll when they overflow", async ({
+  test("dialog stays a fixed tall height and results scroll when they overflow", {
+    tag: IPAD_TEST_TAG,
+  }, async ({
     page,
   }) => {
     await openTestProject(page);

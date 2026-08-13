@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
@@ -168,7 +169,9 @@ test.describe("P6 first-playable scene editing", () => {
     await page.getByTestId("play-overlay-close").click();
   });
 
-  test("scene panels expose touch-sized toolbar controls", async ({ page }) => {
+  test("scene panels expose touch-sized toolbar controls", {
+    tag: IPAD_TEST_TAG,
+  }, async ({ page }) => {
     await openTestProject(page);
     await openMainScene(page);
 

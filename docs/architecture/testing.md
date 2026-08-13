@@ -49,7 +49,9 @@ These have already produced false-passing tests, so check against them before tr
 
 ## Playwright
 
-Projects: `desktop-chrome`, `ipad-landscape`, `ipad-portrait` (the iPad projects set `hasTouch`). The suite builds with `VITE_TEST_MODE=true` and previews on port 4173.
+Projects: `desktop-chrome` (full suite), `ipad-landscape`, and `ipad-portrait` (both set `hasTouch` and a device scale factor of 2). The suite builds with `VITE_TEST_MODE=true` and previews on port 4173.
+
+iPad projects grep `@ipad` so they only rerun tests that depend on touch, coarse pointer, or orientation. Tag those cases with `IPAD_TEST_TAG` from `e2e/ipad-tag.ts`. Desktop still runs every spec. Behaviour that does not change with viewport or pointer (Play, scripting, import, Engine Settings, smoke) stays desktop-only. `playwright.config.test.ts` lists the iPad set via `playwright test --list`.
 
 `e2e/touch-shell.spec.ts` holds the touch-UX audits required by engineplan §2.4: minimum 44px touch targets, `user-select: none` by default, app-wide native context-menu suppression with `SelectableText` as the opt-out, the widened dock sash hit area, and radii resolving to values on the `--radius-*` scale.
 

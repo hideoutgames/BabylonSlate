@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
 
-test.describe("Touch shell UX", () => {
+test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
   test.beforeEach(async ({ page }) => {
     await openTestProject(page);
     await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
