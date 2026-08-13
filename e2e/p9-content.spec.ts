@@ -288,7 +288,9 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("ui-add-widget-UserInterface").click();
     await page.getByTestId("property-nestedUi").click();
     await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
-    await expect(page.getByText("Panel")).toBeVisible();
+    await expect(
+      page.getByTestId("ui-nested-picker").getByText("Panel", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByTestId("ui-nested-picker").getByText("HUD", { exact: true }),
     ).toHaveCount(0);
