@@ -41,6 +41,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD does not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes). Cold-load Play first-frame is later polish | Accepted |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; designer goldens cover layout | Accepted |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-system | Standards | Play HUD `borderRadius: 999` (stick) pre-existed; widget style passthrough still uses a numeric fallback | Accepted |
+| 2026-08-13 | cursor/startup-scene-play-cleanup-ebf7 | p14-export / Play | Spec | Unused `collectPlayStartupScene` still loaded `scenes[0]` / `main.scene.babasset` when no scene tab was open | Resolved |
 
 ## PR checklist
 
@@ -311,7 +312,7 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 | Item | Status |
 | --- | --- |
 | ScriptHost `TickContext` input, tick Delay, spawn, addComponent, interface handlers | Done |
-| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Play uses the open scene tab only; disabled otherwise. `startupSceneGuid` is packaged/export boot |
+| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Play uses the open scene tab only; disabled otherwise. `collectPlayStartupScene` path fallback removed. `startupSceneGuid` is packaged/export boot (`p14-export`) |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
 | Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract is §2.5 / `p-lighting-camera`, not P11) |

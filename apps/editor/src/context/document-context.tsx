@@ -17,7 +17,7 @@ import type {
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, MAIN_SCENE_FILE, normalizeProjectSettings, normalizeScene } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -238,8 +238,6 @@ interface DocumentContextValue {
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, Uint8Array>>;
-  /** Startup/main scene when no scene tab is open; otherwise the open scene. */
-  collectPlayStartupScene: () => Promise<PlaySceneLoad | null>;
   /** All project scenes so Play `changescene` can instantiate them. */
   collectPlaySceneLibrary: () => Promise<
     Array<{ guid: string; scene: SerializedScene }>
@@ -1372,30 +1370,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
-  const collectPlayStartupScene = useCallback(async (): Promise<PlaySceneLoad | null> => {
-    const open = documentService.getOpenDocumentsOrdered().map((doc) => ({
-      id: doc.id,
-      ref: doc.ref,
-      content: doc.content,
-    }));
-    const fromOpen = playSceneFromOpenDocuments(
-      open,
-      documentService.getState().activeDocumentId,
-    );
-    if (fromOpen) return fromOpen;
-    const path = projectDocument?.scenes[0] ?? MAIN_SCENE_FILE;
-    try {
-      const content = await projectService.loadDocument("scene", path);
-      return {
-        sceneAssetGuid: documentId({ kind: "scene", path }),
-        scene: normalizeScene(content),
-      };
-    } catch (error) {
-      console.error(`[play] failed to load startup scene ${path}`, error);
-      return null;
-    }
-  }, [documentService, projectDocument, projectService]);
-
   const collectPlaySceneLibrary = useCallback(async (): Promise<
     Array<{ guid: string; scene: SerializedScene }>
   > => {
@@ -1954,7 +1928,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
-      collectPlayStartupScene,
       collectPlaySceneLibrary,
       loadGraphDocument,
       graphsNeedCompile: compileSignatureIsStale(
@@ -1987,7 +1960,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
-      collectPlayStartupScene,
       collectPlaySceneLibrary,
       loadGraphDocument,
       lastCompiledSignature,
