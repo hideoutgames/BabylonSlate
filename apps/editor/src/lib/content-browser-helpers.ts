@@ -18,11 +18,8 @@ import {
   walkAncestry,
   type TypeVisual,
 } from "@babylonslate/editor-kit";
+import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
-import {
-  typeColorCardAccent,
-  typeColorThumbAccent,
-} from "@babylonslate/ui/lib/data-types";
 
 export const ASSETS_ROOT = "assets";
 
@@ -98,10 +95,7 @@ export function addSelectedFolderPath(
   return next;
 }
 
-export {
-  typeColorCardAccent as assetTypeCardAccent,
-  typeColorThumbAccent as assetTypeThumbAccent,
-};
+export { typeColorThumbAccent as assetTypeThumbAccent };
 
 export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
   const needle = query.trim().toLowerCase();

@@ -6,7 +6,6 @@ import {
   PIN_COLOR_VAR,
   assetColorVar,
   pinColorVar,
-  typeColorCardAccent,
   typeColorThumbAccent,
 } from "./data-types";
 
@@ -35,14 +34,12 @@ describe("data-types", () => {
     expect(ASSET_COLOR_VAR.folder).toBe("var(--asset-folder)");
   });
 
-  it("builds darker type accents from a color token", () => {
+  it("builds a thumb-only type wash with an inset kind bar", () => {
     const colorVar = "var(--asset-texture)";
-    expect(typeColorCardAccent(colorVar)).toEqual({
-      backgroundColor: "color-mix(in oklch, var(--asset-texture) 16%, var(--card))",
-      borderColor: "color-mix(in oklch, var(--asset-texture) 50%, var(--border))",
-    });
     expect(typeColorThumbAccent(colorVar)).toEqual({
-      backgroundColor: "color-mix(in oklch, var(--asset-texture) 28%, var(--muted))",
+      backgroundColor:
+        "color-mix(in oklch, var(--asset-texture) 45%, var(--muted))",
+      boxShadow: "inset 0 -3px 0 var(--asset-texture)",
     });
   });
 });

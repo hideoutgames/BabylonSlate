@@ -26,7 +26,6 @@ import {
   classParentLookup,
   addSelectedAssetGuid,
   addSelectedFolderPath,
-  assetTypeCardAccent,
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
@@ -739,17 +738,11 @@ describe("content-browser-helpers", () => {
     expect(selected).not.toBe(current);
   });
 
-  it("mixes the type token into card and thumb accents", () => {
-    const colorVar = "var(--asset-texture)";
-    const card = assetTypeCardAccent(colorVar);
-    expect(card.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 16%, var(--card))",
-    );
-    expect(card.borderColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 50%, var(--border))",
-    );
-    expect(assetTypeThumbAccent(colorVar).backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-texture) 28%, var(--muted))",
-    );
+  it("re-exports a thumb-only type accent", () => {
+    expect(assetTypeThumbAccent("var(--asset-texture)")).toEqual({
+      backgroundColor:
+        "color-mix(in oklch, var(--asset-texture) 45%, var(--muted))",
+      boxShadow: "inset 0 -3px 0 var(--asset-texture)",
+    });
   });
 });
