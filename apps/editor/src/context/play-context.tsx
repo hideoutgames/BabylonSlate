@@ -116,6 +116,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playTilesets, setPlayTilesets] = useState<Map<string, TilesetPayload>>(
     () => new Map(),
   );
+  const [playTextureBytes, setPlayTextureBytes] = useState<
+    Map<string, Uint8Array>
+  >(() => new Map());
+  const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
+    () => new Map(),
+  );
   const [playSceneLoad, setPlaySceneLoad] = useState<PlaySceneLoad | null>(null);
   const [playSceneLibrary, setPlaySceneLibrary] = useState<
     Array<{ guid: string; scene: import("@babylonslate/core").SerializedScene }>
@@ -126,6 +132,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayAnimGraphs,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
+    collectPlayTextureBytes,
+    collectPlayModelBytes,
     collectPlayStartupScene,
     collectPlaySceneLibrary,
     openDocuments,
@@ -307,10 +315,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayAnimGraphs([]);
         }
+        let sprites = new Map<string, SpritePayload>();
+        let tilesets = new Map<string, TilesetPayload>();
         try {
-          setPlaySpritePayloads(
-            await collectPlaySpritePayloads(resolvedScene?.scene),
-          );
+          sprites = await collectPlaySpritePayloads(resolvedScene?.scene);
+          setPlaySpritePayloads(sprites);
         } catch (error) {
           appendLog(
             `Sprite payload load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -321,12 +330,29 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           const tileContent = await collectPlayTilemapContent(resolvedScene?.scene);
           setPlayTilemaps(tileContent.tilemaps);
           setPlayTilesets(tileContent.tilesets);
+          tilesets = tileContent.tilesets;
         } catch (error) {
           appendLog(
             `Tilemap load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlayTilemaps(new Map());
           setPlayTilesets(new Map());
+        }
+        try {
+          setPlayTextureBytes(await collectPlayTextureBytes(sprites, tilesets));
+        } catch (error) {
+          appendLog(
+            `Texture load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayTextureBytes(new Map());
+        }
+        try {
+          setPlayModelBytes(await collectPlayModelBytes(resolvedScene?.scene));
+        } catch (error) {
+          appendLog(
+            `Model load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayModelBytes(new Map());
         }
 
         setPrepareState(null);
@@ -360,6 +386,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayAnimGraphs,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
+      collectPlayTextureBytes,
+      collectPlayModelBytes,
       collectPlayStartupScene,
       collectPlaySceneLibrary,
       diagnostics,
@@ -491,6 +519,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             spritePayloads={playSpritePayloads}
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}
+            textureBytes={playTextureBytes}
+            modelBytes={playModelBytes}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }

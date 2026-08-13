@@ -419,6 +419,14 @@ class InProcessRuntime implements RuntimeDriver {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
+      playSound: (asset, volume) => {
+        this.emit({
+          type: "playSound",
+          assetGuid: String(asset ?? ""),
+          volume: Number(volume ?? 1),
+          frameId: this.frameId,
+        });
+      },
     });
 
     this.bindGameInstance();
@@ -760,6 +768,33 @@ class InProcessRuntime implements RuntimeDriver {
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind: "tilemap",
+      });
+      return;
+    }
+    const light = actor.components.find(
+      (component) =>
+        component.classId === "LightComponent" && !component.destroyed,
+    );
+    if (light) {
+      const kind = light.getVariable("lightKind");
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: `light:${typeof kind === "string" ? kind : "point"}`,
+      });
+      return;
+    }
+    const camera = actor.components.find(
+      (component) =>
+        component.classId === "CameraComponent" && !component.destroyed,
+    );
+    if (camera) {
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "camera",
       });
     }
   }

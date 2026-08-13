@@ -768,4 +768,37 @@ describe("script host runs compiled graphs", () => {
     expect(runtime.getWorld().gameInstance?.classId).toBe("MyGame");
     runtime.stop();
   });
+
+  it("emits a playSound command when Begin Play runs audio.play", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "play", "audio.play", { asset: "jump.wav", volume: 0.5 }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "play", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Speaker", "audio-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Speaker" });
+    runtime.start();
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "playSound")).toEqual([
+      expect.objectContaining({
+        type: "playSound",
+        assetGuid: "jump.wav",
+        volume: 0.5,
+      }),
+    ]);
+    runtime.stop();
+  });
 });

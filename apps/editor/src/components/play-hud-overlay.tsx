@@ -30,6 +30,12 @@ function numberProp(
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function capturePointer(target: EventTarget, pointerId: number): void {
+  const capture = (target as { setPointerCapture?: (id: number) => void })
+    .setPointerCapture;
+  if (typeof capture === "function") capture.call(target, pointerId);
+}
+
 function stringProp(
   props: Record<string, unknown>,
   key: string,
@@ -90,6 +96,13 @@ export function PlayHudOverlay({
     [onTouchAxis],
   );
 
+  const emitButton = useCallback(
+    (action: string, down: boolean) => {
+      onTouchAxis(action, down ? 1 : 0);
+    },
+    [onTouchAxis],
+  );
+
   return (
     <div
       className="pointer-events-none absolute inset-0 z-[5]"
@@ -102,9 +115,23 @@ export function PlayHudOverlay({
         if (!control.visible) return null;
         if (hiddenWidgetIds?.has(control.id)) return null;
         const isStick = control.kind === "TouchJoystick";
-        const deadZone = numberProp(control.props, "deadZone", 0.15);
-        const controlIdX = stringProp(control.props, "controlIdX", "joystick-x");
-        const controlIdY = stringProp(control.props, "controlIdY", "joystick-y");
+        const isPad = control.kind === "TouchDPad";
+        const isButton = control.kind === "TouchButton";
+        const isSlider = control.kind === "Slider";
+        const analog = isStick || isPad;
+        const deadZone = numberProp(control.props, "deadZone", analog ? 0.15 : 0);
+        const controlIdX = stringProp(
+          control.props,
+          "controlIdX",
+          isPad ? "dpad-x" : "joystick-x",
+        );
+        const controlIdY = stringProp(
+          control.props,
+          "controlIdY",
+          isPad ? "dpad-y" : "joystick-y",
+        );
+        const action = stringProp(control.props, "action", "Jump");
+        const sliderId = stringProp(control.props, "controlId", "slider");
         return (
           <Button
             key={control.id}
@@ -131,12 +158,12 @@ export function PlayHudOverlay({
               opacity: control.style.opacity,
             }}
             onPointerDown={
-              isStick
+              analog
                 ? (event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     pointerIdRef.current = event.pointerId;
-                    event.currentTarget.setPointerCapture(event.pointerId);
+                    capturePointer(event.currentTarget, event.pointerId);
                     emitStick(
                       controlIdX,
                       controlIdY,
@@ -146,10 +173,28 @@ export function PlayHudOverlay({
                       event.currentTarget.getBoundingClientRect(),
                     );
                   }
-                : undefined
+                : isButton
+                  ? (event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      pointerIdRef.current = event.pointerId;
+                      capturePointer(event.currentTarget, event.pointerId);
+                      emitButton(action, true);
+                    }
+                  : isSlider
+                    ? (event) => {
+                        event.preventDefault();
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        const t =
+                          bounds.width > 0
+                            ? (event.clientX - bounds.left) / bounds.width
+                            : 0;
+                        onTouchAxis(sliderId, Math.max(-1, Math.min(1, t * 2 - 1)));
+                      }
+                    : undefined
             }
             onPointerMove={
-              isStick
+              analog
                 ? (event) => {
                     if (pointerIdRef.current !== event.pointerId) return;
                     emitStick(
@@ -164,23 +209,33 @@ export function PlayHudOverlay({
                 : undefined
             }
             onPointerUp={
-              isStick
+              analog
                 ? (event) => {
                     if (pointerIdRef.current !== event.pointerId) return;
                     pointerIdRef.current = null;
                     onTouchAxis(controlIdX, 0);
                     onTouchAxis(controlIdY, 0);
                   }
-                : undefined
+                : isButton
+                  ? () => {
+                      pointerIdRef.current = null;
+                      emitButton(action, false);
+                    }
+                  : undefined
             }
             onPointerCancel={
-              isStick
+              analog
                 ? () => {
                     pointerIdRef.current = null;
                     onTouchAxis(controlIdX, 0);
                     onTouchAxis(controlIdY, 0);
                   }
-                : undefined
+                : isButton
+                  ? () => {
+                      pointerIdRef.current = null;
+                      emitButton(action, false);
+                    }
+                  : undefined
             }
           >
             {control.text ?? control.name}

@@ -67,6 +67,7 @@ export const DEFAULT_INPUT_MAPPINGS: InputMappings = {
       bindings: [
         { device: "key", code: "Space" },
         { device: "gamepadButton", code: "0:0" },
+        { device: "touch", code: "Jump" },
       ],
     },
     {
@@ -109,6 +110,18 @@ export const DEFAULT_INPUT_MAPPINGS: InputMappings = {
         {
           device: "touch",
           code: "joystick-y",
+          component: "y",
+          deadZone: 0.15,
+        },
+        {
+          device: "touch",
+          code: "dpad-x",
+          component: "x",
+          deadZone: 0.15,
+        },
+        {
+          device: "touch",
+          code: "dpad-y",
           component: "y",
           deadZone: 0.15,
         },

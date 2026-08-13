@@ -41,7 +41,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const sceneRef = useRef<SerializedScene | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, projectDocument } = useDocuments();
+  const {
+    openDocuments,
+    applySceneChange,
+    projectDocument,
+    collectPlaySpritePayloads,
+    collectPlayTilemapContent,
+    collectPlayTextureBytes,
+    collectPlayModelBytes,
+  } = useDocuments();
   const {
     selectedActorIds,
     selectActor,
@@ -211,10 +219,45 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [playing]);
 
   useEffect(() => {
-    if (scene && engineRef.current) {
-      engineRef.current.loadScene(scene);
-    }
-  }, [scene]);
+    const handle = engineRef.current;
+    if (!scene || !handle) return;
+    handle.loadScene(scene);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sprites = await collectPlaySpritePayloads(scene);
+        const tileContent = await collectPlayTilemapContent(scene);
+        const textureBytes = await collectPlayTextureBytes(
+          sprites,
+          tileContent.tilesets,
+        );
+        const modelBytes = await collectPlayModelBytes(scene);
+        if (cancelled || engineRef.current !== handle) return;
+        handle.setMeshAssets({
+          resourceCache: handle.resourceCache,
+          spritePayloads: sprites,
+          tilemaps: tileContent.tilemaps,
+          tilesets: tileContent.tilesets,
+          textureBytes,
+          modelBytes,
+          pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
+        });
+      } catch (error) {
+        console.error("[viewport] failed to load mesh assets", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    scene,
+    openDocuments,
+    collectPlaySpritePayloads,
+    collectPlayTilemapContent,
+    collectPlayTextureBytes,
+    collectPlayModelBytes,
+    projectDocument?.settings.twoD.pixelsPerUnit,
+  ]);
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(selectedActorIds);

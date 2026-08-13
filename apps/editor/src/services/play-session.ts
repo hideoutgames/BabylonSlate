@@ -13,6 +13,7 @@ import { playLoadTilemapsControl } from "../lib/play-content";
 import {
   createEngine,
   type EngineHandle,
+  type PlayActorPosition,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
 import {
@@ -74,6 +75,8 @@ export interface PlaySession {
   setPaused: (paused: boolean) => void;
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
+  /** Latest snapshot actor positions for e2e collision / motion. */
+  lastActorPositions: () => readonly PlayActorPosition[];
   /** Push a touch joystick sample into the Play input ring. */
   pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
@@ -179,6 +182,8 @@ export function startPlaySession(options: {
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
+  textureBytes?: ReadonlyMap<string, Uint8Array>;
+  modelBytes?: ReadonlyMap<string, Uint8Array>;
   pixelsPerUnit?: number;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
@@ -196,6 +201,8 @@ export function startPlaySession(options: {
     spritePayloads: options.spritePayloads,
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
+    textureBytes: options.textureBytes,
+    modelBytes: options.modelBytes,
     pixelsPerUnit: options.pixelsPerUnit,
   });
   handle.scheduler.invalidate("play");
@@ -285,6 +292,12 @@ export function startPlaySession(options: {
     }
     if (command.type === "uiRemove") {
       options.onUiRemove?.(command.instanceId);
+    }
+    if (command.type === "playSound") {
+      options.onLog?.(
+        `[audio] ${command.assetGuid} vol=${command.volume}`,
+        "log",
+      );
     }
   };
 
@@ -474,6 +487,7 @@ export function startPlaySession(options: {
       }
       return lastObservedMoveX;
     },
+    lastActorPositions: () => handle.lastActorPositions(),
     pushTouchAxis: (controlId: string, value: number) => {
       input.pushTouchAxis(controlId, value);
     },

@@ -100,6 +100,8 @@ import {
   spriteAssetGuidsFromScene,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
+  textureGuidsFromPlayPayloads,
+  modelAssetGuidsFromScene,
   type PlayAnimGraphEntry,
 } from "../lib/play-content";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
@@ -222,6 +224,15 @@ interface DocumentContextValue {
     tilemaps: Map<string, TilemapPayload>;
     tilesets: Map<string, TilesetPayload>;
   }>;
+  /** Texture pixels/source bytes for sprite and tileset `textureGuid`s. */
+  collectPlayTextureBytes: (
+    sprites: ReadonlyMap<string, SpritePayload>,
+    tilesets: ReadonlyMap<string, TilesetPayload>,
+  ) => Promise<Map<string, Uint8Array>>;
+  /** Model source bytes for scene MeshComponent `assetGuid`s. */
+  collectPlayModelBytes: (
+    scene?: SerializedScene | null,
+  ) => Promise<Map<string, Uint8Array>>;
   /** Startup/main scene when no scene tab is open; otherwise the open scene. */
   collectPlayStartupScene: () => Promise<PlaySceneLoad | null>;
   /** All project scenes so Play `changescene` can instantiate them. */
@@ -1238,6 +1249,50 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [loadPlayAssetContent, projectService],
   );
 
+  const collectPlayTextureBytes = useCallback(
+    async (
+      sprites: ReadonlyMap<string, SpritePayload>,
+      tilesets: ReadonlyMap<string, TilesetPayload>,
+    ): Promise<Map<string, Uint8Array>> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets.map((asset) => [asset.header.guid, asset] as const),
+      );
+      const bytes = new Map<string, Uint8Array>();
+      for (const guid of textureGuidsFromPlayPayloads(sprites, tilesets)) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const pixels = await projectService.readAssetChunk(asset.path, "pixels");
+        if (pixels && pixels.byteLength > 0) {
+          bytes.set(guid, pixels);
+          continue;
+        }
+        const source = await projectService.readAssetChunk(asset.path, "source");
+        if (source && source.byteLength > 0) bytes.set(guid, source);
+      }
+      return bytes;
+    },
+    [projectService],
+  );
+
+  const collectPlayModelBytes = useCallback(
+    async (scene?: SerializedScene | null): Promise<Map<string, Uint8Array>> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets.map((asset) => [asset.header.guid, asset] as const),
+      );
+      const bytes = new Map<string, Uint8Array>();
+      for (const guid of modelAssetGuidsFromScene(scene)) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const source = await projectService.readAssetChunk(asset.path, "source");
+        if (source && source.byteLength > 0) bytes.set(guid, source);
+      }
+      return bytes;
+    },
+    [projectService],
+  );
+
   const loadGraphDocument = useCallback(
     async (path: string): Promise<SerializedGraph | null> => {
       const openDoc = documentService
@@ -1834,6 +1889,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayAnimGraphs,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
+      collectPlayTextureBytes,
+      collectPlayModelBytes,
       collectPlayStartupScene,
       collectPlaySceneLibrary,
       loadGraphDocument,
@@ -1865,6 +1922,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayAnimGraphs,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
+      collectPlayTextureBytes,
+      collectPlayModelBytes,
       collectPlayStartupScene,
       collectPlaySceneLibrary,
       loadGraphDocument,

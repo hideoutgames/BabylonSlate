@@ -53,6 +53,8 @@ export interface PlayOverlayProps {
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
+  textureBytes?: ReadonlyMap<string, Uint8Array>;
+  modelBytes?: ReadonlyMap<string, Uint8Array>;
   pixelsPerUnit?: number;
   onClose: (result: PlaySessionResult) => void;
 }
@@ -84,6 +86,8 @@ export function PlayOverlay({
   spritePayloads,
   tilemapPayloads,
   tilesetPayloads,
+  textureBytes,
+  modelBytes,
   pixelsPerUnit,
   onClose,
 }: PlayOverlayProps) {
@@ -101,6 +105,7 @@ export function PlayOverlay({
   const [logs, setLogs] = useState<string[]>([]);
   const [moveX, setMoveX] = useState<number | null>(null);
   const [actorGuids, setActorGuids] = useState<string[]>([]);
+  const [actorYs, setActorYs] = useState<number[]>([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [trace, setTrace] = useState<TracePayload | null>(null);
   const [overlaySize, setOverlaySize] = useState({ width: 1280, height: 720 });
@@ -121,6 +126,10 @@ export function PlayOverlay({
   tilemapPayloadsRef.current = tilemapPayloads;
   const tilesetPayloadsRef = useRef(tilesetPayloads);
   tilesetPayloadsRef.current = tilesetPayloads;
+  const textureBytesRef = useRef(textureBytes);
+  textureBytesRef.current = textureBytes;
+  const modelBytesRef = useRef(modelBytes);
+  modelBytesRef.current = modelBytes;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
   const physicsRef = useRef(physics);
@@ -164,6 +173,8 @@ export function PlayOverlay({
       spritePayloads: spritePayloadsRef.current,
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
+      textureBytes: textureBytesRef.current,
+      modelBytes: modelBytesRef.current,
       pixelsPerUnit: pixelsPerUnitRef.current,
       onUiSetVisible: (widgetId, visible) => {
         setHiddenWidgetIds((prev) => {
@@ -218,6 +229,7 @@ export function PlayOverlay({
       const current = sessionRef.current;
       setMoveX(current?.lastMoveX() ?? null);
       setActorGuids([...(current?.spawnedActorGuids() ?? [])]);
+      setActorYs((current?.lastActorPositions() ?? []).map((entry) => entry.y));
       if (current) {
         setMemoryBytes(current.accountedBytes());
         const counts = current.liveObjectCounts();
@@ -274,6 +286,10 @@ export function PlayOverlay({
         <span
           data-testid="play-actor-guids"
           data-guids={actorGuids.join(",")}
+        />
+        <span
+          data-testid="play-actor-y"
+          data-ys={actorYs.join(",")}
         />
       </div>
       <div className="absolute right-3 top-3 z-10 flex items-center gap-2">

@@ -196,4 +196,28 @@ describe("InputResolver", () => {
     expect(resolved.axes2D.Move!.x).toBeCloseTo(1, 5);
     expect(resolved.axes2D.Move!.y).toBeCloseTo(-1, 5);
   });
+
+  it("default Move axis includes the TouchDPad control ids", () => {
+    const resolver = new InputResolver(createDefaultInputMappings());
+    const resolved = resolver.resolve([
+      { kind: "touchAxis", tick: 1, controlId: "dpad-x", value: 1 },
+      { kind: "touchAxis", tick: 1, controlId: "dpad-y", value: -1 },
+    ]);
+    expect(resolved.axes2D.Move!.x).toBeCloseTo(1, 5);
+    expect(resolved.axes2D.Move!.y).toBeCloseTo(-1, 5);
+  });
+
+  it("default Jump action is held while the TouchButton control is down", () => {
+    const resolver = new InputResolver(createDefaultInputMappings());
+    const down = resolver.resolve([
+      { kind: "touchAxis", tick: 1, controlId: "Jump", value: 1 },
+    ]);
+    expect(down.actions.Jump?.held).toBe(true);
+    expect(down.actions.Jump?.pressed).toBe(true);
+    const up = resolver.resolve([
+      { kind: "touchAxis", tick: 2, controlId: "Jump", value: 0 },
+    ]);
+    expect(up.actions.Jump?.held).toBe(false);
+    expect(up.actions.Jump?.released).toBe(true);
+  });
 });

@@ -165,6 +165,12 @@ export type CommandMessage =
       blendWeights: Record<string, number>;
       clipName?: string;
       clipKind?: "animation" | "sprite";
+    }
+  | {
+      type: "playSound";
+      assetGuid: string;
+      volume: number;
+      frameId: number;
     };
 
 export type BridgeHostMessage =

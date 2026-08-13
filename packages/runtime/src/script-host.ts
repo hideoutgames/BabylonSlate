@@ -63,7 +63,9 @@ export interface ScriptHostServices {
   applyUserInterface?(assetGuid: string): string;
   removeUserInterface?(instanceId: string): void;
   changeScene?(scene: string): void;
+  playSound?(asset: string, volume?: number): void;
 }
+
 export interface ScriptContext {
   self: Actor | null;
   deltaSeconds: number;
@@ -133,7 +135,7 @@ export interface ScriptContext {
     translation: Vec3,
     offset?: number,
   ): void;
-  playSound(): void;
+  playSound(asset: string, volume?: number): void;
   setWidgetVisible(widget: string, visible: boolean): void;
   applyUserInterface(assetGuid: string): string;
   removeUserInterface(instanceId: string): void;
@@ -392,7 +394,9 @@ export class ScriptHost {
           offset,
         );
       },
-      playSound: () => {},
+      playSound: (asset, volume) => {
+        services.playSound?.(String(asset ?? ""), Number(volume ?? 1));
+      },
       setWidgetVisible: (widget, visible) => {
         services.setWidgetVisible?.(widget, visible);
       },

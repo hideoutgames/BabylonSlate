@@ -10,6 +10,7 @@ import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { usePlay } from "../context/play-context";
+import { useDocuments } from "../context/document-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { previewSceneFor } from "../lib/prefab-preview";
@@ -33,6 +34,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const engineRef = useRef<EngineHandle | null>(null);
   const joystickLeaseRef = useRef<(() => void) | null>(null);
   const { components } = usePrefabEditing();
+  const {
+    collectPlaySpritePayloads,
+    collectPlayTilemapContent,
+    collectPlayTextureBytes,
+    collectPlayModelBytes,
+    projectDocument,
+  } = useDocuments();
   const {
     gizmoTool,
     snapEnabled,
@@ -84,9 +92,46 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [playing]);
 
   useEffect(() => {
-    engineRef.current?.loadScene(previewSceneFor(components));
-    engineRef.current?.resize();
-  }, [components]);
+    const handle = engineRef.current;
+    if (!handle) return;
+    const scene = previewSceneFor(components);
+    handle.loadScene(scene);
+    handle.resize();
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sprites = await collectPlaySpritePayloads(scene);
+        const tileContent = await collectPlayTilemapContent(scene);
+        const textureBytes = await collectPlayTextureBytes(
+          sprites,
+          tileContent.tilesets,
+        );
+        const modelBytes = await collectPlayModelBytes(scene);
+        if (cancelled || engineRef.current !== handle) return;
+        handle.setMeshAssets({
+          resourceCache: handle.resourceCache,
+          spritePayloads: sprites,
+          tilemaps: tileContent.tilemaps,
+          tilesets: tileContent.tilesets,
+          textureBytes,
+          modelBytes,
+          pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
+        });
+      } catch (error) {
+        console.error("[prefab] failed to load mesh assets", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    components,
+    collectPlaySpritePayloads,
+    collectPlayTilemapContent,
+    collectPlayTextureBytes,
+    collectPlayModelBytes,
+    projectDocument?.settings.twoD.pixelsPerUnit,
+  ]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
