@@ -15,6 +15,7 @@ import {
 } from "@babylonslate/ui/components/select";
 import { NumericDragField } from "./numeric-drag-field";
 import { humanizePropertyLabel } from "./humanize-property-label";
+import { ColorField } from "./color-field";
 
 export type Vector3Value = [number, number, number];
 
@@ -76,6 +77,8 @@ export type PropertyRow =
       value: string | null;
       defaultValue?: string | null;
       placeholder?: string;
+      /** Human name shown on the picker button; `value` stays the guid. */
+      displayLabel?: string;
       onPick: () => void;
       onChange: (value: string | null) => void;
     });
@@ -85,23 +88,6 @@ export interface PropertyGridProps {
   /** Section heading rendered above the rows. */
   title?: string;
   "data-testid"?: string;
-}
-
-function toHex(color: Vector3Value): string {
-  const channel = (value: number) =>
-    Math.max(0, Math.min(255, Math.round(value * 255)))
-      .toString(16)
-      .padStart(2, "0");
-  return `#${channel(color[0])}${channel(color[1])}${channel(color[2])}`;
-}
-
-function fromHex(hex: string): Vector3Value {
-  const value = hex.replace("#", "");
-  return [
-    Number.parseInt(value.slice(0, 2), 16) / 255,
-    Number.parseInt(value.slice(2, 4), 16) / 255,
-    Number.parseInt(value.slice(4, 6), 16) / 255,
-  ];
 }
 
 function hasDefault(row: PropertyRow): boolean {
@@ -237,13 +223,11 @@ function RowControl({ row }: { row: PropertyRow }) {
       );
     case "color":
       return (
-        <input
-          type="color"
+        <ColorField
           id={`property-${row.id}`}
-          className="min-h-[var(--chrome-row,28px)] w-full rounded-md border border-input bg-background"
-          value={toHex(row.value)}
+          value={row.value}
           disabled={row.disabled}
-          onChange={(event) => row.onChange(fromHex(event.target.value))}
+          onChange={row.onChange}
           data-testid={`property-${row.id}`}
         />
       );
@@ -256,7 +240,7 @@ function RowControl({ row }: { row: PropertyRow }) {
           onClick={row.onPick}
           data-testid={`property-${row.id}`}
         >
-          {row.value ?? row.placeholder ?? "None"}
+          {row.displayLabel ?? row.value ?? row.placeholder ?? "None"}
         </Button>
       );
   }

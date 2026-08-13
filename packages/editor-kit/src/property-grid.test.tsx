@@ -143,6 +143,29 @@ describe("PropertyGrid", () => {
     expect(onPick).toHaveBeenCalled();
   });
 
+  it("shows an asset display label instead of the raw guid", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "asset",
+            id: "mesh",
+            label: "Mesh",
+            value: "guid-rock",
+            displayLabel: "Rock",
+            placeholder: "None",
+            onPick: () => {},
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("property-mesh").textContent).toContain("Rock");
+    expect(screen.getByTestId("property-mesh").textContent).not.toContain(
+      "guid-rock",
+    );
+  });
+
   it("humanizes camelCase property keys as Title Case", () => {
     expect(humanizePropertyLabel("meshKind")).toBe("Mesh Kind");
     expect(humanizePropertyLabel("fixedTimestepMs")).toBe("Fixed Timestep MS");
