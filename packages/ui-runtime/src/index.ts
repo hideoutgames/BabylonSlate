@@ -65,3 +65,29 @@ export {
   describeUiControls,
   type UiControlDescriptor,
 } from "./controls";
+export {
+  ANCHOR_PRESETS,
+  applyAnchorPreset,
+  applyAuthoringFields,
+  applyWidgetResize,
+  authoringFieldsFromLayout,
+  defaultAddLayout,
+  layoutFromRect,
+  matchAnchorPreset,
+  parentOwnsChildLayout,
+  preferredWidgetSize,
+} from "./layout-authoring";
+export type {
+  AnchorPreset,
+  AnchorPresetId,
+  AuthoringFieldPatch,
+  AuthoringFields,
+  ResizeEdges,
+} from "./layout-authoring";
+export {
+  duplicateWidget,
+  insertWidget,
+  removeWidget,
+  reparentWidget,
+  widgetParentId,
+} from "./widget-tree";
