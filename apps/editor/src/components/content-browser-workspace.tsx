@@ -54,6 +54,13 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@babylonslate/ui/components/dialog";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
