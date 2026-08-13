@@ -186,6 +186,11 @@ describe("playSceneFromOpenDocuments", () => {
     ).toBeNull();
   });
 
+  it("does not export a path-based startup-scene Play loader", async () => {
+    const mod = await import("./play-physics");
+    expect("collectPlayStartupScene" in mod).toBe(false);
+  });
+
   it("resolvePlayScene prefers an open scene tab over the startup fallback", () => {
     const open = {
       name: "Level",

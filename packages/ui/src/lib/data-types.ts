@@ -119,7 +119,7 @@ export function typeColorThumbAccent(colorVar: string): {
   boxShadow: string;
 } {
   return {
-    backgroundColor: `color-mix(in oklch, ${colorVar} 45%, var(--muted))`,
+    backgroundColor: `color-mix(in oklch, ${colorVar} 55%, var(--muted))`,
     boxShadow: `inset 0 -3px 0 ${colorVar}`,
   };
 }

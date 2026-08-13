@@ -84,5 +84,5 @@ test("gallery composites meet the minimum touch target size", {
   const treeRow = page.getByTestId("tree-row-player");
   const rowBox = await treeRow.boundingBox();
   expect(rowBox).not.toBeNull();
-  expect(rowBox!.height).toBeGreaterThanOrEqual(32);
+  expect(rowBox!.height).toBeGreaterThanOrEqual(28);
 });

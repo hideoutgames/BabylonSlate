@@ -65,17 +65,8 @@ describe("Class and settings documents", () => {
     ).toBe("Hero Class");
   });
 
-  it("opens import and type assets as settings tabs", () => {
-    for (const type of [
-      "Texture",
-      "Material",
-      "Model",
-      "Audio",
-      "Animation",
-      "Enum",
-      "Structure",
-      "ScriptInterface",
-    ]) {
+  it("opens import assets as settings tabs", () => {
+    for (const type of ["Texture", "Material", "Model", "Audio", "Animation"]) {
       expect(documentKindForAssetType(type)).toBe("asset-settings");
     }
     expect(assetTypeForDocumentKind("asset-settings")).toBe("Texture");
@@ -88,5 +79,26 @@ describe("Class and settings documents", () => {
     expect(
       createDocumentRef("asset-settings", "assets/hero.babasset").label,
     ).toMatch(/Settings$/);
+  });
+
+  it("opens Enum, Structure, and ScriptInterface as their own document kinds", () => {
+    expect(documentKindForAssetType("Enum")).toBe("enum");
+    expect(documentKindForAssetType("Structure")).toBe("structure");
+    expect(documentKindForAssetType("ScriptInterface")).toBe("script-interface");
+    expect(assetTypeForDocumentKind("enum")).toBe("Enum");
+    expect(assetTypeForDocumentKind("structure")).toBe("Structure");
+    expect(assetTypeForDocumentKind("script-interface")).toBe("ScriptInterface");
+    expect(documentKindLabel("enum")).toBe("Enum");
+    expect(documentKindLabel("structure")).toBe("Structure");
+    expect(documentKindLabel("script-interface")).toBe("Script Interface");
+    expect(
+      createDocumentRef("enum", "assets/colors.babasset", { name: "Colors" })
+        .label,
+    ).toBe("Colors Enum");
+    expect(
+      createDocumentRef("script-interface", "assets/hit.babasset", {
+        name: "Hit",
+      }).label,
+    ).toBe("Hit Script Interface");
   });
 });

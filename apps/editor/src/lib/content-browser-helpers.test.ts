@@ -756,7 +756,7 @@ describe("content-browser-helpers", () => {
   it("re-exports a thumb-only type accent", () => {
     expect(assetTypeThumbAccent("var(--asset-texture)")).toEqual({
       backgroundColor:
-        "color-mix(in oklch, var(--asset-texture) 45%, var(--muted))",
+        "color-mix(in oklch, var(--asset-texture) 55%, var(--muted))",
       boxShadow: "inset 0 -3px 0 var(--asset-texture)",
     });
   });

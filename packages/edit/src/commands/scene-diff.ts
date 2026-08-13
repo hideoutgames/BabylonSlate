@@ -13,6 +13,7 @@ import {
   ReorderActorCommand,
   ReorderComponentCommand,
   ReparentActorCommand,
+  ReparentComponentCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
   SetComponentPropertyCommand,
@@ -73,6 +74,16 @@ function diffComponents(
           key,
           previous.properties[key],
           component.properties[key],
+        ),
+      );
+    }
+    if ((previous.parentId ?? null) !== (component.parentId ?? null)) {
+      commands.push(
+        new ReparentComponentCommand(
+          actorId,
+          id,
+          previous.parentId ?? null,
+          component.parentId ?? null,
         ),
       );
     }

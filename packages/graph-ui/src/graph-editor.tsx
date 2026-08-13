@@ -79,12 +79,16 @@ export interface GraphEditorProps {
   onChange?: (graph: GraphDocument) => void;
   /** Selected canvas node ids; not part of the serialized graph. */
   onSelectionChange?: (nodeIds: string[]) => void;
+  /** Pin click in read-only previews (does not mutate). */
+  onPinSelect?: (nodeId: string, pinId: string) => void;
   focusedNodeId?: string;
   diagnostics?: GraphDiagnostic[];
   onNavigateRequest?: (request: NavigateRequest) => void;
   paletteNodes?: PaletteNode[];
   colorMode?: "light" | "dark";
   defaultZoom?: number;
+  /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
+  readOnly?: boolean;
 }
 
 const DOUBLE_TAP_MS = 350;
@@ -190,6 +194,8 @@ function GraphEditorCanvas({
   paletteNodes,
   colorMode = "dark",
   defaultZoom = GRAPH_DEFAULT_ZOOM,
+  readOnly = false,
+  onPinSelect,
 }: GraphEditorProps) {
   const graphViewport = useMemo(
     () => resolveGraphViewport(defaultZoom),
@@ -327,25 +333,31 @@ function GraphEditorCanvas({
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       setNodes((current) => {
-        const next = applyNodeChanges(changes, current);
-        if (nodeChangesMutateGraph(changes)) {
+        const applied = readOnly
+          ? changes.filter(
+              (change) => change.type === "select" || change.type === "dimensions",
+            )
+          : changes;
+        const next = applyNodeChanges(applied, current);
+        if (!readOnly && nodeChangesMutateGraph(changes)) {
           emitChange(next, graphStateRef.current.edges);
         }
         return next;
       });
     },
-    [emitChange],
+    [emitChange, readOnly],
   );
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
+      if (readOnly) return;
       setEdges((current) => {
         const next = applyEdgeChanges(changes, current);
         emitChange(graphStateRef.current.nodes, next);
         return next;
       });
     },
-    [emitChange],
+    [emitChange, readOnly],
   );
 
   const addEdge = useCallback(
@@ -373,6 +385,10 @@ function GraphEditorCanvas({
 
   const onPinTap = useCallback(
     (nodeId: string, pinId: string, direction: "in" | "out") => {
+      if (readOnly) {
+        onPinSelect?.(nodeId, pinId);
+        return;
+      }
       if (direction === "out") {
         const next = { nodeId, pinId };
         pendingPinRef.current = next;
@@ -391,11 +407,12 @@ function GraphEditorCanvas({
       pendingPinRef.current = null;
       setPendingPin(null);
     },
-    [addEdge],
+    [addEdge, onPinSelect, readOnly],
   );
 
   const handleConnect = useCallback(
     (connection: Connection) => {
+      if (readOnly) return;
       if (
         !connection.source ||
         !connection.target ||
@@ -413,7 +430,7 @@ function GraphEditorCanvas({
       setPendingPin(null);
       pendingPinRef.current = null;
     },
-    [addEdge],
+    [addEdge, readOnly],
   );
 
   const isValidConnection = useCallback(
@@ -444,6 +461,7 @@ function GraphEditorCanvas({
 
   const handleConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+      if (readOnly) return;
       if (state.toHandle) return;
       const fromHandle = state.fromHandle;
       const fromNode = state.fromNode;
@@ -501,7 +519,7 @@ function GraphEditorCanvas({
       pendingPinRef.current = null;
       setPendingPin(null);
     },
-    [emitChange, screenToFlowPosition],
+    [emitChange, readOnly, screenToFlowPosition],
   );
 
   const handleAddPaletteNode = useCallback(
@@ -736,12 +754,12 @@ function GraphEditorCanvas({
     }
     clearSelection();
     const now = Date.now();
-    if (now - lastPaneTapRef.current < DOUBLE_TAP_MS) {
+    if (now - lastPaneTapRef.current < DOUBLE_TAP_MS && !readOnly) {
       setPendingConnect(null);
       setPaletteOpen(true);
     }
     lastPaneTapRef.current = now;
-  }, [clearSelection]);
+  }, [clearSelection, readOnly]);
 
   const screenToFlowPositionRef = useRef(screenToFlowPosition);
   screenToFlowPositionRef.current = screenToFlowPosition;
@@ -835,6 +853,8 @@ function GraphEditorCanvas({
       <div
         ref={wrapperRef}
         className="relative h-full w-full touch-manipulation"
+        data-testid="graph-editor"
+        data-readonly={readOnly ? "true" : undefined}
       >
         {marqueeScreen ? (
           <div
@@ -848,6 +868,7 @@ function GraphEditorCanvas({
             }}
           />
         ) : null}
+        {readOnly ? null : (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card/90 p-1 shadow-md"
@@ -907,17 +928,22 @@ function GraphEditorCanvas({
             </Button>
           </div>
         </div>
+        )}
         <ReactFlow
           className="graph-editor-canvas"
           colorMode={colorMode}
           nodes={nodes}
           edges={styledEdges}
           nodeTypes={graphNodeTypes}
+          nodesDraggable={!readOnly}
+          nodesConnectable={!readOnly}
+          elementsSelectable
+          edgesReconnectable={false}
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}
           onConnectEnd={handleConnectEnd}
-          isValidConnection={isValidConnection}
+          isValidConnection={readOnly ? () => false : isValidConnection}
           onPaneClick={handlePaneClick}
           panOnDrag={!marqueeArmed}
           connectionLineStyle={connectionLineStyle}
@@ -940,6 +966,7 @@ function GraphEditorCanvas({
           <Controls showInteractive={false} />
           <FocusedNodeSync focusedNodeId={focusedNodeId} />
         </ReactFlow>
+        {readOnly ? null : (
         <NodePalette
           open={paletteOpen}
           onOpenChange={(next) => {
@@ -950,6 +977,7 @@ function GraphEditorCanvas({
           filterPin={pendingConnect?.pin ?? null}
           onAddNode={handleAddPaletteNode}
         />
+        )}
       </div>
     </GraphEditorProvider>
   );

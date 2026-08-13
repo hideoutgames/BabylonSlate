@@ -28,6 +28,9 @@ export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
 export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   scene: "viewport",
   graph: "graph",
+  enum: "enum-members",
+  structure: "structure-members",
+  "script-interface": "script-interface-preview",
 };
 
 /**
@@ -38,12 +41,7 @@ export function focusKeepCandidates(
   kind: FocusDocumentKind,
   options?: DockWindowOptions,
 ): FocusKeepCandidate[] {
-  if (options) {
-    return catalogFocusCandidates(kind, options);
-  }
-  return kind === "scene"
-    ? [...SCENE_FOCUS_CANDIDATES]
-    : [...GRAPH_FOCUS_CANDIDATES];
+  return catalogFocusCandidates(kind, options);
 }
 
 export function resolveFocusKeepPanelIds(

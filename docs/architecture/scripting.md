@@ -166,7 +166,7 @@ Ship with the catalog but own dedicated designs (not one-line templates):
 | **Event On Command Run** | `BDebugCommand` entry; output pins from the parameter list; compiles to `onCommandRun` |
 | **Report Command** | Sets the console success flag + output string for `OnCommandRun` |
 
-Shared **parameter-list editor** (typed named reorderable rows: type, optional, default, enum, up/down) lives in `editor-kit` — reused by ExecuteJavaScript Inputs/Outputs, Class / ScriptInterface signatures, and `BDebugCommand` / Event On Command Run.
+Shared **PinListEditor** / **PinTypePicker** in `editor-kit` author typed named reorderable pins (color chip, compact type picker, optional in/out). `ParameterListEditor` is a thin wrapper for ExecuteJavaScript Inputs/Outputs and `BDebugCommand` / Event On Command Run. Class function signatures and ScriptInterface method pins use `PinListEditor` directly.
 
 ## Node catalog (`scripting-nodes`)
 
@@ -183,17 +183,29 @@ AI / navigation categories wait for P11.
 ### Class document
 
 - **Graph** canvas (event + per-function graphs). **Double-tap empty pane** opens the unfiltered Add Node catalog (`Dialog` with categories + search; search is **not** autofocused). Drag-to-connect and tap-to-connect both persist. Pin-drag Add Node uses a 96px screen-space safe zone around the source pin and compatible pins; a live **Add Node** hint follows the wire when a drop would open the catalog. A cancelled pin drag (no snap, no Add Node, pointer left the source handle) breaks every wire on that pin.
-- **Class**: compact collapsible tree (Functions, Variables, Events, Interfaces — no Graphs section) stacked *under* Components, about 50% of the left stack. Inline **+** prompts for a name and writes `SerializedGraph.members` (normalized). Event names are Title Cased (`On Hit`; node title `Event On Hit`). Events also insert `flow.event.custom`; variables can drop a Get node. Clicking an event focuses that graph node. `flow.event.custom` compiles to a named export (`On_Hit` from "On Hit"); Play dispatches it with `ScriptHost.invokeEvent(classId, event)` / `RuntimeDriver.invokeScriptEvent`. Class-owned per-function graphs remain a later follow-up.
-- **Details** (dock title Inspector): canvas selection drives the target (first selected node; Compiler Results / Play focus as fallback). Empty selection shows an empty state — no ExecuteJavaScript fallback. Unconnected applicable data pins get literal defaults; ExecuteJavaScript still has pin lists + body; Log has severity / category.
+- **Class**: My Blueprint member tree (Functions, Variables, Events, Interfaces — empty sections stay visible; no Graphs section) stacked *under* Components, about 50% of the left stack. Toolbar Add (kind menu) + Remove; rows use `TypeColorMark` (function / event / interface tokens, variable pin color). Writes `SerializedGraph.members` (variables: `typeId` + optional `defaultValue`; functions: `pins[]`; interfaces: ScriptInterface `assetGuid` via `AssetPicker`). Event names are Title Cased (`On Hit`; node title `Event On Hit`). Events insert `flow.event.custom`; variables do **not** spawn Get nodes (palette already has Get/Set). Clicking a member selects it for Inspector and clears graph-node selection. Clicking an event focuses that graph node. `flow.event.custom` compiles to a named export (`On_Hit` from "On Hit"); Play dispatches it with `ScriptHost.invokeEvent(classId, event)` / `RuntimeDriver.invokeScriptEvent`. Class-owned per-function graphs remain a later follow-up.
+- **Details** (dock title Inspector): canvas selection drives the target (first selected node; Compiler Results / Play focus as fallback). A selected Class member shows variable type/default (`PinTypePicker`), function pins (`PinListEditor`), or interface `AssetPicker`. Empty selection shows an empty state — no ExecuteJavaScript fallback. Unconnected applicable data pins get literal defaults; ExecuteJavaScript still has pin lists + body; Log has severity / category.
 - **Compiler Results**: diagnostics grouped by graph; tap → select node, pan canvas, flash pin (or scroll CodeMirror to `bodyLine`).
 - **Prefab** (Actor): full-size center tab; 3D preview + gizmos; component tree writes `SerializedGraph.components` (undo via `graph.setComponents`). Place Actors copies those components onto spawned Class actors when the class document is open.
-- **Components**: actor component tree in the left dock; Add Component uses the Place Actors catalog chrome.
+- **Components**: nested actor component tree (`parentId`) in the left dock; immediate drag-to-parent; Add Component uses the Place Actors catalog chrome.
+
+### Type assets (Enum / Structure / ScriptInterface)
+
+These open their own DockView documents (not compact Settings tabs). **Windows** lists their panels.
+
+| Kind | Default panels |
+| --- | --- |
+| Enum | Members table (name + value) + Details |
+| Structure | Member list with pin colors + Details (`PinTypePicker`, default) |
+| ScriptInterface | Methods \| read-only function-node Preview (`GraphEditor` `readOnly`) \| pin Details (`PinListEditor` in/out) |
+
+Texture / Material / Model / Audio / Animation stay compact `asset-settings`. FunctionLibrary palette and Class per-function graph documents are later work.
 
 ### `graph-ui` rework
 
 Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 
-- **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `onSelectionChange` (selected node ids; select-only changes do not call `onChange`), `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + centered **Add node** catalog modal (opened by double-tap pane or connect-end, not a persistent floating button), `defaultZoom` (opening fit-view cap; default 0.5 from Engine Settings `graphDefaultZoom`). Small graphs do not zoom in past that value; large graphs still fit down to min zoom 0.1. External `initialGraph` updates (undo/redo, Inspector, Class members) reconcile onto the canvas without emitting `onChange`; parent echoes of the last emit are ignored so a drag is not snapped back.
+- **`GraphEditor` props** (all optional except `initialGraph`): `onChange`, `onSelectionChange` (selected node ids; select-only changes do not call `onChange`), `focusedNodeId` (select + fit/pan), `diagnostics` (red node badges for `severity: "error"`), `onNavigateRequest`, `paletteNodes` + centered **Add node** catalog modal (opened by double-tap pane or connect-end, not a persistent floating button), `defaultZoom` (opening fit-view cap; default 0.5 from Engine Settings `graphDefaultZoom`), `readOnly` (ScriptInterface signature preview: pan/zoom only; no connect, node drag, palette, or Cut/Paste/Delete/Format). Small graphs do not zoom in past that value; large graphs still fit down to min zoom 0.1. External `initialGraph` updates (undo/redo, Inspector, Class members) reconcile onto the canvas without emitting `onChange`; parent echoes of the last emit are ignored so a drag is not snapped back.
 - **`GraphDocument`**: local extension of core `SerializedGraph`; edges may carry optional `sourceHandle` / `targetHandle` for pin-aware wiring. Optional `members` round-trip Class panel rows; optional `components` round-trip Actor prefab rows.
 - **Nodes**: scripting nodes render via `PinNode` when `data.__pins` is present. Chrome is Blueprint-like: role-colored title bar (`--node-*`) clipped to the shell radius (`overflow-hidden` + `rounded-t-lg`) while the error badge sits outside that clip, two-column pin rows, exec diamonds, data circles, and array list bars. Each pin row is `--touch-target` (44px) tall; the visual pin is `--graph-pin-size` (22px). Titles wrap; `flow.event.*` without `data.title` formats as **Event …**. Tap output pin → tap input pin to connect. Legacy `logMessage` without pins still uses the same shell until the host hydrates.
 - **Host pin hydration** (`hydrateSerializedGraphForEditor` in the editor): injects `__pins` plus `__category` / `__pure` / `__latent` from `@babylonslate/scripting-nodes` on load; palette entries carry `pins`, `pure`, `latent`, and `defaultData` so Add node creates connectable, colored handles. `graph-ui` stays free of the catalog package. It depends on `@babylonslate/scripting` only for `resolveWildcardPinTypes` so pin/wire colors can follow resolved display types without persisting them.
@@ -286,6 +298,7 @@ An actor scripted in the editor compiles and runs in the worker; a type mismatch
 | Behaviour-tree validation rules | P11 |
 | Shader / AnimationGraph validators | P9 |
 | Scene viewport Play badge on 3D viewport | P6 scene chrome (wire badge API in P5; host may be class-doc Play until then) |
+| Possess Camera / Default Camera pick | `p-lighting-camera` ([engineplan §2.5](../engineplan.md)) |
 
 ## Implementation order
 
@@ -305,7 +318,7 @@ Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tr
 
 Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, copies tick input into `ctx`, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers Tick→Print plus Tick→GetAxis2D (injected gamepad). Play with no scene tab is disabled.
 
-**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (pin flash, richer type-asset field editors, project-wide validation sweep, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **compact type-asset settings tabs** are landed — do not reopen those as P5 gaps.
+**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (pin flash, project-wide validation sweep, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **Enum / Structure / ScriptInterface DockView editors** (member tables, interface method preview, Class My Blueprint + Inspector) are landed — do not reopen those as P5 gaps.
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design Class panel UX against `ClassRegistry.reparent` from the start.

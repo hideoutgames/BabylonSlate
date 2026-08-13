@@ -91,14 +91,14 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
-| `--asset-scene` | Scene (blue) | Scene |
+| `--asset-scene` | Scene (yellow, Unreal Level) | Scene |
 | `--asset-graph` | Graph / UserInterface (cyan) | Graph |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
 | `--asset-material` | Material, Shader (red) | Material |
 | `--asset-model` | Model (orange) | Model |
 | `--asset-audio` | Audio (green) | Audio |
 | `--asset-font` | Font (sky) | Font |
-| `--asset-animation` | Animation, AnimationGraph (yellow) | Animation |
+| `--asset-animation` | Animation, AnimationGraph (blue) | Animation |
 | `--asset-class` | Class assets; Object / Actor / Widget identities (indigo) | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
 | `--asset-script-type` | Enum, Structure, ScriptInterface (teal) | one icon each |
 | `--asset-component` | Engine components in Details / Add Component (purple) | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
@@ -106,7 +106,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-class` (they spawn as Actors). Unknown types fall back to a file glyph and `--muted-foreground`.
 
-Content Browser tiles mix the type token into the **thumbnail well only** (`color-mix` 45% into `--muted` plus a 3px inset bar via `typeColorThumbAccent`). The `Card` chrome and text panel stay `--card`. Glyphs still use the raw `--asset-*` token. Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Inspector / Class / ScriptInterface pin-type toggles use `TypeColorMark` so they match graph pins.
+Content Browser tiles mix the type token into the **thumbnail well only** (`color-mix` 55% into `--muted` plus a 3px inset bar via `typeColorThumbAccent`). The `Card` chrome and text panel stay `--card`. Glyphs still use the raw `--asset-*` token. Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum / Structure / ScriptInterface keep `--asset-script-type` on tiles; Details type columns use **pin** colors via `PinTypePicker`.
 
 ## Graph sizing tokens
 
@@ -118,7 +118,7 @@ Content Browser tiles mix the type token into the **thumbnail well only** (`colo
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 
-Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 32px.
+Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
 
 ## Axis colors
 

@@ -17,7 +17,7 @@ import type {
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, MAIN_SCENE_FILE, normalizeProjectSettings, normalizeScene } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -79,7 +79,7 @@ import {
   toggleDockWindow as toggleDockWindowOnApi,
   type DockWindowApi,
 } from "../shell/dock-window-ops";
-import { findDockWindow } from "../shell/window-catalog";
+import { findDockWindow, isDockviewDocumentKind } from "../shell/window-catalog";
 import { listEditorUtilityWindows } from "../shell/editor-utility-windows";
 import {
   classDocumentShowsPrefab,
@@ -107,11 +107,6 @@ import {
   type PlayAnimGraphEntry,
 } from "../lib/play-content";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
-import {
-  playSceneFromOpenDocuments,
-  type PlaySceneLoad,
-} from "../services/play-physics";
-
 export type AppRoute = "home" | "editor";
 
 interface DocumentContextValue {
@@ -238,8 +233,6 @@ interface DocumentContextValue {
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, Uint8Array>>;
-  /** Startup/main scene when no scene tab is open; otherwise the open scene. */
-  collectPlayStartupScene: () => Promise<PlaySceneLoad | null>;
   /** All project scenes so Play `changescene` can instantiate them. */
   collectPlaySceneLibrary: () => Promise<
     Array<{ guid: string; scene: SerializedScene }>
@@ -277,10 +270,11 @@ function asDockWindowApi(api: DockviewApi): DockWindowApi {
 }
 
 function findWindowDefinition(
-  kind: "scene" | "graph",
+  kind: string,
   panelId: string,
   actorPrefab = true,
 ) {
+  if (!isDockviewDocumentKind(kind)) return undefined;
   return (
     findDockWindow(kind, panelId, { actorPrefab }) ??
     listEditorUtilityWindows().find((entry) => entry.id === panelId)
@@ -1372,30 +1366,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
-  const collectPlayStartupScene = useCallback(async (): Promise<PlaySceneLoad | null> => {
-    const open = documentService.getOpenDocumentsOrdered().map((doc) => ({
-      id: doc.id,
-      ref: doc.ref,
-      content: doc.content,
-    }));
-    const fromOpen = playSceneFromOpenDocuments(
-      open,
-      documentService.getState().activeDocumentId,
-    );
-    if (fromOpen) return fromOpen;
-    const path = projectDocument?.scenes[0] ?? MAIN_SCENE_FILE;
-    try {
-      const content = await projectService.loadDocument("scene", path);
-      return {
-        sceneAssetGuid: documentId({ kind: "scene", path }),
-        scene: normalizeScene(content),
-      };
-    } catch (error) {
-      console.error(`[play] failed to load startup scene ${path}`, error);
-      return null;
-    }
-  }, [documentService, projectDocument, projectService]);
-
   const collectPlaySceneLibrary = useCallback(async (): Promise<
     Array<{ guid: string; scene: SerializedScene }>
   > => {
@@ -1695,10 +1665,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const dock = asDockWindowApi(api);
       const kind = documentService.getDocument(id)?.ref.kind;
       for (const panel of listDockPanels(dock)) {
-        const def =
-          kind === "scene" || kind === "graph"
-            ? findWindowDefinition(kind, panel.id)
-            : undefined;
+        const def = isDockviewDocumentKind(kind)
+          ? findWindowDefinition(kind, panel.id)
+          : undefined;
         const placement = capturePanelPlacement(dock, panel.id, def);
         if (placement) {
           documentService.setPanelPlacement(id, panel.id, placement);
@@ -1724,7 +1693,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const { activeDocumentId } = documentService.getState();
     if (!activeDocumentId) return;
     const doc = documentService.getDocument(activeDocumentId);
-    if (!doc || (doc.ref.kind !== "scene" && doc.ref.kind !== "graph")) {
+    if (!doc || !isDockviewDocumentKind(doc.ref.kind)) {
       return;
     }
     const api = dockviewApisRef.current.get(activeDocumentId);
@@ -1778,7 +1747,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const doc = documentService
       .getOpenDocumentsOrdered()
       .find((entry) => entry.id === activeDocumentId);
-    if (!doc || (doc.ref.kind !== "scene" && doc.ref.kind !== "graph")) {
+    if (!doc || !isDockviewDocumentKind(doc.ref.kind)) {
       return;
     }
     const api = dockviewApisRef.current.get(activeDocumentId);
@@ -1812,7 +1781,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     applyFocusLayout(
       doc.ref.kind,
       dock,
-      settings.focusKeepPanels[doc.ref.kind],
+      doc.ref.kind === "scene" || doc.ref.kind === "graph"
+        ? settings.focusKeepPanels[doc.ref.kind]
+        : undefined,
     );
     setFocusedLayoutIds((current) => {
       const next = new Set(current);
@@ -1954,7 +1925,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
-      collectPlayStartupScene,
       collectPlaySceneLibrary,
       loadGraphDocument,
       graphsNeedCompile: compileSignatureIsStale(
@@ -1987,7 +1957,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
-      collectPlayStartupScene,
       collectPlaySceneLibrary,
       loadGraphDocument,
       lastCompiledSignature,

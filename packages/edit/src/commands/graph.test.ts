@@ -130,7 +130,7 @@ describe("graph commands", () => {
   it("SetGraphComponentsCommand apply-then-invert restores the document", () => {
     const doc: SerializedGraph = { nodes: [], edges: [] };
     const components = [
-      { id: "mesh-1", classId: "MeshComponent", properties: { meshKind: "box" } },
+      { id: "mesh-1", classId: "MeshComponent", properties: { meshKind: "box" }, parentId: null },
     ];
     const command = new SetGraphComponentsCommand(undefined, components);
     const afterApply = command.apply(doc);

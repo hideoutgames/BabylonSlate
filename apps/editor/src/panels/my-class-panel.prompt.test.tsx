@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { MyClassPanel } from "./my-class-panel";
+import { GraphEditingProvider } from "../context/graph-editing-context";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -36,6 +37,7 @@ vi.mock("../context/document-context", () => ({
       },
     ],
     applyGraphChange,
+    assetRegistry: { list: () => [] },
   }),
 }));
 
@@ -51,7 +53,12 @@ afterEach(() => {
 describe("MyClassPanel name prompt", () => {
   it("adds a function through NamePromptDialog instead of window.prompt", () => {
     const prompt = vi.spyOn(window, "prompt");
-    render(<MyClassPanel {...({} as IDockviewPanelProps)} />);
+    render(
+      <GraphEditingProvider>
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("class-add-member"));
     fireEvent.click(screen.getByTestId("class-add-functions"));
     expect(prompt).not.toHaveBeenCalled();
     fireEvent.change(screen.getByTestId("name-prompt-input"), {

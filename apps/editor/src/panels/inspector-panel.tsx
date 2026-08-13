@@ -1,13 +1,18 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
+  AssetPicker,
   PanelFrame,
   ParameterListEditor,
+  PinListEditor,
+  PinTypePicker,
   PropertyGrid,
+  type PinListRow,
 } from "@babylonslate/editor-kit";
 import { Field, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { Button } from "@babylonslate/ui/components/button";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedGraph } from "@babylonslate/core";
+import type { GraphClassMember, SerializedGraph } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -29,6 +34,151 @@ import {
   pinDefaultPropertyRows,
   pinListFromParameterRows,
 } from "../lib/graph-inspector";
+import { patchClassMember } from "../lib/class-members";
+
+function ClassMemberDetails({
+  graph,
+  member,
+  interfaceAssets,
+  onChange,
+}: {
+  graph: SerializedGraph;
+  member: GraphClassMember;
+  interfaceAssets: Array<{ guid: string; name: string; type: string }>;
+  onChange: (next: SerializedGraph) => void;
+}) {
+  const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
+  const commit = (patch: Partial<GraphClassMember>) => {
+    onChange(patchClassMember(graph, member.id, patch));
+  };
+
+  if (member.kind === "variable") {
+    const defaultText =
+      member.defaultValue === undefined || member.defaultValue === null
+        ? ""
+        : String(member.defaultValue);
+    return (
+      <div className="flex flex-col gap-3 p-3" data-testid="inspector-member-variable">
+        <div className="text-sm font-medium">{member.name}</div>
+        <PropertyGrid
+          rows={[
+            {
+              id: "name",
+              kind: "text",
+              label: "Name",
+              value: member.name,
+              onChange: (name) => commit({ name }),
+            },
+            {
+              id: "default",
+              kind: "text",
+              label: "Default",
+              value: defaultText,
+              onChange: (value) => commit({ defaultValue: value }),
+            },
+          ]}
+        />
+        <div className="flex flex-col gap-1">
+          <div className="text-sm font-medium">Type</div>
+          <PinTypePicker
+            value={member.typeId ?? "float"}
+            onChange={(typeId) => commit({ typeId })}
+            data-testid="inspector-member-type"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (member.kind === "function") {
+    const rows: PinListRow[] = (member.pins ?? []).map((pin, index) => ({
+      id: `${member.id}-pin-${index}`,
+      name: pin.name,
+      type: pin.typeId,
+      direction: pin.direction,
+    }));
+    return (
+      <div className="flex flex-col gap-3 p-3" data-testid="inspector-member-function">
+        <div className="text-sm font-medium">{member.name}</div>
+        <PropertyGrid
+          rows={[
+            {
+              id: "name",
+              kind: "text",
+              label: "Name",
+              value: member.name,
+              onChange: (name) => commit({ name }),
+            },
+          ]}
+        />
+        <PinListEditor
+          title="Pins"
+          rows={rows}
+          showDirection
+          testIdPrefix="class-fn-pin"
+          data-testid="inspector-member-pins"
+          onChange={(nextRows) =>
+            commit({
+              pins: nextRows.map((row) => ({
+                name: row.name,
+                typeId: String(row.type),
+                direction: row.direction === "out" ? "out" : "in",
+              })),
+            })
+          }
+        />
+      </div>
+    );
+  }
+
+  if (member.kind === "interface") {
+    const picked =
+      interfaceAssets.find((asset) => asset.guid === member.assetGuid)?.name ??
+      member.name;
+    return (
+      <div className="flex flex-col gap-3 p-3" data-testid="inspector-member-interface">
+        <div className="text-sm font-medium">{member.name}</div>
+        <PropertyGrid
+          rows={[
+            {
+              id: "name",
+              kind: "text",
+              label: "Name",
+              value: member.name,
+              onChange: (name) => commit({ name }),
+            },
+          ]}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          data-testid="inspector-member-interface-pick"
+          onClick={() => setInterfacePickerOpen(true)}
+        >
+          {picked || "Pick Script Interface"}
+        </Button>
+        <AssetPicker
+          open={interfacePickerOpen}
+          onOpenChange={setInterfacePickerOpen}
+          assets={interfaceAssets}
+          allowedTypes={["ScriptInterface"]}
+          allowNone={false}
+          title="Pick Script Interface"
+          onPick={(guid) => {
+            if (!guid) return;
+            const named =
+              interfaceAssets.find((asset) => asset.guid === guid)?.name ??
+              member.name;
+            commit({ assetGuid: guid, name: named });
+          }}
+          data-testid="inspector-interface-picker"
+        />
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export function InspectorPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -37,14 +187,19 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     useDocuments();
   const { focusDiagnostic } = useValidation();
   const { focusedNodeId } = usePlay();
-  const { selectedNodeIds } = useGraphEditing();
+  const { selectedNodeIds, selectedMemberId } = useGraphEditing();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
     doc?.ref.kind === "graph" ? (doc.content as SerializedGraph) : null;
 
+  const selectedMember =
+    graph && selectedMemberId
+      ? (graph.members ?? []).find((member) => member.id === selectedMemberId)
+      : undefined;
+
   const selectedNode = useMemo(() => {
-    if (!graph) return null;
+    if (!graph || selectedMember) return null;
     const id = resolveInspectorNodeId(
       selectedNodeIds,
       focusDiagnostic?.nodeId,
@@ -52,13 +207,42 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     );
     if (!id) return null;
     return graph.nodes.find((n) => n.id === id) ?? null;
-  }, [graph, selectedNodeIds, focusDiagnostic, focusedNodeId]);
+  }, [
+    focusDiagnostic?.nodeId,
+    focusedNodeId,
+    graph,
+    selectedMember,
+    selectedNodeIds,
+  ]);
+
+  const interfaceAssets = (assetRegistry?.list() ?? [])
+    .filter((asset) => asset.header.type === "ScriptInterface")
+    .map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+    }));
+
+  if (graph && selectedMember && selectedMember.kind !== "event") {
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        <ClassMemberDetails
+          graph={graph}
+          member={selectedMember}
+          interfaceAssets={interfaceAssets}
+          onChange={(next) => {
+            void applyGraphChange(documentId, next);
+          }}
+        />
+      </PanelFrame>
+    );
+  }
 
   if (!graph || !selectedNode) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <p className="p-4 text-sm text-muted-foreground">
-          Select a graph node to edit properties.
+          Select a graph node or class member to edit properties.
         </p>
       </PanelFrame>
     );

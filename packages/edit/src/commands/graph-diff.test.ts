@@ -71,7 +71,7 @@ describe("diffGraphCommands", () => {
     const after = {
       ...before,
       components: [
-        { id: "mesh-1", classId: "MeshComponent", properties: { meshKind: "box" } },
+        { id: "mesh-1", classId: "MeshComponent", properties: { meshKind: "box" }, parentId: null },
       ],
     };
     const commands = diffGraphCommands(before, after);

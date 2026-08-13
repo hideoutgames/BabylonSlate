@@ -3,11 +3,10 @@ import {
   AssetPicker,
   NamedListEditor,
   PanelFrame,
-  ParameterListEditor,
   PropertyGrid,
   SelectableText,
 } from "@babylonslate/editor-kit";
-import type { ParameterRow, PropertyRow } from "@babylonslate/editor-kit";
+import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
 import {
@@ -22,19 +21,7 @@ import { ShaderGraphEditor } from "./shader-graph-editor";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
-import {
-  addEnumMember,
-  addScriptInterfaceMethod,
-  addStructureField,
-  patchTextureUsage,
-  STRUCTURE_FIELD_TYPES,
-  TEXTURE_USAGE_OPTIONS,
-} from "../lib/asset-settings";
-import type {
-  EnumAsset,
-  ScriptInterfaceAsset,
-  StructureAsset,
-} from "@babylonslate/scripting";
+import { patchTextureUsage, TEXTURE_USAGE_OPTIONS } from "../lib/asset-settings";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -387,64 +374,6 @@ function TilesetEditor({
   );
 }
 
-function asEnumAsset(payload: Record<string, unknown>): EnumAsset {
-  const members = Array.isArray(payload.members) ? payload.members : [];
-  return {
-    kind: "enum",
-    guid: typeof payload.guid === "string" ? payload.guid : "",
-    name: typeof payload.name === "string" ? payload.name : "Enum",
-    members: members.map((raw) => {
-      const row = asRecord(raw);
-      return {
-        name: typeof row.name === "string" ? row.name : "Member",
-        value: typeof row.value === "number" ? row.value : 0,
-      };
-    }),
-  };
-}
-
-function asStructureAsset(payload: Record<string, unknown>): StructureAsset {
-  const fields = Array.isArray(payload.fields) ? payload.fields : [];
-  return {
-    kind: "structure",
-    guid: typeof payload.guid === "string" ? payload.guid : "",
-    name: typeof payload.name === "string" ? payload.name : "Structure",
-    fields: fields.map((raw) => {
-      const row = asRecord(raw);
-      return {
-        name: typeof row.name === "string" ? row.name : "Field",
-        typeId: typeof row.typeId === "string" ? row.typeId : "float",
-      };
-    }),
-  };
-}
-
-function asScriptInterfaceAsset(
-  payload: Record<string, unknown>,
-): ScriptInterfaceAsset {
-  const methods = Array.isArray(payload.methods) ? payload.methods : [];
-  return {
-    kind: "scriptInterface",
-    guid: typeof payload.guid === "string" ? payload.guid : "",
-    name: typeof payload.name === "string" ? payload.name : "Interface",
-    methods: methods.map((raw) => {
-      const row = asRecord(raw);
-      const pins = Array.isArray(row.pins) ? row.pins : [];
-      return {
-        name: typeof row.name === "string" ? row.name : "Method",
-        pins: pins.map((pin) => {
-          const pinRow = asRecord(pin);
-          return {
-            name: typeof pinRow.name === "string" ? pinRow.name : "Pin",
-            typeId: typeof pinRow.typeId === "string" ? pinRow.typeId : "float",
-            direction: pinRow.direction === "out" ? "out" : "in",
-          };
-        }),
-      };
-    }),
-  };
-}
-
 function AssetSettingsEditor({
   assetType,
   dependencies,
@@ -456,171 +385,6 @@ function AssetSettingsEditor({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  if (assetType === "Enum") {
-    const asset = asEnumAsset(payload);
-    return (
-      <PanelFrame className="flex-1" title="Enum">
-        <div className="flex flex-col gap-3 p-3" data-testid="enum-settings">
-          {asset.members.map((member, index) => (
-            <PropertyGrid
-              key={`${member.name}-${index}`}
-              rows={[
-                {
-                  id: `name-${index}`,
-                  kind: "text",
-                  label: "Name",
-                  value: member.name,
-                  onChange: (value) => {
-                    const members = [...asset.members];
-                    members[index] = { ...member, name: value };
-                    onChange({ ...asset, members });
-                  },
-                },
-                {
-                  id: `value-${index}`,
-                  kind: "number",
-                  label: "Value",
-                  value: member.value,
-                  onChange: (value) => {
-                    const members = [...asset.members];
-                    members[index] = { ...member, value };
-                    onChange({ ...asset, members });
-                  },
-                },
-              ]}
-            />
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onChange(addEnumMember(asset))}
-          >
-            Add Member
-          </Button>
-        </div>
-      </PanelFrame>
-    );
-  }
-
-  if (assetType === "Structure") {
-    const asset = asStructureAsset(payload);
-    return (
-      <PanelFrame className="flex-1" title="Structure">
-        <div className="flex flex-col gap-3 p-3" data-testid="structure-settings">
-          {asset.fields.map((field, index) => (
-            <PropertyGrid
-              key={`${field.name}-${index}`}
-              rows={[
-                {
-                  id: `name-${index}`,
-                  kind: "text",
-                  label: "Name",
-                  value: field.name,
-                  onChange: (value) => {
-                    const fields = [...asset.fields];
-                    fields[index] = { ...field, name: value };
-                    onChange({ ...asset, fields });
-                  },
-                },
-                {
-                  id: `type-${index}`,
-                  kind: "enum",
-                  label: "Type",
-                  value: field.typeId,
-                  options: [
-                    ...STRUCTURE_FIELD_TYPES,
-                    ...(STRUCTURE_FIELD_TYPES as readonly string[]).includes(
-                      field.typeId,
-                    )
-                      ? []
-                      : [field.typeId],
-                  ].map((typeId) => ({ value: typeId, label: typeId })),
-                  onChange: (value) => {
-                    const fields = [...asset.fields];
-                    fields[index] = { ...field, typeId: value };
-                    onChange({ ...asset, fields });
-                  },
-                },
-              ]}
-            />
-          ))}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onChange(addStructureField(asset))}
-          >
-            Add Field
-          </Button>
-        </div>
-      </PanelFrame>
-    );
-  }
-
-  if (assetType === "ScriptInterface") {
-    const asset = asScriptInterfaceAsset(payload);
-    return (
-      <PanelFrame className="flex-1" title="Script Interface">
-        <div className="flex flex-col gap-4 p-3" data-testid="script-interface-settings">
-          {asset.methods.map((method, index) => {
-            const rows: ParameterRow[] = method.pins.map((pin, pinIndex) => ({
-              id: `${index}-${pinIndex}-${pin.name}`,
-              name: pin.name,
-              type:
-                pin.typeId === "int" ||
-                pin.typeId === "bool" ||
-                pin.typeId === "string" ||
-                pin.typeId === "enum"
-                  ? pin.typeId
-                  : "float",
-            }));
-            return (
-              <div key={`${method.name}-${index}`} className="flex flex-col gap-2">
-                <PropertyGrid
-                  rows={[
-                    {
-                      id: `method-${index}`,
-                      kind: "text",
-                      label: "Method",
-                      value: method.name,
-                      onChange: (value) => {
-                        const methods = [...asset.methods];
-                        methods[index] = { ...method, name: value };
-                        onChange({ ...asset, methods });
-                      },
-                    },
-                  ]}
-                />
-                <ParameterListEditor
-                  title="Pins"
-                  rows={rows}
-                  onChange={(nextRows) => {
-                    const methods = [...asset.methods];
-                    methods[index] = {
-                      ...method,
-                      pins: nextRows.map((row) => ({
-                        name: row.name,
-                        typeId: row.type,
-                        direction: "in" as const,
-                      })),
-                    };
-                    onChange({ ...asset, methods });
-                  }}
-                />
-              </div>
-            );
-          })}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onChange(addScriptInterfaceMethod(asset))}
-          >
-            Add Method
-          </Button>
-        </div>
-      </PanelFrame>
-    );
-  }
-
   const rows: PropertyRow[] = [];
   if (assetType === "Texture") {
     const usage = typeof payload.usage === "string" ? payload.usage : "albedo";

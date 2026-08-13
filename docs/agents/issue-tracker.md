@@ -41,6 +41,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD did not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes) | Resolved (`cursor/babylon-native-ui-138e` registers `source` bytes on Play + designer ADT) |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; `previewRect` tables cover pin / percent / stretch-padding / safe-area | Accepted |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-system | Standards | Play HUD `borderRadius: 999` (stick) pre-existed; widget style passthrough still uses a numeric fallback | Accepted |
+| 2026-08-13 | cursor/startup-scene-play-cleanup-ebf7 | p14-export / Play | Spec | Unused `collectPlayStartupScene` still loaded `scenes[0]` / `main.scene.babasset` when no scene tab was open | Resolved |
 
 ## PR checklist
 
@@ -143,7 +144,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
-| Full Enum / Structure / ScriptInterface row editors | later polish (`apps/editor`, `editor-kit`) | Compact settings tabs landed (member/field/method rows + `ParameterListEditor`); richer designers not in scope |
+| Full Enum / Structure / ScriptInterface row editors | `apps/editor`, `editor-kit` | DockView member tables, ScriptInterface method preview, `PinListEditor` / `PinTypePicker` |
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Play now validates the compiled project graph set (`collectPlayPreviewScripts`); startup-map / GameInstance / plugin EUO sweep still deferred |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed (`p8-command-system`) |
@@ -156,7 +157,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (selection tidy / then-chain); **hold-to-marquee** (`attachGraphPaneMarquee`).
 
-**Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface and import data types open compact `asset-settings` tabs (not new Shader/UI editors). Legacy Graph files still load.
+**Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface open DockView documents (import data types stay compact `asset-settings` tabs). Legacy Graph files still load.
 
 ## P6 slice ownership
 
@@ -181,7 +182,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list (`mainCameraActorId` still later). May run beside P11. |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list. Remaining: **Default Camera** via kit `SceneComponentPicker` (`CameraComponent` only), **Possess Camera** node (global Play camera), `UniversalCamera`, shadows/IBL. May run beside P11. |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -224,7 +225,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 | Core quality commands “mutate real engine settings” | `consoleHost` still `emitSetting` logs ([debugger.md](../architecture/debugger.md) already says this) | Later polish / P14 player |
 | §9.4 HUD (render ms, invalidations/s, HW scale, texture/geometry/compressed bytes, LRU evictions, actors, per-channel bytes) | `StatsHud` shows fps, script/physics ms, tick-budget flag, one accounted-byte total, mesh/texture counts, draws, aggregate bridge msgs/s | `p8-hud-polish` |
 | Trace as document tab + graphs + derived-data `.babtrace` spill | In-memory + overlay `TracePlayback`; `encodeTraceDocument` exists, editor does not write it | `p8-trace-playback` (P11 needs real input replay) |
-| `ParameterListEditor` on Class / ScriptInterface | Used for ExecuteJavaScript + `OnCommandRun` only | Later polish |
+| `PinListEditor` on Class / ScriptInterface | Done (Class Inspector function pins + ScriptInterface method Details; ExecuteJavaScript / OnCommandRun keep the `ParameterListEditor` wrapper) | — |
 
 ## P9 slice ownership
 
@@ -254,7 +255,7 @@ Chrome polish (pin flash, multi-select gizmo) stays parked. Remaining Play/scrip
 | Play loads anim graphs / sprites from scene refs | Done |
 | `ctx.changeScene` / `changescene` loads a scene from the Play scene library | Done (foundation wave) |
 | Catalog honesty (Tilemap / BT / Nav / Widget / AudioComponent) | Done (Tilemap addable; BT/Nav gated; Widget hidden; AudioComponent not in Search/Add) |
-| Enum / Structure / ScriptInterface editors | Already `asset-settings` tabs |
+| Enum / Structure / ScriptInterface editors | DockView Members / Methods / Preview / Details |
 | Prefab → class document persistence | Done (open tab **or** disk graph) |
 | Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
 | ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |
@@ -311,7 +312,7 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 | Item | Status |
 | --- | --- |
 | ScriptHost `TickContext` input, tick Delay, spawn, addComponent, interface handlers | Done |
-| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Play uses the open scene tab only; disabled otherwise. `startupSceneGuid` is packaged/export boot |
+| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Play uses the open scene tab only; disabled otherwise. `collectPlayStartupScene` path fallback removed. `startupSceneGuid` is packaged/export boot (`p14-export`) |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
 | Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract is §2.5 / `p-lighting-camera`, not P11) |
@@ -325,10 +326,10 @@ Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P11 (
 
 | Slice | Checklist | Packages |
 | --- | --- | --- |
-| Schema + Details | `p-lighting-camera` | `core` SceneSettings + Light/Camera properties; `apps/editor` Details enums and scene-settings rows |
+| Schema + Details | `p-lighting-camera` | `core` SceneSettings Default Camera (actor+component ids); kit `SceneComponentPicker` with `allowedClassIds`; `apps/editor` Details enums and scene-settings rows |
 | Renderer | same | `render` incremental `scene-illumination`, detached UniversalCamera, one ShadowGenerator, fog/IBL/clear, dir/spot gizmos |
-| Play | same | `runtime` assign payload; `render` snapshot-apply parity |
-| Scripting | same | `scripting-nodes` get/set active camera, FOV, ortho size, light enabled/color/intensity |
+| Play | same | `runtime` assign payload; named Default Camera as `activeCamera`; `render` snapshot-apply parity |
+| Scripting | same | `scripting-nodes` **Possess Camera** (global `activeCamera`); get/set FOV, ortho size, light enabled/color/intensity |
 
 ## P11 behaviour trees / navigation
 
