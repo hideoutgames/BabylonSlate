@@ -50,8 +50,21 @@ describe("scene schema", () => {
     });
     expect(scene.settings.grid.tileSize).toBe(1);
     expect(scene.settings.grid.tileSubdivisions).toBe(4);
+    expect(scene.settings.grid.showGrid).toBe(true);
     expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
     expect(scene.settings.editorJoystickEnabled).toBe(false);
+  });
+
+  it("keeps the grid visible unless showGrid is explicitly false", () => {
+    expect(normalizeScene({}).settings.grid.showGrid).toBe(true);
+    expect(
+      normalizeScene({ settings: { grid: { showGrid: false } } }).settings.grid
+        .showGrid,
+    ).toBe(false);
+    expect(
+      normalizeScene({ settings: { grid: { showGrid: "no" } } }).settings.grid
+        .showGrid,
+    ).toBe(true);
   });
 
   it("normalizes editorJoystickEnabled only when explicitly true", () => {

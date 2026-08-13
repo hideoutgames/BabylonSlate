@@ -7,7 +7,8 @@
  *
  * v3 adds `settings.physicsWorld` (`"3d"` | `"2d"`). Older documents default
  * from `viewportMode` on normalize. `editorJoystickEnabled` is additive on v3
- * (missing keys normalize to false).
+ * (missing keys normalize to false). `grid.showGrid` is additive (missing keys
+ * normalize to true so older scenes keep the editor grid).
  */
 
 export type ViewportMode = "3d" | "2d";
@@ -53,6 +54,8 @@ export interface SceneGridSettings {
   tileSize: number;
   /** Minor grid lines drawn between two tile lines in 2D. */
   tileSubdivisions: number;
+  /** Editor viewport grid visibility; missing keys normalize to true. */
+  showGrid: boolean;
 }
 
 /** Rectangle the game camera frames in 2D, drawn as bounds in the viewport. */
@@ -115,6 +118,7 @@ export function createDefaultSceneSettings(
       snapScale: 0.25,
       tileSize: 1,
       tileSubdivisions: 4,
+      showGrid: true,
     },
     cameraBounds2D: { width: 16, height: 9 },
     editorJoystickEnabled: false,
@@ -263,6 +267,7 @@ export function normalizeSceneSettings(
         typeof grid.tileSubdivisions === "number"
           ? Math.max(1, Math.round(grid.tileSubdivisions))
           : defaults.grid.tileSubdivisions,
+      showGrid: grid.showGrid !== false,
     },
     cameraBounds2D: {
       width:
