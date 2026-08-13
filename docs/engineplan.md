@@ -15,7 +15,7 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 P0–P10 packages are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** P11 behaviour trees / navigation. The pre-P11 foundation-hardening wave closed Play/scripting contracts that Appendix A `[x]` had overstated (ScriptHost input, tick-clock Delay, spawn/addComponent, GameInstance singleton, startup scene without an open tab, closed-tab class prefabs, real `changescene` library load, ResourceCache textures on sprites/tilemaps, GLB `assetGuid`, authored lights/cameras, HUD TouchButton/DPad, `playSound` command). Do not start P11+ packages from leftover **chrome** polish (pin flash, multi-select gizmo, ADT HUD). Parked: `p1-device-spikes` (hardware-only).
+**Next engine slice:** P11 behaviour trees / navigation. The pre-P11 foundation-hardening wave closed Play/scripting contracts that Appendix A `[x]` had overstated (ScriptHost input, tick-clock Delay, spawn/addComponent, GameInstance singleton, startup scene without an open tab, closed-tab class prefabs, real `changescene` library load, ResourceCache textures on sprites/tilemaps, GLB `assetGuid`, authored lights/cameras, HUD TouchButton/DPad, `playSound` command). Do not start P11+ packages from leftover **chrome** polish (pin flash, multi-select gizmo, ADT HUD, lighting polish / ShadowGenerator). Parked: `p1-device-spikes` (hardware-only).
 
 Appendix A `[x]` means the **package/slice** landed. It does not mean every Play or document-tab path matches the letter of the spec. Honest residuals:
 
@@ -28,12 +28,13 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | ScriptHost input / Delay / spawn | `ScriptContext` copies `TickContext` input; Delay is tick-clock (pause-safe); `addComponent` / `spawnActor` / interface handlers are live | Done (foundation wave) |
 | GameInstance class | Scene/project `gameInstanceClass` constructs that subclass as the session singleton; its Begin Play runs | Done (foundation wave) |
 | Actor Prefab persistence | Class documents store `components`; Place Actors copies them from the open tab **or** the disk graph | Done (foundation wave) |
-| Lights / cameras | `LightComponent` / `CameraComponent` create authored Babylon lights/cameras in the editor (orbit camera stays) and Play (authored camera becomes `activeCamera`) | Done (foundation wave) |
+| Lights / cameras | `LightComponent` / `CameraComponent` create authored Babylon lights/cameras in the editor (orbit camera stays) and Play (authored camera becomes `activeCamera`). Direction from transform, Play color/intensity, range/cone, and `shadowquality` → one `ShadowGenerator` are parked polish — not a new lighting phase | Done (foundation wave) |
 | Unbuilt components in catalogs | `BehaviourTreeComponent` / `NavAgentComponent` stay gated. `TilemapComponent` is addable. `WidgetComponent` is hidden until `CreateForMesh` exists. `AudioComponent` is not in Search/Add; graphs use `audio.play` → `playSound` command | P11 / later |
 | Tileset / Tilemap documents | Codecs, UV math, golden chunk `VertexData`, Content Browser types, settings + paint tab, Rapier/software chain colliders, Play load from scene refs, textured chunks, 2D Create Project card; Play e2e asserts a falling actor settles on painted tiles | Done (`p10-tilemap` + foundation wave) |
 | Type-asset tabs | Enum / Structure / ScriptInterface open `asset-settings` editors. `FunctionLibrary` is an engine base class; it does **not** emit palette nodes | Done (`p5-types`); palette parked |
 | Map nodes | `map.get` / `set` / `has` / `remove` / `size` / `keys` with K/V wildcards | Done |
 | ADT HUD / `.babtrace` tab / §9.4 HUD completeness / full audio mixer | Recorded P8/P9 polish — `playSound` emits a command and Play logs it; no `AudioContext` mixer yet | Parked |
+| Lighting polish (direction, Play color, shadows, IBL) | Authored lights exist (`scene-illumination.ts`). No rotation-driven direction, Play still creates white lights, no `ShadowGenerator` / IBL. Do not start a lighting rewrite; a small residual ticket later is enough | Parked |
 
 **Authoring-surface residuals** (document-tab hosts, not a new engine phase; do not rebuild `ui-runtime` / `shader-graph` / `anim-graph` / `scripting`):
 
@@ -219,7 +220,7 @@ Section 1.2 states the budget. This section is how the architecture actually hit
 
 **Shaders compile at load, not at first draw.** A shader compilation stall on a mobile GPU is a visible hitch at the worst possible moment, which is the first time something becomes visible. Materials are pre-warmed with `forceCompilationAsync` during scene load, behind the loading indicator that is already on screen. The same concern applies while authoring: the shader graph recompiles a Node Material on edit, so its live preview is throttled rather than recompiling per keystroke.
 
-**Defaults are set for the baseline device rather than for a demo.** Shadow maps default to 1024 with one shadow-casting light, with 2048 and beyond available but warned about. Post-processing is off by default, because a full-screen pass at retina is the classic mobile killer, and the shader graph flags the cost when a post-process material is added to a project on the iPad baseline. The `shadowquality` and `renderquality` commands from section 9 step these tiers at runtime, which is also how the dynamic relief valve expresses itself.
+**Defaults are set for the baseline device rather than for a demo.** Shadow maps default to 1024 with one shadow-casting light, with 2048 and beyond available but warned about. Post-processing is off by default, because a full-screen pass at retina is the classic mobile killer, and the shader graph flags the cost when a post-process material is added to a project on the iPad baseline. The `shadowquality` and `renderquality` commands from section 9 step these tiers at runtime, which is also how the dynamic relief valve expresses itself. `shadowquality` is registered today; the renderer does not yet attach a `ShadowGenerator` (parked polish, not a new engine phase).
 
 **Allocation discipline in the per-frame path.** GC pauses read as jank and are avoidable. Snapshot application reuses scratch `Vector3`, `Quaternion` and `Matrix` instances and writes into existing objects rather than allocating per actor per frame. This lands in `CODING_STANDARDS.md` with review enforcement, because it is easy to write innocently and unpleasant to track down afterwards.
 

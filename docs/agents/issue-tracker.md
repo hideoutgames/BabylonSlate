@@ -180,7 +180,8 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
-| Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; directional/spot cones still later |
+| Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons |
+| Lighting polish (direction, Play color/intensity, `shadowquality` → one ShadowGenerator) | later polish | Authored lights shipped. Do **not** start a lighting/PBR/IBL rewrite; next engine slice is P11. Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates lights; range/cone/cast-shadow flags and spot cones later |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -313,7 +314,7 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 | Play loads startup/main scene + `gameInstanceClass` with no scene tab | Done |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
-| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done |
+| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (lighting polish parked — not P11) |
 | Play HUD TouchButton / TouchDPad / default Jump+dpad mappings | Done |
 | `playSound` command (logged; no mixer) | Done |
 | FunctionLibrary palette nodes | Parked (base class exists) |
