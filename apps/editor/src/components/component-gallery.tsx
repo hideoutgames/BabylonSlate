@@ -71,6 +71,7 @@ function GalleryComposites() {
   const [friction, setFriction] = useState(0.5);
   const [physicsLayer, setPhysicsLayer] = useState(1);
   const [visible, setVisible] = useState(true);
+  const [tint, setTint] = useState<[number, number, number]>([1, 0, 0]);
   const [selectedId, setSelectedId] = useState("player");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -127,6 +128,14 @@ function GalleryComposites() {
       value: visible,
       defaultValue: true,
       onChange: setVisible,
+    },
+    {
+      kind: "color",
+      id: "gallery-tint",
+      label: "Tint",
+      value: tint,
+      defaultValue: [1, 0, 0],
+      onChange: setTint,
     },
     {
       kind: "enum",

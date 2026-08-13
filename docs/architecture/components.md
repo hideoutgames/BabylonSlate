@@ -48,7 +48,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
 | **PropertyGrid** | Typed Details rows: number, vector3 (2–4 axes), boolean, text, enum, color (`ColorField`), slider, flags (`FlagsField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis / enumRef defaults), UserInterface widget details, Sprite / Tileset / Tilemap / Structure settings. |
-| **ColorField** | Native color input wrapped for PropertyGrid. | Light color; Inspector color pin defaults; gallery. |
+| **ColorField** | Native color swatch plus a pasteable `#rrggbb` field. | Light color; Inspector color pin defaults; gallery. |
 | **FlagsField** | Compact 44px bitmask toggles (Layer 0–31 or named labels). | Collider `layer` / `mask`; gallery. |
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / slider / color; InputMappingEditor axis extras; gallery. |

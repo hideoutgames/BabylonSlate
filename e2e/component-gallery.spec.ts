@@ -36,6 +36,7 @@ test("component gallery renders every editor-kit composite", async ({
   await expect(page.getByTestId("property-gallery-position-x")).toBeVisible();
   await expect(page.getByTestId("property-gallery-friction-slider")).toBeVisible();
   await expect(page.getByTestId("property-gallery-layer-bit-0")).toBeVisible();
+  await expect(page.getByTestId("property-gallery-tint-hex")).toBeVisible();
   await expect(page.getByTestId("gallery-slider")).toBeVisible();
   await expect(page.getByTestId("gallery-numeric-drag")).toBeVisible();
   await expect(page.getByTestId("gallery-parameter-list")).toBeVisible();
