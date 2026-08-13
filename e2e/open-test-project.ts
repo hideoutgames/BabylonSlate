@@ -20,8 +20,40 @@ export async function openTestProject(
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
 
+export async function openContentBrowser(page: Page): Promise<void> {
+  const tab = page.locator(
+    '[data-testid="document-tab"][data-document-kind="content-browser"]',
+  );
+  const select = tab.getByTestId("document-tab-select");
+  if ((await select.count()) > 0) {
+    await select.click();
+  }
+  await expect(
+    page.getByTestId("document-workspace-content-browser"),
+  ).toBeVisible();
+}
+
+/** Open an asset from Content Browser, activating the browser tab if it is hidden. */
+export async function openAssetFromBrowser(
+  page: Page,
+  assetPath: string,
+): Promise<void> {
+  await openContentBrowser(page);
+  await page.locator(`[data-asset-path="${assetPath}"]`).dblclick();
+}
+
 export async function openMainScene(page: Page): Promise<void> {
-  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
+  const sceneTab = page.locator(
+    '[data-testid="document-tab"][data-document-kind="scene"]',
+  );
+  if ((await sceneTab.count()) > 0) {
+    const select = sceneTab.getByTestId("document-tab-select");
+    if ((await select.count()) > 0) {
+      await select.click();
+    }
+  } else {
+    await openAssetFromBrowser(page, "assets/main.scene.babasset");
+  }
   await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
   await expect(page.getByTestId("viewport-canvas")).toBeVisible({
     timeout: 15_000,

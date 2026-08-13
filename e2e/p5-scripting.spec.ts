@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { openMainScene, openTestProject } from "./open-test-project";
+import {
+  openAssetFromBrowser,
+  openMainScene,
+  openTestProject,
+} from "./open-test-project";
 
 async function injectGamepad(
   page: { evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown> },
@@ -81,7 +85,7 @@ test.describe("P5 visual scripting acceptance", () => {
     expect(installed).toBe(true);
 
     await openMainScene(page);
-    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("compile-graph")).toBeVisible();
     await expect(page.getByTestId("compilation-error")).toHaveCount(0);
 
@@ -176,9 +180,7 @@ test.describe("P5 visual scripting acceptance", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");
@@ -236,7 +238,7 @@ test.describe("P5 visual scripting acceptance", () => {
       });
     });
 
-    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("compiler-results")).toBeVisible();
     await expect(page.getByTestId("compiler-result-row").first()).toBeVisible({
       timeout: 15_000,
@@ -260,9 +262,7 @@ test.describe("P5 visual scripting acceptance", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");

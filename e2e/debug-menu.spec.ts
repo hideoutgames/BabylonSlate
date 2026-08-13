@@ -1,14 +1,10 @@
-import { expect, test } from "@playwright/test";
-import { openTestProject } from "./open-test-project";
+import { expect, test, type Page } from "@playwright/test";
+import { openMainScene, openTestProject } from "./open-test-project";
 
 async function openSceneWithViewport(page: Page) {
   await openTestProject(page);
-  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
-  await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
+  await openMainScene(page);
   await expect(page.getByTestId("viewport-panel")).toBeVisible();
-  await expect(
-    page.getByTestId("viewport-canvas"),
-  ).toBeVisible({ timeout: 15_000 });
 }
 
 /** Full-viewport layers (modal menu backdrops) that sit over the WebGL canvas. */

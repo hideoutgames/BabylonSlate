@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
+import { openMainScene } from "./open-test-project";
 
 async function openTwoDProject(page: Page): Promise<void> {
   await page.goto("/?test=1");
@@ -58,14 +59,6 @@ async function tileAt(page: Page, gx: number, gy: number): Promise<number | null
     },
     [gx, gy] as const,
   );
-}
-
-async function openMainScene(page: Page): Promise<void> {
-  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
-  await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
-  await expect(
-    page.getByTestId("viewport-canvas"),
-  ).toBeVisible({ timeout: 15_000 });
 }
 
 async function pickSelectedAsset(

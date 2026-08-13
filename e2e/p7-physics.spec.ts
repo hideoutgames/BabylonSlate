@@ -1,13 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { openTestProject } from "./open-test-project";
-
-async function openMainScene(page: Page) {
-  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
-  await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
-  await expect(
-    page.getByTestId("viewport-canvas"),
-  ).toBeVisible({ timeout: 15_000 });
-}
+import { expect, test } from "@playwright/test";
+import { openMainScene, openTestProject } from "./open-test-project";
 
 test.describe("P7 Play physics timings", () => {
   test("2D rigid body Play reports non-zero physics ms on the worker HUD", async ({
