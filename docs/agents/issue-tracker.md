@@ -36,7 +36,8 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load / p8-command-system | Standards | `CODING_STANDARDS.md` package list omitted `debugger` after the new package landed | Resolved |
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load / p8-command-system | Standards | Two Appendix A slices in one PR (`p7-play-scene-load` then `p8-command-system`); assigned plan required both | Accepted |
 | 2026-08-12 | cursor/p7-play-scene-load-7208 | p7-play-scene-load | Spec | E2E asserts Play spawn guid `actor-1` rather than reading the snapshot buffer; spawn is how snapshot slots are assigned | Accepted |
-| 2026-08-12 | cursor/p7-play-scene-load-7208 | p8-command-system | Spec | `changescene` still only fires `GameInstance.onSceneLoaded`; core quality/volume/framecap setters emit console logs until the HUD/renderer consume them | Accepted |
+| 2026-08-12 | cursor/p7-play-scene-load-7208 | p8-command-system | Spec | `changescene` still only fires `GameInstance.onSceneLoaded`; core quality/volume/framecap setters emit console logs until the HUD/renderer consume them | Resolved (scene library load in foundation wave; quality setters still log) |
+| 2026-08-13 | cursor/foundation-harden-e9a2 | pre-P11 foundation | Spec | Play/scripting contracts that catalogs marked Done were host stubs (ScriptHost input, Delay wall-clock, closed-tab prefab/scene, GameInstance picker, untextured sprites, ignored GLB, HUD button no-ops, silent `playSound`) | Resolved |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD does not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes). Cold-load Play first-frame is later polish | Accepted |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; designer goldens cover layout | Accepted |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-system | Standards | Play HUD `borderRadius: 999` (stick) pre-existed; widget style passthrough still uses a numeric fallback | Accepted |
@@ -178,8 +179,8 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 
 | Item | Owner | Notes |
 | --- | --- | --- |
-| Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies open class prefabs |
-| Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | SpriteComponent uses a UV-baked quad; light/camera gizmos still later |
+| Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
+| Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera) |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -243,19 +244,23 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 
 ### P9 Play-path residuals (do not rebuild P8/P9)
 
-Chrome polish (pin flash, multi-select gizmo, ADT HUD) stays parked. Play-path holes that would fail P10 acceptance are the hardening wave on `cursor/play-path-harden-8678`.
+Chrome polish (pin flash, multi-select gizmo, ADT HUD) stays parked. Remaining Play/scripting holes were closed by the pre-P11 foundation wave on `cursor/foundation-harden-e9a2` (do not rebuild P8/P9 packages).
 
 | Item | Status |
 | --- | --- |
 | Sprite `animState` UVs in Play | Done |
 | Worker HUD `scriptMs` / `physicsMs` not clobbered by rAF | Done |
 | Play loads anim graphs / sprites from scene refs | Done |
-| `ctx.changeScene` → `World.loadScene` | Done |
-| Catalog honesty (Tilemap / BT / Nav / Widget) | Done (Tilemap returns in Search/Add when Play load lands) |
+| `ctx.changeScene` / `changescene` loads a scene from the Play scene library | Done (foundation wave) |
+| Catalog honesty (Tilemap / BT / Nav / Widget / AudioComponent) | Done (Tilemap addable; BT/Nav gated; Widget hidden; AudioComponent not in Search/Add) |
 | Enum / Structure / ScriptInterface editors | Already `asset-settings` tabs |
-| Prefab → class document persistence | Done (`SerializedGraph.components`) |
+| Prefab → class document persistence | Done (open tab **or** disk graph) |
 | Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
-| `playSound` mixer, ADT HUD, `.babtrace` tab, §9.4 HUD | Parked |
+| ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |
+| Play startup scene with no scene tab open | Done (foundation wave) |
+| Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
+| HUD TouchButton / TouchDPad → input | Done (foundation wave) |
+| `playSound` command (log, not a mixer), ADT HUD, `.babtrace` tab, §9.4 HUD | Command landed; mixer / ADT / trace tab parked |
 
 ### Authoring-surface wave (before P11)
 
@@ -294,7 +299,27 @@ Design note: [tilemaps.md](../architecture/tilemaps.md). Codecs first, then Rapi
 | Tileset / Tilemap payloads, UV math, golden chunk VertexData, document tabs | Done (`cursor/play-path-harden-8678`) |
 | Merged chain colliders + `TilemapComponent` Play load | Done (`cursor/play-path-harden-8678`) |
 | Touch painting, one undo per stroke, 2D Create Project card, acceptance e2e | Done (`cursor/play-path-harden-8678`) |
+| Play asserts a falling actor settles on painted tiles | Done (foundation wave; keep in-process `tilemap-physics.test.ts`) |
 | Autotile / terrain | Deferred |
 | A16 alpha-test vs blend profile | Record in tilemaps.md; do not lock a new default without numbers |
+
+## Pre-P11 foundation hardening
+
+Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `scripting`, `physics`, or `debugger`. Host wiring + runtime bindings + honest e2e. P11 (`behaviour-tree` / `navigation`) starts only after this wave is on `main`.
+
+| Item | Status |
+| --- | --- |
+| ScriptHost `TickContext` input, tick Delay, spawn, addComponent, interface handlers | Done |
+| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Done |
+| Place Actors copies closed-tab class prefab components from disk | Done |
+| `changescene` / `ctx.changeScene` instantiates a library scene | Done |
+| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done |
+| Play HUD TouchButton / TouchDPad / default Jump+dpad mappings | Done |
+| `playSound` command (logged; no mixer) | Done |
+| FunctionLibrary palette nodes | Parked (base class exists) |
+
+## P11 behaviour trees / navigation
+
+Do not start until the foundation-hardening wave above is merged. Chrome polish (pin flash, multi-select gizmo, ADT HUD) is not a reason to skip P11, and is not P11 work.
 
 

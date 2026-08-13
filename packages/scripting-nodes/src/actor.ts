@@ -54,4 +54,19 @@ export const actorNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => ({ out: `(${ctx.input("target")} != null)` }),
   },
+  {
+    id: "actor.spawn",
+    title: "Spawn Actor",
+    category: "actor",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("classId", "classId", "in", STRING),
+      pin("out", "out", "out", actorRef("Actor")),
+    ],
+    codegen: (ctx) => {
+      const out = ctx.output("out");
+      ctx.emit(`${out} = ctx.spawnActor(${ctx.input("classId")});`);
+    },
+  },
 ];

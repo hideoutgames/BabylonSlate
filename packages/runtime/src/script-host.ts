@@ -1,6 +1,11 @@
 import { formatValue } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
-import type { Actor, LifecycleHooks, TickContext } from "@babylonslate/object-model";
+import {
+  interfaceHandlerKey,
+  type Actor,
+  type LifecycleHooks,
+  type TickContext,
+} from "@babylonslate/object-model";
 import type {
   ColliderShape,
   HitResult,
@@ -20,6 +25,11 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  */
 export interface ScriptHostServices {
   log(severity: LogSeverity, category: string, message: string): void;
+  addComponent?(
+    actor: Actor | null | undefined,
+    classId: string,
+  ): unknown;
+  spawnActor?(classId: string): Actor | null;
   print(
     message: string,
     key: string,
@@ -53,7 +63,9 @@ export interface ScriptHostServices {
   applyUserInterface?(assetGuid: string): string;
   removeUserInterface?(instanceId: string): void;
   changeScene?(scene: string): void;
+  playSound?(asset: string, volume?: number): void;
 }
+
 export interface ScriptContext {
   self: Actor | null;
   deltaSeconds: number;
@@ -84,9 +96,21 @@ export interface ScriptContext {
   ): unknown;
   getComponent(actor: Actor | null | undefined, classId: string): unknown;
   addComponent(actor: Actor | null | undefined, classId: string): unknown;
+  spawnActor(classId: string): Actor | null;
   isActionHeld(action: string): boolean;
+  wasActionPressed?(action: string): boolean;
+  wasActionReleased?(action: string): boolean;
   getAxis(axis: string): number;
   getAxis2D(axis: string): { x: number; y: number };
+  setGamepadRumble?(
+    gamepadIndex: number,
+    intensity: number,
+    durationMs: number,
+  ): void;
+  gamepadConnections?: ReadonlyArray<{
+    gamepadIndex: number;
+    connected: boolean;
+  }>;
   lineTrace(
     start: Vec3,
     end: Vec3,
@@ -111,7 +135,7 @@ export interface ScriptContext {
     translation: Vec3,
     offset?: number,
   ): void;
-  playSound(): void;
+  playSound(asset: string, volume?: number): void;
   setWidgetVisible(widget: string, visible: boolean): void;
   applyUserInterface(assetGuid: string): string;
   removeUserInterface(instanceId: string): void;
@@ -163,7 +187,15 @@ export class ScriptHost {
         this.dispatchEvent(loaded, "onBeginPlay", self, 0, 0);
       },
       onTick: (self, ctx: TickContext) => {
-        this.dispatchEvent(loaded, "onTick", self, ctx.dt, ctx.tickIndex);
+        this.dispatchEvent(
+          loaded,
+          "onTick",
+          self,
+          ctx.dt,
+          ctx.tickIndex,
+          {},
+          ctx,
+        );
       },
     };
   }
@@ -188,6 +220,29 @@ export class ScriptHost {
     this.dispatchEvent(loaded, event, self, 0, 0);
   }
 
+  /**
+   * Register compiled custom events as interface handlers on `actor`.
+   * Keys match `interfaceHandlerKey` (`guid:method`).
+   */
+  bindInterfaceHandlers(actor: Actor): void {
+    const loaded = this.byClassId.get(actor.classId);
+    if (!loaded || loaded.length === 0) return;
+    const lifecycle = new Set(["onBeginPlay", "onTick", "onCommandRun"]);
+    for (const iface of actor.implementedInterfaces) {
+      for (const entry of loaded) {
+        for (const point of entry.script.entryPoints) {
+          const event = point.event;
+          if (!event || lifecycle.has(event)) continue;
+          const key = interfaceHandlerKey(iface, event);
+          actor.interfaceHandlers.set(key, (args) => {
+            this.dispatchEvent(loaded, event, actor, 0, 0, args);
+            return {};
+          });
+        }
+      }
+    }
+  }
+
   private dispatchEvent(
     loaded: readonly LoadedScript[],
     event: string,
@@ -195,6 +250,7 @@ export class ScriptHost {
     deltaSeconds: number,
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
+    tick?: TickContext,
   ): void {
     for (const entry of loaded) {
       for (const point of entry.script.entryPoints) {
@@ -208,6 +264,7 @@ export class ScriptHost {
           deltaSeconds,
           tickIndex,
           commandArgs,
+          tick,
         );
         try {
           const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
@@ -245,6 +302,7 @@ export class ScriptHost {
     deltaSeconds: number,
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
+    tick?: TickContext,
   ): ScriptContext {
     const services = this.services;
     return {
@@ -277,16 +335,25 @@ export class ScriptHost {
       callInterface: (target, interfaceGuid, method) => {
         const receiver = target ?? self;
         const handler = receiver?.interfaceHandlers.get(
-          `${interfaceGuid}.${method}`,
+          interfaceHandlerKey(String(interfaceGuid), String(method)),
         );
         return handler ? handler({}) : undefined;
       },
       getComponent: (actor, classId) =>
         (actor ?? self)?.components.find((c) => c.classId === classId) ?? null,
-      addComponent: () => null,
-      isActionHeld: () => false,
-      getAxis: () => 0,
-      getAxis2D: () => ({ x: 0, y: 0 }),
+      addComponent: (actor, classId) =>
+        services.addComponent?.(actor ?? self, classId) ?? null,
+      spawnActor: (classId) => services.spawnActor?.(String(classId)) ?? null,
+      isActionHeld: (action) => tick?.isActionHeld?.(action) ?? false,
+      wasActionPressed: (action) => tick?.wasActionPressed?.(action) ?? false,
+      wasActionReleased: (action) =>
+        tick?.wasActionReleased?.(action) ?? false,
+      getAxis: (axis) => tick?.getAxis?.(axis) ?? 0,
+      getAxis2D: (axis) => tick?.getAxis2D?.(axis) ?? { x: 0, y: 0 },
+      setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
+        tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
+      },
+      gamepadConnections: tick?.gamepadConnections ?? [],
       lineTrace: (start, end) => {
         const hit = services.lineTrace?.(start, end) ?? {
           hit: false,
@@ -327,7 +394,9 @@ export class ScriptHost {
           offset,
         );
       },
-      playSound: () => {},
+      playSound: (asset, volume) => {
+        services.playSound?.(String(asset ?? ""), Number(volume ?? 1));
+      },
       setWidgetVisible: (widget, visible) => {
         services.setWidgetVisible?.(widget, visible);
       },

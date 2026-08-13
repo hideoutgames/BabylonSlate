@@ -13,6 +13,7 @@ import { playLoadTilemapsControl } from "../lib/play-content";
 import {
   createEngine,
   type EngineHandle,
+  type PlayActorPosition,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
 import {
@@ -74,6 +75,8 @@ export interface PlaySession {
   setPaused: (paused: boolean) => void;
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
+  /** Latest snapshot actor positions for e2e collision / motion. */
+  lastActorPositions: () => readonly PlayActorPosition[];
   /** Push a touch joystick sample into the Play input ring. */
   pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
@@ -94,6 +97,18 @@ export interface PlaySession {
 /** Resolve a Play session cap; omitted or non-positive values become 60. */
 export function resolvePlayFrameCap(fps?: number): number {
   return typeof fps === "number" && fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
+}
+
+/**
+ * Tick stamp for Play canvas events. In-process Play uses World.clock;
+ * the worker host has no World on the main thread, so it must use the last
+ * `stats.tickIndex` rather than `performance.now() / (1000/60)`.
+ */
+export function playInputStampTick(
+  inProcessTickIndex: number | undefined,
+  lastWorkerTickIndex: number,
+): number {
+  return inProcessTickIndex ?? lastWorkerTickIndex;
 }
 
 export interface PlayHudStats {
@@ -152,6 +167,8 @@ export function startPlaySession(options: {
   /** Authored scene instantiated in the worker instead of demo actors. */
   sceneAssetGuid?: string;
   scene?: SerializedScene;
+  gameInstanceClass?: string;
+  scenes?: Array<{ guid: string; scene: SerializedScene }>;
   onStats?: (stats: {
     fps: number;
     scriptMs: number;
@@ -177,6 +194,8 @@ export function startPlaySession(options: {
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
+  textureBytes?: ReadonlyMap<string, Uint8Array>;
+  modelBytes?: ReadonlyMap<string, Uint8Array>;
   pixelsPerUnit?: number;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
@@ -194,6 +213,8 @@ export function startPlaySession(options: {
     spritePayloads: options.spritePayloads,
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
+    textureBytes: options.textureBytes,
+    modelBytes: options.modelBytes,
     pixelsPerUnit: options.pixelsPerUnit,
   });
   handle.scheduler.invalidate("play");
@@ -214,6 +235,7 @@ export function startPlaySession(options: {
   let commandWindowStart = performance.now();
   let bridgeRate = 0;
   let hudStats: PlayHudStats | undefined;
+  let lastWorkerTickIndex = 0;
 
   const emitHudStats = (next: PlayHudStats) => {
     hudStats = next;
@@ -254,6 +276,7 @@ export function startPlaySession(options: {
       });
     }
     if (command.type === "stats") {
+      lastWorkerTickIndex = command.tickIndex;
       emitHudStats(
         applyWorkerPlayStats(hudStats, {
           fps: command.fps,
@@ -284,6 +307,12 @@ export function startPlaySession(options: {
     if (command.type === "uiRemove") {
       options.onUiRemove?.(command.instanceId);
     }
+    if (command.type === "playSound") {
+      options.onLog?.(
+        `[audio] ${command.assetGuid} vol=${command.volume}`,
+        "log",
+      );
+    }
   };
 
   const scripts = options.scripts ?? [];
@@ -297,6 +326,8 @@ export function startPlaySession(options: {
     scene: options.scene,
     physicsWorld: physics.physicsWorld,
     gravity: physics.gravity,
+    gameInstanceClass: options.gameInstanceClass,
+    scenes: options.scenes,
   });
 
   try {
@@ -400,8 +431,10 @@ export function startPlaySession(options: {
     const now = performance.now();
     const elapsed = (now - last) / 1000;
     last = now;
-    const tick =
-      runtime?.getWorld().clock.tickIndex ?? Math.floor(now / (1000 / 60));
+    const tick = playInputStampTick(
+      runtime?.getWorld().clock.tickIndex,
+      lastWorkerTickIndex,
+    );
     input.setTick(tick);
     input.pollGamepads();
     const drained = input.ring.drain();
@@ -470,6 +503,7 @@ export function startPlaySession(options: {
       }
       return lastObservedMoveX;
     },
+    lastActorPositions: () => handle.lastActorPositions(),
     pushTouchAxis: (controlId: string, value: number) => {
       input.pushTouchAxis(controlId, value);
     },

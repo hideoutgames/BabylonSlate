@@ -61,7 +61,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 
 - **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
 - **Visual scripting (P5)**: `@babylonslate/scripting` compiles logic graphs to JS modules with anchor tables; `@babylonslate/scripting-nodes` supplies the catalog; `runtime.ScriptHost` loads those modules and binds Begin Play / Tick entry points to actor lifecycle hooks, and Preview ships compiled project graphs to the worker (see [scripting.md](scripting.md)). `ExecuteConsoleCommand` runs through `@babylonslate/debugger` (see [debugger.md](debugger.md)).
-- **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); visible editor canvases render at `viewportFrameCap` and freeze when hidden or a modal is open; Play holds a continuous lease and renders at project `playFrameCap` (default 60). Play hosts a viewport-layer HUD overlay whose TouchJoystick writes `touchAxis` into the P6 input ring.
+- **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); visible editor canvases render at `viewportFrameCap` and freeze when hidden or a modal is open; Play holds a continuous lease and renders at project `playFrameCap` (default 60). Play hosts a viewport-layer HUD overlay whose TouchJoystick / TouchDPad / TouchButton write `touchAxis` into the P6 input ring (default Move + Jump).
 
 ## Package rules
 

@@ -49,7 +49,7 @@ Play builds a parent `actor-N` mesh plus one child draw per non-empty chunk (`cr
 
 `PhysicsWorldSync` gives every `TilemapComponent` actor a **static** body (even without `RigidBodyComponent`) and attaches those chains for layers with `collision: true`. Software 2D treats a chain as its AABB (wasm-failure path); Rapier uses real chain colliders.
 
-Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` values (not only open tabs) and posts worker `loadTilemaps` before `play`. Project `twoD.pixelsPerUnit` sizes both meshes and chains.
+Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` values (not only open tabs) and posts worker `loadTilemaps` before `play`. Project `twoD.pixelsPerUnit` sizes both meshes and chains. Chunk meshes bind the tileset `textureGuid` through `ResourceCache` when texture bytes were collected. Play e2e (`e2e/p10-tilemap.spec.ts`) asserts `physicsMs > 0` **and** that a dynamic actor starting at Y=3 settles on the painted tiles (`play-actor-y`).
 
 ## Placement
 

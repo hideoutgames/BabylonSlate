@@ -80,6 +80,10 @@ export interface RuntimeDriverOptions {
   /** Authored scene to instantiate on `realizePlayWorld` (no demo actors). */
   playScene?: SerializedScene;
   playSceneGuid?: string;
+  /** Class id for the session GameInstance singleton. */
+  gameInstanceClass?: string;
+  /** Extra authored scenes `changescene` can instantiate by guid or name. */
+  sceneLibrary?: Readonly<Record<string, SerializedScene>>;
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
@@ -114,6 +118,7 @@ export interface RuntimeDriver {
   spawnScriptedActor(options: {
     classId: string;
     variables?: Record<string, unknown>;
+    implementedInterfaces?: string[];
   }): Actor | null;
   /**
    * Instantiate `playScene` (if any) with compiled script hooks.
@@ -186,8 +191,10 @@ class InProcessRuntime implements RuntimeDriver {
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
   private physicsSync: PhysicsWorldSync;
-  private readonly playScene: SerializedScene | undefined;
-  private readonly playSceneGuid: string;
+  private playScene: SerializedScene | undefined;
+  private playSceneGuid: string;
+  private readonly gameInstanceClass: string;
+  private readonly sceneLibrary = new Map<string, SerializedScene>();
   private playWorldRealized = false;
   private readonly commands: CommandRegistry;
   private readonly trace = new TraceRecorder();
@@ -200,6 +207,8 @@ class InProcessRuntime implements RuntimeDriver {
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
   private pixelsPerUnit = 100;
+  private readonly delayWaiters: Array<{ remaining: number; resolve: () => void }> =
+    [];
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -221,6 +230,18 @@ class InProcessRuntime implements RuntimeDriver {
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
     this.playScene = options.playScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
+    this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
+    if (options.sceneLibrary) {
+      for (const [key, scene] of Object.entries(options.sceneLibrary)) {
+        this.sceneLibrary.set(key, scene);
+      }
+    }
+    if (options.playScene) {
+      this.sceneLibrary.set(this.playSceneGuid, options.playScene);
+      if (options.playScene.name) {
+        this.sceneLibrary.set(options.playScene.name, options.playScene);
+      }
+    }
     this.commands = createCommandRegistry({
       includeDebug: options.includeDebugCommands ?? true,
     });
@@ -305,22 +326,6 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
 
-    this.world.setGameInstance(
-      new GameInstance({
-        classId: "GameInstance",
-        guid: "runtime-gi",
-        variables: { ticks: 0 },
-        hooks: {
-          onTick: (self) => {
-            self.setVariable(
-              "ticks",
-              Number(self.getVariable("ticks")) + 1,
-            );
-          },
-        },
-      }),
-    );
-
     this.scriptHost = new ScriptHost({
       log: (severity, category, message) => {
         this.logs.push({
@@ -352,10 +357,27 @@ class InProcessRuntime implements RuntimeDriver {
       destroyActor: (actor) => {
         if (actor) this.world.destroyActor(actor.guid);
       },
+      addComponent: (actor, classId) => {
+        const target = actor;
+        if (!target || target.destroyed) return null;
+        const id = String(classId ?? "").trim();
+        if (!id) return null;
+        const component = this.world.createComponent({ classId: id });
+        target.attachComponent(component);
+        return component;
+      },
+      spawnActor: (classId) => {
+        const id = String(classId ?? "").trim();
+        if (!id) return null;
+        return this.spawnScriptedActor({ classId: id });
+      },
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       delay: (seconds) =>
         new Promise<void>((resolve) => {
-          setTimeout(resolve, Math.max(0, seconds) * 1000);
+          this.delayWaiters.push({
+            remaining: Math.max(0, Number(seconds) || 0),
+            resolve,
+          });
         }),
       reportError: (error) => {
         this.reportError(error);
@@ -395,9 +417,19 @@ class InProcessRuntime implements RuntimeDriver {
         this.emit({ type: "uiRemove", instanceId: id });
       },
       changeScene: (scene) => {
-        this.world.loadScene(scene);
+        this.applyChangeScene(scene);
+      },
+      playSound: (asset, volume) => {
+        this.emit({
+          type: "playSound",
+          assetGuid: String(asset ?? ""),
+          volume: Number(volume ?? 1),
+          frameId: this.frameId,
+        });
       },
     });
+
+    this.bindGameInstance();
 
     if (options.seedDemoActors !== false && !options.playScene) {
       this.seedDefaultActors();
@@ -450,18 +482,21 @@ class InProcessRuntime implements RuntimeDriver {
   spawnScriptedActor(options: {
     classId: string;
     variables?: Record<string, unknown>;
+    implementedInterfaces?: string[];
   }): Actor | null {
     const hooks = this.scriptHost.hooksFor(options.classId);
     if (!hooks) return null;
     const actor = this.world.createActor({
       classId: options.classId,
       variables: options.variables,
+      implementedInterfaces: options.implementedInterfaces,
       hooks: {
         onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
         onTick: (self, ctx) =>
           this.guardScript(() => hooks.onTick?.(self, ctx)),
       },
     });
+    this.scriptHost.bindInterfaceHandlers(actor);
     this.world.spawnActorNow(actor);
     const slotId = this.assignSlot(actor);
     this.emitMeshAssignment(actor, slotId);
@@ -486,12 +521,43 @@ class InProcessRuntime implements RuntimeDriver {
         },
       );
       for (const actor of actors) {
+        this.scriptHost.bindInterfaceHandlers(actor);
         this.world.spawnActorNow(actor);
         const slotId = this.assignSlot(actor);
         this.emitMeshAssignment(actor, slotId);
       }
     }
     this.world.loadScene(this.playSceneGuid);
+  }
+
+  private applyChangeScene(sceneKey: string): void {
+    const key = String(sceneKey ?? "").trim();
+    const next = this.sceneLibrary.get(key);
+    if (!next) {
+      this.emit({
+        type: "log",
+        severity: "warning",
+        category: "scene",
+        message: `changeScene: no scene asset loaded for ${key}`,
+        frameId: this.frameId,
+      });
+      this.world.loadScene(key);
+      return;
+    }
+    for (const actor of [...this.world.getActors()]) {
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (slotId !== undefined) {
+        this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
+        this.slotByGuid.delete(actor.guid);
+      }
+      this.world.destroyActor(actor.guid);
+    }
+    this.world.flushPending();
+    this.animEvalBySlot.clear();
+    this.playScene = next;
+    this.playSceneGuid = key;
+    this.playWorldRealized = false;
+    this.realizePlayWorld();
   }
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
@@ -619,7 +685,7 @@ class InProcessRuntime implements RuntimeDriver {
     };
     return {
       changeScene: (scene) => {
-        this.world.loadScene(scene);
+        this.applyChangeScene(scene);
       },
       setRenderQuality: (level) => emitSetting("renderquality", level),
       setShadowQuality: (level) => emitSetting("shadowquality", level),
@@ -702,6 +768,33 @@ class InProcessRuntime implements RuntimeDriver {
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind: "tilemap",
+      });
+      return;
+    }
+    const light = actor.components.find(
+      (component) =>
+        component.classId === "LightComponent" && !component.destroyed,
+    );
+    if (light) {
+      const kind = light.getVariable("lightKind");
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: `light:${typeof kind === "string" ? kind : "point"}`,
+      });
+      return;
+    }
+    const camera = actor.components.find(
+      (component) =>
+        component.classId === "CameraComponent" && !component.destroyed,
+    );
+    if (camera) {
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "camera",
       });
     }
   }
@@ -786,7 +879,36 @@ class InProcessRuntime implements RuntimeDriver {
     return slotId;
   }
 
+  private bindGameInstance(): void {
+    const classId = this.gameInstanceClass;
+    const hooks = this.scriptHost.hooksFor(classId);
+    this.world.setGameInstance(
+      new GameInstance({
+        classId,
+        guid: "runtime-gi",
+        variables: { ticks: 0 },
+        hooks: {
+          onCreation: (self) => {
+            this.guardScript(() =>
+              hooks?.onCreation?.(self as unknown as Actor),
+            );
+          },
+          onTick: (self, ctx) => {
+            self.setVariable(
+              "ticks",
+              Number(self.getVariable("ticks")) + 1,
+            );
+            this.guardScript(() =>
+              hooks?.onTick?.(self as unknown as Actor, ctx),
+            );
+          },
+        },
+      }),
+    );
+  }
+
   start(): void {
+    this.bindGameInstance();
     this.running = true;
     this.paused = false;
     this.world.start();
@@ -826,8 +948,12 @@ class InProcessRuntime implements RuntimeDriver {
 
   tick(): void {
     if (!this.running || this.paused) return;
-    const tickIndex = this.world.clock.tickIndex;
-    const pending = this.input.drain().filter((e) => e.tick <= tickIndex + 1);
+    // Consume every event queued since the last tick. Gating on event.tick
+    // dropped Play worker input: the host stamped with a wall-clock index
+    // (performance.now()/16.67) while World.clock.tickIndex stayed small,
+    // and drain() discarded the "future" events instead of deferring them.
+    // Replay still works because it feeds one tick of events at a time.
+    const pending = this.input.drain();
     this.resolvedInput = this.resolver.resolve(pending);
     this.connectionBox.current = this.resolvedInput.gamepadConnections;
     this.tickPrints = [];
@@ -849,6 +975,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.phaseMark = nowMs();
 
     this.world.tick();
+    this.advanceDelays();
     this.tickAnimGraphs();
     this.closePhaseTiming();
 
@@ -966,6 +1093,20 @@ class InProcessRuntime implements RuntimeDriver {
       severity: "error",
     });
     return diag;
+  }
+
+  private advanceDelays(): void {
+    if (this.delayWaiters.length === 0) return;
+    const remaining: Array<{ remaining: number; resolve: () => void }> = [];
+    const due: Array<() => void> = [];
+    for (const waiter of this.delayWaiters) {
+      waiter.remaining -= this.dt;
+      if (waiter.remaining <= 0) due.push(waiter.resolve);
+      else remaining.push(waiter);
+    }
+    this.delayWaiters.length = 0;
+    this.delayWaiters.push(...remaining);
+    for (const resolve of due) resolve();
   }
 
   private publishSnapshot(): void {

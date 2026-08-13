@@ -4,6 +4,7 @@ import {
   applyPlayFpsSample,
   applyWorkerPlayStats,
   diagnosticFromCommand,
+  playInputStampTick,
   resolvePlayFrameCap,
 } from "./play-session";
 
@@ -71,6 +72,17 @@ describe("diagnosticFromCommand", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.count).toBe(3);
     expect(entries[0]!.nodeId).toBe("node-1");
+  });
+});
+
+describe("playInputStampTick", () => {
+  it("uses the in-process World tick when present", () => {
+    expect(playInputStampTick(3, 99)).toBe(3);
+  });
+
+  it("uses the last worker stats tick instead of a wall-clock index", () => {
+    expect(playInputStampTick(undefined, 0)).toBe(0);
+    expect(playInputStampTick(undefined, 12)).toBe(12);
   });
 });
 

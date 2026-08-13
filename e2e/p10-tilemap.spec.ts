@@ -171,6 +171,15 @@ test.describe("P10 tilemaps", () => {
         return Number(attr ?? "0");
       }, { timeout: 15_000 })
       .toBeGreaterThan(0);
+    await expect
+      .poll(async () => {
+        const ys = (await page.getByTestId("play-actor-y").getAttribute("data-ys")) ?? "";
+        return ys
+          .split(",")
+          .map((value) => Number(value))
+          .some((y) => Number.isFinite(y) && y > 0.2 && y < 2.5);
+      }, { timeout: 15_000 })
+      .toBe(true);
     await page.getByTestId("play-overlay-close").click();
   });
 });

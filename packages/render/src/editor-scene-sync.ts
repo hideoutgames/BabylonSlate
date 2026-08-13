@@ -1,11 +1,13 @@
 import type { Mesh, Scene } from "@babylonjs/core";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
 import type { RenderScheduler } from "./render-scheduler";
+import type { MeshAssetContext } from "./mesh-assets";
 import {
   actorIdFromMeshName,
   applyActorTransform,
   createActorMesh,
 } from "./scene-loader";
+import { syncAuthoredIllumination } from "./scene-illumination";
 import { applySortingToMesh, resolveSortingLayer } from "./sorting";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
@@ -26,18 +28,38 @@ function spriteSortingOf(
 }
 
 function meshKindOf(actor: SerializedActor): string | null {
-  const component = actor.components.find(
+  const meshComponent = actor.components.find(
     (entry) => entry.classId === "MeshComponent",
   );
-  if (typeof component?.properties.meshKind === "string") {
-    return component.properties.meshKind;
+  const spriteComponent = actor.components.find(
+    (entry) => entry.classId === "SpriteComponent",
+  );
+  const tilemapComponent = actor.components.find(
+    (entry) => entry.classId === "TilemapComponent",
+  );
+  const lightComponent = actor.components.find(
+    (entry) => entry.classId === "LightComponent",
+  );
+  const cameraComponent = actor.components.find(
+    (entry) => entry.classId === "CameraComponent",
+  );
+  const asset =
+    (typeof meshComponent?.properties.assetGuid === "string" &&
+      meshComponent.properties.assetGuid) ||
+    (typeof spriteComponent?.properties.assetGuid === "string" &&
+      spriteComponent.properties.assetGuid) ||
+    (typeof tilemapComponent?.properties.assetGuid === "string" &&
+      tilemapComponent.properties.assetGuid) ||
+    "";
+  if (typeof meshComponent?.properties.meshKind === "string") {
+    return `${meshComponent.properties.meshKind}:${asset}`;
   }
-  if (actor.components.some((entry) => entry.classId === "SpriteComponent")) {
-    return "sprite";
+  if (spriteComponent) return `sprite:${asset}`;
+  if (tilemapComponent) return `tilemap:${asset}`;
+  if (lightComponent) {
+    return `light:${String(lightComponent.properties.lightKind ?? "point")}`;
   }
-  if (actor.components.some((entry) => entry.classId === "TilemapComponent")) {
-    return "tilemap";
-  }
+  if (cameraComponent) return "camera";
   return null;
 }
 
@@ -54,6 +76,8 @@ export class EditorSceneSync {
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
+  private assets: MeshAssetContext | undefined;
+  private lastScene: SerializedScene | null = null;
 
   constructor(scene: Scene, scheduler?: Pick<RenderScheduler, "invalidate">) {
     this.scene = scene;
@@ -64,6 +88,14 @@ export class EditorSceneSync {
   setSortingLayers(layers: readonly string[]): void {
     this.sortingLayers =
       layers.length > 0 ? [...layers] : [...DEFAULT_SORTING_LAYERS];
+  }
+
+  setMeshAssets(assets: MeshAssetContext | undefined): void {
+    this.assets = assets;
+    for (const mesh of this.meshes.values()) mesh.dispose();
+    this.meshes.clear();
+    this.meshKinds.clear();
+    if (this.lastScene) this.apply(this.lastScene);
   }
 
   apply(sceneData: SerializedScene): void {
@@ -78,7 +110,7 @@ export class EditorSceneSync {
         mesh = undefined;
       }
       if (!mesh) {
-        mesh = createActorMesh(this.scene, actor);
+        mesh = createActorMesh(this.scene, actor, this.assets);
         this.meshes.set(actor.id, mesh);
         this.meshKinds.set(actor.id, kind);
       }
@@ -117,6 +149,8 @@ export class EditorSceneSync {
     }
 
     this.scheduler?.invalidate("asset");
+    this.lastScene = sceneData;
+    syncAuthoredIllumination(this.scene, sceneData, { stealActiveCamera: false });
   }
 
   meshForActor(actorId: string): Mesh | null {

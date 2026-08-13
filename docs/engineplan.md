@@ -13,24 +13,27 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 ## 1. Where the project stands today
 
-P0–P9 are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
+P0–P10 packages are landed. Appendix A is the checklist; this section is the orientation so agents do not redo finished work.
 
-**Next engine slice:** P11 behaviour trees / navigation, **after** the authoring-surface wave. P10 tilemaps (codecs, chain colliders, painting, 2D template) is landed. Parked: `p1-device-spikes` (hardware-only). Do not start P11+ packages from leftover **chrome** polish (pin flash, multi-select gizmo, ADT HUD).
+**Next engine slice:** P11 behaviour trees / navigation. The pre-P11 foundation-hardening wave closed Play/scripting contracts that Appendix A `[x]` had overstated (ScriptHost input, tick-clock Delay, spawn/addComponent, GameInstance singleton, startup scene without an open tab, closed-tab class prefabs, real `changescene` library load, ResourceCache textures on sprites/tilemaps, GLB `assetGuid`, authored lights/cameras, HUD TouchButton/DPad, `playSound` command). Do not start P11+ packages from leftover **chrome** polish (pin flash, multi-select gizmo, ADT HUD). Parked: `p1-device-spikes` (hardware-only).
 
 Appendix A `[x]` means the **package/slice** landed. It does not mean every Play or document-tab path matches the letter of the spec. Honest residuals:
 
 | Residual | Reality | Owner |
 | --- | --- | --- |
-| Sprite clips in Play | Worker `animState` with `clipKind: "sprite"` now calls `applySpriteAnimFrame` | Done (Play-path wave) |
+| Sprite clips in Play | Worker `animState` with `clipKind: "sprite"` calls `applySpriteAnimFrame`; sprite/tilemap quads also bind `ResourceCache` textures from `textureGuid` | Done (foundation wave) |
 | Worker HUD timings | rAF FPS pump merges fps into last worker `scriptMs` / `physicsMs` instead of zeroing them | Done (Play-path wave) |
-| Play content from closed tabs | AnimationGraph / Sprite payloads load from scene component guids; UserInterface library is every HUD asset | Done (Play-path wave) |
-| `ctx.changeScene` | Calls `World.loadScene` (same as console `changescene`) | Done (Play-path wave) |
-| Unbuilt components in catalogs | `BehaviourTreeComponent` / `NavAgentComponent` stay gated. `TilemapComponent` is addable (Play loads chunks + chains). `WidgetComponent` is hidden until `CreateForMesh` exists | P11 / later |
-| Tileset / Tilemap documents | Codecs, UV math, golden chunk `VertexData`, Content Browser types, settings + paint tab, Rapier/software chain colliders, Play load from scene refs, 2D Create Project card | Done (`p10-tilemap` / `p10-tilemap-painting`) |
-| Type-asset tabs | Enum / Structure / ScriptInterface open `asset-settings` editors | Done (`p5-types` follow-up) |
-| Actor Prefab persistence | Class documents store `components`; Place Actors copies them when the class tab is open | Done |
+| Play content from closed tabs | AnimationGraph / Sprite / Tilemap payloads, texture pixels, and GLB source bytes load from scene component guids; UserInterface library is every HUD asset; startup/main scene loads with no scene tab open | Done (foundation wave) |
+| `ctx.changeScene` / `changescene` | Loads a scene from the Play scene library (`project.json` scenes) into the World, not only `GameInstance.onSceneLoaded` | Done (foundation wave) |
+| ScriptHost input / Delay / spawn | `ScriptContext` copies `TickContext` input; Delay is tick-clock (pause-safe); `addComponent` / `spawnActor` / interface handlers are live | Done (foundation wave) |
+| GameInstance class | Scene/project `gameInstanceClass` constructs that subclass as the session singleton; its Begin Play runs | Done (foundation wave) |
+| Actor Prefab persistence | Class documents store `components`; Place Actors copies them from the open tab **or** the disk graph | Done (foundation wave) |
+| Lights / cameras | `LightComponent` / `CameraComponent` create authored Babylon lights/cameras in the editor (orbit camera stays) and Play (authored camera becomes `activeCamera`) | Done (foundation wave) |
+| Unbuilt components in catalogs | `BehaviourTreeComponent` / `NavAgentComponent` stay gated. `TilemapComponent` is addable. `WidgetComponent` is hidden until `CreateForMesh` exists. `AudioComponent` is not in Search/Add; graphs use `audio.play` → `playSound` command | P11 / later |
+| Tileset / Tilemap documents | Codecs, UV math, golden chunk `VertexData`, Content Browser types, settings + paint tab, Rapier/software chain colliders, Play load from scene refs, textured chunks, 2D Create Project card; Play e2e asserts a falling actor settles on painted tiles | Done (`p10-tilemap` + foundation wave) |
+| Type-asset tabs | Enum / Structure / ScriptInterface open `asset-settings` editors. `FunctionLibrary` is an engine base class; it does **not** emit palette nodes | Done (`p5-types`); palette parked |
 | Map nodes | `map.get` / `set` / `has` / `remove` / `size` / `keys` with K/V wildcards | Done |
-| `playSound` / ADT HUD / `.babtrace` tab / §9.4 HUD completeness | Recorded P8/P9 polish — do not rebuild those packages | Parked |
+| ADT HUD / `.babtrace` tab / §9.4 HUD completeness / full audio mixer | Recorded P8/P9 polish — `playSound` emits a command and Play logs it; no `AudioContext` mixer yet | Parked |
 
 **Authoring-surface residuals** (document-tab hosts, not a new engine phase; do not rebuild `ui-runtime` / `shader-graph` / `anim-graph` / `scripting`):
 
@@ -383,7 +386,7 @@ The spec's list, plus one addition flagged below:
 - **ScriptInterface**, function and event signatures with no implementation.
 - **EditorUtilityInterface** and **EditorUtilityObject**, editor-only and stripped from exports. The interface is a UI widget opened from **Windows → Editor Utilities** (not auto-inserted into the Scene default layout); once opened, its dock position persists in `layout.json`. The object gets `OnEditorStartup`, `OnSceneOpen`, `OnSceneSaved` and `OnEditorShutdown`, and only runs when registered in Project Settings.
 - **PluginSettings**, exactly one per plugin folder, defining the plugin's identity, maturity flags, startup behaviour and export defaults. Covered in section 10.
-- **FunctionLibrary**, a base class rather than a distinct file type, producing static global nodes usable anywhere.
+- **FunctionLibrary**, a base class rather than a distinct file type, producing static global nodes usable anywhere. **v1:** the base class is registered; palette emission of those static nodes is parked.
 - **BDebugCommand**, a base class for console commands. Covered in section 9.2.
 - **Font**, carrying the font file itself plus a family name, weight and style, an ordered fallback chain, and any baked representations needed for 3D text. Covered in 11.4, because how Babylon renders text dictates the design.
 - **Engine data assets**: Texture, Model, Animation, Audio, Material, plus Camera, Light and Sound placeable actor classes.
@@ -418,7 +421,7 @@ The conversion family (`WildcardToString`, `WildcardToObject`, `WildcardToFloat`
 - Exec flow becomes straight-line statements; Branch, Sequence and loop nodes become native `if`, `for` and `while`.
 - Pure data nodes inline as expressions with common-subexpression elimination.
 - Latent nodes (v1: Delay and Timeline) compile into async generator state machines.
-- FunctionLibrary classes emit a module of static functions.
+- FunctionLibrary classes emit a module of static functions. **v1 parked:** the engine base class exists; those functions are not injected into the node palette.
 - Output is deterministic text, so compiler golden tests are the primary correctness gate.
 - Compiled modules load through a blob-URL dynamic import inside the worker. That needs a CSP allowing blob URLs plus a spike to confirm behaviour in WKWebView under Capacitor.
 
@@ -1126,7 +1129,7 @@ Granular tasks tracked against the roadmap in section 18. Update checkboxes as s
 - [x] **p5-execute-js** — P5: ExecuteJavaScript node - Details panel input and output pin lists with identifier validation, fixed single exec in and out, body compiled into a module-scope named function with pre-declared defaulted outputs destructured at the call site, async toggle making the node latent, edit-time syntax check reporting into Compiler Results, CodeMirror 6 body editor with an iPad accessory key bar and selection enabled
 - [x] **p5-log-print** — P5: Log node with severity, category and a capped ring buffer; Print node taking a wildcard through formatValue with colour and duration, plus keyed prints that replace an existing on-screen entry in place rather than appending; export setting to strip Print when the debugger is not bundled
 - [x] **p5-graph-ui** — P5: graph-ui rework as a touch-first React Flow shell with tap-to-connect and a node palette `CatalogDialog` (search not autofocused), reusable by script, shader, animation and behaviour tree graphs; Class panel stacked under Components; Compiler Results panel. *Accepts when* graph nodes use Blueprint chrome with `--pin-*` / `--node-*` tokens, 44px pin rows, and blocking errors use `AlertDialog`.
-- [x] **p5-types** — P5: Enum, Structure and ScriptInterface asset editors feeding the pin type system; FunctionLibrary base class emitting static global nodes
+- [x] **p5-types** — P5: Enum, Structure and ScriptInterface asset editors feeding the pin type system; FunctionLibrary engine base class exists (static global palette nodes remain parked)
 
 > **P5 residual polish** (not a new phase): pin-flash navigation, richer type-asset field editors, project-wide validation sweep, latent async-generator emission — see [issue-tracker P5 follow-ups](agents/issue-tracker.md#p5-follow-ups--open-deferrals). **Class-owned graphs shipped** (`.class.babasset`; Prefab Actor-only; compact settings tabs). **Format graph shipped** (selection tidy / then-chain to the right plus data-input trees). **Hold-to-marquee shipped** (custom overlay after ~250ms pane hold). **Drag-to-connect shipped** (React Flow `onConnect` / connect-end palette). **Authoring-loop pin hydration shipped** (host injects `__pins`, palette embeds pins, Begin Play/Tick defaults, Add/Remove node undo). Phase-owned stubs (ExecuteConsoleCommand, Print strip, AI/nav and audio/UI runtime beyond catalog stubs) stay under P8 / P9 / P11.
 

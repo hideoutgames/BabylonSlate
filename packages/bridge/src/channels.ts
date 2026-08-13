@@ -52,6 +52,10 @@ export type ControlMessage =
       gravity?: [number, number, number];
       /** Worker-resolvable URL for HavokPhysics.wasm (3d Play). */
       havokWasmUrl?: string;
+      /** Session GameInstance class id from the scene/project picker. */
+      gameInstanceClass?: string;
+      /** Extra authored scenes `changescene` can instantiate by guid or name. */
+      scenes?: Array<{ guid: string; scene: SerializedScene }>;
     }
   | {
       type: "loadScripts";
@@ -161,6 +165,12 @@ export type CommandMessage =
       blendWeights: Record<string, number>;
       clipName?: string;
       clipKind?: "animation" | "sprite";
+    }
+  | {
+      type: "playSound";
+      assetGuid: string;
+      volume: number;
+      frameId: number;
     };
 
 export type BridgeHostMessage =

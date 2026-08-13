@@ -5,6 +5,7 @@ import {
   playLoadControl,
   playPhysicsFromOpenDocuments,
   playSceneFromOpenDocuments,
+  resolvePlayScene,
 } from "./play-physics";
 
 describe("playLoadControl", () => {
@@ -32,6 +33,20 @@ describe("playLoadControl", () => {
     });
     expect(msg.sceneAssetGuid).toBe("scene:assets/main.scene.babasset");
     expect(msg.scene).toEqual(scene);
+  });
+
+  it("forwards gameInstanceClass and extra scenes for changescene", () => {
+    const extra = {
+      name: "Level2",
+      viewportMode: "3d" as const,
+      actors: [],
+    };
+    const msg = playLoadControl({
+      gameInstanceClass: "MyGame",
+      scenes: [{ guid: "Level2", scene: extra as never }],
+    });
+    expect(msg.gameInstanceClass).toBe("MyGame");
+    expect(msg.scenes).toEqual([{ guid: "Level2", scene: extra }]);
   });
 
   it("defaults to a 3d world and standard gravity", () => {
@@ -123,6 +138,57 @@ describe("playSceneFromOpenDocuments", () => {
 
   it("returns null when no scene document is open", () => {
     expect(playSceneFromOpenDocuments([], null)).toBeNull();
+  });
+
+  it("resolvePlayScene uses the project startup scene when no scene tab is open", () => {
+    const fallback = {
+      sceneAssetGuid: "scene:assets/main.scene.babasset",
+      scene: normalizeScene({
+        name: "Main",
+        viewportMode: "3d" as const,
+        actors: [{ id: "hero", name: "Hero" }],
+      }),
+    };
+    expect(
+      resolvePlayScene({
+        documents: [
+          { id: "graph:main", ref: { kind: "graph" }, content: {} },
+        ],
+        activeDocumentId: "graph:main",
+        fallback,
+      }),
+    ).toEqual(fallback);
+  });
+
+  it("resolvePlayScene prefers an open scene tab over the startup fallback", () => {
+    const open = {
+      name: "Level",
+      viewportMode: "2d" as const,
+      actors: [{ id: "open", name: "Open" }],
+    };
+    const fallback = {
+      sceneAssetGuid: "scene:assets/main.scene.babasset",
+      scene: normalizeScene({
+        name: "Main",
+        actors: [{ id: "hero", name: "Hero" }],
+      }),
+    };
+    expect(
+      resolvePlayScene({
+        documents: [
+          {
+            id: "scene:assets/level.scene.babasset",
+            ref: { kind: "scene" },
+            content: open,
+          },
+        ],
+        activeDocumentId: "scene:assets/level.scene.babasset",
+        fallback,
+      }),
+    ).toEqual({
+      sceneAssetGuid: "scene:assets/level.scene.babasset",
+      scene: normalizeScene(open),
+    });
   });
 });
 

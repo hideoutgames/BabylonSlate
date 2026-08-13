@@ -37,6 +37,7 @@ import {
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
+import type { MeshAssetContext } from "./mesh-assets";
 import { applyAnimStateToScene, resolvePlaySpriteSlot } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { meshNamesInCanvasRect } from "./two-d";
@@ -65,6 +66,10 @@ export interface EngineHandle {
   ) => { meshName: string; slotId: number | null } | null;
   /** Editor camera, gizmos, grid, outline and scene sync; null in Play views. */
   editor: EditorTools | null;
+  /** Latest snapshot actor positions (Play), for e2e collision / motion. */
+  lastActorPositions: () => PlayActorPosition[];
+  /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
+  setMeshAssets: (assets: MeshAssetContext) => void;
 }
 
 export interface CreateEngineOptions {
@@ -96,6 +101,10 @@ export interface CreateEngineOptions {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   pixelsPerUnit?: number;
+  /** Texture pixels keyed by Texture asset guid. */
+  textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  /** Model source bytes keyed by Model asset guid. */
+  modelBytes?: ReadonlyMap<string, Uint8Array>;
 }
 
 export interface EditorTools {
@@ -127,6 +136,30 @@ export interface EditorTools {
     rotation: [number, number, number, number];
     scale: [number, number, number];
   } | null;
+}
+
+export type PlayActorPosition = {
+  slotId: number;
+  x: number;
+  y: number;
+  z: number;
+};
+
+function positionsFromSample(
+  sampled: { actorCount: number; actors: Array<{ slotId: number; position: { x: number; y: number; z: number } }> },
+): PlayActorPosition[] {
+  const next: PlayActorPosition[] = [];
+  const count = sampled.actorCount;
+  for (let i = 0; i < count; i++) {
+    const actor = sampled.actors[i]!;
+    next.push({
+      slotId: actor.slotId,
+      x: actor.position.x,
+      y: actor.position.y,
+      z: actor.position.z,
+    });
+  }
+  return next;
 }
 
 /**
@@ -183,6 +216,10 @@ export function createEngine(
   binding.tilemaps = options.tilemapPayloads;
   binding.tilesets = options.tilesetPayloads;
   binding.pixelsPerUnit = options.pixelsPerUnit;
+  binding.spritePayloads = options.spritePayloads;
+  binding.textureBytes = options.textureBytes;
+  binding.modelBytes = options.modelBytes;
+  binding.resourceCache = resourceCache;
 
   const editorSync = options.editor ? new EditorSceneSync(scene, scheduler) : null;
 
@@ -191,7 +228,7 @@ export function createEngine(
       editorSync.apply(sceneData);
       return;
     }
-    applySceneToBabylonScene(scene, sceneData);
+    applySceneToBabylonScene(scene, sceneData, binding);
     scheduler.invalidate("asset");
   };
 
@@ -326,6 +363,7 @@ export function createEngine(
   };
 
   let interpAlpha = 1;
+  let lastPositions: PlayActorPosition[] = [];
   const renderLoop = () => {
     if (!scheduler.shouldRender()) {
       return;
@@ -333,6 +371,7 @@ export function createEngine(
     const sampled = interpolator.sample(interpAlpha);
     if (sampled) {
       applySnapshotToScene(scene, binding, sampled);
+      lastPositions = positionsFromSample(sampled);
     }
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
@@ -410,6 +449,8 @@ export function createEngine(
     pushSnapshot: (buffer: Float32Array) => {
       interpolator.push(buffer);
       interpAlpha = 1;
+      const sampled = interpolator.sample(interpAlpha);
+      if (sampled) lastPositions = positionsFromSample(sampled);
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
@@ -439,6 +480,19 @@ export function createEngine(
       return hit
         ? { meshName: hit.meshName, slotId: hit.slotId }
         : null;
+    },
+    lastActorPositions: () => lastPositions,
+    setMeshAssets: (assets: MeshAssetContext) => {
+      binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
+      binding.textureBytes = assets.textureBytes;
+      binding.modelBytes = assets.modelBytes;
+      binding.spritePayloads = assets.spritePayloads ?? binding.spritePayloads;
+      binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
+      binding.tilesets = assets.tilesets ?? binding.tilesets;
+      if (typeof assets.pixelsPerUnit === "number") {
+        binding.pixelsPerUnit = assets.pixelsPerUnit;
+      }
+      editorSync?.setMeshAssets(assets);
     },
   };
 }

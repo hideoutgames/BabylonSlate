@@ -19,6 +19,10 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
   "flow.event.commandRun": "onCommandRun",
+  // Input event entries gate internally; they run on the tick like Event Tick.
+  "input.onAction": "onTick",
+  "input.onGamepadConnected": "onTick",
+  "input.onGamepadDisconnected": "onTick",
 };
 
 /** Custom events use the member name; catalog events use EVENT_BY_TYPE_ID. */

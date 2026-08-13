@@ -24,6 +24,8 @@ import {
   spriteAssetGuidsFromScene,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
+  textureGuidsFromPlayPayloads,
+  modelAssetGuidsFromScene,
 } from "./play-content";
 
 describe("playUiLibraryFromAssets", () => {
@@ -237,6 +239,50 @@ describe("scene-referenced Play content", () => {
       pixelsPerUnit: 16,
     });
     expect(playLoadTilemapsControl(new Map(), new Map())).toBeNull();
+  });
+
+  it("collects texture guids from sprite and tileset payloads", () => {
+    const sprite = { ...createDefaultSpritePayload(), textureGuid: "tex-sprite" };
+    const tileset = {
+      ...createDefaultTilesetPayload(),
+      textureGuid: "tex-atlas",
+    };
+    expect(
+      textureGuidsFromPlayPayloads(
+        new Map([["hero-sprite", sprite]]),
+        new Map([["overworld-set", tileset]]),
+      ),
+    ).toEqual(["tex-sprite", "tex-atlas"]);
+  });
+
+  it("skips missing texture guids and de-duplicates", () => {
+    const sprite = { ...createDefaultSpritePayload(), textureGuid: "shared" };
+    const tileset = { ...createDefaultTilesetPayload(), textureGuid: "shared" };
+    expect(
+      textureGuidsFromPlayPayloads(
+        new Map([["hero-sprite", sprite]]),
+        new Map([["overworld-set", tileset]]),
+      ),
+    ).toEqual(["shared"]);
+    expect(
+      textureGuidsFromPlayPayloads(new Map(), new Map()),
+    ).toEqual([]);
+  });
+
+  it("collects MeshComponent assetGuid values as model assets", () => {
+    const scene = createDefaultScene();
+    scene.actors.push(
+      createActor("tree", "Tree", {
+        components: [
+          {
+            id: "mesh",
+            classId: "MeshComponent",
+            properties: { meshKind: "box", assetGuid: "tree-glb" },
+          },
+        ],
+      }),
+    );
+    expect(modelAssetGuidsFromScene(scene)).toEqual(["tree-glb"]);
   });
 });
 

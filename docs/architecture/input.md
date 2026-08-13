@@ -22,7 +22,7 @@ Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButt
 | `component` | `"x"` \| `"y"` for `kind: "2d"` axes |
 | `digitalValue` | Constant while a digital binding is held |
 
-`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads; `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard, gamepad stick, and touch joystick (`joystick-x` / `joystick-y`) so an on-screen stick and a gamepad drive the same `GetAxis2D("Move")` with no script change. Default gamepad face bindings: Jump → `0:0` (A), Confirm → `0:1` (B) so both actions do not fire from one button.
+`InputMappings` = `{ actions[], axes[] }`. `normalizeInputMappings()` coerces unknown `project.json` payloads; `createDefaultInputMappings()` supplies Jump / Confirm / Move / Look defaults. Default **Move** includes keyboard, gamepad stick, touch joystick (`joystick-x` / `joystick-y`), and TouchDPad (`dpad-x` / `dpad-y`) so an on-screen stick, d-pad, and a gamepad drive the same `GetAxis2D("Move")` with no script change. Default **Jump** includes Space, gamepad A (`0:0`), and touch control id `Jump` (Play HUD `TouchButton`). Default Confirm → `0:1` (B) so both actions do not fire from one button.
 
 ## InputResolver
 
@@ -56,19 +56,19 @@ Pure with respect to the browser — feed synthetic streams from the determinist
 | `gamepadConnections` | connection transitions this tick |
 | `setGamepadRumble(index, intensity, durationMs)` | forwarded to main thread when supported |
 
-Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases.
+Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolve` → `TickContext` for script/physics phases. Each `tick()` consumes **all** events queued since the previous tick. Event `tick` is recorded on traces; it does not gate consumption. Play's worker host stamps canvas/gamepad samples with the last worker `stats.tickIndex` (not `performance.now() / 16.67`), so compiled `GetAxis` / `GetAxis2D` graphs see the same stick as the overlay HUD.
 
 ## Project Settings
 
-**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` (add/remove/reorder actions and axes, per-binding device, listen-to-bind, modifiers, axis extras). Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-*`) plus `controlId*` from open UserInterface documents. Persists through `updateProjectSettings({ input })` + `normalizeInputMappings`. No JSON textarea.
+**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` (add/remove/reorder actions and axes, per-binding device, listen-to-bind, modifiers, axis extras). Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-x` / `dpad-y` / `Jump`) plus `controlId*` from open UserInterface documents. Persists through `updateProjectSettings({ input })` + `normalizeInputMappings`. No JSON textarea.
 
-Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchButton widgets pick an action the same way.
+Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchButton widgets pick an action the same way; Play HUD emits that action as a touch axis (1 while held, 0 on release). TouchDPad shares the analog-stick path with defaults `dpad-x` / `dpad-y`.
 
 Runtime receives mappings via `RuntimeDriverOptions.inputMappings` / `setInputMappings`.
 
 ## Testing
 
-Per engineplan §11.1: input is tested through **synthetic event streams** replayed by the deterministic harness and `InputResolver` unit tests — not by driving a browser. P4 raw capture tests remain separate from mapping resolution.
+Per engineplan §11.1: input is tested through **synthetic event streams** replayed by the deterministic harness and `InputResolver` unit tests — not by driving a browser. P4 raw capture tests remain separate from mapping resolution. Runtime tests also cover live gamepad events stamped with a host wall-clock tick (the Play worker skew) so `GetAxis2D("Move")` cannot silently stay at `{x:0,y:0}`. E2e: `e2e/p5-scripting.spec.ts` injects a synthetic pad and asserts a compiled Tick → GetAxis2D → Print overlay.
 
 ## Scripting nodes (`@babylonslate/scripting-nodes`)
 

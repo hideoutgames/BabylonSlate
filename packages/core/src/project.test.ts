@@ -38,10 +38,17 @@ describe("project schema", () => {
     expect(confirmPad).toBe("0:1");
     expect(jumpPad).not.toBe(confirmPad);
     expect(
-      project.settings.input.axes
-        .find((axis) => axis.name === "Move")
-        ?.bindings.some((binding) => binding.device === "touch"),
+      project.settings.input.actions
+        .find((a) => a.name === "Jump")
+        ?.bindings.some((binding) => binding.device === "touch" && binding.code === "Jump"),
     ).toBe(true);
+    const moveCodes = project.settings.input.axes
+      .find((axis) => axis.name === "Move")
+      ?.bindings.filter((binding) => binding.device === "touch")
+      .map((binding) => binding.code);
+    expect(moveCodes).toEqual(
+      expect.arrayContaining(["joystick-x", "joystick-y", "dpad-x", "dpad-y"]),
+    );
     expect(project.settings.fonts).toEqual({
       defaultFontGuid: null,
       globalFallback: "sans-serif",

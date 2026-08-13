@@ -267,6 +267,34 @@ export function tilesetGuidsFromTilemaps(
   return guids;
 }
 
+/** Texture asset guids referenced by loaded sprite / tileset payloads. */
+export function textureGuidsFromPlayPayloads(
+  sprites: ReadonlyMap<string, SpritePayload> | undefined,
+  tilesets: ReadonlyMap<string, TilesetPayload> | undefined,
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  const add = (guid: string | null | undefined) => {
+    if (!guid || seen.has(guid)) return;
+    seen.add(guid);
+    guids.push(guid);
+  };
+  if (sprites) {
+    for (const sprite of sprites.values()) add(sprite.textureGuid);
+  }
+  if (tilesets) {
+    for (const tileset of tilesets.values()) add(tileset.textureGuid);
+  }
+  return guids;
+}
+
+/** Model asset guids on MeshComponent.assetGuid (imported GLB). */
+export function modelAssetGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]);
+}
+
 export function playTilesetPayloadsFromGuids(
   guids: readonly string[],
   payloadForGuid: (guid: string) => unknown | null,

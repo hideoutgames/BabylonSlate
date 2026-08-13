@@ -1,4 +1,4 @@
-import type { Engine } from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
 
@@ -100,7 +100,7 @@ export class ResourceCache {
    */
   getTexture(
     assetGuid: string,
-    engine: Engine,
+    engine: AbstractEngine,
     bytes: Uint8Array | Blob,
     options: TextureSamplingOptions = {},
   ): Texture {
