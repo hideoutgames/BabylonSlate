@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { COLOR, FLOAT, STRING, VEC2, pin } from "@babylonslate/scripting";
+import { COLOR, FLOAT, STRING, VEC2, VEC4, enumRef, pin } from "@babylonslate/scripting";
 import {
+  collectEnumMemberNames,
   connectedInputPinIds,
   inspectorLiteralPinDefaults,
   logNodePropertyRows,
@@ -117,6 +118,116 @@ describe("pinDefaultPropertyRows", () => {
       action.onChange("Confirm");
     }
     expect(onPatch).toHaveBeenCalledWith({ "default:action": "Confirm" });
+  });
+
+  it("maps vec4 to four-axis scrubs and enumRef to member options", () => {
+    const onPatch = vi.fn();
+    const rows = pinDefaultPropertyRows(
+      [
+        {
+          pinId: "offset",
+          name: "offset",
+          type: VEC4,
+          value: { x: 1, y: 2, z: 3, w: 4 },
+        },
+        {
+          pinId: "state",
+          name: "state",
+          type: enumRef("enum-1"),
+          value: "Idle",
+        },
+      ],
+      onPatch,
+      {
+        enumMembers: { "enum-1": ["None", "Idle", "Run"] },
+      },
+    );
+    expect(rows).toMatchObject([
+      {
+        kind: "vector3",
+        id: "offset",
+        value: [1, 2, 3, 4],
+        axes: ["X", "Y", "Z", "W"],
+      },
+      { kind: "enum", id: "state", label: "state", value: "Idle" },
+    ]);
+    const vec = rows[0];
+    if (vec?.kind === "vector3") {
+      vec.onChange([9, 8, 7, 6]);
+    }
+    expect(onPatch).toHaveBeenCalledWith({
+      "default:offset": { x: 9, y: 8, z: 7, w: 6 },
+    });
+    const state = rows[1];
+    if (state?.kind === "enum") {
+      expect(state.options.map((option) => option.value)).toEqual([
+        "None",
+        "Idle",
+        "Run",
+      ]);
+      state.onChange("Run");
+    }
+    expect(onPatch).toHaveBeenCalledWith({ "default:state": "Run" });
+  });
+
+  it("keeps an authored enumRef value that is missing from the member list", () => {
+    const rows = pinDefaultPropertyRows(
+      [
+        {
+          pinId: "state",
+          name: "state",
+          type: enumRef("enum-1"),
+          value: "Custom",
+        },
+      ],
+      vi.fn(),
+      { enumMembers: { "enum-1": ["Idle"] } },
+    );
+    const state = rows[0];
+    expect(state?.kind).toBe("enum");
+    if (state?.kind === "enum") {
+      expect(state.options.map((option) => option.value)).toEqual([
+        "Idle",
+        "Custom",
+      ]);
+    }
+  });
+});
+
+describe("collectEnumMemberNames", () => {
+  it("reads Enum assets and lets open documents override registry members", () => {
+    expect(
+      collectEnumMemberNames(
+        [
+          {
+            content: {
+              kind: "enum",
+              guid: "enum-1",
+              members: [{ name: "Idle" }, { name: "Run" }],
+            },
+          },
+        ],
+        [
+          {
+            header: {
+              guid: "enum-1",
+              type: "Enum",
+              payload: { members: [{ name: "None" }, { name: "Idle" }] },
+            },
+          },
+          {
+            header: {
+              guid: "enum-2",
+              type: "Enum",
+              payload: { members: [{ name: "Red" }, { name: "Blue" }] },
+            },
+          },
+        ],
+      ),
+    ).toEqual({
+      "enum-1": ["Idle", "Run"],
+      "enum-2": ["Red", "Blue"],
+    });
   });
 });
 

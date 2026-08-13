@@ -8,8 +8,10 @@ const LITERAL_DEFAULT_KINDS = new Set<PinType["kind"]>([
   "string",
   "vec2",
   "vec3",
+  "vec4",
   "rotator",
   "color",
+  "enumRef",
 ]);
 
 export function pinAcceptsLiteralDefault(type: PinType): boolean {
@@ -47,6 +49,10 @@ export function defaultJsValue(type: PinType): unknown {
       return { pitch: 0, yaw: 0, roll: 0 };
     case "color":
       return { x: 0, y: 0, z: 0, w: 0 };
+    case "vec4":
+      return { x: 0, y: 0, z: 0, w: 0 };
+    case "enumRef":
+      return "";
     default:
       return null;
   }
@@ -132,6 +138,27 @@ export function vec3TupleToObject(
     result[keys[2]] = tuple[2];
   }
   return result;
+}
+
+export type Vec4Tuple = [number, number, number, number];
+
+export function pinDefaultAsVec4Tuple(value: unknown): Vec4Tuple {
+  const record = recordOf(value);
+  return [
+    pinDefaultAsNumber(record?.x),
+    pinDefaultAsNumber(record?.y),
+    pinDefaultAsNumber(record?.z),
+    pinDefaultAsNumber(record?.w),
+  ];
+}
+
+export function vec4TupleToObject(tuple: readonly number[]): Record<string, number> {
+  return {
+    x: tuple[0] ?? 0,
+    y: tuple[1] ?? 0,
+    z: tuple[2] ?? 0,
+    w: tuple[3] ?? 0,
+  };
 }
 
 export function pinDefaultColorRgb(value: unknown): Vec3Tuple {

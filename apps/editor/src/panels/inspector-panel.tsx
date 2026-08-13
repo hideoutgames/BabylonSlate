@@ -20,6 +20,7 @@ import {
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import {
+  collectEnumMemberNames,
   commandParameterRows,
   commandParametersFromRows,
   inspectorLiteralPinDefaults,
@@ -32,7 +33,8 @@ import {
 export function InspectorPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, projectDocument } = useDocuments();
+  const { openDocuments, applyGraphChange, projectDocument, assetRegistry } =
+    useDocuments();
   const { focusDiagnostic } = useValidation();
   const { focusedNodeId } = usePlay();
   const { selectedNodeIds } = useGraphEditing();
@@ -98,12 +100,17 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   };
 
   const inputMappings = normalizeInputMappings(projectDocument?.settings.input);
+  const enumMembers = collectEnumMemberNames(
+    openDocuments,
+    assetRegistry?.list() ?? [],
+  );
   const pinDefaultRows = pinDefaultPropertyRows(
     inspectorLiteralPinDefaults(selectedNode, graph.edges),
     updateNodeData,
     {
       actionNames: inputMappings.actions.map((action) => action.name),
       axisNames: inputMappings.axes.map((axis) => axis.name),
+      enumMembers,
     },
   );
   const logRows = isLog
