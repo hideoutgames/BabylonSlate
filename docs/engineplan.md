@@ -41,7 +41,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | UserInterface Logic tab | Script palette + members dock; Play compiles `payload.logic`; Class `flow.event.custom` dispatches | Done (authoring-surface wave) |
 | Shader preview | Throttled `compileShaderGraphForRender` → `applyShaderGraphPreview` / `NodeMaterial.Parse`; catalog pin hydration | Done (authoring-surface wave) |
 | Anim graph Add Node pins | `hydrateAnimGraphForEditor` / `animPaletteNodes` inject `in`/`out` | Done (authoring-surface wave) |
-| Anim blend / exit-time inspector | Play evaluator already works; inspector parked | Follow-up |
+| Anim Graph authoring host | Parameters / States / Details split; persisted node positions; clip picker; blend / exit-time rows | Done (`cursor/anim-graph-authoring-6e70`) |
 | Pin flash, multi-select gizmo | Chrome polish | Parked |
 | CustomBlock GLSL IDE; assign shader to a live scene mesh | Preview canvas is the host | Parked |
 

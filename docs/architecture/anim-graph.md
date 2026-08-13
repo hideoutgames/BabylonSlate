@@ -19,4 +19,12 @@ Drives:
 
 ## Authoring
 
-`GraphEditor` from `graph-ui` with a small node-type map (states, transitions). `hydrateAnimGraphForEditor` / `animPaletteNodes()` inject `in` / `out` pins on `anim.state` so Add Node is connectable. Own validator; diagnostics navigate like script graphs. Blend / exit-time inspector stays parked — the Play evaluator already consumes those fields when present.
+Asset-document host (`AnimGraphEditor`), not a Dockview Class layout. Three columns:
+
+- **Parameters** — `NamedListEditor` on `doc.parameters` (bool/trigger names the worker reads as `inputs.conditions`).
+- **States** — list plus **Add State**; double-tap canvas still opens Add Node (`anim.state`).
+- **Graph** — `GraphEditor` with `hydrateAnimGraphForEditor` / `animPaletteNodes()` `in` / `out` pins so wires are connectable.
+- **Details** — selected state (name, entry, clip kind, Animation/Sprite `AssetPicker`, clip name, speed, loop) and outgoing transitions (condition, blend seconds, exit time).
+
+`AnimState.position` round-trips through `animGraphToSerialized` / `serializedToAnimGraph` so drags stick. Transition condition / blend / exit-time merge from the previous document when canvas edge ids change. Own validator; diagnostics navigate like script graphs.
+
