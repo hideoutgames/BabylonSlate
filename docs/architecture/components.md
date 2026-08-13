@@ -66,7 +66,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **SelectableText** | Opt-in selectable span inside a `user-select: none` shell. | Logs, compiler messages, Play overlay copy, gallery code snippets. |
 | **ContextMenuOverlay** | Pointer-anchored menu driven by `useContextMenu` (500ms hold or `contextmenu`). | Viewport, Outliner, Content Browser. |
 
-Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`. Label helpers: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`, `formatBindingLabel`. Type lookup: `resolveTypeVisual`, `resolveActorTypeVisual`.
+Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`. Label helpers: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`, `formatBindingLabel`. Type lookup: `resolveTypeVisual`, `resolveActorTypeVisual`. History: `documentHistoryHotkey`.
 
 ## Graph (`@babylonslate/graph-ui`)
 
@@ -74,7 +74,7 @@ Reusable by script, shader, animation, and behaviour-tree graphs.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, cancelled pin-drag disconnect, marquee, pin-filtered drop-to-add. | Graph document panel; UserInterface Logic tab; Shader / AnimationGraph hosts (catalog `__pins` hydrated so Add Node is not an empty box). |
+| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, cancelled pin-drag disconnect, marquee, pin-filtered drop-to-add. Reconciles external `initialGraph` updates (undo/redo, Inspector) without emitting `onChange`. | Graph document panel; UserInterface Logic tab; Shader / AnimationGraph hosts (catalog `__pins` hydrated so Add Node is not an empty box). |
 | **NodePalette** | CatalogDialog of nodes with role-color chips; optional pin compatibility filter. | Add Node from GraphEditor (empty-pane connect-end and Add Node). |
 
 ## App wrappers

@@ -19,6 +19,10 @@ export {
   shouldSuppressIosEditingGesture,
   shouldSuppressIosHistoryInput,
 } from "./ios-editing-gestures";
+export {
+  documentHistoryHotkey,
+  type DocumentHistoryHotkeyEvent,
+} from "./document-history-hotkey";
 export { usePreventDocumentOverscroll } from "./use-prevent-document-overscroll";
 export {
   canScrollInDirection,

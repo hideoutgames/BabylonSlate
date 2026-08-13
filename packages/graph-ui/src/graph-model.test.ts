@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalGraphSignature,
   createEdgeId,
   DEFAULT_NODE_TYPE,
   nodeChangesMutateGraph,
-  nodesMissingFromLocal,
+  reconcileCanvasGraph,
   toSerializedGraph,
 } from "./graph-model";
+import type { GraphDocument } from "./graph-types";
 
 describe("toSerializedGraph", () => {
   it("keeps id, type, position and data for each node", () => {
@@ -112,14 +114,212 @@ describe("toSerializedGraph", () => {
   });
 });
 
-describe("nodesMissingFromLocal", () => {
-  it("returns incoming nodes the local canvas does not already have", () => {
-    expect(
-      nodesMissingFromLocal(
-        [{ id: "a" }],
-        [{ id: "a" }, { id: "b" }, { id: "c" }],
+const twoNodeGraph: GraphDocument = {
+  nodes: [
+    {
+      id: "a",
+      type: "debug.log",
+      position: { x: 0, y: 0 },
+      data: { message: "A" },
+    },
+    {
+      id: "b",
+      type: "debug.log",
+      position: { x: 280, y: 0 },
+      data: { message: "B" },
+    },
+  ],
+  edges: [
+    {
+      id: "e:a:out:b:in",
+      source: "a",
+      target: "b",
+      sourceHandle: "out",
+      targetHandle: "in",
+    },
+  ],
+};
+
+describe("canonicalGraphSignature", () => {
+  it("is equal for the same ids, types, positions, data, and edges regardless of order", () => {
+    const reversed: GraphDocument = {
+      nodes: [...twoNodeGraph.nodes].reverse(),
+      edges: [...twoNodeGraph.edges],
+    };
+    expect(canonicalGraphSignature(reversed)).toBe(
+      canonicalGraphSignature(twoNodeGraph),
+    );
+  });
+
+  it("ignores __nodeType in data so hydrated echoes match the serialized canvas", () => {
+    const hydrated: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) => ({
+        ...node,
+        data: { ...node.data, __nodeType: node.type },
+      })),
+    };
+    expect(canonicalGraphSignature(hydrated)).toBe(
+      canonicalGraphSignature(twoNodeGraph),
+    );
+  });
+
+  it("differs when a node is removed, moved, or data changes", () => {
+    const removed: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.slice(0, 1),
+    };
+    const moved: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) =>
+        node.id === "a"
+          ? { ...node, position: { x: 40, y: 12 } }
+          : node,
       ),
-    ).toEqual([{ id: "b" }, { id: "c" }]);
+    };
+    const patched: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) =>
+        node.id === "a" ? { ...node, data: { message: "patched" } } : node,
+      ),
+    };
+    expect(canonicalGraphSignature(removed)).not.toBe(
+      canonicalGraphSignature(twoNodeGraph),
+    );
+    expect(canonicalGraphSignature(moved)).not.toBe(
+      canonicalGraphSignature(twoNodeGraph),
+    );
+    expect(canonicalGraphSignature(patched)).not.toBe(
+      canonicalGraphSignature(twoNodeGraph),
+    );
+  });
+});
+
+describe("reconcileCanvasGraph", () => {
+  const localNodes = twoNodeGraph.nodes.map((node) => ({
+    ...node,
+    selected: node.id === "a",
+    measured: { width: 180, height: 80 },
+    width: 180,
+    height: 80,
+  }));
+  const localEdges = twoNodeGraph.edges;
+
+  it("returns null when incoming matches local serialization", () => {
+    expect(
+      reconcileCanvasGraph({
+        localNodes,
+        localEdges,
+        incoming: twoNodeGraph,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null when incoming matches lastEmitted so a parent echo is ignored", () => {
+    const dragged = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) =>
+        node.id === "a"
+          ? { ...node, position: { x: 64, y: 8 } }
+          : node,
+      ),
+    };
+    const localDragged = dragged.nodes.map((node) => ({ ...node }));
+    expect(
+      reconcileCanvasGraph({
+        localNodes: localDragged,
+        localEdges,
+        incoming: twoNodeGraph,
+        lastEmitted: twoNodeGraph,
+      }),
+    ).toBeNull();
+  });
+
+  it("drops nodes removed from incoming", () => {
+    const incoming: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.slice(0, 1),
+      edges: [],
+    };
+    const next = reconcileCanvasGraph({
+      localNodes,
+      localEdges,
+      incoming,
+    });
+    expect(next).not.toBeNull();
+    expect(next!.nodes.map((node) => node.id)).toEqual(["a"]);
+    expect(next!.edges).toEqual([]);
+  });
+
+  it("applies moved positions from incoming", () => {
+    const incoming: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) =>
+        node.id === "a"
+          ? { ...node, position: { x: 100, y: 40 } }
+          : node,
+      ),
+    };
+    const next = reconcileCanvasGraph({
+      localNodes,
+      localEdges,
+      incoming,
+    });
+    expect(next?.nodes.find((node) => node.id === "a")?.position).toEqual({
+      x: 100,
+      y: 40,
+    });
+  });
+
+  it("applies edge rewires from incoming", () => {
+    const incoming: GraphDocument = {
+      ...twoNodeGraph,
+      edges: [],
+    };
+    const next = reconcileCanvasGraph({
+      localNodes,
+      localEdges,
+      incoming,
+    });
+    expect(next?.edges).toEqual([]);
+  });
+
+  it("applies data patches from incoming", () => {
+    const incoming: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) =>
+        node.id === "a" ? { ...node, data: { message: "undo" } } : node,
+      ),
+    };
+    const next = reconcileCanvasGraph({
+      localNodes,
+      localEdges,
+      incoming,
+    });
+    expect(next?.nodes.find((node) => node.id === "a")?.data).toEqual({
+      message: "undo",
+    });
+  });
+
+  it("keeps selected and measured on surviving node ids", () => {
+    const incoming: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) =>
+        node.id === "a"
+          ? { ...node, position: { x: 12, y: 24 } }
+          : node,
+      ),
+    };
+    const next = reconcileCanvasGraph({
+      localNodes,
+      localEdges,
+      incoming,
+    });
+    const surviving = next?.nodes.find((node) => node.id === "a");
+    expect(surviving?.selected).toBe(true);
+    expect(surviving?.measured).toEqual({ width: 180, height: 80 });
+    expect(surviving?.width).toBe(180);
+    expect(surviving?.height).toBe(80);
   });
 });
 

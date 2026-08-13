@@ -55,7 +55,7 @@ iPad projects grep `@ipad` so they only rerun tests that depend on touch, coarse
 
 `e2e/touch-shell.spec.ts` holds the touch-UX audits required by engineplan §2.4: minimum 44px touch targets, `user-select: none` by default, app-wide native context-menu suppression with `SelectableText` as the opt-out, the widened dock sash hit area, and radii resolving to values on the `--radius-*` scale.
 
-`e2e/p5-scripting.spec.ts` holds the P5 acceptance proofs: a graph scripted in the editor compiles, loads, and ticks in Preview (its `Print` reaches the on-screen overlay), and a type mismatch raises the blocking dialog whose rows navigate to the offending node.
+`e2e/p5-scripting.spec.ts` holds the P5 acceptance proofs: a graph scripted in the editor compiles, loads, and ticks in Preview (its `Print` reaches the on-screen overlay), a type mismatch raises the blocking dialog whose rows navigate to the offending node, and chrome undo/redo restores a node added on the Class canvas.
 
 `e2e/p7-physics.spec.ts` places a 2D Rapier rigid body, plays, and asserts the worker HUD `play-physics-ms` `data-ms` is non-zero (the rAF FPS pump must not clobber worker timings).
 

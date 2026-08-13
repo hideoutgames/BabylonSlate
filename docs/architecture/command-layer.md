@@ -18,7 +18,7 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 | `replayJournalLines` | Replay journal onto open graph or scene documents |
 | `reviveCommand` / `registerCommandReviver` | Registry to rebuild commands from journal JSON |
 
-Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`, scene panels call `applySceneChange`, asset tabs call `applyAssetDocumentChange`; chrome **Undo** / **Redo** act on the active document only. `SetNodeDataCommand` and subtree-capturing scene commands (e.g. `RemoveActorCommand`) record `byteSize` so snapshot-style edits count toward the budget. Tilemap paint strokes pass `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`) so one undo restores the whole gesture.
+Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`, scene panels call `applySceneChange`, asset tabs call `applyAssetDocumentChange`; chrome **Undo** / **Redo** (and desktop Mod+Z / Mod+Shift+Z / Mod+Y) act on the active document only. `GraphEditor` reconciles that restored graph onto the canvas. `SetNodeDataCommand` and subtree-capturing scene commands (e.g. `RemoveActorCommand`) record `byteSize` so snapshot-style edits count toward the budget. Tilemap paint strokes pass `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`) so one undo restores the whole gesture.
 
 ## Ownership
 
@@ -53,7 +53,7 @@ interface EditCommand<TDoc = unknown> {
 
 - One `DocumentEditStack` per open document id — **never** a global undo stack.
 - Closing a document drops its history.
-- Chrome undo/redo act on the **active** document only; buttons are the primary touch affordance (keyboard shortcuts secondary on desktop).
+- Chrome undo/redo act on the **active** document only; buttons are the primary touch affordance. Desktop **Mod+Z** undoes, **Mod+Shift+Z** / **Mod+Y** redo (`documentHistoryHotkey`); skipped in text fields / `SelectableText` and while three pointers are down. Graph canvases reconcile the restored document so node add/move/connect/delete is visible (same path as scene / UI Design / tilemap).
 - Caps (both enforced; drop from the oldest end when either is exceeded):
   - **Entry limit** from Engine Settings `undoHistoryLength` (default 50).
   - **Byte budget** across recorded `byteSize` values (snapshot fallbacks).
@@ -87,4 +87,4 @@ See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 
 ## Tests
 
-Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer.
+Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer; `e2e/p5-scripting.spec.ts` covers Class graph undo/redo on the canvas.

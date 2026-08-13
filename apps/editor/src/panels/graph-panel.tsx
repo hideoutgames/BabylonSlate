@@ -57,13 +57,18 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   }, []);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
+  const graphContent =
+    doc?.ref.kind === "graph" && doc.content
+      ? (doc.content as SerializedGraph)
+      : null;
+  // `DocumentService.updateGraph` mutates the open-doc object in place, so
+  // depend on `content` (replaced on every command/undo) rather than `doc`.
   const graph = useMemo(() => {
-    const raw =
-      doc?.ref.kind === "graph" && doc.content
-        ? (doc.content as SerializedGraph)
-        : createDefaultLogicGraphSerialized(registry);
-    return hydrateSerializedGraphForEditor(raw, registry);
-  }, [doc]);
+    return hydrateSerializedGraphForEditor(
+      graphContent ?? createDefaultLogicGraphSerialized(registry),
+      registry,
+    );
+  }, [graphContent]);
 
   const assetGuid = doc?.ref.path ?? documentId;
 
