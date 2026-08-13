@@ -61,7 +61,7 @@ test.describe("BabylonSlate editor smoke", () => {
       .click();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
     await expect(
-      page.getByTestId("document-workspace-scene").locator("canvas"),
+      page.getByTestId("viewport-canvas"),
     ).toBeVisible({ timeout: 15_000 });
   });
 

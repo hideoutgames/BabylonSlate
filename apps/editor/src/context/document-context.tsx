@@ -62,7 +62,9 @@ import {
   type OpenDocument,
 } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
+import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { loadTemplateCards } from "../services/template-service";
+import type { CreateProjectOptions } from "../lib/create-project";
 import {
   compileGraphDocuments,
   graphCompileSignature,
@@ -138,7 +140,7 @@ interface DocumentContextValue {
   openProject: () => Promise<void>;
   createEmptyProject: (
     name: string,
-    options?: { pickFolder?: boolean; kind?: "empty" | "2d" },
+    options?: CreateProjectOptions,
   ) => Promise<void>;
   createFromTemplate: (
     templateId: string,
@@ -162,6 +164,9 @@ interface DocumentContextValue {
   dismissRecovery: () => Promise<void>;
   keepRecovery: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
+  pendingExclusiveScene: DocumentRef | null;
+  confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
+  cancelExclusiveSceneOpen: () => void;
   closeDocument: (id: string) => void;
   setActiveDocument: (id: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
@@ -320,6 +325,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [registryVersion, setRegistryVersion] = useState(0);
   const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
+  const [pendingExclusiveScene, setPendingExclusiveScene] =
+    useState<DocumentRef | null>(null);
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
@@ -570,7 +577,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [enterEditor, projectService]);
 
   const createEmptyProject = useCallback(
-    async (name: string, options?: { pickFolder?: boolean; kind?: "empty" | "2d" }) => {
+    async (name: string, options?: CreateProjectOptions) => {
       const { document, layouts, migrationPending: pending } =
         await projectService.createEmptyProject(name, options);
       await enterEditor(document, layouts, pending);
@@ -786,20 +793,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await replayRecoveryJournal();
   }, [replayRecoveryJournal]);
 
-  const openDocument = useCallback(
-    async (ref: DocumentRef) => {
-      const { activeDocumentId } = documentService.getState();
-      if (activeDocumentId) {
-        captureLayoutForId(activeDocumentId);
-      }
-      const layouts = documentService.buildLayouts();
-      const layout = layouts.documents[documentId(ref)] ?? null;
-      await documentService.openDocument(projectService, ref, layout, true);
-      bump();
-    },
-    [bump, captureLayoutForId, documentService, projectService],
-  );
-
   const closeDocument = useCallback(
     (id: string) => {
       dockviewApisRef.current.delete(id);
@@ -817,6 +810,65 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [bump, disposeDockSubscriptions, documentService],
   );
+
+  const finishOpenDocument = useCallback(
+    async (ref: DocumentRef) => {
+      const { activeDocumentId } = documentService.getState();
+      if (activeDocumentId) {
+        captureLayoutForId(activeDocumentId);
+      }
+      if (ref.kind === "scene") {
+        const nextId = documentId(ref);
+        const others = documentService
+          .getOpenDocumentsOrdered()
+          .filter((doc) => doc.ref.kind === "scene" && doc.id !== nextId);
+        for (const other of others) {
+          closeDocument(other.id);
+        }
+      }
+      const layouts = documentService.buildLayouts();
+      const layout = layouts.documents[documentId(ref)] ?? null;
+      await documentService.openDocument(projectService, ref, layout, true);
+      bump();
+    },
+    [bump, captureLayoutForId, closeDocument, documentService, projectService],
+  );
+
+  const openDocument = useCallback(
+    async (ref: DocumentRef) => {
+      if (ref.kind === "scene") {
+        const blocking = dirtyScenesBlockingOpen(
+          documentService.getDirtyDocuments(),
+          documentId(ref),
+        );
+        if (blocking.length > 0) {
+          setPendingExclusiveScene(ref);
+          bump();
+          return;
+        }
+      }
+      await finishOpenDocument(ref);
+    },
+    [bump, documentService, finishOpenDocument],
+  );
+
+  const confirmExclusiveSceneOpen = useCallback(
+    async (mode: "save" | "discard") => {
+      const ref = pendingExclusiveScene;
+      if (!ref) return;
+      if (mode === "save") {
+        const saved = await saveAll();
+        if (!saved) return;
+      }
+      setPendingExclusiveScene(null);
+      await finishOpenDocument(ref);
+    },
+    [finishOpenDocument, pendingExclusiveScene, saveAll],
+  );
+
+  const cancelExclusiveSceneOpen = useCallback(() => {
+    setPendingExclusiveScene(null);
+  }, []);
 
   const setActiveDocument = useCallback(
     (id: string) => {
@@ -883,6 +935,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             playPreview: {
               ...current.settings.playPreview,
               ...settings.playPreview,
+            },
+            render: {
+              ...current.settings.render,
+              ...settings.render,
+            },
+            fonts: {
+              ...current.settings.fonts,
+              ...settings.fonts,
             },
             input: settings.input
               ? settings.input
@@ -1840,6 +1900,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dismissRecovery,
       keepRecovery,
       openDocument,
+      pendingExclusiveScene,
+      confirmExclusiveSceneOpen,
+      cancelExclusiveSceneOpen,
       closeDocument,
       setActiveDocument,
       reorderTabs,
@@ -1952,6 +2015,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dismissRecovery,
       keepRecovery,
       openDocument,
+      pendingExclusiveScene,
+      confirmExclusiveSceneOpen,
+      cancelExclusiveSceneOpen,
       closeDocument,
       setActiveDocument,
       reorderTabs,

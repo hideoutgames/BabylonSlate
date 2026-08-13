@@ -5,6 +5,7 @@ import {
   playLoadControl,
   playPhysicsFromOpenDocuments,
   playSceneFromOpenDocuments,
+  playIsEnabled,
   resolvePlayScene,
 } from "./play-physics";
 
@@ -140,7 +141,32 @@ describe("playSceneFromOpenDocuments", () => {
     expect(playSceneFromOpenDocuments([], null)).toBeNull();
   });
 
-  it("resolvePlayScene uses the project startup scene when no scene tab is open", () => {
+  it("playIsEnabled is false when no scene tab is open", () => {
+    expect(
+      playIsEnabled(
+        [{ id: "graph:main", ref: { kind: "graph" }, content: {} }],
+        "graph:main",
+      ),
+    ).toBe(false);
+  });
+
+  it("playIsEnabled is true when a scene tab is open even if it is not active", () => {
+    expect(
+      playIsEnabled(
+        [
+          { id: "content-browser", ref: { kind: "content-browser" }, content: null },
+          {
+            id: "scene:level",
+            ref: { kind: "scene" },
+            content: { name: "Level", actors: [] },
+          },
+        ],
+        "content-browser",
+      ),
+    ).toBe(true);
+  });
+
+  it("resolvePlayScene does not fall back to a startup scene when no scene tab is open", () => {
     const fallback = {
       sceneAssetGuid: "scene:assets/main.scene.babasset",
       scene: normalizeScene({
@@ -157,7 +183,7 @@ describe("playSceneFromOpenDocuments", () => {
         activeDocumentId: "graph:main",
         fallback,
       }),
-    ).toEqual(fallback);
+    ).toBeNull();
   });
 
   it("resolvePlayScene prefers an open scene tab over the startup fallback", () => {

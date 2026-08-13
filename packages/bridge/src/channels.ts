@@ -171,6 +171,11 @@ export type CommandMessage =
       assetGuid: string;
       volume: number;
       frameId: number;
+    }
+  | {
+      type: "setRenderResolution";
+      width: number;
+      height: number;
     };
 
 export type BridgeHostMessage =

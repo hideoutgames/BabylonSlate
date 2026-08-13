@@ -169,6 +169,62 @@ describe("DocumentService", () => {
     });
   });
 
+  it("closes the previously open scene when opening another scene", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const firstPath = MAIN_SCENE_FILE;
+    const secondPath = "assets/level.scene.babasset";
+    await service.openDocument(project, {
+      kind: "scene",
+      path: firstPath,
+      label: "main",
+    });
+    const firstId = documentId({ kind: "scene", path: firstPath });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    await service.openDocument(project, {
+      kind: "graph",
+      path: MAIN_CLASS_FILE,
+      label: "class",
+    });
+    await service.openDocument(project, {
+      kind: "scene",
+      path: secondPath,
+      label: "level",
+    });
+    const secondId = documentId({ kind: "scene", path: secondPath });
+    const state = service.getState();
+    expect(state.openDocuments.has(firstId)).toBe(false);
+    expect(state.openDocuments.has(secondId)).toBe(true);
+    expect(state.openDocuments.has(graphId)).toBe(true);
+    expect(state.activeDocumentId).toBe(secondId);
+  });
+
+  it("restores at most one scene tab from a saved layout", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const projectService = createMockProjectService();
+    const firstId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+    const secondId = documentId({
+      kind: "scene",
+      path: "assets/level.scene.babasset",
+    });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+
+    await service.initializeFromProject(projectService, project, {
+      documents: {},
+      tabOrder: [firstId, graphId, secondId],
+      activeDocumentId: firstId,
+    });
+
+    const state = service.getState();
+    expect(state.tabOrder).toContain(CONTENT_BROWSER_ID);
+    expect(state.tabOrder).toContain(graphId);
+    expect(state.tabOrder).toContain(secondId);
+    expect(state.tabOrder).not.toContain(firstId);
+    expect(state.activeDocumentId).toBe(CONTENT_BROWSER_ID);
+  });
+
   it("closes a document and falls back to content browser", async () => {
     const service = new DocumentService();
     const project = createEmptyProject("Test");

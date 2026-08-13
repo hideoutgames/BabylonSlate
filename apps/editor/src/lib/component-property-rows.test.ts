@@ -162,6 +162,16 @@ describe("componentPropertyRows", () => {
       min: 0,
       max: 16,
     });
+    expect(light.rows.find((row) => row.id.endsWith("-range"))).toMatchObject({
+      kind: "number",
+      value: 10,
+      min: 0,
+    });
+    expect(light.rows.find((row) => row.id.endsWith("-lightKind"))).toMatchObject({
+      kind: "enum",
+      value: "point",
+    });
+    expect(light.rows.find((row) => row.id.endsWith("-outerAngle"))).toBeUndefined();
     const gravity = body.rows.find((row) => row.id.endsWith("-gravityScale"));
     expect(gravity).toMatchObject({ kind: "slider", value: 1, min: 0, max: 10 });
   });
@@ -185,6 +195,24 @@ describe("componentPropertyRows", () => {
       value: 5,
       min: 0.1,
       max: 50,
+    });
+  });
+
+  it("shows outer angle for a spot light", () => {
+    const spot = rowsFor({
+      id: "spot",
+      classId: "LightComponent",
+      properties: { lightKind: "spot", range: 12, outerAngle: 45, intensity: 1 },
+    });
+    expect(spot.rows.find((row) => row.id.endsWith("-outerAngle"))).toMatchObject({
+      kind: "number",
+      value: 45,
+      min: 1,
+      max: 179,
+    });
+    expect(spot.rows.find((row) => row.id.endsWith("-range"))).toMatchObject({
+      kind: "number",
+      value: 12,
     });
   });
 

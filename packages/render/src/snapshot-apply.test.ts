@@ -7,6 +7,7 @@ import { encodeTriangleGlb } from "./model-mesh";
 import {
   createPlayMesh,
   createSnapshotSceneBinding,
+  applySnapshotToScene,
 } from "./snapshot-apply";
 
 describe("createPlayMesh", () => {
@@ -51,5 +52,36 @@ describe("createPlayMesh", () => {
     const light = binding.lights.get(4);
     expect(light).toBeInstanceOf(PointLight);
     expect(light!.name).toBe("authoredLight:4");
+  });
+
+  it("binds the first camera slot as activeCamera and follows snapshot position", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    createPlayMesh(scene, 0, "camera", null, binding);
+    expect(scene.activeCamera?.name).toBe("authoredCamera:0");
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: 3, y: 4, z: -8 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    const camera = binding.cameras.get(0);
+    expect(scene.activeCamera).toBe(camera);
+    expect(camera).toBeDefined();
+    if (camera && "position" in camera) {
+      expect((camera as { position: { x: number; y: number; z: number } }).position.x).toBeCloseTo(3);
+      expect((camera as { position: { y: number } }).position.y).toBeCloseTo(4);
+    }
   });
 });

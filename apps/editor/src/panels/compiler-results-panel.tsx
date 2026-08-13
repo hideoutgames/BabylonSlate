@@ -5,11 +5,14 @@ import { Button } from "@babylonslate/ui/components/button";
 import { PanelFrame, SelectableText } from "@babylonslate/editor-kit";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
+import { useDocuments } from "../context/document-context";
+import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
 
 export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { diagnostics, setFocusDiagnostic } = useValidation();
   const { clearFocusedNode } = usePlay();
+  const { openDocuments, setActiveDocument } = useDocuments();
 
   const grouped = new Map<string, typeof diagnostics>();
   for (const d of diagnostics) {
@@ -41,6 +44,11 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                     onClick={() => {
                       clearFocusedNode();
                       setFocusDiagnostic(d);
+                      const revealId = documentIdToRevealForDiagnostic(
+                        d,
+                        openDocuments.map((doc) => doc.id),
+                      );
+                      if (revealId) setActiveDocument(revealId);
                     }}
                   >
                     <span

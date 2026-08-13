@@ -29,6 +29,14 @@ vi.mock("../context/document-context", async () => {
             header: { guid: "font-1", name: "Display", type: "Font" },
             path: "assets/Display.font.babasset",
           },
+          {
+            header: { guid: "scene-1", name: "Main", type: "Scene" },
+            path: "assets/main.scene.babasset",
+          },
+          {
+            header: { guid: "scene-2", name: "Arena", type: "Scene" },
+            path: "assets/Arena.scene.babasset",
+          },
         ],
         getByGuid: (guid: string) =>
           guid === "font-1"
@@ -100,5 +108,30 @@ describe("SettingsModal project authoring", () => {
         }),
       }),
     );
+  });
+
+  it("picks the packaged startup scene from Scene assets only", async () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("settings-startup-scene"));
+    expect(await screen.findByTestId("search-item-scene-1")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-font-1")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-scene-2"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ startupSceneGuid: "scene-2" }),
+    );
+  });
+
+  it("authors custom render resolution on the Rendering category", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.getByTestId("setting-render-custom")).toBeTruthy();
+    expect(screen.getByTestId("setting-render-width")).toBeTruthy();
+    expect(screen.getByTestId("setting-render-height")).toBeTruthy();
+    expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
   });
 });

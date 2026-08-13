@@ -82,6 +82,37 @@ export const DEFAULT_FONT_PROJECT_SETTINGS: FontProjectSettings = {
   globalFallback: "sans-serif",
 };
 
+export interface RenderProjectSettings {
+  /**
+   * When false or missing, Play fills the overlay / Follow System path.
+   * New projects default this on.
+   */
+  customResolution: boolean;
+  width: number;
+  height: number;
+  /** When true, letterbox the WxH framebuffer; when false, stretch to fill. */
+  blackBars: boolean;
+}
+
+export const DEFAULT_RENDER_WIDTH = 1920;
+export const DEFAULT_RENDER_HEIGHT = 1080;
+
+/** Missing field on existing projects — keep fill / Follow System. */
+export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
+  customResolution: false,
+  width: DEFAULT_RENDER_WIDTH,
+  height: DEFAULT_RENDER_HEIGHT,
+  blackBars: false,
+};
+
+/** New projects lock Play/runtime to 1920×1080 and stretch (no black bars). */
+export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
+  customResolution: true,
+  width: DEFAULT_RENDER_WIDTH,
+  height: DEFAULT_RENDER_HEIGHT,
+  blackBars: false,
+};
+
 export interface ProjectSettings {
   touchMinTargetPx: number;
   /** Play/Preview render cap in fps. Editor viewports use Engine Settings. */
@@ -90,12 +121,18 @@ export interface ProjectSettings {
   compileOnSave: boolean;
   /** Idle interval before dirty documents are written. */
   autoSaveIntervalMs: number;
-  /** Play overlay letterbox; Preview-only, does not affect export. */
+  /** Play overlay letterbox; used when `render.customResolution` is off. */
   playPreview: PlayPreviewProjectSettings;
+  /**
+   * Packaged / export boot scene asset guid. Editor Play never reads this —
+   * Play uses the open scene tab.
+   */
+  startupSceneGuid: string | null;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
   input: ProjectInputSettings;
   fonts: FontProjectSettings;
+  render: RenderProjectSettings;
 }
 
 export interface ProjectDocument {
@@ -274,6 +311,27 @@ function normalizePlayPreview(
   };
 }
 
+function normalizePositiveInt(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : fallback;
+}
+
+function normalizeRender(
+  value: Partial<RenderProjectSettings> | undefined,
+): RenderProjectSettings {
+  return {
+    customResolution: value?.customResolution === true,
+    width: normalizePositiveInt(value?.width, DEFAULT_RENDER_WIDTH),
+    height: normalizePositiveInt(value?.height, DEFAULT_RENDER_HEIGHT),
+    blackBars: value?.blackBars === true,
+  };
+}
+
+function normalizeStartupSceneGuid(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
 function normalizeProjectInput(value: unknown): ProjectInputSettings {
   const source = (value ?? {}) as Record<string, unknown>;
   const hasActions = Array.isArray(source.actions) && source.actions.length > 0;
@@ -337,12 +395,17 @@ export function normalizeProjectSettings(
           ? settings.fonts.globalFallback.trim()
           : DEFAULT_FONT_PROJECT_SETTINGS.globalFallback,
     },
+    startupSceneGuid: normalizeStartupSceneGuid(settings?.startupSceneGuid),
+    render: normalizeRender(settings?.render),
   };
 }
 
 export function createEmptyProject(
   name: string,
-  options?: { kind?: "empty" | "2d" },
+  options?: {
+    kind?: "empty" | "2d";
+    render?: Partial<RenderProjectSettings>;
+  },
 ): ProjectDocument {
   const now = new Date().toISOString();
   const twoD =
@@ -360,7 +423,14 @@ export function createEmptyProject(
       createdAt: now,
       updatedAt: now,
     },
-    settings: normalizeProjectSettings(twoD ? { twoD } : undefined),
+    settings: normalizeProjectSettings({
+      ...(twoD ? { twoD } : {}),
+      render: {
+        ...NEW_PROJECT_RENDER_SETTINGS,
+        ...options?.render,
+        customResolution: options?.render?.customResolution ?? true,
+      },
+    }),
     scenes: [MAIN_SCENE_FILE],
     graphs: [MAIN_CLASS_FILE],
   };

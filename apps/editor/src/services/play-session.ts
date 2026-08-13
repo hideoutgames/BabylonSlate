@@ -197,6 +197,7 @@ export function startPlaySession(options: {
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   pixelsPerUnit?: number;
+  onSetRenderResolution?: (width: number, height: number) => void;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
@@ -306,6 +307,9 @@ export function startPlaySession(options: {
     }
     if (command.type === "uiRemove") {
       options.onUiRemove?.(command.instanceId);
+    }
+    if (command.type === "setRenderResolution") {
+      options.onSetRenderResolution?.(command.width, command.height);
     }
     if (command.type === "playSound") {
       options.onLog?.(

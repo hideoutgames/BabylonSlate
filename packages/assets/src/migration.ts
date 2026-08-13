@@ -106,6 +106,13 @@ function migrateSceneMeshesToActors(
   };
 }
 
+/** Scene v2 → v3: physicsWorld / editorJoystickEnabled are additive on normalize. */
+function migrateSceneV2ToV3(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...payload };
+}
+
 /** Default registry with Graph/Class logic-graph chains and Scene/Project. */
 export function createDefaultMigrationRegistry(): MigrationRegistry {
   const registry = new MigrationRegistry();
@@ -132,6 +139,7 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
         meshes: Array.isArray(payload.meshes) ? payload.meshes : [],
       }),
       migrateSceneMeshesToActors,
+      migrateSceneV2ToV3,
     ],
   });
   registry.register({

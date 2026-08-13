@@ -73,7 +73,13 @@ export function defaultPropertiesFor(
     case "CameraComponent":
       return { fieldOfView: 60, orthographicSize: 5 };
     case "LightComponent":
-      return { intensity: 1, color: [1, 1, 1] };
+      return {
+        intensity: 1,
+        color: [1, 1, 1],
+        lightKind: "point",
+        range: 10,
+        outerAngle: 45,
+      };
     case "RigidBodyComponent":
       return { ...parseRigidBodyProperties({}) };
     case "ColliderComponent":

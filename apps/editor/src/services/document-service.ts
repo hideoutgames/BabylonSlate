@@ -118,10 +118,14 @@ export class DocumentService {
     const savedOrder = layouts.tabOrder.filter(
       (id) => !isContentBrowserId(id) && id.includes(":"),
     );
+    const lastSceneId = [...savedOrder]
+      .reverse()
+      .find((id) => parseDocumentId(id)?.kind === "scene");
 
     for (const id of savedOrder) {
       const parsed = parseDocumentId(id);
       if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
+      if (parsed.kind === "scene" && id !== lastSceneId) continue;
       await this.openDocument(
         projectService,
         { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
@@ -157,6 +161,9 @@ export class DocumentService {
       if (setActive) {
         this.state.activeDocumentId = id;
       }
+      if (ref.kind === "scene") {
+        this.closeOtherSceneDocuments(id);
+      }
       return id;
     }
 
@@ -174,10 +181,25 @@ export class DocumentService {
     this.state.openDocuments.set(id, entry);
     this.state.tabOrder.push(id);
     this.pinContentBrowserFirst();
+    if (ref.kind === "scene") {
+      this.closeOtherSceneDocuments(id);
+    }
     if (setActive) {
       this.state.activeDocumentId = id;
     }
     return id;
+  }
+
+  private closeOtherSceneDocuments(keepId: string): void {
+    const toClose: string[] = [];
+    for (const [docId, doc] of this.state.openDocuments) {
+      if (doc.ref.kind === "scene" && docId !== keepId) {
+        toClose.push(docId);
+      }
+    }
+    for (const docId of toClose) {
+      this.closeDocument(docId);
+    }
   }
 
   closeDocument(id: string): void {

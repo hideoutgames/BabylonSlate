@@ -53,11 +53,18 @@ describe("project schema", () => {
       defaultFontGuid: null,
       globalFallback: "sans-serif",
     });
+    expect(project.settings.startupSceneGuid).toBeNull();
     expect(project.settings.playFrameCap).toBe(60);
     expect(project.settings.playPreview).toEqual({
       followSystem: true,
       aspectWidth: 16,
       aspectHeight: 9,
+    });
+    expect(project.settings.render).toEqual({
+      customResolution: true,
+      width: 1920,
+      height: 1080,
+      blackBars: false,
     });
   });
 
@@ -186,5 +193,49 @@ describe("project schema", () => {
     expect(
       normalizeProjectSettings({ autoSaveIntervalMs: 0 }).autoSaveIntervalMs,
     ).toBe(120_000);
+  });
+
+  it("normalizes a missing startup scene guid to null and keeps a stored guid", () => {
+    expect(normalizeProjectSettings(undefined).startupSceneGuid).toBeNull();
+    expect(normalizeProjectSettings({}).startupSceneGuid).toBeNull();
+    expect(
+      normalizeProjectSettings({ startupSceneGuid: "" }).startupSceneGuid,
+    ).toBeNull();
+    expect(
+      normalizeProjectSettings({ startupSceneGuid: "scene-guid-1" })
+        .startupSceneGuid,
+    ).toBe("scene-guid-1");
+  });
+
+  it("keeps fill Play layout when custom resolution is missing or off", () => {
+    expect(normalizeProjectSettings(undefined).render).toEqual({
+      customResolution: false,
+      width: 1920,
+      height: 1080,
+      blackBars: false,
+    });
+    expect(
+      normalizeProjectSettings({
+        render: { customResolution: false, width: 1280, height: 720, blackBars: true },
+      }).render,
+    ).toEqual({
+      customResolution: false,
+      width: 1280,
+      height: 720,
+      blackBars: true,
+    });
+  });
+
+  it("keeps a custom 1920×1080 stretch override on new projects", () => {
+    expect(
+      createEmptyProject("Demo", {
+        render: { customResolution: true, width: 1280, height: 720, blackBars: true },
+      }).settings.render,
+    ).toEqual({
+      customResolution: true,
+      width: 1280,
+      height: 720,
+      blackBars: true,
+    });
   });
 });

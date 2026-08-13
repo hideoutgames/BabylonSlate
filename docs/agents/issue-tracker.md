@@ -180,8 +180,8 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
-| Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; game cameras are `ArcRotateCamera`; active camera is first in the list. May run beside P11. |
+| Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list (`mainCameraActorId` still later). May run beside P11. |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -258,7 +258,7 @@ Chrome polish (pin flash, multi-select gizmo) stays parked. Remaining Play/scrip
 | Prefab → class document persistence | Done (open tab **or** disk graph) |
 | Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
 | ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |
-| Play startup scene with no scene tab open | Done (foundation wave) |
+| Play startup scene with no scene tab open | Superseded — Play is **disabled** until a scene tab is open; `startupSceneGuid` is packaged/export only |
 | Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
 | HUD TouchButton / TouchDPad → input | Done (foundation wave) |
 | `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer / trace tab parked. ADT HUD done |
@@ -311,7 +311,7 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 | Item | Status |
 | --- | --- |
 | ScriptHost `TickContext` input, tick Delay, spawn, addComponent, interface handlers | Done |
-| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Done |
+| Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Play uses the open scene tab only; disabled otherwise. `startupSceneGuid` is packaged/export boot |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
 | Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract is §2.5 / `p-lighting-camera`, not P11) |

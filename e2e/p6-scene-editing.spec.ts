@@ -1,16 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openTestProject } from "./open-test-project";
+import { openMainScene, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
-
-async function openMainScene(page: Page) {
-  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
-  await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
-  await expect(
-    page.getByTestId("document-workspace-scene").locator("canvas"),
-  ).toBeVisible({ timeout: 15_000 });
-}
 
 /** Commit a simulated gizmo drag (mesh mutation → applySceneChange). */
 async function commitGizmoNudge(page: Page): Promise<boolean> {

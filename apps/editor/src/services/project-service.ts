@@ -20,6 +20,7 @@ import {
   migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
+  type RenderProjectSettings,
 } from "@babylonslate/core";
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
@@ -248,7 +249,13 @@ export class ProjectService {
 
   async createEmptyProject(
     name?: string,
-    options?: { pickFolder?: boolean; kind?: "empty" | "2d" },
+    options?: {
+      pickFolder?: boolean;
+      kind?: "empty" | "2d";
+      renderWidth?: number;
+      renderHeight?: number;
+      blackBars?: boolean;
+    },
   ): Promise<ProjectLoadResult> {
     const projectName =
       name && name.trim()
@@ -263,13 +270,13 @@ export class ProjectService {
       if (await this.storage.exists(PROJECT_FILE)) {
         return this.loadCurrentProject();
       }
-      return this.scaffoldNewProject(projectName, options.kind);
+      return this.scaffoldNewProject(projectName, options.kind, options);
     }
     await this.storage.openDocumentsProject(projectName);
     if (await this.storage.exists(PROJECT_FILE)) {
       return this.loadCurrentProject();
     }
-    return this.scaffoldNewProject(projectName, options?.kind);
+    return this.scaffoldNewProject(projectName, options?.kind, options);
   }
 
   async createFromTemplate(options: {
@@ -541,8 +548,21 @@ export class ProjectService {
   private async scaffoldNewProject(
     name: string,
     kind: "empty" | "2d" = "empty",
+    renderOptions?: {
+      renderWidth?: number;
+      renderHeight?: number;
+      blackBars?: boolean;
+    },
   ): Promise<ProjectLoadResult> {
-    const document = createEmptyProject(name, { kind });
+    const render: Partial<RenderProjectSettings> | undefined = renderOptions
+      ? {
+          customResolution: true,
+          width: renderOptions.renderWidth,
+          height: renderOptions.renderHeight,
+          blackBars: renderOptions.blackBars,
+        }
+      : undefined;
+    const document = createEmptyProject(name, { kind, render });
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
     const graph = createDefaultLogicGraphSerialized();
@@ -551,6 +571,7 @@ export class ProjectService {
     await this.storage.mkdir("plugins", true);
     await this.saveDocument("scene", MAIN_SCENE_FILE, scene);
     await this.saveDocument("graph", MAIN_CLASS_FILE, graph);
+    document.settings.startupSceneGuid = await this.guidForAsset(MAIN_SCENE_FILE);
     await this.saveProject(document, createEmptyLayouts());
     const stored = JSON.parse(
       await this.storage.readText(PROJECT_FILE),

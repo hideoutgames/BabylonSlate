@@ -52,6 +52,7 @@ describe("spawnPlacedActor", () => {
     const actor = spawnPlacedActor(scene, item, "actor-2");
     expect(actor.components[0]?.classId).toBe("LightComponent");
     expect(actor.components[0]?.properties.lightKind).toBe("point");
+    expect(actor.components[0]?.properties.range).toBe(10);
   });
 
   it("spawns an empty actor", () => {

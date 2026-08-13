@@ -34,3 +34,4 @@ export * from "./shader-compile";
 export * from "./shader-preview";
 export * from "./anim-apply";
 export * from "./editor-billboard";
+export * from "./editor-debug-overlay";

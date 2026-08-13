@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { FolderOpenIcon, LayoutTemplateIcon } from "lucide-react";
-import type { ProjectFolderHandle } from "@babylonslate/core";
+import {
+  DEFAULT_RENDER_HEIGHT,
+  DEFAULT_RENDER_WIDTH,
+  type ProjectFolderHandle,
+} from "@babylonslate/core";
+import { NumberField } from "@babylonslate/editor-kit";
 import { getHostPlatform, isTestModeEnabled } from "@babylonslate/vfs";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
@@ -11,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@babylonslate/ui/components/card";
+import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -33,7 +39,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { Field, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { displayProjectName } from "../lib/display-project-name";
@@ -91,6 +102,9 @@ export function Homepage({
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createTemplateId, setCreateTemplateId] = useState<string>("empty");
+  const [createWidth, setCreateWidth] = useState(DEFAULT_RENDER_WIDTH);
+  const [createHeight, setCreateHeight] = useState(DEFAULT_RENDER_HEIGHT);
+  const [createBlackBars, setCreateBlackBars] = useState(false);
   const [pickFolder, setPickFolder] = useState(false);
   const hostPlatform = getHostPlatform();
 
@@ -432,6 +446,50 @@ export function Homepage({
                 </Button>
               ) : null}
             </Field>
+            <Field>
+              <FieldLabel htmlFor="create-project-width">
+                Render Size
+              </FieldLabel>
+              <div className="flex items-center gap-2">
+                <NumberField
+                  id="create-project-width"
+                  min={1}
+                  step={1}
+                  className="min-h-[var(--touch-target,44px)]"
+                  value={createWidth}
+                  onChange={setCreateWidth}
+                  data-testid="create-project-width"
+                  aria-label="Render Width"
+                />
+                <span aria-hidden="true">×</span>
+                <NumberField
+                  id="create-project-height"
+                  min={1}
+                  step={1}
+                  className="min-h-[var(--touch-target,44px)]"
+                  value={createHeight}
+                  onChange={setCreateHeight}
+                  data-testid="create-project-height"
+                  aria-label="Render Height"
+                />
+              </div>
+              <FieldDescription>
+                Play and packaged builds use this framebuffer. Default 1920×1080.
+              </FieldDescription>
+            </Field>
+            <Field orientation="horizontal">
+              <Checkbox
+                id="create-project-black-bars"
+                checked={createBlackBars}
+                onCheckedChange={(checked) =>
+                  setCreateBlackBars(checked === true)
+                }
+                data-testid="create-project-black-bars"
+              />
+              <FieldLabel htmlFor="create-project-black-bars">
+                Black Bars
+              </FieldLabel>
+            </Field>
           </FieldGroup>
           <DialogFooter>
             <Button
@@ -448,7 +506,12 @@ export function Homepage({
               onClick={() => {
                 const folderName = normalizeProjectFolderName(createName);
                 if (!folderName) return;
-                const options: CreateProjectOptions = { pickFolder };
+                const options: CreateProjectOptions = {
+                  pickFolder,
+                  renderWidth: createWidth,
+                  renderHeight: createHeight,
+                  blackBars: createBlackBars,
+                };
                 setCreateOpen(false);
                 if (createTemplateId === "empty" || createTemplateId === "2d") {
                   void run(() =>

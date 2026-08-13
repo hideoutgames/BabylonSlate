@@ -157,6 +157,9 @@ function EditorLayout() {
     saveAll,
     dirtyDocuments,
     migrationPending,
+    pendingExclusiveScene,
+    confirmExclusiveSceneOpen,
+    cancelExclusiveSceneOpen,
     approveMigrationsAndSave,
   } = useDocuments();
   const {
@@ -178,6 +181,13 @@ function EditorLayout() {
     }
   };
 
+  const exclusiveDirtyNames = pendingExclusiveScene
+    ? dirtyDocuments
+        .filter((doc) => doc.ref.kind === "scene")
+        .map((doc) => doc.ref.label)
+    : [];
+  const promptNames = dirtyPrompt ?? exclusiveDirtyNames;
+
   const requestSave = async () => {
     if (migrationPending.length > 0) {
       setShowMigrate(true);
@@ -197,14 +207,25 @@ function EditorLayout() {
         <DocumentWorkspace />
       </main>
       <DirtyCloseDialog
-        dirtyNames={dirtyPrompt ?? []}
-        open={dirtyPrompt !== null}
-        onCancel={() => setDirtyPrompt(null)}
+        dirtyNames={promptNames}
+        open={dirtyPrompt !== null || pendingExclusiveScene !== null}
+        onCancel={() => {
+          setDirtyPrompt(null);
+          cancelExclusiveSceneOpen();
+        }}
         onDiscard={() => {
+          if (pendingExclusiveScene) {
+            void confirmExclusiveSceneOpen("discard");
+            return;
+          }
           setDirtyPrompt(null);
           void forceCloseProject();
         }}
         onSave={() => {
+          if (pendingExclusiveScene) {
+            void confirmExclusiveSceneOpen("save");
+            return;
+          }
           void (async () => {
             await requestSave();
             setDirtyPrompt(null);

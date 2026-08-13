@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { openTestProject } from "./open-test-project";
+import {
+  openAssetFromBrowser,
+  openMainScene,
+  openTestProject,
+} from "./open-test-project";
 
 async function injectGamepad(
   page: { evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown> },
@@ -80,7 +84,8 @@ test.describe("P5 visual scripting acceptance", () => {
     }, SCRIPTED_GRAPH);
     expect(installed).toBe(true);
 
-    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
+    await openMainScene(page);
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("compile-graph")).toBeVisible();
     await expect(page.getByTestId("compilation-error")).toHaveCount(0);
 
@@ -98,16 +103,9 @@ test.describe("P5 visual scripting acceptance", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
-  test("Play without a scene tab loads the startup scene", async ({ page }) => {
+  test("Play without a scene tab is disabled", async ({ page }) => {
     await openTestProject(page);
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
-    await expect
-      .poll(async () => {
-        return page.getByTestId("play-actor-guids").getAttribute("data-guids");
-      })
-      .toContain("actor-1");
-    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-preview")).toBeDisabled();
   });
 
   test("GetAxis2D Move from a compiled graph prints the stick in Play", async ({
@@ -168,6 +166,7 @@ test.describe("P5 visual scripting acceptance", () => {
     expect(installed).toBe(true);
 
     await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
+    await openMainScene(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("print-overlay")).toContainText("0.8", {
@@ -181,9 +180,7 @@ test.describe("P5 visual scripting acceptance", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");
@@ -241,7 +238,7 @@ test.describe("P5 visual scripting acceptance", () => {
       });
     });
 
-    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("compiler-results")).toBeVisible();
     await expect(page.getByTestId("compiler-result-row").first()).toBeVisible({
       timeout: 15_000,
@@ -252,6 +249,7 @@ test.describe("P5 visual scripting acceptance", () => {
       "Compilation Error",
     );
 
+    await openMainScene(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-blocked-dialog")).toBeVisible();
     await page.getByTestId("play-blocked-row").first().click();
@@ -264,9 +262,7 @@ test.describe("P5 visual scripting acceptance", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");

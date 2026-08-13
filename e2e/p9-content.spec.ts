@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openTestProject } from "./open-test-project";
+import { openMainScene, openTestProject } from "./open-test-project";
 
 async function showContentBrowser(
   page: import("@playwright/test").Page,
@@ -176,6 +176,7 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     await openTestProject(page);
+    await openMainScene(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-hud")).toBeVisible();
@@ -230,6 +231,7 @@ test.describe("P9 content systems", () => {
         buttons: [0, 0, 0, 0],
       });
     });
+    await openMainScene(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect
@@ -271,6 +273,7 @@ test.describe("P9 content systems", () => {
     tag: IPAD_TEST_TAG,
   }, async ({ page }, testInfo) => {
     await openTestProject(page);
+    await openMainScene(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-hud")).toBeVisible();
@@ -346,6 +349,7 @@ test.describe("P9 content systems", () => {
     );
     expect(installed).toBe(true);
 
+    await openMainScene(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-hud-stick")).toBeVisible({

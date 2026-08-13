@@ -42,6 +42,7 @@ import { applyAnimStateToScene, resolvePlaySpriteSlot } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
+import { EditorDebugOverlay } from "./editor-debug-overlay";
 
 export interface EngineHandle {
   engine: Engine;
@@ -51,6 +52,7 @@ export interface EngineHandle {
   scaling: HardwareScalingController;
   dispose: () => void;
   resize: () => void;
+  setSize: (width: number, height: number) => void;
   loadScene: (sceneData: SerializedScene) => void;
   /** Push a worker snapshot and invalidate the viewport. */
   pushSnapshot: (buffer: Float32Array) => void;
@@ -128,6 +130,13 @@ export interface EditorTools {
   }) => void;
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
+  /** Frustum / light debug + 1 Hz camera preview for the current selection. */
+  syncSelectionDebug: (options: {
+    sceneData: SerializedScene | null;
+    selectedActorIds: readonly string[];
+    selectedComponentIds?: readonly string[];
+  }) => void;
+  setPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
   frameActor: (actorId: string) => void;
   /** Live transform of the gizmo-attached mesh, for turning a drag into a command. */
   attachedActorTransform: () => {
@@ -233,6 +242,7 @@ export function createEngine(
   };
 
   let editor: EditorTools | null = null;
+  let debugOverlay: EditorDebugOverlay | null = null;
   let disposeGestures: (() => void) | null = null;
   if (options.editor && editorSync) {
     const mode: ViewportMode = options.viewportMode ?? "3d";
@@ -248,6 +258,8 @@ export function createEngine(
       onDrag: options.onGizmoDrag,
       onDragEnd: options.onGizmoDragEnd,
     });
+    const debugOverlayInstance = new EditorDebugOverlay(scene);
+    debugOverlay = debugOverlayInstance;
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
@@ -321,6 +333,13 @@ export function createEngine(
           meshes.find((mesh) => mesh !== null && mesh.isPickable) ?? null;
         gizmos.attachTo(gizmoTarget);
         scheduler.invalidate("selection");
+      },
+      syncSelectionDebug: (options) => {
+        debugOverlayInstance.sync(options);
+        scheduler.invalidate("selection");
+      },
+      setPreviewCanvas: (canvas) => {
+        debugOverlayInstance.setPreviewCanvas(canvas);
       },
       frameActor: (actorId: string) => {
         const mesh = editorSync.meshForActor(actorId);
@@ -430,6 +449,8 @@ export function createEngine(
       editor?.grid.dispose();
       editor?.selection.dispose();
       editor?.sync.dispose();
+      debugOverlay?.dispose();
+      debugOverlay = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
@@ -445,6 +466,9 @@ export function createEngine(
       }
     },
     resize,
+    setSize: (width: number, height: number) => {
+      engine.setSize(Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height)));
+    },
     loadScene,
     pushSnapshot: (buffer: Float32Array) => {
       interpolator.push(buffer);
