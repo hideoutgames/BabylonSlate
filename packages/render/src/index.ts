@@ -25,3 +25,4 @@ export * from "./font-registry";
 export * from "./ui-apply";
 export * from "./sprite-quad";
 export * from "./shader-compile";
+export * from "./anim-apply";

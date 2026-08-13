@@ -19,6 +19,7 @@ import {
 } from "@babylonslate/bridge";
 import { spawnListForScripts } from "./script-compiler";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
+import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
 import {
   playLoadControl,
@@ -70,6 +71,8 @@ export interface PlaySession {
   setPaused: (paused: boolean) => void;
   /** Last resolved Move.x from the in-process runtime; null on the worker path. */
   lastMoveX: () => number | null;
+  /** Push a touch joystick sample into the Play input ring. */
+  pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + unmatched scripts). */
@@ -123,6 +126,7 @@ export function startPlaySession(options: {
   }) => void;
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
+  onUiSetVisible?: (widgetId: string, visible: boolean) => void;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
@@ -174,6 +178,9 @@ export function startPlaySession(options: {
     if (command.type === "assignMesh") {
       handle.applyCommand(command);
     }
+    if (command.type === "animState") {
+      handle.applyCommand(command);
+    }
     if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");
     }
@@ -204,6 +211,9 @@ export function startPlaySession(options: {
     }
     if (command.type === "trace") {
       recordedTrace = command.payload as unknown as TracePayload;
+    }
+    if (command.type === "uiSetVisible") {
+      options.onUiSetVisible?.(command.widgetId, command.visible);
     }
   };
 
@@ -299,12 +309,7 @@ export function startPlaySession(options: {
     input.pollGamepads();
     const drained = input.ring.drain();
     if (drained.length > 0) {
-      for (const event of drained) {
-        // Axis 0 is Move.x in the default project mappings; e2e asserts this.
-        if (event.kind === "gamepad" && typeof event.axes[0] === "number") {
-          lastObservedMoveX = event.axes[0]!;
-        }
-      }
+      lastObservedMoveX = observedMoveXFromEvents(drained, lastObservedMoveX);
       if (worker) worker.pushInput(drained);
       else if (runtime) runtime.pushInputBuffer(encodeInputEvents(drained));
     }
@@ -372,6 +377,9 @@ export function startPlaySession(options: {
         return runtime.getResolvedInput().axes2D.Move?.x ?? lastObservedMoveX;
       }
       return lastObservedMoveX;
+    },
+    pushTouchAxis: (controlId: string, value: number) => {
+      input.pushTouchAxis(controlId, value);
     },
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);

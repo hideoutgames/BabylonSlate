@@ -59,6 +59,10 @@ export type ControlMessage =
       /** Actors to spawn once the scripts are loaded. */
       spawn?: Array<{ classId: string; variables?: Record<string, unknown> }>;
     }
+  | {
+      type: "loadAnimGraphs";
+      graphs: Array<{ guid: string; document: unknown }>;
+    }
   | { type: "play" }
   | { type: "pause" }
   | { type: "step" }
@@ -140,6 +144,8 @@ export type CommandMessage =
       stateId: string;
       normalisedTime: number;
       blendWeights: Record<string, number>;
+      clipName?: string;
+      clipKind?: "animation" | "sprite";
     };
 
 export type BridgeHostMessage =

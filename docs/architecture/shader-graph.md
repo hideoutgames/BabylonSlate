@@ -6,7 +6,7 @@ Curated NodeMaterial catalog compiled in `render` (engineplan §14). New package
 
 Nodes are a **curated** subset of Babylon NodeMaterial blocks plus a `CustomBlock` escape hatch. Validator uses the same diagnostic model as [scripting.md](scripting.md).
 
-Compile in `render` via `NodeMaterial.Parse` / block wiring; `forceCompilationAsync` at load. Live preview is **throttled** (do not recompile every keystroke). Post-process materials are **off by default** and flagged as iPad-costly (engineplan §2.4).
+Compile in `render`: `compileShaderGraphForRender` is the throttled live-preview path (do not recompile every keystroke). `compileShaderGraphAtLoad` is never throttled and awaits an injected `forceCompilationAsync` (Babylon `NodeMaterial.Parse` on a real scene, or a test double). Post-process materials are **off by default** and flagged as iPad-costly (engineplan §2.4).
 
 ## Authoring
 

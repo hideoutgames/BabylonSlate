@@ -1,9 +1,16 @@
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
-import { DOCUMENT_CHUNK_ID } from "@babylonslate/assets";
+import {
+  DOCUMENT_CHUNK_ID,
+  createDefaultSpritePayload,
+  createFontPayload,
+} from "@babylonslate/assets";
 import {
   createDefaultScene,
   SCENE_SCHEMA_VERSION,
 } from "@babylonslate/core";
+import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import { createDefaultShaderGraph } from "@babylonslate/shader-graph";
+import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
 import {
   engineParentOf,
   resolveTypeVisual,
@@ -44,11 +51,15 @@ export const ENGINE_BASE_CLASSES = [
 export const CREATABLE_ASSET_TYPES = [
   "Scene",
   "Graph",
+  "UserInterface",
   "Texture",
   "Material",
   "Model",
   "Audio",
   "Font",
+  "Sprite",
+  "AnimationGraph",
+  "Shader",
   "Class",
   "Enum",
   "Structure",
@@ -328,6 +339,50 @@ export function buildNewAssetResult(options: {
     };
   }
 
+  if (type === "UserInterface") {
+    const payload = {
+      ...createDefaultPlayHud(name),
+      logic: createDefaultLogicGraphSerialized(),
+    } as unknown as Record<string, unknown>;
+    return documentAsset(type, name, guid, payload);
+  }
+
+  if (type === "Sprite") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultSpritePayload(name) as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "AnimationGraph") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultAnimGraph(name) as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "Shader") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultShaderGraph(name) as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "Font") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createFontPayload(name) as unknown as Record<string, unknown>,
+    );
+  }
+
   if (type === "Enum" || type === "Structure" || type === "ScriptInterface") {
     const payload: Record<string, unknown> =
       type === "Enum"
@@ -384,8 +439,41 @@ export function newAssetFileName(
       ? ".scene.babasset"
       : type === "Graph"
         ? ".graph.babasset"
-        : ".babasset";
+        : type === "UserInterface"
+          ? ".ui.babasset"
+          : type === "Sprite"
+            ? ".sprite.babasset"
+            : type === "AnimationGraph"
+              ? ".anim.babasset"
+              : type === "Shader"
+                ? ".shader.babasset"
+                : ".babasset";
   return `${safe}${suffix}`;
+}
+
+function documentAsset(
+  type: string,
+  name: string,
+  guid: string,
+  payload: Record<string, unknown>,
+): ImportResult {
+  return {
+    type,
+    name,
+    guid,
+    version: 1,
+    dependencies: [],
+    parentClass: null,
+    payload,
+    chunks: [
+      {
+        id: DOCUMENT_CHUNK_ID,
+        kind: "document",
+        mime: "application/json",
+        data: new TextEncoder().encode(JSON.stringify(payload)),
+      },
+    ],
+  };
 }
 
 export function folderRelativePath(

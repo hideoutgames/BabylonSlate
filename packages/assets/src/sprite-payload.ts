@@ -44,6 +44,36 @@ export function createDefaultSpritePayload(_name = "Sprite"): SpritePayload {
   };
 }
 
+/** Pick the clip frame at normalised time in `[0, 1]` (inclusive of the last frame). */
+export function spriteClipFrameAt(
+  payload: SpritePayload,
+  clipName: string,
+  normalisedTime: number,
+): SpriteFrame | null {
+  const named = new Map(payload.frames.map((frame) => [frame.name, frame]));
+  const clip =
+    payload.clips.find((entry) => entry.name === clipName) ?? payload.clips[0];
+  const frames = (clip?.frames ?? [])
+    .map((name) => named.get(name))
+    .filter((frame): frame is SpriteFrame => frame !== undefined);
+  const sequence = frames.length > 0 ? frames : payload.frames;
+  if (sequence.length === 0) return null;
+  const t = Number.isFinite(normalisedTime)
+    ? Math.min(1, Math.max(0, normalisedTime))
+    : 0;
+  if (t >= 1) return sequence[sequence.length - 1]!;
+  const total = sequence.reduce(
+    (sum, frame) => sum + Math.max(1, frame.durationMs),
+    0,
+  );
+  let cursor = t * total;
+  for (const frame of sequence) {
+    cursor -= Math.max(1, frame.durationMs);
+    if (cursor < 0) return frame;
+  }
+  return sequence[sequence.length - 1]!;
+}
+
 export function spriteFrameUvs(
   frame: SpriteFrame,
 ): { u0: number; v0: number; u1: number; v1: number } {

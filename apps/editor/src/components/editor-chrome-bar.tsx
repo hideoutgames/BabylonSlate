@@ -32,6 +32,7 @@ import { useEffect, useState } from "react";
 import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
+  assetTypeForDocumentKind,
   type DocumentKind,
   type SerializedGraph,
 } from "@babylonslate/core";
@@ -72,7 +73,7 @@ function kindIcon(kind: DocumentKind) {
     return <LayoutGridIcon className="size-4 shrink-0" />;
   }
   const visual = resolveTypeVisual({
-    assetType: kind === "scene" ? "Scene" : "Graph",
+    assetType: assetTypeForDocumentKind(kind),
   });
   return <TypeVisualIcon visual={visual} className="size-4 shrink-0" />;
 }

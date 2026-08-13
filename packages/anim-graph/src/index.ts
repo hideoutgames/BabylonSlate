@@ -1,6 +1,8 @@
 export {
+  clipForState,
   createDefaultAnimGraph,
   evaluateAnimGraph,
+  parseAnimGraphDocument,
   validateAnimGraph,
   type AnimClipKind,
   type AnimClipRef,

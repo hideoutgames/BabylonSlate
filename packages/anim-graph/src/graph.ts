@@ -168,3 +168,95 @@ export function evaluateAnimGraph(
     timeMs,
   };
 }
+
+export function clipForState(
+  doc: AnimGraphDocument,
+  stateId: string,
+): AnimClipRef | undefined {
+  const state = doc.states.find((row) => row.id === stateId);
+  if (!state?.clipId) return undefined;
+  return doc.clips.find((clip) => clip.id === state.clipId);
+}
+
+function asFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/** Recover an `AnimGraphDocument` from a document-chunk JSON payload. */
+export function parseAnimGraphDocument(
+  value: unknown,
+): AnimGraphDocument | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  if (!Array.isArray(source.states)) return null;
+  const states: AnimState[] = [];
+  for (const row of source.states) {
+    if (!row || typeof row !== "object") continue;
+    const state = row as Record<string, unknown>;
+    if (typeof state.id !== "string" || state.id === "") continue;
+    states.push({
+      id: state.id,
+      name: typeof state.name === "string" && state.name !== "" ? state.name : state.id,
+      clipId: typeof state.clipId === "string" ? state.clipId : null,
+      speed: asFiniteNumber(state.speed, 1),
+      loop: state.loop !== false,
+    });
+  }
+  if (states.length === 0) return null;
+  const clips: AnimClipRef[] = [];
+  if (Array.isArray(source.clips)) {
+    for (const row of source.clips) {
+      if (!row || typeof row !== "object") continue;
+      const clip = row as Record<string, unknown>;
+      if (typeof clip.id !== "string" || clip.id === "") continue;
+      clips.push({
+        id: clip.id,
+        kind: clip.kind === "sprite" ? "sprite" : "animation",
+        assetGuid: typeof clip.assetGuid === "string" ? clip.assetGuid : "",
+        clipName: typeof clip.clipName === "string" ? clip.clipName : clip.id,
+        durationMs: Math.max(1, asFiniteNumber(clip.durationMs, 1000)),
+      });
+    }
+  }
+  const transitions: AnimTransition[] = [];
+  if (Array.isArray(source.transitions)) {
+    for (const row of source.transitions) {
+      if (!row || typeof row !== "object") continue;
+      const transition = row as Record<string, unknown>;
+      if (typeof transition.id !== "string") continue;
+      if (typeof transition.fromStateId !== "string") continue;
+      if (typeof transition.toStateId !== "string") continue;
+      transitions.push({
+        id: transition.id,
+        fromStateId: transition.fromStateId,
+        toStateId: transition.toStateId,
+        condition:
+          typeof transition.condition === "string"
+            ? transition.condition
+            : undefined,
+        blendSeconds: asFiniteNumber(transition.blendSeconds, 0.1),
+        hasExitTime: transition.hasExitTime === true,
+        exitTime: asFiniteNumber(transition.exitTime, 0),
+      });
+    }
+  }
+  const parameters = Array.isArray(source.parameters)
+    ? source.parameters.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const entryStateId =
+    typeof source.entryStateId === "string" &&
+    states.some((state) => state.id === source.entryStateId)
+      ? source.entryStateId
+      : states[0]!.id;
+  return {
+    name:
+      typeof source.name === "string" && source.name !== ""
+        ? source.name
+        : "Locomotion",
+    entryStateId,
+    states,
+    transitions,
+    clips,
+    parameters,
+  };
+}

@@ -14,8 +14,20 @@ export const ADDABLE_COMPONENT_CLASSES = [
   {
     id: "SpriteComponent",
     label: "Sprite",
-    description: "2D sprite",
+    description: "2D sprite quad",
     category: "Rendering",
+  },
+  {
+    id: "WidgetComponent",
+    label: "Widget",
+    description: "World-space User Interface",
+    category: "UI",
+  },
+  {
+    id: "AnimationGraphComponent",
+    label: "Animation Graph",
+    description: "Worker-evaluated clip state machine",
+    category: "Animation",
   },
   {
     id: "LightComponent",
@@ -52,6 +64,10 @@ export function defaultPropertiesFor(
       return { meshKind: "box", assetGuid: null };
     case "SpriteComponent":
       return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
+    case "WidgetComponent":
+      return { uiAssetGuid: null, viewportLayer: false };
+    case "AnimationGraphComponent":
+      return { graphGuid: null };
     case "CameraComponent":
       return { fieldOfView: 60, orthographicSize: 5 };
     case "LightComponent":

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@babylonjs/core": "^9.20.0",
+    "@babylonslate/anim-graph": "workspace:*",
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",
@@ -25,7 +26,9 @@
     "@babylonslate/runtime": "workspace:*",
     "@babylonslate/scripting": "workspace:*",
     "@babylonslate/scripting-nodes": "workspace:*",
+    "@babylonslate/shader-graph": "workspace:*",
     "@babylonslate/ui": "workspace:*",
+    "@babylonslate/ui-runtime": "workspace:*",
     "@babylonslate/vfs": "workspace:*",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",

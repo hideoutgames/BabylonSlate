@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultShaderGraph } from "@babylonslate/shader-graph";
-import { compileShaderGraphForRender } from "./shader-compile";
+import { compileShaderGraphForRender, compileShaderGraphAtLoad } from "./shader-compile";
 
 describe("compileShaderGraphForRender", () => {
   it("skips recompile inside the preview throttle window", () => {
@@ -22,5 +22,18 @@ describe("compileShaderGraphForRender", () => {
     expect(ready.skipped).toBe(false);
     expect(ready.compiled).toBe(true);
     expect(ready.fragmentOutputNodeId).toBe("out");
+  });
+
+  it("load compile ignores preview throttle and awaits forceCompilation", async () => {
+    let calls = 0;
+    const result = await compileShaderGraphAtLoad(
+      createDefaultShaderGraph(),
+      async () => {
+        calls += 1;
+      },
+    );
+    expect(calls).toBe(1);
+    expect(result.compiled).toBe(true);
+    expect(result.skipped).toBe(false);
   });
 });

@@ -19,7 +19,7 @@ Import accepts **pre-packed JSON** or **loose frames**. Loose frames run a **det
 
 ## `SpriteComponent`
 
-A **quad mesh** with the current frame baked into UVs. Editor `EditorSceneSync` replaces the box proxy with that quad. Alpha-test default; blending opt-in via existing `sorting.ts` `alphaIndex`. Play `assignMesh` / `assignSprite` creates the same quad.
+A **quad mesh** with the current frame baked into UVs. Editor `EditorSceneSync` replaces the box proxy with that quad. Alpha-test default; blending opt-in via existing `sorting.ts` `alphaIndex`. Play `assignMesh` with `meshKind: "sprite"` creates the same quad. `spriteClipFrameAt` picks a named clip frame from normalised time; render `applySpriteAnimFrame` rebakes UVs when an `animState` command targets a sprite clip.
 
 Golden: a sprite at world +X renders **right of origin** (Babylon left-handed 2D, camera at −Z — same trap as [render.md](render.md) 2D projection).
 

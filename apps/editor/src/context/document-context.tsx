@@ -9,13 +9,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
 import type {
+  AssetDocumentKind,
   DocumentRef,
   ProjectDocument,
   ProjectFolderHandle,
+  SerializedGraph,
+  SerializedScene,
 } from "@babylonslate/core";
-import { documentId, normalizeProjectSettings } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, normalizeProjectSettings } from "@babylonslate/core";
 import {
   appendJournalLine,
   hasJournal,
@@ -36,6 +38,7 @@ import {
   EditSession,
   replayJournalLines,
   serializeJournalLine,
+  SetAssetDocumentCommand,
 } from "@babylonslate/edit";
 import {
   createAppSettingsStore,
@@ -86,7 +89,7 @@ interface DocumentContextValue {
   refreshAssetRegistry: () => Promise<void>;
   /** Retarget open tabs after a Scene/Graph file move or rename. */
   repathDocument: (
-    kind: "scene" | "graph",
+    kind: AssetDocumentKind,
     oldPath: string,
     newPath: string,
   ) => void;
@@ -138,6 +141,10 @@ interface DocumentContextValue {
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
   /** Apply a scene edit through the command layer (marks dirty + undoable). */
   applySceneChange: (id: string, next: SerializedScene) => Promise<boolean>;
+  applyAssetDocumentChange: (
+    id: string,
+    next: Record<string, unknown>,
+  ) => Promise<boolean>;
   /** Persist project.json settings (Input, 2D units, textures, …). */
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   undoActiveDocument: () => void;
@@ -373,7 +380,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [bump, projectDocument, projectService]);
 
   const repathDocument = useCallback(
-    (kind: "scene" | "graph", oldPath: string, newPath: string) => {
+    (kind: AssetDocumentKind, oldPath: string, newPath: string) => {
       documentService.repathDocument(kind, oldPath, newPath);
       bump();
     },
@@ -423,7 +430,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const openDocs = new Map<string, SerializedGraph | SerializedScene>();
     for (const doc of documentService.getOpenDocumentsOrdered()) {
       if ((doc.ref.kind === "graph" || doc.ref.kind === "scene") && doc.content) {
-        openDocs.set(doc.id, doc.content);
+        openDocs.set(doc.id, doc.content as SerializedGraph | SerializedScene);
       }
     }
 
@@ -585,11 +592,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
     for (const doc of dirtyDocs) {
-      if (doc.ref.kind === "scene" || doc.ref.kind === "graph") {
+      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
         await projectService.saveDocument(
           doc.ref.kind,
           doc.ref.path,
-          doc.content as SerializedScene | SerializedGraph,
+          doc.content as SerializedScene | SerializedGraph | Record<string, unknown>,
         );
       }
     }
@@ -634,11 +641,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
     for (const doc of dirtyDocs) {
-      if (doc.ref.kind === "scene" || doc.ref.kind === "graph") {
+      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
         await projectService.saveDocument(
           doc.ref.kind,
           doc.ref.path,
-          doc.content as SerializedScene | SerializedGraph,
+          doc.content as SerializedScene | SerializedGraph | Record<string, unknown>,
         );
       }
     }
@@ -905,6 +912,44 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
 
+  const applyAssetDocumentChange = useCallback(
+    async (id: string, next: Record<string, unknown>): Promise<boolean> => {
+      const doc = documentService.getState().openDocuments.get(id);
+      if (
+        !doc ||
+        !isAssetDocumentKind(doc.ref.kind) ||
+        doc.ref.kind === "scene" ||
+        doc.ref.kind === "graph" ||
+        !doc.content
+      ) {
+        return false;
+      }
+      const previous = doc.content as Record<string, unknown>;
+      const command = new SetAssetDocumentCommand(previous, next);
+      const current = editSessionRef.current.apply(id, previous, command).doc;
+      documentService.updateAssetDocument(id, current);
+      projectService.indexOpenDocument(doc.ref.path, current);
+      const guid = projectService.guid;
+      if (guid) {
+        const derived = await ensureDerived();
+        await appendJournalLine(
+          derived,
+          guid,
+          serializeJournalLine({
+            v: 1,
+            docId: id,
+            at: new Date().toISOString(),
+            command: commandToJournalPayload(command),
+          }),
+        );
+      }
+      scheduleDebouncedSave();
+      bump();
+      return true;
+    },
+    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
+  );
+
   const loadProjectGraphDocuments = useCallback(async (): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
@@ -987,6 +1032,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           axes?: number[];
           buttons?: number[];
         } | null) => void;
+        injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
       };
     };
@@ -1091,6 +1137,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           buttons: pad.buttons ?? [0, 0, 0, 0],
         };
       },
+      injectTestTouchAxis: (axes) => {
+        const globalHost = globalThis as {
+          __babylonslateTestTouchAxes?: Record<string, number>;
+        };
+        if (!axes) {
+          delete globalHost.__babylonslateTestTouchAxes;
+          return;
+        }
+        globalHost.__babylonslateTestTouchAxes = { ...axes };
+      },
       /** Replace the main graph so Preview compiles a known script. */
       setMainGraphContent: async (graph: SerializedGraph) => {
         const path = "assets/main.graph.babasset";
@@ -1112,10 +1168,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       delete host.__babylonslateTest;
       delete (globalThis as { __babylonslateTestGamepad?: unknown })
         .__babylonslateTestGamepad;
+      delete (globalThis as { __babylonslateTestTouchAxes?: unknown })
+        .__babylonslateTestTouchAxes;
     };
   }, [
     applyGraphChange,
     applySceneChange,
+    applyAssetDocumentChange,
     bump,
     documentService,
     ensureDerived,
@@ -1147,6 +1206,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
         documentService.updateScene(activeDocumentId, result.doc);
+        bump();
+        return;
+      }
+      if (isAssetDocumentKind(doc.ref.kind)) {
+        const stack = editSessionRef.current.getStack<Record<string, unknown>>(
+          activeDocumentId,
+        );
+        const content = doc.content as Record<string, unknown>;
+        const result =
+          direction === "undo" ? stack.undo(content) : stack.redo(content);
+        if (!result) return;
+        documentService.updateAssetDocument(activeDocumentId, result.doc);
         bump();
       }
     },
@@ -1372,6 +1443,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateGraph,
       applyGraphChange,
       applySceneChange,
+      applyAssetDocumentChange,
       updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,
@@ -1464,6 +1536,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateGraph,
       applyGraphChange,
       applySceneChange,
+      applyAssetDocumentChange,
       updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,

@@ -46,3 +46,23 @@ export function compileShaderGraphForRender(
     skipped: false,
   };
 }
+
+/**
+ * Load-time compile: never throttled. The Babylon host supplies
+ * `forceCompilationAsync` (or a test double) after the IR is ready.
+ */
+export async function compileShaderGraphAtLoad(
+  graph: ShaderGraphDocument,
+  forceCompilationAsync: (
+    ir: ShaderCompileResult,
+  ) => Promise<void> = async () => {},
+): Promise<NodeMaterialCompileResult> {
+  const compiled = compileShaderGraph(graph);
+  const result: NodeMaterialCompileResult = {
+    ...compiled,
+    compiled: true,
+    skipped: false,
+  };
+  await forceCompilationAsync(compiled);
+  return result;
+}

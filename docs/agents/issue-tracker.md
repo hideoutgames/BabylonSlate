@@ -148,7 +148,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Trace recorder / `.babtrace` | P8 | Landed (`p8-trace-recorder`) |
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export | Print works; export strip preset + HUD polish deferred |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
-| Audio / UI node runtime helpers beyond stubs | P9 | Catalog nodes exist; runtime helpers are inert stubs until content systems |
+| Audio / UI node runtime helpers beyond stubs | P9 | `setWidgetVisible` emits `uiSetVisible`; audio helpers still stubs |
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (selection tidy / then-chain); **hold-to-marquee** (`attachGraphPaneMarquee`).
 
@@ -174,7 +174,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | P7/P9 content systems | Preview-only UI shipped in P6; edits are session-local |
-| Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | Details can add components; editor mesh proxy only for MeshComponent |
+| Non-mesh component visualization (sprite quads, light/camera gizmos) | P9 Sprite / content | SpriteComponent uses a UV-baked quad; light/camera gizmos still later |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | later polish | Project Settings Input tab is a JSON textarea |
@@ -221,20 +221,27 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 ## P9 slice ownership
 
-Design notes land first. Sprite / AnimationGraph / Shader are in Appendix A and §4 but **not** in the P9 acceptance sentence — ship UI + fonts + joystick first so the phase gate can close, then sprite / anim / shader as follow-on PRs.
+P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9; residual ADT mesh HUD / NodeMaterial.Parse bind is later polish.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | Design notes | — | `docs/architecture/ui-runtime.md`, `fonts.md`, `sprites.md`, `anim-graph.md`, `shader-graph.md` | P8 complete |
-| Anchoring + layout | `p9-ui-anchoring` | `ui-runtime` | Design notes |
-| Font payload + registry | `p9-fonts` | `assets`, `core`, `render`, `ui-runtime`, `apps/editor` | Design notes |
-| UserInterface + designer | `p9-ui-system` | `ui-runtime`, `render`, `bridge`, `runtime`, `apps/editor`, `edit` | Anchoring + fonts |
-| Widget library + touch axis | `p9-widget-library` | `ui-runtime`, `input`, `apps/editor` | UI system |
-| Sprite packer + quad | `p9-sprite` | `assets`, `render`, `apps/editor` | Design notes |
-| AnimationGraph | `p9-anim-graph` | `anim-graph`, `runtime`, `render`, `graph-ui`, `apps/editor` | Sprite (clips) + graph-ui host |
-| Shader graph | `p9-shader-graph` | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
+| Anchoring + layout | `p9-ui-anchoring` (done) | `ui-runtime` | Design notes |
+| Font payload + registry | `p9-fonts` (done) | `assets`, `core`, `render`, `ui-runtime`, `apps/editor` | Design notes |
+| UserInterface + designer | `p9-ui-system` (done) | `ui-runtime`, `render`, `bridge`, `runtime`, `apps/editor`, `edit` | Anchoring + fonts |
+| Widget library + touch axis | `p9-widget-library` (done) | `ui-runtime`, `input`, `apps/editor` | UI system |
+| Sprite packer + quad | `p9-sprite` (done) | `assets`, `render`, `apps/editor` | Design notes |
+| AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `apps/editor` | Sprite (clips) + graph-ui host |
+| Shader graph | `p9-shader-graph` (done) | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
 
 Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
 
-**Parallelism:** after design notes, layout goldens (`ui-runtime`), font payload (`assets` / `core` / `render`), and sprite packer (`assets` / `render`) may run concurrently. Do **not** parallelize designer vs widget library vs Play overlay — they all own `apps/editor`. Sequence `p9-ui-system` → `p9-widget-library`. Anim and shader wait on a `graph-ui` host copy; they can run in parallel with each other after sprite (anim) / independently (shader). Thin-instance / merged-static batching stay out of v1.
+### P9 follow-ups / open deferrals
+
+| Gap vs engineplan §11–§14 | Reality | Owner |
+| --- | --- | --- |
+| Viewport-layer HUD as Babylon `AdvancedDynamicTexture` | Play hosts a DOM overlay (`PlayHudOverlay`); `applyUiControls` is injectable | Later polish / P14 player |
+| Project UserInterface assets loaded into Play | Default HUD is always shown; registry viewport-layer assets are not auto-hosted | Later polish |
+| `NodeMaterial.Parse` + live Babylon preview | IR compile + throttle + `compileShaderGraphAtLoad` injection; host supplies `forceCompilationAsync` | Later polish |
+| Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
 

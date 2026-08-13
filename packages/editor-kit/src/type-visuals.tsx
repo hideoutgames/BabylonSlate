@@ -77,6 +77,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   RigidBodyComponent: "ActorComponent",
   ColliderComponent: "ActorComponent",
   WidgetComponent: "ActorComponent",
+  AnimationGraphComponent: "ActorComponent",
   BehaviourTreeComponent: "ActorComponent",
   NavAgentComponent: "ActorComponent",
 };
@@ -89,6 +90,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   ActorComponent: OBJECT_ICON,
   Actor: ACTOR_ICON,
   WidgetComponent: WIDGET_ICON,
+  AnimationGraphComponent: FilmIcon,
   MeshComponent: BoxIcon,
   SpriteComponent: ImagesIcon,
   TilemapComponent: Grid3x3Icon,
@@ -127,6 +129,7 @@ const COMPONENT_CLASS_IDS = new Set([
   "RigidBodyComponent",
   "ColliderComponent",
   "WidgetComponent",
+  "AnimationGraphComponent",
   "BehaviourTreeComponent",
   "NavAgentComponent",
 ]);

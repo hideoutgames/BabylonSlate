@@ -406,6 +406,9 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@babylonslate/anim-graph':
+        specifier: workspace:*
+        version: link:../anim-graph
       '@babylonslate/bridge':
         specifier: workspace:*
         version: link:../bridge

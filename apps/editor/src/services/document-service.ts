@@ -1,4 +1,5 @@
 import type {
+  AssetDocumentKind,
   DocumentRef,
   PanelPlacement,
   ProjectLayouts,
@@ -10,16 +11,24 @@ import {
   CONTENT_BROWSER_REF,
   createDocumentRef,
   documentId,
+  documentKindLabel,
+  isAssetDocumentKind,
   isContentBrowserId,
   labelFromPath,
+  parseDocumentId,
 } from "@babylonslate/core";
 import type { ProjectDocument } from "@babylonslate/core";
 import type { ProjectService } from "./project-service";
 
+export type DocumentContent =
+  | SerializedScene
+  | SerializedGraph
+  | Record<string, unknown>;
+
 export interface OpenDocument {
   id: string;
   ref: DocumentRef;
-  content: SerializedScene | SerializedGraph | null;
+  content: DocumentContent | null;
   layout: Record<string, unknown> | null;
   dirty: boolean;
 }
@@ -111,13 +120,11 @@ export class DocumentService {
     );
 
     for (const id of savedOrder) {
-      const colonIndex = id.indexOf(":");
-      const kind = id.slice(0, colonIndex);
-      const path = id.slice(colonIndex + 1);
-      if (kind !== "scene" && kind !== "graph") continue;
+      const parsed = parseDocumentId(id);
+      if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
       await this.openDocument(
         projectService,
-        { kind, path, label: labelFromPath(path) },
+        { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
         layouts.documents[id] ?? null,
         false,
       );
@@ -191,7 +198,7 @@ export class DocumentService {
    * Guids stay stable; only path-based document ids and layout keys change.
    */
   repathDocument(
-    kind: "scene" | "graph",
+    kind: AssetDocumentKind,
     oldPath: string,
     newPath: string,
   ): void {
@@ -269,6 +276,26 @@ export class DocumentService {
     if (!doc || doc.ref.kind !== "graph") return;
     doc.content = graph;
     doc.dirty = true;
+  }
+
+  updateAssetDocument(id: string, content: Record<string, unknown>): void {
+    const doc = this.state.openDocuments.get(id);
+    if (
+      !doc ||
+      doc.ref.kind === "content-browser" ||
+      doc.ref.kind === "scene" ||
+      doc.ref.kind === "graph"
+    ) {
+      return;
+    }
+    doc.content = content;
+    doc.dirty = true;
+    if (typeof content.name === "string" && content.name.trim() !== "") {
+      doc.ref = {
+        ...doc.ref,
+        label: `${content.name} ${documentKindLabel(doc.ref.kind)}`,
+      };
+    }
   }
 
   setLayout(id: string, layout: Record<string, unknown> | null): void {

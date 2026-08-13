@@ -12,6 +12,7 @@
     "test": "vitest run --config ../../vitest.workspace.ts --project node packages/runtime"
   },
   "dependencies": {
+    "@babylonslate/anim-graph": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",
     "@babylonslate/debugger": "workspace:*",

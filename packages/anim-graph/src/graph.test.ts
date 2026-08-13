@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  clipForState,
   createDefaultAnimGraph,
   evaluateAnimGraph,
+  parseAnimGraphDocument,
   validateAnimGraph,
   animGraphToSerialized,
   serializedToAnimGraph,
@@ -87,5 +89,13 @@ describe("anim graph evaluator", () => {
     doc.states[0]!.loop = false;
     const next = evaluateAnimGraph(doc, null, 2, { conditions: {} });
     expect(next.normalisedTime).toBe(1);
+  });
+
+  it("round-trips a document-chunk payload and resolves the state clip", () => {
+    const doc = createDefaultAnimGraph("Hero");
+    const parsed = parseAnimGraphDocument(JSON.parse(JSON.stringify(doc)));
+    expect(parsed).toEqual(doc);
+    expect(parseAnimGraphDocument({ name: "bad" })).toBeNull();
+    expect(clipForState(doc, "idle")?.clipName).toBe("Idle");
   });
 });
