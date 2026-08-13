@@ -7,6 +7,7 @@ import {
 import type { DevicePreset } from "@babylonslate/ui-runtime";
 import { dispatchEngineSettingsChanged } from "./viewport-render-gate";
 import {
+  asDevicePresets,
   resolveDesignerCanvasId,
   useEngineUiDesignerPresets,
 } from "./engine-ui-presets";
@@ -29,6 +30,28 @@ function Probe() {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+});
+
+describe("asDevicePresets", () => {
+  it("fills missing size and inset fields", () => {
+    expect(
+      asDevicePresets([
+        {
+          id: "custom-phone",
+          label: "Phone",
+          safeArea: {},
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "custom-phone",
+        label: "Phone",
+        width: 1,
+        height: 1,
+        safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+      },
+    ]);
+  });
 });
 
 describe("resolveDesignerCanvasId", () => {
