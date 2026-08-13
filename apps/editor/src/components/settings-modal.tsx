@@ -375,7 +375,7 @@ export function SettingsModal({
               value={normalizeInputMappings(projectDocument.settings.input)}
               onChange={(input) =>
                 updateProjectSettings({
-                  input: input as ProjectInputSettings,
+                  input: input as unknown as ProjectInputSettings,
                 })
               }
               touchControlIds={collectTouchControlIds(openDocuments)}
