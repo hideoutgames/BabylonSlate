@@ -198,18 +198,19 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         item.kind.assetType === "Class" &&
         !item.kind.components
       ) {
+        const kind = item.kind;
         const asset = (assetRegistry?.list() ?? []).find(
-          (entry) => entry.header.guid === item.kind.guid,
+          (entry) => entry.header.guid === kind.guid,
         );
         if (asset?.path) {
           void loadGraphDocument(asset.path).then((graph) => {
             finish({
               ...item,
               kind: {
-                ...item.kind,
+                ...kind,
                 components: graph
                   ? prefabComponentsFromGraph(graph)
-                  : item.kind.components,
+                  : kind.components,
               },
             });
           });
