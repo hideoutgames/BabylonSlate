@@ -140,6 +140,7 @@ export function ContentBrowserWorkspace() {
   const {
     projectDocument,
     assetRegistry,
+    registryVersion,
     refreshAssetRegistry,
     repathDocument,
     openDocument,
@@ -223,7 +224,10 @@ export function ContentBrowserWorkspace() {
     [assetRegistry],
   );
 
-  const allAssets = assetRegistry?.list({ rootId: PROJECT_ROOT_ID }) ?? [];
+  const allAssets = useMemo(
+    () => assetRegistry?.list({ rootId: PROJECT_ROOT_ID }) ?? [],
+    [assetRegistry, registryVersion],
+  );
   const classParentOf = useMemo(
     () => classParentLookup(allAssets),
     [allAssets],

@@ -114,6 +114,8 @@ interface DocumentContextValue {
   projectDocument: ProjectDocument | null;
   projectName: string | null;
   assetRegistry: AssetRegistry | null;
+  /** Bumps when encode/import mutates registry payloads in place. */
+  registryVersion: number;
   refreshAssetRegistry: () => Promise<void>;
   /** Retarget open tabs after a Scene/Graph file move or rename. */
   repathDocument: (
@@ -1855,9 +1857,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DocumentContextValue>(
     () => {
-      // registryVersion is a bump counter for imperative document-service
-      // mutations that are not themselves React state.
-      void registryVersion;
       const currentGraphSignature = graphCompileSignature(
         openGraphCompileDocuments(documentService),
       );
@@ -1933,6 +1932,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleLayoutFocus,
       getAvailableDocuments,
       assetRegistry: projectService.registry,
+      registryVersion,
       refreshAssetRegistry,
       repathDocument,
       retryFailedTextureEncoding,
