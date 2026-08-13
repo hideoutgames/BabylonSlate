@@ -46,7 +46,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | --- | --- | --- |
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
-| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print), UserInterface widget details (including nested UI asset), Sprite / Tileset / Tilemap settings. |
+| **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print), UserInterface widget details (name, nested UI, anchors / offsets / pivot / padding), Sprite / Tileset / Tilemap settings. |
 | **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog, UserInterface widget hierarchy. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; gallery. |
 | **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings via CatalogDialog; UserInterface desired width/height. |

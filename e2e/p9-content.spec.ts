@@ -69,6 +69,38 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("ui-desired-height")).toBeVisible();
   });
 
+  test("UserInterface designer drags a widget and undo restores it", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("ui-design-viewport")).toBeVisible();
+    const stick = page.getByTestId("ui-widget-stick");
+    const before = await stick.getAttribute("data-gui-x");
+    const box = await stick.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + 80, box!.y + box!.height / 2);
+    await page.mouse.up();
+    await expect
+      .poll(async () => stick.getAttribute("data-gui-x"))
+      .not.toBe(before);
+    await page.getByTestId("undo-document").click();
+    await expect.poll(async () => stick.getAttribute("data-gui-x")).toBe(before);
+
+    await page.getByTestId("ui-design-viewport").hover();
+    await page.mouse.wheel(0, -180);
+    await expect(page.getByTestId("ui-design-canvas")).not.toHaveAttribute(
+      "data-zoom",
+      "1",
+    );
+    await page.getByTestId("ui-widget-header").click();
+    await expect(page.getByTestId("property-name")).toHaveValue("Title");
+    await expect(page.getByTestId("property-offset-min-x")).toBeVisible();
+  });
+
   test("UserInterface designer lists a custom Engine Settings preset", async ({
     page,
   }) => {

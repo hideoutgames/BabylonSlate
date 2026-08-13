@@ -48,6 +48,7 @@ Placement:
 
 Dedicated document workspace (not a Dockview Windows menu): **Design** tab (canvas, widget hierarchy `TreeView`, Details `PropertyGrid`, device-preset selector: **Desired**, built-ins, then Engine Settings custom labels) + **Logic** tab (`GraphEditor` from `graph-ui`, same host as script graphs). Built-in canvases are read-only. If the selected custom id is deleted, the designer falls back to `ipad-landscape`. Undo via `@babylonslate/edit`. Compose from [components.md](components.md) (`PanelFrame`, `Tabs`, `TreeView`, `PropertyGrid`, `NumberField`, `AssetPicker`).
 
+- **Design canvas** (`ui-design-viewport` / `ui-design-canvas`): `touch-none` wrapper. One finger on a widget writes `offsetMin` / `offsetMax` (anchors unchanged; layout stays Y-up). Two fingers pan; pinch span also zooms; wheel zooms around the pointer. One undo per drag (`SetAssetDocumentCommand.mergeKey` `ui-design-stroke:<id>`). Details exposes anchors, offsets, pivot, and padding.
 - **Desired size** (`desiredSize`, default `{ width: 400, height: 300 }` on a blank UI; Play HUD template copies `designResolution`) is the authoring canvas for reusable elements. The Desired preset uses that size with zero safe-area insets. Nested layout treats the nested asset’s `desiredSize` as its design resolution inside the host slot.
 - **Nested UserInterface** is a widget kind. The Details asset picker lists other UserInterface assets and omits the document under edit and any guid that would close a cycle.
 
