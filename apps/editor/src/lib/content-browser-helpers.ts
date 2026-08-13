@@ -1,13 +1,13 @@
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
+  createDefaultMigrationRegistry,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
-  SCENE_SCHEMA_VERSION,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import { createDefaultShaderGraph } from "@babylonslate/shader-graph";
@@ -488,7 +488,7 @@ export function buildNewAssetResult(options: {
       type: "Scene",
       name,
       guid,
-      version: SCENE_SCHEMA_VERSION,
+      version: createDefaultMigrationRegistry().currentVersion("Scene"),
       dependencies: [],
       parentClass: null,
       payload,

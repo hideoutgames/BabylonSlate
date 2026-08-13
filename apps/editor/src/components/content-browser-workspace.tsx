@@ -195,6 +195,7 @@ export function ContentBrowserWorkspace() {
     currentName: string;
   } | null>(null);
   const [importErrors, setImportErrors] = useState<string[] | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const thumbnailUrlsRef = useRef(thumbnailUrls);
   thumbnailUrlsRef.current = thumbnailUrls;
@@ -375,11 +376,17 @@ export function ContentBrowserWorkspace() {
         setActiveDocument(id);
         return;
       }
-      await openDocument({
-        kind,
-        path,
-        label: labelFromPath(path),
-      });
+      try {
+        await openDocument({
+          kind,
+          path,
+          label: labelFromPath(path),
+        });
+      } catch (error) {
+        setOpenError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     },
     [openDocument, openIds, setActiveDocument],
   );
@@ -1059,13 +1066,16 @@ export function ContentBrowserWorkspace() {
             ? newAssetParent
             : defaultParentClassForType(type),
       });
-      await assetRegistry.createAsset(
+      const created = await assetRegistry.createAsset(
         PROJECT_ROOT_ID,
         relative ? `${relative}/${fileName}` : fileName,
         result,
       );
       setNewAssetOpen(false);
       await refreshAssetRegistry();
+      if (type === "Scene") {
+        await openOrFocusDocument(created);
+      }
     } finally {
       setBusy(false);
     }
@@ -1075,6 +1085,7 @@ export function ContentBrowserWorkspace() {
     newAssetNameTaken,
     newAssetParent,
     newAssetType,
+    openOrFocusDocument,
     refreshAssetRegistry,
     selectedFolderPath,
   ]);
@@ -1683,6 +1694,29 @@ export function ContentBrowserWorkspace() {
             <AlertDialogAction
               data-testid="import-errors-dismiss"
               onClick={() => setImportErrors(null)}
+            >
+              Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={openError !== null}
+        onOpenChange={(open) => {
+          if (!open) setOpenError(null);
+        }}
+      >
+        <AlertDialogContent data-testid="content-browser-open-error">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Could Not Open Asset</AlertDialogTitle>
+            <AlertDialogDescription>
+              {openError ?? "The asset could not be opened."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              data-testid="content-browser-open-error-dismiss"
+              onClick={() => setOpenError(null)}
             >
               Close
             </AlertDialogAction>

@@ -98,17 +98,21 @@ export function playSceneFromOpenDocuments(
   };
 }
 
-/** Open scene tab, else a project startup/main scene loaded from disk. */
+export function playIsEnabled(
+  documents: readonly PlaySceneDocument[],
+  activeDocumentId: string | null,
+): boolean {
+  return playSceneFromOpenDocuments(documents, activeDocumentId) !== null;
+}
+
+/** Open scene tab only. Startup scene is export-only and must not feed Play. */
 export function resolvePlayScene(options: {
   documents: readonly PlaySceneDocument[];
   activeDocumentId: string | null;
   fallback?: PlaySceneLoad | null;
 }): PlaySceneLoad | null {
-  return (
-    playSceneFromOpenDocuments(options.documents, options.activeDocumentId) ??
-    options.fallback ??
-    null
-  );
+  void options.fallback;
+  return playSceneFromOpenDocuments(options.documents, options.activeDocumentId);
 }
 
 export function playLoadControl(options: {

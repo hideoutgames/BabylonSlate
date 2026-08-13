@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@babylonslate/assets";
+import { createDefaultMigrationRegistry } from "@babylonslate/assets";
 import {
   CREATABLE_ASSET_TYPES,
   ENGINE_BASE_CLASSES,
@@ -685,6 +686,19 @@ describe("content-browser-helpers", () => {
     expect((klass.payload.nodes as unknown[]).length).toBeGreaterThan(0);
     expect(Array.isArray(klass.payload.edges)).toBe(true);
     expect(klass.chunks.some((chunk) => chunk.id === "document")).toBe(true);
+  });
+
+  it("writes new Scene assets at the current migration schema version", () => {
+    const scene = buildNewAssetResult({
+      type: "Scene",
+      name: "Arena",
+      guid: "scene-1",
+      parentClass: null,
+    });
+    expect(scene.type).toBe("Scene");
+    expect(scene.version).toBe(
+      createDefaultMigrationRegistry().currentVersion("Scene"),
+    );
   });
 
   it("shows Prefab only for Actor-lineage classes", () => {

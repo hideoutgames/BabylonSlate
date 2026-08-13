@@ -19,3 +19,8 @@ export async function openTestProject(
   await page.getByTestId("create-project-submit").click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
+
+export async function openMainScene(page: Page): Promise<void> {
+  await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
+  await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
+}

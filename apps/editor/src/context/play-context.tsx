@@ -28,6 +28,8 @@ import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import {
   playPhysicsFromOpenDocuments,
   playPhysicsFromSceneSettings,
+  playSceneFromOpenDocuments,
+  playIsEnabled,
   resolvePlayScene,
   type PlaySceneLoad,
 } from "../services/play-physics";
@@ -51,6 +53,7 @@ interface PlayContextValue {
   preparing: boolean;
   playAwaitingMigration: boolean;
   requestPlay: (options?: PlayOptions) => Promise<void>;
+  canPlay: boolean;
   launchPlay: (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => void;
   resumePlayAfterMigration: () => Promise<void>;
   cancelPlayMigration: () => void;
@@ -135,7 +138,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
-    collectPlayStartupScene,
     collectPlaySceneLibrary,
     openDocuments,
     activeDocumentId,
@@ -149,8 +151,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const playScene = resolvePlayScene({
     documents: openDocuments,
     activeDocumentId,
-    fallback: playSceneLoad,
   });
+  const canPlay = playIsEnabled(openDocuments, activeDocumentId);
   const playPhysics = playScene
     ? playPhysicsFromSceneSettings(playScene.scene.settings)
     : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId);
@@ -237,6 +239,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
       if (playing || preparingRef.current) return;
+      if (!playIsEnabled(openDocuments, activeDocumentId)) return;
       pendingPlayOptionsRef.current = options;
       const inject = Boolean(options?.injectFixtureThrow);
       const plan = planPlayPreviewPrepare({
@@ -285,12 +288,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setScripts(nextScripts);
           setDiagnostics(nextDiagnostics);
         }
-        const fallbackScene = await collectPlayStartupScene();
-        const resolvedScene = resolvePlayScene({
-          documents: openDocuments,
+        const resolvedScene = playSceneFromOpenDocuments(
+          openDocuments,
           activeDocumentId,
-          fallback: fallbackScene,
-        });
+        );
         setPlaySceneLoad(resolvedScene);
         try {
           setPlaySceneLibrary(await collectPlaySceneLibrary());
@@ -389,7 +390,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
-      collectPlayStartupScene,
       collectPlaySceneLibrary,
       diagnostics,
       dirtyDocuments,
@@ -445,6 +445,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       preparing,
       playAwaitingMigration,
       requestPlay,
+      canPlay,
       launchPlay,
       resumePlayAfterMigration,
       cancelPlayMigration,
@@ -465,6 +466,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       preparing,
       playAwaitingMigration,
       requestPlay,
+      canPlay,
       launchPlay,
       resumePlayAfterMigration,
       cancelPlayMigration,

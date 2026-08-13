@@ -209,7 +209,7 @@ export function EditorChromeBar({
     activateDockPanel,
   } = useDocuments();
 
-  const { requestPlay, playing, preparing, alwaysRender, setAlwaysRender, renderStats } =
+  const { requestPlay, playing, preparing, canPlay, alwaysRender, setAlwaysRender, renderStats } =
     usePlay();
   const { errorCount, setDiagnostics } =
     useValidation();
@@ -419,8 +419,9 @@ export function EditorChromeBar({
               variant="ghost"
               data-testid="play-preview"
               className="chrome-action-button chrome-play-button relative"
-              aria-label="Play"
-              disabled={!projectName || playing || preparing}
+              aria-label={canPlay ? "Play" : "Play (Open a Scene)"}
+              title={canPlay ? undefined : "Open a scene to play"}
+              disabled={!projectName || playing || preparing || !canPlay}
               onClick={() => {
                 const inject =
                   typeof window !== "undefined" &&
