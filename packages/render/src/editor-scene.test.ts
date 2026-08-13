@@ -14,7 +14,11 @@ import {
   TWO_D_BETA,
 } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { createEditorGrid, buildGridLines, gridLineOffsets } from "./editor-grid";
+import {
+  createEditorGrid,
+  gridCoverageWorld,
+  snapGridOrigin,
+} from "./editor-grid";
 import { createGizmoHost, gizmoAxisEnabledFlags, GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
@@ -439,70 +443,75 @@ describe("EditorSceneSync", () => {
 });
 
 describe("editor grid", () => {
-  it("spaces lines evenly around the origin", () => {
-    expect(gridLineOffsets(2, 2)).toEqual([-4, -2, 0, 2, 4]);
+  it("snaps the plane origin to the camera target on the grid plane", () => {
+    expect(snapGridOrigin("3d", { x: 3.6, y: 10, z: -1.4 }, 1)).toEqual({
+      x: 4,
+      y: 0,
+      z: -1,
+    });
+    expect(snapGridOrigin("2d", { x: 3.6, y: -1.4, z: 8 }, 2)).toEqual({
+      x: 4,
+      y: -2,
+      z: 0,
+    });
   });
 
-  it("builds the grid on XZ in 3D and on XY in 2D", () => {
-    const threeD = buildGridLines("3d", 1, 1);
-    expect(threeD.every((line) => line.every((point) => point.y === 0))).toBe(true);
-    const twoD = buildGridLines("2d", 1, 1);
-    expect(twoD.every((line) => line.every((point) => point.z === 0))).toBe(true);
+  it("sizes coverage from the ortho frustum in 2D and radius in 3D", () => {
+    expect(
+      gridCoverageWorld("2d", { radius: 8, orthoTop: 5, orthoRight: 8 }),
+    ).toBe(32);
+    expect(
+      gridCoverageWorld("3d", { radius: 10, orthoTop: null, orthoRight: null }),
+    ).toBe(80);
   });
 
-  it("rebuilds when the mode or spacing changes and draws camera bounds", () => {
+  it("lays the grid on XZ in 3D and XY in 2D without a finite line mesh", () => {
     const { scene } = createHandle();
-    const grid = createEditorGrid(scene, { mode: "3d", extent: 2 });
-    grid.setMode("2d");
-    expect(grid.mesh.isPickable).toBe(false);
+    const threeD = createEditorGrid(scene, { mode: "3d" });
+    expect(threeD.mesh.isPickable).toBe(false);
+    expect(threeD.mesh.rotation.x).toBeCloseTo(Math.PI / 2);
+    expect(scene.getMeshByName("__editor-grid-minor__")).toBeNull();
+    threeD.dispose();
 
-    grid.setSpacing(2);
+    const twoD = createEditorGrid(scene, { mode: "2d" });
+    expect(twoD.mesh.rotation.x).toBeCloseTo(0);
+    twoD.dispose();
+  });
+
+  it("follows the editor camera so the plane covers the view", () => {
+    const { scene } = createHandle();
+    const camera = createEditorCamera(scene, { mode: "3d" });
+    camera.camera.setTarget(new Vector3(40, 2, 40));
+    const grid = createEditorGrid(scene, {
+      mode: "3d",
+      camera: camera.camera,
+      spacing: 1,
+    });
+    grid.sync();
+    expect(grid.mesh.position.x).toBe(40);
+    expect(grid.mesh.position.z).toBe(40);
+    expect(grid.mesh.scaling.x).toBeGreaterThan(8);
+    grid.dispose();
+  });
+
+  it("hides the grid without hiding 2D camera bounds", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "2d" });
     grid.setCameraBounds({ width: 10, height: 6 });
     expect(scene.getMeshByName("__editor-camera-bounds__")).not.toBeNull();
+
+    grid.setVisible(false);
+    expect(grid.mesh.isVisible).toBe(false);
+    expect(grid.boundsMesh?.isVisible).toBe(true);
 
     grid.setCameraBounds(null);
     expect(scene.getMeshByName("__editor-camera-bounds__")).toBeNull();
     grid.dispose();
   });
 
-  it("draws a minor subdivision grid in 2D only", () => {
-    const { scene } = createHandle();
-    const grid = createEditorGrid(scene, {
-      mode: "3d",
-      extent: 2,
-      subdivisions: 4,
-    });
-    expect(grid.minorMesh).toBeNull();
-
-    grid.setMode("2d");
-    expect(grid.minorMesh).not.toBeNull();
-    expect(scene.getMeshByName("__editor-grid-minor__")).not.toBeNull();
-
-    grid.setSubdivisions(1);
-    expect(grid.minorMesh).toBeNull();
-
-    grid.dispose();
-  });
-
-  it("hides the minor grid along with the major grid", () => {
-    const { scene } = createHandle();
-    const grid = createEditorGrid(scene, {
-      mode: "2d",
-      extent: 2,
-      subdivisions: 2,
-    });
-    grid.setVisible(false);
-    expect(grid.mesh.isVisible).toBe(false);
-    expect(grid.minorMesh?.isVisible).toBe(false);
-
-    grid.setVisible(true);
-    expect(grid.minorMesh?.isVisible).toBe(true);
-    grid.dispose();
-  });
-
   it("keeps camera bounds out of 3D, where the rectangle is meaningless", () => {
     const { scene } = createHandle();
-    const grid = createEditorGrid(scene, { mode: "3d", extent: 2 });
+    const grid = createEditorGrid(scene, { mode: "3d" });
     grid.setCameraBounds({ width: 16, height: 9 });
     expect(grid.boundsMesh).toBeNull();
 

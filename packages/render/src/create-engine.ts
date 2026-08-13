@@ -249,7 +249,7 @@ export function createEngine(
     // The editor camera replaces the default viewport camera set up above.
     scene.activeCamera?.dispose();
     const cameraController = createEditorCamera(scene, { mode, scheduler });
-    const grid = createEditorGrid(scene, { mode });
+    const grid = createEditorGrid(scene, { mode, camera: cameraController.camera });
     const selection = new SelectionOutline(scene);
     const gizmos = createGizmoHost(scene, {
       mode,

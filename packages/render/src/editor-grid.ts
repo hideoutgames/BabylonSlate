@@ -1,69 +1,131 @@
 import {
   Color3,
+  Effect,
   LinesMesh,
+  Mesh,
   MeshBuilder,
   Scene,
+  ShaderMaterial,
   Vector3,
+  type ArcRotateCamera,
 } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
 
 export const GRID_MESH_NAME = "__editor-grid__";
-export const GRID_MINOR_MESH_NAME = "__editor-grid-minor__";
 export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
+
+const GRID_SHADER_NAME = "editorGrid";
+const GRID_PLANE_OFFSET = 0.002;
+const GRID_LINE_WIDTH = 1.25;
 
 export interface EditorGridOptions {
   mode?: ViewportMode;
+  /** Editor camera the plane follows; omit only in unit tests without a camera. */
+  camera?: Pick<
+    ArcRotateCamera,
+    "target" | "position" | "radius" | "orthoTop" | "orthoRight"
+  >;
   /** World units between major grid lines; the 2D tile size. */
   spacing?: number;
   /** Minor lines drawn between two major lines; 1 disables the minor grid. */
   subdivisions?: number;
-  /** Line count per axis; the grid spans `extent * spacing` world units. */
-  extent?: number;
   color?: Color3;
   minorColor?: Color3;
 }
 
-/**
- * Grid line positions for one axis, as a pure function so spacing and extent
- * are unit-testable without an engine.
- */
-export function gridLineOffsets(spacing: number, extent: number): number[] {
-  const offsets: number[] = [];
-  for (let i = -extent; i <= extent; i++) {
-    offsets.push(i * spacing);
-  }
-  return offsets;
+export interface GridCoverageCamera {
+  radius: number;
+  orthoTop: number | null;
+  orthoRight: number | null;
 }
 
 /**
- * Builds the grid on the plane the mode works in: XZ for 3D, XY for 2D where
- * the plan fixes +Y up and +X right.
+ * Snap the follow-plane origin to the grid under the camera target so the
+ * shader stays world-aligned as the view pans.
  */
-export function buildGridLines(
+export function snapGridOrigin(
   mode: ViewportMode,
+  target: { x: number; y: number; z: number },
   spacing: number,
-  extent: number,
-  reachOverride?: number,
-): Vector3[][] {
-  const offsets = gridLineOffsets(spacing, extent);
-  const reach = reachOverride ?? extent * spacing;
-  const lines: Vector3[][] = [];
-  for (const offset of offsets) {
-    if (mode === "2d") {
-      lines.push([new Vector3(offset, -reach, 0), new Vector3(offset, reach, 0)]);
-      lines.push([new Vector3(-reach, offset, 0), new Vector3(reach, offset, 0)]);
-    } else {
-      lines.push([new Vector3(offset, 0, -reach), new Vector3(offset, 0, reach)]);
-      lines.push([new Vector3(-reach, 0, offset), new Vector3(reach, 0, offset)]);
-    }
+): { x: number; y: number; z: number } {
+  const step = spacing > 0 ? spacing : 1;
+  const snap = (value: number) => Math.round(value / step) * step;
+  if (mode === "2d") {
+    return { x: snap(target.x), y: snap(target.y), z: 0 };
   }
-  return lines;
+  return { x: snap(target.x), y: 0, z: snap(target.z) };
+}
+
+/**
+ * World size of the follow plane so its edges stay off-screen.
+ */
+export function gridCoverageWorld(
+  mode: ViewportMode,
+  camera: GridCoverageCamera,
+): number {
+  if (mode === "2d") {
+    const height = Math.abs(camera.orthoTop ?? 10);
+    const width = Math.abs(camera.orthoRight ?? 10);
+    return Math.max(width, height, 1) * 4;
+  }
+  return Math.max(camera.radius, 1) * 8;
+}
+
+function ensureGridShaders(): void {
+  const vertexKey = `${GRID_SHADER_NAME}VertexShader`;
+  const fragmentKey = `${GRID_SHADER_NAME}FragmentShader`;
+  if (Effect.ShadersStore[vertexKey]) return;
+  Effect.ShadersStore[vertexKey] = `
+attribute vec3 position;
+uniform mat4 world;
+uniform mat4 worldViewProjection;
+varying vec3 vWorldPos;
+void main() {
+  vec4 worldPosition = world * vec4(position, 1.0);
+  vWorldPos = worldPosition.xyz;
+  gl_Position = worldViewProjection * vec4(position, 1.0);
+}
+`;
+  Effect.ShadersStore[fragmentKey] = `
+#extension GL_OES_standard_derivatives : enable
+varying vec3 vWorldPos;
+uniform vec3 majorColor;
+uniform vec3 minorColor;
+uniform float spacing;
+uniform float subdivisions;
+uniform float fadeStart;
+uniform float fadeEnd;
+uniform vec3 cameraPos;
+uniform float mode2d;
+uniform float lineWidth;
+
+float gridLine(vec2 coord, float cell) {
+  vec2 uv = coord / cell;
+  vec2 wrapped = abs(fract(uv - 0.5) - 0.5);
+  vec2 deriv = fwidth(uv);
+  vec2 line = 1.0 - smoothstep(vec2(0.0), deriv * lineWidth, wrapped);
+  return max(line.x, line.y);
+}
+
+void main() {
+  vec2 coord = mode2d > 0.5 ? vWorldPos.xy : vWorldPos.xz;
+  float cell = max(spacing, 0.0001);
+  float major = gridLine(coord, cell);
+  float minor = subdivisions > 1.5
+    ? gridLine(coord, cell / max(subdivisions, 1.0))
+    : 0.0;
+  float dist = length(cameraPos - vWorldPos);
+  float fade = 1.0 - smoothstep(fadeStart, fadeEnd, dist);
+  vec3 color = mix(minorColor, majorColor, clamp(major, 0.0, 1.0));
+  float alpha = max(major, minor * 0.45) * fade;
+  if (alpha < 0.02) discard;
+  gl_FragColor = vec4(color, alpha);
+}
+`;
 }
 
 export interface EditorGrid {
-  readonly mesh: LinesMesh;
-  /** Minor subdivision grid; only built in 2D, where pixel work needs it. */
-  readonly minorMesh: LinesMesh | null;
+  readonly mesh: Mesh;
   readonly boundsMesh: LinesMesh | null;
   setMode: (mode: ViewportMode) => void;
   setSpacing: (spacing: number) => void;
@@ -71,6 +133,8 @@ export interface EditorGrid {
   setVisible: (visible: boolean) => void;
   /** Draw the rectangle the game camera will frame (2D only). */
   setCameraBounds: (bounds: { width: number; height: number } | null) => void;
+  /** Snap/scale the plane to the live camera. Also runs each frame. */
+  sync: () => void;
   dispose: () => void;
 }
 
@@ -78,24 +142,67 @@ export function createEditorGrid(
   scene: Scene,
   options: EditorGridOptions = {},
 ): EditorGrid {
+  ensureGridShaders();
+
   let mode: ViewportMode = options.mode ?? "3d";
   let spacing = options.spacing ?? 1;
   let subdivisions = Math.max(1, Math.round(options.subdivisions ?? 4));
-  const extent = options.extent ?? 20;
   const color = options.color ?? new Color3(0.32, 0.34, 0.38);
   const minorColor = options.minorColor ?? new Color3(0.2, 0.21, 0.24);
+  const camera = options.camera ?? null;
 
-  let mesh!: LinesMesh;
-  let minorMesh: LinesMesh | null = null;
   let boundsMesh: LinesMesh | null = null;
   let requestedBounds: { width: number; height: number } | null = null;
   let visible = true;
 
-  const style = (target: LinesMesh, lineColor: Color3) => {
-    target.color = lineColor;
-    target.isPickable = false;
-    target.doNotSyncBoundingInfo = true;
-    target.isVisible = visible;
+  const mesh = MeshBuilder.CreatePlane(
+    GRID_MESH_NAME,
+    { size: 1, sideOrientation: Mesh.DOUBLESIDE },
+    scene,
+  );
+  mesh.isPickable = false;
+  mesh.doNotSyncBoundingInfo = true;
+  mesh.alwaysSelectAsActiveMesh = true;
+  mesh.isVisible = visible;
+
+  const material = new ShaderMaterial(
+    `${GRID_MESH_NAME}-material`,
+    scene,
+    { vertex: GRID_SHADER_NAME, fragment: GRID_SHADER_NAME },
+    {
+      attributes: ["position"],
+      uniforms: [
+        "world",
+        "worldViewProjection",
+        "spacing",
+        "subdivisions",
+        "majorColor",
+        "minorColor",
+        "fadeStart",
+        "fadeEnd",
+        "cameraPos",
+        "mode2d",
+        "lineWidth",
+      ],
+      needAlphaBlending: true,
+    },
+  );
+  material.backFaceCulling = false;
+  material.disableDepthWrite = true;
+  mesh.material = material;
+
+  const applyUniforms = () => {
+    material.setFloat("spacing", spacing);
+    material.setFloat("subdivisions", subdivisions);
+    material.setColor3("majorColor", color);
+    material.setColor3("minorColor", minorColor);
+    material.setFloat("mode2d", mode === "2d" ? 1 : 0);
+    material.setFloat("lineWidth", GRID_LINE_WIDTH);
+  };
+
+  const applyPlane = () => {
+    mesh.rotation.x = mode === "3d" ? Math.PI / 2 : 0;
+    applyUniforms();
   };
 
   const buildBounds = () => {
@@ -122,46 +229,32 @@ export function createEditorGrid(
     boundsMesh.isPickable = false;
   };
 
-  const build = () => {
-    mesh?.dispose();
-    minorMesh?.dispose();
-    minorMesh = null;
-
-    mesh = MeshBuilder.CreateLineSystem(
-      GRID_MESH_NAME,
-      { lines: buildGridLines(mode, spacing, extent), updatable: false },
-      scene,
-    );
-    style(mesh, color);
-
-    if (mode === "2d" && subdivisions > 1) {
-      const minorSpacing = spacing / subdivisions;
-      minorMesh = MeshBuilder.CreateLineSystem(
-        GRID_MINOR_MESH_NAME,
-        {
-          lines: buildGridLines(
-            mode,
-            minorSpacing,
-            extent * subdivisions,
-            extent * spacing,
-          ),
-          updatable: false,
-        },
-        scene,
-      );
-      style(minorMesh, minorColor);
+  const sync = () => {
+    applyPlane();
+    if (!camera) return;
+    const origin = snapGridOrigin(mode, camera.target, spacing);
+    if (mode === "2d") {
+      mesh.position.set(origin.x, origin.y, GRID_PLANE_OFFSET);
+    } else {
+      mesh.position.set(origin.x, GRID_PLANE_OFFSET, origin.z);
     }
-    buildBounds();
+    const coverage = gridCoverageWorld(mode, camera);
+    mesh.scaling.setAll(coverage);
+    material.setVector3("cameraPos", camera.position);
+    material.setFloat("fadeStart", coverage * 0.35);
+    material.setFloat("fadeEnd", coverage * 0.5);
   };
 
-  build();
+  applyPlane();
+  sync();
+
+  const observer = scene.onBeforeRenderObservable.add(() => {
+    sync();
+  });
 
   return {
     get mesh() {
       return mesh;
-    },
-    get minorMesh() {
-      return minorMesh;
     },
     get boundsMesh() {
       return boundsMesh;
@@ -169,33 +262,36 @@ export function createEditorGrid(
     setMode: (next: ViewportMode) => {
       if (next === mode) return;
       mode = next;
-      build();
+      applyPlane();
+      buildBounds();
+      sync();
     },
     setSpacing: (next: number) => {
       if (next <= 0 || next === spacing) return;
       spacing = next;
-      build();
+      applyUniforms();
+      sync();
     },
     setSubdivisions: (next: number) => {
       const rounded = Math.max(1, Math.round(next));
       if (rounded === subdivisions) return;
       subdivisions = rounded;
-      build();
+      applyUniforms();
     },
     setVisible: (next: boolean) => {
       visible = next;
       mesh.isVisible = next;
-      if (minorMesh) minorMesh.isVisible = next;
     },
     setCameraBounds: (bounds) => {
       requestedBounds = bounds;
       buildBounds();
     },
+    sync,
     dispose: () => {
+      if (observer) scene.onBeforeRenderObservable.remove(observer);
       boundsMesh?.dispose();
       boundsMesh = null;
-      minorMesh?.dispose();
-      minorMesh = null;
+      material.dispose();
       mesh.dispose();
     },
   };
