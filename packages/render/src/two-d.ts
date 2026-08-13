@@ -71,6 +71,43 @@ export function meshNamesInCanvasRect(
   return hits;
 }
 
+export interface OrthoFrustum {
+  orthoLeft: number | null;
+  orthoRight: number | null;
+  orthoTop: number | null;
+  orthoBottom: number | null;
+}
+
+/**
+ * World pan for a canvas-pixel drag so the point under the pointer stays put.
+ * Uses CSS canvas size (same space as pointer `clientX`/`clientY`), not the
+ * hardware-scaled render buffer.
+ */
+export function orthoPanFromCanvasDelta(
+  dxPx: number,
+  dyPx: number,
+  frustum: OrthoFrustum,
+  canvas: { width: number; height: number },
+): { deltaX: number; deltaY: number } {
+  const { orthoLeft, orthoRight, orthoTop, orthoBottom } = frustum;
+  if (
+    canvas.width <= 0 ||
+    canvas.height <= 0 ||
+    orthoLeft == null ||
+    orthoRight == null ||
+    orthoTop == null ||
+    orthoBottom == null
+  ) {
+    return { deltaX: 0, deltaY: 0 };
+  }
+  const worldWidth = orthoRight - orthoLeft;
+  const worldHeight = orthoTop - orthoBottom;
+  return {
+    deltaX: -dxPx * (worldWidth / canvas.width),
+    deltaY: dyPx * (worldHeight / canvas.height),
+  };
+}
+
 /** Snap a world coordinate to the nearest multiple of `step`. */
 export function snapToGrid(value: number, step: number): number {
   if (step <= 0) return value;
