@@ -11,7 +11,8 @@ import {
   PanelFrame,
   ParameterListEditor,
   PropertyGrid,
-  SearchSheet,
+  SearchDialog,
+  SearchDropdown,
   SelectableText,
   ToolbarStrip,
   TreeView,
@@ -191,8 +192,19 @@ function GalleryComposites() {
           />
         </div>
         <Button variant="outline" onClick={() => setSearchOpen(true)}>
-          Open search sheet
+          Open search dialog
         </Button>
+        <SearchDropdown
+          title="Tile Palette"
+          items={[
+            { id: "0", label: "Empty", description: "Tile 0" },
+            { id: "1", label: "Tile 1", description: "Full" },
+          ]}
+          onSelect={() => {}}
+          data-testid="gallery-search-dropdown"
+        >
+          <Button variant="outline">Open search dropdown</Button>
+        </SearchDropdown>
         <Button variant="outline" onClick={() => setPickerOpen(true)}>
           Open asset picker
         </Button>
@@ -218,16 +230,16 @@ function GalleryComposites() {
           data-testid="gallery-input-mapping"
         />
       </div>
-      <SearchSheet
+      <SearchDialog
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        title="Add component"
+        title="Add Component"
         items={[
           { id: "mesh", label: "MeshComponent", description: "Renderable mesh" },
           { id: "camera", label: "CameraComponent", description: "Scene camera" },
         ]}
         onSelect={() => {}}
-        data-testid="gallery-search-sheet"
+        data-testid="gallery-search-dialog"
       />
       <AssetPicker
         open={pickerOpen}

@@ -41,8 +41,12 @@ test("component gallery renders every editor-kit composite", async ({
   await expect(page.getByTestId("gallery-numeric-drag")).toBeVisible();
   await expect(page.getByTestId("gallery-parameter-list")).toBeVisible();
 
-  await page.getByRole("button", { name: "Open search sheet" }).click();
-  await expect(page.getByTestId("gallery-search-sheet")).toBeVisible();
+  await page.getByRole("button", { name: "Open search dropdown" }).click();
+  await expect(page.getByTestId("gallery-search-dropdown")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "Open search dialog" }).click();
+  await expect(page.getByTestId("gallery-search-dialog")).toBeVisible();
 });
 
 test("gallery composites meet the minimum touch target size", {
