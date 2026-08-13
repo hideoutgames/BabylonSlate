@@ -1,17 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppWindowIcon, ChevronDownIcon } from "lucide-react";
+import { NestedMenu, type NestedMenuItem } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@babylonslate/ui/components/dropdown-menu";
 import {
   useDocuments,
   useDockWindowTick,
@@ -62,74 +52,74 @@ export function WindowsMenu() {
     }
   }, [canToggleWindows, projectName]);
 
+  const items = useMemo((): NestedMenuItem[] => {
+    const checkbox = (entry: { id: string; title: string }): NestedMenuItem => {
+      const open = isDockWindowOpen(entry.id);
+      return {
+        id: entry.id,
+        type: "checkbox",
+        label: entry.title,
+        checked: open,
+        closeOnClick: false,
+        disabled: open && openDockWindowCount === 1,
+        testId: `windows-menu-${entry.id}`,
+        onCheckedChange: () => toggleDockWindow(entry.id),
+      };
+    };
+
+    return [
+      ...windows.map(checkbox),
+      { type: "separator", id: "utilities-sep" },
+      {
+        type: "submenu",
+        id: "editor-utilities",
+        label: "Editor Utilities",
+        testId: "windows-editor-utilities",
+        contentTestId: "windows-editor-utilities-menu",
+        items:
+          editorUtilities.length === 0
+            ? [
+                {
+                  id: "empty",
+                  label: "None registered",
+                  disabled: true,
+                  testId: "windows-editor-utilities-empty",
+                  onSelect: () => {},
+                },
+              ]
+            : editorUtilities.map(checkbox),
+      },
+    ];
+  }, [
+    editorUtilities,
+    isDockWindowOpen,
+    openDockWindowCount,
+    toggleDockWindow,
+    windows,
+  ]);
+
   return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            size="sm"
-            variant="outline"
-            data-testid="windows-menu"
-            className="chrome-action-button"
-            aria-label="Windows"
-            disabled={!projectName || !canToggleWindows}
-          />
-        }
-      >
-        <AppWindowIcon data-icon="inline-start" />
-        Windows
-        <ChevronDownIcon data-icon="inline-end" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="min-w-44 duration-0 data-open:animate-none data-closed:animate-none"
-        data-testid="windows-menu-content"
-      >
-        {windows.map((entry) => {
-          const open = isDockWindowOpen(entry.id);
-          return (
-            <DropdownMenuCheckboxItem
-              key={entry.id}
-              data-testid={`windows-menu-${entry.id}`}
-              checked={open}
-              closeOnClick={false}
-              disabled={open && openDockWindowCount === 1}
-              onCheckedChange={() => toggleDockWindow(entry.id)}
-            >
-              {entry.title}
-            </DropdownMenuCheckboxItem>
-          );
-        })}
-        <DropdownMenuSeparator />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger data-testid="windows-editor-utilities">
-            Editor Utilities
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent data-testid="windows-editor-utilities-menu">
-            {editorUtilities.length === 0 ? (
-              <DropdownMenuItem disabled data-testid="windows-editor-utilities-empty">
-                None registered
-              </DropdownMenuItem>
-            ) : (
-              editorUtilities.map((entry) => {
-                const open = isDockWindowOpen(entry.id);
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={entry.id}
-                    data-testid={`windows-menu-${entry.id}`}
-                    checked={open}
-                    closeOnClick={false}
-                    disabled={open && openDockWindowCount === 1}
-                    onCheckedChange={() => toggleDockWindow(entry.id)}
-                  >
-                    {entry.title}
-                  </DropdownMenuCheckboxItem>
-                );
-              })
-            )}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <NestedMenu
+      items={items}
+      open={menuOpen}
+      onOpenChange={setMenuOpen}
+      align="end"
+      contentTestId="windows-menu-content"
+      contentClassName="min-w-44 duration-0 data-open:animate-none data-closed:animate-none"
+      trigger={
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid="windows-menu"
+          className="chrome-action-button"
+          aria-label="Windows"
+          disabled={!projectName || !canToggleWindows}
+        />
+      }
+    >
+      <AppWindowIcon data-icon="inline-start" />
+      Windows
+      <ChevronDownIcon data-icon="inline-end" />
+    </NestedMenu>
   );
 }

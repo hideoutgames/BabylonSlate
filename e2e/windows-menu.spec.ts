@@ -82,4 +82,18 @@ test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
     await page.getByTestId("windows-editor-utilities").click({ force: true });
     await expect(page.getByTestId("windows-editor-utilities-empty")).toBeVisible();
   });
+
+  test("opens the Editor Utilities submenu on tap", async ({ page }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("windows-menu")).toBeEnabled({
+      timeout: 15_000,
+    });
+    await openWindowsMenu(page);
+    await page.getByTestId("windows-editor-utilities").click({ force: true });
+    await expect(page.getByTestId("windows-editor-utilities-menu")).toBeVisible();
+    await expect(page.getByTestId("windows-editor-utilities-empty")).toBeVisible();
+  });
 });

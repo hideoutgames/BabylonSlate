@@ -1,3 +1,4 @@
+import { NestedMenu } from "./nested-menu";
 import type { ContextMenuState } from "./use-context-menu";
 
 export interface ContextMenuOverlayProps {
@@ -16,28 +17,16 @@ export function ContextMenuOverlay({ menu, onClose }: ContextMenuOverlayProps) {
         onClick={onClose}
         onContextMenu={(e) => e.preventDefault()}
       />
-      <div
-        className="context-menu-panel"
-        data-testid="context-menu-panel"
-        style={{ left: menu.x, top: menu.y }}
-        role="menu"
-      >
-        {menu.items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="menuitem"
-            className="context-menu-item"
-            data-testid={`context-menu-item-${item.id}`}
-            onClick={() => {
-              item.onSelect();
-              onClose();
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <NestedMenu
+        items={menu.items}
+        open
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) onClose();
+        }}
+        anchor={{ x: menu.x, y: menu.y }}
+        size="touch"
+        contentTestId="context-menu-panel"
+      />
     </>
   );
 }

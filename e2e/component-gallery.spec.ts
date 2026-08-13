@@ -40,6 +40,8 @@ test("component gallery renders every editor-kit composite", async ({
   await expect(page.getByTestId("gallery-slider")).toBeVisible();
   await expect(page.getByTestId("gallery-numeric-drag")).toBeVisible();
   await expect(page.getByTestId("gallery-parameter-list")).toBeVisible();
+  await expect(page.getByTestId("gallery-nested-menu")).toBeVisible();
+  await expect(page.getByTestId("gallery-nested-overlay")).toBeVisible();
 
   await page.getByRole("button", { name: "Open search dropdown" }).click();
   await expect(page.getByTestId("gallery-search-dropdown")).toBeVisible();
@@ -47,6 +49,12 @@ test("component gallery renders every editor-kit composite", async ({
 
   await page.getByRole("button", { name: "Open search dialog" }).click();
   await expect(page.getByTestId("gallery-search-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("gallery-nested-menu").click();
+  await expect(page.getByTestId("gallery-nested-menu-content")).toBeVisible();
+  await page.getByTestId("context-menu-item-more").click();
+  await expect(page.getByTestId("context-menu-sub-more")).toBeVisible();
 });
 
 test("gallery composites meet the minimum touch target size", {
