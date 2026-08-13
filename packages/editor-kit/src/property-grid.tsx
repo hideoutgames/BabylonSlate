@@ -16,7 +16,7 @@ import {
 import { Slider } from "@babylonslate/ui/components/slider";
 import { NumericDragField } from "./numeric-drag-field";
 import { humanizePropertyLabel } from "./humanize-property-label";
-import { ColorField } from "./color-field";
+import { ColorField, type ColorValue } from "./color-field";
 import { FlagsField } from "./flags-field";
 
 export type Vector3Value = [number, number, number] | [number, number, number, number];
@@ -70,9 +70,9 @@ export type PropertyRow =
     })
   | (PropertyRowBase & {
       kind: "color";
-      value: Vector3Value;
-      defaultValue?: Vector3Value;
-      onChange: (value: Vector3Value) => void;
+      value: ColorValue;
+      defaultValue?: ColorValue;
+      onChange: (value: ColorValue) => void;
     })
   | (PropertyRowBase & {
       kind: "slider";

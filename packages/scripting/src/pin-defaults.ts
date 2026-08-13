@@ -127,7 +127,7 @@ export function pinDefaultAsVec3Tuple(
 }
 
 export function vec3TupleToObject(
-  tuple: Vec3Tuple,
+  tuple: readonly number[],
   keys: readonly [string, string] | readonly [string, string, string],
 ): Record<string, number> {
   const result: Record<string, number> = {

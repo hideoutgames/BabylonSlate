@@ -89,7 +89,7 @@ function GalleryComposites() {
       label: "Position",
       value: position,
       defaultValue: [0, 0, 0],
-      onChange: setPosition,
+      onChange: (value) => setPosition([value[0], value[1], value[2]]),
     },
     {
       kind: "number",
