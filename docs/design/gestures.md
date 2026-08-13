@@ -33,6 +33,8 @@ iOS 13+ standalone / Add to Home Screen maps three-finger swipe and tap to syste
 
 `useContextMenu` cancels a pending long-press when the pointer moves past 8px or on scroll (captured document-wide, since `scroll` does not bubble). The 500ms delay and 8px tolerance deliberately match Dockview's `LongPressDetector` defaults, so a panel drag and a context menu can never both fire from one gesture.
 
+Nested `NestedMenu` submenus open on **tap / click**, not hover-only. Large catalogs still use `CatalogDialog` / `SearchDialog` rather than nested menus.
+
 ## Document scroll lock
 
 The editor shell is a full-viewport IDE, not a scrollable web page. Document rubber-band overscroll is disabled so drags on the viewport, dock chrome, and other non-scrollable areas do not bounce the whole page (especially on iOS Safari).
