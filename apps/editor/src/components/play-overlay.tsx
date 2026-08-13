@@ -27,6 +27,12 @@ import { applyPlayPreviewCanvasLayout } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { PlayHudOverlay } from "./play-hud-overlay";
+import {
+  applyPlayHudInstance,
+  removePlayHudInstance,
+  resolvePlayHudDocuments,
+  type PlayHudInstance,
+} from "../lib/play-content";
 
 export interface PlayOverlayProps {
   sharedEngine: Engine;
@@ -39,7 +45,7 @@ export interface PlayOverlayProps {
   frameCap?: number;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
-  hudDocument?: UserInterfaceDocument;
+  uiLibrary?: Record<string, UserInterfaceDocument>;
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   onClose: (result: PlaySessionResult) => void;
 }
@@ -64,7 +70,7 @@ export function PlayOverlay({
   scene,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
-  hudDocument,
+  uiLibrary = {},
   animGraphs,
   onClose,
 }: PlayOverlayProps) {
@@ -88,6 +94,7 @@ export function PlayOverlay({
   const [hiddenWidgetIds, setHiddenWidgetIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [hudInstances, setHudInstances] = useState<PlayHudInstance[]>([]);
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -133,6 +140,14 @@ export function PlayOverlay({
           else next.add(widgetId);
           return next;
         });
+      },
+      onUiApply: (instanceId, assetGuid) => {
+        setHudInstances((prev) =>
+          applyPlayHudInstance(prev, instanceId, assetGuid),
+        );
+      },
+      onUiRemove: (instanceId) => {
+        setHudInstances((prev) => removePlayHudInstance(prev, instanceId));
       },
       onStats: (stats) => {
         setFps(stats.fps);
@@ -262,7 +277,8 @@ export function PlayOverlay({
         data-testid="play-canvas"
       />
       <PlayHudOverlay
-        document={hudDocument}
+        instances={resolvePlayHudDocuments(hudInstances, uiLibrary)}
+        uiLibrary={uiLibrary}
         width={overlaySize.width}
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}

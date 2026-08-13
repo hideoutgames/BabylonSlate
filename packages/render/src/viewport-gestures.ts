@@ -1,5 +1,6 @@
 import type { EditorCameraController } from "./editor-camera";
 import type { RenderScheduler } from "./render-scheduler";
+import { orthoPanFromCanvasDelta } from "./two-d";
 
 export interface ViewportGestureOptions {
   /** Called for a stationary single-finger tap (selection pick). */
@@ -12,7 +13,10 @@ export interface ViewportGestureOptions {
     height: number;
   }) => void;
   scheduler?: Pick<RenderScheduler, "acquireContinuous">;
-  /** World units panned per pixel of three-finger drag. */
+  /**
+   * World units panned per pixel of three-finger drag in 3D.
+   * 2D uses 1:1 frustum mapping instead.
+   */
   panScale?: number;
   /** Radians of look per pixel of one-finger / left-button drag. */
   orbitScale?: number;
@@ -96,6 +100,21 @@ export function attachViewportGestures(
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
 
+  const panFromPointerDelta = (dx: number, dy: number) => {
+    if (controller.mode === "2d") {
+      const rect = canvas.getBoundingClientRect();
+      const { deltaX, deltaY } = orthoPanFromCanvasDelta(
+        dx,
+        dy,
+        controller.camera,
+        { width: rect.width, height: rect.height },
+      );
+      controller.pan(deltaX, deltaY);
+      return;
+    }
+    controller.pan(-dx * panScale, dy * panScale);
+  };
+
   const onPointerDown = (event: PointerEvent) => {
     const point = toCanvas(event);
     pointers.set(event.pointerId, point);
@@ -158,7 +177,7 @@ export function attachViewportGestures(
         const dy = point.y - lastPoint.y;
         if (dx !== 0 || dy !== 0) {
           acquireLease();
-          controller.pan(-dx * panScale, dy * panScale);
+          panFromPointerDelta(dx, dy);
           clearMarqueeTimer();
         }
       }
@@ -171,7 +190,7 @@ export function attachViewportGestures(
     if (samples.length >= 3 && lastMid) {
       const dx = mid.x - lastMid.x;
       const dy = mid.y - lastMid.y;
-      controller.pan(-dx * panScale, dy * panScale);
+      panFromPointerDelta(dx, dy);
     }
     if (samples.length === 2 && lastSpread > 0 && currentSpread > 0) {
       const factor = currentSpread / lastSpread;

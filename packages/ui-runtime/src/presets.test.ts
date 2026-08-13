@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DESIRED_CANVAS_ID,
   DEVICE_PRESETS,
+  designerViewport,
   devicePresetById,
   devicePresetForViewport,
 } from "./presets";
@@ -28,5 +30,21 @@ describe("device presets", () => {
     expect(devicePresetForViewport(1280, 720).id).toBe("desktop-16-9");
     expect(devicePresetForViewport(1194, 834).safeArea.top).toBeGreaterThan(0);
     expect(devicePresetForViewport(1280, 720).safeArea.top).toBe(0);
+  });
+
+  it("uses desired size with zero safe area for reusable-element design", () => {
+    const viewport = designerViewport(DESIRED_CANVAS_ID, {
+      width: 240,
+      height: 64,
+    });
+    expect(viewport).toMatchObject({
+      id: "desired",
+      width: 240,
+      height: 64,
+      safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+    });
+    expect(designerViewport("ipad-landscape", { width: 240, height: 64 }).id).toBe(
+      "ipad-landscape",
+    );
   });
 });

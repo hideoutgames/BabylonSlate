@@ -1,7 +1,11 @@
-export type {
-  DevicePreset,
+export {
+  DESIRED_CANVAS_ID,
+  DEVICE_PRESETS,
+  designerViewport,
+  devicePresetById,
+  devicePresetForViewport,
 } from "./presets";
-export { DEVICE_PRESETS, devicePresetById, devicePresetForViewport } from "./presets";
+export type { DesignerCanvasId, DevicePreset } from "./presets";
 export type {
   EdgeInsets,
   LaidOutWidget,
@@ -19,6 +23,7 @@ export type {
 export {
   CONTAINER_KINDS,
   DEFAULT_DESIGN_RESOLUTION,
+  DEFAULT_DESIRED_SIZE,
   WIDGET_KINDS,
   ZERO_INSETS,
   createDefaultPlayHud,
@@ -43,6 +48,7 @@ export {
   roundRect,
   toGuiRect,
 } from "./layout";
+export type { LayoutOptions } from "./layout";
 export {
   compileFontStack,
   glyphsFallingToFallback,
@@ -51,6 +57,7 @@ export {
 export {
   findUiReferenceCycle,
   nestedUiGuidsOf,
+  nestedUiPickableGuids,
   uiDocumentWouldCycle,
 } from "./cycle-check";
 export {

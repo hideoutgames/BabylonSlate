@@ -19,8 +19,6 @@ import {
 } from "@babylonslate/editor-kit";
 import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
 
-export const ASSET_DRAG_MIME = "application/x-babylonslate-asset";
-export const FOLDER_DRAG_MIME = "application/x-babylonslate-folder";
 export const ASSETS_ROOT = "assets";
 
 export type TextureCompressionState =
@@ -68,47 +66,11 @@ export const CREATABLE_ASSET_TYPES = [
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
 
-export function assetDragPayload(asset: IndexedAsset): string {
-  return JSON.stringify({
-    guid: asset.header.guid,
-    type: asset.header.type,
-    path: asset.path,
-  });
-}
-
-export function guidFromAssetDragData(raw: string): string | null {
-  if (!raw) return null;
-  try {
-    const payload = JSON.parse(raw) as { guid?: string };
-    if (payload.guid) return payload.guid;
-  } catch {
-    return raw;
-  }
-  return raw;
-}
-
 export function isFolderTreeRoot(
   path: string,
   rootPath: string = ASSETS_ROOT,
 ): boolean {
   return path === rootPath;
-}
-
-export function folderDropTargetFromElement(
-  target: EventTarget | null,
-): string | null {
-  if (!(target instanceof Element)) return null;
-  return (
-    target.closest("[data-folder-path]")?.getAttribute("data-folder-path") ??
-    target.closest("[data-asset-folder]")?.getAttribute("data-asset-folder")
-  );
-}
-
-export function folderDropTargetFromPoint(
-  clientX: number,
-  clientY: number,
-): string | null {
-  return folderDropTargetFromElement(document.elementFromPoint(clientX, clientY));
 }
 
 export function displayAssetTitle(name: string): string {
@@ -212,18 +174,79 @@ export function collectFolderGuids(
   return guids;
 }
 
-export function flattenFolderTree(
-  node: FolderTreeLike,
-  collapsed: ReadonlySet<string> = new Set(),
-  depth = 0,
-): Array<{
+export type MoveKind = "asset" | "folder";
+
+export interface FlattenedFolderRow {
   id: string;
   label: string;
   depth: number;
   hasChildren: boolean;
   expanded: boolean;
   path: string;
-}> {
+}
+
+export function parentFolderPath(
+  path: string,
+  rootPath: string = ASSETS_ROOT,
+): string {
+  if (path === rootPath || !path.includes("/")) return rootPath;
+  return path.slice(0, path.lastIndexOf("/")) || rootPath;
+}
+
+export function isValidMoveDestination(options: {
+  kind: MoveKind;
+  sourcePath: string;
+  destinationPath: string;
+}): boolean {
+  const { kind, sourcePath, destinationPath } = options;
+  if (kind === "asset") {
+    return destinationPath !== sourcePath;
+  }
+  if (destinationPath === sourcePath) return false;
+  if (destinationPath.startsWith(`${sourcePath}/`)) return false;
+  return destinationPath !== parentFolderPath(sourcePath);
+}
+
+export function filterFolderTreeRows<T extends { path: string; label: string }>(
+  rows: T[],
+  query: string,
+): T[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return rows;
+  const matching = new Set<string>();
+  for (const row of rows) {
+    if (
+      row.label.toLowerCase().includes(needle) ||
+      row.path.toLowerCase().includes(needle)
+    ) {
+      matching.add(row.path);
+    }
+  }
+  return rows.filter((row) => {
+    if (matching.has(row.path)) return true;
+    for (const path of matching) {
+      if (path.startsWith(`${row.path}/`)) return true;
+    }
+    return false;
+  });
+}
+
+export function remapPathAfterFolderMove(
+  path: string,
+  fromFolder: string,
+  toFolder: string,
+): string {
+  if (path === fromFolder || path.startsWith(`${fromFolder}/`)) {
+    return `${toFolder}${path.slice(fromFolder.length)}`;
+  }
+  return path;
+}
+
+export function flattenFolderTree(
+  node: FolderTreeLike,
+  collapsed: ReadonlySet<string> = new Set(),
+  depth = 0,
+): FlattenedFolderRow[] {
   const hasChildren = node.children.length > 0;
   const expanded = !collapsed.has(node.path);
   const label =

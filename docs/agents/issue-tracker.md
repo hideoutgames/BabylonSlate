@@ -151,7 +151,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Trace recorder / `.babtrace` | P8 | Landed (`p8-trace-recorder`) |
 | Keyed Print HUD polish + strip-on-export preset UI | P8 / export | Print works; export strip preset + HUD polish deferred |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
-| Audio / UI node runtime helpers beyond stubs | P9 | `setWidgetVisible` emits `uiSetVisible`; audio helpers still stubs |
+| Audio / UI node runtime helpers beyond stubs | P9 | `setWidgetVisible` / `applyUserInterface` / `removeUserInterface` emit UI commands; audio helpers still stubs |
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (selection tidy / then-chain); **hold-to-marquee** (`attachGraphPaneMarquee`).
 
@@ -224,7 +224,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 ## P9 slice ownership
 
-P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9; residual ADT mesh HUD / NodeMaterial.Parse bind / registry-wide Play hosting is later polish.
+P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9; residual ADT mesh HUD / NodeMaterial.Parse bind is later polish.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -244,11 +244,11 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 | Gap vs engineplan §11–§14 | Reality | Owner |
 | --- | --- | --- |
 | Viewport-layer HUD as Babylon `AdvancedDynamicTexture` | Play hosts a DOM overlay (`PlayHudOverlay`); `applyUiControls` is injectable | Later polish / P14 player |
-| Every UserInterface in the asset registry auto-hosted in Play | Open viewport-layer UI documents are hosted (same pattern as the open scene); default HUD if none are open | Later polish |
+| Every UserInterface in the asset registry auto-hosted in Play | Play does **not** auto-apply UI. Class graphs call `ui.applyToViewport` / `ui.removeFromViewport`; the host loads a guid-keyed library of all UserInterface assets | Done (`cursor/ui-apply-nested-8c7a`) |
 | `NodeMaterial.Parse` + live Babylon preview | IR compile + throttle + `compileShaderGraphAtLoad` injection; host supplies `forceCompilationAsync` | Later polish |
 | Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
 | Play engine applies sprite-clip UVs from `animState` | `applySpriteAnimFrame` is unit-tested; `create-engine` seeks AnimationGroups only | Later polish |
 | World-space `WidgetComponent` (`CreateForMesh`) | Component is addable; viewport-layer HUD is the v1 Play path | Later polish |
-| Designer nested-UI guid field + cycle check UI | `uiDocumentWouldCycle` is tested in `ui-runtime`; PropertyGrid does not yet edit nested refs | Later polish |
-| Play HUD `FontRegistry.registerAll` from project Font assets | Font editor registers imported `source` bytes; Play HUD uses the compiled CSS stack + generic fallback without awaiting project FontFace loads | Later polish (same class as registry-wide UI hosting) |
+| Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
+| Play HUD `FontRegistry.registerAll` from project Font assets | Font editor registers imported `source` bytes; Play HUD uses the compiled CSS stack + generic fallback without awaiting project FontFace loads | Later polish |
 
