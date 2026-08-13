@@ -8,15 +8,14 @@ import {
   displayAssetTitle,
   filterAssets,
   flattenFolderTree,
-  folderDropTargetFromElement,
   filterFolderTreeRows,
-  guidFromAssetDragData,
   isFolderNameTaken,
   isFolderTreeRoot,
   isNewAssetNameTaken,
   isValidMoveDestination,
   matchesAssetSearch,
   newAssetFileName,
+  remapPathAfterFolderMove,
   textureCompressionState,
   visualForIndexedAsset,
   classParentLookup,
@@ -311,29 +310,34 @@ describe("content-browser-helpers", () => {
     ]);
   });
 
+  it("remaps contained paths after a folder move", () => {
+    expect(
+      remapPathAfterFolderMove(
+        "assets/textures/ui/hero.babasset",
+        "assets/textures",
+        "assets/fx/textures",
+      ),
+    ).toBe("assets/fx/textures/ui/hero.babasset");
+    expect(
+      remapPathAfterFolderMove(
+        "assets/fx/boom.babasset",
+        "assets/textures",
+        "assets/fx/textures",
+      ),
+    ).toBe("assets/fx/boom.babasset");
+    expect(
+      remapPathAfterFolderMove(
+        "assets/textures",
+        "assets/textures",
+        "assets/fx/textures",
+      ),
+    ).toBe("assets/fx/textures");
+  });
+
   it("treats the registry tree root as immovable", () => {
     expect(isFolderTreeRoot("assets")).toBe(true);
     expect(isFolderTreeRoot("assets/textures")).toBe(false);
     expect(isFolderTreeRoot("content", "content")).toBe(true);
-  });
-
-  it("reads a drop folder from folder-path or asset-folder attributes", () => {
-    const tree = document.createElement("div");
-    tree.innerHTML = `<button data-folder-path="assets"><span>assets</span></button>`;
-    const span = tree.querySelector("span");
-    expect(folderDropTargetFromElement(span)).toBe("assets");
-
-    const tile = document.createElement("div");
-    tile.setAttribute("data-asset-folder", "assets/fx");
-    const inner = document.createElement("button");
-    tile.appendChild(inner);
-    expect(folderDropTargetFromElement(inner)).toBe("assets/fx");
-  });
-
-  it("parses HTML5 asset drag payloads, including raw guids", () => {
-    expect(guidFromAssetDragData(JSON.stringify({ guid: "abc" }))).toBe("abc");
-    expect(guidFromAssetDragData("plain-guid")).toBe("plain-guid");
-    expect(guidFromAssetDragData("")).toBeNull();
   });
 
   it("resolves Class tiles to the parent engine icon", () => {

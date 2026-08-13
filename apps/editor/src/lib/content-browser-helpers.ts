@@ -19,8 +19,6 @@ import {
 } from "@babylonslate/editor-kit";
 import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
 
-export const ASSET_DRAG_MIME = "application/x-babylonslate-asset";
-export const FOLDER_DRAG_MIME = "application/x-babylonslate-folder";
 export const ASSETS_ROOT = "assets";
 
 export type TextureCompressionState =
@@ -68,47 +66,11 @@ export const CREATABLE_ASSET_TYPES = [
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
 
-export function assetDragPayload(asset: IndexedAsset): string {
-  return JSON.stringify({
-    guid: asset.header.guid,
-    type: asset.header.type,
-    path: asset.path,
-  });
-}
-
-export function guidFromAssetDragData(raw: string): string | null {
-  if (!raw) return null;
-  try {
-    const payload = JSON.parse(raw) as { guid?: string };
-    if (payload.guid) return payload.guid;
-  } catch {
-    return raw;
-  }
-  return raw;
-}
-
 export function isFolderTreeRoot(
   path: string,
   rootPath: string = ASSETS_ROOT,
 ): boolean {
   return path === rootPath;
-}
-
-export function folderDropTargetFromElement(
-  target: EventTarget | null,
-): string | null {
-  if (!(target instanceof Element)) return null;
-  return (
-    target.closest("[data-folder-path]")?.getAttribute("data-folder-path") ??
-    target.closest("[data-asset-folder]")?.getAttribute("data-asset-folder")
-  );
-}
-
-export function folderDropTargetFromPoint(
-  clientX: number,
-  clientY: number,
-): string | null {
-  return folderDropTargetFromElement(document.elementFromPoint(clientX, clientY));
 }
 
 export function displayAssetTitle(name: string): string {
@@ -267,6 +229,17 @@ export function filterFolderTreeRows<T extends { path: string; label: string }>(
     }
     return false;
   });
+}
+
+export function remapPathAfterFolderMove(
+  path: string,
+  fromFolder: string,
+  toFolder: string,
+): string {
+  if (path === fromFolder || path.startsWith(`${fromFolder}/`)) {
+    return `${toFolder}${path.slice(fromFolder.length)}`;
+  }
+  return path;
 }
 
 export function flattenFolderTree(
