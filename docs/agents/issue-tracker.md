@@ -321,6 +321,6 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 
 ## P11 behaviour trees / navigation
 
-Do not start until the foundation-hardening wave above is merged. Chrome polish (pin flash, multi-select gizmo, ADT HUD) is not a reason to skip P11, and is not P11 work.
+Do not start until the foundation-hardening wave above is merged. Chrome polish (pin flash, multi-select gizmo, ADT HUD, lighting polish / ShadowGenerator) is not a reason to skip P11, and is not P11 work.
 
 
