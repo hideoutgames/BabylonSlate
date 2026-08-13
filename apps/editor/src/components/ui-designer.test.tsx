@@ -214,12 +214,12 @@ describe("UiDesigner", () => {
     fireEvent.click(screen.getByTestId("ui-widget-menu-canvas"));
     expect(screen.getByTestId("ui-widget-visible-canvas")).toBeTruthy();
     expect(screen.queryByTestId("ui-widget-ignore-safe-area-canvas")).toBeNull();
-    expect(screen.getByTestId("ui-widget-delete")).toHaveAttribute(
-      "data-disabled",
-    );
-    expect(screen.getByTestId("ui-widget-duplicate")).toHaveAttribute(
-      "data-disabled",
-    );
+    expect(
+      screen.getByTestId("ui-widget-delete").hasAttribute("data-disabled"),
+    ).toBe(true);
+    expect(
+      screen.getByTestId("ui-widget-duplicate").hasAttribute("data-disabled"),
+    ).toBe(true);
   });
 
   it("toggles Ignore Safe Area from the hierarchy settings menu for Canvas children", () => {
