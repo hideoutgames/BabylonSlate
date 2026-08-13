@@ -146,7 +146,7 @@ export function createDefaultLogicGraphSerialized(
 }
 
 export function hydrateClassDocumentPayload(
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown> | SerializedGraph,
 ): SerializedGraph {
   if (Array.isArray(payload.nodes) && Array.isArray(payload.edges)) {
     return payload as unknown as SerializedGraph;
