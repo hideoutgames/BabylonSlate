@@ -4,7 +4,7 @@ Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.
 
 ## App-lifetime Engine
 
-One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its overlay canvas with `registerView(canvas, undefined, true)` / `unRegisterView` — never a second `Engine` (WebGL context caps).
+One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its overlay canvas with `registerView(canvas, undefined, true)` / `unRegisterView` — never a second `Engine` (WebGL context caps). The UserInterface designer uses the same shared Engine: `createUiSurface` builds a dedicated Scene + standalone `CreateFullscreenUI` (`@babylonjs/gui` is a `@babylonslate/render` dependency only) and **copies the ADT Canvas2D** onto the document canvas. It does not `registerView` that canvas — extra views blit the last 3D framebuffer (editor / Play) onto the tab. Play HUD is a foreground ADT Layer on the Play scene (`attachFullscreenGui`). Dispose the designer Scene + ADTs when the document tab closes so Play’s texture-cache invariant still holds.
 
 `registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine.
 

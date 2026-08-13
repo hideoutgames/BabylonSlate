@@ -1,4 +1,10 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Scene } from "@babylonjs/core/scene";
+import {
+  applyAdtIdeal,
+  applyUiControls,
+  attachFullscreenGui,
+} from "@babylonslate/render";
 import {
   describeUiControls,
   devicePresetForViewport,
@@ -19,6 +25,8 @@ export interface PlayHudOverlayProps {
   height: number;
   hiddenWidgetIds?: ReadonlySet<string>;
   onTouchAxis: (controlId: string, value: number) => void;
+  /** Play scene; when set, widgets render through Babylon GUI. */
+  scene?: Scene | null;
 }
 
 function numberProp(
@@ -52,8 +60,11 @@ export function PlayHudOverlay({
   height,
   hiddenWidgetIds,
   onTouchAxis,
+  scene = null,
 }: PlayHudOverlayProps) {
   const pointerIdRef = useRef<number | null>(null);
+  const onTouchAxisRef = useRef(onTouchAxis);
+  onTouchAxisRef.current = onTouchAxis;
   const extras = useEngineUiDesignerPresets();
   const preset = useMemo(
     () =>
@@ -80,6 +91,57 @@ export function PlayHudOverlay({
     });
   }, [instances, width, height, preset, resolveNested]);
 
+  const visibleControls = useMemo(
+    () =>
+      controls.filter(
+        (control) => control.visible && !hiddenWidgetIds?.has(control.id),
+      ),
+    [controls, hiddenWidgetIds],
+  );
+
+  const [guiReady, setGuiReady] = useState(false);
+  const attachedRef = useRef<ReturnType<typeof attachFullscreenGui> | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!scene) {
+      attachedRef.current = null;
+      setGuiReady(false);
+      return;
+    }
+    try {
+      const attached = attachFullscreenGui(scene, {
+        name: "play-hud",
+        interactive: true,
+        width: Math.max(1, width),
+        height: Math.max(1, height),
+        onTouchAxis: (controlId, value) => onTouchAxisRef.current(controlId, value),
+      });
+      attachedRef.current = attached;
+      setGuiReady(true);
+      return () => {
+        attached.dispose();
+        attachedRef.current = null;
+        setGuiReady(false);
+      };
+    } catch {
+      attachedRef.current = null;
+      setGuiReady(false);
+    }
+  }, [scene, width, height]);
+
+  useEffect(() => {
+    const attached = attachedRef.current;
+    if (!attached) return;
+    applyAdtIdeal(
+      attached.adt,
+      { width: Math.max(1, width), height: Math.max(1, height) },
+      "shortestSide",
+    );
+    applyUiControls(attached.host, visibleControls);
+  }, [visibleControls, width, height, scene]);
+
   const emitStick = useCallback(
     (
       controlIdX: string,
@@ -103,6 +165,8 @@ export function PlayHudOverlay({
     [onTouchAxis],
   );
 
+  const useDomHits = !guiReady;
+
   return (
     <div
       className="pointer-events-none absolute inset-0 z-[5]"
@@ -111,9 +175,7 @@ export function PlayHudOverlay({
       data-safe-top={String(preset.safeArea.top)}
       data-safe-bottom={String(preset.safeArea.bottom)}
     >
-      {controls.map((control) => {
-        if (!control.visible) return null;
-        if (hiddenWidgetIds?.has(control.id)) return null;
+      {visibleControls.map((control) => {
         const isStick = control.kind === "TouchJoystick";
         const isPad = control.kind === "TouchDPad";
         const isButton = control.kind === "TouchButton";
@@ -132,26 +194,39 @@ export function PlayHudOverlay({
         );
         const action = stringProp(control.props, "action", "Jump");
         const sliderId = stringProp(control.props, "controlId", "slider");
+        const testId = isStick ? "play-hud-stick" : `play-hud-widget-${control.id}`;
+        const boxStyle = {
+          left: control.guiRect.x,
+          top: control.guiRect.y,
+          width: Math.max(8, control.guiRect.width),
+          height: Math.max(8, control.guiRect.height),
+        };
+        if (!useDomHits) {
+          return (
+            <div
+              key={control.id}
+              data-testid={testId}
+              data-kind={control.kind}
+              data-gui-x={String(Math.round(control.guiRect.x))}
+              data-gui-y={String(Math.round(control.guiRect.y))}
+              className="absolute"
+              style={boxStyle}
+            />
+          );
+        }
         return (
           <Button
             key={control.id}
             type="button"
             variant="outline"
-            data-testid={
-              isStick ? "play-hud-stick" : `play-hud-widget-${control.id}`
-            }
+            data-testid={testId}
             data-kind={control.kind}
             data-gui-x={String(Math.round(control.guiRect.x))}
             data-gui-y={String(Math.round(control.guiRect.y))}
             className="pointer-events-auto absolute h-auto min-h-0 border-white/40 bg-black/35 px-0 py-0 text-[11px] text-white hover:bg-black/50"
             style={{
-              left: control.guiRect.x,
-              top: control.guiRect.y,
-              width: Math.max(8, control.guiRect.width),
-              height: Math.max(8, control.guiRect.height),
-              borderRadius: isStick
-                ? 999
-                : (control.style.borderRadius ?? 6),
+              ...boxStyle,
+              borderRadius: isStick ? 999 : (control.style.borderRadius ?? 6),
               fontFamily: control.style.fontFamily,
               color: control.style.color,
               background: control.style.background,

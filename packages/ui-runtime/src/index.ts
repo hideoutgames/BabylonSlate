@@ -65,3 +65,38 @@ export {
   describeUiControls,
   type UiControlDescriptor,
 } from "./controls";
+export {
+  guiControlType,
+  guiSpecFromDescriptor,
+  type GuiAlignment,
+  type GuiControlSpec,
+  type GuiControlType,
+} from "./gui-spec";
+export {
+  ANCHOR_PRESETS,
+  applyAnchorPreset,
+  applyAuthoringFields,
+  applyWidgetResize,
+  authoringFieldsFromLayout,
+  defaultAddLayout,
+  layoutFromRect,
+  matchAnchorPreset,
+  parentOwnsChildLayout,
+  preferredWidgetSize,
+  laidOutParentRect,
+  widgetAllowsDesignerTransform,
+} from "./layout-authoring";
+export type {
+  AnchorPreset,
+  AnchorPresetId,
+  AuthoringFieldPatch,
+  AuthoringFields,
+  ResizeEdges,
+} from "./layout-authoring";
+export {
+  duplicateWidget,
+  insertWidget,
+  removeWidget,
+  reparentWidget,
+  widgetParentId,
+} from "./widget-tree";

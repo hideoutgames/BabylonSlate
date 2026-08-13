@@ -23,6 +23,8 @@ export * from "./sorting";
 export * from "./pixel-perfect";
 export * from "./font-registry";
 export * from "./ui-apply";
+export * from "./babylon-ui-host";
+export * from "./ui-surface";
 export * from "./sprite-quad";
 export * from "./tilemap-mesh";
 export * from "./mesh-assets";

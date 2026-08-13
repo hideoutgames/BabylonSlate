@@ -98,7 +98,8 @@ test.describe("P9 content systems", () => {
     );
     await page.getByTestId("ui-widget-header").click();
     await expect(page.getByTestId("property-name")).toHaveValue("Title");
-    await expect(page.getByTestId("property-offset-min-x")).toBeVisible();
+    await expect(page.getByTestId("property-left")).toBeVisible();
+    await expect(page.getByTestId("property-pos-y")).toBeVisible();
   });
 
   test("UserInterface designer lists a custom Engine Settings preset", async ({
@@ -359,6 +360,7 @@ test.describe("P9 content systems", () => {
     await createAsset(page, "UserInterface", "Panel");
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
+    await page.getByTestId("ui-add-widget").click();
     await page.getByTestId("ui-add-widget-UserInterface").click();
     await page.getByTestId("property-nestedUi").click();
     await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
