@@ -47,7 +47,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
 | **PropertyGrid** | Typed Details rows: number, vector3, boolean, text, enum, color, asset. | Scene Details, Inspector (node / Log / Print). |
-| **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser folders, asset Move dialog. |
+| **TreeView** | Flattened touch tree (32px rows): select, expand, reparent, activate, long-press. | Outliner, Class members, Prefab hierarchy, Content Browser Move dialog. |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / color; gallery. |
 | **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields; Project Settings via CatalogDialog. |
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchSheet, global search. |
@@ -55,11 +55,12 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **AssetPicker** | Asset-guid picker on SearchSheet, optional None row and type filter. | PropertyGrid asset rows (gallery); Details mesh/texture picks as they land. |
 | **CatalogDialog** | Large centered dialog: category nav, non-autofocused search, scrollable body. | Engine / Project Settings, Place Actors, Add Component, graph NodePalette. |
 | **CatalogItemButton** | Full-width outline row for a catalog entry. | Place Actors, Add Component. |
+| **TypeVisualIcon** | Colored Lucide glyph for an asset / class family (`resolveTypeVisual`). | Outliner, Details, Prefab, Content Browser, global search, Place Actors, Add Component, AssetPicker, document tabs. |
 | **ParameterListEditor** | Named, typed, reorderable pin/parameter rows. | Inspector Execute JavaScript; Class / ScriptInterface signatures. |
 | **SelectableText** | Opt-in selectable span inside a `user-select: none` shell. | Logs, compiler messages, Play overlay copy, gallery code snippets. |
 | **ContextMenuOverlay** | Pointer-anchored menu driven by `useContextMenu` (500ms hold or `contextmenu`). | Viewport, Outliner, Content Browser. |
 
-Related hooks (not components): `useContextMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`. Label helpers: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`.
+Related hooks (not components): `useContextMenu`, `useHoldDragMenu`, `useSuppressNativeContextMenu`, `useSuppressIosEditingGestures`, `usePreventDocumentOverscroll`. Label helpers: `humanizePropertyLabel`, `formatEventMemberName`, `formatEventTitle`. Type lookup: `resolveTypeVisual`, `resolveActorTypeVisual`.
 
 ## Graph (`@babylonslate/graph-ui`)
 
@@ -70,10 +71,14 @@ Reusable by script, shader, animation, and behaviour-tree graphs.
 | **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, marquee, pin-filtered drop-to-add. | Graph document panel. |
 | **NodePalette** | CatalogDialog of nodes with role-color chips; optional pin compatibility filter. | Add Node from GraphEditor (empty-pane connect-end and Add Node). |
 
-## App wrapper
+## App wrappers
+
+Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **IconActionButton** ([`apps/editor/src/components/icon-action-button.tsx`](../../apps/editor/src/components/icon-action-button.tsx)) | Icon-only `Button` with `aria-label` plus Tooltip. | Chrome bar, Outliner, Details, Prefab panel. |
+| **IconActionButton** ([`icon-action-button.tsx`](../../apps/editor/src/components/icon-action-button.tsx)) | Icon-only `Button` with `aria-label` plus Tooltip. | Chrome bar, Outliner, Details, Prefab panel. |
+| **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: thumbnail or type glyph, selection, hold-to-drag, drop onto folders. | Content Browser grid. |
+| **ContentBrowserFolderTree** ([`content-browser-folder-tree.tsx`](../../apps/editor/src/components/content-browser-folder-tree.tsx)) | Nested folder rows with hold-drag move and asset drop targets. | Content Browser sidebar. |
 
 Not kit (single call site): `BrandLogo` (Homepage), `JsBodyEditor` (Inspector Execute JavaScript body).
