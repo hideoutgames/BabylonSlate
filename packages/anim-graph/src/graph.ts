@@ -17,6 +17,8 @@ export interface AnimState {
   /** Speed multiplier; 1 is authored duration. */
   speed: number;
   loop: boolean;
+  /** Canvas layout. Parse fills a fallback when a legacy document omits it. */
+  position: { x: number; y: number };
 }
 
 export interface AnimTransition {
@@ -59,6 +61,16 @@ export interface AnimDiagnostic {
   severity: "error" | "warning";
 }
 
+export const ANIM_STATE_LAYOUT_ORIGIN = { x: 80, y: 80 };
+export const ANIM_STATE_LAYOUT_GAP_X = 220;
+
+export function defaultAnimStatePosition(index: number): { x: number; y: number } {
+  return {
+    x: ANIM_STATE_LAYOUT_ORIGIN.x + index * ANIM_STATE_LAYOUT_GAP_X,
+    y: ANIM_STATE_LAYOUT_ORIGIN.y,
+  };
+}
+
 export function createDefaultAnimGraph(name = "Locomotion"): AnimGraphDocument {
   const idle: AnimState = {
     id: "idle",
@@ -66,6 +78,7 @@ export function createDefaultAnimGraph(name = "Locomotion"): AnimGraphDocument {
     clipId: "idle-clip",
     speed: 1,
     loop: true,
+    position: defaultAnimStatePosition(0),
   };
   return {
     name,
@@ -182,6 +195,15 @@ function asFiniteNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function parsePosition(value: unknown): { x: number; y: number } | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const x = asFiniteNumber(row.x, Number.NaN);
+  const y = asFiniteNumber(row.y, Number.NaN);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
 /** Recover an `AnimGraphDocument` from a document-chunk JSON payload. */
 export function parseAnimGraphDocument(
   value: unknown,
@@ -200,6 +222,7 @@ export function parseAnimGraphDocument(
       clipId: typeof state.clipId === "string" ? state.clipId : null,
       speed: asFiniteNumber(state.speed, 1),
       loop: state.loop !== false,
+      position: parsePosition(state.position) ?? defaultAnimStatePosition(states.length),
     });
   }
   if (states.length === 0) return null;
