@@ -22,6 +22,7 @@ packages/debugger/    Command registry, parser, BDebugCommand helpers, stats bud
 packages/ui-runtime/  Widget tree, anchors, layout, font-stack compiler, cycle check (P9)
 packages/anim-graph/  AnimationGraph evaluator in the game worker (P9)
 packages/behaviour-tree/ Tree IR, blackboard, explicit-stack evaluator (P11)
+packages/navigation/  Recast bake/query port, 2D remap, Scene navmesh chunk (P11)
 packages/shader-graph/ Shader IR; compile-to-NodeMaterial in render (P9)
 packages/input/       Raw input ring + action/axis mapping model and `InputResolver`
 packages/render/      Snapshot sync, visibility-gated editor loop, resource cache, editor tools, KTX2 transcoder, FontFace registry, Babylon GUI apply
@@ -70,7 +71,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `behaviour-tree`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
+| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `behaviour-tree`, `navigation`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
 | `physics` | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok` on a worker-local NullEngine Scene. |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |

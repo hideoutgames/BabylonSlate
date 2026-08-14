@@ -341,7 +341,7 @@ Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo)
 | Tree + evaluator | `p11-behaviour-tree` | `behaviour-tree`, `scripting` (hook) | Design notes |
 | BT classes + component | `p11-bt-authoring` | `object-model`, `runtime`, `scripting-nodes` | Tree package |
 | BT editor | `p11-bt-editor` | `graph-ui`, `apps/editor`, `debugger` | Authoring |
-| Nav port + bake | `p11-navigation` | `navigation`, `assets` (scene chunk), `apps/editor` | Design notes |
+| Nav port + bake | `p11-navigation` | `navigation` (package landed); bake modal / Place Actors / runtime load later | Design notes |
 | Blockers + 2D + nodes | `p11-nav-blockers-2d` | `navigation`, `scripting-nodes`, `apps/editor` | Nav package + BT MoveTo stub |
 
 Do **not** ungate `BehaviourTreeComponent` / `NavAgentComponent` until `p11-bt-authoring`. Do not add editor hosts in the tree-package slice.

@@ -99,6 +99,36 @@ const physicsNoReactNoCapacitor = boundary(
   ],
 );
 
+/**
+ * Navigation may load Recast wasm (`@recast-navigation/core` / `generators`)
+ * but must not import React, Babylon, Capacitor, or the editor-only
+ * `@recast-navigation/babylon` helper (engineplan section 2.2 / §14.2).
+ */
+const navigationNoReactNoBabylon = boundary(
+  "boundary/navigation",
+  ["packages/navigation/**/*.{ts,tsx}"],
+  [
+    {
+      group: REACT_PATTERNS,
+      message: "navigation must not import React (engineplan section 2.2).",
+    },
+    {
+      group: BABYLON_PATTERNS,
+      message:
+        "navigation may load recast wasm but must not import Babylon (engineplan section 2.2).",
+    },
+    {
+      group: ["@recast-navigation/babylon", "@recast-navigation/babylon/*"],
+      message:
+        "@recast-navigation/babylon is editor-only debug draw; keep it out of packages/navigation.",
+    },
+    {
+      group: CAPACITOR_PATTERNS,
+      message: "Only vfs adapters may import Capacitor (engineplan section 2.2).",
+    },
+  ],
+);
+
 const vfsNoReactNoBabylon = boundary(
   "boundary/vfs",
   ["packages/vfs/**/*.{ts,tsx}"],
@@ -217,6 +247,7 @@ export default tseslint.config(
   },
   pureNoReactNoBabylon,
   physicsNoReactNoCapacitor,
+  navigationNoReactNoBabylon,
   vfsNoReactNoBabylon,
   renderNoReact,
   renderTextureCacheOnly,
