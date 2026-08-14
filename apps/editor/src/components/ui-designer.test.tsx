@@ -180,15 +180,57 @@ describe("UiDesigner", () => {
     expect(button!.layout.verticalAlignment).toBe("center");
   });
 
-  it("deletes a widget from the hierarchy context menu", () => {
+  it("deletes a widget from the hierarchy settings menu", () => {
     const { onChange } = renderHud();
-    fireEvent.contextMenu(screen.getByTestId("tree-row-stick"));
+    fireEvent.click(screen.getByTestId("ui-widget-menu-stick"));
     fireEvent.click(screen.getByTestId("ui-widget-delete"));
     expect(onChange).toHaveBeenCalled();
     const next = onChange.mock.calls.at(-1)![0] as {
       widgets: Record<string, unknown>;
     };
     expect(next.widgets.stick).toBeUndefined();
+  });
+
+  it("toggles Visible from the hierarchy settings menu", () => {
+    const { onChange } = renderHud();
+    fireEvent.click(screen.getByTestId("ui-widget-menu-stick"));
+    fireEvent.click(screen.getByTestId("ui-widget-visible-stick"));
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0] as {
+      widgets: Record<string, { visible: boolean }>;
+    };
+    expect(next.widgets.stick.visible).toBe(false);
+  });
+
+  it("does not open Duplicate or Delete from a row context menu", () => {
+    renderHud();
+    fireEvent.contextMenu(screen.getByTestId("tree-row-stick"));
+    expect(screen.queryByTestId("ui-widget-delete")).toBeNull();
+    expect(screen.queryByTestId("ui-widget-duplicate")).toBeNull();
+  });
+
+  it("disables Duplicate and Delete on the Canvas root menu", () => {
+    renderHud();
+    fireEvent.click(screen.getByTestId("ui-widget-menu-canvas"));
+    expect(screen.getByTestId("ui-widget-visible-canvas")).toBeTruthy();
+    expect(screen.queryByTestId("ui-widget-ignore-safe-area-canvas")).toBeNull();
+    expect(
+      screen.getByTestId("ui-widget-delete").hasAttribute("data-disabled"),
+    ).toBe(true);
+    expect(
+      screen.getByTestId("ui-widget-duplicate").hasAttribute("data-disabled"),
+    ).toBe(true);
+  });
+
+  it("toggles Ignore Safe Area from the hierarchy settings menu for Canvas children", () => {
+    const { onChange } = renderHud();
+    fireEvent.click(screen.getByTestId("ui-widget-menu-stick"));
+    fireEvent.click(screen.getByTestId("ui-widget-ignore-safe-area-stick"));
+    expect(onChange).toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)![0] as {
+      widgets: Record<string, { ignoreSafeArea?: boolean }>;
+    };
+    expect(next.widgets.stick.ignoreSafeArea).toBe(true);
   });
 
   it("does not expose Desired Width and Height inputs", () => {

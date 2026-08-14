@@ -1,19 +1,20 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
-  ContextMenuOverlay,
   NamePromptDialog,
+  NestedMenu,
   TreeView,
   TypeVisualIcon,
   resolveTypeVisual,
-  useContextMenu,
+  type NestedMenuItem,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
-import { Toggle } from "@babylonslate/ui/components/toggle";
-import { EyeIcon, EyeOffIcon } from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
+import { MoreHorizontalIcon } from "lucide-react";
 import {
   duplicateWidget,
   removeWidget,
   reparentWidget,
+  widgetParentId,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
 
@@ -29,8 +30,98 @@ export function UiDesignHierarchy({
   onChange: (next: UserInterfaceDocument) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const menuTargetRef = useRef<string | null>(null);
-  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
+
+  const widgetMenuItems = useCallback(
+    (id: string): NestedMenuItem[] => {
+      const widget = ui.widgets[id];
+      if (!widget) return [];
+      const isRoot = id === ui.rootId;
+      const parentId = widgetParentId(ui, id);
+      const parent = parentId ? ui.widgets[parentId] : undefined;
+      const items: NestedMenuItem[] = [
+        {
+          type: "checkbox",
+          id: "visible",
+          label: "Visible",
+          checked: widget.visible,
+          testId: `ui-widget-visible-${id}`,
+          closeOnClick: false,
+          onCheckedChange: (visible) => {
+            const current = ui.widgets[id];
+            if (!current) return;
+            onChange({
+              ...ui,
+              widgets: {
+                ...ui.widgets,
+                [id]: { ...current, visible },
+              },
+            });
+          },
+        },
+      ];
+      if (parent?.kind === "Canvas") {
+        items.push({
+          type: "checkbox",
+          id: "ignore-safe-area",
+          label: "Ignore Safe Area",
+          checked: widget.ignoreSafeArea === true,
+          testId: `ui-widget-ignore-safe-area-${id}`,
+          onCheckedChange: (ignoreSafeArea) => {
+            const current = ui.widgets[id];
+            if (!current) return;
+            onChange({
+              ...ui,
+              widgets: {
+                ...ui.widgets,
+                [id]: { ...current, ignoreSafeArea },
+              },
+            });
+          },
+        });
+      }
+      items.push(
+        { type: "separator", id: "actions" },
+        {
+          id: "duplicate",
+          label: "Duplicate",
+          testId: "ui-widget-duplicate",
+          disabled: isRoot,
+          onSelect: () => {
+            if (isRoot) return;
+            const nextId = `${id}-copy-${Math.random().toString(36).slice(2, 6)}`;
+            const next = duplicateWidget(ui, id, nextId);
+            onChange(next);
+            if (next.widgets[nextId]) onSelect(nextId);
+          },
+        },
+        {
+          id: "rename",
+          label: "Rename",
+          testId: "ui-widget-rename",
+          onSelect: () => setRenameTarget(id),
+        },
+        {
+          id: "delete",
+          label: "Delete",
+          testId: "ui-widget-delete",
+          variant: "destructive",
+          disabled: isRoot,
+          onSelect: () => {
+            if (isRoot) return;
+            const next = removeWidget(ui, id);
+            onChange(next);
+            if (selectedId === id || !next.widgets[selectedId]) {
+              onSelect(next.rootId);
+            }
+          },
+        },
+      );
+      return items;
+    },
+    [onChange, onSelect, selectedId, ui],
+  );
+
   const nodes = useMemo(() => {
     const rows: TreeViewNode[] = [];
     const walk = (id: string, depth: number) => {
@@ -48,24 +139,20 @@ export function UiDesignHierarchy({
           <TypeVisualIcon visual={resolveTypeVisual({ assetType: "UserInterface" })} />
         ),
         trailing: (
-          <Toggle
-            variant="default"
-            size="sm"
-            aria-label={`Toggle visibility of ${widget.name}`}
-            pressed={widget.visible}
-            data-testid={`ui-widget-visible-${id}`}
-            onPressedChange={(visible) => {
-              onChange({
-                ...ui,
-                widgets: {
-                  ...ui.widgets,
-                  [id]: { ...widget, visible },
-                },
-              });
-            }}
-          >
-            {widget.visible ? <EyeIcon /> : <EyeOffIcon />}
-          </Toggle>
+          <NestedMenu
+            items={widgetMenuItems(id)}
+            trigger={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Widget Menu for ${widget.name}`}
+                data-testid={`ui-widget-menu-${id}`}
+              >
+                <MoreHorizontalIcon />
+              </Button>
+            }
+          />
         ),
       });
       if (!expanded) return;
@@ -73,47 +160,9 @@ export function UiDesignHierarchy({
     };
     walk(ui.rootId, 0);
     return rows;
-  }, [collapsed, onChange, ui]);
+  }, [collapsed, ui, widgetMenuItems]);
 
-  const { menu, closeMenu, openMenuAt } = useContextMenu({
-    items: [
-      {
-        id: "duplicate",
-        label: "Duplicate",
-        testId: "ui-widget-duplicate",
-        disabled: menuTargetRef.current === ui.rootId,
-        onSelect: () => {
-          const target = menuTargetRef.current;
-          if (!target || target === ui.rootId) return;
-          const nextId = `${target}-copy-${Math.random().toString(36).slice(2, 6)}`;
-          const next = duplicateWidget(ui, target, nextId);
-          onChange(next);
-          if (next.widgets[nextId]) onSelect(nextId);
-        },
-      },
-      {
-        id: "rename",
-        label: "Rename",
-        testId: "ui-widget-rename",
-        onSelect: () => setRenameOpen(true),
-      },
-      {
-        id: "delete",
-        label: "Delete",
-        testId: "ui-widget-delete",
-        disabled: menuTargetRef.current === ui.rootId,
-        onSelect: () => {
-          const target = menuTargetRef.current;
-          if (!target || target === ui.rootId) return;
-          const next = removeWidget(ui, target);
-          onChange(next);
-          if (selectedId === target || !next.widgets[selectedId]) {
-            onSelect(next.rootId);
-          }
-        },
-      },
-    ],
-  });
+  const renameWidget = renameTarget ? ui.widgets[renameTarget] : undefined;
 
   return (
     <>
@@ -133,31 +182,26 @@ export function UiDesignHierarchy({
           if (!targetId) return;
           onChange(reparentWidget(ui, dragId, targetId));
         }}
-        onContextMenu={(id, x, y) => {
-          menuTargetRef.current = id;
-          onSelect(id);
-          openMenuAt(x, y);
-        }}
+        reparentArm="immediate"
         emptyLabel="No widgets"
         data-testid="ui-widget-tree"
       />
-      <ContextMenuOverlay menu={menu} onClose={closeMenu} />
-      {renameOpen ? (
+      {renameWidget && renameTarget ? (
         <NamePromptDialog
-          open={renameOpen}
-          onOpenChange={setRenameOpen}
+          open
+          onOpenChange={(open) => {
+            if (!open) setRenameTarget(null);
+          }}
           title="Rename Widget"
           label="Name"
           confirmLabel="Rename"
           data-testid="ui-rename-widget"
           onSubmit={(name) => {
-            const target = menuTargetRef.current;
-            if (!target || !ui.widgets[target]) return;
             onChange({
               ...ui,
               widgets: {
                 ...ui.widgets,
-                [target]: { ...ui.widgets[target]!, name },
+                [renameTarget]: { ...renameWidget, name },
               },
             });
           }}
