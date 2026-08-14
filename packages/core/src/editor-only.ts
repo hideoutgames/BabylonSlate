@@ -1,5 +1,13 @@
 /** Editor-only assets stripped from Play compile and game export (P12 / P14). */
 
+export type EditorUtilityDockKind = "scene" | "class";
+
+export function normalizeEditorUtilityDockKind(
+  value: unknown,
+): EditorUtilityDockKind {
+  return value === "class" ? "class" : "scene";
+}
+
 export function isEditorOnlyAssetType(type: string): boolean {
   return type === "EditorUtilityInterface";
 }

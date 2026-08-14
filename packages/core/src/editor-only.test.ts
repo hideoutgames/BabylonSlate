@@ -3,6 +3,7 @@ import {
   isEditorOnlyAsset,
   isEditorOnlyAssetType,
   isEditorUtilityObjectClass,
+  normalizeEditorUtilityDockKind,
 } from "./editor-only";
 
 describe("editor-only assets", () => {
@@ -36,5 +37,12 @@ describe("editor-only assets", () => {
     expect(
       isEditorOnlyAsset({ type: "Class", parentClass: "Actor" }, parentOf),
     ).toBe(false);
+  });
+
+  it("normalizes EditorUtilityInterface dockKind to scene or class", () => {
+    expect(normalizeEditorUtilityDockKind("class")).toBe("class");
+    expect(normalizeEditorUtilityDockKind("scene")).toBe("scene");
+    expect(normalizeEditorUtilityDockKind(undefined)).toBe("scene");
+    expect(normalizeEditorUtilityDockKind("viewport")).toBe("scene");
   });
 });

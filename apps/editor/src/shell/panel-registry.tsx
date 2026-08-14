@@ -16,6 +16,13 @@ import { InterfaceMethodsPanel } from "../panels/interface-methods-panel";
 import { InterfacePreviewPanel } from "../panels/interface-preview-panel";
 import { InterfaceDetailsPanel } from "../panels/interface-details-panel";
 import { SpritePreviewPanel, SpriteDetailsPanel } from "../components/sprite-editor";
+import {
+  UiDesignPanel,
+  UiDetailsPanel,
+  UiHierarchyPanel,
+  UiLogicPanel,
+  UiSettingsPanel,
+} from "../panels/ui-editor-panels";
 import { EditorUtilityPanel } from "../panels/editor-utility-panel";
 
 export const panelComponents = {
@@ -59,6 +66,13 @@ export const panelComponents = {
   "sprite-details": (props: IDockviewPanelProps) => (
     <SpriteDetailsPanel {...props} />
   ),
+  "ui-design": (props: IDockviewPanelProps) => <UiDesignPanel {...props} />,
+  "ui-hierarchy": (props: IDockviewPanelProps) => (
+    <UiHierarchyPanel {...props} />
+  ),
+  "ui-details": (props: IDockviewPanelProps) => <UiDetailsPanel {...props} />,
+  "ui-logic": (props: IDockviewPanelProps) => <UiLogicPanel {...props} />,
+  "ui-settings": (props: IDockviewPanelProps) => <UiSettingsPanel {...props} />,
   "editor-utility": (props: IDockviewPanelProps) => (
     <EditorUtilityPanel {...props} />
   ),

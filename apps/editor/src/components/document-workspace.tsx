@@ -3,6 +3,7 @@ import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
+import { UiEditingProvider } from "../context/ui-editing-context";
 import { useProjectSearch } from "../context/project-search-context";
 import {
   SceneEditingProvider,
@@ -51,11 +52,13 @@ function RegisteredDockviewShell({
   documentKind,
   initialLayout,
   actorPrefab,
+  editorUtilityInterface,
 }: {
   id: string;
   documentKind: DockviewDocumentKind;
   initialLayout: Record<string, unknown> | null;
   actorPrefab?: boolean;
+  editorUtilityInterface?: boolean;
 }) {
   const { registerDockviewApi } = useDocuments();
   const onReady = useCallback(
@@ -70,6 +73,7 @@ function RegisteredDockviewShell({
       documentKind={documentKind}
       initialLayout={initialLayout}
       actorPrefab={actorPrefab}
+      editorUtilityInterface={editorUtilityInterface}
       onReady={onReady}
     />
   );
@@ -164,6 +168,32 @@ export function DocumentWorkspace() {
           doc.ref.kind === "enum" ||
           doc.ref.kind === "structure" ||
           doc.ref.kind === "script-interface";
+
+        if (doc.ref.kind === "ui") {
+          if (!shouldMount) return null;
+          const indexed = assetRegistry
+            ?.list()
+            .find((asset) => asset.path === doc.ref.path);
+          return (
+            <DocumentWorkspaceProvider key={id} documentId={id}>
+              <UiEditingProvider>
+                <div
+                  className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                  data-testid="document-workspace-ui"
+                >
+                  <RegisteredDockviewShell
+                    id={id}
+                    documentKind="ui"
+                    initialLayout={doc.layout}
+                    editorUtilityInterface={
+                      indexed?.header.type === "EditorUtilityInterface"
+                    }
+                  />
+                </div>
+              </UiEditingProvider>
+            </DocumentWorkspaceProvider>
+          );
+        }
 
         if (doc.ref.kind === "sprite") {
           if (!shouldMount) return null;

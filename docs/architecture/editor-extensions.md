@@ -27,4 +27,4 @@ Not the Play worker. On project open it compiles registered EUO graphs and fires
 
 ## Authoring
 
-Opening an EUI asset still uses the UserInterface document kind (`"ui"`). The Dockview Design / Hierarchy / Details / Logic split is the last P12 pass. Live-run stays **Windows → Editor Utilities**.
+Opening an EUI asset uses the UserInterface document kind (`"ui"`) on Dockview: Design / Hierarchy / Details / Logic plus Settings (`dockKind`). Live-run stays **Windows → Editor Utilities**.

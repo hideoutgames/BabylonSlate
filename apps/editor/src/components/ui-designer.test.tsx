@@ -61,6 +61,24 @@ vi.mock("../context/document-context", () => ({
           },
           path: "assets/Display.font.babasset",
         },
+        {
+          header: {
+            guid: "hud-1",
+            name: "HUD",
+            type: "UserInterface",
+            payload: {},
+          },
+          path: "assets/HUD.ui.babasset",
+        },
+        {
+          header: {
+            guid: "eui-1",
+            name: "SceneTools",
+            type: "EditorUtilityInterface",
+            payload: { dockKind: "scene" },
+          },
+          path: "assets/SceneTools.eui.babasset",
+        },
       ],
       getByGuid: (guid: string) =>
         guid === "font-1"
@@ -73,12 +91,37 @@ vi.mock("../context/document-context", () => ({
               },
               path: "assets/Display.font.babasset",
             }
-          : guid === "tex-1"
+          : guid === "hud-1"
             ? {
-                header: { guid: "tex-1", name: "Icon", type: "Texture", payload: {} },
-                path: "assets/Icon.texture.babasset",
+                header: {
+                  guid: "hud-1",
+                  name: "HUD",
+                  type: "UserInterface",
+                  payload: {},
+                },
+                path: "assets/HUD.ui.babasset",
               }
-            : undefined,
+            : guid === "eui-1"
+              ? {
+                  header: {
+                    guid: "eui-1",
+                    name: "SceneTools",
+                    type: "EditorUtilityInterface",
+                    payload: { dockKind: "scene" },
+                  },
+                  path: "assets/SceneTools.eui.babasset",
+                }
+              : guid === "tex-1"
+                ? {
+                    header: {
+                      guid: "tex-1",
+                      name: "Icon",
+                      type: "Texture",
+                      payload: {},
+                    },
+                    path: "assets/Icon.texture.babasset",
+                  }
+                : undefined,
     },
     openDocuments: [],
     collectPlayUiLibrary: async () => ({}),
@@ -251,7 +294,6 @@ describe("UiDesigner", () => {
         onChange={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Logic" }));
     expect(screen.getByTestId("ui-logic-members")).toBeTruthy();
     fireEvent.click(screen.getByTestId("class-add-variables"));
     expect(screen.getByTestId("class-add-events")).toBeTruthy();
@@ -355,7 +397,6 @@ describe("UiDesigner", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Logic" }));
     fireEvent.click(screen.getByTestId("class-add-functions"));
     fireEvent.change(screen.getByTestId("name-prompt-input"), {
       target: { value: "Jump" },
@@ -369,6 +410,25 @@ describe("UiDesigner", () => {
           ]),
         }),
       }),
+    );
+  });
+
+  it("round-trips EditorUtilityInterface dockKind in Settings", () => {
+    const onChange = vi.fn();
+    render(
+      <UiDesigner
+        path="assets/SceneTools.eui.babasset"
+        payload={{
+          ...(createDefaultPlayHud("HUD") as unknown as Record<string, unknown>),
+          dockKind: "scene",
+        }}
+        onChange={onChange}
+        editorUtilityInterface
+      />,
+    );
+    fireEvent.click(screen.getByTestId("ui-dock-kind-class"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ dockKind: "class" }),
     );
   });
 });

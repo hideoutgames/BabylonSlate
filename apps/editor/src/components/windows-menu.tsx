@@ -46,6 +46,8 @@ export function WindowsMenu() {
     classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
       assetType: indexed.header.type,
     });
+  const editorUtilityInterface =
+    indexed?.header.type === "EditorUtilityInterface";
   const openDockWindowCount = getOpenDockWindowCount();
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export function WindowsMenu() {
 
   const items = useMemo((): NestedMenuItem[] => {
     const windows = isDockviewDocumentKind(activeKind)
-      ? listDockWindows(activeKind, { actorPrefab })
+      ? listDockWindows(activeKind, { actorPrefab, editorUtilityInterface })
       : [];
     const editorUtilities = listEditorUtilityWindows({
       kind: activeKind,
@@ -102,6 +104,7 @@ export function WindowsMenu() {
   }, [
     activeKind,
     actorPrefab,
+    editorUtilityInterface,
     assetRegistry,
     isDockWindowOpen,
     openDockWindowCount,

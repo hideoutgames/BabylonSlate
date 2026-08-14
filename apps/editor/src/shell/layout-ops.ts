@@ -36,6 +36,7 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   structure: "structure-members",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
+  ui: "ui-design",
 };
 
 /**

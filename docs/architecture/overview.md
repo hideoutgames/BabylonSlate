@@ -51,7 +51,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 ## Data flow today
 
 - **Lifecycle**: Homepage opens/creates a `.babproject`; editor shell only runs against an open project.
-- **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. The global **Windows** menu toggles dock panels for the active DockView document (Scene, Class, Enum, Structure, ScriptInterface, Sprite, …) and stores last **addPanel-relative** placements in `layout.json`. New asset editors must be DockView documents — see [Asset document docks](#asset-document-docks).
+- **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. The global **Windows** menu toggles dock panels for the active DockView document (Scene, Class, Enum, Structure, ScriptInterface, Sprite, UserInterface / EditorUtilityInterface, …) and stores last **addPanel-relative** placements in `layout.json`. New asset editors must be DockView documents — see [Asset document docks](#asset-document-docks).
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
 - **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only).
 - **Global search**: `ProjectSearchIndex` (same package) may load Scene/Graph document JSON for actors/nodes; it must not load binary payloads. Toolbar Search opens a centered dialog; see [global-search.md](global-search.md).
@@ -67,7 +67,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 
 ## Asset document docks
 
-New editor tabs for assets are per-document **DockView** layouts (`DockviewShell`), not a full-page `AssetDocumentWorkspace` and not shadcn `Tabs` as the document shell. That keeps panels resizable, dockable beside each other, and able to host **Windows → Editor Utilities** live Babylon GUI tabs. UserInterface / EditorUtilityInterface **authoring** still uses a dedicated designer until last P12 (`p12-ui-editors`).
+New editor tabs for assets are per-document **DockView** layouts (`DockviewShell`), not a full-page `AssetDocumentWorkspace` and not shadcn `Tabs` as the document shell. That keeps panels resizable, dockable beside each other, and able to host **Windows → Editor Utilities** live Babylon GUI tabs. UserInterface / EditorUtilityInterface **authoring** is the same DockView path (Design / Hierarchy / Details / Logic; EUI adds Settings).
 
 Wire every new kind through `apps/editor/src/shell/window-catalog.ts` (`DockviewDocumentKind` + `listDockWindows`), `panel-registry.tsx`, `document-workspace.tsx` (`DockviewShell` with the real kind), `documentKindForAssetType`, and `FOCUS_PRIMARY_PANEL`. **Windows** stays disabled unless `isDockviewDocumentKind(activeKind)` is true. Agent rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../../.cursor/rules/dockview-editor-tabs.mdc).
 

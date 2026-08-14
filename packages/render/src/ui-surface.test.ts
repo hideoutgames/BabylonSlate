@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
-import { presentAdtToCanvas } from "./ui-surface";
+import { isHardUiPresentFailure, presentAdtToCanvas } from "./ui-surface";
 
-function fakeAdt(source: { canvas: unknown } | null): AdvancedDynamicTexture {
+function fakeAdt(
+  source: { canvas: unknown } | null,
+  size: { width: number; height: number } = { width: 8, height: 8 },
+): AdvancedDynamicTexture {
   return {
     _checkUpdate: vi.fn(),
     getContext: () => source,
-    getSize: () => ({ width: 8, height: 8 }),
+    getSize: () => size,
     markAsDirty: vi.fn(),
   } as unknown as AdvancedDynamicTexture;
 }
@@ -49,5 +52,39 @@ describe("presentAdtToCanvas", () => {
     presentAdtToCanvas(fakeAdt({ canvas: sourceCanvas }), canvas);
     expect(clearRect).toHaveBeenCalled();
     expect(drawImage).toHaveBeenCalledWith(sourceCanvas, 0, 0);
+  });
+
+  it("skips the blit when the ADT size is 0 instead of throwing", () => {
+    const clearRect = vi.fn();
+    const drawImage = vi.fn();
+    const canvas = {
+      getContext: () => ({ clearRect, drawImage }),
+      width: 0,
+      height: 0,
+    } as unknown as HTMLCanvasElement;
+    expect(() =>
+      presentAdtToCanvas(
+        fakeAdt({ canvas: {} }, { width: 0, height: 0 }),
+        canvas,
+      ),
+    ).not.toThrow();
+    expect(drawImage).not.toHaveBeenCalled();
+    expect(clearRect).not.toHaveBeenCalled();
+  });
+});
+
+describe("isHardUiPresentFailure", () => {
+  it("treats a missing 2d context or ADT backing store as a hard failure", () => {
+    expect(
+      isHardUiPresentFailure(new Error("Designer canvas has no 2d context for ADT blit")),
+    ).toBe(true);
+    expect(isHardUiPresentFailure(new Error("ADT backing store is missing"))).toBe(
+      true,
+    );
+    expect(isHardUiPresentFailure(new Error("standalone ADT failed"))).toBe(true);
+  });
+
+  it("treats a zero-size ADT blit as a transient skip", () => {
+    expect(isHardUiPresentFailure(new Error("ADT blit size is 0"))).toBe(false);
   });
 });

@@ -80,7 +80,7 @@ import {
   toggleDockWindow as toggleDockWindowOnApi,
   type DockWindowApi,
 } from "../shell/dock-window-ops";
-import { isDockviewDocumentKind } from "../shell/window-catalog";
+import { isDockviewDocumentKind, type DockWindowOptions } from "../shell/window-catalog";
 import {
   editorUtilityAssetsFromIndexed,
   findDockOrUtilityWindow,
@@ -311,14 +311,32 @@ function asDockWindowApi(api: DockviewApi): DockWindowApi {
   return api as unknown as DockWindowApi;
 }
 
+function dockOptionsForIndexed(
+  kind: string,
+  indexed:
+    | { header: { type: string; parentClass?: string | null } }
+    | undefined,
+  parentOf: (id: string) => string | null | undefined,
+): DockWindowOptions {
+  return {
+    actorPrefab:
+      kind !== "graph" ||
+      !indexed ||
+      classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
+        assetType: indexed.header.type,
+      }),
+    editorUtilityInterface: indexed?.header.type === "EditorUtilityInterface",
+  };
+}
+
 function findWindowDefinition(
   kind: string,
   panelId: string,
-  actorPrefab = true,
+  dockOptions: DockWindowOptions = {},
   assets: ReturnType<typeof editorUtilityAssetsFromIndexed> = [],
 ) {
   if (!isDockviewDocumentKind(kind)) return undefined;
-  return findDockOrUtilityWindow(kind, panelId, { actorPrefab, assets });
+  return findDockOrUtilityWindow(kind, panelId, { ...dockOptions, assets });
 }
 
 export function DocumentProvider({ children }: { children: ReactNode }) {
@@ -1880,12 +1898,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (preFocusLayoutsRef.current.has(id)) return;
       const dock = asDockWindowApi(api);
       const kind = documentService.getDocument(id)?.ref.kind;
+      const doc = documentService.getDocument(id);
+      const indexed = projectService.registry
+        ?.list()
+        .find((asset) => asset.path === doc?.ref.path);
+      const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+      const dockOptions = dockOptionsForIndexed(kind ?? "", indexed, parentOf);
       for (const panel of listDockPanels(dock)) {
         const def = isDockviewDocumentKind(kind)
           ? findWindowDefinition(
               kind,
               panel.id,
-              true,
+              dockOptions,
               editorUtilityAssetsFromIndexed(
                 projectService.registry?.list() ?? [],
               ),
@@ -1925,16 +1949,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ?.list()
       .find((asset) => asset.path === doc.ref.path);
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
-    const actorPrefab =
-      doc.ref.kind !== "graph" ||
-      !indexed ||
-      classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
-        assetType: indexed.header.type,
-      });
+    const dockOptions = dockOptionsForIndexed(doc.ref.kind, indexed, parentOf);
     const def = findWindowDefinition(
       doc.ref.kind,
       panelId,
-      actorPrefab,
+      dockOptions,
       editorUtilityAssetsFromIndexed(projectService.registry?.list() ?? []),
     );
     if (!def) return;
