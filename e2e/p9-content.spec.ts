@@ -75,8 +75,10 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("ui-design-viewport")).toBeVisible();
     await page.getByTestId("ui-add-widget").click();
     await page.getByTestId("ui-add-widget-Button").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     const button = page.locator('[data-testid^="ui-widget-button-"]');
     await expect(button).toBeVisible();
+    await page.getByTestId("ui-anchor-preset-top-left").click();
     const before = await button.getAttribute("data-gui-x");
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
@@ -354,9 +356,12 @@ test.describe("P9 content systems", () => {
     await openMainScene(page);
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
-    await expect(page.getByTestId("play-hud-stick")).toBeVisible({
+    await expect(
+      page.locator('[data-testid="play-hud"] [data-kind="Canvas"]'),
+    ).toBeVisible({
       timeout: 15_000,
     });
+    await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
     await page.getByTestId("play-overlay-close").click();
   });
 
