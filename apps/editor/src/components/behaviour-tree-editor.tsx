@@ -566,7 +566,7 @@ export function BehaviourTreeEditor({
           readOnly={play.playing}
           paletteNodes={paletteNodes}
           diagnostics={diagnostics}
-          focusedNodeId={play.focusedNodeId ?? selectedId ?? undefined}
+          focusedNodeId={play.focusedNodeId ?? undefined}
           selectedAttachmentId={attachmentId}
           onAttachmentSelect={(id) => {
             setAttachmentId(id);

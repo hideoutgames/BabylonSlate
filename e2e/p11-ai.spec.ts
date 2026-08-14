@@ -58,6 +58,21 @@ async function pickSelectedAsset(
   await expect(page.getByTestId("details-asset-picker")).toBeHidden();
 }
 
+async function openGraphNodePalette(page: Page): Promise<void> {
+  const pane = page.getByTestId("graph-editor").locator(".react-flow__pane");
+  await expect(async () => {
+    const box = await pane.boundingBox();
+    expect(box).toBeTruthy();
+    const position = {
+      x: Math.max(16, (box?.width ?? 0) - 36),
+      y: Math.max(16, (box?.height ?? 0) - 36),
+    };
+    await pane.click({ position });
+    await pane.click({ position });
+    await expect(page.getByTestId("node-palette")).toBeVisible({ timeout: 800 });
+  }).toPass({ timeout: 10_000 });
+}
+
 async function openTwoDProject(page: Page): Promise<void> {
   await page.goto("/?test=1");
   await expect(page.getByTestId("homepage")).toBeVisible();
@@ -125,8 +140,8 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await expect(page.getByTestId("bt-node-root")).toBeVisible();
 
     const graph = page.getByTestId("graph-editor");
-    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
-    await expect(page.getByTestId("node-palette")).toBeVisible();
+    await expect(graph).toBeVisible();
+    await openGraphNodePalette(page);
     await page.getByTestId("node-palette-search").fill("Wait");
     await page.getByTestId("node-palette-item-bt.task.wait").click();
     await expect(page.getByTestId("node-palette")).toHaveCount(0);
