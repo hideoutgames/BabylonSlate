@@ -24,6 +24,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 - Use `@babylonslate/ui` and semantic tokens (`bg-background`, `text-muted-foreground`, `text-primary`, `bg-node-event`) — no raw hex colors in app code.
 - Compose forms from `Field` + shadcn inputs (`Input`, `Select`, `Switch`, `Checkbox`) — no raw `<input>`, `<select>`, or `<textarea>` with hand-rolled Tailwind in `apps/editor/src`. Inventory: [architecture/components.md](architecture/components.md).
 - Use `@babylonslate/editor-kit` panel composites (`PanelFrame`, `ToolbarStrip`) for docked panel chrome.
+- New asset editor tabs are DockView documents (`DockviewShell` + `window-catalog.ts`) so panels resize, dock together, and appear in the toolbar **Windows** menu. Do not use shadcn `Tabs` or a new `AssetDocumentWorkspace` page as the document shell. Agent rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../.cursor/rules/dockview-editor-tabs.mdc).
 - Palette and token roles: [architecture/theming.md](architecture/theming.md). Edit tokens only in `packages/ui/src/styles/globals.css`. `--primary` is ink; saturated pin/node/axis/success tokens are the chromatic cues.
 - Use `flex` + `gap-*` for spacing, not `space-y-*`.
 - Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`.
