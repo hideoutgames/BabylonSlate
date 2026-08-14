@@ -116,8 +116,12 @@ export function assetColorVar(family: string): string {
 
 export function typeColorThumbAccent(colorVar: string): {
   border: string;
+  borderTopLeftRadius: string;
+  borderTopRightRadius: string;
 } {
   return {
     border: `2px solid ${colorVar}`,
+    borderTopLeftRadius: "var(--radius-xl)",
+    borderTopRightRadius: "var(--radius-xl)",
   };
 }

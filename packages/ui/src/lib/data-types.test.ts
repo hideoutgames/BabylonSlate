@@ -38,6 +38,8 @@ describe("data-types", () => {
     const colorVar = "var(--asset-texture)";
     const accent = typeColorThumbAccent(colorVar);
     expect(accent.border).toBe("2px solid var(--asset-texture)");
+    expect(accent.borderTopLeftRadius).toBe("var(--radius-xl)");
+    expect(accent.borderTopRightRadius).toBe("var(--radius-xl)");
     expect("boxShadow" in accent).toBe(false);
     expect("backgroundImage" in accent).toBe(false);
     expect("backgroundColor" in accent).toBe(false);
