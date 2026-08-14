@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONTENT_BROWSER_ID,
+  CONTENT_BROWSER_REF,
   assetTypeForDocumentKind,
   createDocumentRef,
+  createEmptyLayouts,
+  documentId,
   documentKindForAssetType,
   documentKindLabel,
   isAssetDocumentKind,
+  isClosableDocumentKind,
+  isContentBrowserId,
   isLogicGraphAssetType,
   labelFromPath,
+  migrateLegacyLayout,
   parseDocumentId,
 } from "./document";
 
@@ -100,5 +107,40 @@ describe("Class and settings documents", () => {
         name: "Hit",
       }).label,
     ).toBe("Hit Script Interface");
+  });
+});
+
+describe("document ids and layouts", () => {
+  it("uses a stable id for the pinned Content Browser", () => {
+    expect(documentId(CONTENT_BROWSER_REF)).toBe(CONTENT_BROWSER_ID);
+    expect(isContentBrowserId(CONTENT_BROWSER_ID)).toBe(true);
+    expect(isContentBrowserId("scene:assets/main.scene.babasset")).toBe(false);
+    expect(isClosableDocumentKind("content-browser")).toBe(false);
+    expect(isClosableDocumentKind("scene")).toBe(true);
+  });
+
+  it("namespaces asset document ids by kind and path", () => {
+    expect(
+      documentId({ kind: "scene", path: "assets/main.scene.babasset" }),
+    ).toBe("scene:assets/main.scene.babasset");
+    expect(parseDocumentId("not-an-id")).toBeNull();
+    expect(parseDocumentId(CONTENT_BROWSER_ID)).toEqual({
+      kind: "content-browser",
+      path: "",
+    });
+  });
+
+  it("starts empty and wraps a legacy dock layout under the main scene", () => {
+    expect(createEmptyLayouts()).toEqual({
+      documents: {},
+      tabOrder: [],
+      activeDocumentId: null,
+    });
+    const legacy = { grid: { root: "viewport" } };
+    expect(migrateLegacyLayout(legacy, "scene:main")).toEqual({
+      documents: { "scene:main": legacy },
+      tabOrder: ["scene:main"],
+      activeDocumentId: "scene:main",
+    });
   });
 });
