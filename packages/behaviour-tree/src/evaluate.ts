@@ -189,6 +189,44 @@ function notifyTaskAbort(
   host?.abort?.(node, blackboard, nodeMemory[node.id] ?? {});
 }
 
+function abortRunningSubtree(
+  nodes: Map<string, BtNode>,
+  rootId: string,
+  lastResults: Record<string, BtResult>,
+  blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  host?: BtTaskHost,
+): void {
+  for (const id of subtreeIds(nodes, rootId)) {
+    if (id === rootId || lastResults[id] !== "running") continue;
+    lastResults[id] = "failure";
+    const child = nodes.get(id);
+    notifyTaskAbort(child, blackboard, nodeMemory, host);
+    if (child) startCooldowns(child, nodeMemory);
+  }
+}
+
+function failActiveNode(
+  node: BtNode,
+  stack: BtStackFrame[],
+  lastResults: Record<string, BtResult>,
+  nodes: Map<string, BtNode>,
+  blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  host?: BtTaskHost,
+): void {
+  const onStack = stack.some((frame) => frame.nodeId === node.id);
+  if (onStack) {
+    popThrough(stack, lastResults, node.id, nodes, blackboard, nodeMemory, host);
+  } else {
+    lastResults[node.id] = "failure";
+    notifyTaskAbort(node, blackboard, nodeMemory, host);
+    startCooldowns(node, nodeMemory);
+    abortRunningSubtree(nodes, node.id, lastResults, blackboard, nodeMemory, host);
+  }
+  lastResults[node.id] = "failure";
+}
+
 function popThrough(
   stack: BtStackFrame[],
   lastResults: Record<string, BtResult>,
@@ -201,9 +239,35 @@ function popThrough(
   while (stack.length > 0) {
     const frame = stack.pop()!;
     lastResults[frame.nodeId] = "failure";
-    notifyTaskAbort(nodes.get(frame.nodeId), blackboard, nodeMemory, host);
-    if (frame.nodeId === nodeId) break;
+    const popped = nodes.get(frame.nodeId);
+    notifyTaskAbort(popped, blackboard, nodeMemory, host);
+    if (popped) startCooldowns(popped, nodeMemory);
+    if (frame.nodeId === nodeId) {
+      abortRunningSubtree(nodes, nodeId, lastResults, blackboard, nodeMemory, host);
+      break;
+    }
   }
+}
+
+function yieldToParallel(
+  stack: BtStackFrame[],
+  nodes: Map<string, BtNode>,
+  lastResults: Record<string, BtResult>,
+): boolean {
+  let parallelIndex = -1;
+  for (let i = stack.length - 2; i >= 0; i -= 1) {
+    if (nodes.get(stack[i]!.nodeId)?.kind === "parallel") {
+      parallelIndex = i;
+      break;
+    }
+  }
+  if (parallelIndex < 0) return false;
+  stack.pop();
+  while (stack.length - 1 > parallelIndex) {
+    const frame = stack.pop()!;
+    lastResults[frame.nodeId] = "running";
+  }
+  return true;
 }
 
 function cooldownKey(decoratorId: string): string {
@@ -281,15 +345,24 @@ function applyTimeLimits(
   blackboard: BlackboardValues,
   host?: BtTaskHost,
 ): void {
+  const seen = new Set<string>();
+  const order: string[] = [];
   for (let index = stack.length - 1; index >= 0; index -= 1) {
     const frame = stack[index]!;
-    if (!frame.opened) continue;
-    const node = nodes.get(frame.nodeId);
+    if (!frame.opened || seen.has(frame.nodeId)) continue;
+    seen.add(frame.nodeId);
+    order.push(frame.nodeId);
+  }
+  for (const [id, result] of Object.entries(lastResults)) {
+    if (result !== "running" || seen.has(id)) continue;
+    seen.add(id);
+    order.push(id);
+  }
+  for (const id of order) {
+    const node = nodes.get(id);
     if (!node) continue;
     if (!advanceTimeLimits(node, nodeMemory, dtSeconds)) continue;
-    popThrough(stack, lastResults, node.id, nodes, blackboard, nodeMemory, host);
-    lastResults[node.id] = "failure";
-    startCooldowns(node, nodeMemory);
+    failActiveNode(node, stack, lastResults, nodes, blackboard, nodeMemory, host);
     return;
   }
 }
@@ -377,9 +450,15 @@ function applyAborts(
   decoratorHost?: BtDecoratorHost,
   host?: BtTaskHost,
 ): void {
-  if (stack.length === 0) return;
   const parents = parentOf(nodes);
-  const onStack = new Set(stack.map((frame) => frame.nodeId));
+  const active = new Set<string>();
+  for (const frame of stack) {
+    if (frame.opened) active.add(frame.nodeId);
+  }
+  for (const [id, result] of Object.entries(lastResults)) {
+    if (result === "running") active.add(id);
+  }
+  if (active.size === 0) return;
 
   for (const node of nodes.values()) {
     for (const decorator of node.decorators) {
@@ -395,9 +474,8 @@ function applyAborts(
       const lower =
         decorator.abortMode === "lowerPriority" || decorator.abortMode === "both";
 
-      if (self && !condition && onStack.has(node.id)) {
-        popThrough(stack, lastResults, node.id, nodes, blackboard, nodeMemory, host);
-        lastResults[node.id] = "failure";
+      if (self && !condition && active.has(node.id)) {
+        failActiveNode(node, stack, lastResults, nodes, blackboard, nodeMemory, host);
         return;
       }
 
@@ -407,13 +485,31 @@ function applyAborts(
         const runningLower = found.selector.children.some((childId, index) => {
           if (index <= found.index) return false;
           const ids = subtreeIds(nodes, childId);
-          return stack.some((frame) => ids.has(frame.nodeId));
+          return [...ids].some((id) => active.has(id));
         });
         if (!runningLower) continue;
         while (stack.length > 0 && stack[stack.length - 1]!.nodeId !== found.selector.id) {
           const frame = stack.pop()!;
           lastResults[frame.nodeId] = "failure";
-          notifyTaskAbort(nodes.get(frame.nodeId), blackboard, nodeMemory, host);
+          const popped = nodes.get(frame.nodeId);
+          notifyTaskAbort(popped, blackboard, nodeMemory, host);
+          if (popped) startCooldowns(popped, nodeMemory);
+        }
+        for (const childId of found.selector.children.slice(found.index + 1)) {
+          abortRunningSubtree(
+            nodes,
+            childId,
+            lastResults,
+            blackboard,
+            nodeMemory,
+            host,
+          );
+          if (lastResults[childId] === "running") {
+            lastResults[childId] = "failure";
+            const child = nodes.get(childId);
+            notifyTaskAbort(child, blackboard, nodeMemory, host);
+            if (child) startCooldowns(child, nodeMemory);
+          }
         }
         const selectorFrame = stack[stack.length - 1];
         if (selectorFrame) {
@@ -508,19 +604,35 @@ function tickStackServices(
   dtSeconds: number,
   nodeMemory: Record<string, Record<string, unknown>>,
   seed: number,
+  lastResults: Record<string, BtResult>,
   host?: BtServiceHost,
 ): void {
+  const ticked = new Set<string>();
   for (const frame of stack) {
     if (!frame.opened) continue;
     const node = nodes.get(frame.nodeId);
+    if (!node) continue;
+    ticked.add(node.id);
+    tickNodeServices(node, blackboard, dtSeconds, nodeMemory, seed, host);
+  }
+  for (const [id, result] of Object.entries(lastResults)) {
+    if (result !== "running" || ticked.has(id)) continue;
+    const node = nodes.get(id);
     if (node) tickNodeServices(node, blackboard, dtSeconds, nodeMemory, seed, host);
   }
 }
 
-function runningLeaf(stack: BtStackFrame[], nodes: Map<string, BtNode>): string | null {
+function runningLeaf(
+  stack: BtStackFrame[],
+  nodes: Map<string, BtNode>,
+  lastResults: Record<string, BtResult>,
+): string | null {
   for (let i = stack.length - 1; i >= 0; i -= 1) {
     const node = nodes.get(stack[i]!.nodeId);
     if (node?.kind === "task") return node.id;
+  }
+  for (const [id, result] of Object.entries(lastResults)) {
+    if (result === "running" && nodes.get(id)?.kind === "task") return id;
   }
   return null;
 }
@@ -540,6 +652,12 @@ export function evaluateBehaviourTree(
   const nodeMemory = cloneMemory(previous?.nodeMemory);
   const stack: BtStackFrame[] = (previous?.stack ?? []).map((frame) => ({ ...frame }));
   const seed = options?.seed ?? 0;
+
+  if (stack.length === 0) {
+    for (const key of Object.keys(lastResults)) delete lastResults[key];
+    retainCooldownMemory(nodeMemory);
+    stack.push({ nodeId: tree.rootId, childIndex: 0, opened: false });
+  }
 
   applyAborts(
     nodes,
@@ -567,14 +685,9 @@ export function evaluateBehaviourTree(
     dtSeconds,
     nodeMemory,
     seed,
+    lastResults,
     options?.serviceHost,
   );
-
-  if (stack.length === 0) {
-    for (const key of Object.keys(lastResults)) delete lastResults[key];
-    retainCooldownMemory(nodeMemory);
-    stack.push({ nodeId: tree.rootId, childIndex: 0, opened: false });
-  }
 
   let status: BtResult = "running";
   let guard = 0;
@@ -587,8 +700,6 @@ export function evaluateBehaviourTree(
       stack.pop();
       continue;
     }
-
-    const parent = stack.length >= 2 ? nodes.get(stack[stack.length - 2]!.nodeId) : undefined;
 
     if (node.kind === "task") {
       if (!frame.opened) {
@@ -617,14 +728,11 @@ export function evaluateBehaviourTree(
       const result = tickTask(node, blackboard, dtSeconds, memory, options?.host);
       lastResults[node.id] = result;
       if (result === "running") {
-        if (parent?.kind === "parallel") {
-          stack.pop();
-          continue;
-        }
+        if (yieldToParallel(stack, nodes, lastResults)) continue;
         status = "running";
         break;
       }
-      if (result === "success" && restartLoop(node, frame, nodes, lastResults, nodeMemory)) {
+      if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) {
         continue;
       }
       startCooldowns(node, nodeMemory);
@@ -661,7 +769,16 @@ export function evaluateBehaviourTree(
       if (childId === undefined) {
         const results = node.children.map((id) => lastResults[id]);
         if (results.includes("failure")) {
+          abortRunningSubtree(
+            nodes,
+            node.id,
+            lastResults,
+            blackboard,
+            nodeMemory,
+            options?.host,
+          );
           lastResults[node.id] = "failure";
+          if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) continue;
           startCooldowns(node, nodeMemory);
           stack.pop();
           continue;
@@ -696,10 +813,7 @@ export function evaluateBehaviourTree(
     const childId = node.children[frame.childIndex];
     if (childId === undefined) {
       lastResults[node.id] = node.kind === "selector" ? "failure" : "success";
-      if (
-        lastResults[node.id] === "success" &&
-        restartLoop(node, frame, nodes, lastResults, nodeMemory)
-      ) {
+      if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) {
         continue;
       }
       startCooldowns(node, nodeMemory);
@@ -710,6 +824,7 @@ export function evaluateBehaviourTree(
     const childResult = lastResults[childId];
     const childOnStack = stack.some((entry) => entry.nodeId === childId);
     if (childOnStack) {
+      if (yieldToParallel(stack, nodes, lastResults)) continue;
       status = "running";
       break;
     }
@@ -724,6 +839,7 @@ export function evaluateBehaviourTree(
     if (node.kind === "sequence") {
       if (childResult === "failure") {
         lastResults[node.id] = "failure";
+        if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) continue;
         startCooldowns(node, nodeMemory);
         stack.pop();
         continue;
@@ -750,7 +866,7 @@ export function evaluateBehaviourTree(
     stack,
     status,
     lastResults,
-    btNodeId: status === "running" ? runningLeaf(stack, nodes) : null,
+    btNodeId: status === "running" ? runningLeaf(stack, nodes, lastResults) : null,
     blackboard,
     nodeMemory,
   };

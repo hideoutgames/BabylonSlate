@@ -557,6 +557,180 @@ describe("evaluateBehaviourTree", () => {
     expect(timedOut.stack).toEqual([]);
   });
 
+  it("does not restart a root TimeLimit failure until the next tick", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    wait.decorators.push({
+      id: "limit",
+      classId: "bt.decorator.timeLimit",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { durationMs: 80 },
+    });
+    const doc = tree([wait], "wait");
+    const running = evaluateBehaviourTree(doc, null, 0.05);
+    expect(running.status).toBe("running");
+    const timedOut = evaluateBehaviourTree(doc, running, 0.05);
+    expect(timedOut.status).toBe("failure");
+    expect(timedOut.stack).toEqual([]);
+    const again = evaluateBehaviourTree(doc, timedOut, 0.05);
+    expect(again.status).toBe("running");
+  });
+
+  it("ticks a nested parallel sibling while a sequence child is running", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 100 };
+    const doc = tree(
+      [
+        node("root", "parallel", "bt.composite.parallel", ["seq", "other"]),
+        node("seq", "sequence", "bt.composite.sequence", ["wait"]),
+        wait,
+        node("other", "task", "bt.task.succeed"),
+      ],
+      "root",
+    );
+    const next = evaluateBehaviourTree(doc, null, 0.05);
+    expect(next.status).toBe("running");
+    expect(next.lastResults.wait).toBe("running");
+    expect(next.lastResults.other).toBe("success");
+  });
+
+  it("advances TimeLimit on a running parallel child", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    wait.decorators.push({
+      id: "limit",
+      classId: "bt.decorator.timeLimit",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { durationMs: 80 },
+    });
+    const idle = node("idle", "task", "bt.task.wait");
+    idle.properties = { durationMs: 10_000 };
+    const doc = tree(
+      [node("root", "parallel", "bt.composite.parallel", ["wait", "idle"]), wait, idle],
+      "root",
+    );
+    const running = evaluateBehaviourTree(doc, null, 0.05);
+    expect(running.status).toBe("running");
+    const timedOut = evaluateBehaviourTree(doc, running, 0.05);
+    expect(timedOut.status).toBe("failure");
+    expect(timedOut.lastResults.wait).toBe("failure");
+    expect(timedOut.stack).toEqual([]);
+  });
+
+  it("aborts a running parallel sibling when another child fails", () => {
+    const aborted: string[] = [];
+    const runner = node("runner", "task", "bt.task.custom");
+    const doc = tree(
+      [
+        node("root", "parallel", "bt.composite.parallel", ["runner", "no"]),
+        runner,
+        node("no", "task", "bt.task.fail"),
+      ],
+      "root",
+    );
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: () => "running",
+        abort: (leaf) => {
+          aborted.push(leaf.id);
+        },
+      },
+    });
+    expect(next.status).toBe("failure");
+    expect(aborted).toEqual(["runner"]);
+  });
+
+  it("ticks services on a running parallel child each step", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    wait.services.push({
+      id: "pulse",
+      classId: "bt.service.custom",
+      intervalMs: 0,
+      randomDeviationMs: 0,
+      properties: {},
+    });
+    const idle = node("idle", "task", "bt.task.wait");
+    idle.properties = { durationMs: 10_000 };
+    const doc = tree(
+      [node("root", "parallel", "bt.composite.parallel", ["wait", "idle"]), wait, idle],
+      "root",
+    );
+    const seen: string[] = [];
+    const host = { tick: (service: { id: string }) => seen.push(service.id) };
+    const first = evaluateBehaviourTree(doc, null, 0.016, { serviceHost: host });
+    expect(first.status).toBe("running");
+    evaluateBehaviourTree(doc, first, 0.016, { serviceHost: host });
+    expect(seen).toEqual(["pulse", "pulse"]);
+  });
+
+  it("loops a failing task until numLoops", () => {
+    const leaf = node("leaf", "task", "bt.task.custom");
+    leaf.decorators.push({
+      id: "loop",
+      classId: "bt.decorator.loop",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { numLoops: 3 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    let ticks = 0;
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: () => {
+          ticks += 1;
+          return "failure";
+        },
+      },
+    });
+    expect(next.status).toBe("failure");
+    expect(ticks).toBe(3);
+  });
+
+  it("starts cooldown when a decorator aborts a running node", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    wait.decorators.push(
+      {
+        id: "alive",
+        classId: "bt.decorator.blackboardIsSet",
+        abortMode: "self",
+        observedKeys: ["ok"],
+        properties: { key: "ok" },
+      },
+      {
+        id: "cd",
+        classId: "bt.decorator.cooldown",
+        abortMode: "none",
+        observedKeys: [],
+        properties: { durationMs: 100 },
+      },
+    );
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["wait"]), wait],
+      "root",
+    );
+    const running = evaluateBehaviourTree(doc, null, 0.016, {
+      blackboard: { ok: true },
+    });
+    expect(running.status).toBe("running");
+    const aborted = evaluateBehaviourTree(doc, running, 0.016, { blackboard: {} });
+    expect(aborted.status).toBe("failure");
+    const cooling = evaluateBehaviourTree(doc, aborted, 0.016, {
+      blackboard: { ok: true },
+    });
+    expect(cooling.status).toBe("failure");
+    const ready = evaluateBehaviourTree(doc, cooling, 0.1, {
+      blackboard: { ok: true },
+    });
+    expect(ready.status).toBe("running");
+  });
+
   it("reproduces the same service schedule for the same seed", () => {
     const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
     root.services.push({

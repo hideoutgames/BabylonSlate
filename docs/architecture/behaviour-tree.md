@@ -41,11 +41,12 @@ Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 - Results: `success` | `failure` | `running`.
 - `lastResult` per node for a later debug overlay.
 - `btNodeId` on the running leaf (Preview / trace).
-- Custom leaves go through `BtTaskHost.tick`; omitted host still runs built-ins. Popping a running **task** (self abort, lower-priority abort, time limit) calls optional `BtTaskHost.abort` once.
+- Custom leaves go through `BtTaskHost.tick`; omitted host still runs built-ins. Popping a running **task** (self abort, lower-priority abort, time limit, or a failing parallel sibling) calls optional `BtTaskHost.abort` once.
 - Unknown decorator `classId` values go through `BtDecoratorHost.evaluate`; omitted host (or missing class / no `btEvaluate` call) is **true** so an empty subclass does not fail the tree. Built-in blackboard / compare / cooldown / loop / time-limit stay in the evaluator.
-- **Loop** restarts the decorated subtree until `numLoops` (0 = infinite). **Cooldown** blocks the node for `durationMs` after it finishes (cooldown memory survives tree restart). **TimeLimit** fails a running node when elapsed time exceeds `durationMs`.
-- When the stack is empty the next tick **restarts from the root** and clears instance memory except `__cd:` cooldown keys, so Wait / MoveTo / custom tasks run again instead of succeeding immediately.
-- Attached **services** tick while their owner is on the stack. Interval + `randomDeviationMs` use `options.seed` (default `0`) so the same seed yields the same schedule. Built-in `bt.service.setBlackboard`; other class ids go through `BtServiceHost.tick`.
+- **Loop** restarts the decorated subtree until `numLoops` (0 = infinite) after **success or failure**. **Cooldown** blocks the node for `durationMs` after it finishes, including abort and TimeLimit (cooldown memory survives tree restart). **TimeLimit** fails a running node when elapsed time exceeds `durationMs`.
+- When the stack is empty at the **start** of an evaluate, that tick restarts from the root and clears instance memory except `__cd:` cooldown keys. Abort / TimeLimit that empty the stack report failure this tick; Wait / MoveTo / custom tasks run again on the following tick instead of succeeding immediately.
+- **Parallel** ticks every child each step, including nested composites: a running descendant yields back to the parallel so later siblings still run. Nodes with `lastResults === "running"` stay active for TimeLimit, services, self-abort, and `BtTaskHost.abort` even when they are not on the explicit stack.
+- Attached **services** tick while their owner is active (on the stack or `lastResults === "running"`). Interval + `randomDeviationMs` use `options.seed` (default `0`) so the same seed yields the same schedule. Built-in `bt.service.setBlackboard`; other class ids go through `BtServiceHost.tick`.
 
 Abort observers run **before** continuing the stack (Unreal-style):
 
