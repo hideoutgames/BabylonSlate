@@ -78,13 +78,18 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     const button = page.locator('[data-testid^="ui-widget-button-"]');
     await expect(button).toBeVisible();
-    await page.getByTestId("ui-anchor-preset-top-left").click();
+    // Add Widget selects the control. 44px screen-space handles then cover a
+    // 36px-tall Button on a fitted 1920 canvas, so a center press would resize.
+    await page.getByTestId("ui-widget-canvas").click({ position: { x: 8, y: 8 } });
+    await expect(page.getByTestId("ui-resize-se")).toHaveCount(0);
     const before = await button.getAttribute("data-gui-x");
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await page.mouse.down();
-    await page.mouse.move(box!.x + box!.width / 2 + 80, box!.y + box!.height / 2);
+    await page.mouse.move(box!.x + box!.width / 2 + 80, box!.y + box!.height / 2, {
+      steps: 8,
+    });
     await page.mouse.up();
     await expect
       .poll(async () => button.getAttribute("data-gui-x"))
@@ -98,7 +103,7 @@ test.describe("P9 content systems", () => {
       "data-zoom",
       "1",
     );
-    await button.click();
+    await page.locator('[data-testid^="tree-row-button-"]').click();
     await expect(page.getByTestId("property-name")).toHaveValue("Button");
     await expect(page.getByTestId("property-left")).toBeVisible();
     await expect(page.getByTestId("property-top")).toBeVisible();
