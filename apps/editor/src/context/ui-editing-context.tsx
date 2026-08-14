@@ -27,7 +27,6 @@ import {
   parentOwnsChildLayout,
   type DesignerCanvasId,
   type LayoutResult,
-  type ScaleRule,
   type UiControlDescriptor,
   type UserInterfaceDocument,
   type WidgetKind,
