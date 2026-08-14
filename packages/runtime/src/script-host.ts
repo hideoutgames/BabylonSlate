@@ -1,8 +1,9 @@
 import { formatValue } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
+  Actor,
+  ActorComponent,
   interfaceHandlerKey,
-  type Actor,
   type LifecycleHooks,
   type TickContext,
 } from "@babylonslate/object-model";
@@ -65,6 +66,8 @@ export interface ScriptHostServices {
   changeScene?(scene: string): void;
   playSound?(asset: string, volume?: number): void;
   setRenderResolution?(width: number, height: number): void;
+  possessCamera?(target: unknown): void;
+  updateIllumination?(target: unknown): void;
   findPathTo?(
     from: Vec3,
     to: Vec3,
@@ -153,6 +156,17 @@ export interface ScriptContext {
   removeUserInterface(instanceId: string): void;
   changeScene(scene: string): void;
   setRenderResolution(width: number, height: number): void;
+  possessCamera(target: unknown): void;
+  getCameraFieldOfView(target: unknown): number;
+  setCameraFieldOfView(target: unknown, fov: number): void;
+  getCameraOrthographicSize(target: unknown): number;
+  setCameraOrthographicSize(target: unknown, size: number): void;
+  setLightEnabled(target: unknown, enabled: boolean): void;
+  setLightColor(
+    target: unknown,
+    color: { x: number; y: number; z: number; w?: number },
+  ): void;
+  setLightIntensity(target: unknown, intensity: number): void;
   btFinish(result: "success" | "failure"): void;
   getBlackboard(key: string): unknown;
   setBlackboard(key: string, value: unknown): void;
@@ -454,6 +468,39 @@ export class ScriptHost {
       setRenderResolution: (width, height) => {
         services.setRenderResolution?.(Number(width), Number(height));
       },
+      possessCamera: (target) => {
+        services.possessCamera?.(target);
+      },
+      getCameraFieldOfView: (target) =>
+        Number(cameraComponentOf(target)?.getVariable("fieldOfView") ?? 60),
+      setCameraFieldOfView: (target, fov) => {
+        cameraComponentOf(target)?.setVariable("fieldOfView", Number(fov));
+        services.updateIllumination?.(target);
+      },
+      getCameraOrthographicSize: (target) =>
+        Number(
+          cameraComponentOf(target)?.getVariable("orthographicSize") ?? 5,
+        ),
+      setCameraOrthographicSize: (target, size) => {
+        cameraComponentOf(target)?.setVariable("orthographicSize", Number(size));
+        services.updateIllumination?.(target);
+      },
+      setLightEnabled: (target, enabled) => {
+        lightComponentOf(target)?.setVariable("enabled", Boolean(enabled));
+        services.updateIllumination?.(target);
+      },
+      setLightColor: (target, color) => {
+        lightComponentOf(target)?.setVariable("color", [
+          Number(color?.x ?? 1),
+          Number(color?.y ?? 1),
+          Number(color?.z ?? 1),
+        ]);
+        services.updateIllumination?.(target);
+      },
+      setLightIntensity: (target, intensity) => {
+        lightComponentOf(target)?.setVariable("intensity", Number(intensity));
+        services.updateIllumination?.(target);
+      },
       findPathTo: (from, to) => services.findPathTo?.(from, to) ?? [],
       moveTo: (actor, destination) => {
         services.moveTo?.(actor ?? self, destination);
@@ -476,4 +523,32 @@ export class ScriptHost {
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
   }
+}
+
+function actorOf(target: unknown): Actor | null {
+  if (target instanceof Actor) return target;
+  if (target instanceof ActorComponent) return target.owner;
+  return null;
+}
+
+function cameraComponentOf(target: unknown): ActorComponent | null {
+  if (target instanceof ActorComponent && target.classId === "CameraComponent") {
+    return target;
+  }
+  return (
+    actorOf(target)?.components.find(
+      (component) => component.classId === "CameraComponent" && !component.destroyed,
+    ) ?? null
+  );
+}
+
+function lightComponentOf(target: unknown): ActorComponent | null {
+  if (target instanceof ActorComponent && target.classId === "LightComponent") {
+    return target;
+  }
+  return (
+    actorOf(target)?.components.find(
+      (component) => component.classId === "LightComponent" && !component.destroyed,
+    ) ?? null
+  );
 }
