@@ -20,6 +20,19 @@ describe("nativeEventStubs", () => {
       true,
     );
   });
+
+  it("lists editor lifecycle events when ancestry includes EditorUtilityObject", () => {
+    const stubs = nativeEventStubs({
+      parentClass: "EditorUtilityObject",
+      parentOf: (id) => (id === "EditorUtilityObject" ? "BObject" : null),
+    });
+    expect(stubs.map((stub) => stub.eventType)).toEqual([
+      "flow.event.editorStartup",
+      "flow.event.sceneOpen",
+      "flow.event.sceneSaved",
+      "flow.event.editorShutdown",
+    ]);
+  });
 });
 
 describe("ensureEventNodeOnGraph", () => {

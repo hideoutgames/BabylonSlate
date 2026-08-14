@@ -622,6 +622,10 @@ describe("content-browser-helpers", () => {
     expect(ENGINE_BASE_CLASSES).toContain("BDebugCommand");
   });
 
+  it("offers EditorUtilityObject as a Class parent", () => {
+    expect(ENGINE_BASE_CLASSES).toContain("EditorUtilityObject");
+  });
+
   it("offers behaviour-tree bases as Class parents", () => {
     expect(ENGINE_BASE_CLASSES).toContain("BTTask");
     expect(ENGINE_BASE_CLASSES).toContain("BTDecorator");
@@ -646,6 +650,9 @@ describe("content-browser-helpers", () => {
     );
     expect(newAssetFileName("Blackboard", "Guard")).toBe(
       "Guard.blackboard.babasset",
+    );
+    expect(newAssetFileName("EditorUtilityInterface", "SceneTools")).toBe(
+      "SceneTools.eui.babasset",
     );
     expect(newAssetFileName("Scene", "")).toBe("");
     expect(newAssetFileName("Scene", "   ")).toBe("");
@@ -723,6 +730,7 @@ describe("content-browser-helpers", () => {
       "Enum",
       "Structure",
       "ScriptInterface",
+      "EditorUtilityInterface",
     ]);
   });
 
@@ -739,6 +747,19 @@ describe("content-browser-helpers", () => {
     expect((klass.payload.nodes as unknown[]).length).toBeGreaterThan(0);
     expect(Array.isArray(klass.payload.edges)).toBe(true);
     expect(klass.chunks.some((chunk) => chunk.id === "document")).toBe(true);
+  });
+
+  it("creates EditorUtilityInterface assets with UserInterface payload and dockKind", () => {
+    const eui = buildNewAssetResult({
+      type: "EditorUtilityInterface",
+      name: "SceneTools",
+      guid: "eui-1",
+      parentClass: null,
+    });
+    expect(eui.type).toBe("EditorUtilityInterface");
+    expect(eui.payload.dockKind).toBe("scene");
+    expect(eui.payload.rootId).toBeTruthy();
+    expect(eui.payload.widgets).toBeTruthy();
   });
 
   it("writes new Scene assets at the current migration schema version", () => {

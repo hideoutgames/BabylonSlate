@@ -88,6 +88,7 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Class":
       return "graph";
     case "UserInterface":
+    case "EditorUtilityInterface":
       return "ui";
     case "Font":
       return "font";

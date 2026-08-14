@@ -19,6 +19,21 @@ describe("flow nodes", () => {
     );
   });
 
+  it("registers editor utility lifecycle events", () => {
+    const ids = flowNodes.map((node) => node.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "flow.event.editorStartup",
+        "flow.event.sceneOpen",
+        "flow.event.sceneSaved",
+        "flow.event.editorShutdown",
+      ]),
+    );
+    expect(
+      flowNodes.find((node) => node.id === "flow.event.editorStartup")?.title,
+    ).toBe("Event On Editor Startup");
+  });
+
   it("maps function Input pins from member inputs as outputs", () => {
     const input = flowNodes.find((node) => node.id === "flow.function.input");
     expect(input?.title).toBe("Input");

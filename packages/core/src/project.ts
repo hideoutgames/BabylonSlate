@@ -133,6 +133,8 @@ export interface ProjectSettings {
   input: ProjectInputSettings;
   fonts: FontProjectSettings;
   render: RenderProjectSettings;
+  /** Class ids (EditorUtilityObject lineage) that run in the editor ScriptHost. */
+  editorUtilityObjects: string[];
 }
 
 export interface ProjectDocument {
@@ -353,6 +355,20 @@ function normalizeStartupSceneGuid(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
+function normalizeEditorUtilityObjects(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const id = entry.trim();
+    if (id === "" || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
 function normalizeProjectInput(value: unknown): ProjectInputSettings {
   const source = (value ?? {}) as Record<string, unknown>;
   const hasActions = Array.isArray(source.actions) && source.actions.length > 0;
@@ -418,6 +434,9 @@ export function normalizeProjectSettings(
     },
     startupSceneGuid: normalizeStartupSceneGuid(settings?.startupSceneGuid),
     render: normalizeRender(settings?.render),
+    editorUtilityObjects: normalizeEditorUtilityObjects(
+      settings?.editorUtilityObjects,
+    ),
   };
 }
 

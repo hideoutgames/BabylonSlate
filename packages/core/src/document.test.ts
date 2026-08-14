@@ -13,6 +13,7 @@ import {
 describe("P9 document kinds", () => {
   it("maps UserInterface / Sprite / AnimationGraph / Shader kinds", () => {
     expect(documentKindForAssetType("UserInterface")).toBe("ui");
+    expect(documentKindForAssetType("EditorUtilityInterface")).toBe("ui");
     expect(assetTypeForDocumentKind("ui")).toBe("UserInterface");
     expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
     expect(documentKindForAssetType("BehaviourTree")).toBe("behaviour-tree");

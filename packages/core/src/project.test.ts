@@ -251,6 +251,16 @@ describe("project schema", () => {
     ).toBe("scene-guid-1");
   });
 
+  it("normalizes editorUtilityObjects to unique class ids", () => {
+    expect(normalizeProjectSettings(undefined).editorUtilityObjects).toEqual([]);
+    expect(normalizeProjectSettings({}).editorUtilityObjects).toEqual([]);
+    expect(
+      normalizeProjectSettings({
+        editorUtilityObjects: ["  Tools  ", "Tools", "", "Inspector"],
+      }).editorUtilityObjects,
+    ).toEqual(["Tools", "Inspector"]);
+  });
+
   it("keeps fill Play layout when custom resolution is missing or off", () => {
     expect(normalizeProjectSettings(undefined).render).toEqual({
       customResolution: false,

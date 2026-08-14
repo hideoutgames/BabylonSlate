@@ -27,7 +27,18 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
   "flow.event.commandRun": "Event On Command Run",
+  "flow.event.editorStartup": "Event On Editor Startup",
+  "flow.event.sceneOpen": "Event On Scene Open",
+  "flow.event.sceneSaved": "Event On Scene Saved",
+  "flow.event.editorShutdown": "Event On Editor Shutdown",
 };
+
+const EDITOR_UTILITY_EVENT_TYPES = [
+  "flow.event.editorStartup",
+  "flow.event.sceneOpen",
+  "flow.event.sceneSaved",
+  "flow.event.editorShutdown",
+] as const;
 
 export function nativeStubId(eventType: string): string {
   return `native:${eventType}`;
@@ -109,6 +120,12 @@ export function nativeEventStubs(options?: {
   const parentOf =
     options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
   const chain = walkAncestry(options?.parentClass ?? "Actor", parentOf);
+  if (chain.includes("EditorUtilityObject")) {
+    return EDITOR_UTILITY_EVENT_TYPES.map((eventType) => ({
+      eventType,
+      name: NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType),
+    }));
+  }
   const types: string[] = [...NATIVE_CLASS_EVENT_TYPES];
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
