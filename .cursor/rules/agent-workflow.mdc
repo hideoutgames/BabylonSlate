@@ -59,6 +59,10 @@ Hard allowlist when launching Task / subagents (not a preference):
 - Omitting `model` is allowed. Do not force an explicit slug on every Task call.
 - Honor a different model only if the human user explicitly names it in this conversation. A parent agent must not pick Sonnet or any other forbidden family because a task “would benefit.”
 
+## No AI-generated artwork
+
+Never AI-generate artwork, videos, icons, 3D models, or similar media. See [no-ai-artwork.mdc](no-ai-artwork.mdc). Use existing Lucide icons and `engine-logos/` branding; capture the real running app when a screenshot or recording is required. Do not call `GenerateImage` or invent stand-in assets.
+
 ## Git: commit and push
 
 **Default:** commit and push without waiting for explicit user permission whenever you have meaningful changes.

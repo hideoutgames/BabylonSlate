@@ -53,6 +53,10 @@ See [design/perf-budget.md](design/perf-budget.md). In particular:
 - Per-package coverage is gated at 60%. Add tests or split out the untestable part with a documented exclusion — never lower a threshold to go green.
 - Read [architecture/testing.md](architecture/testing.md) before writing DOM or gesture tests: jsdom lacks `PointerEvent` and `ResizeObserver`, which has already caused tests that passed without asserting anything.
 
+## Artwork and media
+
+Never AI-generate artwork, videos, icons, 3D models, or similar media. Reuse Lucide / the project `iconLibrary` and existing `engine-logos/` branding. Capture the real running app when a screenshot or recording is required. Agent rule: [`.cursor/rules/no-ai-artwork.mdc`](../.cursor/rules/no-ai-artwork.mdc).
+
 ## Git / PRs
 
 - One roadmap slice per PR when possible.
