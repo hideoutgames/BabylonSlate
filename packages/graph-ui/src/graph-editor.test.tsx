@@ -1228,7 +1228,11 @@ describe("GraphEditor", () => {
                 classId: "bt.composite.selector",
                 sortIndex: 0,
                 decorators: [
-                  { id: "dec-1", classId: "bt.decorator.blackboardIsSet" },
+                  {
+                    id: "dec-1",
+                    classId: "bt.decorator.blackboardIsSet",
+                    title: "Blackboard Is Set",
+                  },
                 ],
                 services: [],
               },
@@ -1243,9 +1247,132 @@ describe("GraphEditor", () => {
     await waitFor(() => {
       expect(getByTestId("bt-node-root")).toBeTruthy();
       expect(getByTestId("bt-decorator-dec-1").textContent).toContain(
-        "blackboardIsSet",
+        "Blackboard Is Set",
       );
     });
+  });
+
+  it("hides Break Links and Format when listed in hiddenToolbarActions", () => {
+    const { queryByTestId, getByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        hiddenToolbarActions={["breakLinks", "format"]}
+      />,
+    );
+    expect(queryByTestId("graph-break-links")).toBeNull();
+    expect(queryByTestId("graph-format")).toBeNull();
+    expect(getByTestId("graph-delete")).toBeTruthy();
+  });
+
+  it("opens a long-press menu on a behaviour-tree node", async () => {
+    const wrap = vi.fn();
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "root",
+              type: "bt.node",
+              position: { x: 0, y: 0 },
+              data: {
+                title: "Selector",
+                kind: "selector",
+                classId: "bt.composite.selector",
+              },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={treeNodeTypes}
+        contextMenuItemsForNode={() => [
+          {
+            id: "wrap",
+            label: "Wrap In Sequence",
+            testId: "bt-menu-wrap",
+            onSelect: wrap,
+          },
+        ]}
+      />,
+    );
+    await waitFor(() => {
+      expect(getByTestId("bt-node-root")).toBeTruthy();
+    });
+    fireEvent.contextMenu(getByTestId("bt-node-root"));
+    fireEvent.click(getByTestId("bt-menu-wrap"));
+    expect(wrap).toHaveBeenCalled();
+  });
+
+  it("opens the selected node menu from the canvas pane", async () => {
+    const wrap = vi.fn();
+    const { getByTestId, container } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "root",
+              type: "bt.node",
+              position: { x: 0, y: 0 },
+              data: {
+                title: "Selector",
+                kind: "selector",
+                classId: "bt.composite.selector",
+              },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={treeNodeTypes}
+        focusedNodeId="root"
+        contextMenuItemsForNode={() => [
+          {
+            id: "wrap",
+            label: "Wrap In Sequence",
+            testId: "bt-menu-wrap",
+            onSelect: wrap,
+          },
+        ]}
+      />,
+    );
+    await waitFor(() => {
+      expect(getByTestId("bt-node-root")).toBeTruthy();
+    });
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    fireEvent.contextMenu(pane!);
+    fireEvent.click(getByTestId("bt-menu-wrap"));
+    expect(wrap).toHaveBeenCalled();
+  });
+
+  it("uses PaletteNode.nodeType when adding from the palette", async () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        nodeTypes={treeNodeTypes}
+        paletteNodes={[
+          {
+            id: "bt.task.wait",
+            title: "Wait",
+            category: "Tasks",
+            nodeType: "bt.node",
+            defaultData: { title: "Wait", classId: "bt.task.wait", kind: "task" },
+          },
+        ]}
+        onChange={onChange}
+      />,
+    );
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    fireEvent.click(pane!);
+    fireEvent.click(pane!);
+    fireEvent.click(getByTestId("node-palette-item-bt.task.wait"));
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+    const graph = onChange.mock.calls.at(-1)?.[0] as {
+      nodes: Array<{ type?: string }>;
+    };
+    expect(graph.nodes[0]?.type).toBe("bt.node");
   });
 });
 

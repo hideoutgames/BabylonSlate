@@ -1127,6 +1127,7 @@ class InProcessRuntime implements RuntimeDriver {
         btNodeId: next.btNodeId,
         lastResults: next.lastResults,
         blackboard: next.blackboard,
+        stack: next.stack,
       });
     }
   }

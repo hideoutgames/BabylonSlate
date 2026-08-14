@@ -232,3 +232,31 @@ export function nodeChangesMutateGraph(
 ): boolean {
   return changes.some((change) => change.type !== "select");
 }
+
+type PositionChange = {
+  type: string;
+  id?: string;
+  position?: { x: number; y: number };
+};
+
+/** Keep the locked axis on the node's current layout position (BT sibling reorder). */
+export function lockNodeDragAxis<T extends PositionChange>(
+  changes: readonly T[],
+  nodes: ReadonlyArray<{ id: string; position: { x: number; y: number } }>,
+  axis: "x" | "y" | undefined,
+): T[] {
+  if (!axis) return [...changes];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  return changes.map((change) => {
+    if (change.type !== "position" || !change.id || !change.position) return change;
+    const current = byId.get(change.id);
+    if (!current) return change;
+    return {
+      ...change,
+      position:
+        axis === "x"
+          ? { x: change.position.x, y: current.position.y }
+          : { x: current.position.x, y: change.position.y },
+    };
+  });
+}

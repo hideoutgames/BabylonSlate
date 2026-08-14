@@ -27,6 +27,11 @@ import {
 } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
+  ContextMenuOverlay,
+  useContextMenu,
+  type NestedMenuItem,
+} from "@babylonslate/editor-kit";
+import {
   hasSerializedPins,
   type GraphDiagnostic,
   type GraphDocument,
@@ -36,12 +41,14 @@ import {
 } from "./graph-types";
 import { GraphEditorProvider } from "./graph-editor-context";
 import {
+  canonicalGraphSignature,
   createEdgeId,
+  deletableNodeIds,
+  isProtectedNode,
+  lockNodeDragAxis,
   nodeChangesMutateGraph,
   reconcileCanvasGraph,
   toSerializedGraph,
-  isProtectedNode,
-  deletableNodeIds,
 } from "./graph-model";
 import {
   type CanvasNode,
@@ -110,6 +117,15 @@ export interface GraphEditorProps {
   toolbarExtra?: ReactNode;
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
+  hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "format">;
+  /** Lock node drag to one axis (behaviour-tree sibling reorder). */
+  lockNodeDragAxis?: "x" | "y";
+  contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
+  contextMenuItemsForAttachment?: (
+    nodeId: string,
+    attachmentId: string,
+  ) => NestedMenuItem[];
+  onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
 }
 
 const DOUBLE_TAP_MS = 350;
@@ -227,6 +243,11 @@ function GraphEditorCanvas({
   toolbarExtra,
   selectedAttachmentId = null,
   onAttachmentSelect,
+  hiddenToolbarActions = [],
+  lockNodeDragAxis: lockDragAxis,
+  contextMenuItemsForNode,
+  contextMenuItemsForAttachment,
+  onAttachmentDoubleClick,
 }: GraphEditorProps) {
   const knownTypes = useMemo(
     () => ({ ...graphNodeTypes, ...nodeTypesProp }),
@@ -276,6 +297,10 @@ function GraphEditorCanvas({
   const { screenToFlowPosition } = useReactFlow();
   const graphStateRef = useRef({ nodes, edges });
   graphStateRef.current = { nodes, edges };
+  const paneMenu = useContextMenu({
+    items: [],
+    enabled: Boolean(contextMenuItemsForNode) && !readOnly,
+  });
 
   const errorDiagnostics = useMemo(
     () =>
@@ -314,6 +339,13 @@ function GraphEditorCanvas({
         })),
         { members: membersRef.current, components: componentsRef.current },
       );
+      if (
+        lastEmittedRef.current &&
+        canonicalGraphSignature(graph) ===
+          canonicalGraphSignature(lastEmittedRef.current)
+      ) {
+        return;
+      }
       lastEmittedRef.current = graph;
       onChange?.(graph);
     },
@@ -366,22 +398,28 @@ function GraphEditorCanvas({
     );
   }, [initialGraph, knownTypes]);
 
+  const hiddenToolbar = useMemo(
+    () => new Set(hiddenToolbarActions),
+    [hiddenToolbarActions],
+  );
+
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       setNodes((current) => {
+        const constrained = lockNodeDragAxis(changes, current, lockDragAxis);
         const applied = readOnly
-          ? changes.filter(
+          ? constrained.filter(
               (change) => change.type === "select" || change.type === "dimensions",
             )
-          : changes;
+          : constrained;
         const next = applyNodeChanges(applied, current);
-        if (!readOnly && nodeChangesMutateGraph(changes)) {
+        if (!readOnly && nodeChangesMutateGraph(constrained)) {
           emitChange(next, graphStateRef.current.edges);
         }
         return next;
       });
     },
-    [emitChange, readOnly],
+    [emitChange, lockDragAxis, readOnly],
   );
 
   const handleEdgesChange = useCallback(
@@ -569,7 +607,7 @@ function GraphEditorCanvas({
       const data: Record<string, unknown> = {
         ...(paletteNode.defaultData ?? {}),
         title: paletteNode.title,
-        __nodeType: paletteNode.id,
+        __nodeType: paletteNode.nodeType ?? paletteNode.id,
         __category: paletteNode.category,
         __pure: paletteNode.pure ?? false,
         __latent: paletteNode.latent ?? false,
@@ -579,7 +617,11 @@ function GraphEditorCanvas({
       }
       const nextNode: CanvasNode = {
         id,
-        type: resolveNodeType(paletteNode.id, data, knownTypes),
+        type: resolveNodeType(
+          paletteNode.nodeType ?? paletteNode.id,
+          data,
+          knownTypes,
+        ),
         position,
         data,
       };
@@ -801,6 +843,29 @@ function GraphEditorCanvas({
     lastPaneTapRef.current = now;
   }, [clearSelection, readOnly]);
 
+  const handlePaneContextMenu = useCallback(
+    (event: {
+      preventDefault: () => void;
+      clientX: number;
+      clientY: number;
+      target?: EventTarget | null;
+    }) => {
+      event.preventDefault();
+      if (readOnly || !contextMenuItemsForNode) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".react-flow__node")
+      ) {
+        return;
+      }
+      const selected = graphStateRef.current.nodes.find((node) => node.selected);
+      if (!selected) return;
+      const items = contextMenuItemsForNode(selected.id);
+      paneMenu.openMenuAt(event.clientX, event.clientY, items);
+    },
+    [contextMenuItemsForNode, paneMenu.openMenuAt, readOnly],
+  );
+
   const screenToFlowPositionRef = useRef(screenToFlowPosition);
   screenToFlowPositionRef.current = screenToFlowPosition;
 
@@ -879,6 +944,9 @@ function GraphEditorCanvas({
       onNavigateRequest,
       selectedAttachmentId,
       onAttachmentSelect,
+      onAttachmentDoubleClick,
+      contextMenuItemsForNode,
+      contextMenuItemsForAttachment,
     }),
     [
       nodeErrorCount,
@@ -889,6 +957,9 @@ function GraphEditorCanvas({
       pinHasError,
       selectedAttachmentId,
       onAttachmentSelect,
+      onAttachmentDoubleClick,
+      contextMenuItemsForNode,
+      contextMenuItemsForAttachment,
     ],
   );
 
@@ -939,6 +1010,7 @@ function GraphEditorCanvas({
             >
               Paste
             </Button>
+            {hiddenToolbar.has("delete") ? null : (
             <Button
               type="button"
               variant="outline"
@@ -949,6 +1021,8 @@ function GraphEditorCanvas({
             >
               Delete
             </Button>
+            )}
+            {hiddenToolbar.has("breakLinks") ? null : (
             <Button
               type="button"
               variant="outline"
@@ -960,6 +1034,8 @@ function GraphEditorCanvas({
             >
               Break Links
             </Button>
+            )}
+            {hiddenToolbar.has("format") ? null : (
             <Button
               type="button"
               variant="outline"
@@ -971,6 +1047,7 @@ function GraphEditorCanvas({
             >
               Format
             </Button>
+            )}
             {toolbarExtra}
           </div>
         </div>
@@ -993,6 +1070,7 @@ function GraphEditorCanvas({
           onNodeDoubleClick={(_, node) => onNodeDoubleClick?.(node.id)}
           isValidConnection={readOnly ? () => false : isValidConnection}
           onPaneClick={handlePaneClick}
+          onPaneContextMenu={handlePaneContextMenu}
           panOnDrag={!marqueeArmed}
           connectionLineStyle={connectionLineStyle}
           connectionLineComponent={GraphConnectionLine}
@@ -1026,6 +1104,7 @@ function GraphEditorCanvas({
           onAddNode={handleAddPaletteNode}
         />
         )}
+        <ContextMenuOverlay menu={paneMenu.menu} onClose={paneMenu.closeMenu} />
       </div>
     </GraphEditorProvider>
   );
