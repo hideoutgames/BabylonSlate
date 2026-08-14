@@ -89,6 +89,24 @@ describe("Add Component catalog", () => {
       lightKind: "point",
       range: 10,
       outerAngle: 45,
+      innerAngle: 30,
+      enabled: true,
+      castShadows: false,
+    });
+  });
+
+  it("seeds camera projection from the scene viewport mode", () => {
+    expect(defaultPropertiesFor("CameraComponent", "3d", "3d")).toEqual({
+      fieldOfView: 60,
+      orthographicSize: 5,
+      projectionMode: "perspective",
+      nearClip: 0.1,
+      farClip: 1000,
+    });
+    expect(defaultPropertiesFor("CameraComponent", "2d", "2d")).toMatchObject({
+      projectionMode: "orthographic",
+      nearClip: 0.1,
+      farClip: 1000,
     });
   });
 

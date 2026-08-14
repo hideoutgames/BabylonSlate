@@ -80,6 +80,15 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.properties.area).toBe("unwalkable");
   });
 
+  it("spawns a camera with explicit projection defaults", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "camera")!;
+    const actor = spawnPlacedActor(scene, item, "actor-cam");
+    expect(actor.components[0]?.classId).toBe("CameraComponent");
+    expect(actor.components[0]?.properties.projectionMode).toBe("perspective");
+    expect(actor.components[0]?.properties.nearClip).toBe(0.1);
+    expect(actor.components[0]?.properties.farClip).toBe(1000);
+  });
+
   it("spawns an empty actor", () => {
     const item: PlaceActorItem = ENGINE_PLACE_ACTORS.find(
       (entry) => entry.id === "empty",
