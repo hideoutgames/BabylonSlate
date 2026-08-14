@@ -191,7 +191,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list. Remaining: **Default Camera** via kit `SceneComponentPicker` (`CameraComponent` only), **Possess Camera** node (global Play camera), `UniversalCamera`, shadows/IBL. May run beside P11. |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list. Remaining: **Default Camera** via kit `SceneComponentPicker` (`CameraComponent` only), **Possess Camera** node (global Play camera), `UniversalCamera`, shadows/IBL. May run beside P12. |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -331,7 +331,7 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 
 ## Lighting and cameras (`p-lighting-camera`)
 
-Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P11 (owns `render` / `core` / `runtime` / `editor`, not AI packages).
+Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P12 (serialize `render` / `core` / `runtime` / `apps/editor` if another agent holds them). Do not reopen AI packages.
 
 | Slice | Checklist | Packages |
 | --- | --- | --- |
@@ -342,7 +342,7 @@ Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P11 (
 
 ## P11 behaviour trees / navigation
 
-Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo) is not P11 work. Lighting and cameras are section 2.5 / `p-lighting-camera` — parallel to P11, not P11 work. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
+Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo) is not P11 work. Lighting and cameras are section 2.5 / `p-lighting-camera` — parallel to P12, not P11 work. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -355,6 +355,16 @@ Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo)
 | Blockers + 2D + nodes | `p11-nav-blockers-2d` | `navigation`, `scripting-nodes`, `apps/editor`, `runtime` (landed) | Nav editor host |
 | §18 acceptance | `p11-acceptance` | `runtime` harness + `e2e/p11-ai.spec.ts` (landed) | Blockers + editor host |
 
-`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default. Dynamic cost volumes do not carve. **P11 is Done** (packages + §18).
+`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default. Dynamic cost volumes do not carve. RotateToFace / PlayAnimation / PlaySound succeed without a host. **P11 is Done** (packages + §18). Do not start a new P11 slice.
+
+## P12 editor extensions
+
+Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities), §18 P12, Appendix A `p12-editor-extensions`. Lighting/cameras (`p-lighting-camera`) may run beside this slice.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| EditorUtilityObject + Interface | `p12-editor-extensions` | `object-model`, `apps/editor`, export strip | P11 done |
+| Lighting / cameras | `p-lighting-camera` | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5; serialize if another agent holds those packages |
+
 
 
