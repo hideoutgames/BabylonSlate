@@ -676,7 +676,7 @@ describe("gizmo host", () => {
     for (const mesh of root.getChildMeshes()) {
       if (mesh.visibility <= 0) continue;
       mesh.computeWorldMatrix(true);
-      mesh.refreshBoundingInfo();
+      mesh.refreshBoundingInfo(false, false);
       const size = mesh.getBoundingInfo().boundingBox.extendSizeWorld;
       maxHalfExtent = Math.max(maxHalfExtent, size.x, size.y, size.z);
     }
