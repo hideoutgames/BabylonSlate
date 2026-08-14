@@ -207,7 +207,7 @@ describe("BehaviourTreeEditor", () => {
       const [payload, setPayload] = useState(
         () => createDefaultBehaviourTree() as unknown as Record<string, unknown>,
       );
-      const kind = (payload as BehaviourTreeDocument).nodes.find(
+      const kind = (payload as unknown as BehaviourTreeDocument).nodes.find(
         (node) => node.classId === "MyBrain",
       )?.kind;
       return (
