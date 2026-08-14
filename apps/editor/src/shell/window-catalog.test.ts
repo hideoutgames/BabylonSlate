@@ -108,6 +108,23 @@ describe("listDockWindows", () => {
       "sprite-preview",
       "sprite-details",
     ]);
+    expect(listDockWindows("ui").map((entry) => entry.id)).toEqual([
+      "ui-design",
+      "ui-hierarchy",
+      "ui-details",
+      "ui-logic",
+    ]);
+    expect(
+      listDockWindows("ui", { editorUtilityInterface: true }).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual([
+      "ui-design",
+      "ui-hierarchy",
+      "ui-details",
+      "ui-logic",
+      "ui-settings",
+    ]);
   });
 });
 

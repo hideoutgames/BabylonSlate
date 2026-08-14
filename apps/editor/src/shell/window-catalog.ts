@@ -6,7 +6,8 @@ export type DockviewDocumentKind =
   | "enum"
   | "structure"
   | "script-interface"
-  | "sprite";
+  | "sprite"
+  | "ui";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -16,6 +17,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "structure",
   "script-interface",
   "sprite",
+  "ui",
 ]);
 
 export function isDockviewDocumentKind(
@@ -31,6 +33,8 @@ export const CLASS_PANEL_INITIAL_HEIGHT = 400;
 export type DockWindowOptions = {
   /** Actor-lineage class documents get Prefab + Components. Default true. */
   actorPrefab?: boolean;
+  /** EditorUtilityInterface authoring adds a Settings dock for `dockKind`. */
+  editorUtilityInterface?: boolean;
 };
 
 export interface DockWindowDefaultPosition {
@@ -238,6 +242,51 @@ const SPRITE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const UI_WINDOWS: DockWindowDefinition[] = [
+  { id: "ui-design", component: "ui-design", title: "Design" },
+  {
+    id: "ui-hierarchy",
+    component: "ui-hierarchy",
+    title: "Hierarchy",
+    defaultPosition: {
+      referencePanelId: "ui-design",
+      direction: "left",
+      initialWidth: 240,
+    },
+  },
+  {
+    id: "ui-details",
+    component: "ui-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "ui-design",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+  {
+    id: "ui-logic",
+    component: "ui-logic",
+    title: "Logic",
+    defaultPosition: {
+      referencePanelId: "ui-design",
+      direction: "below",
+      initialHeight: 220,
+    },
+  },
+];
+
+const UI_SETTINGS_WINDOW: DockWindowDefinition = {
+  id: "ui-settings",
+  component: "ui-settings",
+  title: "Settings",
+  defaultPosition: {
+    referencePanelId: "ui-details",
+    direction: "below",
+    initialHeight: 160,
+  },
+};
+
 export function listDockWindows(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
@@ -247,6 +296,11 @@ export function listDockWindows(
   if (kind === "structure") return STRUCTURE_WINDOWS;
   if (kind === "script-interface") return SCRIPT_INTERFACE_WINDOWS;
   if (kind === "sprite") return SPRITE_WINDOWS;
+  if (kind === "ui") {
+    return options?.editorUtilityInterface
+      ? [...UI_WINDOWS, UI_SETTINGS_WINDOW]
+      : UI_WINDOWS;
+  }
   if (options?.actorPrefab === false) return OBJECT_GRAPH_WINDOWS;
   return GRAPH_WINDOWS;
 }

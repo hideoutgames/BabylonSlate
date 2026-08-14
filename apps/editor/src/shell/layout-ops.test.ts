@@ -71,6 +71,7 @@ describe("resolveFocusKeepPanelIds", () => {
       "script-interface-preview",
     ]);
     expect(resolveFocusKeepPanelIds("sprite", [])).toEqual(["sprite-preview"]);
+    expect(resolveFocusKeepPanelIds("ui", [])).toEqual(["ui-design"]);
   });
 
   it("keeps an explicit list as-is", () => {

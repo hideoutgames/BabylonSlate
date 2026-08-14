@@ -39,7 +39,7 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; Tilemap paint tools; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
 
-Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder). **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`) is used by UserInterface / Font / Sprite / graph asset workspaces (design vs logic).
+Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder). **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`) is used inside some asset workspaces (Font; nested modes). UserInterface / Sprite / Enum / Structure / ScriptInterface / Class document shells are DockView, not shadcn Tabs.
 
 ## Composites (`@babylonslate/editor-kit`)
 
@@ -84,7 +84,7 @@ Reusable by script, shader, animation, and behaviour-tree graphs.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, cancelled pin-drag disconnect, Break Links on the selection, marquee, pin-filtered drop-to-add. Hosts may pass `nodeTypes`, `edgeTypes`, `nodesDraggable`, `toolbarExtra`, and attachment selection. Reconciles external `initialGraph` updates (undo/redo, Inspector) without emitting `onChange`. | Graph document panel; UserInterface Logic tab; Shader / AnimationGraph / BehaviourTree hosts (catalog `__pins` hydrated so Add Node is not an empty box; Anim Graph persists `AnimState.position`; BT uses parent-child handles and computed layout). |
+| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, tap- and drag-to-connect, cancelled pin-drag disconnect, Break Links on the selection, marquee, pin-filtered drop-to-add. Hosts may pass `nodeTypes`, `edgeTypes`, `nodesDraggable`, `toolbarExtra`, and attachment selection. Reconciles external `initialGraph` updates (undo/redo, Inspector) without emitting `onChange`. | Graph document panel; UserInterface Logic dock; Shader / AnimationGraph / BehaviourTree hosts (catalog `__pins` hydrated so Add Node is not an empty box; Anim Graph persists `AnimState.position`; BT uses parent-child handles and computed layout). |
 | **NodePalette** | CatalogDialog of nodes with role-color chips; optional pin compatibility filter. | Add Node from GraphEditor (empty-pane connect-end and Add Node). |
 
 ## App wrappers

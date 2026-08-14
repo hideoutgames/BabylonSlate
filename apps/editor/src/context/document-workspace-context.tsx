@@ -23,8 +23,12 @@ export function DocumentWorkspaceProvider({
 
 // Context modules intentionally export the provider plus consumer hooks.
 /* eslint-disable react-refresh/only-export-components -- context module */
+export function useOptionalDocumentWorkspace(): DocumentWorkspaceContextValue | null {
+  return useContext(DocumentWorkspaceContext);
+}
+
 export function useDocumentWorkspace(): DocumentWorkspaceContextValue {
-  const context = useContext(DocumentWorkspaceContext);
+  const context = useOptionalDocumentWorkspace();
   if (!context) {
     throw new Error(
       "useDocumentWorkspace must be used within DocumentWorkspaceProvider",

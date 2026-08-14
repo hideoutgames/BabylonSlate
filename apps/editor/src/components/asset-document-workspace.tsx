@@ -14,7 +14,6 @@ import {
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
 import { TilemapEditor } from "./tilemap-editor";
-import { UiDesigner } from "./ui-designer";
 import { AnimGraphEditor } from "./anim-graph-editor";
 import { ShaderGraphEditor } from "./shader-graph-editor";
 import { BehaviourTreeEditor } from "./behaviour-tree-editor";
@@ -44,15 +43,6 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   const commit = (next: Record<string, unknown>, mergeKey?: string) => {
     void applyAssetDocumentChange(documentId, next, mergeKey);
   };
-  if (doc.ref.kind === "ui") {
-    return (
-      <UiDesigner
-        path={doc.ref.path}
-        payload={payload}
-        onChange={commit}
-      />
-    );
-  }
   if (doc.ref.kind === "font") {
     return (
       <FontEditor

@@ -295,7 +295,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 
-Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. UserInterface / EditorUtilityInterface **authoring** editors (Dockview host + editing-stage Babylon GUI) are last P12 (`p12-ui-editors`), not parked.
+Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. UserInterface / EditorUtilityInterface **authoring** editors (Dockview host + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`).
 
 ### P9 follow-ups / open deferrals
 
@@ -309,7 +309,7 @@ Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateF
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
-| UserInterface + EditorUtilityInterface **authoring** editors | Designer is `AssetDocumentWorkspace` / `UiDesigner`, not Windows. Live EditorUtilityInterface **tabs** are P12 Dockview + `createUiSurface`. Authoring reuses this designer plus EUI `dockKind` | Last P12 (`p12-ui-editors`) |
+| UserInterface + EditorUtilityInterface **authoring** editors | Dockview Design / Hierarchy / Details / Logic; EUI Settings `dockKind`. Live EditorUtilityInterface **tabs** stay P12 Dockview + `createUiSurface` from Windows → Editor Utilities | Done (`p12-ui-editors`) |
 
 ## P10 tilemaps
 
@@ -377,7 +377,7 @@ Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live 
 | UserInterface + EditorUtilityInterface **authoring** editors | `p12-ui-editors` | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
 | Lighting / cameras | `p-lighting-camera` | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5; serialize if another agent holds those packages |
 
-**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one designer host. Last P12 (`p12-ui-editors`) is a thorough pass so those editors work: Dockview Design / Hierarchy / Details / Logic, editing-stage widgets actually paint (no Preview Unavailable as the normal path), EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
+**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one Dockview designer host (`p12-ui-editors`): Design / Hierarchy / Details / Logic, editing-stage widgets paint on a healthy Engine, EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
 
 Do not start leftover chrome polish (pin flash, multi-select gizmo). Plugin EUOs are P13.
 

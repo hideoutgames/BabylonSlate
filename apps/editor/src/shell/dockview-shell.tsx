@@ -17,6 +17,7 @@ export interface DockviewShellProps {
   onReady?: (api: DockviewApi) => void;
   initialLayout?: Record<string, unknown> | null;
   actorPrefab?: boolean;
+  editorUtilityInterface?: boolean;
 }
 
 export function DockviewShell({
@@ -24,6 +25,7 @@ export function DockviewShell({
   onReady,
   initialLayout,
   actorPrefab = true,
+  editorUtilityInterface = false,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const onReadyRef = useRef(onReady);
@@ -42,12 +44,16 @@ export function DockviewShell({
       } else {
         createDefaultLayoutForKind(event.api, documentKind, {
           actorPrefab,
+          editorUtilityInterface,
         });
       }
       migrateRestoredLayout(event.api);
       if (!actorPrefab) {
         event.api.getPanel("prefab-viewport")?.api.close();
         event.api.getPanel("actor-prefab")?.api.close();
+      }
+      if (!editorUtilityInterface) {
+        event.api.getPanel("ui-settings")?.api.close();
       }
 
       if (platformOptions.disableFloatingGroups) {
@@ -58,7 +64,7 @@ export function DockviewShell({
 
       onReadyRef.current?.(event.api);
     },
-    [documentKind, actorPrefab, platformOptions.disableFloatingGroups],
+    [documentKind, actorPrefab, editorUtilityInterface, platformOptions.disableFloatingGroups],
   );
 
   return (
