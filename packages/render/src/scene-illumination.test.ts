@@ -1,0 +1,376 @@
+import {
+  DirectionalLight,
+  PointLight,
+  Quaternion,
+  Scene,
+  ShadowGenerator,
+  SpotLight,
+  UniversalCamera,
+  Vector3,
+} from "@babylonjs/core";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  createActor,
+  createDefaultScene,
+  type SerializedScene,
+} from "@babylonslate/core";
+import { createTestEngine } from "./create-null-engine";
+import { setupDefaultViewport } from "./viewport";
+import {
+  AUTHORED_CAMERA_PREFIX,
+  AUTHORED_LIGHT_PREFIX,
+  shadowMapSizeFromQuality,
+  syncAuthoredIllumination,
+} from "./scene-illumination";
+
+const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
+  [];
+
+function createHandle() {
+  const handle = createTestEngine();
+  handles.push(handle);
+  return handle;
+}
+
+function sceneWith(
+  actors: SerializedScene["actors"],
+  settings: Partial<SerializedScene["settings"]> = {},
+  viewportMode: SerializedScene["viewportMode"] = "3d",
+): SerializedScene {
+  const base = createDefaultScene();
+  return {
+    ...base,
+    viewportMode,
+    settings: { ...base.settings, ...settings },
+    actors,
+  };
+}
+
+function lightActor(
+  id: string,
+  properties: Record<string, unknown>,
+  rotation: [number, number, number, number] = [0, 0, 0, 1],
+) {
+  return createActor(id, id, {
+    transform: {
+      position: [1, 2, 3],
+      rotation,
+      scale: [1, 1, 1],
+    },
+    components: [
+      {
+        id: `${id}-light`,
+        classId: "LightComponent",
+        properties,
+      },
+    ],
+  });
+}
+
+function cameraActor(
+  id: string,
+  properties: Record<string, unknown>,
+  rotation: [number, number, number, number] = [0, 0, 0, 1],
+) {
+  return createActor(id, id, {
+    transform: {
+      position: [0, 2, -6],
+      rotation,
+      scale: [1, 1, 1],
+    },
+    components: [
+      {
+        id: `${id}-camera`,
+        classId: "CameraComponent",
+        properties,
+      },
+    ],
+  });
+}
+
+afterEach(() => {
+  while (handles.length > 0) {
+    const handle = handles.pop();
+    handle?.scene.dispose();
+    handle?.engine.dispose();
+  }
+});
+
+describe("shadowMapSizeFromQuality", () => {
+  it("maps off/512/1024/2048 and defaults unknown to 1024", () => {
+    expect(shadowMapSizeFromQuality("off")).toBeNull();
+    expect(shadowMapSizeFromQuality("512")).toBe(512);
+    expect(shadowMapSizeFromQuality("1024")).toBe(1024);
+    expect(shadowMapSizeFromQuality("2048")).toBe(2048);
+    expect(shadowMapSizeFromQuality("low")).toBe(1024);
+  });
+});
+
+describe("syncAuthoredIllumination", () => {
+  it("updates an existing light in place instead of disposing the set", () => {
+    const { scene } = createHandle();
+    const first = sceneWith([
+      lightActor("lamp", {
+        lightKind: "point",
+        intensity: 1,
+        color: [1, 1, 1],
+      }),
+    ]);
+    syncAuthoredIllumination(scene, first, { stealActiveCamera: false });
+    const before = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}lamp`);
+    expect(before).toBeInstanceOf(PointLight);
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        lightActor("lamp", {
+          lightKind: "point",
+          intensity: 4,
+          color: [1, 0, 0],
+        }),
+      ]),
+      { stealActiveCamera: false },
+    );
+    const after = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}lamp`);
+    expect(after).toBe(before);
+    expect(after!.intensity).toBeCloseTo(4);
+    expect(after!.diffuse.r).toBeCloseTo(1);
+    expect(after!.diffuse.g).toBeCloseTo(0);
+  });
+
+  it("disposes only the authored light whose actor left the document", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        lightActor("keep", { lightKind: "point", intensity: 1 }),
+        lightActor("drop", { lightKind: "point", intensity: 1 }),
+      ]),
+      { stealActiveCamera: false },
+    );
+    const keep = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}keep`);
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([lightActor("keep", { lightKind: "point", intensity: 2 })]),
+      { stealActiveCamera: false },
+    );
+    expect(scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}keep`)).toBe(keep);
+    expect(scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}drop`)).toBeNull();
+  });
+
+  it("aims directional and spot lights along quaternion times Babylon forward", () => {
+    const { scene } = createHandle();
+    const half = Math.PI / 4;
+    const rotX90: [number, number, number, number] = [
+      Math.sin(half),
+      0,
+      0,
+      Math.cos(half),
+    ];
+    const expected = Vector3.Forward().applyRotationQuaternion(
+      new Quaternion(...rotX90),
+    );
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        lightActor("sun", { lightKind: "directional", intensity: 1 }, rotX90),
+        lightActor(
+          "spot",
+          { lightKind: "spot", intensity: 1, outerAngle: 40, innerAngle: 20 },
+          rotX90,
+        ),
+      ]),
+      { stealActiveCamera: false },
+    );
+    const sun = scene.getLightByName(
+      `${AUTHORED_LIGHT_PREFIX}sun`,
+    ) as DirectionalLight;
+    const spot = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}spot`) as SpotLight;
+    expect(sun.direction.x).toBeCloseTo(expected.x, 5);
+    expect(sun.direction.y).toBeCloseTo(expected.y, 5);
+    expect(sun.direction.z).toBeCloseTo(expected.z, 5);
+    expect(spot.direction.x).toBeCloseTo(expected.x, 5);
+    expect(spot.innerAngle).toBeCloseTo((20 * Math.PI) / 180, 5);
+    expect(spot.angle).toBeCloseTo((40 * Math.PI) / 180, 5);
+  });
+
+  it("creates a detached UniversalCamera using explicit projectionMode", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        cameraActor("rig", {
+          projectionMode: "orthographic",
+          orthographicSize: 0,
+          fieldOfView: 50,
+          nearClip: 0.2,
+          farClip: 500,
+        }),
+      ]),
+      { stealActiveCamera: false },
+    );
+    const camera = scene.getCameraByName(
+      `${AUTHORED_CAMERA_PREFIX}rig`,
+    ) as UniversalCamera;
+    expect(camera).toBeInstanceOf(UniversalCamera);
+    expect(camera.getClassName()).toBe("UniversalCamera");
+    expect(camera.mode).toBe(1);
+    expect(camera.minZ).toBeCloseTo(0.2);
+    expect(camera.maxZ).toBeCloseTo(500);
+    expect(camera.inputs.attachedToElement).toBeFalsy();
+  });
+
+  it("does not steal the first camera when stealActiveCamera is false", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    const orbit = scene.activeCamera;
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([cameraActor("rig", { projectionMode: "perspective" })]),
+      { stealActiveCamera: false },
+    );
+    expect(scene.activeCamera).toBe(orbit);
+  });
+
+  it("steals only the named Default Camera when stealActiveCamera is true", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    const orbit = scene.activeCamera;
+    const data = sceneWith(
+      [
+        cameraActor("first", { projectionMode: "perspective" }),
+        cameraActor("named", { projectionMode: "perspective" }),
+      ],
+      {
+        mainCameraActorId: "named",
+        mainCameraComponentId: "named-camera",
+      },
+    );
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: true });
+    expect(scene.activeCamera?.name).toBe(`${AUTHORED_CAMERA_PREFIX}named`);
+    expect(scene.activeCamera).not.toBe(orbit);
+  });
+
+  it("keeps the existing active camera when Default Camera is missing or stale", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    const orbit = scene.activeCamera;
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([cameraActor("rig", { projectionMode: "perspective" })], {
+        mainCameraActorId: "gone",
+        mainCameraComponentId: "gone-camera",
+      }),
+      { stealActiveCamera: true },
+    );
+    expect(scene.activeCamera).toBe(orbit);
+  });
+
+  it("applies linear fog and 3D environmentColor as clearColor", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([], {
+        environmentColor: [0.1, 0.2, 0.3],
+        fogEnabled: true,
+        fogColor: [0.4, 0.5, 0.6],
+        fogStart: 2,
+        fogEnd: 40,
+      }),
+      { stealActiveCamera: false, applyClearColor: true },
+    );
+    expect(scene.clearColor.r).toBeCloseTo(0.1);
+    expect(scene.clearColor.g).toBeCloseTo(0.2);
+    expect(scene.clearColor.b).toBeCloseTo(0.3);
+    expect(scene.fogEnabled).toBe(true);
+    expect(scene.fogMode).toBe(Scene.FOGMODE_LINEAR);
+    expect(scene.fogStart).toBeCloseTo(2);
+    expect(scene.fogEnd).toBeCloseTo(40);
+    expect(scene.fogColor.r).toBeCloseTo(0.4);
+  });
+
+  it("keeps chrome clearColor for a 2D editor when applyClearColor is false", () => {
+    const { scene } = createHandle();
+    const r = scene.clearColor.r;
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([], { environmentColor: [1, 0, 0] }, "2d"),
+      { stealActiveCamera: false, applyClearColor: false },
+    );
+    expect(scene.clearColor.r).toBeCloseTo(r);
+  });
+
+  it("attaches one ShadowGenerator to the first castShadows light", () => {
+    const { scene } = createHandle();
+    const diagnostics: string[] = [];
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        lightActor("fill", { lightKind: "point", intensity: 1, castShadows: false }),
+        lightActor("key", {
+          lightKind: "directional",
+          intensity: 1,
+          castShadows: true,
+        }),
+        lightActor("bounce", {
+          lightKind: "spot",
+          intensity: 1,
+          castShadows: true,
+        }),
+      ]),
+      {
+        stealActiveCamera: false,
+        shadowQuality: "1024",
+        onDiagnostic: (message) => diagnostics.push(message),
+      },
+    );
+    const key = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}key`);
+    const bounce = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}bounce`);
+    expect(key?.getShadowGenerator()).toBeInstanceOf(ShadowGenerator);
+    expect(
+      (key!.getShadowGenerator() as ShadowGenerator).getShadowMap()?.getSize()
+        .width,
+    ).toBe(1024);
+    expect(bounce?.getShadowGenerator()).toBeNull();
+    expect(diagnostics.some((line) => /castShadows/i.test(line))).toBe(true);
+  });
+
+  it("disables the shadow map when shadowquality is off", () => {
+    const { scene } = createHandle();
+    const data = sceneWith([
+      lightActor("key", {
+        lightKind: "directional",
+        intensity: 1,
+        castShadows: true,
+      }),
+    ]);
+    syncAuthoredIllumination(scene, data, {
+      stealActiveCamera: false,
+      shadowQuality: "1024",
+    });
+    const key = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}key`);
+    expect(key?.getShadowGenerator()).toBeTruthy();
+    syncAuthoredIllumination(scene, data, {
+      stealActiveCamera: false,
+      shadowQuality: "off",
+    });
+    expect(key?.getShadowGenerator()).toBeNull();
+  });
+
+  it("honors LightComponent enabled", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        lightActor("lamp", {
+          lightKind: "point",
+          intensity: 1,
+          enabled: false,
+        }),
+      ]),
+      { stealActiveCamera: false },
+    );
+    expect(
+      scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}lamp`)!.isEnabled(),
+    ).toBe(false);
+  });
+});

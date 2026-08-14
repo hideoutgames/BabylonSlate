@@ -49,14 +49,15 @@ The registry does not touch the world or renderer. Runtime implements:
 | Command | Host |
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
-| `renderquality` / `shadowquality` / `resolutionscale` / `volume` / `framecap` | typed setters (Play overlay / renderer consume later). `shadowquality` → one `ShadowGenerator` is [engineplan §2.5](../engineplan.md) / `p-lighting-camera`; the command is registered today and still succeeds as a typed setter until the renderer consumes it |
+| `renderquality` / `resolutionscale` / `volume` / `framecap` | typed setters (log `key=value` until a later consumer). `renderquality` stays `low`/`medium`/`high` |
+| `shadowquality` | enum `off`/`512`/`1024`/`2048` (not the render-quality ladder). Runtime emits `{ type: "setShadowQuality"; level }` and the renderer sizes the one `ShadowGenerator` (or disposes it when `off`). `2048` also warns |
 | `quit` | `quit()` → runtime `stop` |
 | debug pause / step / slomo | `pause` / `step` / `setTimeDilation` |
 | `dumplog` | `dumpLog()` from the log ring |
 | overlay flags | `setShowFps`, `setStat`, `setShowCollision`, … |
 | `snapshot start` / `snapshot stop` | `startSnapshot` / `stopSnapshot` → `TraceRecorder`; stop emits a `trace` command |
 
-Core setters that the main thread does not yet apply still succeed and emit a `log` command so graphs and tests can observe them.
+Core setters that the main thread does not yet apply (`renderquality`, `resolutionscale`, `volume`, `framecap`) still succeed and emit a `log` command so graphs and tests can observe them. `shadowquality` logs and applies.
 
 ## ExecuteConsoleCommand
 

@@ -1,4 +1,5 @@
-import type { AbstractEngine } from "@babylonjs/core";
+import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
 
@@ -26,7 +27,7 @@ interface CacheEntry {
   refCount: number;
   lastUsed: number;
   samplingKey: string;
-  texture?: Texture;
+  texture?: BaseTexture;
 }
 
 function samplingKey(options: TextureSamplingOptions = {}): string {
@@ -103,13 +104,13 @@ export class ResourceCache {
     engine: AbstractEngine,
     bytes: Uint8Array | Blob,
     options: TextureSamplingOptions = {},
-  ): Texture {
+  ): Texture | CubeTexture {
     const key = samplingKey(options);
     const existing = this.entries.get(assetGuid);
     if (existing?.texture && existing.samplingKey === key) {
       existing.refCount += 1;
       existing.lastUsed = ++this.clock;
-      return existing.texture;
+      return existing.texture as Texture | CubeTexture;
     }
     const url = this.blobUrlFor(assetGuid, bytes);
     const entry = this.entries.get(assetGuid)!;
@@ -118,12 +119,17 @@ export class ResourceCache {
       entry.texture = undefined;
     }
     // Canonical sampling flags are part of Babylon's InternalTexture cache key.
-    const texture = new Texture(url, engine, {
-      noMipmap: options.noMipmap ?? false,
-      invertY: options.invertY !== false,
-      samplingMode: options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE,
-      useSRGBBuffer: options.useSRGBBuffer ?? false,
-    });
+    const texture = options.isCube
+      ? new CubeTexture(url, engine, {
+          noMipmap: options.noMipmap ?? false,
+          useSRGBBuffer: options.useSRGBBuffer ?? false,
+        })
+      : new Texture(url, engine, {
+          noMipmap: options.noMipmap ?? false,
+          invertY: options.invertY !== false,
+          samplingMode: options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE,
+          useSRGBBuffer: options.useSRGBBuffer ?? false,
+        });
     entry.texture = texture;
     entry.samplingKey = key;
     return texture;

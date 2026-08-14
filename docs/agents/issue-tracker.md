@@ -200,7 +200,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list. Remaining: **Default Camera** via kit `SceneComponentPicker` (`CameraComponent` only), **Possess Camera** node (global Play camera), `UniversalCamera`, shadows/IBL. May run beside P12. |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | Done (`p-lighting-camera`) | Incremental `authoredLight`/`authoredCamera`; direction from actor rotation × `(0,0,1)`; Play color/intensity/range/cone; detached `UniversalCamera`; named Default Camera (`SceneComponentPicker`); Possess Camera; one `ShadowGenerator` from `shadowquality` (`off`/`512`/`1024`/`2048`); fog/IBL; `environmentColor` clear. Spec: [engineplan §2.5](../engineplan.md). |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -334,14 +334,14 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 | Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Play uses the open scene tab only; disabled otherwise. `collectPlayStartupScene` path fallback removed. `startupSceneGuid` is packaged/export boot (`p14-export`) |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
-| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract is §2.5 / `p-lighting-camera`, not P11) |
+| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract landed in `p-lighting-camera`) |
 | Play HUD TouchButton / TouchDPad / default Jump+dpad mappings | Done |
 | `playSound` command (logged; no mixer) | Done |
 | FunctionLibrary palette nodes | Parked (base class exists) |
 
 ## Lighting and cameras (`p-lighting-camera`)
 
-Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P12 (serialize `render` / `core` / `runtime` / `apps/editor` if another agent holds them). Do not reopen AI packages.
+Spec: [engineplan.md](../engineplan.md) §2.5. **Done.** Do not reopen AI packages.
 
 | Slice | Checklist | Packages |
 | --- | --- | --- |
@@ -352,7 +352,7 @@ Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P12 (
 
 ## P11 behaviour trees / navigation
 
-Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo) is not P11 work. Lighting and cameras are section 2.5 / `p-lighting-camera` — parallel to P12, not P11 work. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
+Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo) is not P11 work. Lighting and cameras (`p-lighting-camera`) are Done. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -393,12 +393,12 @@ Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation / Play
 
 ## P12 editor extensions
 
-Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities), §18 P12, Appendix A `p12-editor-extensions`. Lighting/cameras (`p-lighting-camera`) may run beside this slice.
+Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities), §18 P12, Appendix A `p12-editor-extensions`. Lighting/cameras (`p-lighting-camera`) is Done.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | EditorUtilityObject + Interface | `p12-editor-extensions` | `object-model`, `apps/editor`, export strip | P11 done |
-| Lighting / cameras | `p-lighting-camera` | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5; serialize if another agent holds those packages |
+| Lighting / cameras | Done (`p-lighting-camera`) | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5 landed |
 
 
 

@@ -1,20 +1,91 @@
 import {
   Color3,
+  Color4,
   DirectionalLight,
-  FreeCamera,
   PointLight,
   Quaternion,
+  Scene,
+  ShadowGenerator,
   SpotLight,
+  UniversalCamera,
   Vector3,
   type Camera,
   type Light,
-  type Scene,
 } from "@babylonjs/core";
+import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
 import { DEFAULT_LIGHT_INTENSITY } from "./viewport";
+import type { MeshAssetContext } from "./mesh-assets";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
+
+const EXTRA_CASTER_DIAGNOSTIC =
+  "Only the first castShadows light owns a shadow map; extra casters are ignored.";
+const SHADOW_2048_WARN =
+  "shadowquality 2048 is expensive on the baseline device";
+
+export type ShadowQualityLevel = "off" | "512" | "1024" | "2048";
+
+export function shadowMapSizeFromQuality(level: string): number | null {
+  if (level === "off") return null;
+  if (level === "512") return 512;
+  if (level === "2048") return 2048;
+  return 1024;
+}
+
+export type AuthoredLightProperties = {
+  color?: [number, number, number] | number[];
+  intensity?: number;
+  enabled?: boolean;
+  range?: number;
+  innerAngle?: number;
+  outerAngle?: number;
+  castShadows?: boolean;
+};
+
+export type AuthoredCameraProperties = {
+  projectionMode?: "perspective" | "orthographic" | string;
+  fieldOfView?: number;
+  orthographicSize?: number;
+  nearClip?: number;
+  farClip?: number;
+  isDefault?: boolean;
+};
+
+export type SyncIlluminationOptions = {
+  stealActiveCamera?: boolean;
+  restoreCamera?: Camera | null;
+  applyClearColor?: boolean;
+  shadowQuality?: string;
+  assets?: MeshAssetContext;
+  onDiagnostic?: (message: string) => void;
+};
+
+type AuthoredState = {
+  lights: Map<string, Light>;
+  cameras: Map<string, Camera>;
+  lightKinds: Map<string, string>;
+  shadow: ShadowGenerator | null;
+  shadowOwnerId: string | null;
+};
+
+const stateByScene = new WeakMap<Scene, AuthoredState>();
+
+function stateOf(scene: Scene): AuthoredState {
+  let state = stateByScene.get(scene);
+  if (!state) {
+    state = {
+      lights: new Map(),
+      cameras: new Map(),
+      lightKinds: new Map(),
+      shadow: null,
+      shadowOwnerId: null,
+    };
+    stateByScene.set(scene, state);
+  }
+  return state;
+}
 
 function asRgb(value: unknown): Color3 {
   if (Array.isArray(value) && value.length >= 3) {
@@ -23,127 +94,370 @@ function asRgb(value: unknown): Color3 {
   return Color3.White();
 }
 
+function asNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function degreesToRadians(degrees: unknown, fallback: number): number {
+  return (asNumber(degrees, fallback) * Math.PI) / 180;
+}
+
 function actorPosition(actor: SerializedActor): Vector3 {
   const [x, y, z] = actor.transform.position;
   return new Vector3(x, y, z);
 }
 
-function disposeAuthoredIllumination(scene: Scene): void {
-  for (const light of [...scene.lights]) {
-    if (light.name.startsWith(AUTHORED_LIGHT_PREFIX)) light.dispose();
-  }
-  for (const camera of [...scene.cameras]) {
-    if (camera.name.startsWith(AUTHORED_CAMERA_PREFIX)) camera.dispose();
-  }
+function actorRotation(actor: SerializedActor): Quaternion {
+  const [x, y, z, w] = actor.transform.rotation;
+  return new Quaternion(x, y, z, w);
 }
 
-function createAuthoredLight(
-  scene: Scene,
-  actor: SerializedActor,
-  component: SerializedActor["components"][number],
-): Light {
+export function actorForwardFromRotation(rotation: {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}): Vector3 {
+  return Vector3.Forward().applyRotationQuaternion(
+    new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+  );
+}
+
+function actorForward(actor: SerializedActor): Vector3 {
+  const [x, y, z, w] = actor.transform.rotation;
+  return actorForwardFromRotation({ x, y, z, w });
+}
+
+function lightKindOf(component: { properties: Record<string, unknown> }): string {
   const kind = String(component.properties.lightKind ?? "point");
-  const name = `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
-  const position = actorPosition(actor);
-  let light: Light;
-  if (kind === "directional") {
-    light = new DirectionalLight(name, new Vector3(0, -1, 0), scene);
-  } else if (kind === "spot") {
-    light = new SpotLight(
-      name,
-      position,
-      new Vector3(0, -1, 0),
-      Math.PI / 3,
-      2,
-      scene,
-    );
-  } else {
-    light = new PointLight(name, position, scene);
-  }
-  light.intensity = Number(component.properties.intensity ?? 1);
-  light.diffuse = asRgb(component.properties.color);
-  if ("position" in light) {
-    (light as PointLight).position.copyFrom(position);
-  }
-  const range = Number(component.properties.range ?? 10);
+  return kind === "directional" || kind === "spot" ? kind : "point";
+}
+
+export function applyAuthoredLightProperties(
+  light: Light,
+  properties: AuthoredLightProperties,
+): void {
+  light.intensity = asNumber(properties.intensity, 1);
+  light.diffuse = asRgb(properties.color);
+  light.setEnabled(properties.enabled !== false);
+  const range = asNumber(properties.range, 10);
   if (light instanceof PointLight || light instanceof SpotLight) {
-    light.range = Number.isFinite(range) && range > 0 ? range : 10;
+    light.range = range > 0 ? range : 10;
   }
   if (light instanceof SpotLight) {
-    const degrees = Number(component.properties.outerAngle ?? 45);
-    light.angle = ((Number.isFinite(degrees) ? degrees : 45) * Math.PI) / 180;
+    light.angle = degreesToRadians(properties.outerAngle, 45);
+    light.innerAngle = degreesToRadians(properties.innerAngle, 30);
   }
-  return light;
 }
 
-function createAuthoredCamera(
-  scene: Scene,
-  actor: SerializedActor,
-  component: SerializedActor["components"][number],
-): Camera {
-  const name = `${AUTHORED_CAMERA_PREFIX}${actor.id}`;
-  const position = actorPosition(actor);
-  const camera = new FreeCamera(name, position, scene);
-  camera.minZ = 0.1;
-  camera.maxZ = 1000;
-  const [rx, ry, rz, rw] = actor.transform.rotation;
-  camera.rotationQuaternion = new Quaternion(rx, ry, rz, rw);
-  const fovDeg = Number(component.properties.fieldOfView ?? 60);
-  camera.fov = ((Number.isFinite(fovDeg) ? fovDeg : 60) * Math.PI) / 180;
-  const ortho = Number(component.properties.orthographicSize ?? 0);
-  if (ortho > 0) {
+export function applyAuthoredCameraProperties(
+  camera: Camera,
+  properties: AuthoredCameraProperties,
+): void {
+  camera.minZ = asNumber(properties.nearClip, 0.1);
+  camera.maxZ = asNumber(properties.farClip, 1000);
+  const fovDeg = asNumber(properties.fieldOfView, 60);
+  camera.fov = (fovDeg * Math.PI) / 180;
+  const ortho = asNumber(properties.orthographicSize, 5) || 5;
+  if (properties.projectionMode === "orthographic") {
     camera.mode = 1;
     camera.orthoTop = ortho;
     camera.orthoBottom = -ortho;
     camera.orthoLeft = -ortho * (16 / 9);
     camera.orthoRight = ortho * (16 / 9);
+  } else {
+    camera.mode = 0;
   }
-  return camera;
 }
 
-/**
- * Rebuild authored lights/cameras from the scene document. When a camera is
- * present it becomes `activeCamera` (Play). Editor callers pass
- * `stealActiveCamera: false` so the orbit camera stays in control.
- */
-export function syncAuthoredIllumination(
+function detachCameraInputs(camera: UniversalCamera): void {
+  camera.detachControl();
+  camera.inputs.clear();
+}
+
+function createLight(
   scene: Scene,
-  sceneData: SerializedScene,
-  options: { stealActiveCamera?: boolean } = {},
-): void {
-  disposeAuthoredIllumination(scene);
-  let authoredLight = false;
-  let firstCamera: Camera | null = null;
-  for (const actor of sceneData.actors) {
-    const lightComponent = actor.components.find(
-      (component) => component.classId === "LightComponent",
-    );
-    if (lightComponent) {
-      createAuthoredLight(scene, actor, lightComponent);
-      authoredLight = true;
-    }
-    const cameraComponent = actor.components.find(
-      (component) => component.classId === "CameraComponent",
-    );
-    if (cameraComponent) {
-      const camera = createAuthoredCamera(scene, actor, cameraComponent);
-      firstCamera ??= camera;
-    }
+  actor: SerializedActor,
+  kind: string,
+): Light {
+  const name = `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
+  const position = actorPosition(actor);
+  const direction = actorForward(actor);
+  if (kind === "directional") {
+    const light = new DirectionalLight(name, direction, scene);
+    light.position.copyFrom(position);
+    return light;
   }
-  const defaultLight = scene.getLightByName("light");
-  if (defaultLight) {
-    defaultLight.intensity = authoredLight ? 0.15 : DEFAULT_LIGHT_INTENSITY;
+  if (kind === "spot") {
+    return new SpotLight(name, position, direction, Math.PI / 3, 2, scene);
   }
-  if (options.stealActiveCamera !== false && firstCamera) {
-    scene.activeCamera = firstCamera;
-  }
+  return new PointLight(name, position, scene);
+}
+
+function createCamera(scene: Scene, actor: SerializedActor): UniversalCamera {
+  const camera = new UniversalCamera(
+    `${AUTHORED_CAMERA_PREFIX}${actor.id}`,
+    actorPosition(actor),
+    scene,
+  );
+  camera.rotationQuaternion = actorRotation(actor);
+  detachCameraInputs(camera);
+  return camera;
 }
 
 export function updateAuthoredLightTransform(
   light: Light,
   position: { x: number; y: number; z: number },
+  rotation?: { x: number; y: number; z: number; w: number },
 ): void {
   if ("position" in light) {
     (light as PointLight).position.set(position.x, position.y, position.z);
+  }
+  if (rotation && (light instanceof DirectionalLight || light instanceof SpotLight)) {
+    const direction = actorForwardFromRotation(rotation);
+    light.direction.copyFrom(direction);
+  }
+}
+
+export function updateAuthoredCameraTransform(
+  camera: Camera,
+  position: { x: number; y: number; z: number },
+  rotation: { x: number; y: number; z: number; w: number },
+): void {
+  const gameCamera = camera as UniversalCamera;
+  gameCamera.position.set(position.x, position.y, position.z);
+  if (!gameCamera.rotationQuaternion) {
+    gameCamera.rotationQuaternion = Quaternion.Identity();
+  }
+  gameCamera.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+}
+
+function refreshShadowCasters(scene: Scene, generator: ShadowGenerator): void {
+  for (const mesh of scene.meshes) {
+    if (mesh.name.startsWith("__")) continue;
+    generator.addShadowCaster(mesh, false);
+    mesh.receiveShadows = true;
+  }
+}
+
+export function attachSingleShadowGenerator(
+  scene: Scene,
+  light: Light,
+  mapSize: number | null,
+  existing: ShadowGenerator | null,
+): ShadowGenerator | null {
+  existing?.dispose();
+  if (mapSize === null) return null;
+  if (
+    !(
+      light instanceof DirectionalLight ||
+      light instanceof PointLight ||
+      light instanceof SpotLight
+    )
+  ) {
+    return null;
+  }
+  const generator = new ShadowGenerator(mapSize, light);
+  refreshShadowCasters(scene, generator);
+  return generator;
+}
+
+export function applySceneEnvironment(
+  scene: Scene,
+  sceneData: SerializedScene,
+  options: { applyClearColor?: boolean; assets?: MeshAssetContext } = {},
+): void {
+  const settings = sceneData.settings;
+  if (options.applyClearColor) {
+    const [r, g, b] = settings.environmentColor;
+    scene.clearColor = new Color4(r, g, b, 1);
+  }
+  if (settings.fogEnabled) {
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogEnabled = true;
+    scene.fogColor = asRgb(settings.fogColor);
+    scene.fogStart = settings.fogStart;
+    scene.fogEnd = settings.fogEnd;
+  } else {
+    scene.fogMode = Scene.FOGMODE_NONE;
+    scene.fogEnabled = false;
+  }
+  const guid = settings.environmentTextureGuid;
+  const bytes = guid ? options.assets?.textureBytes?.get(guid) : undefined;
+  if (guid && bytes && options.assets?.resourceCache) {
+    scene.environmentTexture = options.assets.resourceCache.getTexture(
+      guid,
+      scene.getEngine(),
+      bytes,
+      { isCube: true },
+    );
+  } else {
+    scene.environmentTexture = null;
+  }
+}
+
+function resolveDefaultCameraActorId(sceneData: SerializedScene): string | null {
+  const actorId = sceneData.settings.mainCameraActorId;
+  const componentId = sceneData.settings.mainCameraComponentId;
+  if (!actorId || !componentId) return null;
+  const actor = sceneData.actors.find((entry) => entry.id === actorId);
+  const component = actor?.components.find(
+    (entry) => entry.id === componentId && entry.classId === "CameraComponent",
+  );
+  return component ? actorId : null;
+}
+
+/**
+ * Incrementally sync authored lights/cameras from the scene document.
+ * Play callers pass `stealActiveCamera: true` so the named Default Camera
+ * becomes `activeCamera` when it exists. Editor callers pass false (or the
+ * Game Camera preview toggle) so the orbit camera stays in control.
+ */
+export function syncAuthoredIllumination(
+  scene: Scene,
+  sceneData: SerializedScene,
+  options: SyncIlluminationOptions = {},
+): void {
+  const state = stateOf(scene);
+  const previousActive = scene.activeCamera;
+  applySceneEnvironment(scene, sceneData, {
+    applyClearColor: options.applyClearColor,
+    assets: options.assets,
+  });
+
+  const liveLights = new Set<string>();
+  const liveCameras = new Set<string>();
+  let authoredLight = false;
+  const shadowCandidates: string[] = [];
+
+  for (const actor of sceneData.actors) {
+    const lightComponent = actor.components.find(
+      (component) => component.classId === "LightComponent",
+    );
+    if (lightComponent) {
+      authoredLight = true;
+      liveLights.add(actor.id);
+      const kind = lightKindOf(lightComponent);
+      let light = state.lights.get(actor.id);
+      if (light && state.lightKinds.get(actor.id) !== kind) {
+        if (state.shadowOwnerId === actor.id) {
+          state.shadow?.dispose();
+          state.shadow = null;
+          state.shadowOwnerId = null;
+        }
+        light.dispose();
+        light = undefined;
+      }
+      if (!light) {
+        light = createLight(scene, actor, kind);
+        state.lights.set(actor.id, light);
+        state.lightKinds.set(actor.id, kind);
+      }
+      applyAuthoredLightProperties(light, lightComponent.properties);
+      updateAuthoredLightTransform(
+        light,
+        {
+          x: actor.transform.position[0],
+          y: actor.transform.position[1],
+          z: actor.transform.position[2],
+        },
+        {
+          x: actor.transform.rotation[0],
+          y: actor.transform.rotation[1],
+          z: actor.transform.rotation[2],
+          w: actor.transform.rotation[3],
+        },
+      );
+      if (lightComponent.properties.castShadows === true) {
+        shadowCandidates.push(actor.id);
+      }
+    }
+    const cameraComponent = actor.components.find(
+      (component) => component.classId === "CameraComponent",
+    );
+    if (cameraComponent) {
+      liveCameras.add(actor.id);
+      let camera = state.cameras.get(actor.id);
+      if (!camera) {
+        camera = createCamera(scene, actor);
+        state.cameras.set(actor.id, camera);
+      }
+      applyAuthoredCameraProperties(camera, cameraComponent.properties);
+      updateAuthoredCameraTransform(
+        camera,
+        {
+          x: actor.transform.position[0],
+          y: actor.transform.position[1],
+          z: actor.transform.position[2],
+        },
+        {
+          x: actor.transform.rotation[0],
+          y: actor.transform.rotation[1],
+          z: actor.transform.rotation[2],
+          w: actor.transform.rotation[3],
+        },
+      );
+    }
+  }
+
+  for (const [actorId, light] of state.lights) {
+    if (!liveLights.has(actorId)) {
+      if (state.shadowOwnerId === actorId) {
+        state.shadow?.dispose();
+        state.shadow = null;
+        state.shadowOwnerId = null;
+      }
+      light.dispose();
+      state.lights.delete(actorId);
+      state.lightKinds.delete(actorId);
+    }
+  }
+  for (const [actorId, camera] of state.cameras) {
+    if (!liveCameras.has(actorId)) {
+      camera.dispose();
+      state.cameras.delete(actorId);
+    }
+  }
+
+  const defaultLight = scene.getLightByName("light");
+  if (defaultLight) {
+    defaultLight.intensity = authoredLight ? 0.15 : DEFAULT_LIGHT_INTENSITY;
+  }
+
+  const mapSize = shadowMapSizeFromQuality(options.shadowQuality ?? "1024");
+  const ownerId = shadowCandidates[0] ?? null;
+  if (ownerId && mapSize !== null) {
+    const owner = state.lights.get(ownerId);
+    if (owner && (state.shadowOwnerId !== ownerId || !state.shadow)) {
+      state.shadow = attachSingleShadowGenerator(scene, owner, mapSize, state.shadow);
+      state.shadowOwnerId = ownerId;
+    } else if (owner && state.shadow) {
+      const current = state.shadow.getShadowMap()?.getSize().width;
+      if (current !== mapSize) {
+        state.shadow = attachSingleShadowGenerator(scene, owner, mapSize, state.shadow);
+      } else {
+        refreshShadowCasters(scene, state.shadow);
+      }
+    }
+  } else if (state.shadow) {
+    state.shadow.dispose();
+    state.shadow = null;
+    state.shadowOwnerId = null;
+  }
+  if (shadowCandidates.length > 1) {
+    options.onDiagnostic?.(EXTRA_CASTER_DIAGNOSTIC);
+  }
+  if (options.shadowQuality === "2048") {
+    options.onDiagnostic?.(SHADOW_2048_WARN);
+  }
+
+  const namedId = resolveDefaultCameraActorId(sceneData);
+  const named = namedId ? state.cameras.get(namedId) : undefined;
+  if (options.stealActiveCamera && named) {
+    scene.activeCamera = named;
+  } else if (options.restoreCamera) {
+    scene.activeCamera = options.restoreCamera;
+  } else if (previousActive) {
+    scene.activeCamera = previousActive;
   }
 }

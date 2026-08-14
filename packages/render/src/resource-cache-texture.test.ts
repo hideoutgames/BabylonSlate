@@ -36,6 +36,16 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
+  it("builds a cube texture when isCube is set", () => {
+    const engine = new NullEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const cube = cache.getTexture("env", engine, bytes, { isCube: true });
+    expect(cube.isCube).toBe(true);
+    cache.dispose();
+    engine.dispose();
+  });
+
   it("logs eviction reason when flushing unreferenced", () => {
     const reasons: Array<{ id: string; reason: string }> = [];
     const cache = new ResourceCache({

@@ -1,4 +1,4 @@
-import type { Mesh, Scene } from "@babylonjs/core";
+import type { Camera, Mesh, Scene } from "@babylonjs/core";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
 import type { RenderScheduler } from "./render-scheduler";
 import type { MeshAssetContext } from "./mesh-assets";
@@ -44,6 +44,9 @@ export class EditorSceneSync {
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
   private lastScene: SerializedScene | null = null;
+  private stealActiveCamera = false;
+  private restoreCamera: Camera | null = null;
+  private shadowQuality = "1024";
 
   constructor(scene: Scene, scheduler?: Pick<RenderScheduler, "invalidate">) {
     this.scene = scene;
@@ -61,6 +64,17 @@ export class EditorSceneSync {
     for (const mesh of this.meshes.values()) mesh.dispose();
     this.meshes.clear();
     this.meshKinds.clear();
+    if (this.lastScene) this.apply(this.lastScene);
+  }
+
+  setGameCameraPreview(enabled: boolean, restoreCamera?: Camera | null): void {
+    this.stealActiveCamera = enabled;
+    if (restoreCamera !== undefined) this.restoreCamera = restoreCamera;
+    if (this.lastScene) this.apply(this.lastScene);
+  }
+
+  setShadowQuality(level: string): void {
+    this.shadowQuality = level;
     if (this.lastScene) this.apply(this.lastScene);
   }
 
@@ -117,7 +131,13 @@ export class EditorSceneSync {
 
     this.scheduler?.invalidate("asset");
     this.lastScene = sceneData;
-    syncAuthoredIllumination(this.scene, sceneData, { stealActiveCamera: false });
+    syncAuthoredIllumination(this.scene, sceneData, {
+      stealActiveCamera: this.stealActiveCamera,
+      restoreCamera: this.restoreCamera,
+      applyClearColor: sceneData.viewportMode !== "2d",
+      shadowQuality: this.shadowQuality,
+      assets: this.assets,
+    });
   }
 
   serializedScene(): SerializedScene | null {

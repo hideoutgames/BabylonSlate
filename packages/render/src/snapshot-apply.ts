@@ -1,16 +1,16 @@
 import {
-  Color3,
   DirectionalLight,
-  FreeCamera,
   Matrix,
   Mesh,
   PointLight,
   Quaternion,
   Scene,
   SpotLight,
+  UniversalCamera,
   Vector3,
   type Camera,
   type Light,
+  type ShadowGenerator,
 } from "@babylonjs/core";
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import type { SampledSnapshot } from "./snapshot-sync";
@@ -20,7 +20,14 @@ import { createPrimitiveMesh } from "./scene-loader";
 import {
   AUTHORED_CAMERA_PREFIX,
   AUTHORED_LIGHT_PREFIX,
+  applyAuthoredCameraProperties,
+  applyAuthoredLightProperties,
+  attachSingleShadowGenerator,
+  shadowMapSizeFromQuality,
+  updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
+  type AuthoredCameraProperties,
+  type AuthoredLightProperties,
 } from "./scene-illumination";
 import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
@@ -35,12 +42,19 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   meshes: Map<number, Mesh>;
   lights: Map<number, Light>;
   cameras: Map<number, Camera>;
+  lightProps: Map<number, AuthoredLightProperties>;
+  cameraProps: Map<number, AuthoredCameraProperties>;
   /** Reused each apply — no per-frame Set allocation. */
   liveSlots: Set<number>;
   /** meshKind from assignMesh, keyed by slotId. */
   meshKinds: Map<number, string | null>;
   /** Sprite / mesh asset guid from assignMesh, keyed by slotId. */
   meshAssetGuids: Map<number, string | null>;
+  defaultCameraSlotId: number | null;
+  possessedCameraSlotId: number | null;
+  shadow: ShadowGenerator | null;
+  shadowOwnerSlot: number | null;
+  shadowQuality: string;
 }
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
@@ -48,13 +62,63 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     meshes: new Map(),
     lights: new Map(),
     cameras: new Map(),
+    lightProps: new Map(),
+    cameraProps: new Map(),
     liveSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
+    defaultCameraSlotId: null,
+    possessedCameraSlotId: null,
+    shadow: null,
+    shadowOwnerSlot: null,
+    shadowQuality: "1024",
   };
 }
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
+
+function refreshPlayActiveCamera(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+): void {
+  const possessed =
+    binding.possessedCameraSlotId !== null
+      ? binding.cameras.get(binding.possessedCameraSlotId)
+      : undefined;
+  if (possessed) {
+    scene.activeCamera = possessed;
+    return;
+  }
+  const named =
+    binding.defaultCameraSlotId !== null
+      ? binding.cameras.get(binding.defaultCameraSlotId)
+      : undefined;
+  if (named) {
+    scene.activeCamera = named;
+    return;
+  }
+  const playDefault = scene.getCameraByName("camera");
+  if (playDefault) scene.activeCamera = playDefault;
+}
+
+function applyPlayShadows(scene: Scene, binding: SnapshotSceneBinding): void {
+  const mapSize = shadowMapSizeFromQuality(binding.shadowQuality);
+  if (mapSize === null || binding.shadowOwnerSlot === null) {
+    binding.shadow?.dispose();
+    binding.shadow = null;
+    return;
+  }
+  const light = binding.lights.get(binding.shadowOwnerSlot);
+  if (!light) {
+    binding.shadow?.dispose();
+    binding.shadow = null;
+    binding.shadowOwnerSlot = null;
+    return;
+  }
+  if (!binding.shadow) {
+    binding.shadow = attachSingleShadowGenerator(scene, light, mapSize, null);
+  }
+}
 
 /** Remember (and rebuild) the Play mesh for a slot from an assignMesh command. */
 export function applyAssignMesh(
@@ -65,6 +129,31 @@ export function applyAssignMesh(
   const meshKind = command.meshKind ?? null;
   binding.meshKinds.set(command.slotId, meshKind);
   binding.meshAssetGuids.set(command.slotId, command.meshAssetGuid);
+  if (command.light) binding.lightProps.set(command.slotId, command.light);
+  if (command.camera) {
+    binding.cameraProps.set(command.slotId, command.camera);
+    if (command.camera.isDefault) {
+      binding.defaultCameraSlotId = command.slotId;
+    } else if (binding.defaultCameraSlotId === command.slotId) {
+      binding.defaultCameraSlotId = null;
+    }
+  }
+  const existingLight = binding.lights.get(command.slotId);
+  if (existingLight && command.light) {
+    applyAuthoredLightProperties(existingLight, command.light);
+    if (command.light.castShadows && binding.shadowOwnerSlot === null) {
+      binding.shadowOwnerSlot = command.slotId;
+    }
+    applyPlayShadows(scene, binding);
+    refreshPlayActiveCamera(scene, binding);
+    return;
+  }
+  const existingCamera = binding.cameras.get(command.slotId);
+  if (existingCamera && command.camera) {
+    applyAuthoredCameraProperties(existingCamera, command.camera);
+    refreshPlayActiveCamera(scene, binding);
+    return;
+  }
   const existing = binding.meshes.get(command.slotId);
   if (!existing) return;
   disposeSlotVisuals(scene, binding, command.slotId);
@@ -78,6 +167,27 @@ export function applyAssignMesh(
       binding,
     ),
   );
+  refreshPlayActiveCamera(scene, binding);
+}
+
+export function applyPossessCamera(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+  slotId: number,
+): void {
+  binding.possessedCameraSlotId = slotId;
+  refreshPlayActiveCamera(scene, binding);
+}
+
+export function applyShadowQuality(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+  level: string,
+): void {
+  binding.shadowQuality = level;
+  binding.shadow?.dispose();
+  binding.shadow = null;
+  applyPlayShadows(scene, binding);
 }
 
 function disposeSlotVisuals(
@@ -91,6 +201,11 @@ function disposeSlotVisuals(
   binding.lights.delete(slotId);
   binding.cameras.get(slotId)?.dispose();
   binding.cameras.delete(slotId);
+  if (binding.shadowOwnerSlot === slotId) {
+    binding.shadow?.dispose();
+    binding.shadow = null;
+    binding.shadowOwnerSlot = null;
+  }
   void scene;
 }
 
@@ -145,25 +260,30 @@ export function createPlayMesh(
     const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}`;
     const light =
       kind === "directional"
-        ? new DirectionalLight(lightName, new Vector3(0, -1, 0), scene)
+        ? new DirectionalLight(lightName, new Vector3(0, 0, 1), scene)
         : kind === "spot"
           ? new SpotLight(
               lightName,
               Vector3.Zero(),
-              new Vector3(0, -1, 0),
+              new Vector3(0, 0, 1),
               Math.PI / 3,
               2,
               scene,
             )
           : new PointLight(lightName, Vector3.Zero(), scene);
-    light.diffuse = Color3.White();
+    const props = binding.lightProps.get(slotId);
+    if (props) applyAuthoredLightProperties(light, props);
     binding.lights.set(slotId, light);
+    if (props?.castShadows && binding.shadowOwnerSlot === null) {
+      binding.shadowOwnerSlot = slotId;
+    }
+    applyPlayShadows(scene, binding);
     return mesh;
   }
   if (meshKind === "camera" && binding) {
     const mesh = createPrimitiveMesh(scene, name, null);
     mesh.isVisible = false;
-    const camera = new FreeCamera(
+    const camera = new UniversalCamera(
       `${AUTHORED_CAMERA_PREFIX}${slotId}`,
       Vector3.Zero(),
       scene,
@@ -171,9 +291,12 @@ export function createPlayMesh(
     camera.minZ = 0.1;
     camera.maxZ = 1000;
     camera.rotationQuaternion = Quaternion.Identity();
-    const isFirst = binding.cameras.size === 0;
+    camera.detachControl();
+    camera.inputs.clear();
+    const props = binding.cameraProps.get(slotId);
+    if (props) applyAuthoredCameraProperties(camera, props);
     binding.cameras.set(slotId, camera);
-    if (isFirst) scene.activeCamera = camera;
+    refreshPlayActiveCamera(scene, binding);
     return mesh;
   }
   return createPrimitiveMesh(scene, name, meshKind);
@@ -212,14 +335,12 @@ export function applySnapshotToScene(
       writeActorTransform(mesh, actor);
       mesh.isVisible = (actor.flags & 1) === 1;
       const light = binding.lights.get(actor.slotId);
-      if (light) updateAuthoredLightTransform(light, actor.position);
+      if (light) {
+        updateAuthoredLightTransform(light, actor.position, actor.rotation);
+      }
       const camera = binding.cameras.get(actor.slotId);
-      if (camera instanceof FreeCamera) {
-        camera.position.copyFrom(scratchPos);
-        if (!camera.rotationQuaternion) {
-          camera.rotationQuaternion = Quaternion.Identity();
-        }
-        camera.rotationQuaternion.copyFrom(scratchQuat);
+      if (camera) {
+        updateAuthoredCameraTransform(camera, actor.position, actor.rotation);
       }
     }
     for (const [slotId, mesh] of binding.meshes) {
@@ -228,10 +349,23 @@ export function applySnapshotToScene(
         binding.meshes.delete(slotId);
         binding.meshKinds.delete(slotId);
         binding.meshAssetGuids.delete(slotId);
+        binding.lightProps.delete(slotId);
+        binding.cameraProps.delete(slotId);
         binding.lights.get(slotId)?.dispose();
         binding.lights.delete(slotId);
         binding.cameras.get(slotId)?.dispose();
         binding.cameras.delete(slotId);
+        if (binding.defaultCameraSlotId === slotId) {
+          binding.defaultCameraSlotId = null;
+        }
+        if (binding.possessedCameraSlotId === slotId) {
+          binding.possessedCameraSlotId = null;
+        }
+        if (binding.shadowOwnerSlot === slotId) {
+          binding.shadow?.dispose();
+          binding.shadow = null;
+          binding.shadowOwnerSlot = null;
+        }
       }
     }
   } finally {
@@ -246,11 +380,18 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   }
   for (const light of binding.lights.values()) light.dispose();
   for (const camera of binding.cameras.values()) camera.dispose();
+  binding.shadow?.dispose();
   binding.meshes.clear();
   binding.lights.clear();
   binding.cameras.clear();
+  binding.lightProps.clear();
+  binding.cameraProps.clear();
   binding.meshKinds.clear();
   binding.meshAssetGuids.clear();
+  binding.shadow = null;
+  binding.shadowOwnerSlot = null;
+  binding.defaultCameraSlotId = null;
+  binding.possessedCameraSlotId = null;
 }
 
 function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {

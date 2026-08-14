@@ -172,7 +172,7 @@ Shared **PinListEditor** / **PinTypePicker** in `editor-kit` author typed named 
 
 One module + one test file per category:
 
-`flow`, `math`, `vector`, `string`, `array`/`map` (`array.*` plus `map.get` / `map.set` / `map.has` / `map.remove` / `map.size` / `map.keys` with K/V wildcards), `actor`, `component`, `transform`, `physics` (LineTrace, Sphere Overlap, Shape Sweep, Add Impulse — sync on calling exec pin), `input`, `audio`, `ui`, `scene`, `debug`, `interface`, `variables`, `casting`, `timers`, `behaviour-tree` (On Activate / On Tick / On Abort / On Evaluate / Finish Execute / Return Condition / Get Blackboard / Set Blackboard), `navigation` (FindPathTo, MoveTo, StopMovement, path queries, obstacle add/remove).
+`flow`, `math`, `vector`, `string`, `array`/`map` (`array.*` plus `map.get` / `map.set` / `map.has` / `map.remove` / `map.size` / `map.keys` with K/V wildcards), `actor`, `component`, `transform`, `physics` (LineTrace, Sphere Overlap, Shape Sweep, Add Impulse — sync on calling exec pin), `input`, `audio`, `ui`, `scene`, `camera` / `light` (Possess Camera, get/set FOV and orthographic size, set light enabled/color/intensity), `debug`, `interface`, `variables`, `casting`, `timers`, `behaviour-tree` (On Activate / On Tick / On Abort / On Evaluate / Finish Execute / Return Condition / Get Blackboard / Set Blackboard), `navigation` (FindPathTo, MoveTo, StopMovement, path queries, obstacle add/remove).
 
 Each node: `{ id, title, category, pins, codegen(ctx) }`. Physics/input nodes may register with compile-time "not yet available" or emit TODOs that fail validation until those phases — prefer stub codegen that throws a clear diagnostic over silently no-op.
 
@@ -298,7 +298,7 @@ An actor scripted in the editor compiles and runs in the worker; a type mismatch
 | Behaviour-tree validation rules | P11 |
 | Shader / AnimationGraph validators | P9 |
 | Scene viewport Play badge on 3D viewport | P6 scene chrome (wire badge API in P5; host may be class-doc Play until then) |
-| Possess Camera / Default Camera pick | `p-lighting-camera` ([engineplan §2.5](../engineplan.md)) |
+| Possess Camera / Default Camera pick | Done (`p-lighting-camera`, [engineplan §2.5](../engineplan.md)) |
 
 ## Implementation order
 
@@ -316,7 +316,7 @@ See [issue-tracker P5 slice ownership](../agents/issue-tracker.md#p5-slice-owner
 
 Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tree. Editor wires validation (Compiler Results, Play badge + Play Anyway `AlertDialog`), graph-ui tap-to-connect **and** drag-to-connect + CatalogDialog palette, Class panel, CodeMirror ExecuteJavaScript body editor, Enum/Structure/ScriptInterface creatable assets, `FunctionLibrary` engine base (no palette nodes), `formatValue`, and validator fixtures.
 
-Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, copies tick input into `ctx`, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers Tick→Print plus Tick→GetAxis2D (injected gamepad). Play with no scene tab is disabled.
+Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, copies tick input into `ctx`, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers Tick→Print plus Tick→GetAxis2D (injected gamepad). Play with no scene tab is disabled. **Possess Camera** (`camera.possess`) emits `{ type: "possessCamera"; slotId }` for the global Play `activeCamera`. Camera/light property nodes mutate component variables and re-emit `assignMesh`.
 
 **Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (pin flash, project-wide validation sweep, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **Enum / Structure / ScriptInterface DockView editors** (member tables, interface method preview, Class My Blueprint + Inspector) are landed — do not reopen those as P5 gaps.
 

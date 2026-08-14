@@ -17,6 +17,7 @@ import { ResourceCache } from "./resource-cache";
 import { applySceneToBabylonScene, editorMeshName } from "./scene-loader";
 import type { MeshAssetContext } from "./mesh-assets";
 import { encodeTriangleGlb } from "./model-mesh";
+import { setupDefaultViewport } from "./viewport";
 
 function sceneWith(
   actors: SerializedScene["actors"],
@@ -175,8 +176,10 @@ describe("authored mesh content", () => {
     expect(scene.lights.length).toBeGreaterThan(0);
   });
 
-  it("uses CameraComponent as the active camera", () => {
+  it("does not steal the first CameraComponent when Default Camera is unset", () => {
     const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    const orbit = scene.activeCamera;
     applySceneToBabylonScene(
       scene,
       sceneWith([
@@ -190,12 +193,45 @@ describe("authored mesh content", () => {
             {
               id: "camera",
               classId: "CameraComponent",
-              properties: { fieldOfView: 50, orthographicSize: 4 },
+              properties: {
+                fieldOfView: 50,
+                projectionMode: "perspective",
+              },
             },
           ],
         }),
       ]),
     );
+    expect(scene.getCameraByName("authoredCamera:cam")).toBeTruthy();
+    expect(scene.activeCamera).toBe(orbit);
+    expect(scene.activeCamera?.name).not.toBe("authoredCamera:cam");
+  });
+
+  it("uses the named Default Camera as activeCamera", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    const data = sceneWith([
+      createActor("cam", "Camera", {
+        transform: {
+          position: [0, 2, -6],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+        },
+        components: [
+          {
+            id: "camera",
+            classId: "CameraComponent",
+            properties: {
+              fieldOfView: 50,
+              projectionMode: "perspective",
+            },
+          },
+        ],
+      }),
+    ]);
+    data.settings.mainCameraActorId = "cam";
+    data.settings.mainCameraComponentId = "camera";
+    applySceneToBabylonScene(scene, data);
     expect(scene.activeCamera?.name).toBe("authoredCamera:cam");
   });
 });

@@ -34,6 +34,9 @@ export interface SceneEditingContextValue {
   /** Live viewport mode; the scene document holds the per-scene default. */
   viewportMode: ViewportMode;
   setViewportMode: (mode: ViewportMode) => void;
+  /** Session-only Game Camera preview of the named Default Camera. */
+  previewGameCamera: boolean;
+  setPreviewGameCamera: (enabled: boolean) => void;
   frameActor: (actorId: string) => void;
   setFrameActorHandler: (handler: ((actorId: string) => void) | null) => void;
   /** Persist editor camera pose across viewport remounts (Focus, layout restore). */
@@ -110,6 +113,7 @@ export function SceneEditingProvider({
   const [viewportMode, setViewportMode] = useState<ViewportMode>(
     resolveDocumentViewportMode(documentViewportMode ?? initialViewportMode),
   );
+  const [previewGameCamera, setPreviewGameCamera] = useState(false);
   const frameActorHandlerRef = useRef<((actorId: string) => void) | null>(
     null,
   );
@@ -186,6 +190,8 @@ export function SceneEditingProvider({
       setDragSelectActive,
       viewportMode,
       setViewportMode,
+      previewGameCamera,
+      setPreviewGameCamera,
       frameActor,
       setFrameActorHandler,
       saveEditorCameraPose,
@@ -204,6 +210,7 @@ export function SceneEditingProvider({
       setFrameActorHandler,
       snapEnabled,
       viewportMode,
+      previewGameCamera,
     ],
   );
 

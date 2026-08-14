@@ -249,6 +249,9 @@ export function startPlaySession(options: {
     pixelsPerUnit: options.pixelsPerUnit,
     environmentColor: options.scene?.settings.environmentColor,
   });
+  if (options.scene) {
+    handle.applySceneEnvironment(options.scene);
+  }
   handle.scheduler.invalidate("play");
   liveBefore.meshes = handle.liveObjectCounts().meshes;
 
@@ -291,6 +294,9 @@ export function startPlaySession(options: {
       spawnedActorGuids.push(command.actorGuid);
     }
     if (command.type === "assignMesh") {
+      handle.applyCommand(command);
+    }
+    if (command.type === "possessCamera" || command.type === "setShadowQuality") {
       handle.applyCommand(command);
     }
     if (command.type === "animState") {

@@ -55,6 +55,8 @@ export function ViewportToolbar({
     setDragSelectActive,
     viewportMode,
     setViewportMode,
+    previewGameCamera,
+    setPreviewGameCamera,
   } = useSceneEditing();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -131,6 +133,15 @@ export function ViewportToolbar({
       closeOnClick: false,
       testId: `${testIdPrefix}gizmo-joystick-toggle`,
       onCheckedChange: toggleJoystick,
+    },
+    {
+      type: "checkbox",
+      id: "game-camera",
+      label: "Game Camera",
+      checked: previewGameCamera,
+      closeOnClick: false,
+      testId: `${testIdPrefix}viewport-game-camera-toggle`,
+      onCheckedChange: setPreviewGameCamera,
     },
   ];
 

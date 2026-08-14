@@ -127,6 +127,14 @@ export {
   type ClassPickerProps,
 } from "./class-picker";
 export {
+  SceneComponentPicker,
+  parseSceneComponentPickId,
+  sceneComponentPickId,
+  type SceneComponentPickerEntry,
+  type SceneComponentPickerProps,
+  type SceneComponentRef,
+} from "./scene-component-picker";
+export {
   NamedListEditor,
   type NamedListEditorProps,
   type NamedListItemRenderArgs,

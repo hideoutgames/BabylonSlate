@@ -244,6 +244,14 @@ describe("componentPropertyRows", () => {
       value: "point",
     });
     expect(light.rows.find((row) => row.id.endsWith("-outerAngle"))).toBeUndefined();
+    expect(light.rows.find((row) => row.id.endsWith("-enabled"))).toMatchObject({
+      kind: "boolean",
+      value: true,
+    });
+    expect(light.rows.find((row) => row.id.endsWith("-castShadows"))).toMatchObject({
+      kind: "boolean",
+      value: false,
+    });
     const gravity = body.rows.find((row) => row.id.endsWith("-gravityScale"));
     expect(gravity).toMatchObject({ kind: "slider", value: 1, min: 0, max: 10 });
   });
@@ -268,6 +276,20 @@ describe("componentPropertyRows", () => {
       min: 0.1,
       max: 50,
     });
+    expect(
+      camera.rows.find((row) => row.id.endsWith("-projectionMode")),
+    ).toMatchObject({
+      kind: "enum",
+      value: "perspective",
+    });
+    expect(camera.rows.find((row) => row.id.endsWith("-nearClip"))).toMatchObject({
+      kind: "number",
+      value: 0.1,
+    });
+    expect(camera.rows.find((row) => row.id.endsWith("-farClip"))).toMatchObject({
+      kind: "number",
+      value: 1000,
+    });
   });
 
   it("shows outer angle for a spot light", () => {
@@ -286,6 +308,19 @@ describe("componentPropertyRows", () => {
       kind: "number",
       value: 12,
     });
+    expect(spot.rows.find((row) => row.id.endsWith("-innerAngle"))).toMatchObject({
+      kind: "number",
+      value: 30,
+    });
+  });
+
+  it("hides range on a directional light", () => {
+    const directional = rowsFor({
+      id: "sun",
+      classId: "LightComponent",
+      properties: { lightKind: "directional", intensity: 1 },
+    });
+    expect(directional.rows.find((row) => row.id.endsWith("-range"))).toBeUndefined();
   });
 
   it("flattens collider shape kind and numeric extents instead of object text", () => {
