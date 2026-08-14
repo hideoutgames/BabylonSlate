@@ -34,13 +34,11 @@ describe("data-types", () => {
     expect(ASSET_COLOR_VAR.folder).toBe("var(--asset-folder)");
   });
 
-  it("builds a dark-center radial type wash with an inset kind bar", () => {
+  it("builds an inset type-colored outline without a radial wash", () => {
     const colorVar = "var(--asset-texture)";
     const accent = typeColorThumbAccent(colorVar);
-    expect(accent.backgroundImage).toContain("radial-gradient");
-    expect(accent.backgroundImage).toContain("var(--card)");
-    expect(accent.backgroundImage).toContain("var(--asset-texture)");
-    expect(accent.boxShadow).toBe("inset 0 -3px 0 var(--asset-texture)");
+    expect(accent.boxShadow).toBe("inset 0 0 0 2px var(--asset-texture)");
+    expect("backgroundImage" in accent).toBe(false);
     expect("backgroundColor" in accent).toBe(false);
   });
 });

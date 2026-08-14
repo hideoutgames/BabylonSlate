@@ -150,7 +150,7 @@ describe("ContentBrowserAssetTile", () => {
     expect(className).not.toContain("p-4");
   });
 
-  it("tints only the thumb well, leaving the card and text panel on card chrome", () => {
+  it("outlines the thumb well, leaving the card and text panel on card chrome", () => {
     const { tile } = renderTile();
     const card = tile.closest('[data-slot="card"]') as HTMLElement | null;
     expect(card).not.toBeNull();
@@ -158,9 +158,9 @@ describe("ContentBrowserAssetTile", () => {
     expect(card?.style.borderColor).toBe("");
     const glyph = screen.getByTestId("content-item-type-icon-hero-1");
     const thumb = glyph.parentElement as HTMLElement;
-    expect(thumb.style.backgroundImage).toContain("radial-gradient");
-    expect(thumb.style.backgroundImage).toContain("var(--card)");
-    expect(thumb.style.backgroundImage).toContain("var(--asset-texture)");
-    expect(thumb.style.boxShadow).toBe("inset 0 -3px 0 var(--asset-texture)");
+    expect(thumb.style.backgroundImage).toBe("");
+    expect(thumb.style.boxShadow).toBe("inset 0 0 0 2px var(--asset-texture)");
+    expect(thumb.className).toContain("bg-card");
+    expect(thumb.className).toContain("p-0.5");
   });
 });
