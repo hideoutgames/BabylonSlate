@@ -2,6 +2,13 @@ export type NavPoint = { x: number; y: number; z: number };
 
 export type NavObstacleKind = "box" | "cylinder";
 
+export type NavAgentParams = {
+  radius?: number;
+  height?: number;
+  maxSpeed?: number;
+  maxAcceleration?: number;
+};
+
 export type NavigationBackend = {
   importNavMesh(bytes: Uint8Array): void;
   findPath(from: NavPoint, to: NavPoint): NavPoint[];
@@ -9,6 +16,10 @@ export type NavigationBackend = {
   randomPointInRadius(center: NavPoint, radius: number): NavPoint | null;
   addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;
   removeObstacle(id: string): void;
+  addAgent(position: NavPoint, params?: NavAgentParams): string;
+  removeAgent(id: string): void;
+  agentPosition(id: string): NavPoint | null;
+  setAgentTarget(id: string, target: NavPoint): boolean;
   stepCrowd(dtSeconds: number): void;
 };
 

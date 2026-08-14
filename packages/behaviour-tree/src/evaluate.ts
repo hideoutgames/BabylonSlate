@@ -5,8 +5,11 @@ import type {
   BtEvalState,
   BtNode,
   BtResult,
+  BtService,
+  BtServiceHost,
   BtStackFrame,
   BtTaskHost,
+  EvaluateBehaviourTreeOptions,
 } from "./types";
 
 const BUILTIN_TASKS = new Set([
@@ -184,6 +187,92 @@ function applyAborts(
   }
 }
 
+function hash01(seed: number, id: string, fireIndex: number): number {
+  let h = seed >>> 0;
+  for (let i = 0; i < id.length; i += 1) {
+    h = Math.imul(h ^ id.charCodeAt(i), 2654435761) >>> 0;
+  }
+  h = Math.imul(h ^ fireIndex, 1597334677) >>> 0;
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+function serviceIntervalMs(service: BtService, seed: number, fireIndex: number): number {
+  const base = service.intervalMs;
+  const deviation = service.randomDeviationMs;
+  if (!(deviation > 0)) return Math.max(0, base);
+  const offset = (hash01(seed, service.id, fireIndex) * 2 - 1) * deviation;
+  return Math.max(0, base + offset);
+}
+
+function fireService(
+  service: BtService,
+  node: BtNode,
+  blackboard: BlackboardValues,
+  dtSeconds: number,
+  memory: Record<string, unknown>,
+  host?: BtServiceHost,
+): void {
+  if (service.classId === "bt.service.setBlackboard") {
+    const key = typeof service.properties.key === "string" ? service.properties.key : "";
+    if (key) blackboard[key] = service.properties.value;
+    return;
+  }
+  host?.tick(service, node, blackboard, dtSeconds, memory);
+}
+
+function tickNodeServices(
+  node: BtNode,
+  blackboard: BlackboardValues,
+  dtSeconds: number,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  seed: number,
+  host?: BtServiceHost,
+): void {
+  if (node.services.length === 0) return;
+  const memory = (nodeMemory[node.id] ??= {});
+  for (const service of node.services) {
+    const key = `__svc:${service.id}`;
+    const row = (memory[key] as Record<string, unknown> | undefined) ?? {};
+    let elapsed = typeof row.elapsedMs === "number" ? row.elapsedMs : 0;
+    let fires = typeof row.fires === "number" ? row.fires : 0;
+    let nextMs =
+      typeof row.nextMs === "number" ? row.nextMs : serviceIntervalMs(service, seed, fires);
+    elapsed += dtSeconds * 1000;
+    if (nextMs <= 0) {
+      fireService(service, node, blackboard, dtSeconds, memory, host);
+      fires += 1;
+      elapsed = 0;
+      nextMs = serviceIntervalMs(service, seed, fires);
+    } else {
+      while (elapsed >= nextMs && nextMs > 0) {
+        elapsed -= nextMs;
+        fireService(service, node, blackboard, dtSeconds, memory, host);
+        fires += 1;
+        nextMs = serviceIntervalMs(service, seed, fires);
+        if (nextMs <= 0) break;
+      }
+    }
+    memory[key] = { elapsedMs: elapsed, nextMs, fires };
+  }
+}
+
+function tickStackServices(
+  stack: BtStackFrame[],
+  nodes: Map<string, BtNode>,
+  blackboard: BlackboardValues,
+  dtSeconds: number,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  seed: number,
+  host?: BtServiceHost,
+): void {
+  for (const frame of stack) {
+    if (!frame.opened) continue;
+    const node = nodes.get(frame.nodeId);
+    if (node) tickNodeServices(node, blackboard, dtSeconds, nodeMemory, seed, host);
+  }
+}
+
 function runningLeaf(stack: BtStackFrame[], nodes: Map<string, BtNode>): string | null {
   for (let i = stack.length - 1; i >= 0; i -= 1) {
     const node = nodes.get(stack[i]!.nodeId);
@@ -196,7 +285,7 @@ export function evaluateBehaviourTree(
   tree: BehaviourTreeDocument,
   previous: BtEvalState | null,
   dtSeconds: number,
-  options?: { host?: BtTaskHost; blackboard?: BlackboardValues },
+  options?: EvaluateBehaviourTreeOptions,
 ): BtEvalState {
   const nodes = new Map(tree.nodes.map((node) => [node.id, node]));
   const blackboard: BlackboardValues =
@@ -206,8 +295,18 @@ export function evaluateBehaviourTree(
   const lastResults: Record<string, BtResult> = { ...(previous?.lastResults ?? {}) };
   const nodeMemory = cloneMemory(previous?.nodeMemory);
   const stack: BtStackFrame[] = (previous?.stack ?? []).map((frame) => ({ ...frame }));
+  const seed = options?.seed ?? 0;
 
   applyAborts(nodes, stack, lastResults, blackboard);
+  tickStackServices(
+    stack,
+    nodes,
+    blackboard,
+    dtSeconds,
+    nodeMemory,
+    seed,
+    options?.serviceHost,
+  );
 
   if (stack.length === 0) {
     const aborted = lastResults[tree.rootId];
@@ -246,6 +345,14 @@ export function evaluateBehaviourTree(
           continue;
         }
         frame.opened = true;
+        tickNodeServices(
+          node,
+          blackboard,
+          dtSeconds,
+          nodeMemory,
+          seed,
+          options?.serviceHost,
+        );
       }
       const memory = (nodeMemory[node.id] ??= {});
       const result = tickTask(node, blackboard, dtSeconds, memory, options?.host);
@@ -270,6 +377,14 @@ export function evaluateBehaviourTree(
       }
       frame.opened = true;
       frame.childIndex = 0;
+      tickNodeServices(
+        node,
+        blackboard,
+        dtSeconds,
+        nodeMemory,
+        seed,
+        options?.serviceHost,
+      );
     }
 
     if (node.kind === "parallel") {

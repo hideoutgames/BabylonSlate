@@ -2,7 +2,7 @@
 
 Shared surface for navmesh bake and worker queries (engineplan §14.2). Implementation: `@babylonslate/navigation`. Recast wasm is allowed; no React, no Babylon, no `@recast-navigation/babylon`.
 
-Bake UI, Place Actors, debug draw, and runtime crowd tick stay later slices. `NavAgentComponent` stays catalog-gated.
+Bake UI, Place Actors, debug draw, and runtime crowd **load** stay later slices. The package crowd API (`addAgent` / `stepCrowd`) is in this package. `NavAgentComponent` stays catalog-gated.
 
 ## Package
 
@@ -18,7 +18,8 @@ Do **not** use Babylon `RecastJSPlugin`. `@recast-navigation/core` + `generators
 ## This slice (`p11-navigation` package)
 
 - `generateNavMesh({ positions, indices, settings? })` → `exportNavMesh()` bytes (solo mesh). Call `initNavigation()` / generate before import.
-- `createNavigationBackend()`: `importNavMesh`, `findPath`, `closestPoint`, `randomPointInRadius`, `addObstacle` / `removeObstacle` (ids; tile-cache carving is later), `stepCrowd`.
+- `createNavigationBackend()`: `importNavMesh`, `findPath`, `closestPoint`, `randomPointInRadius`, `addObstacle` / `removeObstacle` (ids only; **tile-cache carving is `p11-nav-blockers-2d`**), `addAgent` / `removeAgent` / `agentPosition` / `setAgentTarget`, `stepCrowd` (moves added agents).
+- Crowd steps with a fixed dt and the same navmesh bytes are identical across two backends in unit tests; if that ever fails, record agent pose into the P8 trace instead of recomputing.
 - `worldToRecast` / `recastToWorld`: 2D world `(x, y, _)` ↔ Recast `(x, 0, y)`. Property-tested. No other code touches Recast axes.
 - `facingYawFromVelocity`: Recast XZ yaw (`atan2(x, z)`), keep previous yaw below a min-length guard.
 - `navmeshChunk` / `navmeshBytesFromChunks` / `NAVMESH_CHUNK_ID = "navmesh"`. Pass the chunk as `extraChunks` on Scene save; `extraChunksFromDecoded` already preserves it. Not a Content Browser type.
@@ -40,7 +41,7 @@ Bake in the editor (later); **never** generate at Play start.
 
 | Slice | Work |
 | --- | --- |
-| Nav editor host | Main-thread geometry collect, bake worker wrapping `generateNavMesh`, blocking bake modal, NavMesh Place Actor + Recast settings Details, `@recast-navigation/babylon` debug draw, runtime `importNavMesh` / crowd tick |
+| Nav editor host | Main-thread geometry collect, bake worker wrapping `generateNavMesh`, blocking bake modal, NavMesh Place Actor + Recast settings Details, `@recast-navigation/babylon` debug draw, runtime `importNavMesh` + `addAgent` / `stepCrowd` |
 | `p11-nav-blockers-2d` | Static vs dynamic `NavMeshBlockerActor`, area cost, tile-cache obstacles, scripting FindPathTo / MoveTo / …, BT MoveTo |
 
 Bake modal (when the editor host lands):

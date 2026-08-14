@@ -35,13 +35,14 @@ Separate asset. Keys use the scripting pin type system (`PinType` JSON). The eva
 
 ## Evaluator
 
-Pure: `(tree, blackboard, previous, dtSeconds, host?) → BtEvalState`.
+Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 
 - Explicit stack of `{ nodeId, childIndex }` — no recursion, so a tree can be stepped and inspected.
 - Results: `success` | `failure` | `running`.
 - `lastResult` per node for a later debug overlay.
 - `btNodeId` on the running leaf (Preview / trace).
 - Custom leaves go through `BtTaskHost.tick`; omitted host still runs built-ins.
+- Attached **services** tick while their owner is on the stack. Interval + `randomDeviationMs` use `options.seed` (default `0`) so the same seed yields the same schedule. Built-in `bt.service.setBlackboard`; other class ids go through `BtServiceHost.tick`.
 
 Abort observers run **before** continuing the stack (Unreal-style):
 

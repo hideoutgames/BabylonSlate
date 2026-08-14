@@ -1,4 +1,5 @@
 export type {
+  NavAgentParams,
   NavMeshGenerateInput,
   NavMeshSettings,
   NavObstacleKind,

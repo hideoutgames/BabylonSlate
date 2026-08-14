@@ -73,3 +73,20 @@ export type BtTaskHost = {
     memory: Record<string, unknown>,
   ): BtResult;
 };
+
+export type BtServiceHost = {
+  tick(
+    service: BtService,
+    node: BtNode,
+    blackboard: BlackboardValues,
+    dtSeconds: number,
+    memory: Record<string, unknown>,
+  ): void;
+};
+
+export type EvaluateBehaviourTreeOptions = {
+  host?: BtTaskHost;
+  serviceHost?: BtServiceHost;
+  blackboard?: BlackboardValues;
+  seed?: number;
+};

@@ -239,4 +239,112 @@ describe("evaluateBehaviourTree", () => {
     );
     expect(evaluateBehaviourTree(doc, null, 1 / 60).status).toBe("success");
   });
+
+  it("fires an attached setBlackboard service while a wait stays running", () => {
+    const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
+    root.services.push({
+      id: "pulse",
+      classId: "bt.service.setBlackboard",
+      intervalMs: 50,
+      randomDeviationMs: 0,
+      properties: { key: "alert", value: true },
+    });
+    const wait = node("idle", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    const doc = tree([root, wait], "root");
+    const first = evaluateBehaviourTree(doc, null, 0.03, { blackboard: {} });
+    expect(first.status).toBe("running");
+    expect(first.blackboard.alert).toBeUndefined();
+    const second = evaluateBehaviourTree(doc, first, 0.03, { blackboard: first.blackboard });
+    expect(second.status).toBe("running");
+    expect(second.blackboard.alert).toBe(true);
+  });
+
+  it("ticks a custom service through the service host", () => {
+    const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
+    root.services.push({
+      id: "custom",
+      classId: "bt.service.custom",
+      intervalMs: 0,
+      randomDeviationMs: 0,
+      properties: {},
+    });
+    const wait = node("idle", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    const doc = tree([root, wait], "root");
+    const seen: string[] = [];
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      serviceHost: {
+        tick: (service) => {
+          seen.push(service.id);
+        },
+      },
+    });
+    expect(next.status).toBe("running");
+    expect(seen).toEqual(["custom"]);
+  });
+
+  it("does not tick a service after abort pops its owner", () => {
+    const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
+    root.decorators.push({
+      id: "alive",
+      classId: "bt.decorator.blackboardIsSet",
+      abortMode: "self",
+      observedKeys: ["ok"],
+      properties: { key: "ok" },
+    });
+    root.services.push({
+      id: "pulse",
+      classId: "bt.service.custom",
+      intervalMs: 0,
+      randomDeviationMs: 0,
+      properties: {},
+    });
+    const wait = node("idle", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    const doc = tree([root, wait], "root");
+    const seen: string[] = [];
+    const host = {
+      tick: (service: { id: string }) => {
+        seen.push(service.id);
+      },
+    };
+    const running = evaluateBehaviourTree(doc, null, 0.016, {
+      blackboard: { ok: true },
+      serviceHost: host,
+    });
+    expect(running.status).toBe("running");
+    expect(seen).toEqual(["pulse"]);
+    const aborted = evaluateBehaviourTree(doc, running, 0.016, {
+      blackboard: {},
+      serviceHost: host,
+    });
+    expect(aborted.status).toBe("failure");
+    expect(seen).toEqual(["pulse"]);
+  });
+
+  it("reproduces the same service schedule for the same seed", () => {
+    const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
+    root.services.push({
+      id: "pulse",
+      classId: "bt.service.setBlackboard",
+      intervalMs: 40,
+      randomDeviationMs: 20,
+      properties: { key: "count", value: 1 },
+    });
+    const wait = node("idle", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    const doc = tree([root, wait], "root");
+    const run = (seed: number) => {
+      let state = evaluateBehaviourTree(doc, null, 0.016, { seed, blackboard: {} });
+      for (let i = 0; i < 12; i += 1) {
+        state = evaluateBehaviourTree(doc, state, 0.016, { seed, blackboard: state.blackboard });
+      }
+      return state;
+    };
+    const a = run(7);
+    const b = run(7);
+    expect(a.blackboard.count).toBe(1);
+    expect(a).toEqual(b);
+  });
 });

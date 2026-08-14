@@ -10,8 +10,10 @@ export type {
   BtNodeKind,
   BtResult,
   BtService,
+  BtServiceHost,
   BtStackFrame,
   BtTaskHost,
+  EvaluateBehaviourTreeOptions,
 } from "./types";
 
 export {
