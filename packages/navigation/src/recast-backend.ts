@@ -53,14 +53,14 @@ export async function generateNavMesh(input: NavMeshGenerateInput): Promise<Uint
     input.indices,
     toRecastConfig(settings),
   );
-  if (!result.success || !result.navMesh) {
-    throw new Error(result.error ?? "generateNavMesh failed");
+  if (result.success) {
+    try {
+      return exportNavMesh(result.navMesh);
+    } finally {
+      result.navMesh.destroy();
+    }
   }
-  try {
-    return exportNavMesh(result.navMesh);
-  } finally {
-    result.navMesh.destroy();
-  }
+  throw new Error("generateNavMesh failed");
 }
 
 class RecastNavigationBackend implements NavigationBackend {
@@ -142,6 +142,13 @@ class RecastNavigationBackend implements NavigationBackend {
     const agent = this.agents.get(id);
     if (!agent) return null;
     const point = agent.position();
+    return { x: point.x, y: point.y, z: point.z };
+  }
+
+  agentVelocity(id: string): NavPoint | null {
+    const agent = this.agents.get(id);
+    if (!agent) return null;
+    const point = agent.velocity();
     return { x: point.x, y: point.y, z: point.z };
   }
 

@@ -341,10 +341,10 @@ Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo)
 | Tree + evaluator | `p11-behaviour-tree` | `behaviour-tree`, `scripting` (hook) | Design notes |
 | BT classes + component | `p11-bt-authoring` | `object-model`, `runtime`, `scripting-nodes` (landed) | Tree package |
 | BT editor | `p11-bt-editor` | `graph-ui`, `apps/editor`, `debugger` (landed) | Authoring |
-| Nav port + bake | `p11-navigation` | `navigation` (package landed; crowd `addAgent` / `setAgentTarget`); bake modal / Place Actors / runtime load later | Design notes |
-| Nav editor host | `p11-nav-editor-host` | `apps/editor`, `render`, `runtime` | Nav package |
+| Nav port + bake | `p11-navigation` | `navigation` (package landed; crowd `addAgent` / `setAgentTarget`) | Design notes |
+| Nav editor host | `p11-nav-editor-host` | `apps/editor`, `render`, `runtime` (landed) | Nav package |
 | Blockers + 2D + nodes | `p11-nav-blockers-2d` | `navigation`, `scripting-nodes`, `apps/editor` | Nav package + BT MoveTo stub |
 
-Do **not** ungate `NavAgentComponent` until `p11-nav-editor-host`. `BehaviourTreeComponent` is addable.
+`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` is Place Actors only. Auto-bake-on-save stays off by default.
 
 

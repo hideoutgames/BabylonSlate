@@ -82,6 +82,7 @@ describe("recast generate / import round-trip", () => {
     expect(moved!.x).toBeGreaterThan(start!.x);
     nav.removeAgent(id);
     expect(nav.agentPosition(id)).toBeNull();
+    expect(nav.agentVelocity(id)).toBeNull();
   });
 
   it("records whether crowd steps are byte-identical across two backends", () => {

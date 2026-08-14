@@ -15,6 +15,7 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   "ColliderComponent",
   "AnimationGraphComponent",
   "BehaviourTreeComponent",
+  "NavAgentComponent",
 ];
 
 const nodeRegistry = createDefaultNodeRegistry();

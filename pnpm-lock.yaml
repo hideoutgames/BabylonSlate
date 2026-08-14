@@ -119,6 +119,9 @@ importers:
       '@babylonslate/input':
         specifier: workspace:*
         version: link:../../packages/input
+      '@babylonslate/navigation':
+        specifier: workspace:*
+        version: link:../../packages/navigation
       '@babylonslate/object-model':
         specifier: workspace:*
         version: link:../../packages/object-model
@@ -437,6 +440,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
+      '@babylonslate/navigation':
+        specifier: workspace:*
+        version: link:../navigation
       '@babylonslate/shader-graph':
         specifier: workspace:*
         version: link:../shader-graph
@@ -474,6 +480,9 @@ importers:
       '@babylonslate/input':
         specifier: workspace:*
         version: link:../input
+      '@babylonslate/navigation':
+        specifier: workspace:*
+        version: link:../navigation
       '@babylonslate/object-model':
         specifier: workspace:*
         version: link:../object-model

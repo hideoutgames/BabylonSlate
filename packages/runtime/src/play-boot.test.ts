@@ -66,6 +66,28 @@ describe("createPlayBootCoordinator", () => {
     expect(runtime.started).toBe(true);
   });
 
+  it("imports the baked navmesh before realizePlayWorld so agents register on spawn", async () => {
+    const nav = deferred<void>();
+    let navLoaded = false;
+    let realizedAfterNav = false;
+    const runtime = fakeRuntime({
+      loadNavMesh: () =>
+        nav.promise.then(() => {
+          navLoaded = true;
+        }),
+      realizePlayWorld() {
+        realizedAfterNav = navLoaded;
+      },
+    });
+    const boot = createPlayBootCoordinator();
+    boot.queueNavMesh(runtime, new Uint8Array([1, 2, 3]));
+    const playing = boot.play(runtime);
+    expect(navLoaded).toBe(false);
+    nav.resolve();
+    await playing;
+    expect(realizedAfterNav).toBe(true);
+  });
+
   it("skips graph spawns whose class already exists after realize", async () => {
     const runtime = fakeRuntime();
     const boot = createPlayBootCoordinator();

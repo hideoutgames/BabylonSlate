@@ -13,6 +13,7 @@ export type PlayBootRuntime = {
   getWorld(): { getActors(): readonly { classId: string }[] };
   spawnScriptedActor(options: PlaySpawnEntry): unknown;
   loadPhysics(): Promise<void>;
+  loadNavMesh?(bytes: Uint8Array): Promise<void>;
   start(): void;
   resume(): void;
   reportError(error: unknown): void;
@@ -24,11 +25,13 @@ export type PlayBootRuntime = {
  */
 export function createPlayBootCoordinator() {
   let scriptsReady: Promise<void> = Promise.resolve();
+  let navReady: Promise<void> = Promise.resolve();
   let pendingSpawn: PlaySpawnEntry[] = [];
 
   return {
     reset() {
       scriptsReady = Promise.resolve();
+      navReady = Promise.resolve();
       pendingSpawn = [];
     },
     queueScripts(
@@ -41,8 +44,15 @@ export function createPlayBootCoordinator() {
         runtime.reportError(error);
       });
     },
+    queueNavMesh(runtime: PlayBootRuntime, bytes: Uint8Array) {
+      if (!runtime.loadNavMesh) return;
+      navReady = runtime.loadNavMesh(bytes).catch((error) => {
+        runtime.reportError(error);
+      });
+    },
     async play(runtime: PlayBootRuntime): Promise<void> {
       await scriptsReady;
+      await navReady;
       runtime.realizePlayWorld();
       const sceneClassIds = new Set(
         runtime.getWorld().getActors().map((actor) => actor.classId),

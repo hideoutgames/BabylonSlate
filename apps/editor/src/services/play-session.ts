@@ -205,6 +205,8 @@ export function startPlaySession(options: {
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   pixelsPerUnit?: number;
+  /** Baked Scene navmesh bytes; Play imports and never generates. */
+  navmeshBytes?: Uint8Array | null;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -395,6 +397,16 @@ export function startPlaySession(options: {
     if (tilemapsControl) {
       worker.postControl(tilemapsControl);
     }
+    if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
+      const copy = options.navmeshBytes.slice();
+      worker.postControl({
+        type: "loadNavMesh",
+        bytes: copy.buffer.slice(
+          copy.byteOffset,
+          copy.byteOffset + copy.byteLength,
+        ) as ArrayBuffer,
+      });
+    }
     worker.postControl({ type: "play" });
   } catch (err) {
     worker = null;
@@ -435,6 +447,9 @@ export function startPlaySession(options: {
         tilesets: options.tilesetPayloads ?? new Map(),
         pixelsPerUnit: options.pixelsPerUnit,
       });
+    }
+    if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
+      boot.queueNavMesh(inProcess, options.navmeshBytes);
     }
     void boot.play(inProcess).catch((error) => {
       inProcess.reportError(error);

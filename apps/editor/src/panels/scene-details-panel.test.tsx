@@ -133,6 +133,23 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByDisplayValue("[object Object]")).toBeNull();
   });
 
+  it("shows a Bake NavMesh action on NavMeshComponent details", () => {
+    scene().actors = [
+      createActor("nav", "NavMesh", {
+        components: [
+          {
+            id: "navmesh",
+            classId: "NavMeshComponent",
+            properties: { cellSize: 0.2, tiled: false },
+          },
+        ],
+      }),
+    ];
+    harness.selectedActorIds = ["nav"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("navmesh-bake-navmesh")).toBeTruthy();
+  });
+
   it("picks Game Instance from ClassPicker instead of a free text field", async () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const trigger = screen.getByTestId("property-scene-game-instance-class");

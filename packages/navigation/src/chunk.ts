@@ -24,3 +24,30 @@ export function navmeshBytesFromChunks(
   }
   return null;
 }
+
+export type ExtraChunkLike = {
+  id: string;
+  kind?: string;
+  mime?: string;
+  data?: Uint8Array;
+};
+
+/** Replace or insert the Scene `navmesh` extra chunk, keeping other extras. */
+export function extraChunksWithNavmesh(
+  extra: Iterable<ExtraChunkLike>,
+  bytes: Uint8Array,
+): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
+  const next: Array<{ id: string; kind: string; mime: string; data: Uint8Array }> =
+    [];
+  for (const chunk of extra) {
+    if (chunk.id === NAVMESH_CHUNK_ID || !chunk.data) continue;
+    next.push({
+      id: chunk.id,
+      kind: chunk.kind ?? "bin",
+      mime: chunk.mime ?? "application/octet-stream",
+      data: chunk.data,
+    });
+  }
+  next.push(navmeshChunk(bytes));
+  return next;
+}

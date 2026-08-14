@@ -10,6 +10,7 @@ import {
 } from "@babylonslate/assets";
 import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
 import type { UserInterfaceDocument, WidgetNode } from "@babylonslate/ui-runtime";
+import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import {
   migrateUserInterfacePayload,
   normalizeLayout,
@@ -416,6 +417,15 @@ export function modelAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
   return componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]);
+}
+
+/** Scene `navmesh` extra chunk for Play import. Never generates. */
+export async function readPlayNavmeshBytes(
+  path: string | undefined,
+  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+): Promise<Uint8Array | null> {
+  if (!path) return null;
+  return readChunk(path, NAVMESH_CHUNK_ID);
 }
 
 export function playTilesetPayloadsFromGuids(

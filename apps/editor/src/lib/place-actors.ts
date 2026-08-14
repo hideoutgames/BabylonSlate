@@ -21,6 +21,7 @@ export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
   | { type: "light"; lightKind: string }
   | { type: "camera" }
+  | { type: "navmesh" }
   | { type: "empty" }
   | {
       type: "asset";
@@ -65,6 +66,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "Empty Actor",
     category: "Empty",
     kind: { type: "empty" },
+  },
+  {
+    id: "navmesh",
+    title: "NavMesh",
+    category: "Navigation",
+    kind: { type: "navmesh" },
   },
 ];
 
@@ -125,6 +132,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "camera") {
     return resolveTypeVisual({ classId: "CameraComponent", family: "class" });
   }
+  if (kind.type === "navmesh") {
+    return resolveTypeVisual({ classId: "NavMeshComponent", family: "class" });
+  }
   if (kind.type === "asset") {
     return resolveTypeVisual({ assetType: kind.assetType });
   }
@@ -171,6 +181,17 @@ export function spawnPlacedActor(
           id: `${id}-camera`,
           classId: "CameraComponent",
           properties: defaultPropertiesFor("CameraComponent"),
+        },
+      ],
+    });
+  }
+  if (kind.type === "navmesh") {
+    return createActor(id, "NavMesh", {
+      components: [
+        {
+          id: `${id}-navmesh`,
+          classId: "NavMeshComponent",
+          properties: defaultPropertiesFor("NavMeshComponent"),
         },
       ],
     });

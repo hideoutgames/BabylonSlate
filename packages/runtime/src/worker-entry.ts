@@ -97,6 +97,11 @@ function handleControl(msg: ControlMessage): void {
       });
       return;
     }
+    case "loadNavMesh": {
+      const rt = ensureRuntime();
+      boot.queueNavMesh(rt, new Uint8Array(msg.bytes));
+      return;
+    }
     case "play": {
       const rt = ensureRuntime();
       void boot.play(rt).then(() => {

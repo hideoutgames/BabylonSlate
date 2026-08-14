@@ -7,9 +7,12 @@ import {
 import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
+  collectNavBakeGeometry,
+  NavMeshDebugOverlay,
   syncEditorPlayState,
   type EngineHandle,
 } from "@babylonslate/render";
+import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import {
   engineCommandBus,
   findActor,
@@ -19,6 +22,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
+import { useOptionalNavBake } from "../context/nav-bake-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { isTestModeEnabled } from "@babylonslate/vfs";
@@ -39,6 +43,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const navDebugRef = useRef<NavMeshDebugOverlay | null>(null);
   const sceneRef = useRef<SerializedScene | null>(null);
   const dragStartSceneRef = useRef<SerializedScene | null>(null);
   const { documentId } = useDocumentWorkspace();
@@ -50,6 +55,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
+    readAssetChunk,
   } = useDocuments();
   const {
     selectedActorIds,
@@ -65,6 +71,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     setFrameActorHandler,
   } = useSceneEditing();
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
+  const navBake = useOptionalNavBake();
+  const [navOverlayGeneration, setNavOverlayGeneration] = useState(0);
   const selectActorRef = useRef(selectActor);
   selectActorRef.current = selectActor;
   const setSelectedActorIdsRef = useRef(setSelectedActorIds);
@@ -118,6 +126,48 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     sceneRef.current = scene;
   }, [scene]);
 
+  useEffect(() => {
+    if (!navBake) return;
+    navBake.registerCollector(() => {
+      const handle = engineRef.current;
+      const current = sceneRef.current;
+      if (!handle?.editor || !current) {
+        return { positions: [], indices: [] };
+      }
+      return collectNavBakeGeometry(handle.editor.sync, current);
+    });
+    return () => navBake.registerCollector(null);
+  }, [navBake]);
+
+  useEffect(() => {
+    const overlay = navDebugRef.current;
+    const path = doc?.ref.kind === "scene" ? doc.ref.path : null;
+    const enabled = Boolean(
+      scene?.actors.some((actor) =>
+        actor.components.some(
+          (component) =>
+            component.classId === "NavMeshComponent" &&
+            component.properties.debugOverlay === true,
+        ),
+      ),
+    );
+    if (!overlay || !enabled) {
+      overlay?.clear();
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const bytes =
+        navBake?.lastBytes ??
+        (path ? await readAssetChunk(path, NAVMESH_CHUNK_ID) : null);
+      if (cancelled || !bytes) return;
+      await overlay.sync(bytes);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [doc?.ref.kind, doc?.ref.path, navBake?.lastBytes, navOverlayGeneration, readAssetChunk, scene]);
+
   /** Turn the mesh state a gizmo drag left behind into one scene command. */
   const commitGizmoTransform = useCallback(() => {
     const handle = engineRef.current;
@@ -168,6 +218,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editorFlyEnabled: () => !playingRef.current,
     });
     engineRef.current = handle;
+    navDebugRef.current = new NavMeshDebugOverlay(handle.scene);
+    setNavOverlayGeneration((generation) => generation + 1);
     handle.editor?.setPreviewCanvas(previewCanvasRef.current);
     registerSharedEngine(handle.engine);
     const unregisterScheduler = registerScheduler({
@@ -220,6 +272,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       joystickLeaseRef.current?.();
       joystickLeaseRef.current = null;
       registerSharedEngine(null);
+      navDebugRef.current?.dispose();
+      navDebugRef.current = null;
       handle.dispose();
       engineRef.current = null;
     };

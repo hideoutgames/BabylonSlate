@@ -22,6 +22,7 @@
     "@babylonslate/editor-kit": "workspace:*",
     "@babylonslate/graph-ui": "workspace:*",
     "@babylonslate/input": "workspace:*",
+    "@babylonslate/navigation": "workspace:*",
     "@babylonslate/object-model": "workspace:*",
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/render": "workspace:*",

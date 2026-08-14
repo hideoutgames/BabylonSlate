@@ -78,6 +78,7 @@ export type ControlMessage =
       tilesets: Array<{ guid: string; document: unknown }>;
       pixelsPerUnit?: number;
     }
+  | { type: "loadNavMesh"; bytes: ArrayBuffer }
   | { type: "play" }
   | { type: "pause" }
   | { type: "step" }

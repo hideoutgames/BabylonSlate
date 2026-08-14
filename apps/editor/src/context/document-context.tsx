@@ -195,6 +195,12 @@ interface DocumentContextValue {
   ) => Promise<boolean>;
   /** Font source / other binary chunks. */
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+  /** Write Recast bake bytes onto the Scene asset extra chunk. */
+  writeSceneNavmeshChunk: (
+    path: string,
+    bytes: Uint8Array,
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
   /** Persist project.json settings (Input, 2D units, textures, …). */
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   undoActiveDocument: () => void;
@@ -1121,6 +1127,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService],
   );
 
+  const writeSceneNavmeshChunk = useCallback(
+    (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
+      projectService.writeSceneNavmeshChunk(path, bytes, payload),
+    [projectService],
+  );
+
   const loadProjectGraphDocuments = useCallback(async (): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
@@ -1991,6 +2003,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
+      writeSceneNavmeshChunk,
       updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,
@@ -2111,6 +2124,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
+      writeSceneNavmeshChunk,
       updateProjectSettings,
       undoActiveDocument,
       redoActiveDocument,

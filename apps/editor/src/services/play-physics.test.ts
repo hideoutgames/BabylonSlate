@@ -125,7 +125,7 @@ describe("playSceneFromOpenDocuments", () => {
         [
           {
             id: "scene:assets/level.scene.babasset",
-            ref: { kind: "scene" },
+            ref: { kind: "scene", path: "assets/level.scene.babasset" },
             content,
           },
         ],
@@ -134,6 +134,7 @@ describe("playSceneFromOpenDocuments", () => {
     ).toEqual({
       sceneAssetGuid: "scene:assets/level.scene.babasset",
       scene: normalizeScene(content),
+      path: "assets/level.scene.babasset",
     });
   });
 

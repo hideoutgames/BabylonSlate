@@ -51,6 +51,7 @@ import {
   type ProjectTreeFile,
 } from "@babylonslate/assets";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
+import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
@@ -779,6 +780,32 @@ export class ProjectService {
       (hash) => this.blobs.readBlob(hash),
     );
     return decoded.chunks.get(chunkId) ?? null;
+  }
+
+  /** Persist Recast `exportNavMesh` bytes as the Scene `navmesh` extra chunk. */
+  async writeSceneNavmeshChunk(
+    path: string,
+    bytes: Uint8Array,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const extra = extraChunksWithNavmesh(await this.extraChunksFor(path), bytes);
+    const existing = await this.readExistingAssetMeta(path);
+    const type = existing?.type ?? "Scene";
+    const encoded = await encodeAssetDocument(
+      {
+        type,
+        name: assetName(path),
+        guid: await this.guidForAsset(path),
+        version: this.migrations.currentVersion(type),
+        payload,
+      },
+      {
+        blobs: this.blobs,
+        extraChunks: extra,
+        parentClass: existing?.parentClass ?? null,
+      },
+    );
+    await this.storage.writeBinary(path, encoded);
   }
 
   guidForPath(path: string): string | null {

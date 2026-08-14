@@ -38,6 +38,7 @@ import type {
   PlayBehaviourTreeEntry,
   PlayBlackboardEntry,
 } from "../lib/play-content";
+import { readPlayNavmeshBytes } from "../lib/play-content";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -148,6 +149,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   >(() => new Map());
   const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
+  );
+  const [playNavmeshBytes, setPlayNavmeshBytes] = useState<Uint8Array | null>(
+    null,
   );
   const [playSceneLibrary, setPlaySceneLibrary] = useState<
     Array<{ guid: string; scene: import("@babylonslate/core").SerializedScene }>
@@ -420,6 +424,16 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayModelBytes(new Map());
         }
+        try {
+          setPlayNavmeshBytes(
+            await readPlayNavmeshBytes(resolvedScene?.path, readAssetChunk),
+          );
+        } catch (error) {
+          appendLog(
+            `Navmesh load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayNavmeshBytes(null);
+        }
 
         setPrepareState(null);
 
@@ -606,6 +620,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
             modelBytes={playModelBytes}
+            navmeshBytes={playNavmeshBytes}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }
