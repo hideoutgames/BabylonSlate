@@ -92,7 +92,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
 | `--asset-scene` | Scene (yellow, Unreal Level) | Scene |
-| `--asset-graph` | Graph / UserInterface / BehaviourTree (cyan) | Graph, UserInterface (`PanelTop`), BehaviourTree (`ListTree`) |
+| `--asset-graph` | Graph / UserInterface / EditorUtilityInterface / BehaviourTree (cyan) | Graph, UserInterface (`PanelTop`), EditorUtilityInterface (widget glyph), BehaviourTree (`ListTree`) |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
 | `--asset-material` | Material, Shader (red) | Material |
 | `--asset-model` | Model (orange) | Model |

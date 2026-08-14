@@ -14,7 +14,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components |
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
-| `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` | Stable string ids for engine types (`BObject`, `Actor`, `BTTask`, …) |
+| `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` | Stable string ids for engine types (`BObject`, `Actor`, `EditorUtilityObject`, `BTTask`, …) |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play |
 

@@ -47,7 +47,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results; AnimationGraph Parameters / States / Details columns. |
+| **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results; AnimationGraph Parameters / States / Details columns; live Editor Utility tabs. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
 | **PropertyGrid** | Typed Details rows: number, vector3 (2–4 axes), boolean, text, enum, color (`ColorField`), slider, flags (`FlagsField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis / enumRef defaults), UserInterface widget details (alignment, left/top, width/height, layout padding), Sprite / Tileset / Tilemap / Structure settings, AnimationGraph state and transition Details. |
 | **ColorField** | Native color swatch plus a pasteable `#rrggbb` field. | Light color; Inspector color pin defaults; gallery. |

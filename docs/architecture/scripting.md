@@ -21,7 +21,7 @@ Add `scripting` / `scripting-nodes` to the ESLint pure-package allowlist beside 
 
 ## Graph IR
 
-Replace today's placeholder `SerializedGraph` (untyped nodes + edges without pin ends) with a typed IR stored on the **Class** asset payload (every class parent: `BObject`, `Actor`, `ActorComponent`, `GameInstance`, `FunctionLibrary`, `BDebugCommand`). New files use `.class.babasset`. Legacy `type: "Graph"` / `.graph.babasset` still loads and rewrites to Class on save. **UserInterface** keeps its own Design + Logic editor and is not a Class. Prefab + Components dock tabs appear only when Class ancestry includes **Actor**; other classes get Graph, Class, Inspector, and Compiler Results.
+Replace today's placeholder `SerializedGraph` (untyped nodes + edges without pin ends) with a typed IR stored on the **Class** asset payload (every class parent: `BObject`, `Actor`, `ActorComponent`, `GameInstance`, `FunctionLibrary`, `BDebugCommand`, `EditorUtilityObject`). New files use `.class.babasset`. Legacy `type: "Graph"` / `.graph.babasset` still loads and rewrites to Class on save. **UserInterface** keeps its own Design + Logic editor and is not a Class. Prefab + Components dock tabs appear only when Class ancestry includes **Actor**; other classes get Graph, Class, Inspector, and Compiler Results. **EditorUtilityObject** native events are On Editor Startup / On Scene Open / On Scene Saved / On Editor Shutdown (not Begin Play / Tick); they run in the in-process editor ScriptHost when listed in Project Settings — see [editor-extensions.md](editor-extensions.md).
 
 ```ts
 type PinKind = "exec" | "data";
