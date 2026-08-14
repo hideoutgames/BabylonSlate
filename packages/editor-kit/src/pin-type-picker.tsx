@@ -10,7 +10,7 @@ import {
 
 export type PinTypePickerProps = {
   value: PinPickerType | string;
-  onChange: (type: string) => void;
+  onChange: (type: PinPickerType) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   types?: readonly string[];
@@ -39,7 +39,7 @@ export function PinTypePicker({
           <TypeColorMark colorVar={pinPickerColorVar(type)} />
         ),
       }))}
-      onSelect={(id) => onChange(id)}
+      onSelect={(id) => onChange(id as PinPickerType)}
       placeholder="Search types"
       data-testid={`${testId}-menu`}
     >

@@ -14,6 +14,7 @@ import { TypeMembersPanel } from "../panels/type-members-panel";
 import { TypeDetailsPanel } from "../panels/type-details-panel";
 import { InterfaceMethodsPanel } from "../panels/interface-methods-panel";
 import { InterfacePreviewPanel } from "../panels/interface-preview-panel";
+import { InterfaceDetailsPanel } from "../panels/interface-details-panel";
 import { SpritePreviewPanel, SpriteDetailsPanel } from "../components/sprite-editor";
 
 export const panelComponents = {
