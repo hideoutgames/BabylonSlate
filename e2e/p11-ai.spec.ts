@@ -115,6 +115,42 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     });
   });
 
+  test("tree editor can add a Wait child, set duration, add a decorator, and remove it", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "BehaviourTree", "Patrol");
+    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await expect(page.getByTestId("bt-node-sequence")).toBeVisible();
+
+    await page.getByTestId("bt-node-sequence").click();
+    const graph = page.getByTestId("graph-editor");
+    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+    await expect(page.getByTestId("node-palette")).toBeVisible();
+    await page.getByTestId("node-palette-search").fill("Wait");
+    await page.getByTestId("node-palette-item-bt.task.wait").click();
+    const waitNode = page.locator('[data-testid^="bt-node-bt.task.wait"]');
+    await expect(waitNode).toBeVisible();
+
+    await waitNode.click();
+    const duration = page.getByTestId("property-durationMs");
+    await duration.fill("250");
+    await duration.blur();
+
+    await page.getByTestId("bt-add-decorator").click();
+    await expect(page.getByTestId("bt-attachment-catalog")).toBeVisible();
+    await page.getByTestId("bt-attachment-item-bt.decorator.blackboardIsSet").click();
+    const keyField = page.getByTestId("property-key");
+    await expect(keyField).toBeVisible();
+    if ((await keyField.evaluate((el) => el.tagName)) === "INPUT") {
+      await keyField.fill("alert");
+    }
+
+    await page.getByTestId("bt-remove-attachment").click();
+    await expect(page.getByTestId("bt-remove-attachment")).toHaveCount(0);
+  });
+
   test("task throw session report focuses the tree node", async ({ page }) => {
     await openTestProject(page, "/?test=1&previewThrow=1");
     await createAsset(page, "BehaviourTree", "Patrol");
