@@ -580,13 +580,6 @@ export function componentPropertyRows(
         },
         {
           kind: "boolean",
-          id: rowId(actorId, component.id, "autoBakeOnSave"),
-          label: "Auto Bake On Save",
-          value: settings.autoBakeOnSave,
-          onChange: (next) => update("autoBakeOnSave", next),
-        },
-        {
-          kind: "boolean",
           id: rowId(actorId, component.id, "debugOverlay"),
           label: "Debug Overlay",
           value: settings.debugOverlay,

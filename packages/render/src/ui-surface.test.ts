@@ -96,9 +96,6 @@ describe("isHardUiPresentFailure", () => {
       true,
     );
     expect(isHardUiPresentFailure(new Error("standalone ADT failed"))).toBe(true);
-  });
-
-  it("treats a zero-size ADT blit as a transient skip", () => {
-    expect(isHardUiPresentFailure(new Error("ADT blit size is 0"))).toBe(false);
+    expect(isHardUiPresentFailure(new Error("ADT blit size is 0"))).toBe(true);
   });
 });

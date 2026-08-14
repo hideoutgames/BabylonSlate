@@ -43,7 +43,8 @@ Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 - `btNodeId` on the running leaf (Preview / trace).
 - Custom leaves go through `BtTaskHost.tick`; omitted host still runs built-ins. Popping a running **task** (self abort, lower-priority abort, time limit) calls optional `BtTaskHost.abort` once.
 - Unknown decorator `classId` values go through `BtDecoratorHost.evaluate`; omitted host (or missing class / no `btEvaluate` call) is **true** so an empty subclass does not fail the tree. Built-in blackboard / compare / cooldown / loop / time-limit stay in the evaluator.
-- **Loop** restarts the decorated subtree until `numLoops` (0 = infinite). **Cooldown** blocks the node for `durationMs` after it finishes (memory survives tree restart). **TimeLimit** fails a running node when elapsed time exceeds `durationMs`.
+- **Loop** restarts the decorated subtree until `numLoops` (0 = infinite). **Cooldown** blocks the node for `durationMs` after it finishes (cooldown memory survives tree restart). **TimeLimit** fails a running node when elapsed time exceeds `durationMs`.
+- When the stack is empty the next tick **restarts from the root** and clears instance memory except `__cd:` cooldown keys, so Wait / MoveTo / custom tasks run again instead of succeeding immediately.
 - Attached **services** tick while their owner is on the stack. Interval + `randomDeviationMs` use `options.seed` (default `0`) so the same seed yields the same schedule. Built-in `bt.service.setBlackboard`; other class ids go through `BtServiceHost.tick`.
 
 Abort observers run **before** continuing the stack (Unreal-style):
@@ -68,6 +69,7 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 - `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`) and `tickBehaviourTrees()` emits `btState`.
 - Missing `treeGuid` / unloaded tree emits `bt.missing_tree`.
 - Custom `classId` values run compiled graphs: tasks `On Activate` / `On Tick` / `On Abort` (`bt.event.*`) and finish via `bt.finish`; decorators `On Evaluate` plus `bt.returnCondition` (`ctx.btEvaluate`); services `On Tick`. Get/Set Blackboard (`bt.blackboard.get` / `bt.blackboard.set`) compile to `ctx.getBlackboard` / `ctx.setBlackboard`. Abort mode on a decorator stays a tree attachment property, not a class event.
+- Runtime `BTTask_MoveTo` abort calls `stopNavAgent` and clears `__moveRequested` so the crowd does not keep walking the aborted path.
 - Custom `BTComposite` subclasses are **data** composites: `kind` walks ancestry (`BTComposite_Selector` → selector, `_Sequence` → sequence, `_Parallel` → parallel, bare `BTComposite` → sequence). There is no scripted composite VM.
 
 ## Editor (`p11-bt-editor` + `p-bt-editor-authoring`)

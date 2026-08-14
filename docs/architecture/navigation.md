@@ -30,7 +30,7 @@ Recast settings (`NavMeshSettings`) are data: cell size/height, walkable slope/h
 
 ## Editor host
 
-- Place Actors **NavMesh** spawns an Actor with `NavMeshComponent` (Recast numbers, solo/tiled enum, support-dynamic-obstacles, auto-bake-on-save default **off**, debug overlay). Not an Add Component row.
+- Place Actors **NavMesh** spawns an Actor with `NavMeshComponent` (Recast numbers, solo/tiled enum, support-dynamic-obstacles, debug overlay). Auto-bake-on-save stays **off** and is not shown in Details until it is wired. Not an Add Component row.
 - Place Actors **NavMesh Blocker** spawns an Actor with `NavMeshBlockerComponent` (`dynamic` default false, `kind` box/cylinder, `area` unwalkable/cost). Scale is the blocker size. Not Add Component / Search.
 - Details **Bake NavMesh** opens a non-dismissable modal on a painted frame, collects geometry, runs `generateNavMesh` in a dedicated bake worker (tile cache when Support Dynamic Obstacles is on), writes the Scene `navmesh` chunk.
 - 3D collect: `MeshComponent` world meshes + static unwalkable blockers. Dynamic / cost blockers are skipped at bake.
@@ -57,11 +57,13 @@ Bake modal phases:
 
 Compiled graphs call `ctx.findPathTo` / `ctx.moveTo` / `ctx.stopMovement` / `ctx.isPathValid` / `ctx.getClosestNavigablePoint` / `ctx.getRandomPointInRadius` / `ctx.addObstacle` / `ctx.removeObstacle`. `scripting-nodes` must not import `@babylonslate/navigation`.
 
-`BTTask_MoveTo` without a task host still succeeds (package stub). The runtime host requests `setNavAgentTarget` and returns `running` until the agent is inside `acceptRadius` (default 0.75).
+`BTTask_MoveTo` without a task host still succeeds (package stub). The runtime host requests `setNavAgentTarget` and returns `running` until the agent is inside `acceptRadius` (default 0.75). Aborting a running MoveTo calls `stopNavAgent` so the crowd does not keep the aborted target.
 
 ## Honest residuals
 
-- Auto-bake-on-save default off.
+- Auto-bake-on-save default off. The data field still defaults to `false`; Details does not show a toggle because enabling it does not bake.
+- Bake bounds are not a NavMesh setting; collect uses the scene's meshes or 2D XY actor bounds.
+- Geometry collect is one-shot on the painted modal frame, not chunked across frames. The blocking modal still covers that stall.
 - Dynamic **cost** area does not carve (no Recast tile-cache cost volume).
 - Tiled generate without `supportDynamicObstacles` still uses solo unless the dynamic-obstacles toggle is on.
 - §18 editor e2e does not Play-patrol in the viewport; 2D/3D patrol and obstacle close are the headless harness.
