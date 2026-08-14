@@ -79,8 +79,11 @@ import {
   toggleDockWindow as toggleDockWindowOnApi,
   type DockWindowApi,
 } from "../shell/dock-window-ops";
-import { findDockWindow, isDockviewDocumentKind } from "../shell/window-catalog";
-import { listEditorUtilityWindows } from "../shell/editor-utility-windows";
+import { isDockviewDocumentKind } from "../shell/window-catalog";
+import {
+  editorUtilityAssetsFromIndexed,
+  findDockOrUtilityWindow,
+} from "../shell/editor-utility-windows";
 import {
   classDocumentShowsPrefab,
   classParentLookup,
@@ -89,6 +92,11 @@ import {
   listedProjectsFromRecents,
   type ListedProject,
 } from "../lib/listed-projects";
+import {
+  EDITOR_UTILITY_EVENTS,
+  emitEditorUtilityLifecycle,
+  selectEditorUtilityGraphs,
+} from "../lib/editor-utility-scripts";
 import {
   animationGraphGuidsFromScene,
   behaviourTreeGuidsFromScene,
@@ -106,7 +114,7 @@ import {
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
   playUiLibraryFromAssets,
-  mergePlayScriptDocuments,
+  collectPlayScriptDocuments,
   spriteAssetGuidsFromScene,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
@@ -230,6 +238,11 @@ interface DocumentContextValue {
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }>;
+  collectEditorUtilityScripts: () => Promise<ScriptBundleEntry[]>;
+  loadAssetDocument: (
+    kind: AssetDocumentKind,
+    path: string,
+  ) => Promise<unknown | null>;
   /** UserInterface assets keyed by guid for Play apply/remove. */
   collectPlayUiLibrary: () => Promise<Record<string, UserInterfaceDocument>>;
   /** AnimationGraphs referenced by the Play scene (plus any open graph tabs). */
@@ -301,12 +314,10 @@ function findWindowDefinition(
   kind: string,
   panelId: string,
   actorPrefab = true,
+  assets: ReturnType<typeof editorUtilityAssetsFromIndexed> = [],
 ) {
   if (!isDockviewDocumentKind(kind)) return undefined;
-  return (
-    findDockWindow(kind, panelId, { actorPrefab }) ??
-    listEditorUtilityWindows().find((entry) => entry.id === panelId)
-  );
+  return findDockOrUtilityWindow(kind, panelId, { actorPrefab, assets });
 }
 
 export function DocumentProvider({ children }: { children: ReactNode }) {
@@ -705,6 +716,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
+    const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
     for (const doc of dirtyDocs) {
       if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
         await projectService.saveDocument(
@@ -736,6 +748,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setRecoveryAvailable(false);
     }
     bump();
+    if (savedScene) {
+      emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
+    }
     return true;
   }, [bump, captureAllLayouts, documentService, ensureDerived, projectService]);
 
@@ -782,6 +797,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const derived = await ensureDerived();
       await truncateJournal(derived, guid);
     }
+    emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
     await projectService.closeProject();
     projectService.setDerivedStorage(null);
     dockviewApisRef.current.clear();
@@ -868,6 +884,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const layouts = documentService.buildLayouts();
       const layout = layouts.documents[documentId(ref)] ?? null;
       await documentService.openDocument(projectService, ref, layout, true);
+      if (ref.kind === "scene") {
+        emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneOpen);
+      }
       bump();
     },
     [bump, captureLayoutForId, closeDocument, documentService, projectService],
@@ -1133,7 +1152,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService],
   );
 
-  const loadProjectGraphDocuments = useCallback(async (): Promise<
+  const loadClassGraphDocuments = useCallback(async (): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
     const paths = projectDocument?.graphs ?? [];
@@ -1155,6 +1174,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         console.error(`[play] failed to load graph ${path}`, error);
       }
     }
+    return documents;
+  }, [documentService, projectDocument, projectService]);
+
+  const loadProjectGraphDocuments = useCallback(async (): Promise<
+    Array<{ path: string; content: SerializedGraph }>
+  > => {
+    const documents = await loadClassGraphDocuments();
+    const open = documentService.getState().openDocuments;
     const uiAssets = (projectService.registry?.list() ?? []).filter(
       (asset) => asset.header.type === "UserInterface",
     );
@@ -1174,8 +1201,65 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         console.error(`[play] failed to load UserInterface logic ${asset.path}`, error);
       }
     }
-    return mergePlayScriptDocuments(documents, uiPayloads);
-  }, [documentService, projectDocument, projectService]);
+    const assets = projectService.registry?.list() ?? [];
+    const headers = Object.fromEntries(
+      assets.map((asset) => [
+        asset.path,
+        {
+          type: asset.header.type,
+          parentClass: asset.header.parentClass ?? null,
+          name: asset.header.name,
+        },
+      ]),
+    );
+    const parentOf = classParentLookup(assets);
+    return collectPlayScriptDocuments(documents, uiPayloads, headers, parentOf);
+  }, [documentService, loadClassGraphDocuments, projectService]);
+
+  const collectEditorUtilityScripts = useCallback(async (): Promise<
+    ScriptBundleEntry[]
+  > => {
+    const documents = await loadClassGraphDocuments();
+    const assets = projectService.registry?.list() ?? [];
+    const headers = Object.fromEntries(
+      assets.map((asset) => [
+        asset.path,
+        {
+          type: asset.header.type,
+          parentClass: asset.header.parentClass ?? null,
+          name: asset.header.name,
+        },
+      ]),
+    );
+    const parentOf = classParentLookup(assets);
+    const registered =
+      projectDocumentRef.current?.settings.editorUtilityObjects ?? [];
+    const selected = selectEditorUtilityGraphs(documents, {
+      headers,
+      parentOf,
+      registeredClassIds: registered,
+    });
+    return compileGraphDocuments(selected);
+  }, [loadClassGraphDocuments, projectService]);
+
+  const loadAssetDocument = useCallback(
+    async (
+      kind: AssetDocumentKind,
+      path: string,
+    ): Promise<unknown | null> => {
+      const openDoc = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind, path }));
+      if (openDoc?.content) return openDoc.content;
+      try {
+        return await projectService.loadDocument(kind, path);
+      } catch (error) {
+        console.error(`[editor] failed to load ${kind} ${path}`, error);
+        return null;
+      }
+    },
+    [documentService, projectService],
+  );
 
   const collectScriptBundles = useCallback(async (): Promise<
     ScriptBundleEntry[]
@@ -1788,7 +1872,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const kind = documentService.getDocument(id)?.ref.kind;
       for (const panel of listDockPanels(dock)) {
         const def = isDockviewDocumentKind(kind)
-          ? findWindowDefinition(kind, panel.id)
+          ? findWindowDefinition(
+              kind,
+              panel.id,
+              true,
+              editorUtilityAssetsFromIndexed(
+                projectService.registry?.list() ?? [],
+              ),
+            )
           : undefined;
         const placement = capturePanelPlacement(dock, panel.id, def);
         if (placement) {
@@ -1803,7 +1894,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ]);
     rememberPlacements();
     bumpDockWindows();
-  }, [bumpDockWindows, disposeDockSubscriptions, documentService]);
+  }, [bumpDockWindows, disposeDockSubscriptions, documentService, projectService]);
 
   const activateDockPanel = useCallback((panelId: string) => {
     const { activeDocumentId } = documentService.getState();
@@ -1830,7 +1921,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
         assetType: indexed.header.type,
       });
-    const def = findWindowDefinition(doc.ref.kind, panelId, actorPrefab);
+    const def = findWindowDefinition(
+      doc.ref.kind,
+      panelId,
+      actorPrefab,
+      editorUtilityAssetsFromIndexed(projectService.registry?.list() ?? []),
+    );
     if (!def) return;
     const remembered =
       documentService.getPanelPlacements(activeDocumentId)[panelId] ?? null;
@@ -2041,6 +2137,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
+      collectEditorUtilityScripts,
+      loadAssetDocument,
       collectPlayUiLibrary,
       collectPlayAnimGraphs,
       collectPlayBehaviourTrees,
@@ -2076,6 +2174,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
+      collectEditorUtilityScripts,
+      loadAssetDocument,
       collectPlayUiLibrary,
       collectPlayAnimGraphs,
       collectPlayBehaviourTrees,

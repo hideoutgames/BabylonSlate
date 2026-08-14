@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { listEditorUtilityWindows } from "./editor-utility-windows";
+import {
+  editorUtilityAssetsFromIndexed,
+  editorUtilityGuidFromWindowId,
+  editorUtilityWindowId,
+  findDockOrUtilityWindow,
+  listEditorUtilityWindows,
+} from "./editor-utility-windows";
 
 describe("listEditorUtilityWindows", () => {
   const assets = [
@@ -39,5 +45,54 @@ describe("listEditorUtilityWindows", () => {
   it("returns an empty list when no matching utilities exist", () => {
     expect(listEditorUtilityWindows({ kind: "sprite", assets })).toEqual([]);
     expect(listEditorUtilityWindows()).toEqual([]);
+  });
+
+  it("docks scene utilities to the right of Viewport by default", () => {
+    const [window] = listEditorUtilityWindows({ kind: "scene", assets });
+    expect(window?.defaultPosition).toEqual({
+      referencePanelId: "viewport",
+      direction: "right",
+      initialWidth: 320,
+    });
+  });
+
+  it("round-trips a window id to the EditorUtilityInterface guid", () => {
+    expect(editorUtilityGuidFromWindowId(editorUtilityWindowId("guid-1"))).toBe(
+      "guid-1",
+    );
+    expect(editorUtilityGuidFromWindowId("viewport")).toBeNull();
+  });
+
+  it("maps registry headers to listing refs without loading document chunks", () => {
+    expect(
+      editorUtilityAssetsFromIndexed([
+        {
+          header: {
+            guid: "eui-scene",
+            name: "SceneTools",
+            type: "EditorUtilityInterface",
+            payload: { dockKind: "scene" },
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        guid: "eui-scene",
+        name: "SceneTools",
+        type: "EditorUtilityInterface",
+        payload: { dockKind: "scene" },
+      },
+    ]);
+  });
+
+  it("finds an EditorUtilityInterface window by id for toggle and Focus", () => {
+    const found = findDockOrUtilityWindow("scene", "eui-eui-scene", {
+      assets,
+    });
+    expect(found?.component).toBe("editor-utility");
+    expect(found?.title).toBe("SceneTools");
+    expect(findDockOrUtilityWindow("scene", "viewport")?.component).toBe(
+      "viewport",
+    );
   });
 });

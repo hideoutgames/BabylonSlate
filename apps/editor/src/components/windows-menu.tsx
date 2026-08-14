@@ -6,7 +6,10 @@ import {
   useDocuments,
   useDockWindowTick,
 } from "../context/document-context";
-import { listEditorUtilityWindows } from "../shell/editor-utility-windows";
+import {
+  editorUtilityAssetsFromIndexed,
+  listEditorUtilityWindows,
+} from "../shell/editor-utility-windows";
 import {
   isDockviewDocumentKind,
   listDockWindows,
@@ -55,7 +58,10 @@ export function WindowsMenu() {
     const windows = isDockviewDocumentKind(activeKind)
       ? listDockWindows(activeKind, { actorPrefab })
       : [];
-    const editorUtilities = listEditorUtilityWindows();
+    const editorUtilities = listEditorUtilityWindows({
+      kind: activeKind,
+      assets: editorUtilityAssetsFromIndexed(assetRegistry?.list() ?? []),
+    });
     const checkbox = (entry: { id: string; title: string }): NestedMenuItem => {
       const open = isDockWindowOpen(entry.id);
       return {
@@ -96,6 +102,7 @@ export function WindowsMenu() {
   }, [
     activeKind,
     actorPrefab,
+    assetRegistry,
     isDockWindowOpen,
     openDockWindowCount,
     toggleDockWindow,

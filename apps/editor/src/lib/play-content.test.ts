@@ -16,6 +16,7 @@ import {
   logicGraphFromUiPayload,
   mergePlayScriptDocuments,
   filterPlayScriptDocuments,
+  collectPlayScriptDocuments,
   mergePlayAnimGraphs,
   playAnimGraphsFromOpenDocuments,
   playAnimGraphsFromGuids,
@@ -435,6 +436,85 @@ describe("UI logic Play compile", () => {
     expect(filtered.map((doc) => doc.path)).toEqual([
       "assets/Hero.class.babasset",
     ]);
+  });
+
+  it("merges UserInterface logic then strips EditorUtilityObject graphs", () => {
+    const collected = collectPlayScriptDocuments(
+      [
+        {
+          path: "assets/Hero.class.babasset",
+          content: { nodes: [], edges: [] },
+        },
+        {
+          path: "assets/Tools.class.babasset",
+          content: { nodes: [], edges: [] },
+        },
+      ],
+      [
+        {
+          path: "assets/HUD.ui.babasset",
+          payload: {
+            logic: {
+              nodes: [
+                {
+                  id: "begin",
+                  type: "flow.event.beginPlay",
+                  position: { x: 0, y: 0 },
+                  data: {},
+                },
+              ],
+              edges: [],
+            },
+          },
+        },
+      ],
+      {
+        "assets/Hero.class.babasset": { type: "Class", parentClass: "Actor" },
+        "assets/Tools.class.babasset": {
+          type: "Class",
+          parentClass: "EditorUtilityObject",
+        },
+        "assets/HUD.ui.babasset": { type: "UserInterface", parentClass: null },
+      },
+      (id) =>
+        id === "EditorUtilityObject" || id === "Actor" ? "BObject" : null,
+    );
+    expect(collected.map((doc) => doc.path)).toEqual([
+      "assets/Hero.class.babasset",
+      "assets/HUD.ui.babasset",
+    ]);
+  });
+
+  it("strips EditorUtilityInterface logic even if it is merged into the Play list", () => {
+    const collected = collectPlayScriptDocuments(
+      [],
+      [
+        {
+          path: "assets/Tools.eui.babasset",
+          payload: {
+            logic: {
+              nodes: [
+                {
+                  id: "start",
+                  type: "flow.event.beginPlay",
+                  position: { x: 0, y: 0 },
+                  data: {},
+                },
+              ],
+              edges: [],
+            },
+          },
+        },
+      ],
+      {
+        "assets/Tools.eui.babasset": {
+          type: "EditorUtilityInterface",
+          parentClass: null,
+        },
+      },
+      () => null,
+    );
+    expect(collected).toEqual([]);
   });
 });
 

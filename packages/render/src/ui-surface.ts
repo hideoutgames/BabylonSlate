@@ -2,6 +2,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { PointerEventTypes, PointerInfoPre } from "@babylonjs/core/Events/pointerEvents";
 import type { Engine } from "@babylonjs/core/Engines/engine";
 import { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
 import type { ScaleRule } from "@babylonslate/ui-runtime";
@@ -61,6 +62,7 @@ export function createUiSurface(
     scene,
     options.designResolution.width,
     options.designResolution.height,
+    options.interactive,
   );
   applyAdtIdeal(designAdt, options.designResolution, options.scaleRule);
 
@@ -88,6 +90,11 @@ export function createUiSurface(
       presentAdtToCanvas(designAdt, canvas);
     },
   });
+  const detachPointers = options.interactive
+    ? attachAdtCanvasPointers(canvas, designAdt, () =>
+        presentAdtToCanvas(designAdt, canvas),
+      )
+    : null;
 
   return {
     scene,
@@ -108,6 +115,7 @@ export function createUiSurface(
       gizmoAdt?.scaleTo(Math.max(1, width), Math.max(1, height));
     },
     dispose: () => {
+      detachPointers?.();
       host.clear();
       gizmoAdt?.dispose();
       designAdt.dispose();
@@ -152,6 +160,7 @@ function createStandaloneAdt(
   scene: Scene,
   width: number,
   height: number,
+  interactive = false,
 ): AdvancedDynamicTexture {
   const adt = AdvancedDynamicTexture.CreateFullscreenUI(name, true, {
     scene,
@@ -159,10 +168,49 @@ function createStandaloneAdt(
     width: Math.max(1, width),
     height: Math.max(1, height),
   });
-  adt.disablePicking = true;
+  adt.disablePicking = !interactive;
   adt.markAsDirty();
   adt._checkUpdate(null);
   return adt;
+}
+
+function pointerTypeFor(type: string): number {
+  if (type === "pointerdown") return PointerEventTypes.POINTERDOWN;
+  if (type === "pointerup" || type === "pointerleave" || type === "pointercancel") {
+    return PointerEventTypes.POINTERUP;
+  }
+  if (type === "wheel") return PointerEventTypes.POINTERWHEEL;
+  return PointerEventTypes.POINTERMOVE;
+}
+
+/** Forward 2D canvas pointers into a standalone ADT (no registerView). */
+export function attachAdtCanvasPointers(
+  canvas: HTMLCanvasElement,
+  adt: AdvancedDynamicTexture,
+  afterPick?: () => void,
+): () => void {
+  const handle = (event: PointerEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    const x = ((event.clientX - rect.left) / width) * canvas.width;
+    const y = ((event.clientY - rect.top) / height) * canvas.height;
+    const info = new PointerInfoPre(pointerTypeFor(event.type), event, x, y);
+    adt.pick(x, y, info);
+    afterPick?.();
+  };
+  canvas.addEventListener("pointerdown", handle);
+  canvas.addEventListener("pointermove", handle);
+  canvas.addEventListener("pointerup", handle);
+  canvas.addEventListener("pointerleave", handle);
+  canvas.addEventListener("pointercancel", handle);
+  return () => {
+    canvas.removeEventListener("pointerdown", handle);
+    canvas.removeEventListener("pointermove", handle);
+    canvas.removeEventListener("pointerup", handle);
+    canvas.removeEventListener("pointerleave", handle);
+    canvas.removeEventListener("pointercancel", handle);
+  };
 }
 
 /** Paint the ADT's Canvas2D backing store onto a 2D designer canvas. */

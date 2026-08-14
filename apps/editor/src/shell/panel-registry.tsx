@@ -16,6 +16,7 @@ import { InterfaceMethodsPanel } from "../panels/interface-methods-panel";
 import { InterfacePreviewPanel } from "../panels/interface-preview-panel";
 import { InterfaceDetailsPanel } from "../panels/interface-details-panel";
 import { SpritePreviewPanel, SpriteDetailsPanel } from "../components/sprite-editor";
+import { EditorUtilityPanel } from "../panels/editor-utility-panel";
 
 export const panelComponents = {
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
@@ -57,5 +58,8 @@ export const panelComponents = {
   ),
   "sprite-details": (props: IDockviewPanelProps) => (
     <SpriteDetailsPanel {...props} />
+  ),
+  "editor-utility": (props: IDockviewPanelProps) => (
+    <EditorUtilityPanel {...props} />
   ),
 };

@@ -3,6 +3,12 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { defaultEngineSettings } from "@babylonslate/vfs";
 import { EngineSettingsForm } from "./engine-settings-form";
 
+vi.mock("../context/document-context", () => ({
+  useDocuments: () => ({
+    assetRegistry: { list: () => [] },
+  }),
+}));
+
 afterEach(() => {
   cleanup();
 });

@@ -117,6 +117,19 @@ export function filterPlayScriptDocuments(
   });
 }
 
+export function collectPlayScriptDocuments(
+  classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
+  uiAssets: ReadonlyArray<{ path: string; payload: unknown }>,
+  headers: Record<string, { type: string; parentClass?: string | null }>,
+  parentOf: (id: string) => string | null | undefined,
+): Array<{ path: string; content: SerializedGraph }> {
+  return filterPlayScriptDocuments(
+    mergePlayScriptDocuments(classGraphs, uiAssets),
+    headers,
+    parentOf,
+  );
+}
+
 export type PlayHudInstance = { instanceId: string; assetGuid: string };
 
 export type PlayUiLibrary = Record<string, UserInterfaceDocument>;
