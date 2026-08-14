@@ -8,7 +8,11 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
-import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
+import {
+  isEditorOnlyAsset,
+  type SerializedGraph,
+  type SerializedScene,
+} from "@babylonslate/core";
 import type { UserInterfaceDocument, WidgetNode } from "@babylonslate/ui-runtime";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import {
@@ -99,6 +103,31 @@ export function mergePlayScriptDocuments(
     return graph ? [graph] : [];
   });
   return [...classGraphs, ...extra];
+}
+
+export function filterPlayScriptDocuments(
+  graphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
+  headers: Record<string, { type: string; parentClass?: string | null }>,
+  parentOf: (id: string) => string | null | undefined,
+): Array<{ path: string; content: SerializedGraph }> {
+  return graphs.filter((graph) => {
+    const header = headers[graph.path];
+    if (!header) return true;
+    return !isEditorOnlyAsset(header, parentOf);
+  });
+}
+
+export function collectPlayScriptDocuments(
+  classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
+  uiAssets: ReadonlyArray<{ path: string; payload: unknown }>,
+  headers: Record<string, { type: string; parentClass?: string | null }>,
+  parentOf: (id: string) => string | null | undefined,
+): Array<{ path: string; content: SerializedGraph }> {
+  return filterPlayScriptDocuments(
+    mergePlayScriptDocuments(classGraphs, uiAssets),
+    headers,
+    parentOf,
+  );
 }
 
 export type PlayHudInstance = { instanceId: string; assetGuid: string };

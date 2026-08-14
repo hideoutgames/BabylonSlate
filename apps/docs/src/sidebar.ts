@@ -37,6 +37,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Shader graph", link: "/architecture/shader-graph" },
       { text: "Theming", link: "/architecture/theming" },
       { text: "Components", link: "/architecture/components" },
+      { text: "Editor extensions", link: "/architecture/editor-extensions" },
       { text: "Testing", link: "/architecture/testing" },
     ],
   },

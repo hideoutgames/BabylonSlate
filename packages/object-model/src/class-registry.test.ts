@@ -9,6 +9,8 @@ describe("ClassRegistry", () => {
     expect(registry.has("Actor")).toBe(true);
     expect(registry.has("BDebugCommand")).toBe(true);
     expect(registry.isA("BDebugCommand", "BObject")).toBe(true);
+    expect(registry.has("EditorUtilityObject")).toBe(true);
+    expect(registry.isA("EditorUtilityObject", "BObject")).toBe(true);
     expect(registry.isA("Actor", "BObject")).toBe(true);
     expect(registry.isA("MeshComponent", "ActorComponent")).toBe(true);
     for (const id of ENGINE_COMPONENT_CLASS_IDS) {

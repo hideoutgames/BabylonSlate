@@ -48,6 +48,18 @@ describe("focusKeepCandidates", () => {
       listDockWindows("graph", { actorPrefab: false }).map((entry) => entry.id),
     );
   });
+
+  it("merges EditorUtilityInterface windows into Focus keep candidates", () => {
+    const utilities = [{ id: "eui-scene-tools", title: "SceneTools" }];
+    expect(
+      focusKeepCandidates("scene", { editorUtilities: utilities }).map(
+        (panel) => panel.id,
+      ),
+    ).toEqual([
+      ...listDockWindows("scene").map((entry) => entry.id),
+      "eui-scene-tools",
+    ]);
+  });
 });
 
 describe("resolveFocusKeepPanelIds", () => {

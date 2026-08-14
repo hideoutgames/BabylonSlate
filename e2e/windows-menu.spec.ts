@@ -96,4 +96,50 @@ test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
     await expect(page.getByTestId("windows-editor-utilities-menu")).toBeVisible();
     await expect(page.getByTestId("windows-editor-utilities-empty")).toBeVisible();
   });
+
+  test("opens an EditorUtilityInterface from Windows and restores its dock tab", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await openTestProject(page);
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+      .click();
+    await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+    await page.getByTestId("content-browser-new-asset").click();
+    await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+    await page.getByTestId("new-asset-type").click();
+    await page.getByTestId("new-asset-type-EditorUtilityInterface").click();
+    await page.getByTestId("new-asset-name").fill("SceneTools");
+    await page.getByTestId("content-browser-new-asset-create").click();
+    await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
+
+    await page
+      .locator('[data-asset-path="assets/main.scene.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("viewport-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await openWindowsMenu(page);
+    await page.getByTestId("windows-editor-utilities").click({ force: true });
+    await expect(page.getByTestId("windows-editor-utilities-empty")).toHaveCount(0);
+    const utilityItem = page.locator(
+      '[data-testid^="windows-menu-eui-"]',
+    );
+    await expect(utilityItem).toHaveAttribute("aria-checked", "false");
+    await utilityItem.click({ force: true });
+    await expect(page.getByTestId("editor-utility-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("editor-utility-canvas")).toBeVisible();
+    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+
+    await expect(utilityItem).toHaveAttribute("aria-checked", "true");
+    await utilityItem.click({ force: true });
+    await expect(page.getByTestId("editor-utility-panel")).toHaveCount(0);
+    await utilityItem.click({ force: true });
+    await expect(page.getByTestId("editor-utility-panel")).toBeVisible({
+      timeout: 10_000,
+    });
+  });
 });

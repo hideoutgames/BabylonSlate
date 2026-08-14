@@ -37,6 +37,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Shader IR to NodeMaterial |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
+| [architecture/editor-extensions.md](architecture/editor-extensions.md) | EditorUtilityObject / Interface, live Dockview GUI tabs |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |
 | [agents/issue-tracker.md](agents/issue-tracker.md) | Issue and spec workflow for agents |
 

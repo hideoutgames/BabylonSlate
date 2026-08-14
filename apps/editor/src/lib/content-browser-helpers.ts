@@ -49,6 +49,7 @@ export const ENGINE_BASE_CLASSES = [
   "GameInstance",
   "FunctionLibrary",
   "BDebugCommand",
+  "EditorUtilityObject",
   "BTTask",
   "BTDecorator",
   "BTService",
@@ -70,6 +71,7 @@ export const CREATABLE_ASSET_TYPES = [
   "Enum",
   "Structure",
   "ScriptInterface",
+  "EditorUtilityInterface",
 ] as const;
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
@@ -651,6 +653,15 @@ export function buildNewAssetResult(options: {
     return documentAsset(type, name, guid, payload);
   }
 
+  if (type === "EditorUtilityInterface") {
+    const payload = {
+      ...createDefaultUserInterface(name),
+      dockKind: "scene",
+      logic: createDefaultLogicGraphSerialized(),
+    } as unknown as Record<string, unknown>;
+    return documentAsset(type, name, guid, payload);
+  }
+
   if (type === "Sprite") {
     return documentAsset(
       type,
@@ -771,6 +782,8 @@ export function newAssetFileName(
                     ? ".bt.babasset"
                     : type === "Blackboard"
                       ? ".blackboard.babasset"
+                      : type === "EditorUtilityInterface"
+                        ? ".eui.babasset"
                     : ".babasset";
   return `${safe}${suffix}`;
 }

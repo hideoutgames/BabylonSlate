@@ -21,6 +21,19 @@ describe("nativeEventStubs", () => {
     );
   });
 
+  it("lists editor lifecycle events when ancestry includes EditorUtilityObject", () => {
+    const stubs = nativeEventStubs({
+      parentClass: "EditorUtilityObject",
+      parentOf: (id) => (id === "EditorUtilityObject" ? "BObject" : null),
+    });
+    expect(stubs.map((stub) => stub.eventType)).toEqual([
+      "flow.event.editorStartup",
+      "flow.event.sceneOpen",
+      "flow.event.sceneSaved",
+      "flow.event.editorShutdown",
+    ]);
+  });
+
   it("lists On Activate, On Tick, and On Abort for BTTask instead of Begin Play", () => {
     expect(nativeEventStubs({ parentClass: "BTTask" }).map((stub) => stub.eventType)).toEqual(
       ["bt.event.activate", "bt.event.tick", "bt.event.abort"],

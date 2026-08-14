@@ -27,11 +27,22 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
   "flow.event.commandRun": "Event On Command Run",
+  "flow.event.editorStartup": "Event On Editor Startup",
+  "flow.event.sceneOpen": "Event On Scene Open",
+  "flow.event.sceneSaved": "Event On Scene Saved",
+  "flow.event.editorShutdown": "Event On Editor Shutdown",
   "bt.event.activate": "On Activate",
   "bt.event.tick": "On Tick",
   "bt.event.abort": "On Abort",
   "bt.event.evaluate": "On Evaluate",
 };
+
+const EDITOR_UTILITY_EVENT_TYPES = [
+  "flow.event.editorStartup",
+  "flow.event.sceneOpen",
+  "flow.event.sceneSaved",
+  "flow.event.editorShutdown",
+] as const;
 
 const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.beginPlay",
@@ -84,6 +95,9 @@ export function nativeEventStubs(
   options?: ClassEventOptions,
 ): Array<{ eventType: string; name: string }> {
   const chain = ancestryChain(options);
+  if (chain.includes("EditorUtilityObject")) {
+    return eventStubsForTypes(EDITOR_UTILITY_EVENT_TYPES);
+  }
   if (chain.includes("BTTask")) return eventStubsForTypes(BT_TASK_EVENT_TYPE_IDS);
   if (chain.includes("BTDecorator")) {
     return eventStubsForTypes(BT_DECORATOR_EVENT_TYPE_IDS);
@@ -119,17 +133,34 @@ export function isScriptCatalogNodeAllowed(
   const isBlackboard = (BT_BLACKBOARD_NODE_IDS as readonly string[]).includes(
     nodeId,
   );
+  const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
+    nodeId,
+  );
+  if (chain.includes("EditorUtilityObject")) {
+    return !isActorEvent && !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
+  }
   if (chain.includes("BTTask")) {
-    return !isActorEvent && nodeId !== "bt.event.evaluate" && !isReturn;
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      nodeId !== "bt.event.evaluate" &&
+      !isReturn
+    );
   }
   if (chain.includes("BTDecorator")) {
-    return !isActorEvent && !isFinish && nodeId !== "bt.event.activate" &&
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      !isFinish &&
+      nodeId !== "bt.event.activate" &&
       nodeId !== "bt.event.tick" &&
-      nodeId !== "bt.event.abort";
+      nodeId !== "bt.event.abort"
+    );
   }
   if (chain.includes("BTService")) {
     return (
       !isActorEvent &&
+      !isEditorEvent &&
       !isFinish &&
       !isReturn &&
       nodeId !== "bt.event.activate" &&
@@ -138,9 +169,18 @@ export function isScriptCatalogNodeAllowed(
     );
   }
   if (chain.includes("BTComposite")) {
-    return !isActorEvent && !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      !isBtLeafEvent &&
+      !isFinish &&
+      !isReturn &&
+      !isBlackboard
+    );
   }
-  return !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
+  return (
+    !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard && !isEditorEvent
+  );
 }
 
 export function nativeStubId(eventType: string): string {

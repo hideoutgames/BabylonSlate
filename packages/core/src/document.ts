@@ -80,6 +80,17 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
   }
 }
 
+/** Preserve EditorUtilityInterface when a ui document is saved. */
+export function assetTypeForDocumentSave(
+  kind: AssetDocumentKind,
+  existingType?: string | null,
+): string {
+  if (kind === "ui" && existingType === "EditorUtilityInterface") {
+    return "EditorUtilityInterface";
+  }
+  return assetTypeForDocumentKind(kind);
+}
+
 export function documentKindForAssetType(type: string): AssetDocumentKind | null {
   switch (type) {
     case "Scene":
@@ -88,6 +99,7 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Class":
       return "graph";
     case "UserInterface":
+    case "EditorUtilityInterface":
       return "ui";
     case "Font":
       return "font";
@@ -227,7 +239,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|ui|sprite|anim|shader|class|tileset|tilemap)\.(babasset|json)$/i,
+        /\.(scene|graph|eui|ui|sprite|anim|shader|class|tileset|tilemap)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "") ?? path;

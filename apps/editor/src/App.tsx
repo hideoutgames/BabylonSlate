@@ -31,6 +31,7 @@ import { EditorThemeProvider } from "./context/theme-context";
 import { PlayProvider, usePlay } from "./context/play-context";
 import { ProjectSearchProvider } from "./context/project-search-context";
 import { ValidationProvider } from "./context/validation-context";
+import { EditorUtilityRuntime } from "./components/editor-utility-runtime";
 import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
@@ -388,6 +389,7 @@ export default function App() {
         <DocumentProvider>
           <ValidationProvider>
             <PlayProvider>
+              <EditorUtilityRuntime />
               <ProjectSearchProvider>
                 <AppRoutes />
               </ProjectSearchProvider>

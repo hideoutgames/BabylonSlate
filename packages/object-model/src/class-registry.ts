@@ -85,6 +85,13 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
+    this.register({
+      id: "EditorUtilityObject",
+      parentClassId: "BObject",
+      kind: "other",
+      variables: [],
+      implementedInterfaces: [],
+    });
     for (const id of ["BTTask", "BTDecorator", "BTService", "BTComposite"] as const) {
       this.register({
         id,

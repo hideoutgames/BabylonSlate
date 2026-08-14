@@ -112,7 +112,7 @@ describe("listDockWindows", () => {
 });
 
 describe("listEditorUtilityWindows", () => {
-  it("returns no editor utility tabs until P12 registers them", () => {
+  it("returns no editor utility tabs when no assets are supplied", () => {
     expect(listEditorUtilityWindows()).toEqual([]);
   });
 });

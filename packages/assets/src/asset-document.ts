@@ -49,6 +49,8 @@ export async function encodeAssetDocument(
     extraChunks?: readonly ChunkInput[];
     parentClass?: string | null;
     headerPayload?: Record<string, unknown>;
+    /** Merged into the header payload without switching to header-only mode. */
+    headerMeta?: Record<string, unknown>;
   } = {},
 ): Promise<Uint8Array> {
   const body = new TextEncoder().encode(stableStringify(document.payload));
@@ -62,7 +64,10 @@ export async function encodeAssetDocument(
       mode: "thin",
       name: document.name,
       parentClass: options.parentClass ?? null,
-      payload: options.headerPayload ?? {},
+      payload: {
+        ...(options.headerPayload ?? {}),
+        ...(options.headerMeta ?? {}),
+      },
       type: document.type,
       version: document.version,
     },

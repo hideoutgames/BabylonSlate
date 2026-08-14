@@ -27,10 +27,15 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { PlusIcon, XIcon } from "lucide-react";
+import { useDocuments } from "../context/document-context";
 import {
   focusKeepCandidates,
   type FocusDocumentKind,
 } from "../shell/layout-ops";
+import {
+  editorUtilityAssetsFromIndexed,
+  listEditorUtilityWindows,
+} from "../shell/editor-utility-windows";
 
 export type EngineSettingsCategoryId =
   | "appearance"
@@ -302,10 +307,15 @@ export function EngineSettingsForm({
   );
 }
 
-function focusKeepTitle(kind: FocusDocumentKind, id: string): string {
+function focusKeepTitle(
+  kind: FocusDocumentKind,
+  id: string,
+  editorUtilities: { id: string; title: string }[],
+): string {
   return (
-    focusKeepCandidates(kind).find((candidate) => candidate.id === id)?.title ??
-    id
+    focusKeepCandidates(kind, { editorUtilities }).find(
+      (candidate) => candidate.id === id,
+    )?.title ?? id
   );
 }
 
@@ -320,7 +330,12 @@ function FocusKeepPanelList({
   ids: string[];
   onChange: (ids: string[]) => void;
 }) {
-  const remaining = focusKeepCandidates(kind).filter(
+  const { assetRegistry } = useDocuments();
+  const editorUtilities = listEditorUtilityWindows({
+    kind,
+    assets: editorUtilityAssetsFromIndexed(assetRegistry?.list() ?? []),
+  }).map((entry) => ({ id: entry.id, title: entry.title }));
+  const remaining = focusKeepCandidates(kind, { editorUtilities }).filter(
     (candidate) => !ids.includes(candidate.id),
   );
   return (
@@ -333,7 +348,7 @@ function FocusKeepPanelList({
         </FieldDescription>
       </Field>
       {ids.map((id) => {
-        const title = focusKeepTitle(kind, id);
+        const title = focusKeepTitle(kind, id, editorUtilities);
         return (
           <Field
             key={id}

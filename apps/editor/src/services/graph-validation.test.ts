@@ -176,6 +176,21 @@ describe("createDefaultLogicGraphSerialized", () => {
       "bt.event.abort",
     ]);
   });
+
+  it("seeds editor lifecycle events for an EditorUtilityObject class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "EditorUtilityObject",
+    });
+    expect(graph.nodes.map((node) => node.type)).toEqual([
+      "flow.event.editorStartup",
+      "flow.event.sceneOpen",
+      "flow.event.sceneSaved",
+      "flow.event.editorShutdown",
+    ]);
+    expect(graph.nodes.some((node) => node.type === "flow.event.beginPlay")).toBe(
+      false,
+    );
+  });
 });
 
 describe("validateSerializedGraph", () => {
@@ -240,5 +255,28 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "bt.event.activate")).toBe(true);
     expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+  });
+
+  it("shows editor lifecycle events and hides Begin Play on EditorUtilityObject graphs", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "EditorUtilityObject",
+    });
+    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+      true,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.sceneOpen")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.event.activate")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.finish")).toBe(false);
+  });
+
+  it("hides editor lifecycle events on Actor class graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.editorShutdown")).toBe(
+      false,
+    );
   });
 });

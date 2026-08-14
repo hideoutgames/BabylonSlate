@@ -70,6 +70,46 @@ export const flowNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "flow.event.editorStartup",
+    title: "Event On Editor Startup",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.sceneOpen",
+    title: "Event On Scene Open",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.sceneSaved",
+    title: "Event On Scene Saved",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.editorShutdown",
+    title: "Event On Editor Shutdown",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
     id: "flow.entry",
     title: "Entry",
     category: "flow",

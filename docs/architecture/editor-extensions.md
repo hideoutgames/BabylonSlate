@@ -1,0 +1,30 @@
+# Editor extensions (P12)
+
+Editor-only types that never ship in Play or export. Spec: [engineplan.md](../engineplan.md) §7.4, §18 P12, Appendix A `p12-editor-extensions`.
+
+## Types
+
+| Type | Kind | File | Play / export |
+| --- | --- | --- | --- |
+| **EditorUtilityObject** | Class parent (`BObject`) | `*.class.babasset` | Stripped. Native events are On Editor Startup / On Scene Open / On Scene Saved / On Editor Shutdown — not Begin Play / Tick. |
+| **EditorUtilityInterface** | Creatable asset | `*.eui.babasset` | Stripped. Payload is a UserInterface document plus `dockKind: "scene" \| "class"`. |
+
+`isEditorOnlyAsset` / `isEditorUtilityObjectClass` in `@babylonslate/core` walk the parent chain. P14 export reuses the same helpers.
+
+## Live tabs
+
+- **Windows → Editor Utilities** lists EUI assets whose header `dockKind` matches the active document (Scene → `"scene"`, Class → `"class"`). They are **not** in the Scene default layout.
+- Opening a utility adds a Dockview panel (`eui-<guid>`, component `editor-utility`). Last placement is stored in `layout.json` like any other tab. Focus keep-lists can include them.
+- The panel hosts Babylon GUI through `createUiSurface` + `presentAdtToCanvas` on the **shared Engine**. It never `registerView`s the GUI canvas. Interactive picking is forwarded from the 2D canvas into the standalone ADT. Hidden tabs skip `present` (freeze). Close disposes the Scene and ADTs.
+
+## Project Settings
+
+`ProjectSettings.editorUtilityObjects` is a unique list of class ids. The General page adds classes via `ClassPicker` filtered to the EditorUtilityObject lineage. Only those classes load into the in-process editor `ScriptHost`.
+
+## Editor ScriptHost
+
+Not the Play worker. On project open it compiles registered EUO graphs and fires `onEditorStartup`. Opening a scene fires `onSceneOpen`; saving a scene fires `onSceneSaved`; closing the project fires `onEditorShutdown`. Play compile (`collectPlayScriptDocuments`) drops EUO class graphs and never merges EUI `logic` into the HUD library (UserInterface only).
+
+## Authoring
+
+Opening an EUI asset still uses the UserInterface document kind (`"ui"`). The Dockview Design / Hierarchy / Details / Logic split is the last P12 pass. Live-run stays **Windows → Editor Utilities**.
