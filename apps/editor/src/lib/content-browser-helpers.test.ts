@@ -770,7 +770,8 @@ describe("content-browser-helpers", () => {
 
   it("re-exports an inset thumb type outline", () => {
     const accent = assetTypeThumbAccent("var(--asset-texture)");
-    expect(accent.boxShadow).toBe("inset 0 0 0 2px var(--asset-texture)");
+    expect(accent.border).toBe("2px solid var(--asset-texture)");
+    expect("boxShadow" in accent).toBe(false);
     expect("backgroundImage" in accent).toBe(false);
   });
 

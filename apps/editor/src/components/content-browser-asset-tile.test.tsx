@@ -159,9 +159,9 @@ describe("ContentBrowserAssetTile", () => {
     const glyph = screen.getByTestId("content-item-type-icon-hero-1");
     const thumb = glyph.parentElement as HTMLElement;
     expect(thumb.style.backgroundImage).toBe("");
-    expect(thumb.style.boxShadow).toBe("inset 0 0 0 2px var(--asset-texture)");
+    expect(thumb.style.border).toBe("2px solid var(--asset-texture)");
+    expect(thumb.style.boxShadow).toBe("");
     expect(thumb.className).toContain("bg-card");
-    expect(thumb.className).toContain("p-0.5");
     expect(thumb.className).toContain("rounded-t-xl");
     expect(thumb.className).toContain("overflow-hidden");
   });

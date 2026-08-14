@@ -115,9 +115,9 @@ export function assetColorVar(family: string): string {
 }
 
 export function typeColorThumbAccent(colorVar: string): {
-  boxShadow: string;
+  border: string;
 } {
   return {
-    boxShadow: `inset 0 0 0 2px ${colorVar}`,
+    border: `2px solid ${colorVar}`,
   };
 }
