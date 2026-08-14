@@ -14,7 +14,10 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
 import { asUiDocument } from "../lib/play-content";
-import { presentLiveUiIfVisible } from "../lib/live-ui-present";
+import {
+  freezeLiveUiSurface,
+  presentLiveUiIfVisible,
+} from "../lib/live-ui-present";
 import {
   editorUtilityGuidFromWindowId,
 } from "../shell/editor-utility-windows";
@@ -92,11 +95,19 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       return;
     }
     surfaceRef.current = surface;
+    freezeLiveUiSurface(surface, { panelVisible, documentActive });
     return () => {
       surface?.dispose();
       surfaceRef.current = null;
     };
+    // panelVisible / documentActive: freeze the new surface this frame; the
+    // next effect updates freeze when those flags change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [guid, play, ui?.designResolution.width, ui?.designResolution.height, ui?.scaleRule]);
+
+  useEffect(() => {
+    freezeLiveUiSurface(surfaceRef.current, { panelVisible, documentActive });
+  }, [documentActive, panelVisible]);
 
   useEffect(() => {
     const surface = surfaceRef.current;

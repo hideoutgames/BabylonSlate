@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { presentLiveUiIfVisible } from "./live-ui-present";
+import { freezeLiveUiSurface, presentLiveUiIfVisible } from "./live-ui-present";
 
 describe("presentLiveUiIfVisible", () => {
   it("presents when the dock tab and document are visible", () => {
@@ -30,5 +30,20 @@ describe("presentLiveUiIfVisible", () => {
       present,
     });
     expect(present).not.toHaveBeenCalled();
+  });
+});
+
+describe("freezeLiveUiSurface", () => {
+  it("freezes when the dock tab or document workspace is hidden", () => {
+    const setFrozen = vi.fn();
+    freezeLiveUiSurface({ setFrozen }, { panelVisible: false, documentActive: true });
+    freezeLiveUiSurface({ setFrozen }, { panelVisible: true, documentActive: false });
+    expect(setFrozen.mock.calls.map((call) => call[0])).toEqual([true, true]);
+  });
+
+  it("unfreezes when the dock tab and document are visible", () => {
+    const setFrozen = vi.fn();
+    freezeLiveUiSurface({ setFrozen }, { panelVisible: true, documentActive: true });
+    expect(setFrozen).toHaveBeenCalledWith(false);
   });
 });

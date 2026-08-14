@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ScriptHost } from "@babylonslate/runtime";
 import { compileGraphDocuments } from "../services/script-compiler";
 import {
   EDITOR_UTILITY_EVENTS,
+  editorUtilityBootEvents,
   fireEditorUtilityEvent,
   selectEditorUtilityGraphs,
+  shutdownEditorUtilityHost,
 } from "./editor-utility-scripts";
 
 const emptyGraph = { nodes: [], edges: [] };
@@ -135,5 +137,28 @@ describe("editor utility ScriptHost events", () => {
     await host.load(scripts[0]!);
     fireEditorUtilityEvent(host, EDITOR_UTILITY_EVENTS.startup);
     expect(logs).toEqual(["editor-up"]);
+  });
+
+  it("boots On Editor Startup then On Scene Open when a scene tab is already open", () => {
+    expect(editorUtilityBootEvents(false)).toEqual([EDITOR_UTILITY_EVENTS.startup]);
+    expect(editorUtilityBootEvents(true)).toEqual([
+      EDITOR_UTILITY_EVENTS.startup,
+      EDITOR_UTILITY_EVENTS.sceneOpen,
+    ]);
+  });
+
+  it("fires On Editor Shutdown when disposing a started host", () => {
+    const invokeEvent = vi.fn();
+    shutdownEditorUtilityHost(
+      { classIds: () => ["Tools"], invokeEvent },
+      true,
+    );
+    expect(invokeEvent).toHaveBeenCalledWith("Tools", "onEditorShutdown");
+    invokeEvent.mockClear();
+    shutdownEditorUtilityHost(
+      { classIds: () => ["Tools"], invokeEvent },
+      false,
+    );
+    expect(invokeEvent).not.toHaveBeenCalled();
   });
 });

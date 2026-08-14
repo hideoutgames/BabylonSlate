@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
-import { isHardUiPresentFailure, presentAdtToCanvas } from "./ui-surface";
+import { isHardUiPresentFailure, presentAdtToCanvas, blitIfUnfrozen } from "./ui-surface";
 
 function fakeAdt(
   source: { canvas: unknown } | null,
@@ -70,6 +70,20 @@ describe("presentAdtToCanvas", () => {
     ).not.toThrow();
     expect(drawImage).not.toHaveBeenCalled();
     expect(clearRect).not.toHaveBeenCalled();
+  });
+});
+
+describe("blitIfUnfrozen", () => {
+  it("runs the blit when the surface is not frozen", () => {
+    const blit = vi.fn();
+    blitIfUnfrozen(false, blit);
+    expect(blit).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the blit when the surface is frozen", () => {
+    const blit = vi.fn();
+    blitIfUnfrozen(true, blit);
+    expect(blit).not.toHaveBeenCalled();
   });
 });
 

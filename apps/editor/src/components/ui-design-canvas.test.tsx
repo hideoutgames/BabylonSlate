@@ -71,6 +71,7 @@ describe("UiDesignCanvas preview fallback", () => {
     });
     createUiSurfaceMock.mockReturnValue({
       present,
+      setFrozen: vi.fn(),
       dispose: vi.fn(),
       host: {
         measureControls: () => ({}),
@@ -90,8 +91,10 @@ describe("UiDesignCanvas preview fallback", () => {
 
   it("skips present when the Design dock tab is hidden", () => {
     const present = vi.fn();
+    const setFrozen = vi.fn();
     createUiSurfaceMock.mockReturnValue({
       present,
+      setFrozen,
       dispose: vi.fn(),
       host: {
         measureControls: () => ({}),
@@ -113,6 +116,7 @@ describe("UiDesignCanvas preview fallback", () => {
       />,
     );
     expect(present).not.toHaveBeenCalled();
+    expect(setFrozen).toHaveBeenCalledWith(true);
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
   });
 });

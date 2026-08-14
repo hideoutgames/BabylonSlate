@@ -33,7 +33,14 @@ export interface UiSurface {
   presentGizmos: (state: DesignerGizmoState) => void;
   resizeDesign: (width: number, height: number, scaleRule: ScaleRule) => void;
   resizeGizmos: (width: number, height: number) => void;
+  /** Skip ADT blits (markDirty, pointers, present) while the dock tab is hidden. */
+  setFrozen: (frozen: boolean) => void;
   dispose: () => void;
+}
+
+/** Skip ADT Canvas2D copies while a Dockview GUI tab is hidden. */
+export function blitIfUnfrozen(frozen: boolean, blit: () => void): void {
+  if (!frozen) blit();
 }
 
 /**
@@ -76,6 +83,14 @@ export function createUiSurface(
       )
     : null;
 
+  let frozen = false;
+  const blitDesign = () =>
+    blitIfUnfrozen(frozen, () => presentAdtToCanvas(designAdt, canvas));
+  const blitGizmos = () => {
+    if (!gizmoAdt || !gizmoCanvas) return;
+    blitIfUnfrozen(frozen, () => presentAdtToCanvas(gizmoAdt, gizmoCanvas));
+  };
+
   const factory = createAdtControlFactory(designAdt, {
     resolveImageUrl: options.resolveImageUrl,
     onTouchAxis: options.onTouchAxis,
@@ -87,13 +102,11 @@ export function createUiSurface(
     onTouchAxis: options.onTouchAxis,
     markDirty: () => {
       designAdt.markAsDirty();
-      presentAdtToCanvas(designAdt, canvas);
+      blitDesign();
     },
   });
   const detachPointers = options.interactive
-    ? attachAdtCanvasPointers(canvas, designAdt, () =>
-        presentAdtToCanvas(designAdt, canvas),
-      )
+    ? attachAdtCanvasPointers(canvas, designAdt, blitDesign)
     : null;
 
   return {
@@ -101,11 +114,11 @@ export function createUiSurface(
     designAdt,
     gizmoAdt,
     host,
-    present: () => presentAdtToCanvas(designAdt, canvas),
+    present: blitDesign,
     presentGizmos: (state) => {
       if (!gizmoAdt || !gizmoCanvas) return;
       paintDesignerGizmos(gizmoAdt, state);
-      presentAdtToCanvas(gizmoAdt, gizmoCanvas);
+      blitGizmos();
     },
     resizeDesign: (width, height, scaleRule) => {
       designAdt.scaleTo(Math.max(1, width), Math.max(1, height));
@@ -113,6 +126,9 @@ export function createUiSurface(
     },
     resizeGizmos: (width, height) => {
       gizmoAdt?.scaleTo(Math.max(1, width), Math.max(1, height));
+    },
+    setFrozen: (next) => {
+      frozen = next;
     },
     dispose: () => {
       detachPointers?.();
