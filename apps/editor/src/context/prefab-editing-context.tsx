@@ -25,16 +25,29 @@ interface PrefabEditingContextValue {
   addComponent: (classId: string) => void;
   removeSelected: () => void;
   reparentComponent: (dragId: string, targetId: string | null) => void;
+  updateComponent: (
+    componentId: string,
+    property: string,
+    value: unknown,
+  ) => void;
 }
 
 const PrefabEditingContext = createContext<PrefabEditingContextValue | null>(
   null,
 );
 
-export function PrefabEditingProvider({ children }: { children: ReactNode }) {
+export function PrefabEditingProvider({
+  children,
+  initialSelectedId = PREFAB_ROOT_ID,
+}: {
+  children: ReactNode;
+  initialSelectedId?: string | null;
+}) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange } = useDocuments();
-  const [selectedId, setSelectedId] = useState<string | null>("prefab-mesh");
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialSelectedId,
+  );
 
   const graph = useMemo(() => {
     const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -81,6 +94,22 @@ export function PrefabEditingProvider({ children }: { children: ReactNode }) {
     [components, persist],
   );
 
+  const updateComponent = useCallback(
+    (componentId: string, property: string, value: unknown) => {
+      persist(
+        components.map((component) =>
+          component.id === componentId
+            ? {
+                ...component,
+                properties: { ...component.properties, [property]: value },
+              }
+            : component,
+        ),
+      );
+    },
+    [components, persist],
+  );
+
   const value = useMemo(
     () => ({
       components,
@@ -89,8 +118,16 @@ export function PrefabEditingProvider({ children }: { children: ReactNode }) {
       addComponent,
       removeSelected,
       reparentComponent,
+      updateComponent,
     }),
-    [addComponent, components, removeSelected, reparentComponent, selectedId],
+    [
+      addComponent,
+      components,
+      removeSelected,
+      reparentComponent,
+      selectedId,
+      updateComponent,
+    ],
   );
 
   return (
@@ -104,9 +141,15 @@ export function PrefabEditingProvider({ children }: { children: ReactNode }) {
 export function usePrefabEditing(): PrefabEditingContextValue {
   const context = useContext(PrefabEditingContext);
   if (!context) {
-    throw new Error("usePrefabEditing must be used within PrefabEditingProvider");
+    throw new Error(
+      "usePrefabEditing must be used within PrefabEditingProvider",
+    );
   }
   return context;
+}
+
+export function useOptionalPrefabEditing(): PrefabEditingContextValue | null {
+  return useContext(PrefabEditingContext);
 }
 
 export { previewSceneFor } from "../lib/prefab-preview";

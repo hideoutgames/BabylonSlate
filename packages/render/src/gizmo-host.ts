@@ -49,11 +49,17 @@ export interface GizmoHost {
   dispose: () => void;
 }
 
-/** Screen-space scale: 2.4 was too small on touch, 3.6 filled the viewport. */
-export const DEFAULT_GIZMO_HANDLE_SCALE = 2.8;
+/** Screen-space scale: smaller visuals; pick size lives on collider scales. */
+export const DEFAULT_GIZMO_HANDLE_SCALE = 1.8;
 
 /** Invisible pick meshes, scaled independently of the thin visual shafts. */
 export const GIZMO_COLLIDER_SCALE = 2.5;
+
+/** Invisible rotation tori — fat enough for a finger without growing the ring. */
+export const GIZMO_ROTATION_COLLIDER_SCALE = 8;
+
+/** Compensates Babylon's dragStrength ÷ rootMesh.scaling (grows with handle size). */
+export const GIZMO_SCALE_SENSITIVITY = 10;
 
 /** Visible translate cones and scale boxes only — not shafts. */
 export const GIZMO_END_CAP_SCALE = 1.6;
@@ -214,7 +220,11 @@ function enlargeGizmoTouchTargets(root: AbstractMesh): void {
   for (const mesh of root.getChildMeshes()) {
     if (!isLeafMesh(mesh)) continue;
     if (mesh.visibility === 0) {
-      mesh.scaling.scaleInPlace(GIZMO_COLLIDER_SCALE);
+      const scale =
+        mesh.name === "ignore"
+          ? GIZMO_ROTATION_COLLIDER_SCALE
+          : GIZMO_COLLIDER_SCALE;
+      mesh.scaling.scaleInPlace(scale);
     } else if (mesh.name === "yPosMesh" || isTranslateCone(mesh)) {
       mesh.scaling.scaleInPlace(GIZMO_END_CAP_SCALE);
     }
@@ -248,6 +258,7 @@ export function createGizmoHost(
     gizmo.updateGizmoRotationToMatchAttachedMesh = false;
   }
   scale.scaleRatio = handleScale;
+  scale.sensitivity = GIZMO_SCALE_SENSITIVITY;
   position.planarGizmoEnabled = true;
   styleEditorGizmos(position, rotation, scale);
 

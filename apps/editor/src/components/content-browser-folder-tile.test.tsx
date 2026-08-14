@@ -122,6 +122,7 @@ describe("ContentBrowserFolderTile", () => {
     expect(icon?.getAttribute("class") ?? "").toContain("text-muted-foreground");
     expect(icon?.getAttribute("width")).toBe("40");
     expect(icon?.getAttribute("height")).toBe("40");
+    expect(icon?.getAttribute("stroke-width")).toBe("1.2");
   });
 
   it("does not bubble pointer events to an empty-grid listener", () => {

@@ -4,30 +4,30 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 
 ## Package API (`@babylonslate/edit`)
 
-| Export | Role |
-| --- | --- |
-| `EditCommand` | Reversible mutation contract (`apply`, `invert`, optional `mergeKey` / `byteSize`) |
-| `DocumentEditStack` | Per-document undo/redo stack with entry + byte budgets |
-| `EditSession` | Map of `docId → DocumentEditStack`; `apply` / `undo` / `redo` / `dropDocument` |
-| `diffGraphCommands` | Derives graph commands from before/after `SerializedGraph` snapshots |
-| `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand`, `SetGraphMembersCommand`, `SetGraphComponentsCommand` | Graph document commands |
-| `AddActorCommand`, `RemoveActorCommand`, `SetActorTransformCommand`, `RenameActorCommand`, `ReparentActorCommand`, `ReorderActorCommand`, `SetActorFlagsCommand`, `AddComponentCommand`, `RemoveComponentCommand`, `ReorderComponentCommand`, `SetComponentPropertyCommand`, `SetSceneSettingCommand`, `SetViewportModeCommand` | Scene document commands |
-| `SetAssetDocumentCommand` | Asset-tab payload replace; optional `mergeKey` for paint strokes |
-| `diffSceneCommands` | Derives scene commands from before/after `SerializedScene` snapshots |
-| `serializeJournalLine` / `parseJournalLine` | JSONL journal line codec |
-| `replayJournalLines` | Replay journal onto open graph or scene documents |
-| `reviveCommand` / `registerCommandReviver` | Registry to rebuild commands from journal JSON |
+| Export                                                                                                                                                                                                                                                                                                                          | Role                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `EditCommand`                                                                                                                                                                                                                                                                                                                   | Reversible mutation contract (`apply`, `invert`, optional `mergeKey` / `byteSize`) |
+| `DocumentEditStack`                                                                                                                                                                                                                                                                                                             | Per-document undo/redo stack with entry + byte budgets                             |
+| `EditSession`                                                                                                                                                                                                                                                                                                                   | Map of `docId → DocumentEditStack`; `apply` / `undo` / `redo` / `dropDocument`     |
+| `diffGraphCommands`                                                                                                                                                                                                                                                                                                             | Derives graph commands from before/after `SerializedGraph` snapshots               |
+| `MoveNodeCommand`, `AddEdgeCommand`, `RemoveEdgeCommand`, `SetNodeDataCommand`, `SetGraphMembersCommand`, `SetGraphComponentsCommand`                                                                                                                                                                                           | Graph document commands                                                            |
+| `AddActorCommand`, `RemoveActorCommand`, `SetActorTransformCommand`, `RenameActorCommand`, `ReparentActorCommand`, `ReorderActorCommand`, `SetActorFlagsCommand`, `AddComponentCommand`, `RemoveComponentCommand`, `ReorderComponentCommand`, `SetComponentPropertyCommand`, `SetSceneSettingCommand`, `SetViewportModeCommand` | Scene document commands                                                            |
+| `SetAssetDocumentCommand`                                                                                                                                                                                                                                                                                                       | Asset-tab payload replace; optional `mergeKey` for paint strokes                   |
+| `diffSceneCommands`                                                                                                                                                                                                                                                                                                             | Derives scene commands from before/after `SerializedScene` snapshots               |
+| `serializeJournalLine` / `parseJournalLine`                                                                                                                                                                                                                                                                                     | JSONL journal line codec                                                           |
+| `replayJournalLines`                                                                                                                                                                                                                                                                                                            | Replay journal onto open graph or scene documents                                  |
+| `reviveCommand` / `registerCommandReviver`                                                                                                                                                                                                                                                                                      | Registry to rebuild commands from journal JSON                                     |
 
 Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`, scene panels call `applySceneChange`, asset tabs call `applyAssetDocumentChange`; chrome **Undo** / **Redo** (and desktop Mod+Z / Mod+Shift+Z / Mod+Y) act on the active document only. `GraphEditor` reconciles that restored graph onto the canvas. `SetNodeDataCommand` and subtree-capturing scene commands (e.g. `RemoveActorCommand`) record `byteSize` so snapshot-style edits count toward the budget. Tilemap paint strokes pass `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`) so one undo restores the whole gesture.
 
 ## Ownership
 
-| Concern | Owner |
-| --- | --- |
-| In-document mutations (graph, scene, properties) | `packages/edit` command stream |
-| Asset **file** create / delete / folder ops | Asset registry (`packages/assets`) — **outside** undo |
-| Persisting dirty documents | Editor services, triggered after command apply (`autoSaveIntervalMs`) |
-| Journal (crash recovery) | Derived-data JSONL of the **same** command stream |
+| Concern                                          | Owner                                                                 |
+| ------------------------------------------------ | --------------------------------------------------------------------- |
+| In-document mutations (graph, scene, properties) | `packages/edit` command stream                                        |
+| Asset **file** create / delete / folder ops      | Asset registry (`packages/assets`) — **outside** undo                 |
+| Persisting dirty documents                       | Editor services, triggered after command apply (`autoSaveIntervalMs`) |
+| Journal (crash recovery)                         | Derived-data JSONL of the **same** command stream                     |
 
 The undo boundary is exactly the asset-file boundary. Editing surfaces must not mutate document models directly.
 
@@ -71,17 +71,19 @@ Each line is one JSON object:
 ```
 
 - Append after a successful `apply` on an open document (`appendJournalLine` in derived data).
-- Clean **Close Project** and a successful **Save** truncate the journal (recovery is for *unsaved* edits).
+- Clean **Close Project** and a successful **Save** truncate the journal (recovery is for _unsaved_ edits).
 - Recovery banner in the editor shell (`data-testid="recovery-prompt"`) offers **Recover edits** / **Discard journal**. Replay opens any missing journal target documents (graphs and scenes), then `replayJournalLines` → `reviveCommand` → `apply`, then truncates. One stream keyed by `docId` — not a parallel recovery path per document kind.
 - Schema version `v` allows journal migration without inventing a parallel recovery path.
 
 ## Dirty / autosave
 
-Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, append journal lines, and schedule `saveProject` after `ProjectSettings.autoSaveIntervalMs` (default **120000**). A second edit does **not** reset an already-running timer. **Save All** writes immediately and cancels the pending timer. **Play** is another explicit save trigger: if documents are dirty or graphs are compile-stale, Play saves and compiles first (progress dialog) and waits before launching Preview. When a save runs and `compileOnSave` is on (default **true**), open graphs compile. Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
+Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, then **immediately** bump chrome (Undo / Redo / Save All dirty) and schedule `saveProject` after `ProjectSettings.autoSaveIntervalMs` (default **120000**). Crash-journal append runs after that bump and is caught so a slow or failed journal cannot leave Undo disabled. A second edit does **not** reset an already-running timer. **Save All** writes immediately and cancels the pending timer. **Play** is another explicit save trigger: if documents are dirty or graphs are compile-stale, Play saves and compiles first (progress dialog) and waits before launching Preview. When a save runs and `compileOnSave` is on (default **true**), open graphs compile. Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
+
+Closing a dirty document tab (the tab **X**) opens the same Save / Discard / Cancel dialog used for Close Project; Cancel leaves the tab open. Discard drops the tab without writing. Save runs **Save All** then closes that tab. A `beforeunload` handler prompts the browser when any open document is dirty (refresh / leave). Autosave interval is unchanged.
 
 ## Scene apply path
 
-`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → journal append → scheduled save. Undo/redo on scene tabs uses the same per-document stack as graphs.
+`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → `notifyDocumentEdited` (bump + scheduled save, then journal). Undo/redo on scene tabs uses the same per-document stack as graphs.
 
 See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 

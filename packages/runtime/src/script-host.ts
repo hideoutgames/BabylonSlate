@@ -168,6 +168,7 @@ export interface ScriptContext {
   ): void;
   setLightIntensity(target: unknown, intensity: number): void;
   btFinish(result: "success" | "failure"): void;
+  btEvaluate(value: boolean): void;
   getBlackboard(key: string): unknown;
   setBlackboard(key: string, value: unknown): void;
   findPathTo(from: Vec3, to: Vec3): Vec3[];
@@ -179,6 +180,11 @@ export interface ScriptContext {
   addObstacle(kind: string, pose: Vec3, size: Vec3): string;
   removeObstacle(id: string): void;
 }
+
+type BtScriptExtras = Pick<
+  ScriptContext,
+  "btFinish" | "btEvaluate" | "getBlackboard" | "setBlackboard"
+>;
 
 export type CompiledScript = ScriptBundleEntry;
 
@@ -267,7 +273,7 @@ export class ScriptHost {
     event: string,
     self: Actor | null,
     deltaSeconds: number,
-    extras: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
+    extras: BtScriptExtras,
   ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
@@ -305,7 +311,7 @@ export class ScriptHost {
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
-    extras?: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
+    extras?: BtScriptExtras,
   ): void {
     for (const entry of loaded) {
       for (const point of entry.script.entryPoints) {
@@ -359,7 +365,7 @@ export class ScriptHost {
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
-    extras?: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
+    extras?: BtScriptExtras,
   ): ScriptContext {
     const services = this.services;
     return {
@@ -519,6 +525,7 @@ export class ScriptHost {
         services.removeObstacle?.(id);
       },
       btFinish: extras?.btFinish ?? (() => undefined),
+      btEvaluate: extras?.btEvaluate ?? (() => undefined),
       getBlackboard: extras?.getBlackboard ?? (() => undefined),
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };

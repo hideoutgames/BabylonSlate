@@ -27,6 +27,8 @@ import {
   DEFAULT_GIZMO_HANDLE_SCALE,
   GIZMO_COLLIDER_SCALE,
   GIZMO_END_CAP_SCALE,
+  GIZMO_ROTATION_COLLIDER_SCALE,
+  GIZMO_SCALE_SENSITIVITY,
 } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
@@ -261,6 +263,95 @@ describe("editor camera controller", () => {
 
     expect(controller.pixelZoom()).toBe(2);
     expect(controller.orthoHalfHeight()).toBe(1.5);
+  });
+
+  it("exports 3D live pose and stored 2D pose for a remounted controller", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.look(0.4, 0.2);
+    controller.zoom(2);
+    controller.frame(new Vector3(3, 4, 5));
+    const alpha = controller.camera.alpha;
+    const beta = controller.camera.beta;
+    const radius = controller.camera.radius;
+    const target3d = controller.camera.target.clone();
+
+    controller.setMode("2d");
+    controller.frame(new Vector3(-8, 2, 0));
+    controller.zoom(2);
+    const target2d = controller.camera.target.clone();
+    const halfHeight = controller.orthoHalfHeight();
+
+    controller.setMode("3d");
+    const exported = controller.exportSessionState();
+
+    const remounted = createEditorCamera(scene, { mode: "3d" });
+    remounted.importSessionState(exported);
+
+    expect(remounted.camera.alpha).toBeCloseTo(alpha, 5);
+    expect(remounted.camera.beta).toBeCloseTo(beta, 5);
+    expect(remounted.camera.radius).toBeCloseTo(radius, 5);
+    expect(remounted.camera.target.x).toBeCloseTo(target3d.x, 5);
+    expect(remounted.camera.target.y).toBeCloseTo(target3d.y, 5);
+    expect(remounted.camera.target.z).toBeCloseTo(target3d.z, 5);
+
+    remounted.setMode("2d");
+    expect(remounted.camera.target.x).toBeCloseTo(target2d.x, 5);
+    expect(remounted.camera.target.y).toBeCloseTo(target2d.y, 5);
+    expect(remounted.orthoHalfHeight()).toBeCloseTo(halfHeight, 5);
+  });
+
+  it("exports 2D live pose and stored 3D pose for a remounted controller", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "2d" });
+    controller.frame(new Vector3(6, -3, 0));
+    controller.zoom(2);
+    const target2d = controller.camera.target.clone();
+    const halfHeight = controller.orthoHalfHeight();
+
+    controller.setMode("3d");
+    controller.look(0.3, 0.1);
+    controller.frame(new Vector3(1, 1, 1), 12);
+    const alpha = controller.camera.alpha;
+    const beta = controller.camera.beta;
+    const radius = controller.camera.radius;
+    const target3d = controller.camera.target.clone();
+
+    controller.setMode("2d");
+    const exported = controller.exportSessionState();
+
+    const remounted = createEditorCamera(scene, { mode: "2d" });
+    remounted.importSessionState(exported);
+
+    expect(remounted.camera.target.x).toBeCloseTo(target2d.x, 5);
+    expect(remounted.camera.target.y).toBeCloseTo(target2d.y, 5);
+    expect(remounted.orthoHalfHeight()).toBeCloseTo(halfHeight, 5);
+
+    remounted.setMode("3d");
+    expect(remounted.camera.alpha).toBeCloseTo(alpha, 5);
+    expect(remounted.camera.beta).toBeCloseTo(beta, 5);
+    expect(remounted.camera.radius).toBeCloseTo(radius, 5);
+    expect(remounted.camera.target.x).toBeCloseTo(target3d.x, 5);
+    expect(remounted.camera.target.y).toBeCloseTo(target3d.y, 5);
+    expect(remounted.camera.target.z).toBeCloseTo(target3d.z, 5);
+  });
+
+  it("leaves a default camera alone when importing null session state", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    const alpha = controller.camera.alpha;
+    const beta = controller.camera.beta;
+    const radius = controller.camera.radius;
+    const target = controller.camera.target.clone();
+
+    controller.importSessionState(null);
+
+    expect(controller.camera.alpha).toBeCloseTo(alpha, 5);
+    expect(controller.camera.beta).toBeCloseTo(beta, 5);
+    expect(controller.camera.radius).toBeCloseTo(radius, 5);
+    expect(controller.camera.target.x).toBeCloseTo(target.x, 5);
+    expect(controller.camera.target.y).toBeCloseTo(target.y, 5);
+    expect(controller.camera.target.z).toBeCloseTo(target.z, 5);
   });
 });
 
@@ -707,14 +798,22 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
-  it("uses a mid-size default handle scale on every tool", () => {
+  it("uses a compact default handle scale on every tool", () => {
     const { scene } = createHandle();
     const host = createGizmoHost(scene);
-    // 2.4 filled too little of the view; 3.6 filled too much.
-    expect(DEFAULT_GIZMO_HANDLE_SCALE).toBe(2.8);
+    expect(DEFAULT_GIZMO_HANDLE_SCALE).toBe(1.8);
     expect(host.positionGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
     expect(host.rotationGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
     expect(host.scaleGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
+    host.dispose();
+  });
+
+  it("raises scale-gizmo drag sensitivity independently of handle size", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    expect(GIZMO_SCALE_SENSITIVITY).toBe(10);
+    expect(host.scaleGizmo.sensitivity).toBe(GIZMO_SCALE_SENSITIVITY);
+    expect(host.scaleGizmo.xGizmo.sensitivity).toBe(GIZMO_SCALE_SENSITIVITY);
     host.dispose();
   });
 
@@ -770,6 +869,24 @@ describe("gizmo host", () => {
     );
     expect(box).toBeDefined();
     expect(box!.scaling.x).toBeCloseTo(0.1 * GIZMO_END_CAP_SCALE);
+    host.dispose();
+  });
+
+  it("fattens invisible rotation-ring colliders more than translate colliders", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    const children = host.rotationGizmo.xGizmo._rootMesh.getChildMeshes();
+    const visual = children.find(
+      (mesh) => mesh.visibility > 0 && mesh.getChildMeshes().length === 0,
+    );
+    const collider = children.find(
+      (mesh) => mesh.visibility === 0 && mesh.getChildMeshes().length === 0,
+    );
+    expect(visual).toBeDefined();
+    expect(collider).toBeDefined();
+    expect(GIZMO_ROTATION_COLLIDER_SCALE).toBe(8);
+    expect(collider!.scaling.x).toBeCloseTo(GIZMO_ROTATION_COLLIDER_SCALE);
+    expect(visual!.scaling.x).toBeCloseTo(1);
     host.dispose();
   });
 });

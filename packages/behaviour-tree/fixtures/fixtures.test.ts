@@ -25,7 +25,10 @@ describe("behaviour tree diagnostic fixtures", () => {
     const raw = JSON.parse(readFileSync(join(dir, `${code}.json`), "utf8"));
     const tree = parseBehaviourTreeDocument(raw);
     expect(tree).not.toBeNull();
-    const diags = validateBehaviourTree(tree!, { assetGuid: "fixture" });
+    const blackboardKeys = Array.isArray(raw.blackboardKeys)
+      ? raw.blackboardKeys.filter((entry: unknown) => typeof entry === "string")
+      : undefined;
+    const diags = validateBehaviourTree(tree!, { assetGuid: "fixture", blackboardKeys });
     expect(diags.some((row) => row.code === code)).toBe(true);
   });
 });

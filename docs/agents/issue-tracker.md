@@ -294,6 +294,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | D — Shader `NodeMaterial.Parse` preview + shader/anim catalog pin hydration | Done (`cursor/authoring-surface-8678`) |
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
+| G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 
 Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
 
@@ -365,6 +366,30 @@ Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo)
 | §18 acceptance | `p11-acceptance` | `runtime` harness + `e2e/p11-ai.spec.ts` (landed) | Blockers + editor host |
 
 `BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default. Dynamic cost volumes do not carve. RotateToFace / PlayAnimation / PlaySound succeed without a host. **P11 is Done** (packages + §18). Do not start a new P11 slice.
+
+## Behaviour tree editor authoring (`p-bt-editor-authoring`)
+
+Authoring-surface residual, same class as the Anim Graph host pass. Do **not** uncheck `p11-bt-editor`. Packages: `apps/editor`, `graph-ui`, `behaviour-tree` (eval + validate only).
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Typed Details + catalogs | `p-bt-editor-authoring` | `apps/editor`, `graph-ui` | `p11-bt-editor` |
+| Tree ops + canvas diagnostics | same | `apps/editor`, `graph-ui`, `behaviour-tree` (validate) | Details |
+| Loop/Cooldown/TimeLimit + Play stack overlay | same | `behaviour-tree` (eval), `bridge`/`runtime` `btState.stack`, `e2e/p11-ai.spec.ts` | Tree ops |
+
+Out of scope: RotateToFace / PlayAnimation / PlaySound hosts; nav cost-carve / auto-bake; Dockview for asset tabs; large-tree iPad virtualization; P12; lighting.
+
+## Behaviour tree class events (`p-bt-class-events`)
+
+Authoring-surface residual. Do **not** uncheck `p11-bt-authoring`. Packages: `apps/editor`, `scripting-nodes`, `behaviour-tree`, `runtime`.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Class Events + palette by ancestry | `p-bt-class-events` | `apps/editor` | `p11-bt-authoring` |
+| Decorator host, abort, Return Condition, blackboard nodes | same | `behaviour-tree`, `scripting-nodes`, `runtime` | Class events |
+| Composite kind from ancestry + e2e | same | `behaviour-tree`, `e2e/p11-ai.spec.ts` | hosts |
+
+Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation / PlaySound hosts; reopening P11; P12; lighting.
 
 ## P12 editor extensions
 

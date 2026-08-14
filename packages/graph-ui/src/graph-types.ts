@@ -35,6 +35,8 @@ export type PaletteNode = {
   pins?: SerializedPin[];
   /** Default property bag (message, severity, …) merged into node data. */
   defaultData?: Record<string, unknown>;
+  /** React Flow node type when `id` is a catalog class id (behaviour trees). */
+  nodeType?: string;
   pure?: boolean;
   latent?: boolean;
 };

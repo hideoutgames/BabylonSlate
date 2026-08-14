@@ -202,6 +202,7 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
     await page.getByTestId("place-actors-item-shape-box").click();
 
+    await expect(page.getByTestId("undo-document")).toBeEnabled();
     await expect(saveAll).toBeEnabled();
     await expect(page.getByTestId("save-all-dirty")).toBeVisible();
     await expect(saveAll).toHaveAttribute(

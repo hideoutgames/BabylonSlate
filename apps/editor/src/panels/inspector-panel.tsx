@@ -7,13 +7,24 @@ import {
   PinListEditor,
   PinTypePicker,
   PropertyGrid,
+  TypeVisualIcon,
+  resolveTypeVisual,
   type PinListRow,
 } from "@babylonslate/editor-kit";
-import { Field, FieldGroup, FieldLabel } from "@babylonslate/ui/components/field";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import { Button } from "@babylonslate/ui/components/button";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { GraphClassMember, SerializedGraph } from "@babylonslate/core";
+import {
+  DEFAULT_SORTING_LAYERS,
+  type GraphClassMember,
+  type SerializedComponent,
+  type SerializedGraph,
+} from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -23,6 +34,12 @@ import {
   resolveInspectorNodeId,
   useGraphEditing,
 } from "../context/graph-editing-context";
+import { usePrefabEditing } from "../context/prefab-editing-context";
+import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import {
+  componentPropertyRows,
+  type AssetPickRequest,
+} from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import {
@@ -59,7 +76,10 @@ function ClassMemberDetails({
         ? ""
         : String(member.defaultValue);
     return (
-      <div className="flex flex-col gap-3 p-3" data-testid="inspector-member-variable">
+      <div
+        className="flex flex-col gap-3 p-3"
+        data-testid="inspector-member-variable"
+      >
         <div className="text-sm font-medium">{member.name}</div>
         <PropertyGrid
           rows={[
@@ -127,7 +147,10 @@ function ClassMemberDetails({
       });
     };
     return (
-      <div className="flex flex-col gap-3 p-3" data-testid="inspector-member-function">
+      <div
+        className="flex flex-col gap-3 p-3"
+        data-testid="inspector-member-function"
+      >
         <div className="text-sm font-medium">{member.name}</div>
         <PropertyGrid
           rows={[
@@ -165,7 +188,10 @@ function ClassMemberDetails({
       interfaceAssets.find((asset) => asset.guid === member.assetGuid)?.name ??
       member.name;
     return (
-      <div className="flex flex-col gap-3 p-3" data-testid="inspector-member-interface">
+      <div
+        className="flex flex-col gap-3 p-3"
+        data-testid="inspector-member-interface"
+      >
         <div className="text-sm font-medium">{member.name}</div>
         <PropertyGrid
           rows={[
@@ -209,6 +235,71 @@ function ClassMemberDetails({
   return null;
 }
 
+function PrefabComponentDetails({
+  component,
+  sortingLayers,
+  physicsWorld,
+  pickerAssets,
+  assetLabel,
+  onUpdate,
+}: {
+  component: SerializedComponent;
+  sortingLayers: readonly string[];
+  physicsWorld: "3d" | "2d";
+  pickerAssets: Array<{
+    guid: string;
+    name: string;
+    type: string;
+    path?: string;
+  }>;
+  assetLabel: (guid: string | null | undefined) => string | undefined;
+  onUpdate: (property: string, value: unknown) => void;
+}) {
+  const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
+  return (
+    <div
+      className="flex flex-col gap-3 p-3"
+      data-testid="inspector-prefab-component"
+    >
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border bg-secondary px-2 py-1">
+          <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
+            <TypeVisualIcon
+              visual={resolveTypeVisual({ classId: component.classId })}
+              data-testid={`inspector-prefab-type-icon-${component.id}`}
+            />
+            {component.classId}
+          </span>
+        </div>
+        <PropertyGrid
+          rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
+            sortingLayers,
+            assetLabel,
+            physicsWorld,
+            onPickAsset: setAssetPick,
+          })}
+        />
+      </div>
+      <AssetPicker
+        open={assetPick !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssetPick(null);
+        }}
+        assets={pickerAssets}
+        allowedTypes={assetPick?.allowedTypes}
+        title={assetPick?.title ?? "Pick Asset"}
+        allowNone
+        onPick={(guid) => {
+          if (!assetPick) return;
+          onUpdate(assetPick.property, guid);
+          setAssetPick(null);
+        }}
+        data-testid="inspector-prefab-asset-picker"
+      />
+    </div>
+  );
+}
+
 export function InspectorPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
@@ -216,7 +307,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     useDocuments();
   const { focusDiagnostic } = useValidation();
   const { focusedNodeId } = usePlay();
-  const { selectedNodeIds, selectedMemberId, activeFunctionId } = useGraphEditing();
+  const { selectedNodeIds, selectedMemberId, activeFunctionId } =
+    useGraphEditing();
+  const {
+    selectedId: prefabSelectedId,
+    components: prefabComponents,
+    updateComponent,
+  } = usePrefabEditing();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
@@ -259,6 +356,44 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       type: asset.header.type,
     }));
 
+  const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
+    guid: asset.header.guid,
+    name: asset.header.name,
+    type: asset.header.type,
+    path: asset.path,
+  }));
+  const sortingLayers =
+    projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const assetLabel = (guid: string | null | undefined) => {
+    if (!guid) return undefined;
+    return (
+      assetRegistry?.getByGuid?.(guid)?.header.name ??
+      pickerAssets.find((asset) => asset.guid === guid)?.name
+    );
+  };
+
+  const selectedPrefabComponent =
+    prefabSelectedId && prefabSelectedId !== PREFAB_ROOT_ID
+      ? prefabComponents.find((component) => component.id === prefabSelectedId)
+      : undefined;
+
+  if (selectedPrefabComponent) {
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        <PrefabComponentDetails
+          component={selectedPrefabComponent}
+          sortingLayers={sortingLayers}
+          physicsWorld="3d"
+          pickerAssets={pickerAssets}
+          assetLabel={assetLabel}
+          onUpdate={(property, value) =>
+            updateComponent(selectedPrefabComponent.id, property, value)
+          }
+        />
+      </PanelFrame>
+    );
+  }
+
   if (graph && selectedMember && selectedMember.kind !== "event") {
     return (
       <PanelFrame data-testid="inspector-panel">
@@ -278,7 +413,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <p className="p-4 text-sm text-muted-foreground">
-          Select a graph node or class member to edit properties.
+          Select a graph node, class member, or prefab component to edit
+          properties.
         </p>
       </PanelFrame>
     );
@@ -311,9 +447,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     const next: SerializedGraph = {
       ...graph,
       nodes: graph.nodes.map((n) =>
-        n.id === selectedNode.id
-          ? { ...n, data: { ...n.data, ...patch } }
-          : n,
+        n.id === selectedNode.id ? { ...n, data: { ...n.data, ...patch } } : n,
       ),
     };
     void applyGraphChange(documentId, next);
@@ -402,7 +536,9 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="command-description">Description</FieldLabel>
+                <FieldLabel htmlFor="command-description">
+                  Description
+                </FieldLabel>
                 <Input
                   id="command-description"
                   className="min-h-11"

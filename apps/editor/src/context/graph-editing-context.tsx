@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useOptionalPrefabEditing } from "./prefab-editing-context";
 
 export interface GraphEditingContextValue {
   selectedNodeIds: string[];
@@ -23,7 +24,8 @@ const GraphEditingContext = createContext<GraphEditingContextValue | null>(
 
 function sameIds(left: readonly string[], right: readonly string[]): boolean {
   return (
-    left.length === right.length && left.every((id, index) => id === right[index])
+    left.length === right.length &&
+    left.every((id, index) => id === right[index])
   );
 }
 
@@ -37,7 +39,10 @@ export function resolveInspectorNodeId(
   playFocusedNodeId?: string | null,
 ): string | undefined {
   return (
-    selectedNodeIds[0] ?? focusDiagnosticNodeId ?? playFocusedNodeId ?? undefined
+    selectedNodeIds[0] ??
+    focusDiagnosticNodeId ??
+    playFocusedNodeId ??
+    undefined
   );
 }
 
@@ -50,6 +55,7 @@ export function GraphEditingProvider({
   initialSelectedMemberId?: string | null;
   initialActiveFunctionId?: string | null;
 }) {
+  const setPrefabSelectedId = useOptionalPrefabEditing()?.setSelectedId;
   const [selectedNodeIds, setSelectedNodeIdsState] = useState<string[]>([]);
   const [selectedMemberId, setSelectedMemberIdState] = useState<string | null>(
     initialSelectedMemberId,
@@ -58,21 +64,29 @@ export function GraphEditingProvider({
     initialActiveFunctionId,
   );
 
-  const setSelectedNodeIds = useCallback((nodeIds: string[]) => {
-    setSelectedNodeIdsState((current) =>
-      sameIds(current, nodeIds) ? current : nodeIds,
-    );
-    if (nodeIds.length > 0) {
-      setSelectedMemberIdState(null);
-    }
-  }, []);
+  const setSelectedNodeIds = useCallback(
+    (nodeIds: string[]) => {
+      setSelectedNodeIdsState((current) =>
+        sameIds(current, nodeIds) ? current : nodeIds,
+      );
+      if (nodeIds.length > 0) {
+        setSelectedMemberIdState(null);
+        setPrefabSelectedId?.(null);
+      }
+    },
+    [setPrefabSelectedId],
+  );
 
-  const setSelectedMemberId = useCallback((id: string | null) => {
-    setSelectedMemberIdState(id);
-    if (id) {
-      setSelectedNodeIdsState([]);
-    }
-  }, []);
+  const setSelectedMemberId = useCallback(
+    (id: string | null) => {
+      setSelectedMemberIdState(id);
+      if (id) {
+        setSelectedNodeIdsState([]);
+        setPrefabSelectedId?.(null);
+      }
+    },
+    [setPrefabSelectedId],
+  );
 
   const setActiveFunctionId = useCallback((id: string | null) => {
     setActiveFunctionIdState(id);

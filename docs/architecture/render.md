@@ -20,7 +20,7 @@ UserInterface documents store Babylon GUI fields (alignment, px/%, left/top, lay
 
 See [ui-runtime.md](ui-runtime.md) and [fonts.md](fonts.md). Agents applying Babylon GUI (UserInterface or EditorUtilityInterface) follow [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md).
 
-`registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine.
+`registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). Play also sets `scene.autoClear = true` after `ScenePerformancePriority.Intermediate` (that priority otherwise disables color-buffer clear, which trails when there is no skybox). Authored `settings.environmentColor` is the Play `clearColor` when the session has a scene payload. `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine.
 
 Play does **not** seed `createDefaultScene()` (the default Cube) into the Play Babylon scene. The Play scene is camera + light only; snapshot apply creates meshes for runtime actors. `assignMesh` commands carry `meshKind` from `MeshComponent` so Play primitives match the editor (sphere, box, …) instead of always being a unit box. Authored actors themselves come from the `load` message `scene` payload (`p7-play-scene-load`).
 
@@ -72,8 +72,8 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 
 | Module | Role |
 | --- | --- |
-| `editor-camera` | Mode-parametric ArcRotate controller; 3D look-in-place + fly, 2D ortho pan/zoom, pixel-perfect framing. `setMode` snapshots the current pose and restores the other mode's last in-session framing (not written to the scene document). |
-| `gizmo-host` | Translate / rotate / scale on a utility layer; unlit axis materials (`GIZMO_AXIS_COLORS` / `GIZMO_UNIFORM_COLOR`); `scaleRatio` 2.8; thin shafts with larger end caps; leaf colliders scaled 2.5× for touch; planar handles; hover; axis set filtered by `ViewportMode`; `hitTest` / `isDragging` block camera look |
+| `editor-camera` | Mode-parametric ArcRotate controller; 3D look-in-place + fly, 2D ortho pan/zoom, pixel-perfect framing. `setMode` snapshots the current pose and restores the other mode's last in-session framing (not written to the scene document). `exportSessionState` / `importSessionState` round-trip both mode slots as plain numbers so a remounted viewport (Focus exit, Windows reopen) can restore the view. |
+| `gizmo-host` | Translate / rotate / scale on a utility layer; unlit axis materials (`GIZMO_AXIS_COLORS` / `GIZMO_UNIFORM_COLOR`); `scaleRatio` 1.8; thin shafts with larger end caps; leaf colliders scaled 2.5× (rotation rings 8×) for touch; `ScaleGizmo.sensitivity` 10; planar handles; hover; axis set filtered by `ViewportMode`; `hitTest` / `isDragging` block camera look |
 | `editor-grid` | World-aligned shader plane (3D XZ / 2D XY) that follows the editor camera; tile spacing + subdivisions; `cameraBounds2D` overlay. Fragment shader is GLES 1.00 (`fwidth` AA) without `GL_OES_standard_derivatives` so WebGL2 compile succeeds. |
 | `selection-outline` | Highlight mesh(es) for selected actors |
 | `editor-scene-sync` | Incremental apply of `SerializedScene` to Babylon meshes |
