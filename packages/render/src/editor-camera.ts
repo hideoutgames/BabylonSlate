@@ -26,9 +26,38 @@ export interface EditorCameraOptions {
   orthoHalfHeight?: number;
 }
 
+/** In-session 3D editor camera pose; plain numbers so it can leave Babylon. */
+export interface EditorCameraPose3d {
+  target: { x: number; y: number; z: number };
+  alpha: number;
+  beta: number;
+  radius: number;
+}
+
+/** In-session 2D editor camera pose; plain numbers so it can leave Babylon. */
+export interface EditorCameraPose2d {
+  target: { x: number; y: number; z: number };
+  orthoHalfHeight: number;
+  pixelZoom: number;
+}
+
+/** Both mode slots, for restoring after a viewport remount. */
+export interface EditorCameraSessionState {
+  pose3d: EditorCameraPose3d | null;
+  pose2d: EditorCameraPose2d | null;
+}
+
+function plainVec(v: Vector3): { x: number; y: number; z: number } {
+  return { x: v.x, y: v.y, z: v.z };
+}
+
 export interface EditorCameraController {
   readonly camera: ArcRotateCamera;
   readonly mode: ViewportMode;
+  /** Snapshot both mode poses so a remounted engine can restore them. */
+  exportSessionState: () => EditorCameraSessionState;
+  /** Restore exported poses; null/undefined is a no-op. */
+  importSessionState: (state: EditorCameraSessionState | null | undefined) => void;
   setMode: (mode: ViewportMode) => void;
   /** Aspect-correct orthographic bounds; call on resize and on zoom. */
   updateOrthoBounds: (aspectRatio: number) => void;
@@ -309,6 +338,53 @@ export function createEditorCamera(
         }
       }
       invalidate();
+    },
+    exportSessionState: () => {
+      snapshotCurrent();
+      return {
+        pose3d: pose3d
+          ? {
+              target: plainVec(pose3d.target),
+              alpha: pose3d.alpha,
+              beta: pose3d.beta,
+              radius: pose3d.radius,
+            }
+          : null,
+        pose2d: pose2d
+          ? {
+              target: plainVec(pose2d.target),
+              orthoHalfHeight: pose2d.orthoHalfHeight,
+              pixelZoom: pose2d.pixelZoom,
+            }
+          : null,
+      };
+    },
+    importSessionState: (state) => {
+      if (!state) return;
+      pose3d = state.pose3d
+        ? {
+            target: new Vector3(
+              state.pose3d.target.x,
+              state.pose3d.target.y,
+              state.pose3d.target.z,
+            ),
+            alpha: state.pose3d.alpha,
+            beta: state.pose3d.beta,
+            radius: state.pose3d.radius,
+          }
+        : null;
+      pose2d = state.pose2d
+        ? {
+            target: new Vector3(
+              state.pose2d.target.x,
+              state.pose2d.target.y,
+              state.pose2d.target.z,
+            ),
+            orthoHalfHeight: state.pose2d.orthoHalfHeight,
+            pixelZoom: state.pose2d.pixelZoom,
+          }
+        : null;
+      restorePose();
     },
     dispose: () => {
       camera.dispose();

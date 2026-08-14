@@ -9,7 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import type { ViewportMode } from "@babylonslate/core";
-import type { GizmoTool } from "@babylonslate/render";
+import type {
+  EditorCameraSessionState,
+  GizmoTool,
+} from "@babylonslate/render";
 
 export interface SceneEditingContextValue {
   /** Actor ids selected in the viewport, outliner and details panel. */
@@ -33,6 +36,22 @@ export interface SceneEditingContextValue {
   setViewportMode: (mode: ViewportMode) => void;
   frameActor: (actorId: string) => void;
   setFrameActorHandler: (handler: ((actorId: string) => void) | null) => void;
+  /** Persist editor camera pose across viewport remounts (Focus, layout restore). */
+  saveEditorCameraPose: (state: EditorCameraSessionState) => void;
+  loadEditorCameraPose: () => EditorCameraSessionState | null;
+}
+
+/** In-memory editor camera pose for one document workspace. */
+export function createEditorCameraPoseStore() {
+  let pose: EditorCameraSessionState | null = null;
+  return {
+    save(state: EditorCameraSessionState | null | undefined) {
+      pose = state ?? null;
+    },
+    load(): EditorCameraSessionState | null {
+      return pose;
+    },
+  };
 }
 
 const SceneEditingContext = createContext<SceneEditingContextValue | null>(null);
@@ -94,6 +113,7 @@ export function SceneEditingProvider({
   const frameActorHandlerRef = useRef<((actorId: string) => void) | null>(
     null,
   );
+  const cameraPoseStoreRef = useRef(createEditorCameraPoseStore());
 
   useEffect(() => {
     if (documentViewportMode === undefined) return;
@@ -139,6 +159,15 @@ export function SceneEditingProvider({
     frameActorHandlerRef.current?.(actorId);
   }, []);
 
+  const saveEditorCameraPose = useCallback((state: EditorCameraSessionState) => {
+    cameraPoseStoreRef.current.save(state);
+  }, []);
+
+  const loadEditorCameraPose = useCallback(
+    () => cameraPoseStoreRef.current.load(),
+    [],
+  );
+
   const value = useMemo<SceneEditingContextValue>(
     () => ({
       selectedActorIds,
@@ -159,6 +188,8 @@ export function SceneEditingProvider({
       setViewportMode,
       frameActor,
       setFrameActorHandler,
+      saveEditorCameraPose,
+      loadEditorCameraPose,
     }),
     [
       dragSelectActive,
@@ -166,6 +197,8 @@ export function SceneEditingProvider({
       gizmoTool,
       gridVisible,
       joystickEnabled,
+      loadEditorCameraPose,
+      saveEditorCameraPose,
       selectActor,
       selectedActorIds,
       setFrameActorHandler,

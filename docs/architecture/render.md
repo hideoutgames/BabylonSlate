@@ -72,7 +72,7 @@ Editor viewport attaches these modules from `@babylonslate/render` (Play views o
 
 | Module | Role |
 | --- | --- |
-| `editor-camera` | Mode-parametric ArcRotate controller; 3D look-in-place + fly, 2D ortho pan/zoom, pixel-perfect framing. `setMode` snapshots the current pose and restores the other mode's last in-session framing (not written to the scene document). |
+| `editor-camera` | Mode-parametric ArcRotate controller; 3D look-in-place + fly, 2D ortho pan/zoom, pixel-perfect framing. `setMode` snapshots the current pose and restores the other mode's last in-session framing (not written to the scene document). `exportSessionState` / `importSessionState` round-trip both mode slots as plain numbers so a remounted viewport (Focus exit, Windows reopen) can restore the view. |
 | `gizmo-host` | Translate / rotate / scale on a utility layer; unlit axis materials (`GIZMO_AXIS_COLORS` / `GIZMO_UNIFORM_COLOR`); `scaleRatio` 3.6; thin shafts with larger end caps; leaf colliders scaled 2.5× for touch; planar handles; hover; axis set filtered by `ViewportMode`; `hitTest` / `isDragging` block camera look |
 | `editor-grid` | World-aligned shader plane (3D XZ / 2D XY) that follows the editor camera; tile spacing + subdivisions; `cameraBounds2D` overlay. Fragment shader is GLES 1.00 (`fwidth` AA) without `GL_OES_standard_derivatives` so WebGL2 compile succeeds. |
 | `selection-outline` | Highlight mesh(es) for selected actors |

@@ -48,6 +48,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     viewportMode,
     joystickEnabled,
     gridVisible,
+    saveEditorCameraPose,
+    loadEditorCameraPose,
   } = useSceneEditing();
   const { registerScheduler, playing } = usePlay();
 
@@ -60,6 +62,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
     });
     engineRef.current = handle;
+    handle.editor?.camera.importSessionState(loadEditorCameraPose());
     handle.editor?.setPreviewCanvas(previewCanvasRef.current);
     const unregisterScheduler = registerScheduler({
       setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
@@ -80,6 +83,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       unregisterScheduler();
       joystickLeaseRef.current?.();
       joystickLeaseRef.current = null;
+      if (handle.editor) {
+        saveEditorCameraPose(handle.editor.camera.exportSessionState());
+      }
       handle.dispose();
       engineRef.current = null;
     };
