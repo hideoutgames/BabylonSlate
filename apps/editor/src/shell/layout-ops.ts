@@ -31,6 +31,7 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   enum: "enum-members",
   structure: "structure-members",
   "script-interface": "script-interface-preview",
+  sprite: "sprite-preview",
 };
 
 /**

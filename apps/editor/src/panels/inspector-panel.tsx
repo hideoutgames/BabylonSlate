@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AssetPicker,
+  FUNCTION_PIN_PICKER_TYPES,
   PanelFrame,
   ParameterListEditor,
   PinListEditor,
@@ -91,12 +92,40 @@ function ClassMemberDetails({
   }
 
   if (member.kind === "function") {
-    const rows: PinListRow[] = (member.pins ?? []).map((pin, index) => ({
-      id: `${member.id}-pin-${index}`,
-      name: pin.name,
-      type: pin.typeId,
-      direction: pin.direction,
-    }));
+    const pins = member.pins ?? [];
+    const inputRows: PinListRow[] = pins
+      .filter((pin) => pin.direction === "in")
+      .map((pin, index) => ({
+        id: `${member.id}-in-${index}`,
+        name: pin.name,
+        type: pin.typeId,
+      }));
+    const outputRows: PinListRow[] = pins
+      .filter((pin) => pin.direction === "out")
+      .map((pin, index) => ({
+        id: `${member.id}-out-${index}`,
+        name: pin.name,
+        type: pin.typeId,
+      }));
+    const commitPins = (
+      nextInputs: PinListRow[],
+      nextOutputs: PinListRow[],
+    ) => {
+      commit({
+        pins: [
+          ...nextInputs.map((row) => ({
+            name: row.name,
+            typeId: String(row.type),
+            direction: "in" as const,
+          })),
+          ...nextOutputs.map((row) => ({
+            name: row.name,
+            typeId: String(row.type),
+            direction: "out" as const,
+          })),
+        ],
+      });
+    };
     return (
       <div className="flex flex-col gap-3 p-3" data-testid="inspector-member-function">
         <div className="text-sm font-medium">{member.name}</div>
@@ -112,20 +141,20 @@ function ClassMemberDetails({
           ]}
         />
         <PinListEditor
-          title="Pins"
-          rows={rows}
-          showDirection
-          testIdPrefix="class-fn-pin"
-          data-testid="inspector-member-pins"
-          onChange={(nextRows) =>
-            commit({
-              pins: nextRows.map((row) => ({
-                name: row.name,
-                typeId: String(row.type),
-                direction: row.direction === "out" ? "out" : "in",
-              })),
-            })
-          }
+          title="Inputs"
+          rows={inputRows}
+          types={FUNCTION_PIN_PICKER_TYPES}
+          testIdPrefix="class-fn-in"
+          data-testid="inspector-member-inputs"
+          onChange={(nextRows) => commitPins(nextRows, outputRows)}
+        />
+        <PinListEditor
+          title="Outputs"
+          rows={outputRows}
+          types={FUNCTION_PIN_PICKER_TYPES}
+          testIdPrefix="class-fn-out"
+          data-testid="inspector-member-outputs"
+          onChange={(nextRows) => commitPins(inputRows, nextRows)}
         />
       </div>
     );
@@ -187,11 +216,18 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     useDocuments();
   const { focusDiagnostic } = useValidation();
   const { focusedNodeId } = usePlay();
-  const { selectedNodeIds, selectedMemberId } = useGraphEditing();
+  const { selectedNodeIds, selectedMemberId, activeFunctionId } = useGraphEditing();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
     doc?.ref.kind === "graph" ? (doc.content as SerializedGraph) : null;
+  const inspectGraph = useMemo(() => {
+    if (!graph) return null;
+    if (!activeFunctionId) return graph;
+    const slice = graph.functionGraphs?.[activeFunctionId];
+    if (!slice) return graph;
+    return { ...graph, nodes: slice.nodes, edges: slice.edges };
+  }, [activeFunctionId, graph]);
 
   const selectedMember =
     graph && selectedMemberId
@@ -199,18 +235,18 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       : undefined;
 
   const selectedNode = useMemo(() => {
-    if (!graph || selectedMember) return null;
+    if (!inspectGraph || selectedMember) return null;
     const id = resolveInspectorNodeId(
       selectedNodeIds,
       focusDiagnostic?.nodeId,
       focusedNodeId,
     );
     if (!id) return null;
-    return graph.nodes.find((n) => n.id === id) ?? null;
+    return inspectGraph.nodes.find((n) => n.id === id) ?? null;
   }, [
     focusDiagnostic?.nodeId,
     focusedNodeId,
-    graph,
+    inspectGraph,
     selectedMember,
     selectedNodeIds,
   ]);

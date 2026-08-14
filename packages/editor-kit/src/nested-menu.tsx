@@ -1,5 +1,7 @@
 import {
   isValidElement,
+  useLayoutEffect,
+  useRef,
   useState,
   type ReactElement,
   type ReactNode,
@@ -21,6 +23,10 @@ import {
 } from "@babylonslate/ui/components/dropdown-menu";
 import { Separator } from "@babylonslate/ui/components/separator";
 import { cn } from "@babylonslate/ui/lib/utils";
+import {
+  clampOverlayMenuPosition,
+  overlaySubmenuOrigin,
+} from "./clamp-overlay-menu";
 
 export type NestedMenuItem =
   | {
@@ -247,24 +253,58 @@ function OverlayMenu({
   y,
   contentTestId,
   onClose,
+  parentWidth,
 }: {
   items: NestedMenuItem[];
   x: number;
   y: number;
   contentTestId?: string;
   onClose: () => void;
+  parentWidth?: number;
 }) {
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
+  const [position, setPosition] = useState({ x, y });
+  const panelRef = useRef<HTMLDivElement>(null);
   const openSubmenu = items.find(
     (item) => item.type === "submenu" && item.id === openSubmenuId,
   );
 
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const rect = panel?.getBoundingClientRect();
+    const width = rect?.width ?? 192;
+    const height = rect?.height ?? 0;
+    setPosition(
+      clampOverlayMenuPosition({
+        x,
+        y,
+        width,
+        height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        margin: 8,
+      }),
+    );
+  }, [x, y, items]);
+
+  const submenuOrigin = openSubmenu
+    ? overlaySubmenuOrigin({
+        parentX: position.x,
+        parentY: position.y,
+        parentWidth: parentWidth ?? panelRef.current?.getBoundingClientRect().width ?? 192,
+        submenuWidth: 192,
+        viewportWidth: window.innerWidth,
+        margin: 8,
+      })
+    : null;
+
   return (
     <>
       <div
+        ref={panelRef}
         className="context-menu-panel"
         data-testid={contentTestId}
-        style={{ left: x, top: y }}
+        style={{ left: position.x, top: position.y }}
         role="menu"
       >
         <OverlayMenuItems
@@ -274,11 +314,12 @@ function OverlayMenu({
           onClose={onClose}
         />
       </div>
-      {openSubmenu && openSubmenu.type === "submenu" ? (
+      {openSubmenu && openSubmenu.type === "submenu" && submenuOrigin ? (
         <OverlayMenu
           items={openSubmenu.items}
-          x={x + 192}
-          y={y}
+          x={submenuOrigin.x}
+          y={submenuOrigin.y}
+          parentWidth={192}
           contentTestId={
             openSubmenu.contentTestId ?? `context-menu-sub-${openSubmenu.id}`
           }

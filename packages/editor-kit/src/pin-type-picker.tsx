@@ -10,10 +10,10 @@ import {
 
 export type PinTypePickerProps = {
   value: PinPickerType | string;
-  onChange: (type: PinPickerType) => void;
+  onChange: (type: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  types?: readonly PinPickerType[];
+  types?: readonly string[];
   "data-testid"?: string;
 };
 
@@ -26,9 +26,7 @@ export function PinTypePicker({
   types = PIN_PICKER_TYPES,
   "data-testid": testId = "pin-type-picker",
 }: PinTypePickerProps) {
-  const selected = (types.includes(value as PinPickerType)
-    ? value
-    : "float") as PinPickerType;
+  const selected = types.includes(value) ? value : "float";
   return (
     <SearchDropdown
       open={open}
@@ -41,7 +39,7 @@ export function PinTypePicker({
           <TypeColorMark colorVar={pinPickerColorVar(type)} />
         ),
       }))}
-      onSelect={(id) => onChange(id as PinPickerType)}
+      onSelect={(id) => onChange(id)}
       placeholder="Search types"
       data-testid={`${testId}-menu`}
     >

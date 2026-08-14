@@ -32,7 +32,7 @@ export type PinListEditorProps = {
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   showDirection?: boolean;
-  types?: readonly PinPickerType[];
+  types?: readonly string[];
   testIdPrefix?: string;
   "data-testid"?: string;
 };

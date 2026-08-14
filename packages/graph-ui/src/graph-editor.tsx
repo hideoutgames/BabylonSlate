@@ -31,6 +31,8 @@ import {
   nodeChangesMutateGraph,
   reconcileCanvasGraph,
   toSerializedGraph,
+  isProtectedNode,
+  deletableNodeIds,
 } from "./graph-model";
 import {
   type CanvasNode,
@@ -588,6 +590,9 @@ function GraphEditorCanvas({
     () => nodes.filter((node) => node.selected),
     [nodes],
   );
+  const selectionIsOnlyProtected =
+    selectedNodes.length > 0 &&
+    selectedNodes.every((node) => isProtectedNode(node));
   const hasBreakableLinks = useMemo(() => {
     const selected = new Set(selectedNodes.map((node) => node.id));
     return edgesTouchingNodes(edges, selected).length > 0;
@@ -603,16 +608,17 @@ function GraphEditorCanvas({
   }, [selectionKey]);
 
   const copySelection = useCallback(() => {
-    const selected = new Set(selectedNodes.map((node) => node.id));
-    if (selected.size === 0) return;
+    const selected = selectedNodes.filter((node) => !isProtectedNode(node));
+    if (selected.length === 0) return;
     clipboardRef.current = {
-      nodes: selectedNodes.map((node) => ({
+      nodes: selected.map((node) => ({
         ...node,
         data: { ...node.data },
       })),
-      edges: graphStateRef.current.edges.filter(
-        (edge) => selected.has(edge.source) && selected.has(edge.target),
-      ),
+      edges: graphStateRef.current.edges.filter((edge) => {
+        const ids = new Set(selected.map((node) => node.id));
+        return ids.has(edge.source) && ids.has(edge.target);
+      }),
     };
     setHasClipboard(true);
   }, [selectedNodes]);
@@ -620,9 +626,11 @@ function GraphEditorCanvas({
   const pasteClipboard = useCallback(() => {
     const clip = clipboardRef.current;
     if (!clip) return;
+    const pasteable = clip.nodes.filter((node) => !isProtectedNode(node));
+    if (pasteable.length === 0) return;
     const idMap = new Map<string, string>();
     const stamp = Date.now();
-    const nextNodes = clip.nodes.map((node, index) => {
+    const nextNodes = pasteable.map((node, index) => {
       const id = `${node.id}-copy-${stamp}-${index}`;
       idMap.set(node.id, id);
       return {
@@ -665,9 +673,7 @@ function GraphEditorCanvas({
 
   const deleteSelection = useCallback(() => {
     const selected = new Set(
-      graphStateRef.current.nodes
-        .filter((node) => node.selected)
-        .map((node) => node.id),
+      deletableNodeIds(graphStateRef.current.nodes),
     );
     if (selected.size === 0) return;
     setNodes((current) => {
@@ -878,7 +884,7 @@ function GraphEditorCanvas({
               type="button"
               variant="outline"
               size="sm"
-              disabled={selectedNodes.length === 0}
+              disabled={selectedNodes.length === 0 || selectionIsOnlyProtected}
               onClick={copySelection}
               data-testid="graph-copy"
             >
@@ -898,7 +904,7 @@ function GraphEditorCanvas({
               type="button"
               variant="outline"
               size="sm"
-              disabled={selectedNodes.length === 0}
+              disabled={selectedNodes.length === 0 || selectionIsOnlyProtected}
               onClick={deleteSelection}
               data-testid="graph-delete"
             >

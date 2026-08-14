@@ -108,7 +108,78 @@ export const flowNodes: NodeDefinition[] = [
       /* handled specially by compiler */
     },
   },
+  {
+    id: "flow.function.input",
+    title: "Input",
+    category: "flow",
+    pure: true,
+    pins: (properties) =>
+      functionEndpointPins(properties, "input"),
+    codegen: (ctx) => {
+      const out: Record<string, string> = {};
+      for (const pinDef of ctx.node.pins) {
+        if (pinDef.kind === "exec") continue;
+        out[pinDef.name] = `ctx.args[${JSON.stringify(pinDef.name)}]`;
+      }
+      if (Object.keys(out).length === 0) return;
+      return out;
+    },
+  },
+  {
+    id: "flow.function.output",
+    title: "Output",
+    category: "flow",
+    pins: (properties) =>
+      functionEndpointPins(properties, "output"),
+    codegen: () => {
+      /* return marker; exec chain ends here */
+    },
+  },
 ];
+
+function pinTypeForMember(typeId: string | undefined): PinType {
+  switch (typeId) {
+    case "exec":
+      return EXEC;
+    case "bool":
+      return BOOL;
+    case "int":
+      return INT;
+    case "string":
+    case "enum":
+      return STRING;
+    default:
+      return FLOAT;
+  }
+}
+
+function functionEndpointPins(
+  properties: Record<string, unknown>,
+  endpoint: "input" | "output",
+) {
+  const rows = Array.isArray(properties.pins)
+    ? (properties.pins as Array<{
+        name?: string;
+        typeId?: string;
+        direction?: string;
+      }>)
+    : [];
+  const want = endpoint === "input" ? "in" : "out";
+  const asDirection = endpoint === "input" ? "out" : "in";
+  const mapped = rows.flatMap((row) => {
+    if (!row || typeof row.name !== "string" || row.name.length === 0) {
+      return [];
+    }
+    if (row.direction !== want) return [];
+    return [
+      pin(row.name, row.name, asDirection, pinTypeForMember(row.typeId)),
+    ];
+  });
+  if (mapped.length > 0) return mapped;
+  return endpoint === "input"
+    ? [pin("exec", "then", "out", EXEC)]
+    : [pin("then", "then", "in", EXEC)];
+}
 
 function pinTypeForCommandParam(type: string | undefined): PinType {
   switch (type) {

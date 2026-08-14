@@ -3,6 +3,7 @@ import {
   canonicalGraphSignature,
   createEdgeId,
   DEFAULT_NODE_TYPE,
+  deletableNodeIds,
   nodeChangesMutateGraph,
   reconcileCanvasGraph,
   toSerializedGraph,
@@ -341,5 +342,16 @@ describe("nodeChangesMutateGraph", () => {
       nodeChangesMutateGraph([{ type: "select" }, { type: "position" }]),
     ).toBe(true);
     expect(nodeChangesMutateGraph([{ type: "remove" }])).toBe(true);
+  });
+});
+
+describe("deletableNodeIds", () => {
+  it("skips protected nodes in a mixed selection", () => {
+    expect(
+      deletableNodeIds([
+        { id: "in-1", selected: true, data: { __protected: true } },
+        { id: "log-a", selected: true, data: {} },
+      ]),
+    ).toEqual(["log-a"]);
   });
 });

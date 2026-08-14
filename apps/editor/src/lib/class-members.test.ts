@@ -17,10 +17,38 @@ describe("addClassMember", () => {
     graph = addClassMember(graph, "function", "Jump", () => "fn-1");
     graph = addClassMember(graph, "interface", "Damageable", () => "if-1");
     expect(graph.members).toEqual([
-      { id: "fn-1", kind: "function", name: "Jump", pins: [] },
+      {
+        id: "fn-1",
+        kind: "function",
+        name: "Jump",
+        pins: [
+          { name: "exec", typeId: "exec", direction: "in" },
+          { name: "then", typeId: "exec", direction: "out" },
+        ],
+      },
       { id: "if-1", kind: "interface", name: "Damageable", assetGuid: "" },
     ]);
     expect(graph.nodes).toEqual([]);
+  });
+
+  it("seeds a protected Input/Output function graph when adding a function", () => {
+    const graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    const slice = graph.functionGraphs?.["fn-1"];
+    expect(slice?.nodes).toHaveLength(2);
+    expect(slice?.nodes.map((node) => node.type)).toEqual([
+      "flow.function.input",
+      "flow.function.output",
+    ]);
+    expect(slice?.nodes.every((node) => node.data.__protected === true)).toBe(
+      true,
+    );
+  });
+
+  it("drops the function graph when the function member is removed", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = removeClassMember(graph, "fn-1");
+    expect(graph.members).toEqual([]);
+    expect(graph.functionGraphs?.["fn-1"]).toBeUndefined();
   });
 
   it("adds a named custom event node for Events +", () => {
@@ -42,6 +70,22 @@ describe("addClassMember", () => {
     const next = removeClassMember(graph, graph.nodes[0]!.id);
     expect(next.nodes).toEqual([]);
     expect(next.members).toEqual([]);
+  });
+
+  it("removes a native event canvas node without dropping the rest of the graph", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [],
+    };
+    const next = removeClassMember(graph, "begin");
+    expect(next.nodes).toEqual([]);
   });
 
   it("Title Cases typed event names and prefixes Event on the node", () => {

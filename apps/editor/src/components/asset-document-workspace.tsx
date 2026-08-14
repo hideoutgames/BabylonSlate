@@ -14,7 +14,6 @@ import {
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
 import { TilemapEditor } from "./tilemap-editor";
-import { SpriteEditor } from "./sprite-editor";
 import { UiDesigner } from "./ui-designer";
 import { AnimGraphEditor } from "./anim-graph-editor";
 import { ShaderGraphEditor } from "./shader-graph-editor";
@@ -61,7 +60,6 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
       />
     );
   }
-  if (doc.ref.kind === "sprite") return <SpriteEditor payload={payload} onChange={commit} />;
   if (doc.ref.kind === "tileset") {
     return <TilesetEditor payload={payload} onChange={commit} />;
   }

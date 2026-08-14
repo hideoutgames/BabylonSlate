@@ -86,10 +86,13 @@ describe("Inspector class member details", () => {
     expect(screen.getByTestId("inspector-member-variable")).toBeTruthy();
   });
 
-  it("shows PinListEditor for a selected function", () => {
+  it("shows separate Inputs and Outputs editors for a selected function", () => {
     renderMemberInspector("fn-1");
-    expect(screen.getByTestId("inspector-member-pins")).toBeTruthy();
-    expect(screen.getByTestId("class-fn-pin-add-input")).toBeTruthy();
+    expect(screen.getByTestId("inspector-member-inputs")).toBeTruthy();
+    expect(screen.getByTestId("inspector-member-outputs")).toBeTruthy();
+    expect(screen.queryByTestId("inspector-member-pins")).toBeNull();
+    expect(screen.getByTestId("class-fn-in-add")).toBeTruthy();
+    expect(screen.getByTestId("class-fn-out-add")).toBeTruthy();
   });
 
   it("shows ScriptInterface AssetPicker for a selected interface", () => {
