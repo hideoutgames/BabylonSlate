@@ -2,6 +2,7 @@ import type {
   BehaviourTreeDocument,
   BlackboardValues,
   BtDecorator,
+  BtDecoratorHost,
   BtEvalState,
   BtNode,
   BtResult,
@@ -55,6 +56,7 @@ function decoratorCondition(
   node: BtNode,
   blackboard: BlackboardValues,
   nodeMemory: Record<string, Record<string, unknown>>,
+  host?: BtDecoratorHost,
 ): boolean {
   const classId = builtinClassId(decorator.classId);
   if (classId === "bt.decorator.blackboardIsSet") {
@@ -81,16 +83,21 @@ function decoratorCondition(
     const remaining = nodeMemory[node.id]?.[`__cd:${decorator.id}`];
     return !(typeof remaining === "number" && remaining > 0);
   }
-  return true;
+  if (classId === "bt.decorator.loop" || classId === "bt.decorator.timeLimit") {
+    return true;
+  }
+  return host?.evaluate(decorator, node, blackboard) ?? true;
 }
 
 function decoratorBlocks(
   node: BtNode,
   blackboard: BlackboardValues,
   nodeMemory: Record<string, Record<string, unknown>>,
+  host?: BtDecoratorHost,
 ): boolean {
   return node.decorators.some(
-    (decorator) => !decoratorCondition(decorator, node, blackboard, nodeMemory),
+    (decorator) =>
+      !decoratorCondition(decorator, node, blackboard, nodeMemory, host),
   );
 }
 
@@ -172,14 +179,29 @@ function nearestSelector(
   return null;
 }
 
+function notifyTaskAbort(
+  node: BtNode | undefined,
+  blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  host?: BtTaskHost,
+): void {
+  if (!node || node.kind !== "task") return;
+  host?.abort?.(node, blackboard, nodeMemory[node.id] ?? {});
+}
+
 function popThrough(
   stack: BtStackFrame[],
   lastResults: Record<string, BtResult>,
   nodeId: string,
+  nodes: Map<string, BtNode>,
+  blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  host?: BtTaskHost,
 ): void {
   while (stack.length > 0) {
     const frame = stack.pop()!;
     lastResults[frame.nodeId] = "failure";
+    notifyTaskAbort(nodes.get(frame.nodeId), blackboard, nodeMemory, host);
     if (frame.nodeId === nodeId) break;
   }
 }
@@ -256,6 +278,8 @@ function applyTimeLimits(
   lastResults: Record<string, BtResult>,
   nodeMemory: Record<string, Record<string, unknown>>,
   dtSeconds: number,
+  blackboard: BlackboardValues,
+  host?: BtTaskHost,
 ): void {
   for (let index = stack.length - 1; index >= 0; index -= 1) {
     const frame = stack[index]!;
@@ -263,7 +287,7 @@ function applyTimeLimits(
     const node = nodes.get(frame.nodeId);
     if (!node) continue;
     if (!advanceTimeLimits(node, nodeMemory, dtSeconds)) continue;
-    popThrough(stack, lastResults, node.id);
+    popThrough(stack, lastResults, node.id, nodes, blackboard, nodeMemory, host);
     lastResults[node.id] = "failure";
     startCooldowns(node, nodeMemory);
     return;
@@ -332,6 +356,8 @@ function applyAborts(
   lastResults: Record<string, BtResult>,
   blackboard: BlackboardValues,
   nodeMemory: Record<string, Record<string, unknown>>,
+  decoratorHost?: BtDecoratorHost,
+  host?: BtTaskHost,
 ): void {
   if (stack.length === 0) return;
   const parents = parentOf(nodes);
@@ -340,13 +366,19 @@ function applyAborts(
   for (const node of nodes.values()) {
     for (const decorator of node.decorators) {
       if (decorator.abortMode === "none") continue;
-      const condition = decoratorCondition(decorator, node, blackboard, nodeMemory);
+      const condition = decoratorCondition(
+        decorator,
+        node,
+        blackboard,
+        nodeMemory,
+        decoratorHost,
+      );
       const self = decorator.abortMode === "self" || decorator.abortMode === "both";
       const lower =
         decorator.abortMode === "lowerPriority" || decorator.abortMode === "both";
 
       if (self && !condition && onStack.has(node.id)) {
-        popThrough(stack, lastResults, node.id);
+        popThrough(stack, lastResults, node.id, nodes, blackboard, nodeMemory, host);
         lastResults[node.id] = "failure";
         return;
       }
@@ -363,6 +395,7 @@ function applyAborts(
         while (stack.length > 0 && stack[stack.length - 1]!.nodeId !== found.selector.id) {
           const frame = stack.pop()!;
           lastResults[frame.nodeId] = "failure";
+          notifyTaskAbort(nodes.get(frame.nodeId), blackboard, nodeMemory, host);
         }
         const selectorFrame = stack[stack.length - 1];
         if (selectorFrame) {
@@ -490,9 +523,25 @@ export function evaluateBehaviourTree(
   const stack: BtStackFrame[] = (previous?.stack ?? []).map((frame) => ({ ...frame }));
   const seed = options?.seed ?? 0;
 
-  applyAborts(nodes, stack, lastResults, blackboard, nodeMemory);
+  applyAborts(
+    nodes,
+    stack,
+    lastResults,
+    blackboard,
+    nodeMemory,
+    options?.decoratorHost,
+    options?.host,
+  );
   tickCooldowns(nodes, nodeMemory, dtSeconds);
-  applyTimeLimits(nodes, stack, lastResults, nodeMemory, dtSeconds);
+  applyTimeLimits(
+    nodes,
+    stack,
+    lastResults,
+    nodeMemory,
+    dtSeconds,
+    blackboard,
+    options?.host,
+  );
   tickStackServices(
     stack,
     nodes,
@@ -524,7 +573,7 @@ export function evaluateBehaviourTree(
 
     if (node.kind === "task") {
       if (!frame.opened) {
-        if (decoratorBlocks(node, blackboard, nodeMemory)) {
+        if (decoratorBlocks(node, blackboard, nodeMemory, options?.decoratorHost)) {
           lastResults[node.id] = "failure";
           stack.pop();
           continue;
@@ -565,7 +614,7 @@ export function evaluateBehaviourTree(
     }
 
     if (!frame.opened) {
-      if (decoratorBlocks(node, blackboard, nodeMemory)) {
+      if (decoratorBlocks(node, blackboard, nodeMemory, options?.decoratorHost)) {
         lastResults[node.id] = "failure";
         stack.pop();
         continue;

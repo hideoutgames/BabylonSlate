@@ -72,6 +72,11 @@ export type BtTaskHost = {
     dtSeconds: number,
     memory: Record<string, unknown>,
   ): BtResult;
+  abort?(
+    node: BtNode,
+    blackboard: BlackboardValues,
+    memory: Record<string, unknown>,
+  ): void;
 };
 
 export type BtServiceHost = {
@@ -84,9 +89,18 @@ export type BtServiceHost = {
   ): void;
 };
 
+export type BtDecoratorHost = {
+  evaluate(
+    decorator: BtDecorator,
+    node: BtNode,
+    blackboard: BlackboardValues,
+  ): boolean;
+};
+
 export type EvaluateBehaviourTreeOptions = {
   host?: BtTaskHost;
   serviceHost?: BtServiceHost;
+  decoratorHost?: BtDecoratorHost;
   blackboard?: BlackboardValues;
   seed?: number;
 };

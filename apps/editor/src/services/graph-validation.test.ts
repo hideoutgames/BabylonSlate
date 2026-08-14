@@ -213,12 +213,17 @@ describe("scriptPaletteNodes", () => {
     const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
     expect(nodes.some((node) => node.id === "bt.event.evaluate")).toBe(false);
     expect(nodes.some((node) => node.id === "bt.finish")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
   });
 
   it("shows On Evaluate and hides Begin Play on BTDecorator class graphs", () => {
     const nodes = scriptPaletteNodes(registry, { parentClass: "BTDecorator" });
     expect(nodes.some((node) => node.id === "bt.event.evaluate")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.blackboard.set")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
     expect(nodes.some((node) => node.id === "bt.finish")).toBe(false);
     expect(nodes.some((node) => node.id === "bt.event.activate")).toBe(false);
@@ -227,7 +232,9 @@ describe("scriptPaletteNodes", () => {
   it("shows Finish Execute on BTTask class graphs", () => {
     const nodes = scriptPaletteNodes(registry, { parentClass: "BTTask" });
     expect(nodes.some((node) => node.id === "bt.finish")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(true);
     expect(nodes.some((node) => node.id === "bt.event.activate")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
   });
 });

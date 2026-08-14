@@ -10,6 +10,7 @@ export type {
   BtNodeKind,
   BtResult,
   BtService,
+  BtDecoratorHost,
   BtServiceHost,
   BtStackFrame,
   BtTaskHost,

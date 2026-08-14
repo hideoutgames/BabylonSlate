@@ -154,6 +154,7 @@ export interface ScriptContext {
   changeScene(scene: string): void;
   setRenderResolution(width: number, height: number): void;
   btFinish(result: "success" | "failure"): void;
+  btEvaluate(value: boolean): void;
   getBlackboard(key: string): unknown;
   setBlackboard(key: string, value: unknown): void;
   findPathTo(from: Vec3, to: Vec3): Vec3[];
@@ -166,7 +167,10 @@ export interface ScriptContext {
   removeObstacle(id: string): void;
 }
 
-export type CompiledScript = ScriptBundleEntry;
+type BtScriptExtras = Pick<
+  ScriptContext,
+  "btFinish" | "btEvaluate" | "getBlackboard" | "setBlackboard"
+>;
 
 type LoadedScript = {
   script: CompiledScript;
@@ -253,7 +257,7 @@ export class ScriptHost {
     event: string,
     self: Actor | null,
     deltaSeconds: number,
-    extras: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
+    extras: BtScriptExtras,
   ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
@@ -291,7 +295,7 @@ export class ScriptHost {
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
-    extras?: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
+    extras?: BtScriptExtras,
   ): void {
     for (const entry of loaded) {
       for (const point of entry.script.entryPoints) {
@@ -345,7 +349,7 @@ export class ScriptHost {
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
-    extras?: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
+    extras?: BtScriptExtras,
   ): ScriptContext {
     const services = this.services;
     return {
@@ -472,6 +476,7 @@ export class ScriptHost {
         services.removeObstacle?.(id);
       },
       btFinish: extras?.btFinish ?? (() => undefined),
+      btEvaluate: extras?.btEvaluate ?? (() => undefined),
       getBlackboard: extras?.getBlackboard ?? (() => undefined),
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
