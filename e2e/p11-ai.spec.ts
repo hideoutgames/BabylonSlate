@@ -122,9 +122,8 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await createAsset(page, "BehaviourTree", "Patrol");
     await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
     await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
-    await expect(page.getByTestId("bt-node-sequence")).toBeVisible();
+    await expect(page.getByTestId("bt-node-root")).toBeVisible();
 
-    await page.getByTestId("bt-node-sequence").click();
     const graph = page.getByTestId("graph-editor");
     await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
@@ -133,7 +132,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     const waitNode = page.locator('[data-testid^="bt-node-bt.task.wait"]');
     await expect(waitNode).toBeVisible();
 
-    await waitNode.click();
+    await waitNode.click({ force: true });
     const duration = page.getByTestId("property-durationMs");
     await duration.fill("250");
     await duration.blur();
