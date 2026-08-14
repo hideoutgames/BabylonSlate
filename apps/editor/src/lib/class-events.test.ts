@@ -20,6 +20,40 @@ describe("nativeEventStubs", () => {
       true,
     );
   });
+
+  it("lists On Activate, On Tick, and On Abort for BTTask instead of Begin Play", () => {
+    expect(nativeEventStubs({ parentClass: "BTTask" }).map((stub) => stub.eventType)).toEqual(
+      ["bt.event.activate", "bt.event.tick", "bt.event.abort"],
+    );
+  });
+
+  it("lists On Evaluate for BTDecorator instead of Begin Play", () => {
+    expect(
+      nativeEventStubs({ parentClass: "BTDecorator" }).map((stub) => stub.eventType),
+    ).toEqual(["bt.event.evaluate"]);
+  });
+
+  it("lists On Tick for BTService instead of Begin Play", () => {
+    expect(nativeEventStubs({ parentClass: "BTService" }).map((stub) => stub.eventType)).toEqual(
+      ["bt.event.tick"],
+    );
+  });
+
+  it("lists no Actor or BT leaf events for BTComposite", () => {
+    expect(nativeEventStubs({ parentClass: "BTComposite" })).toEqual([]);
+  });
+
+  it("uses BT ancestry for a project subclass of BTTask", () => {
+    const stubs = nativeEventStubs({
+      parentClass: "BTTask_Patrol",
+      parentOf: (id) => (id === "BTTask_Patrol" ? "BTTask" : id === "BTTask" ? "BObject" : null),
+    });
+    expect(stubs.map((stub) => stub.eventType)).toEqual([
+      "bt.event.activate",
+      "bt.event.tick",
+      "bt.event.abort",
+    ]);
+  });
 });
 
 describe("ensureEventNodeOnGraph", () => {

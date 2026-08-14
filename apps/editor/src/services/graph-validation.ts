@@ -13,6 +13,11 @@ import {
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { warnDebugTierConsoleCommands } from "@babylonslate/debugger";
 import type { PaletteNode } from "@babylonslate/graph-ui";
+import {
+  isScriptCatalogNodeAllowed,
+  nativeEventStubs,
+  type ClassEventOptions,
+} from "../lib/class-members";
 
 const registry = createDefaultNodeRegistry();
 
@@ -111,35 +116,28 @@ export function hydrateSerializedGraphForEditor(
   };
 }
 
-/** New graphs seed Event Begin Play + Event Tick with registry pins. */
+/** New graphs seed native events for the class parent (Actor Begin Play + Tick by default). */
 export function createDefaultLogicGraphSerialized(
   nodeRegistry: NodeRegistry = registry,
+  options?: ClassEventOptions,
 ): SerializedGraph {
-  const beginDef = nodeRegistry.get("flow.event.beginPlay");
-  const tickDef = nodeRegistry.get("flow.event.tick");
-  if (!beginDef || !tickDef) {
-    throw new Error("Default event nodes missing from node registry");
-  }
-
+  const stubs = nativeEventStubs(options);
   const logic: LogicGraph = {
     id: "main",
     kind: "event",
-    nodes: [
-      {
-        id: "event-begin-play",
-        typeId: beginDef.id,
-        position: { x: 80, y: 80 },
-        pins: beginDef.pins({}),
+    nodes: stubs.map((stub, index) => {
+      const def = nodeRegistry.get(stub.eventType);
+      if (!def) {
+        throw new Error(`Default event node missing from node registry: ${stub.eventType}`);
+      }
+      return {
+        id: `event-${stub.eventType.replace(/\./g, "-")}`,
+        typeId: def.id,
+        position: { x: 80, y: 80 + index * 140 },
+        pins: def.pins({}),
         properties: {},
-      },
-      {
-        id: "event-tick",
-        typeId: tickDef.id,
-        position: { x: 80, y: 220 },
-        pins: tickDef.pins({}),
-        properties: {},
-      },
-    ],
+      };
+    }),
     edges: [],
   };
 
@@ -149,13 +147,11 @@ export function createDefaultLogicGraphSerialized(
 /** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
 export function scriptPaletteNodes(
   nodeRegistry: NodeRegistry = registry,
+  options?: ClassEventOptions,
 ): PaletteNode[] {
   return nodeRegistry
     .list()
-    .filter(
-      (def) =>
-        def.id !== "flow.function.input" && def.id !== "flow.function.output",
-    )
+    .filter((def) => isScriptCatalogNodeAllowed(def.id, options))
     .map((def) => {
     const defaultData: Record<string, unknown> = {};
     if (def.id === "debug.log") {
