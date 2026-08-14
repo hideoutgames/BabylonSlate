@@ -16,6 +16,9 @@ describe("ENGINE_PLACE_ACTORS", () => {
     expect(categories).toEqual(
       new Set(["Shapes", "Lights", "Camera", "Empty", "Navigation"]),
     );
+    expect(ENGINE_PLACE_ACTORS.some((entry) => entry.id === "navmesh-blocker")).toBe(
+      true,
+    );
   });
 
   it("uses Actor color with distinct component icons", () => {
@@ -65,6 +68,16 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.properties.supportDynamicObstacles).toBe(false);
     expect(actor.components[0]?.properties.autoBakeOnSave).toBe(false);
     expect(actor.components[0]?.properties.debugOverlay).toBe(false);
+  });
+
+  it("spawns a NavMesh blocker with static unwalkable defaults", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "navmesh-blocker")!;
+    const actor = spawnPlacedActor(scene, item, "actor-block");
+    expect(actor.name).toBe("NavMesh Blocker");
+    expect(actor.components[0]?.classId).toBe("NavMeshBlockerComponent");
+    expect(actor.components[0]?.properties.dynamic).toBe(false);
+    expect(actor.components[0]?.properties.kind).toBe("box");
+    expect(actor.components[0]?.properties.area).toBe("unwalkable");
   });
 
   it("spawns an empty actor", () => {

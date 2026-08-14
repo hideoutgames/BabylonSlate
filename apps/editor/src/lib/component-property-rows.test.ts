@@ -173,6 +173,24 @@ describe("componentPropertyRows", () => {
       kind: "number",
       value: 0.5,
     });
+
+    const blocker = rowsFor({
+      id: "block",
+      classId: "NavMeshBlockerComponent",
+      properties: { dynamic: true, kind: "cylinder", area: "cost" },
+    });
+    expect(blocker.rows.find((row) => row.id.endsWith("-dynamic"))).toMatchObject({
+      kind: "boolean",
+      value: true,
+    });
+    expect(blocker.rows.find((row) => row.id.endsWith("-kind"))).toMatchObject({
+      kind: "enum",
+      value: "cylinder",
+    });
+    expect(blocker.rows.find((row) => row.id.endsWith("-area"))).toMatchObject({
+      kind: "enum",
+      value: "cost",
+    });
     if (boardRow?.kind === "asset") boardRow.onPick();
     expect(tree.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTypes: ["Blackboard"] }),

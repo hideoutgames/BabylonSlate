@@ -1,6 +1,7 @@
 export type {
   NavAgentParams,
   NavMeshGenerateInput,
+  NavMeshGenerateSettings,
   NavMeshSettings,
   NavObstacleKind,
   NavPoint,
@@ -19,13 +20,28 @@ export {
 } from "./chunk";
 export {
   DEFAULT_NAV_AGENT_PARAMS,
+  defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
   parseNavAgentParams,
   parseNavMeshActorSettings,
+  parseNavMeshBlockerProperties,
   parseNavMeshSettings,
   type NavMeshActorSettings,
+  type NavMeshBlockerProperties,
 } from "./settings";
 export { mergeNavBakeMeshes, type NavBakeGeometry, type NavBakeMeshPart } from "./geometry";
+export {
+  recastMeshesFromCollider2d,
+  recastWalkableQuadFromXy,
+  recastWallsFromXyChains,
+  solidBlockerMesh,
+  staticBlockerBakeParts,
+  xyBoundsFromActors,
+  type NavBlockerArea,
+  type SolidBlockerInput,
+  type XyBounds,
+  type XyChain,
+} from "./blockers";
 export { runNavBakeJob } from "./bake-job";
 export { navMeshDebugPrimitives } from "./debug-primitives";
 export {

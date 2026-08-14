@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { NavMeshSettings } from "@babylonslate/navigation";
+import type { NavMeshGenerateSettings } from "@babylonslate/navigation";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { NavBakeDialog } from "../components/nav-bake-dialog";
@@ -17,10 +17,18 @@ import {
   type NavBakeGeometry,
   type NavBakePhase,
 } from "../lib/nav-bake";
+import { navBakeTilemapChains } from "../lib/nav-bake-tilemaps";
 import { createNavBakeWorker } from "../services/nav-bake-worker-host";
-import { parseNavMeshSettings } from "@babylonslate/navigation";
+import {
+  parseNavMeshActorSettings,
+  parseNavMeshSettings,
+} from "@babylonslate/navigation";
+import type { NavBakeCollectExtras } from "@babylonslate/render";
+import type { SerializedScene } from "@babylonslate/core";
 
-export type NavBakeCollector = () => NavBakeGeometry;
+export type NavBakeCollector = (
+  extras?: NavBakeCollectExtras,
+) => NavBakeGeometry;
 
 export type NavBakeContextValue = {
   registerCollector: (collector: NavBakeCollector | null) => void;
@@ -34,7 +42,12 @@ export type NavBakeContextValue = {
 const NavBakeContext = createContext<NavBakeContextValue | null>(null);
 
 export function NavBakeProvider({ children }: { children: ReactNode }) {
-  const { openDocuments, writeSceneNavmeshChunk } = useDocuments();
+  const {
+    openDocuments,
+    writeSceneNavmeshChunk,
+    collectPlayTilemapContent,
+    projectDocument,
+  } = useDocuments();
   const { documentId } = useDocumentWorkspace();
   const collectorRef = useRef<NavBakeCollector | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -53,7 +66,11 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
       if (!doc || doc.ref.kind !== "scene" || !doc.content) {
         throw new Error("Open a scene before baking a navmesh.");
       }
-      const settings: Partial<NavMeshSettings> = parseNavMeshSettings(properties);
+      const parsed = parseNavMeshActorSettings(properties);
+      const settings: NavMeshGenerateSettings = {
+        ...parseNavMeshSettings(properties),
+        supportDynamicObstacles: parsed.supportDynamicObstacles,
+      };
       const controller = new AbortController();
       abortRef.current = controller;
       setError(null);
@@ -63,8 +80,24 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
       try {
         const bytes = await runNavBake({
           waitPaintedFrame,
-          collect: () =>
-            collectorRef.current?.() ?? { positions: [], indices: [] },
+          collect: async () => {
+            const scene = doc.content as SerializedScene;
+            let extras: NavBakeCollectExtras | undefined;
+            if (scene.viewportMode === "2d") {
+              const { tilemaps, tilesets } =
+                await collectPlayTilemapContent(scene);
+              extras = {
+                tilemapChains: navBakeTilemapChains(
+                  tilemaps,
+                  tilesets,
+                  projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
+                ),
+              };
+            }
+            return (
+              collectorRef.current?.(extras) ?? { positions: [], indices: [] }
+            );
+          },
           generate: (input) => worker.generate(input),
           write: async (next) => {
             await writeSceneNavmeshChunk(
@@ -95,7 +128,7 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
         setCancellable(false);
       }
     },
-    [documentId, openDocuments, writeSceneNavmeshChunk],
+    [collectPlayTilemapContent, documentId, openDocuments, projectDocument, writeSceneNavmeshChunk],
   );
 
   const value = useMemo(

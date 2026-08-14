@@ -239,6 +239,35 @@ describe("evaluateBehaviourTree", () => {
     expect(evaluateBehaviourTree(doc, null, 1 / 60).status).toBe("success");
   });
 
+  it("runs MoveTo through the task host when one is provided", () => {
+    const leaf = node("move", "task", "BTTask_MoveTo");
+    leaf.properties = { destination: { x: 4, y: 0, z: 4 } };
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["move"]), leaf],
+      "root",
+    );
+    let ticks = 0;
+    const first = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: () => {
+          ticks += 1;
+          return ticks >= 2 ? "success" : "running";
+        },
+      },
+    });
+    expect(first.status).toBe("running");
+    const second = evaluateBehaviourTree(doc, first, 1 / 60, {
+      host: {
+        tick: () => {
+          ticks += 1;
+          return ticks >= 2 ? "success" : "running";
+        },
+      },
+    });
+    expect(second.status).toBe("success");
+    expect(ticks).toBe(2);
+  });
+
   it("compares a blackboard value on a decorator", () => {
     const leaf = node("leaf", "task", "bt.task.succeed");
     leaf.decorators.push({

@@ -103,6 +103,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   BehaviourTreeComponent: "ActorComponent",
   NavAgentComponent: "ActorComponent",
   NavMeshComponent: "ActorComponent",
+  NavMeshBlockerComponent: "ActorComponent",
 };
 
 const ICON_BY_ID: Record<string, LucideIcon> = {
@@ -121,6 +122,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   BehaviourTreeComponent: FilmIcon,
   NavAgentComponent: NavigationIcon,
   NavMeshComponent: MapIcon,
+  NavMeshBlockerComponent: BoxIcon,
   MeshComponent: BoxIcon,
   SpriteComponent: ImagesIcon,
   TilemapComponent: Grid3x3Icon,
@@ -165,6 +167,7 @@ const COMPONENT_CLASS_IDS = new Set([
   "BehaviourTreeComponent",
   "NavAgentComponent",
   "NavMeshComponent",
+  "NavMeshBlockerComponent",
 ]);
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {

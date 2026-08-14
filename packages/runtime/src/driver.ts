@@ -57,6 +57,7 @@ import {
 } from "@babylonslate/anim-graph";
 import {
   evaluateBehaviourTree,
+  builtinClassId,
   type BehaviourTreeDocument,
   type BlackboardDocument,
   type BlackboardValues,
@@ -71,7 +72,11 @@ import {
   facingYawFromVelocity,
   initNavigation,
   parseNavAgentParams,
+  parseNavMeshBlockerProperties,
+  recastToWorld,
+  worldToRecast,
   type NavigationBackend,
+  type NavObstacleKind,
   type NavPoint,
 } from "@babylonslate/navigation";
 
@@ -168,6 +173,10 @@ export interface RuntimeDriver {
   /** Import a baked Scene navmesh chunk. Never generates. */
   loadNavMesh(bytes: Uint8Array): Promise<void>;
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean;
+  findNavPath(from: NavPoint, to: NavPoint): NavPoint[];
+  addNavObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;
+  removeNavObstacle(id: string): void;
+  stopNavAgent(actorGuid: string): void;
   readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
@@ -259,7 +268,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.seed = options.seed;
     this.maxCatchUp = options.maxCatchUpSteps ?? 4;
     this.onCommand = options.onCommand;
-    this.physicsWorldKind = options.physicsWorld ?? "3d";
+    this.physicsWorldKind =
+      options.physicsWorld ??
+      options.playScene?.settings.physicsWorld ??
+      "3d";
     this.gravity = options.gravity ?? [0, -9.81, 0];
     this.havokWasmUrl = options.havokWasmUrl;
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
@@ -481,6 +493,31 @@ class InProcessRuntime implements RuntimeDriver {
           frameId: this.frameId,
         });
       },
+      findPathTo: (from, to) => this.findNavPath(from, to),
+      moveTo: (actor, destination) => {
+        if (!actor) return;
+        this.setNavAgentTarget(actor.guid, destination);
+      },
+      stopMovement: (actor) => {
+        if (!actor) return;
+        this.stopNavAgent(actor.guid);
+      },
+      isPathValid: (from, to) => this.findNavPath(from, to).length > 1,
+      getClosestNavigablePoint: (point) => {
+        if (!this.nav) return null;
+        const closest = this.nav.closestPoint(this.toNav(point));
+        return closest ? this.fromNav(closest) : null;
+      },
+      getRandomPointInRadius: (center, radius) => {
+        if (!this.nav) return null;
+        const point = this.nav.randomPointInRadius(this.toNav(center), radius);
+        return point ? this.fromNav(point) : null;
+      },
+      addObstacle: (kind, pose, size) =>
+        this.addNavObstacle(kind === "cylinder" ? "cylinder" : "box", pose, size),
+      removeObstacle: (id) => {
+        this.removeNavObstacle(id);
+      },
     });
 
     this.bindGameInstance();
@@ -582,6 +619,7 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.registerNavAgents();
+    this.registerNavObstacles();
     this.world.loadScene(this.playSceneGuid);
   }
 
@@ -705,13 +743,67 @@ class InProcessRuntime implements RuntimeDriver {
     this.nav ??= createNavigationBackend();
     this.nav.importNavMesh(bytes);
     this.clearNavAgents();
-    if (this.playWorldRealized) this.registerNavAgents();
+    if (this.playWorldRealized) {
+      this.registerNavAgents();
+      this.registerNavObstacles();
+    }
   }
 
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean {
     const agentId = this.navAgentByActor.get(actorGuid);
     if (!agentId || !this.nav) return false;
-    return this.nav.setAgentTarget(agentId, target);
+    return this.nav.setAgentTarget(agentId, this.toNav(target));
+  }
+
+  findNavPath(from: NavPoint, to: NavPoint): NavPoint[] {
+    if (!this.nav) return [];
+    return this.nav.findPath(this.toNav(from), this.toNav(to)).map((point) =>
+      this.fromNav(point),
+    );
+  }
+
+  addNavObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string {
+    if (!this.nav) return "";
+    return this.nav.addObstacle(
+      kind,
+      this.toNavObstaclePose(pose),
+      this.toNavObstacleSize(size),
+    );
+  }
+
+  removeNavObstacle(id: string): void {
+    this.nav?.removeObstacle(id);
+  }
+
+  stopNavAgent(actorGuid: string): void {
+    const agentId = this.navAgentByActor.get(actorGuid);
+    if (!agentId || !this.nav) return;
+    this.nav.stopAgent(agentId);
+  }
+
+  private toNav(point: NavPoint): NavPoint {
+    return this.physicsWorldKind === "2d" ? worldToRecast(point) : point;
+  }
+
+  private fromNav(point: NavPoint): NavPoint {
+    return this.physicsWorldKind === "2d" ? recastToWorld(point) : point;
+  }
+
+  /** Recast obstacle pose: 2D XY sits on a 2-unit-tall volume centered at Y=1. */
+  private toNavObstaclePose(point: NavPoint): NavPoint {
+    if (this.physicsWorldKind !== "2d") return point;
+    const recast = worldToRecast(point);
+    return { x: recast.x, y: 1, z: recast.z };
+  }
+
+  /** Recast obstacle size: 2D (width, height) → Recast (X, up=2, Z). */
+  private toNavObstacleSize(size: NavPoint): NavPoint {
+    if (this.physicsWorldKind !== "2d") return size;
+    return {
+      x: Math.abs(size.x) || 1,
+      y: 2,
+      z: Math.abs(size.y) || 1,
+    };
   }
 
   private clearNavAgents(): void {
@@ -736,15 +828,45 @@ class InProcessRuntime implements RuntimeDriver {
         Object.fromEntries(component.variables),
       );
       const id = this.nav.addAgent(
-        {
+        this.toNav({
           x: actor.transform.position.x,
           y: actor.transform.position.y,
           z: actor.transform.position.z,
-        },
+        }),
         params,
       );
       if (!id) continue;
       this.navAgentByActor.set(actor.guid, id);
+    }
+  }
+
+  private registerNavObstacles(): void {
+    if (!this.nav) return;
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const component = actor.components.find(
+        (entry) =>
+          entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
+      );
+      if (!component) continue;
+      const props = parseNavMeshBlockerProperties(
+        Object.fromEntries(component.variables),
+      );
+      if (!props.dynamic || props.area === "cost") continue;
+      const size = {
+        x: Math.abs(actor.transform.scale.x) || 1,
+        y: Math.abs(actor.transform.scale.y) || 1,
+        z: Math.abs(actor.transform.scale.z) || 1,
+      };
+      this.nav.addObstacle(
+        props.kind,
+        this.toNavObstaclePose({
+          x: actor.transform.position.x,
+          y: actor.transform.position.y,
+          z: actor.transform.position.z,
+        }),
+        this.toNavObstacleSize(size),
+      );
     }
   }
 
@@ -756,14 +878,19 @@ class InProcessRuntime implements RuntimeDriver {
       if (!actor || actor.destroyed) continue;
       const position = this.nav.agentPosition(agentId);
       if (!position) continue;
-      actor.transform.position.x = position.x;
-      actor.transform.position.y = position.y;
-      actor.transform.position.z = position.z;
+      const world = this.fromNav(position);
+      actor.transform.position.x = world.x;
+      actor.transform.position.y = world.y;
+      actor.transform.position.z = world.z;
       const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
       const previous = this.navYawByActor.get(actorGuid) ?? 0;
       const yaw = facingYawFromVelocity(velocity, previous);
       this.navYawByActor.set(actorGuid, yaw);
-      const quat = eulerDegreesToQuaternion([0, (yaw * 180) / Math.PI, 0]);
+      const euler =
+        this.physicsWorldKind === "2d"
+          ? ([0, 0, (yaw * 180) / Math.PI] as [number, number, number])
+          : ([0, (yaw * 180) / Math.PI, 0] as [number, number, number]);
+      const quat = eulerDegreesToQuaternion(euler);
       actor.transform.rotation.x = quat[0];
       actor.transform.rotation.y = quat[1];
       actor.transform.rotation.z = quat[2];
@@ -852,12 +979,15 @@ class InProcessRuntime implements RuntimeDriver {
 
   private tickBtTask(
     actor: Actor,
-    node: { id: string; classId: string },
+    node: { id: string; classId: string; properties?: Record<string, unknown> },
     blackboard: BlackboardValues,
     dtSeconds: number,
     memory: Record<string, unknown>,
   ): BtResult {
     this.currentBtNodeId = node.id;
+    if (builtinClassId(node.classId) === "bt.task.moveTo") {
+      return this.tickMoveTo(actor, node, memory);
+    }
     if (!this.scriptHost.hasClass(node.classId)) return "failure";
     const extras = {
       btFinish: (result: "success" | "failure") => {
@@ -882,6 +1012,34 @@ class InProcessRuntime implements RuntimeDriver {
     const result = memory.__btResult;
     if (result === "success" || result === "failure") return result;
     return "running";
+  }
+
+  private tickMoveTo(
+    actor: Actor,
+    node: { properties?: Record<string, unknown> },
+    memory: Record<string, unknown>,
+  ): BtResult {
+    const dest = navPointFromUnknown(node.properties?.destination);
+    if (!dest) return "failure";
+    const target = this.toNav(dest);
+    if (memory.__moveRequested !== true) {
+      memory.__moveRequested = true;
+      if (!this.setNavAgentTarget(actor.guid, dest)) return "failure";
+    }
+    const agentId = this.navAgentByActor.get(actor.guid);
+    const position = agentId ? this.nav?.agentPosition(agentId) : null;
+    if (!position) return "failure";
+    const accept =
+      typeof node.properties?.acceptRadius === "number" &&
+      Number.isFinite(node.properties.acceptRadius)
+        ? node.properties.acceptRadius
+        : 0.75;
+    const distance = Math.hypot(
+      position.x - target.x,
+      position.y - target.y,
+      position.z - target.z,
+    );
+    return distance <= accept ? "success" : "running";
   }
 
   private emitBtMissing(actorGuid: string, message: string): void {
@@ -1457,4 +1615,15 @@ function nowMs(): number {
   return typeof performance !== "undefined" && performance.now
     ? performance.now()
     : Date.now();
+}
+
+function navPointFromUnknown(value: unknown): NavPoint | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as { x?: unknown; y?: unknown; z?: unknown };
+  if (typeof row.x !== "number" || !Number.isFinite(row.x)) return null;
+  return {
+    x: row.x,
+    y: typeof row.y === "number" && Number.isFinite(row.y) ? row.y : 0,
+    z: typeof row.z === "number" && Number.isFinite(row.z) ? row.z : 0,
+  };
 }

@@ -14,6 +14,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("BehaviourTreeComponent");
     expect(ids).toContain("NavAgentComponent");
     expect(ids).not.toContain("NavMeshComponent");
+    expect(ids).not.toContain("NavMeshBlockerComponent");
     expect(ids).toContain("RigidBodyComponent");
     expect(ids).toContain("ColliderComponent");
   });
@@ -73,6 +74,11 @@ describe("Add Component catalog", () => {
       radius: 0.5,
       height: 2,
       maxSpeed: 3.5,
+    });
+    expect(defaultPropertiesFor("NavMeshBlockerComponent")).toEqual({
+      dynamic: false,
+      kind: "box",
+      area: "unwalkable",
     });
   });
 

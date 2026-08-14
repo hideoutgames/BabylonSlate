@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { tilemapChunkChains } from "./tilemap-chains";
-import { emptyChunkTiles } from "./tilemap-payload";
+import { tilemapChunkChains, tilemapCollisionChains } from "./tilemap-chains";
+import { emptyChunkTiles, normalizeTilemapPayload } from "./tilemap-payload";
 import { normalizeTilesetPayload } from "./tileset-payload";
 
 function fullTileset() {
@@ -108,5 +108,35 @@ describe("tilemapChunkChains", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("tilemapCollisionChains", () => {
+  it("collects collision-layer chunks across a tilemap", () => {
+    const tileset = fullTileset();
+    const tiles = emptyChunkTiles(2);
+    tiles[0] = 1;
+    const map = normalizeTilemapPayload({
+      tilesetGuid: "set",
+      tileWidth: 1,
+      tileHeight: 1,
+      chunkSize: 2,
+      layers: [
+        {
+          id: "ground",
+          name: "Ground",
+          collision: true,
+          chunks: [{ cx: 0, cy: 0, tiles }],
+        },
+        {
+          id: "deco",
+          name: "Deco",
+          collision: false,
+          chunks: [{ cx: 0, cy: 0, tiles }],
+        },
+      ],
+    });
+    const chains = tilemapCollisionChains(map, tileset, 1, 1);
+    expect(chains.length).toBeGreaterThan(0);
   });
 });

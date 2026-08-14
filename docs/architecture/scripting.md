@@ -172,11 +172,11 @@ Shared **PinListEditor** / **PinTypePicker** in `editor-kit` author typed named 
 
 One module + one test file per category:
 
-`flow`, `math`, `vector`, `string`, `array`/`map` (`array.*` plus `map.get` / `map.set` / `map.has` / `map.remove` / `map.size` / `map.keys` with K/V wildcards), `actor`, `component`, `transform`, `physics` (LineTrace, Sphere Overlap, Shape Sweep, Add Impulse — sync on calling exec pin), `input`, `audio`, `ui`, `scene`, `debug`, `interface`, `variables`, `casting`, `timers`, `behaviour-tree` (On Activate / On Tick / On Abort / On Evaluate / Finish Execute).
+`flow`, `math`, `vector`, `string`, `array`/`map` (`array.*` plus `map.get` / `map.set` / `map.has` / `map.remove` / `map.size` / `map.keys` with K/V wildcards), `actor`, `component`, `transform`, `physics` (LineTrace, Sphere Overlap, Shape Sweep, Add Impulse — sync on calling exec pin), `input`, `audio`, `ui`, `scene`, `debug`, `interface`, `variables`, `casting`, `timers`, `behaviour-tree` (On Activate / On Tick / On Abort / On Evaluate / Finish Execute), `navigation` (FindPathTo, MoveTo, StopMovement, path queries, obstacle add/remove).
 
 Each node: `{ id, title, category, pins, codegen(ctx) }`. Physics/input nodes may register with compile-time "not yet available" or emit TODOs that fail validation until those phases — prefer stub codegen that throws a clear diagnostic over silently no-op.
 
-AI / navigation categories wait for P11.
+AI / navigation categories: behaviour-tree event/finish nodes plus `navigation.*` (FindPathTo, MoveTo, StopMovement, path queries, obstacle add/remove). `scripting-nodes` emits `ctx.*` only — Recast stays in `@babylonslate/navigation` / runtime.
 
 ## Editor surfaces
 
