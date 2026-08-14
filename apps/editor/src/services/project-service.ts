@@ -7,6 +7,7 @@ import type {
 } from "@babylonslate/core";
 import {
   assetTypeForDocumentKind,
+  assetTypeForDocumentSave,
   createDefaultScene,
   createEmptyLayouts,
   createEmptyProject,
@@ -719,7 +720,7 @@ export class ProjectService {
       kind === "asset-settings" && existing?.type
         ? existing.type
         : isAssetDocumentKind(kind)
-          ? assetTypeForDocumentKind(kind)
+          ? assetTypeForDocumentSave(kind, existing?.type)
           : "Class";
     const version = this.migrations.currentVersion(type);
     const parentClass =
@@ -746,6 +747,16 @@ export class ProjectService {
           headerPayload: storeInHeader
             ? (content as unknown as Record<string, unknown>)
             : undefined,
+          headerMeta:
+            type === "EditorUtilityInterface"
+              ? {
+                  dockKind:
+                    typeof (content as { dockKind?: unknown }).dockKind ===
+                    "string"
+                      ? (content as { dockKind: string }).dockKind
+                      : "scene",
+                }
+              : undefined,
         },
       );
       await this.storage.writeBinary(path, bytes);

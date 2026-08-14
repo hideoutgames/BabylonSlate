@@ -99,6 +99,25 @@ describe("asset documents", () => {
     expect(decoded.guid).toBe("font-1");
   });
 
+  it("keeps EditorUtilityInterface dockKind on the header next to the document chunk", async () => {
+    const bytes = await encodeAssetDocument(
+      {
+        type: "EditorUtilityInterface",
+        name: "SceneTools",
+        guid: "eui-1",
+        version: 1,
+        payload: { name: "SceneTools", dockKind: "class", widgets: {} },
+      },
+      { headerMeta: { dockKind: "class" } },
+    );
+    const header = readAssetDocumentHeader(bytes);
+    expect(header.type).toBe("EditorUtilityInterface");
+    expect(header.payload).toEqual({ dockKind: "class" });
+    expect(header.chunks.map((chunk) => chunk.id)).toEqual([DOCUMENT_CHUNK_ID]);
+    const decoded = await decodeAssetDocument(bytes);
+    expect(decoded.payload.dockKind).toBe("class");
+  });
+
   it("writes settings payloads onto the header without a document chunk", async () => {
     const pixels = new Uint8Array([1, 2, 3, 4]);
     const bytes = await encodeAssetDocument(
