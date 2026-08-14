@@ -31,6 +31,10 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.sceneOpen": "Event On Scene Open",
   "flow.event.sceneSaved": "Event On Scene Saved",
   "flow.event.editorShutdown": "Event On Editor Shutdown",
+  "bt.event.activate": "On Activate",
+  "bt.event.tick": "On Tick",
+  "bt.event.abort": "On Abort",
+  "bt.event.evaluate": "On Evaluate",
 };
 
 const EDITOR_UTILITY_EVENT_TYPES = [
@@ -39,6 +43,145 @@ const EDITOR_UTILITY_EVENT_TYPES = [
   "flow.event.sceneSaved",
   "flow.event.editorShutdown",
 ] as const;
+
+const ACTOR_EVENT_TYPE_IDS = [
+  "flow.event.beginPlay",
+  "flow.event.tick",
+  "flow.event.commandRun",
+] as const;
+
+const BT_LEAF_EVENT_TYPE_IDS = [
+  "bt.event.activate",
+  "bt.event.tick",
+  "bt.event.abort",
+  "bt.event.evaluate",
+] as const;
+
+const BT_TASK_EVENT_TYPE_IDS = [
+  "bt.event.activate",
+  "bt.event.tick",
+  "bt.event.abort",
+] as const;
+
+const BT_DECORATOR_EVENT_TYPE_IDS = ["bt.event.evaluate"] as const;
+const BT_SERVICE_EVENT_TYPE_IDS = ["bt.event.tick"] as const;
+
+const BT_TASK_ONLY_NODE_IDS = ["bt.finish"] as const;
+const BT_DECORATOR_ONLY_NODE_IDS = ["bt.returnCondition"] as const;
+const BT_BLACKBOARD_NODE_IDS = ["bt.blackboard.get", "bt.blackboard.set"] as const;
+
+export type ClassEventOptions = {
+  parentClass?: string | null;
+  parentOf?: (id: string) => string | null | undefined;
+};
+
+function ancestryChain(options?: ClassEventOptions): string[] {
+  const parentOf =
+    options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  return walkAncestry(options?.parentClass ?? "Actor", parentOf);
+}
+
+function eventStubsForTypes(types: readonly string[]): Array<{
+  eventType: string;
+  name: string;
+}> {
+  return types.map((eventType) => ({
+    eventType,
+    name: NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType),
+  }));
+}
+
+export function nativeEventStubs(
+  options?: ClassEventOptions,
+): Array<{ eventType: string; name: string }> {
+  const chain = ancestryChain(options);
+  if (chain.includes("EditorUtilityObject")) {
+    return eventStubsForTypes(EDITOR_UTILITY_EVENT_TYPES);
+  }
+  if (chain.includes("BTTask")) return eventStubsForTypes(BT_TASK_EVENT_TYPE_IDS);
+  if (chain.includes("BTDecorator")) {
+    return eventStubsForTypes(BT_DECORATOR_EVENT_TYPE_IDS);
+  }
+  if (chain.includes("BTService")) {
+    return eventStubsForTypes(BT_SERVICE_EVENT_TYPE_IDS);
+  }
+  if (chain.includes("BTComposite")) return [];
+  const types: string[] = [...NATIVE_CLASS_EVENT_TYPES];
+  if (chain.includes("BDebugCommand")) {
+    types.push("flow.event.commandRun");
+  }
+  return eventStubsForTypes(types);
+}
+
+/** Whether a script catalog node is legal on a Class graph for this parent. */
+export function isScriptCatalogNodeAllowed(
+  nodeId: string,
+  options?: ClassEventOptions,
+): boolean {
+  if (nodeId === "flow.function.input" || nodeId === "flow.function.output") {
+    return false;
+  }
+  const chain = ancestryChain(options);
+  const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
+  const isBtLeafEvent = (BT_LEAF_EVENT_TYPE_IDS as readonly string[]).includes(
+    nodeId,
+  );
+  const isFinish = (BT_TASK_ONLY_NODE_IDS as readonly string[]).includes(nodeId);
+  const isReturn = (BT_DECORATOR_ONLY_NODE_IDS as readonly string[]).includes(
+    nodeId,
+  );
+  const isBlackboard = (BT_BLACKBOARD_NODE_IDS as readonly string[]).includes(
+    nodeId,
+  );
+  const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
+    nodeId,
+  );
+  if (chain.includes("EditorUtilityObject")) {
+    return !isActorEvent && !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
+  }
+  if (chain.includes("BTTask")) {
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      nodeId !== "bt.event.evaluate" &&
+      !isReturn
+    );
+  }
+  if (chain.includes("BTDecorator")) {
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      !isFinish &&
+      nodeId !== "bt.event.activate" &&
+      nodeId !== "bt.event.tick" &&
+      nodeId !== "bt.event.abort"
+    );
+  }
+  if (chain.includes("BTService")) {
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      !isFinish &&
+      !isReturn &&
+      nodeId !== "bt.event.activate" &&
+      nodeId !== "bt.event.abort" &&
+      nodeId !== "bt.event.evaluate"
+    );
+  }
+  if (chain.includes("BTComposite")) {
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      !isBtLeafEvent &&
+      !isFinish &&
+      !isReturn &&
+      !isBlackboard
+    );
+  }
+  return (
+    !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard && !isEditorEvent
+  );
+}
 
 export function nativeStubId(eventType: string): string {
   return `native:${eventType}`;
@@ -111,29 +254,6 @@ function seedFunctionGraph(
     ],
     edges: [],
   };
-}
-
-export function nativeEventStubs(options?: {
-  parentClass?: string | null;
-  parentOf?: (id: string) => string | null | undefined;
-}): Array<{ eventType: string; name: string }> {
-  const parentOf =
-    options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
-  const chain = walkAncestry(options?.parentClass ?? "Actor", parentOf);
-  if (chain.includes("EditorUtilityObject")) {
-    return EDITOR_UTILITY_EVENT_TYPES.map((eventType) => ({
-      eventType,
-      name: NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType),
-    }));
-  }
-  const types: string[] = [...NATIVE_CLASS_EVENT_TYPES];
-  if (chain.includes("BDebugCommand")) {
-    types.push("flow.event.commandRun");
-  }
-  return types.map((eventType) => ({
-    eventType,
-    name: NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType),
-  }));
 }
 
 export function ensureEventNodeOnGraph(

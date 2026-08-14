@@ -4,8 +4,12 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { InspectorPanel } from "./inspector-panel";
 import { MyClassPanel } from "./my-class-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
+import { PrefabEditingProvider } from "../context/prefab-editing-context";
 
-if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+if (
+  typeof window !== "undefined" &&
+  typeof window.PointerEvent === "undefined"
+) {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
       super(type, init);
@@ -38,7 +42,12 @@ vi.mock("../context/document-context", () => ({
           members: [
             { id: "var-1", kind: "variable", name: "Health", typeId: "bool" },
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
-            { id: "if-1", kind: "interface", name: "Damageable", assetGuid: "" },
+            {
+              id: "if-1",
+              kind: "interface",
+              name: "Damageable",
+              assetGuid: "",
+            },
           ],
         },
         layout: null,
@@ -64,12 +73,14 @@ vi.mock("../context/play-context", () => ({
 
 function renderMemberInspector(memberId: string, includeClassPanel = false) {
   return render(
-    <GraphEditingProvider initialSelectedMemberId={memberId}>
-      {includeClassPanel ? (
-        <MyClassPanel {...({} as IDockviewPanelProps)} />
-      ) : null}
-      <InspectorPanel {...({} as IDockviewPanelProps)} />
-    </GraphEditingProvider>,
+    <PrefabEditingProvider>
+      <GraphEditingProvider initialSelectedMemberId={memberId}>
+        {includeClassPanel ? (
+          <MyClassPanel {...({} as IDockviewPanelProps)} />
+        ) : null}
+        <InspectorPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>
+    </PrefabEditingProvider>,
   );
 }
 

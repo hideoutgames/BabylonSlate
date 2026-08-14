@@ -200,7 +200,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list. Remaining: **Default Camera** via kit `SceneComponentPicker` (`CameraComponent` only), **Possess Camera** node (global Play camera), `UniversalCamera`, shadows/IBL. May run beside P12 core; serialize `apps/editor` / `render` with `p12-ui-editors`. |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | Done (`p-lighting-camera`) | Incremental `authoredLight`/`authoredCamera`; direction from actor rotation × `(0,0,1)`; Play color/intensity/range/cone; detached `UniversalCamera`; named Default Camera (`SceneComponentPicker`); Possess Camera; one `ShadowGenerator` from `shadowquality` (`off`/`512`/`1024`/`2048`); fog/IBL; `environmentColor` clear. Spec: [engineplan §2.5](../engineplan.md). |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -294,6 +294,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | D — Shader `NodeMaterial.Parse` preview + shader/anim catalog pin hydration | Done (`cursor/authoring-surface-8678`) |
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
+| G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 
 Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. UserInterface / EditorUtilityInterface **authoring** editors (Dockview host + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`).
 
@@ -334,14 +335,14 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 | Play loads startup/main scene + `gameInstanceClass` with no scene tab | Superseded — Play uses the open scene tab only; disabled otherwise. `collectPlayStartupScene` path fallback removed. `startupSceneGuid` is packaged/export boot (`p14-export`) |
 | Place Actors copies closed-tab class prefab components from disk | Done |
 | `changescene` / `ctx.changeScene` instantiates a library scene | Done |
-| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract is §2.5 / `p-lighting-camera`, not P11) |
+| Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract landed in `p-lighting-camera`) |
 | Play HUD TouchButton / TouchDPad / default Jump+dpad mappings | Done |
 | `playSound` command (logged; no mixer) | Done |
 | FunctionLibrary palette nodes | Parked (base class exists) |
 
 ## Lighting and cameras (`p-lighting-camera`)
 
-Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P12 **core**. Serialize `apps/editor` / `render` with last-P12 `p12-ui-editors`. Do not reopen AI packages.
+Spec: [engineplan.md](../engineplan.md) §2.5. **Done.** Do not reopen AI packages.
 
 | Slice | Checklist | Packages |
 | --- | --- | --- |
@@ -352,7 +353,7 @@ Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P12 *
 
 ## P11 behaviour trees / navigation
 
-Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo) is not P11 work. Lighting and cameras are section 2.5 / `p-lighting-camera` — parallel to P12, not P11 work. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
+Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo) is not P11 work. Lighting and cameras (`p-lighting-camera`) are Done. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -367,15 +368,39 @@ Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo)
 
 `BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default. Dynamic cost volumes do not carve. RotateToFace / PlayAnimation / PlaySound succeed without a host. **P11 is Done** (packages + §18). Do not start a new P11 slice.
 
-## P12 editor extensions
+## Behaviour tree editor authoring (`p-bt-editor-authoring`)
 
-Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live vs author), §18 P12, Appendix A `p12-editor-extensions` then `p12-ui-editors`. Lighting/cameras (`p-lighting-camera`) may run beside P12 **core**. Serialize `apps/editor` / `render` with `p12-ui-editors`. Design notes: [editor-extensions.md](../architecture/editor-extensions.md).
+Authoring-surface residual, same class as the Anim Graph host pass. Do **not** uncheck `p11-bt-editor`. Packages: `apps/editor`, `graph-ui`, `behaviour-tree` (eval + validate only).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| EditorUtilityObject + live Interface tabs | `p12-editor-extensions` | `object-model`, `apps/editor`, `render` (Dockview Babylon GUI host via `createUiSurface`), export strip | P11 done |
-| UserInterface + EditorUtilityInterface **authoring** editors | `p12-ui-editors` | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
-| Lighting / cameras | `p-lighting-camera` | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5; serialize if another agent holds those packages |
+| Typed Details + catalogs | `p-bt-editor-authoring` | `apps/editor`, `graph-ui` | `p11-bt-editor` |
+| Tree ops + canvas diagnostics | same | `apps/editor`, `graph-ui`, `behaviour-tree` (validate) | Details |
+| Loop/Cooldown/TimeLimit + Play stack overlay | same | `behaviour-tree` (eval), `bridge`/`runtime` `btState.stack`, `e2e/p11-ai.spec.ts` | Tree ops |
+
+Out of scope: RotateToFace / PlayAnimation / PlaySound hosts; nav cost-carve / auto-bake; Dockview for asset tabs; large-tree iPad virtualization; P12; lighting.
+
+## Behaviour tree class events (`p-bt-class-events`)
+
+Authoring-surface residual. Do **not** uncheck `p11-bt-authoring`. Packages: `apps/editor`, `scripting-nodes`, `behaviour-tree`, `runtime`.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Class Events + palette by ancestry | `p-bt-class-events` | `apps/editor` | `p11-bt-authoring` |
+| Decorator host, abort, Return Condition, blackboard nodes | same | `behaviour-tree`, `scripting-nodes`, `runtime` | Class events |
+| Composite kind from ancestry + e2e | same | `behaviour-tree`, `e2e/p11-ai.spec.ts` | hosts |
+
+Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation / PlaySound hosts; reopening P11; P12; lighting.
+
+## P12 editor extensions
+
+Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live vs author), §18 P12, Appendix A `p12-editor-extensions` then `p12-ui-editors`. Lighting/cameras (`p-lighting-camera`) is Done. Design notes: [editor-extensions.md](../architecture/editor-extensions.md).
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| EditorUtilityObject + live Interface tabs | Done (`p12-editor-extensions`) | `object-model`, `apps/editor`, `render` (Dockview Babylon GUI host via `createUiSurface`), export strip | P11 done |
+| UserInterface + EditorUtilityInterface **authoring** editors | Done (`p12-ui-editors`) | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
+| Lighting / cameras | Done (`p-lighting-camera`) | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5 landed |
 
 **Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one Dockview designer host (`p12-ui-editors`): Design / Hierarchy / Details / Logic, editing-stage widgets paint on a healthy Engine, EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
 

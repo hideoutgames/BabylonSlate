@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { GameInstance } from "@babylonslate/object-model";
 import { interfaceHandlerKey } from "@babylonslate/object-model";
+import { createActor, createDefaultSceneSettings } from "@babylonslate/core";
 import {
   compileGraph,
   pin,
@@ -834,6 +835,59 @@ describe("script host runs compiled graphs", () => {
         height: 600,
       }),
     ]);
+    runtime.stop();
+  });
+
+  it("emits possessCamera when Begin Play runs camera.possess", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "possess", "camera.possess"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "possess", "execIn"),
+        edge("e2", "self", "out", "possess", "target"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const settings = createDefaultSceneSettings();
+    settings.mainCameraActorId = "rig";
+    settings.mainCameraComponentId = "cam";
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+      playScene: {
+        name: "Cam",
+        viewportMode: "3d",
+        settings,
+        actors: [
+          createActor("rig", "Rig", {
+            classId: "CameraRig",
+            components: [
+              {
+                id: "cam",
+                classId: "CameraComponent",
+                properties: { projectionMode: "perspective", fieldOfView: 60 },
+              },
+            ],
+          }),
+        ],
+      },
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "CameraRig", "possess-asset"),
+    ]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.tick();
+    expect(
+      commands.filter((command) => command.type === "possessCamera"),
+    ).toEqual([expect.objectContaining({ type: "possessCamera", slotId: 0 })]);
     runtime.stop();
   });
 });

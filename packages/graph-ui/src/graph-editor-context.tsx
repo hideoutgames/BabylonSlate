@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { NavigateRequest } from "./graph-types";
 import type { PinTypeRef } from "./node-theme";
+import type { NestedMenuItem } from "@babylonslate/editor-kit";
 
 export type GraphEditorContextValue = {
   pendingPin: { nodeId: string; pinId: string } | null;
@@ -11,6 +12,12 @@ export type GraphEditorContextValue = {
   onNavigateRequest?: (request: NavigateRequest) => void;
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
+  onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
+  contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
+  contextMenuItemsForAttachment?: (
+    nodeId: string,
+    attachmentId: string,
+  ) => NestedMenuItem[];
 };
 
 const GraphEditorContext = createContext<GraphEditorContextValue | null>(null);

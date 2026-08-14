@@ -11,6 +11,12 @@ const QUALITY: CommandParameter = {
   enumValues: ["low", "medium", "high"],
 };
 
+const SHADOW_QUALITY: CommandParameter = {
+  name: "level",
+  type: "enum",
+  enumValues: ["off", "512", "1024", "2048"],
+};
+
 const FLAG: CommandParameter = {
   name: "enabled",
   type: "bool",
@@ -105,8 +111,8 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "shadowquality",
       tier: "core",
-      description: "Set shadow quality",
-      parameters: [QUALITY],
+      description: "Set shadow map size",
+      parameters: [SHADOW_QUALITY],
       run(args, host) {
         const level = String(args.level);
         host.setShadowQuality(level);

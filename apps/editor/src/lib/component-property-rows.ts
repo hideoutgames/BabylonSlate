@@ -775,6 +775,13 @@ export function componentPropertyRows(
       const lightKind = String(component.properties.lightKind ?? "point");
       const rows: PropertyRow[] = [
         {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "enabled"),
+          label: "Enabled",
+          value: component.properties.enabled !== false,
+          onChange: (next) => update("enabled", next),
+        },
+        {
           kind: "color",
           id: rowId(actorId, component.id, "color"),
           label: "Color",
@@ -804,37 +811,81 @@ export function componentPropertyRows(
           onChange: (next) => update("lightKind", next),
         },
         {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "castShadows"),
+          label: "Cast Shadows",
+          value: component.properties.castShadows === true,
+          onChange: (next) => update("castShadows", next),
+        },
+      ];
+      if (lightKind !== "directional") {
+        rows.push({
           kind: "number",
           id: rowId(actorId, component.id, "range"),
           label: "Range",
           value: asNumber(component.properties.range, 10),
           min: 0,
           onChange: (next) => update("range", next),
-        },
-      ];
-      if (lightKind === "spot") {
-        rows.push({
-          kind: "number",
-          id: rowId(actorId, component.id, "outerAngle"),
-          label: "Outer Angle",
-          value: asNumber(component.properties.outerAngle, 45),
-          min: 1,
-          max: 179,
-          onChange: (next) => update("outerAngle", next),
         });
+      }
+      if (lightKind === "spot") {
+        rows.push(
+          {
+            kind: "number",
+            id: rowId(actorId, component.id, "innerAngle"),
+            label: "Inner Angle",
+            value: asNumber(component.properties.innerAngle, 30),
+            min: 0,
+            max: 179,
+            onChange: (next) => update("innerAngle", next),
+          },
+          {
+            kind: "number",
+            id: rowId(actorId, component.id, "outerAngle"),
+            label: "Outer Angle",
+            value: asNumber(component.properties.outerAngle, 45),
+            min: 1,
+            max: 179,
+            onChange: (next) => update("outerAngle", next),
+          },
+        );
       }
       rows.push(
         ...genericRows(
           actorId,
           component,
           update,
-          new Set(["color", "intensity", "lightKind", "range", "outerAngle"]),
+          new Set([
+            "color",
+            "intensity",
+            "lightKind",
+            "range",
+            "outerAngle",
+            "innerAngle",
+            "enabled",
+            "castShadows",
+          ]),
         ),
       );
       return rows;
     }
-    case "CameraComponent":
+    case "CameraComponent": {
+      const projectionMode =
+        component.properties.projectionMode === "orthographic"
+          ? "orthographic"
+          : "perspective";
       return [
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "projectionMode"),
+          label: "Projection Mode",
+          value: projectionMode,
+          options: [
+            { value: "perspective", label: "Perspective" },
+            { value: "orthographic", label: "Orthographic" },
+          ],
+          onChange: (next) => update("projectionMode", next),
+        },
         sliderRow(
           actorId,
           component.id,
@@ -856,13 +907,36 @@ export function componentPropertyRows(
           50,
           update,
         ),
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "nearClip"),
+          label: "Near Clip",
+          value: asNumber(component.properties.nearClip, 0.1),
+          min: 0.001,
+          onChange: (next) => update("nearClip", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "farClip"),
+          label: "Far Clip",
+          value: asNumber(component.properties.farClip, 1000),
+          min: 0.01,
+          onChange: (next) => update("farClip", next),
+        },
         ...genericRows(
           actorId,
           component,
           update,
-          new Set(["fieldOfView", "orthographicSize"]),
+          new Set([
+            "fieldOfView",
+            "orthographicSize",
+            "projectionMode",
+            "nearClip",
+            "farClip",
+          ]),
         ),
       ];
+    }
     default:
       return genericRows(actorId, component, update, new Set());
   }

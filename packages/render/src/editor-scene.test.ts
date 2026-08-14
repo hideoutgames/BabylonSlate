@@ -27,6 +27,8 @@ import {
   DEFAULT_GIZMO_HANDLE_SCALE,
   GIZMO_COLLIDER_SCALE,
   GIZMO_END_CAP_SCALE,
+  GIZMO_ROTATION_COLLIDER_SCALE,
+  GIZMO_SCALE_SENSITIVITY,
 } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
@@ -796,14 +798,22 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
-  it("uses a mid-size default handle scale on every tool", () => {
+  it("uses a compact default handle scale on every tool", () => {
     const { scene } = createHandle();
     const host = createGizmoHost(scene);
-    // 2.4 filled too little of the view; 3.6 filled too much.
-    expect(DEFAULT_GIZMO_HANDLE_SCALE).toBe(2.8);
+    expect(DEFAULT_GIZMO_HANDLE_SCALE).toBe(1.8);
     expect(host.positionGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
     expect(host.rotationGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
     expect(host.scaleGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
+    host.dispose();
+  });
+
+  it("raises scale-gizmo drag sensitivity independently of handle size", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    expect(GIZMO_SCALE_SENSITIVITY).toBe(10);
+    expect(host.scaleGizmo.sensitivity).toBe(GIZMO_SCALE_SENSITIVITY);
+    expect(host.scaleGizmo.xGizmo.sensitivity).toBe(GIZMO_SCALE_SENSITIVITY);
     host.dispose();
   });
 
@@ -859,6 +869,24 @@ describe("gizmo host", () => {
     );
     expect(box).toBeDefined();
     expect(box!.scaling.x).toBeCloseTo(0.1 * GIZMO_END_CAP_SCALE);
+    host.dispose();
+  });
+
+  it("fattens invisible rotation-ring colliders more than translate colliders", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    const children = host.rotationGizmo.xGizmo._rootMesh.getChildMeshes();
+    const visual = children.find(
+      (mesh) => mesh.visibility > 0 && mesh.getChildMeshes().length === 0,
+    );
+    const collider = children.find(
+      (mesh) => mesh.visibility === 0 && mesh.getChildMeshes().length === 0,
+    );
+    expect(visual).toBeDefined();
+    expect(collider).toBeDefined();
+    expect(GIZMO_ROTATION_COLLIDER_SCALE).toBe(8);
+    expect(collider!.scaling.x).toBeCloseTo(GIZMO_ROTATION_COLLIDER_SCALE);
+    expect(visual!.scaling.x).toBeCloseTo(1);
     host.dispose();
   });
 });

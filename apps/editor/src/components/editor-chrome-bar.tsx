@@ -185,9 +185,11 @@ const TAB_DRAG_ACTIVATION = { delay: 300, tolerance: 8 } as const;
 export function EditorChromeBar({
   onCloseProject,
   onSaveProject,
+  onCloseDocument,
 }: {
   onCloseProject?: () => void;
   onSaveProject?: () => void;
+  onCloseDocument?: (id: string) => void;
 }) {
   const {
     projectName,
@@ -209,13 +211,19 @@ export function EditorChromeBar({
     activateDockPanel,
   } = useDocuments();
 
-  const { requestPlay, playing, preparing, canPlay, alwaysRender, setAlwaysRender, renderStats } =
-    usePlay();
-  const { errorCount, setDiagnostics } =
-    useValidation();
-  const [settingsScope, setSettingsScope] = useState<"project" | "engine" | null>(
-    null,
-  );
+  const {
+    requestPlay,
+    playing,
+    preparing,
+    canPlay,
+    alwaysRender,
+    setAlwaysRender,
+    renderStats,
+  } = usePlay();
+  const { errorCount, setDiagnostics } = useValidation();
+  const [settingsScope, setSettingsScope] = useState<
+    "project" | "engine" | null
+  >(null);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const contentBrowserDoc = openDocuments.find(
@@ -286,10 +294,7 @@ export function EditorChromeBar({
 
   return (
     <div className="editor-chrome-shell">
-      <header
-        className="editor-chrome-bar"
-        data-testid="editor-chrome-bar"
-      >
+      <header className="editor-chrome-bar" data-testid="editor-chrome-bar">
         <div
           className="editor-chrome-title"
           data-testid="project-name"
@@ -321,7 +326,11 @@ export function EditorChromeBar({
                   doc={doc}
                   active={doc.id === activeDocumentId}
                   onSelect={() => setActiveDocument(doc.id)}
-                  onClose={() => closeDocument(doc.id)}
+                  onClose={() =>
+                    onCloseDocument
+                      ? onCloseDocument(doc.id)
+                      : closeDocument(doc.id)
+                  }
                 />
               ))}
             </SortableContext>

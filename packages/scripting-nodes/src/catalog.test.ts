@@ -26,8 +26,13 @@ describe("node catalog", () => {
     expect(registry.get("debug.executeJavaScript")).toBeDefined();
     expect(registry.get("debug.print")).toBeDefined();
     expect(registry.get("render.setResolution")).toBeDefined();
+    expect(registry.get("camera.possess")).toBeDefined();
+    expect(registry.get("light.setIntensity")).toBeDefined();
     expect(registry.get("bt.event.activate")).toBeDefined();
     expect(registry.get("bt.finish")).toBeDefined();
+    expect(registry.get("bt.returnCondition")).toBeDefined();
+    expect(registry.get("bt.blackboard.get")).toBeDefined();
+    expect(registry.get("bt.blackboard.set")).toBeDefined();
     expect(registry.get("navigation.findPathTo")).toBeDefined();
     expect(registry.get("navigation.moveTo")).toBeDefined();
   });

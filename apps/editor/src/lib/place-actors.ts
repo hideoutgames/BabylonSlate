@@ -163,7 +163,7 @@ export function nextActorId(scene: SerializedScene): string {
 }
 
 export function spawnPlacedActor(
-  _scene: SerializedScene,
+  scene: SerializedScene,
   item: PlaceActorItem,
   id: string,
 ): SerializedActor {
@@ -193,7 +193,11 @@ export function spawnPlacedActor(
         {
           id: `${id}-camera`,
           classId: "CameraComponent",
-          properties: defaultPropertiesFor("CameraComponent"),
+          properties: defaultPropertiesFor(
+            "CameraComponent",
+            scene.settings.physicsWorld,
+            scene.viewportMode,
+          ),
         },
       ],
     });

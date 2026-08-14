@@ -3,9 +3,13 @@ import { openMainScene, openTestProject } from "./open-test-project";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
-    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+    .locator(
+      '[data-testid="document-tab"][data-document-kind="content-browser"]',
+    )
     .click();
-  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+  await expect(
+    page.getByTestId("document-workspace-content-browser"),
+  ).toBeVisible();
 }
 
 async function createAsset(
@@ -15,15 +19,23 @@ async function createAsset(
 ): Promise<void> {
   await showContentBrowser(page);
   await page.getByTestId("content-browser-new-asset").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+  await expect(
+    page.getByTestId("content-browser-new-asset-dialog"),
+  ).toBeVisible();
   await page.getByTestId("new-asset-type").click();
   await page.getByTestId(`new-asset-type-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
   await page.getByTestId("content-browser-new-asset-create").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
+  await expect(
+    page.getByTestId("content-browser-new-asset-dialog"),
+  ).toHaveCount(0);
 }
 
-async function dragTreeRow(page: Page, fromId: string, toId: string): Promise<void> {
+async function dragTreeRow(
+  page: Page,
+  fromId: string,
+  toId: string,
+): Promise<void> {
   const from = page.getByTestId(`tree-row-${fromId}`);
   const to = page.getByTestId(`tree-row-${toId}`);
   await expect(from).toBeVisible();
@@ -49,7 +61,9 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await openTestProject(page);
     await createAsset(page, "ScriptInterface", "IHit");
     await page.locator('[data-asset-path="assets/IHit.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-script-interface")).toBeVisible();
+    await expect(
+      page.getByTestId("document-workspace-script-interface"),
+    ).toBeVisible();
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
     await expect(page.getByTestId("interface-methods-empty")).toBeVisible();
     await page.getByTestId("interface-add-method").click();
@@ -64,7 +78,9 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
   test("Enum add member appears in the Members table", async ({ page }) => {
     await openTestProject(page);
     await createAsset(page, "Enum", "Palette");
-    await page.locator('[data-asset-path="assets/Palette.babasset"]').dblclick();
+    await page
+      .locator('[data-asset-path="assets/Palette.babasset"]')
+      .dblclick();
     await expect(page.getByTestId("document-workspace-enum")).toBeVisible();
     await expect(page.getByTestId("enum-row-0")).toBeVisible();
     await page.getByTestId("enum-add-member").click();
@@ -129,7 +145,10 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await page
       .getByTestId("prefab-add-component-catalog-item-LightComponent")
       .click();
-    await expect(page.getByTestId("prefab-add-component-catalog")).toHaveCount(0);
+    await expect(page.getByTestId("prefab-add-component-catalog")).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId("save-all-dirty")).toBeVisible();
     const tree = page.getByTestId("prefab-tree");
     const child = tree.locator('[data-testid^="tree-row-prefab-component-"]');
     await expect(child).toBeVisible();
@@ -139,5 +158,31 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(child).toHaveAttribute("data-depth", "1");
     await dragTreeRow(page, id, "prefab-mesh");
     await expect(child).toHaveAttribute("data-depth", "2");
+  });
+
+  test("dirty Class tab close prompts Save / Discard / Cancel", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("prefab-add-component").click();
+    await page
+      .getByTestId("prefab-add-component-catalog-item-LightComponent")
+      .click();
+    await expect(page.getByTestId("save-all-dirty")).toBeVisible();
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="graph"]')
+      .getByTestId("document-tab-close")
+      .click();
+    await expect(page.getByTestId("dirty-close-dialog")).toBeVisible();
+    await page.getByTestId("dirty-cancel").click();
+    await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("actor-prefab-panel")).toBeVisible();
+    await expect(page.getByTestId("save-all-dirty")).toBeVisible();
   });
 });

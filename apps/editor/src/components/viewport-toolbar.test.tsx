@@ -26,6 +26,8 @@ const harness = vi.hoisted(() => ({
   setDragSelectActive: vi.fn(),
   viewportMode: "3d" as const,
   setViewportMode: vi.fn(),
+  previewGameCamera: false,
+  setPreviewGameCamera: vi.fn(),
   scene: null as SerializedScene | null,
   applySceneChange: vi.fn(async () => true),
 }));
@@ -50,6 +52,8 @@ vi.mock("../context/scene-editing-context", () => ({
     setDragSelectActive: harness.setDragSelectActive,
     viewportMode: harness.viewportMode,
     setViewportMode: harness.setViewportMode,
+    previewGameCamera: harness.previewGameCamera,
+    setPreviewGameCamera: harness.setPreviewGameCamera,
   }),
 }));
 
@@ -79,6 +83,7 @@ beforeEach(() => {
   harness.gridVisible = true;
   harness.dragSelectActive = false;
   harness.viewportMode = "3d";
+  harness.previewGameCamera = false;
   harness.scene = createDefaultScene();
   harness.setGizmoTool.mockClear();
   harness.setSnapEnabled.mockClear();
@@ -86,6 +91,7 @@ beforeEach(() => {
   harness.setGridVisible.mockClear();
   harness.setDragSelectActive.mockClear();
   harness.setViewportMode.mockClear();
+  harness.setPreviewGameCamera.mockClear();
   harness.applySceneChange.mockClear();
 });
 
@@ -110,12 +116,13 @@ describe("ViewportToolbar", () => {
     expect(screen.queryByTestId("gizmo-joystick-toggle")).toBeNull();
   });
 
-  it("opens a settings menu with Snap, Show Grid, and Joystick", () => {
+  it("opens a settings menu with Snap, Show Grid, Joystick, and Game Camera", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     expect(screen.getByTestId("gizmo-snap-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
     expect(screen.getByTestId("gizmo-joystick-toggle")).toBeTruthy();
+    expect(screen.getByTestId("viewport-game-camera-toggle")).toBeTruthy();
   });
 
   it("arms Drag Select without changing the gizmo tool", () => {

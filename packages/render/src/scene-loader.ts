@@ -242,7 +242,11 @@ export function applySceneToBabylonScene(
     }
   }
 
-  syncAuthoredIllumination(scene, sceneData);
+  syncAuthoredIllumination(scene, sceneData, {
+    stealActiveCamera: true,
+    applyClearColor: true,
+    assets,
+  });
 }
 
 export function countSceneMeshes(scene: Scene): number {

@@ -319,6 +319,76 @@ describe("evaluateBehaviourTree", () => {
     expect(second.blackboard.alert).toBe(true);
   });
 
+  it("lets an unknown decorator class pass when no decorator host is provided", () => {
+    const leaf = node("leaf", "task", "bt.task.succeed");
+    leaf.decorators.push({
+      id: "custom",
+      classId: "BTDecorator_Alert",
+      abortMode: "none",
+      observedKeys: [],
+      properties: {},
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    expect(evaluateBehaviourTree(doc, null, 1 / 60).status).toBe("success");
+  });
+
+  it("fails a wait when a custom decorator host returns false", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    wait.decorators.push({
+      id: "gate",
+      classId: "BTDecorator_Alert",
+      abortMode: "none",
+      observedKeys: [],
+      properties: {},
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["wait"]), wait],
+      "root",
+    );
+    const next = evaluateBehaviourTree(doc, null, 0.016, {
+      decoratorHost: { evaluate: () => false },
+    });
+    expect(next.status).toBe("failure");
+    expect(next.stack).toEqual([]);
+  });
+
+  it("notifies the task host abort when a self-abort pops a running wait", () => {
+    const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
+    root.decorators.push({
+      id: "alive",
+      classId: "bt.decorator.blackboardIsSet",
+      abortMode: "self",
+      observedKeys: ["ok"],
+      properties: { key: "ok" },
+    });
+    const wait = node("idle", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    const doc = tree([root, wait], "root");
+    const aborted: string[] = [];
+    const host = {
+      tick: () => "running" as const,
+      abort: (entry: { id: string }) => {
+        aborted.push(entry.id);
+      },
+    };
+    const running = evaluateBehaviourTree(doc, null, 0.016, {
+      blackboard: { ok: true },
+      host,
+    });
+    expect(running.status).toBe("running");
+    expect(aborted).toEqual([]);
+    const next = evaluateBehaviourTree(doc, running, 0.016, {
+      blackboard: {},
+      host,
+    });
+    expect(next.status).toBe("failure");
+    expect(aborted).toEqual(["idle"]);
+  });
+
   it("ticks a custom service through the service host", () => {
     const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
     root.services.push({
@@ -380,6 +450,74 @@ describe("evaluateBehaviourTree", () => {
     });
     expect(aborted.status).toBe("failure");
     expect(seen).toEqual(["pulse"]);
+  });
+
+  it("loops a succeeding task a finite number of times", () => {
+    const leaf = node("leaf", "task", "bt.task.custom");
+    leaf.decorators.push({
+      id: "loop",
+      classId: "bt.decorator.loop",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { numLoops: 3 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    let ticks = 0;
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: () => {
+          ticks += 1;
+          return "success";
+        },
+      },
+    });
+    expect(next.status).toBe("success");
+    expect(ticks).toBe(3);
+  });
+
+  it("blocks a node during cooldown after it finishes", () => {
+    const leaf = node("leaf", "task", "bt.task.succeed");
+    leaf.decorators.push({
+      id: "cd",
+      classId: "bt.decorator.cooldown",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { durationMs: 100 },
+    });
+    const doc = tree(
+      [node("root", "selector", "bt.composite.selector", ["leaf"]), leaf],
+      "root",
+    );
+    const first = evaluateBehaviourTree(doc, null, 1 / 60);
+    expect(first.status).toBe("success");
+    const cooling = evaluateBehaviourTree(doc, first, 0.05);
+    expect(cooling.status).toBe("failure");
+    const ready = evaluateBehaviourTree(doc, cooling, 0.06);
+    expect(ready.status).toBe("success");
+  });
+
+  it("fails a running node when its time limit elapses", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    wait.decorators.push({
+      id: "limit",
+      classId: "bt.decorator.timeLimit",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { durationMs: 80 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["wait"]), wait],
+      "root",
+    );
+    const running = evaluateBehaviourTree(doc, null, 0.05);
+    expect(running.status).toBe("running");
+    const timedOut = evaluateBehaviourTree(doc, running, 0.05);
+    expect(timedOut.status).toBe("failure");
+    expect(timedOut.stack).toEqual([]);
   });
 
   it("reproduces the same service schedule for the same seed", () => {

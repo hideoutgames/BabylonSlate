@@ -63,6 +63,7 @@ import {
 } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
+import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { loadTemplateCards } from "../services/template-service";
 import type { CreateProjectOptions } from "../lib/create-project";
 import {
@@ -1053,24 +1054,27 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       documentService.updateGraph(id, current);
       projectService.indexOpenDocument(doc.ref.path, current);
-      const guid = projectService.guid;
-      if (guid) {
-        const derived = await ensureDerived();
-        for (const command of commands) {
-          await appendJournalLine(
-            derived,
-            guid,
-            serializeJournalLine({
-              v: 1,
-              docId: id,
-              at: new Date().toISOString(),
-              command: commandToJournalPayload(command),
-            }),
-          );
-        }
-      }
-      scheduleDebouncedSave();
-      bump();
+      await notifyDocumentEdited({
+        scheduleDebouncedSave,
+        bump,
+        journal: async () => {
+          const guid = projectService.guid;
+          if (!guid) return;
+          const derived = await ensureDerived();
+          for (const command of commands) {
+            await appendJournalLine(
+              derived,
+              guid,
+              serializeJournalLine({
+                v: 1,
+                docId: id,
+                at: new Date().toISOString(),
+                command: commandToJournalPayload(command),
+              }),
+            );
+          }
+        },
+      });
       return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
@@ -1093,24 +1097,27 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       documentService.updateScene(id, current);
       projectService.indexOpenDocument(doc.ref.path, current);
-      const guid = projectService.guid;
-      if (guid) {
-        const derived = await ensureDerived();
-        for (const command of commands) {
-          await appendJournalLine(
-            derived,
-            guid,
-            serializeJournalLine({
-              v: 1,
-              docId: id,
-              at: new Date().toISOString(),
-              command: commandToJournalPayload(command),
-            }),
-          );
-        }
-      }
-      scheduleDebouncedSave();
-      bump();
+      await notifyDocumentEdited({
+        scheduleDebouncedSave,
+        bump,
+        journal: async () => {
+          const guid = projectService.guid;
+          if (!guid) return;
+          const derived = await ensureDerived();
+          for (const command of commands) {
+            await appendJournalLine(
+              derived,
+              guid,
+              serializeJournalLine({
+                v: 1,
+                docId: id,
+                at: new Date().toISOString(),
+                command: commandToJournalPayload(command),
+              }),
+            );
+          }
+        },
+      });
       return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
@@ -1137,22 +1144,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const current = editSessionRef.current.apply(id, previous, command).doc;
       documentService.updateAssetDocument(id, current);
       projectService.indexOpenDocument(doc.ref.path, current);
-      scheduleDebouncedSave();
-      bump();
-      const guid = projectService.guid;
-      if (guid) {
-        const derived = await ensureDerived();
-        await appendJournalLine(
-          derived,
-          guid,
-          serializeJournalLine({
-            v: 1,
-            docId: id,
-            at: new Date().toISOString(),
-            command: commandToJournalPayload(command),
-          }),
-        );
-      }
+      await notifyDocumentEdited({
+        scheduleDebouncedSave,
+        bump,
+        journal: async () => {
+          const guid = projectService.guid;
+          if (!guid) return;
+          const derived = await ensureDerived();
+          await appendJournalLine(
+            derived,
+            guid,
+            serializeJournalLine({
+              v: 1,
+              docId: id,
+              at: new Date().toISOString(),
+              command: commandToJournalPayload(command),
+            }),
+          );
+        },
+      });
       return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],

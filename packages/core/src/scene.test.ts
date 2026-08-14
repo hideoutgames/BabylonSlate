@@ -78,6 +78,46 @@ describe("scene schema", () => {
     ).toBe(false);
   });
 
+  it("fills additive lighting settings when keys are missing", () => {
+    const settings = normalizeScene({}).settings;
+    expect(settings.fogColor).toEqual([0.5, 0.5, 0.5]);
+    expect(settings.fogStart).toBe(0);
+    expect(settings.fogEnd).toBe(100);
+    expect(settings.environmentTextureGuid).toBeNull();
+    expect(settings.mainCameraActorId).toBeNull();
+    expect(settings.mainCameraComponentId).toBeNull();
+  });
+
+  it("keeps authored fog, IBL, and Default Camera ids", () => {
+    const settings = normalizeScene({
+      settings: {
+        fogColor: [0.1, 0.2, 0.3],
+        fogStart: 4,
+        fogEnd: 40,
+        environmentTextureGuid: "env-1",
+        mainCameraActorId: "cam-actor",
+        mainCameraComponentId: "cam-comp",
+      },
+    }).settings;
+    expect(settings.fogColor).toEqual([0.1, 0.2, 0.3]);
+    expect(settings.fogStart).toBe(4);
+    expect(settings.fogEnd).toBe(40);
+    expect(settings.environmentTextureGuid).toBe("env-1");
+    expect(settings.mainCameraActorId).toBe("cam-actor");
+    expect(settings.mainCameraComponentId).toBe("cam-comp");
+  });
+
+  it("drops a Default Camera pick unless both actor and component ids are strings", () => {
+    const settings = normalizeScene({
+      settings: {
+        mainCameraActorId: "cam-actor",
+        mainCameraComponentId: 12,
+      },
+    }).settings;
+    expect(settings.mainCameraActorId).toBeNull();
+    expect(settings.mainCameraComponentId).toBeNull();
+  });
+
   it("rejects non-positive 2D camera bounds and fractional subdivisions", () => {
     const scene = normalizeScene({
       settings: {
