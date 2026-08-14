@@ -125,7 +125,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
           )}
           data-testid={`bt-result-${id}`}
         >
-          {running ? "Running" : humanizePropertyLabel(lastResult)}
+          {running ? "Running" : humanizePropertyLabel(lastResult ?? "")}
         </div>
       ) : null}
       {decorators.map((row) => (
