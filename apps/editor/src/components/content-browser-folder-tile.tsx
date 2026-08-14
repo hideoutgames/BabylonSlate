@@ -62,6 +62,7 @@ export function ContentBrowserFolderTile({
           <FolderIcon
             size={TYPE_VISUAL_ICON_TILE_SIZE}
             strokeWidth={TYPE_VISUAL_ICON_TILE_STROKE_WIDTH}
+            absoluteStrokeWidth
             className="size-10 shrink-0 overflow-visible text-muted-foreground"
             aria-hidden
           />

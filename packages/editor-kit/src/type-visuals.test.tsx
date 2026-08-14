@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import {
+  AppWindowIcon,
+  FilmIcon,
+  ListTreeIcon,
+  PanelTopIcon,
+  WorkflowIcon,
+} from "lucide-react";
+import {
   TYPE_VISUAL_ICON_CHROME_SIZE,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
@@ -126,6 +133,36 @@ describe("resolveTypeVisual", () => {
     expect(tileset.icon).not.toBe(tilemap.icon);
   });
 
+  it("uses a clean window glyph for UserInterface instead of AppWindow title-bar ticks", () => {
+    const visual = resolveTypeVisual({ assetType: "UserInterface" });
+    const widget = resolveTypeVisual({ classId: "WidgetComponent" });
+    expect(visual.icon).toBe(PanelTopIcon);
+    expect(visual.icon).not.toBe(AppWindowIcon);
+    expect(widget.icon).toBe(PanelTopIcon);
+  });
+
+  it("gives AnimationGraph a workflow glyph distinct from clip Animation Film", () => {
+    const animation = resolveTypeVisual({ assetType: "Animation" });
+    const graph = resolveTypeVisual({ assetType: "AnimationGraph" });
+    const component = resolveTypeVisual({
+      classId: "AnimationGraphComponent",
+    });
+    expect(animation.icon).toBe(FilmIcon);
+    expect(graph.icon).toBe(WorkflowIcon);
+    expect(graph.icon).not.toBe(animation.icon);
+    expect(component.icon).toBe(WorkflowIcon);
+  });
+
+  it("gives BehaviourTree a list-tree glyph distinct from Film", () => {
+    const tree = resolveTypeVisual({ assetType: "BehaviourTree" });
+    const component = resolveTypeVisual({
+      classId: "BehaviourTreeComponent",
+    });
+    expect(tree.icon).toBe(ListTreeIcon);
+    expect(tree.icon).not.toBe(FilmIcon);
+    expect(component.icon).toBe(ListTreeIcon);
+  });
+
   it("uses component color for engine components unless family is overridden", () => {
     const mesh = resolveTypeVisual({ classId: "MeshComponent" });
     const light = resolveTypeVisual({ classId: "LightComponent" });
@@ -212,11 +249,12 @@ describe("TypeVisualIcon", () => {
     expect(glyph.getAttribute("width")).toBe(String(TYPE_VISUAL_ICON_CHROME_SIZE));
     expect(glyph.getAttribute("height")).toBe(String(TYPE_VISUAL_ICON_CHROME_SIZE));
     expect(glyph.getAttribute("fill")).toBe("none");
+    expect(glyph.getAttribute("stroke-width")).toBe("2");
     expect(glyph.getAttribute("class") ?? "").toContain("size-4");
     expect(glyph.getAttribute("class") ?? "").toContain("overflow-visible");
   });
 
-  it("rasterizes tile glyphs at 40px with a tighter stroke", () => {
+  it("keeps tile glyph stroke at 2 CSS px via Lucide absoluteStrokeWidth", () => {
     const visual = resolveTypeVisual({ assetType: "Texture" });
     const { getByTestId } = render(
       <TypeVisualIcon
@@ -228,7 +266,9 @@ describe("TypeVisualIcon", () => {
     const glyph = getByTestId("glyph");
     expect(glyph.getAttribute("width")).toBe(String(TYPE_VISUAL_ICON_TILE_SIZE));
     expect(glyph.getAttribute("height")).toBe(String(TYPE_VISUAL_ICON_TILE_SIZE));
-    expect(glyph.getAttribute("stroke-width")).toBe("1.5");
+    expect(glyph.getAttribute("stroke-width")).toBe(
+      String((2 * 24) / TYPE_VISUAL_ICON_TILE_SIZE),
+    );
     expect(glyph.getAttribute("class") ?? "").toContain("size-10");
   });
 });
