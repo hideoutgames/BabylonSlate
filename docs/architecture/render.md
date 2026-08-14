@@ -4,7 +4,7 @@ Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.
 
 ## App-lifetime Engine
 
-One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its overlay canvas with `registerView(canvas, undefined, true)` / `unRegisterView` — never a second `Engine` (WebGL context caps). The UserInterface designer uses the same shared Engine: `createUiSurface` builds a dedicated Scene + standalone `CreateFullscreenUI` (`@babylonjs/gui` is a `@babylonslate/render` dependency only) and **copies the ADT Canvas2D** onto the document canvas. It does not `registerView` that canvas — extra views blit the last 3D framebuffer (editor / Play) onto the tab. Play HUD is a foreground ADT Layer on the Play scene (`attachFullscreenGui`). Dispose the designer Scene + ADTs when the document tab closes so Play’s texture-cache invariant still holds.
+One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its overlay canvas with `registerView(canvas, undefined, true)` / `unRegisterView` — never a second `Engine` (WebGL context caps). The UserInterface designer uses the same shared Engine: `createUiSurface` builds a dedicated Scene + standalone `CreateFullscreenUI` (`@babylonjs/gui` is a `@babylonslate/render` dependency only) and **copies the ADT Canvas2D** onto the document canvas (`presentAdtToCanvas` throws if the 2D context or backing store is missing). It does not `registerView` that canvas — extra views blit the last 3D framebuffer (editor / Play) onto the tab. Play HUD is a foreground ADT Layer on the Play scene (`attachFullscreenGui`). Dispose the designer Scene + ADTs when the document tab closes so Play’s texture-cache invariant still holds.
 
 ## Game UI apply (Babylon-native)
 
@@ -13,7 +13,7 @@ UserInterface documents store Babylon GUI fields (alignment, px/%, left/top, lay
 - **ADT bitmap** is the device/canvas size. **ADT ideal** (`idealWidth` / `idealHeight` / `useSmallestIdeal`) is `document.designResolution` + `scaleRule` via `applyAdtIdeal`. Resize must not overwrite ideal with the bitmap size.
 - **Parenting is 1:1 with the widget tree.** Only roots go on the texture host. HorizontalBox/VerticalBox → `StackPanel`; Grid → `Grid` (`addControl(child, row, col)`); ScrollBox → `ScrollViewer`. Never `adt.addControl` for non-roots.
 - **SafeArea** is a host-injected `Container` (`__safeArea`) under the root Canvas, padded from the device-preset insets. Default Canvas children parent into it; `ignoreSafeArea` parents to the full-bleed canvas.
-- **TouchDPad** is a `Rectangle` plus composed `Ellipse`s; TouchButton is a `Rectangle`. Slider `min` / `max` copy onto the Babylon slider.
+- **TouchDPad** is a `Rectangle` plus composed `Ellipse`s; TouchButton is a `Rectangle`. Slider `min` / `max` copy onto the Babylon slider. Unspecified text color is `#ffffff`; TouchJoystick without a background is `#e5e5e5` (not opaque black). Canvas fill is authored only.
 - **Fonts:** `applyFontRegistryToHost` (`registerAll` then `consumeDirty` → `adt.markAsDirty()`) on Play HUD and the designer ADT so a custom face is dirty on the first frame after load.
 
 `ui-runtime` stays Babylon-free: it validates the GUI fields, migrates legacy RectTransform payloads (schema v2), and builds the nested spec. A `previewRect` helper mirrors Babylon’s published alignment/%/padding formulas for jsdom designer hit-tests; when a live Engine exists the designer prefers ADT `widthInPixels` / `centerX` bounds.

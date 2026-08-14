@@ -96,6 +96,7 @@ export class ProjectService {
   private derivedStorage: ProjectStorage | null = null;
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
+  private readonly registryListeners = new Set<() => void>();
 
   constructor(storage: ProjectStorage) {
     this.storage = storage;
@@ -108,13 +109,18 @@ export class ProjectService {
       onState: (guid, state) => {
         // `compressed` is written with the KTX2 chunk in onComplete.
         if (state === "compressed") return;
-        void this.assetRegistry?.setCompressionState(guid, state);
+        void this.assetRegistry
+          ?.setCompressionState(guid, state)
+          .then(() => this.emitRegistryChange());
       },
       onComplete: async (result) => {
         await this.assetRegistry?.commitCompressedTexture(result);
+        this.emitRegistryChange();
       },
       onError: (guid) => {
-        void this.assetRegistry?.setCompressionState(guid, "encode_failed");
+        void this.assetRegistry
+          ?.setCompressionState(guid, "encode_failed")
+          .then(() => this.emitRegistryChange());
       },
     });
     this.bindEncodeQueueVisibility();
@@ -171,6 +177,17 @@ export class ProjectService {
     return this.encodeQueue;
   }
 
+  onRegistryChange(listener: () => void): () => void {
+    this.registryListeners.add(listener);
+    return () => {
+      this.registryListeners.delete(listener);
+    };
+  }
+
+  private emitRegistryChange(): void {
+    for (const listener of this.registryListeners) listener();
+  }
+
   /** Pause encode jobs while Preview runs (engineplan §3.5). */
   pauseTextureEncodeQueue(): void {
     this.encodeQueue.pause();
@@ -180,8 +197,13 @@ export class ProjectService {
     this.encodeQueue.resume();
   }
 
-  async retryTextureEncoding(guid: string): Promise<boolean> {
-    return (await this.assetRegistry?.retryTextureEncoding(guid)) ?? false;
+  async retryTextureEncoding(
+    guid: string,
+    options?: { maxDimension?: number; force?: boolean },
+  ): Promise<boolean> {
+    return (
+      (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
+    );
   }
 
   async retryAllFailedTextureEncoding(): Promise<number> {
@@ -189,7 +211,12 @@ export class ProjectService {
     let count = 0;
     for (const asset of this.assetRegistry.list({ type: "Texture" })) {
       const state = asset.header.payload.compressionState;
-      if (state === "encode_failed" || state === "fallback_uncompressed") {
+      if (
+        state === "encode_failed" ||
+        state === "fallback_uncompressed" ||
+        state === "pending" ||
+        state === "encoding"
+      ) {
         if (await this.assetRegistry.retryTextureEncoding(asset.header.guid)) {
           count += 1;
         }

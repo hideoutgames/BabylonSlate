@@ -106,7 +106,7 @@ describe("ContentBrowserFolderTile", () => {
     expect(tile.getAttribute("draggable")).not.toBe("true");
   });
 
-  it("tints only the thumb well, leaving the card and text panel on card chrome", () => {
+  it("uses an uncolored card thumb without a folder type wash", () => {
     const { tile } = renderTile();
     const card = tile.closest('[data-slot="card"]') as HTMLElement | null;
     expect(card).not.toBeNull();
@@ -114,10 +114,12 @@ describe("ContentBrowserFolderTile", () => {
     expect(card?.style.borderColor).toBe("");
     const thumb = tile.querySelector(".aspect-square") as HTMLElement | null;
     expect(thumb).not.toBeNull();
-    expect(thumb?.style.backgroundColor).toBe(
-      "color-mix(in oklch, var(--asset-folder) 55%, var(--muted))",
-    );
-    expect(thumb?.style.boxShadow).toBe("inset 0 -3px 0 var(--asset-folder)");
+    expect(thumb?.style.backgroundImage).toBe("");
+    expect(thumb?.style.backgroundColor).toBe("");
+    expect(thumb?.style.boxShadow).toBe("");
+    expect(thumb?.innerHTML).not.toContain("--asset-folder");
+    const icon = thumb?.querySelector("svg");
+    expect(icon?.getAttribute("class") ?? "").toContain("text-muted-foreground");
   });
 
   it("does not bubble pointer events to an empty-grid listener", () => {

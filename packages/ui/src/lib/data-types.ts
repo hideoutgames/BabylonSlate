@@ -115,11 +115,11 @@ export function assetColorVar(family: string): string {
 }
 
 export function typeColorThumbAccent(colorVar: string): {
-  backgroundColor: string;
+  backgroundImage: string;
   boxShadow: string;
 } {
   return {
-    backgroundColor: `color-mix(in oklch, ${colorVar} 55%, var(--muted))`,
+    backgroundImage: `radial-gradient(circle at center, var(--card) 0%, var(--card) 48%, color-mix(in oklch, ${colorVar} 28%, var(--card)) 72%, ${colorVar} 100%)`,
     boxShadow: `inset 0 -3px 0 ${colorVar}`,
   };
 }

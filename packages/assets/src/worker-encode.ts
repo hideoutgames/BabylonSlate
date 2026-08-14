@@ -30,6 +30,16 @@ export function createWorkerEncodeFn(
   let recycled = 0;
   const pending = new Map<number, PendingEncode>();
 
+  const failPending = (error: unknown) => {
+    for (const entry of pending.values()) {
+      entry.reject(error);
+    }
+    pending.clear();
+    worker?.terminate();
+    worker = null;
+    ready = null;
+  };
+
   const ensureWorker = (): Promise<void> => {
     if (ready) return ready;
     worker = new Worker(workerUrl);
@@ -69,7 +79,14 @@ export function createWorkerEncodeFn(
       };
       worker!.addEventListener("message", onMessage);
       worker!.addEventListener("error", (err) => {
-        reject(err.error ?? new Error("encode worker error"));
+        const error = err.error ?? new Error("encode worker error");
+        reject(error);
+        failPending(error);
+      });
+      worker!.addEventListener("messageerror", () => {
+        const error = new Error("encode worker messageerror");
+        reject(error);
+        failPending(error);
       });
       worker!.postMessage({ type: "init" });
     });
@@ -93,9 +110,14 @@ export function createWorkerEncodeFn(
   const encode: EncodeFn = async (
     source: Uint8Array,
     settings: TextureEncodeSettings,
+    mime?: string,
   ) => {
     await ensureWorker();
-    const decoded = await decodeSourceToRgba(source, settings.maxDimension);
+    const decoded = await decodeSourceToRgba(
+      source,
+      settings.maxDimension,
+      mime,
+    );
     const id = nextId++;
     const result = await new Promise<{ ktx2: Uint8Array; wallMs: number }>(
       (resolve, reject) => {

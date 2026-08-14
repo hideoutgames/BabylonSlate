@@ -34,12 +34,13 @@ describe("data-types", () => {
     expect(ASSET_COLOR_VAR.folder).toBe("var(--asset-folder)");
   });
 
-  it("builds a thumb-only type wash with an inset kind bar", () => {
+  it("builds a dark-center radial type wash with an inset kind bar", () => {
     const colorVar = "var(--asset-texture)";
-    expect(typeColorThumbAccent(colorVar)).toEqual({
-      backgroundColor:
-        "color-mix(in oklch, var(--asset-texture) 55%, var(--muted))",
-      boxShadow: "inset 0 -3px 0 var(--asset-texture)",
-    });
+    const accent = typeColorThumbAccent(colorVar);
+    expect(accent.backgroundImage).toContain("radial-gradient");
+    expect(accent.backgroundImage).toContain("var(--card)");
+    expect(accent.backgroundImage).toContain("var(--asset-texture)");
+    expect(accent.boxShadow).toBe("inset 0 -3px 0 var(--asset-texture)");
+    expect("backgroundColor" in accent).toBe(false);
   });
 });

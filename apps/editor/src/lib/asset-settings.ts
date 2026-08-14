@@ -1,4 +1,5 @@
 import { PIN_PICKER_TYPES } from "@babylonslate/editor-kit";
+import { shouldCompressTexture } from "@babylonslate/assets";
 import type {
   EnumAsset,
   EnumMember,
@@ -21,6 +22,17 @@ export const TEXTURE_USAGE_OPTIONS = [
 ] as const;
 
 export type TextureUsage = (typeof TEXTURE_USAGE_OPTIONS)[number];
+
+export const TEXTURE_MAX_DIMENSION_OPTIONS = [
+  "source",
+  "4096",
+  "2048",
+  "1024",
+  "512",
+] as const;
+
+export type TextureMaxDimensionOption =
+  (typeof TEXTURE_MAX_DIMENSION_OPTIONS)[number];
 
 function moveIndex<T>(items: T[], index: number, delta: number): T[] {
   const nextIndex = index + delta;
@@ -209,4 +221,45 @@ export function patchTextureUsage(
   usage: string,
 ): Record<string, unknown> {
   return { ...payload, usage };
+}
+
+export function patchTextureMaxDimension(
+  payload: Record<string, unknown>,
+  value: string | number | undefined,
+): Record<string, unknown> {
+  if (value === "source" || value === undefined || value === "") {
+    const next = { ...payload };
+    delete next.maxDimension;
+    return next;
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const next = { ...payload };
+    delete next.maxDimension;
+    return next;
+  }
+  return { ...payload, maxDimension: parsed };
+}
+
+export function textureMaxDimensionSelectValue(
+  payload: Record<string, unknown>,
+): string {
+  const value = payload.maxDimension;
+  if (typeof value === "number" && value > 0) return String(value);
+  return "source";
+}
+
+export function applyTextureMaxDimensionChange(
+  payload: Record<string, unknown>,
+  value: string,
+): {
+  payload: Record<string, unknown>;
+  shouldRequeue: boolean;
+} {
+  const next = patchTextureMaxDimension(payload, value);
+  const usage = String(payload.usage ?? "albedo");
+  return {
+    payload: next,
+    shouldRequeue: shouldCompressTexture(usage),
+  };
 }

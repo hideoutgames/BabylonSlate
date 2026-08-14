@@ -11,6 +11,9 @@ import {
   patchScriptInterfacePin,
   patchStructureField,
   patchTextureUsage,
+  patchTextureMaxDimension,
+  applyTextureMaxDimensionChange,
+  textureMaxDimensionSelectValue,
   removeEnumMember,
   removeScriptInterfaceMethod,
   removeStructureField,
@@ -107,6 +110,41 @@ describe("asset settings payloads", () => {
     expect(next).toEqual({
       compressionState: "compressed",
       usage: "pixelArt",
+    });
+  });
+
+  it("patches per-asset texture max dimension and treats Source as unset", () => {
+    expect(
+      patchTextureMaxDimension(
+        { compressionState: "compressed", usage: "albedo" },
+        1024,
+      ),
+    ).toEqual({
+      compressionState: "compressed",
+      usage: "albedo",
+      maxDimension: 1024,
+    });
+    expect(
+      patchTextureMaxDimension(
+        { usage: "albedo", maxDimension: 1024 },
+        "source",
+      ),
+    ).toEqual({ usage: "albedo" });
+    expect(textureMaxDimensionSelectValue({ usage: "albedo" })).toBe("source");
+    expect(
+      textureMaxDimensionSelectValue({ usage: "albedo", maxDimension: 512 }),
+    ).toBe("512");
+    expect(
+      applyTextureMaxDimensionChange({ usage: "albedo" }, "1024"),
+    ).toEqual({
+      payload: { usage: "albedo", maxDimension: 1024 },
+      shouldRequeue: true,
+    });
+    expect(
+      applyTextureMaxDimensionChange({ usage: "pixelArt" }, "1024"),
+    ).toEqual({
+      payload: { usage: "pixelArt", maxDimension: 1024 },
+      shouldRequeue: false,
     });
   });
 });

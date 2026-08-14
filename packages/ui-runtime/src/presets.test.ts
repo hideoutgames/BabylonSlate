@@ -33,7 +33,7 @@ describe("device presets", () => {
     expect(devicePresetForViewport(1280, 720).safeArea.top).toBe(0);
   });
 
-  it("uses desired size with zero safe area for reusable-element design", () => {
+  it("uses content size with zero safe area for reusable-element design", () => {
     const viewport = designerViewport(DESIRED_CANVAS_ID, {
       width: 240,
       height: 64,

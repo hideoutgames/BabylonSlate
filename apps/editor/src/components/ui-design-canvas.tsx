@@ -15,6 +15,12 @@ import {
   type UiSurface,
 } from "@babylonslate/render";
 import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
+import {
   applyWidgetResize,
   laidOutParentRect,
   widgetAllowsDesignerTransform,
@@ -83,6 +89,7 @@ export function UiDesignCanvas({
   const viewportRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<UiSurface | null>(null);
   const [guiLive, setGuiLive] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [liveRects, setLiveRects] = useState<Record<string, ScreenRect>>({});
   const latestUiRef = useRef(ui);
   const viewRef = useRef(view);
@@ -125,10 +132,16 @@ export function UiDesignCanvas({
         gizmoCanvas: gizmoCanvas ?? undefined,
         safeArea: viewport.safeArea,
       });
-    } catch {
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to create GUI surface";
+      console.error("UI designer surface failed", error);
+      setPreviewError(message);
+      setGuiLive(false);
       return;
     }
     surfaceRef.current = surface;
+    setPreviewError(null);
     setGuiLive(true);
     return () => {
       surface?.dispose();
@@ -144,17 +157,30 @@ export function UiDesignCanvas({
     const registry = new FontRegistry();
     void applyFontRegistryToHost(registry, fontEntries, () => {
       surface.designAdt.markAsDirty();
-      surface.present();
+      try {
+        surface.present();
+      } catch (error) {
+        console.error("UI designer font present failed", error);
+      }
     });
   }, [fontEntries, guiLive]);
 
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
-    surface.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
-    applyUiControls(surface.host, controls);
-    surface.present();
-    setLiveRects(surface.host.measureControls());
+    try {
+      surface.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
+      applyUiControls(surface.host, controls);
+      surface.present();
+      setPreviewError(null);
+      setLiveRects(surface.host.measureControls());
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to present GUI";
+      console.error("UI designer present failed", error);
+      setPreviewError(message);
+      setGuiLive(false);
+    }
   }, [controls, guiLive, ui.scaleRule, viewport.height, viewport.width]);
 
   const selected = ui.widgets[selectedId];
@@ -205,7 +231,11 @@ export function UiDesignCanvas({
       safeArea: hasSafeArea ? safeScreen : null,
       pivot: canTransform ? pivotScreen : null,
     };
-    surface.presentGizmos(state);
+    try {
+      surface.presentGizmos(state);
+    } catch (error) {
+      console.error("UI designer gizmos failed", error);
+    }
   }, [
     canTransform,
     guiLive,
@@ -421,7 +451,7 @@ export function UiDesignCanvas({
       onWheel={onViewportWheel}
     >
       <div
-        className="absolute bg-background shadow-sm"
+        className="absolute shadow-sm"
         data-testid="ui-design-canvas"
         data-preset={viewport.id}
         data-scale={String(layout.scale)}
@@ -435,6 +465,9 @@ export function UiDesignCanvas({
           height: viewport.height * previewScale,
           transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
           transformOrigin: "0 0",
+          backgroundImage:
+            "repeating-conic-gradient(var(--muted) 0% 25%, var(--background) 0% 50%)",
+          backgroundSize: "16px 16px",
         }}
       >
         <canvas
@@ -532,6 +565,17 @@ export function UiDesignCanvas({
             )
           : null}
       </div>
+      {previewError ? (
+        <Empty
+          data-testid="ui-gui-preview-error"
+          className="pointer-events-none absolute inset-0 border-0"
+        >
+          <EmptyHeader>
+            <EmptyTitle>Babylon GUI Preview Unavailable</EmptyTitle>
+            <EmptyDescription>{previewError}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
     </div>
   );
 }

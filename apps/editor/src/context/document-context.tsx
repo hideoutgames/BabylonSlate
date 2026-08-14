@@ -114,6 +114,8 @@ interface DocumentContextValue {
   projectDocument: ProjectDocument | null;
   projectName: string | null;
   assetRegistry: AssetRegistry | null;
+  /** Bumps when encode/import mutates registry payloads in place. */
+  registryVersion: number;
   refreshAssetRegistry: () => Promise<void>;
   /** Retarget open tabs after a Scene/Graph file move or rename. */
   repathDocument: (
@@ -122,6 +124,10 @@ interface DocumentContextValue {
     newPath: string,
   ) => void;
   retryFailedTextureEncoding: () => Promise<number>;
+  retryTextureEncoding: (
+    guid: string,
+    options?: { maxDimension?: number; force?: boolean },
+  ) => Promise<boolean>;
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -413,6 +419,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump();
   }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
 
+  useEffect(
+    () => projectService.onRegistryChange(bump),
+    [bump, projectService],
+  );
+
   const captureLayoutForId = useCallback(
     (id: string) => {
       const preFocus = preFocusLayoutsRef.current.get(id);
@@ -461,6 +472,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump();
     return count;
   }, [bump, projectService]);
+
+  const retryTextureEncoding = useCallback(
+    async (
+      guid: string,
+      options?: { maxDimension?: number; force?: boolean },
+    ) => {
+      const ok = await projectService.retryTextureEncoding(guid, options);
+      bump();
+      return ok;
+    },
+    [bump, projectService],
+  );
 
   const replayRecoveryJournal = useCallback(async () => {
     const guid = projectService.guid;
@@ -1834,9 +1857,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DocumentContextValue>(
     () => {
-      // registryVersion is a bump counter for imperative document-service
-      // mutations that are not themselves React state.
-      void registryVersion;
       const currentGraphSignature = graphCompileSignature(
         openGraphCompileDocuments(documentService),
       );
@@ -1912,9 +1932,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleLayoutFocus,
       getAvailableDocuments,
       assetRegistry: projectService.registry,
+      registryVersion,
       refreshAssetRegistry,
       repathDocument,
       retryFailedTextureEncoding,
+      retryTextureEncoding,
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,
@@ -1947,6 +1969,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       refreshAssetRegistry,
       repathDocument,
       retryFailedTextureEncoding,
+      retryTextureEncoding,
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,

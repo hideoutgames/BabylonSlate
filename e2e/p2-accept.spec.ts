@@ -37,6 +37,14 @@ test.describe("P2 acceptance proofs", () => {
       page.locator('[data-asset-path="assets/hero_HeroMat.babasset"]'),
     ).toBeVisible();
 
+    const albedo = page.locator('[data-asset-path="assets/albedo.babasset"]');
+    await expect(async () => {
+      await expect(albedo.getByText("Encoding")).toHaveCount(0);
+      await expect(albedo.getByText("Compress pending")).toHaveCount(0);
+    }).toPass({ timeout: 60_000 });
+    await albedo.dblclick();
+    await expect(page.getByTestId("texture-preview")).toBeVisible();
+
     await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
