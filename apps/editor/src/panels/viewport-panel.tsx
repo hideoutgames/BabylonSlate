@@ -69,6 +69,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     dragSelectActive,
     setDragSelectActive,
     setFrameActorHandler,
+    saveEditorCameraPose,
+    loadEditorCameraPose,
   } = useSceneEditing();
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
   const navBake = useOptionalNavBake();
@@ -218,6 +220,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editorFlyEnabled: () => !playingRef.current,
     });
     engineRef.current = handle;
+    handle.editor?.camera.importSessionState(loadEditorCameraPose());
     navDebugRef.current = new NavMeshDebugOverlay(handle.scene);
     setNavOverlayGeneration((generation) => generation + 1);
     handle.editor?.setPreviewCanvas(previewCanvasRef.current);
@@ -274,6 +277,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       registerSharedEngine(null);
       navDebugRef.current?.dispose();
       navDebugRef.current = null;
+      if (handle.editor) {
+        saveEditorCameraPose(handle.editor.camera.exportSessionState());
+      }
       handle.dispose();
       engineRef.current = null;
     };
