@@ -21,6 +21,9 @@ import {
   ToolbarStrip,
   TreeView,
   TypeColorMark,
+  TYPE_VISUAL_ICON_TILE_SIZE,
+  TypeVisualIcon,
+  resolveTypeVisual,
   useContextMenu,
   type NestedMenuItem,
   type ParameterRow,
@@ -261,6 +264,39 @@ function GalleryComposites() {
           <TypeColorMark colorVar={ASSET_COLOR_VAR.texture} label="Texture" />
           <TypeColorMark colorVar={ASSET_COLOR_VAR.class} label="Class" />
           <TypeColorMark colorVar={ASSET_COLOR_VAR.folder} label="Folder" />
+        </div>
+      </div>
+      <div
+        className="rounded-lg border border-border p-3"
+        data-testid="gallery-type-visuals"
+      >
+        <div className="mb-2 text-sm font-medium">Type Visuals</div>
+        <div className="flex flex-wrap items-end gap-6">
+          <div className="flex flex-col items-center gap-1">
+            <TypeVisualIcon
+              visual={resolveTypeVisual({ assetType: "Scene" })}
+              data-testid="gallery-type-visual-chrome"
+            />
+            <span className="text-[10px] text-muted-foreground">Chrome 16</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <TypeVisualIcon
+              visual={resolveTypeVisual({ assetType: "Texture" })}
+              size={TYPE_VISUAL_ICON_TILE_SIZE}
+              data-testid="gallery-type-visual-tile"
+            />
+            <span className="text-[10px] text-muted-foreground">Tile 40</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <TypeVisualIcon
+              visual={resolveTypeVisual({
+                assetType: "Class",
+                parentClass: "Actor",
+              })}
+              size={TYPE_VISUAL_ICON_TILE_SIZE}
+            />
+            <span className="text-[10px] text-muted-foreground">Class tile</span>
+          </div>
         </div>
       </div>
       <div className="h-40 overflow-hidden rounded-lg border border-border">

@@ -87,7 +87,7 @@ Title-bar fills for Blueprint-like nodes:
 
 ## Asset type colors
 
-Content Browser, Outliner, catalogs, search, and document tabs resolve **icons** through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Colors** come from DataTypes (`assetColorVar` / `--asset-*`). Change a hue in `globals.css`; change which family uses which token in `data-types.ts`. **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent). Graph pin/node tokens stay on the same DataTypes maps.
+Content Browser, Outliner, catalogs, search, and document tabs resolve **icons** through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Colors** come from DataTypes (`assetColorVar` / `--asset-*`). Change a hue in `globals.css`; change which family uses which token in `data-types.ts`. **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent). Graph pin/node tokens stay on the same DataTypes maps. `TypeVisualIcon` passes Lucide `size` so the SVG `width`/`height` match the CSS box: **16** (`TYPE_VISUAL_ICON_CHROME_SIZE`) in chrome/lists, **40** (`TYPE_VISUAL_ICON_TILE_SIZE`, `strokeWidth` 1.5) on Content Browser tiles. CSS-only `size-10` on a 24×24 Lucide SVG upscales a bitmap and looks artefacted.
 
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
@@ -106,7 +106,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-class` (they spawn as Actors). Unknown types fall back to a file glyph and `--muted-foreground`.
 
-Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type-colored border (`typeColorThumbAccent`). The well is inset 2px (`p-0.5`) with `rounded-t-xl`, and the border uses `calc(var(--radius-xl) - 2px)` on the top corners so the outline sits inside the Card clip instead of being chopped. The well, `Card` chrome, and text panel stay `--card`. Glyphs still use the raw `--asset-*` token. **Folder cards** are uncolored (`--card` well, muted folder glyph). Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum / Structure / ScriptInterface keep `--asset-script-type` on tiles; Details type columns use **pin** colors via `PinTypePicker`.
+Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type-colored border (`typeColorThumbAccent`). The well is inset 2px (`p-0.5`) with `rounded-t-xl`, and the border uses `calc(var(--radius-xl) - 2px)` on the top corners so the outline sits inside the Card clip instead of being chopped. The well, `Card` chrome, and text panel stay `--card`. Glyphs still use the raw `--asset-*` token and Lucide `size={40}` so they rasterize at display size. **Folder cards** are uncolored (`--card` well, muted folder glyph at the same Lucide size). Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum / Structure / ScriptInterface keep `--asset-script-type` on tiles; Details type columns use **pin** colors via `PinTypePicker`.
 
 ## Graph sizing tokens
 
