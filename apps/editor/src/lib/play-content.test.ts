@@ -15,6 +15,7 @@ import {
   blackboardGuidsFromScene,
   logicGraphFromUiPayload,
   mergePlayScriptDocuments,
+  filterPlayScriptDocuments,
   mergePlayAnimGraphs,
   playAnimGraphsFromOpenDocuments,
   playAnimGraphsFromGuids,
@@ -47,11 +48,17 @@ describe("playUiLibraryFromAssets", () => {
           path: "assets/Display.babasset",
           type: "Font",
         },
+        {
+          guid: "eui-guid",
+          path: "assets/Tools.eui.babasset",
+          type: "EditorUtilityInterface",
+        },
       ],
       (path) => (path.endsWith("HUD.ui.babasset") ? hud : null),
     );
     expect(library["hud-guid"]?.widgets.header?.props.text).toBe("Authored");
     expect(library["font-guid"]).toBeUndefined();
+    expect(library["eui-guid"]).toBeUndefined();
   });
 });
 
@@ -400,6 +407,33 @@ describe("UI logic Play compile", () => {
     expect(merged.map((doc) => doc.path)).toEqual([
       "assets/Hero.class.babasset",
       "assets/HUD.ui.babasset",
+    ]);
+  });
+
+  it("drops EditorUtilityObject class graphs from Play compile", () => {
+    const filtered = filterPlayScriptDocuments(
+      [
+        {
+          path: "assets/Hero.class.babasset",
+          content: { nodes: [], edges: [] },
+        },
+        {
+          path: "assets/Tools.class.babasset",
+          content: { nodes: [], edges: [] },
+        },
+      ],
+      {
+        "assets/Hero.class.babasset": { type: "Class", parentClass: "Actor" },
+        "assets/Tools.class.babasset": {
+          type: "Class",
+          parentClass: "EditorUtilityObject",
+        },
+      },
+      (id) =>
+        id === "EditorUtilityObject" || id === "Actor" ? "BObject" : null,
+    );
+    expect(filtered.map((doc) => doc.path)).toEqual([
+      "assets/Hero.class.babasset",
     ]);
   });
 });

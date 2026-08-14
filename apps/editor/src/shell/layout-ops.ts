@@ -7,6 +7,10 @@ export interface FocusKeepCandidate {
   title: string;
 }
 
+export type FocusKeepOptions = DockWindowOptions & {
+  editorUtilities?: FocusKeepCandidate[];
+};
+
 function catalogFocusCandidates(
   kind: FocusDocumentKind,
   options?: DockWindowOptions,
@@ -40,9 +44,12 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
  */
 export function focusKeepCandidates(
   kind: FocusDocumentKind,
-  options?: DockWindowOptions,
+  options?: FocusKeepOptions,
 ): FocusKeepCandidate[] {
-  return catalogFocusCandidates(kind, options);
+  return [
+    ...catalogFocusCandidates(kind, options),
+    ...(options?.editorUtilities ?? []),
+  ];
 }
 
 export function resolveFocusKeepPanelIds(
