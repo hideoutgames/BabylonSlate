@@ -825,7 +825,7 @@ class InProcessRuntime implements RuntimeDriver {
             this.tickBtTask(actor, node, board, dtSeconds, memory),
         },
         serviceHost: {
-          tick: (service, _node, board, dtSeconds, _memory) => {
+          tick: (service, _node, board, dtSeconds) => {
             this.scriptHost.invokeBtEvent(
               service.classId,
               "onBtTick",
