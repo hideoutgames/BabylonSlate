@@ -26,7 +26,7 @@ export function editorHavokWasmUrl(): string {
 
 export type PlaySceneDocument = {
   id: string;
-  ref: { kind: string };
+  ref: { kind: string; path?: string };
   content: unknown;
 };
 
@@ -83,6 +83,7 @@ function findOpenSceneDocument(
 export type PlaySceneLoad = {
   sceneAssetGuid: string;
   scene: SerializedScene;
+  path?: string;
 };
 
 /** Active (or first) open scene document for the Play `load` message. */
@@ -95,6 +96,7 @@ export function playSceneFromOpenDocuments(
   return {
     sceneAssetGuid: scene.id,
     scene: normalizeScene(scene.content),
+    path: scene.ref.path,
   };
 }
 

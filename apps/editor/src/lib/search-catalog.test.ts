@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { SEARCH_CATALOG_CLASS_IDS } from "./search-catalog";
 
 describe("search catalog class ids", () => {
-  it("does not advertise unbuilt nav or world-space Widget", () => {
+  it("advertises BehaviourTree and NavAgent but not Place-Actor-only NavMesh", () => {
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("TilemapComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("BehaviourTreeComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("BTTask");
-    expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("NavAgentComponent");
+    expect(SEARCH_CATALOG_CLASS_IDS).toContain("NavAgentComponent");
+    expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("NavMeshComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("WidgetComponent");
   });
 

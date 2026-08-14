@@ -145,6 +145,13 @@ class RecastNavigationBackend implements NavigationBackend {
     return { x: point.x, y: point.y, z: point.z };
   }
 
+  agentVelocity(id: string): NavPoint | null {
+    const agent = this.agents.get(id);
+    if (!agent) return null;
+    const point = agent.velocity();
+    return { x: point.x, y: point.y, z: point.z };
+  }
+
   setAgentTarget(id: string, target: NavPoint): boolean {
     const agent = this.agents.get(id);
     if (!agent) return false;

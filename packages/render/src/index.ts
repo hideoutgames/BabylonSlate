@@ -35,3 +35,5 @@ export * from "./shader-preview";
 export * from "./anim-apply";
 export * from "./editor-billboard";
 export * from "./editor-debug-overlay";
+export * from "./nav-bake-geometry";
+export * from "./nav-debug-overlay";

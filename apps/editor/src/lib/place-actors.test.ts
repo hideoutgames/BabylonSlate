@@ -11,10 +11,10 @@ import {
 } from "./place-actors";
 
 describe("ENGINE_PLACE_ACTORS", () => {
-  it("groups shapes, lights, camera, and empty", () => {
+  it("groups shapes, lights, camera, empty, and navigation", () => {
     const categories = new Set(ENGINE_PLACE_ACTORS.map((item) => item.category));
     expect(categories).toEqual(
-      new Set(["Shapes", "Lights", "Camera", "Empty"]),
+      new Set(["Shapes", "Lights", "Camera", "Empty", "Navigation"]),
     );
   });
 
@@ -53,6 +53,18 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.classId).toBe("LightComponent");
     expect(actor.components[0]?.properties.lightKind).toBe("point");
     expect(actor.components[0]?.properties.range).toBe(10);
+  });
+
+  it("spawns a NavMesh actor with Recast settings", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "navmesh")!;
+    const actor = spawnPlacedActor(scene, item, "actor-nav");
+    expect(actor.name).toBe("NavMesh");
+    expect(actor.components[0]?.classId).toBe("NavMeshComponent");
+    expect(actor.components[0]?.properties.cellSize).toBe(0.2);
+    expect(actor.components[0]?.properties.tiled).toBe(false);
+    expect(actor.components[0]?.properties.supportDynamicObstacles).toBe(false);
+    expect(actor.components[0]?.properties.autoBakeOnSave).toBe(false);
+    expect(actor.components[0]?.properties.debugOverlay).toBe(false);
   });
 
   it("spawns an empty actor", () => {

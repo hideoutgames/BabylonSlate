@@ -19,6 +19,7 @@
     "@babylonslate/core": "workspace:*",
     "@babylonslate/debugger": "workspace:*",
     "@babylonslate/input": "workspace:*",
+    "@babylonslate/navigation": "workspace:*",
     "@babylonslate/object-model": "workspace:*",
     "@babylonslate/physics": "workspace:*"
   },
