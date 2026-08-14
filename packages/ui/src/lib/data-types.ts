@@ -121,7 +121,7 @@ export function typeColorThumbAccent(colorVar: string): {
 } {
   return {
     border: `2px solid ${colorVar}`,
-    borderTopLeftRadius: "var(--radius-xl)",
-    borderTopRightRadius: "var(--radius-xl)",
+    borderTopLeftRadius: "calc(var(--radius-xl) - 2px)",
+    borderTopRightRadius: "calc(var(--radius-xl) - 2px)",
   };
 }

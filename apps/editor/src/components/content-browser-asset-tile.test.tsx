@@ -160,11 +160,13 @@ describe("ContentBrowserAssetTile", () => {
     const thumb = glyph.parentElement as HTMLElement;
     expect(thumb.style.backgroundImage).toBe("");
     expect(thumb.style.border).toBe("2px solid var(--asset-texture)");
-    expect(thumb.style.borderTopLeftRadius).toBe("var(--radius-xl)");
-    expect(thumb.style.borderTopRightRadius).toBe("var(--radius-xl)");
+    expect(thumb.style.borderTopLeftRadius).toBe("calc(var(--radius-xl) - 2px)");
+    expect(thumb.style.borderTopRightRadius).toBe("calc(var(--radius-xl) - 2px)");
     expect(thumb.style.boxShadow).toBe("");
     expect(thumb.className).toContain("bg-card");
-    expect(thumb.className).toContain("rounded-t-xl");
-    expect(thumb.className).toContain("overflow-hidden");
+    const well = thumb.parentElement as HTMLElement;
+    expect(well.className).toContain("rounded-t-xl");
+    expect(well.className).toContain("overflow-hidden");
+    expect(well.className).toContain("p-0.5");
   });
 });
