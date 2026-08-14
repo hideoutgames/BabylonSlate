@@ -4,6 +4,7 @@ import {
   createEdgeId,
   DEFAULT_NODE_TYPE,
   deletableNodeIds,
+  lockNodeDragAxis,
   nodeChangesMutateGraph,
   reconcileCanvasGraph,
   toSerializedGraph,
@@ -353,5 +354,16 @@ describe("deletableNodeIds", () => {
         { id: "log-a", selected: true, data: {} },
       ]),
     ).toEqual(["log-a"]);
+  });
+});
+
+describe("lockNodeDragAxis", () => {
+  it("keeps Y when locking to X", () => {
+    const next = lockNodeDragAxis(
+      [{ type: "position", id: "a", position: { x: 40, y: 99 } }],
+      [{ id: "a", position: { x: 0, y: 12 } }],
+      "x",
+    );
+    expect(next[0]?.position).toEqual({ x: 40, y: 12 });
   });
 });

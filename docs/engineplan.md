@@ -48,6 +48,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | Shader preview | Throttled `compileShaderGraphForRender` → `applyShaderGraphPreview` / `NodeMaterial.Parse`; catalog pin hydration | Done (authoring-surface wave) |
 | Anim graph Add Node pins | `hydrateAnimGraphForEditor` / `animPaletteNodes` inject `in`/`out` | Done (authoring-surface wave) |
 | Anim Graph authoring host | Parameters / States / Details split; persisted node positions; clip picker; blend / exit-time rows | Done (`cursor/anim-graph-authoring-6e70`) |
+| Behaviour tree authoring host | Typed Details, decorator/service catalog, blackboard key pickers, long-press wrap/duplicate/delete, sibling-only drag, canvas diagnostics, Loop/Cooldown/TimeLimit evaluation, running-branch overlay from `btState.stack` | Done (`p-bt-editor-authoring`) |
 | Pin flash, multi-select gizmo | Chrome polish | Parked |
 | CustomBlock GLSL IDE; assign shader to a live scene mesh | Preview canvas is the host | Parked |
 
@@ -1261,6 +1262,10 @@ Named slice, not a P-number. Spec: section 2.5. May run beside P12 (different pa
 - [x] **p11-nav-editor-host** — P11: NavMesh Place Actor + Recast settings Details, blocking bake modal (paint one frame, collect geometry on main thread, generate in a bake worker, write Scene `navmesh` chunk), Recast debug primitives drawn as a Babylon overlay (`@recast-navigation/babylon` is unpublished), runtime import of the chunk + crowd `addAgent` / `stepCrowd`, ungate `NavAgentComponent`. Tile cache, 2D bake, and BT MoveTo landed in `p11-nav-blockers-2d`
 - [x] **p11-nav-blockers-2d** — P11: NavMesh Blocker Place Actor (static bake carve vs dynamic tile-cache cylinder/box; area unwalkable vs cost — cost does not carve), 2D XY↔Recast XZ bake and query remap, scripting nodes FindPathTo / MoveTo / StopMovement / IsPathValid / GetClosestNavigablePoint / GetRandomPointInRadius / obstacle add and remove, BT MoveTo drives the crowd
 - [x] **p11-acceptance** — P11: §18 — same visual-scripted tree patrols a baked navmesh in 2D and 3D, blackboard abort, dynamic obstacle closing the route, task `throw` session-report `btNodeId`, `.babtrace` replay of BT decisions
+
+### Authoring-surface residuals
+
+- [x] **p-bt-editor-authoring** — Authoring-surface residual (not a P11 reopen): typed Details for built-in tasks/decorators/services, Add Decorator/Service catalog (built-ins + project `BTTask`/`BTDecorator`/`BTService`/`BTComposite` classes), attachment remove/reorder, blackboard key pickers and typed blackboard defaults, Title Case chrome, tree-aware toolbar (hide Break Links/Format, refuse root delete), long-press `ContextMenuOverlay` (Delete / Duplicate / Wrap in Sequence / Add Decorator), sibling-only X drag then re-layout, `validateBehaviourTree` on the canvas (`bt.parallel_too_small`, `bt.missing_blackboard_key`), Loop/Cooldown/TimeLimit evaluation, Play overlay running-branch from `btState.stack`. *Accepts when* e2e adds a Wait child, sets duration, adds a keyed decorator, and removes the attachment
 
 ### P12
 

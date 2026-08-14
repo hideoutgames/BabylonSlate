@@ -58,6 +58,21 @@ async function pickSelectedAsset(
   await expect(page.getByTestId("details-asset-picker")).toBeHidden();
 }
 
+async function openGraphNodePalette(page: Page): Promise<void> {
+  const pane = page.getByTestId("graph-editor").locator(".react-flow__pane");
+  await expect(async () => {
+    const box = await pane.boundingBox();
+    expect(box).toBeTruthy();
+    const position = {
+      x: Math.max(16, (box?.width ?? 0) - 36),
+      y: Math.max(16, (box?.height ?? 0) - 36),
+    };
+    await pane.click({ position });
+    await pane.click({ position });
+    await expect(page.getByTestId("node-palette")).toBeVisible({ timeout: 800 });
+  }).toPass({ timeout: 10_000 });
+}
+
 async function openTwoDProject(page: Page): Promise<void> {
   await page.goto("/?test=1");
   await expect(page.getByTestId("homepage")).toBeVisible();
@@ -113,6 +128,39 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await expect(page.getByTestId("nav-bake-dialog")).toHaveCount(0, {
       timeout: 30_000,
     });
+  });
+
+  test("tree editor can add a Wait child, set duration, add a decorator, and remove it", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "BehaviourTree", "Patrol");
+    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await expect(page.getByTestId("bt-node-root")).toBeVisible();
+
+    const graph = page.getByTestId("graph-editor");
+    await expect(graph).toBeVisible();
+    await openGraphNodePalette(page);
+    await page.getByTestId("node-palette-search").fill("Wait");
+    await page.getByTestId("node-palette-item-bt.task.wait").click();
+    await expect(page.getByTestId("node-palette")).toHaveCount(0);
+    const duration = page.getByTestId("property-durationMs");
+    await expect(duration).toBeVisible({ timeout: 15_000 });
+    await duration.fill("250");
+    await duration.blur();
+
+    await page.getByTestId("bt-add-decorator").click();
+    await expect(page.getByTestId("bt-attachment-catalog")).toBeVisible();
+    await page.getByTestId("bt-attachment-item-bt.decorator.blackboardIsSet").click();
+    const keyField = page.getByTestId("property-key");
+    await expect(keyField).toBeVisible();
+    if ((await keyField.evaluate((el) => el.tagName)) === "INPUT") {
+      await keyField.fill("alert");
+    }
+
+    await page.getByTestId("bt-remove-attachment").click();
+    await expect(page.getByTestId("bt-remove-attachment")).toHaveCount(0);
   });
 
   test("task throw session report focuses the tree node", async ({ page }) => {

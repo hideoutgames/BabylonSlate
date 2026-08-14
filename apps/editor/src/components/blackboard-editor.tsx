@@ -26,6 +26,20 @@ function uniqueKeyName(keys: readonly BlackboardKey[]): string {
   return `key${index}`;
 }
 
+function defaultForKind(kind: PinType["kind"]): unknown {
+  switch (kind) {
+    case "bool":
+      return false;
+    case "int":
+    case "float":
+      return 0;
+    case "string":
+      return "";
+    default:
+      return undefined;
+  }
+}
+
 export function BlackboardEditor({
   payload,
   onChange,
@@ -39,6 +53,7 @@ export function BlackboardEditor({
     onChange(next as unknown as Record<string, unknown>);
   };
   const key = doc.keys[selected];
+  const kind = key?.type.kind ?? "bool";
   const rows: PropertyRow[] = key
     ? [
         {
@@ -54,19 +69,47 @@ export function BlackboardEditor({
               ),
             }),
         },
-        {
-          id: "default",
-          kind: "text",
-          label: "Default",
-          value: key.defaultValue === undefined ? "" : String(key.defaultValue),
-          onChange: (value) =>
-            commit({
-              ...doc,
-              keys: doc.keys.map((entry, index) =>
-                index === selected ? { ...entry, defaultValue: value } : entry,
-              ),
-            }),
-        },
+        kind === "bool"
+          ? {
+              id: "default",
+              kind: "boolean",
+              label: "Default",
+              value: Boolean(key.defaultValue),
+              onChange: (value) =>
+                commit({
+                  ...doc,
+                  keys: doc.keys.map((entry, index) =>
+                    index === selected ? { ...entry, defaultValue: value } : entry,
+                  ),
+                }),
+            }
+          : kind === "int" || kind === "float"
+            ? {
+                id: "default",
+                kind: "number",
+                label: "Default",
+                value: Number(key.defaultValue ?? 0),
+                onChange: (value) =>
+                  commit({
+                    ...doc,
+                    keys: doc.keys.map((entry, index) =>
+                      index === selected ? { ...entry, defaultValue: value } : entry,
+                    ),
+                  }),
+              }
+            : {
+                id: "default",
+                kind: "text",
+                label: "Default",
+                value: key.defaultValue === undefined ? "" : String(key.defaultValue),
+                onChange: (value) =>
+                  commit({
+                    ...doc,
+                    keys: doc.keys.map((entry, index) =>
+                      index === selected ? { ...entry, defaultValue: value } : entry,
+                    ),
+                  }),
+              },
       ]
     : [];
 
@@ -96,6 +139,7 @@ export function BlackboardEditor({
               const next: BlackboardKey = {
                 name: uniqueKeyName(doc.keys),
                 type: { kind: "bool" },
+                defaultValue: false,
               };
               commit({ ...doc, keys: [...doc.keys, next] });
               setSelected(doc.keys.length);
@@ -118,7 +162,11 @@ export function BlackboardEditor({
                     ...doc,
                     keys: doc.keys.map((entry, index) =>
                       index === selected
-                        ? { ...entry, type: { kind: typeId } as PinType }
+                        ? {
+                            ...entry,
+                            type: { kind: typeId } as PinType,
+                            defaultValue: defaultForKind(typeId as PinType["kind"]),
+                          }
                         : entry,
                     ),
                   })
@@ -126,6 +174,19 @@ export function BlackboardEditor({
                 data-testid="blackboard-key-type"
               />
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 w-fit"
+              data-testid="blackboard-delete-key"
+              onClick={() => {
+                const keys = doc.keys.filter((_, index) => index !== selected);
+                commit({ ...doc, keys });
+                setSelected(Math.max(0, selected - 1));
+              }}
+            >
+              Delete Key
+            </Button>
           </div>
         ) : (
           <p className="p-3 text-sm text-muted-foreground">Select a key</p>

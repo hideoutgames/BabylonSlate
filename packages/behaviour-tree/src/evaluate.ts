@@ -50,7 +50,12 @@ function compareBlackboard(
   }
 }
 
-function decoratorCondition(decorator: BtDecorator, blackboard: BlackboardValues): boolean {
+function decoratorCondition(
+  decorator: BtDecorator,
+  node: BtNode,
+  blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
+): boolean {
   const classId = builtinClassId(decorator.classId);
   if (classId === "bt.decorator.blackboardIsSet") {
     const key =
@@ -72,11 +77,21 @@ function decoratorCondition(decorator: BtDecorator, blackboard: BlackboardValues
       decorator.properties.value,
     );
   }
+  if (classId === "bt.decorator.cooldown") {
+    const remaining = nodeMemory[node.id]?.[`__cd:${decorator.id}`];
+    return !(typeof remaining === "number" && remaining > 0);
+  }
   return true;
 }
 
-function decoratorBlocks(node: BtNode, blackboard: BlackboardValues): boolean {
-  return node.decorators.some((decorator) => !decoratorCondition(decorator, blackboard));
+function decoratorBlocks(
+  node: BtNode,
+  blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
+): boolean {
+  return node.decorators.some(
+    (decorator) => !decoratorCondition(decorator, node, blackboard, nodeMemory),
+  );
 }
 
 function tickTask(
@@ -169,11 +184,154 @@ function popThrough(
   }
 }
 
+function cooldownKey(decoratorId: string): string {
+  return `__cd:${decoratorId}`;
+}
+
+function loopKey(decoratorId: string): string {
+  return `__loop:${decoratorId}`;
+}
+
+function timeLimitKey(decoratorId: string): string {
+  return `__tl:${decoratorId}`;
+}
+
+function tickCooldowns(
+  nodes: Map<string, BtNode>,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  dtSeconds: number,
+): void {
+  for (const node of nodes.values()) {
+    for (const decorator of node.decorators) {
+      if (builtinClassId(decorator.classId) !== "bt.decorator.cooldown") continue;
+      const memory = (nodeMemory[node.id] ??= {});
+      const key = cooldownKey(decorator.id);
+      const remaining = typeof memory[key] === "number" ? memory[key] : 0;
+      memory[key] = Math.max(0, remaining - dtSeconds * 1000);
+    }
+  }
+}
+
+function startCooldowns(
+  node: BtNode,
+  nodeMemory: Record<string, Record<string, unknown>>,
+): void {
+  for (const decorator of node.decorators) {
+    if (builtinClassId(decorator.classId) !== "bt.decorator.cooldown") continue;
+    const duration =
+      typeof decorator.properties.durationMs === "number" &&
+      Number.isFinite(decorator.properties.durationMs)
+        ? decorator.properties.durationMs
+        : 0;
+    const memory = (nodeMemory[node.id] ??= {});
+    memory[cooldownKey(decorator.id)] = duration;
+  }
+}
+
+function advanceTimeLimits(
+  node: BtNode,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  dtSeconds: number,
+): boolean {
+  let exceeded = false;
+  for (const decorator of node.decorators) {
+    if (builtinClassId(decorator.classId) !== "bt.decorator.timeLimit") continue;
+    const limit =
+      typeof decorator.properties.durationMs === "number" &&
+      Number.isFinite(decorator.properties.durationMs)
+        ? decorator.properties.durationMs
+        : 0;
+    const memory = (nodeMemory[node.id] ??= {});
+    const key = timeLimitKey(decorator.id);
+    const elapsed = (typeof memory[key] === "number" ? memory[key] : 0) + dtSeconds * 1000;
+    memory[key] = elapsed;
+    if (elapsed >= limit) exceeded = true;
+  }
+  return exceeded;
+}
+
+function applyTimeLimits(
+  nodes: Map<string, BtNode>,
+  stack: BtStackFrame[],
+  lastResults: Record<string, BtResult>,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  dtSeconds: number,
+): void {
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    const frame = stack[index]!;
+    if (!frame.opened) continue;
+    const node = nodes.get(frame.nodeId);
+    if (!node) continue;
+    if (!advanceTimeLimits(node, nodeMemory, dtSeconds)) continue;
+    popThrough(stack, lastResults, node.id);
+    lastResults[node.id] = "failure";
+    startCooldowns(node, nodeMemory);
+    return;
+  }
+}
+
+function consumeLoop(
+  node: BtNode,
+  nodeMemory: Record<string, Record<string, unknown>>,
+): "restart" | "done" {
+  const decorator = node.decorators.find(
+    (row) => builtinClassId(row.classId) === "bt.decorator.loop",
+  );
+  if (!decorator) return "done";
+  const numLoops =
+    typeof decorator.properties.numLoops === "number" &&
+    Number.isFinite(decorator.properties.numLoops)
+      ? decorator.properties.numLoops
+      : 0;
+  const memory = (nodeMemory[node.id] ??= {});
+  const key = loopKey(decorator.id);
+  const count = (typeof memory[key] === "number" ? memory[key] : 0) + 1;
+  memory[key] = count;
+  if (numLoops <= 0) return "restart";
+  return count < numLoops ? "restart" : "done";
+}
+
+function resetSubtreeForLoop(
+  nodes: Map<string, BtNode>,
+  lastResults: Record<string, BtResult>,
+  nodeMemory: Record<string, Record<string, unknown>>,
+  rootId: string,
+): void {
+  for (const id of subtreeIds(nodes, rootId)) {
+    delete lastResults[id];
+    if (id !== rootId) {
+      delete nodeMemory[id];
+      continue;
+    }
+    const memory = nodeMemory[id] ?? {};
+    const keep: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(memory)) {
+      if (key.startsWith("__loop:") || key.startsWith("__cd:")) keep[key] = value;
+    }
+    nodeMemory[id] = keep;
+  }
+}
+
+function restartLoop(
+  node: BtNode,
+  frame: BtStackFrame,
+  nodes: Map<string, BtNode>,
+  lastResults: Record<string, BtResult>,
+  nodeMemory: Record<string, Record<string, unknown>>,
+): boolean {
+  if (consumeLoop(node, nodeMemory) !== "restart") return false;
+  resetSubtreeForLoop(nodes, lastResults, nodeMemory, node.id);
+  frame.opened = false;
+  frame.childIndex = 0;
+  return true;
+}
+
 function applyAborts(
   nodes: Map<string, BtNode>,
   stack: BtStackFrame[],
   lastResults: Record<string, BtResult>,
   blackboard: BlackboardValues,
+  nodeMemory: Record<string, Record<string, unknown>>,
 ): void {
   if (stack.length === 0) return;
   const parents = parentOf(nodes);
@@ -182,7 +340,7 @@ function applyAborts(
   for (const node of nodes.values()) {
     for (const decorator of node.decorators) {
       if (decorator.abortMode === "none") continue;
-      const condition = decoratorCondition(decorator, blackboard);
+      const condition = decoratorCondition(decorator, node, blackboard, nodeMemory);
       const self = decorator.abortMode === "self" || decorator.abortMode === "both";
       const lower =
         decorator.abortMode === "lowerPriority" || decorator.abortMode === "both";
@@ -332,7 +490,9 @@ export function evaluateBehaviourTree(
   const stack: BtStackFrame[] = (previous?.stack ?? []).map((frame) => ({ ...frame }));
   const seed = options?.seed ?? 0;
 
-  applyAborts(nodes, stack, lastResults, blackboard);
+  applyAborts(nodes, stack, lastResults, blackboard, nodeMemory);
+  tickCooldowns(nodes, nodeMemory, dtSeconds);
+  applyTimeLimits(nodes, stack, lastResults, nodeMemory, dtSeconds);
   tickStackServices(
     stack,
     nodes,
@@ -344,17 +504,7 @@ export function evaluateBehaviourTree(
   );
 
   if (stack.length === 0) {
-    const aborted = lastResults[tree.rootId];
-    if (aborted === "failure" || aborted === "success") {
-      return {
-        stack: [],
-        status: aborted,
-        lastResults,
-        btNodeId: null,
-        blackboard,
-        nodeMemory,
-      };
-    }
+    for (const key of Object.keys(lastResults)) delete lastResults[key];
     stack.push({ nodeId: tree.rootId, childIndex: 0, opened: false });
   }
 
@@ -374,12 +524,18 @@ export function evaluateBehaviourTree(
 
     if (node.kind === "task") {
       if (!frame.opened) {
-        if (decoratorBlocks(node, blackboard)) {
+        if (decoratorBlocks(node, blackboard, nodeMemory)) {
           lastResults[node.id] = "failure";
           stack.pop();
           continue;
         }
         frame.opened = true;
+        if (advanceTimeLimits(node, nodeMemory, dtSeconds)) {
+          lastResults[node.id] = "failure";
+          startCooldowns(node, nodeMemory);
+          stack.pop();
+          continue;
+        }
         tickNodeServices(
           node,
           blackboard,
@@ -400,18 +556,28 @@ export function evaluateBehaviourTree(
         status = "running";
         break;
       }
+      if (result === "success" && restartLoop(node, frame, nodes, lastResults, nodeMemory)) {
+        continue;
+      }
+      startCooldowns(node, nodeMemory);
       stack.pop();
       continue;
     }
 
     if (!frame.opened) {
-      if (decoratorBlocks(node, blackboard)) {
+      if (decoratorBlocks(node, blackboard, nodeMemory)) {
         lastResults[node.id] = "failure";
         stack.pop();
         continue;
       }
       frame.opened = true;
       frame.childIndex = 0;
+      if (advanceTimeLimits(node, nodeMemory, dtSeconds)) {
+        lastResults[node.id] = "failure";
+        startCooldowns(node, nodeMemory);
+        stack.pop();
+        continue;
+      }
       tickNodeServices(
         node,
         blackboard,
@@ -428,11 +594,14 @@ export function evaluateBehaviourTree(
         const results = node.children.map((id) => lastResults[id]);
         if (results.includes("failure")) {
           lastResults[node.id] = "failure";
+          startCooldowns(node, nodeMemory);
           stack.pop();
           continue;
         }
         if (results.length > 0 && results.every((row) => row === "success")) {
           lastResults[node.id] = "success";
+          if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) continue;
+          startCooldowns(node, nodeMemory);
           stack.pop();
           continue;
         }
@@ -459,6 +628,13 @@ export function evaluateBehaviourTree(
     const childId = node.children[frame.childIndex];
     if (childId === undefined) {
       lastResults[node.id] = node.kind === "selector" ? "failure" : "success";
+      if (
+        lastResults[node.id] === "success" &&
+        restartLoop(node, frame, nodes, lastResults, nodeMemory)
+      ) {
+        continue;
+      }
+      startCooldowns(node, nodeMemory);
       stack.pop();
       continue;
     }
@@ -480,6 +656,7 @@ export function evaluateBehaviourTree(
     if (node.kind === "sequence") {
       if (childResult === "failure") {
         lastResults[node.id] = "failure";
+        startCooldowns(node, nodeMemory);
         stack.pop();
         continue;
       }
@@ -489,6 +666,8 @@ export function evaluateBehaviourTree(
     // selector
     if (childResult === "success") {
       lastResults[node.id] = "success";
+      if (restartLoop(node, frame, nodes, lastResults, nodeMemory)) continue;
+      startCooldowns(node, nodeMemory);
       stack.pop();
       continue;
     }

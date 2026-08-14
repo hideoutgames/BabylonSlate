@@ -22,10 +22,36 @@ export {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
 } from "./tree";
-export { validateBehaviourTree } from "./validate";
+export { validateBehaviourTree, type BehaviourTreeValidateContext } from "./validate";
 export { evaluateBehaviourTree } from "./evaluate";
 export { builtinClassId, BT_CLASS_ALIASES } from "./builtins";
 export { registerBehaviourTreeValidationRules } from "./rules";
+export {
+  BT_COMPARE_OPS,
+  BT_COMPOSITE_CATALOG,
+  BT_DECORATOR_CATALOG,
+  BT_SERVICE_CATALOG,
+  BT_TASK_CATALOG,
+  defaultPropertiesForClassId,
+  kindForCatalogClassId,
+  propertyFieldsForClassId,
+  titleForBtClassId,
+  type BtCatalogEntry,
+  type BtCatalogKind,
+  type BtPropertyField,
+  type BtPropertyFieldKind,
+} from "./catalog";
+export {
+  addChildNode,
+  addDecorator,
+  addService,
+  deleteSubtree,
+  duplicateSubtree,
+  moveAttachment,
+  removeAttachment,
+  pruneUnreachable,
+  wrapInSequence,
+} from "./edit";
 export {
   BT_CHILDREN_HANDLE,
   BT_CHILDREN_PIN,
