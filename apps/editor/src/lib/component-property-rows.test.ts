@@ -137,6 +137,42 @@ describe("componentPropertyRows", () => {
     expect(tree.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTypes: ["BehaviourTree"] }),
     );
+
+    const navMesh = rowsFor({
+      id: "nav",
+      classId: "NavMeshComponent",
+      properties: {
+        cellSize: 0.2,
+        tiled: false,
+        supportDynamicObstacles: false,
+        autoBakeOnSave: false,
+        debugOverlay: true,
+      },
+    });
+    expect(navMesh.rows.find((row) => row.id.endsWith("-cellSize"))).toMatchObject({
+      kind: "number",
+      value: 0.2,
+    });
+    expect(navMesh.rows.find((row) => row.id.endsWith("-tiled"))).toMatchObject({
+      kind: "enum",
+      value: "solo",
+    });
+    expect(
+      navMesh.rows.find((row) => row.id.endsWith("-supportDynamicObstacles")),
+    ).toMatchObject({ kind: "boolean", value: false });
+    expect(
+      navMesh.rows.find((row) => row.id.endsWith("-debugOverlay")),
+    ).toMatchObject({ kind: "boolean", value: true });
+
+    const agent = rowsFor({
+      id: "agent",
+      classId: "NavAgentComponent",
+      properties: { radius: 0.5, height: 2, maxSpeed: 3.5 },
+    });
+    expect(agent.rows.find((row) => row.id.endsWith("-radius"))).toMatchObject({
+      kind: "number",
+      value: 0.5,
+    });
     if (boardRow?.kind === "asset") boardRow.onPick();
     expect(tree.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTypes: ["Blackboard"] }),

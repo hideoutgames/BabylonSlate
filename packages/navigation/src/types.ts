@@ -19,6 +19,7 @@ export type NavigationBackend = {
   addAgent(position: NavPoint, params?: NavAgentParams): string;
   removeAgent(id: string): void;
   agentPosition(id: string): NavPoint | null;
+  agentVelocity(id: string): NavPoint | null;
   setAgentTarget(id: string, target: NavPoint): boolean;
   stepCrowd(dtSeconds: number): void;
 };

@@ -3,6 +3,10 @@ import {
   parseColliderProperties,
   parseRigidBodyProperties,
 } from "@babylonslate/physics";
+import {
+  DEFAULT_NAV_AGENT_PARAMS,
+  defaultNavMeshComponentProperties,
+} from "@babylonslate/navigation";
 
 export const ADDABLE_COMPONENT_CLASSES = [
   {
@@ -33,6 +37,12 @@ export const ADDABLE_COMPONENT_CLASSES = [
     id: "BehaviourTreeComponent",
     label: "Behaviour Tree",
     description: "Worker-evaluated behaviour tree",
+    category: "AI",
+  },
+  {
+    id: "NavAgentComponent",
+    label: "Nav Agent",
+    description: "Crowd agent on the baked navmesh",
     category: "AI",
   },
   {
@@ -78,6 +88,10 @@ export function defaultPropertiesFor(
       return { graphGuid: null };
     case "BehaviourTreeComponent":
       return { treeGuid: null, blackboardGuid: null };
+    case "NavAgentComponent":
+      return { ...DEFAULT_NAV_AGENT_PARAMS };
+    case "NavMeshComponent":
+      return { ...defaultNavMeshComponentProperties() };
     case "CameraComponent":
       return { fieldOfView: 60, orthographicSize: 5 };
     case "LightComponent":

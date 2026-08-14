@@ -18,6 +18,8 @@ import {
   LayoutGridIcon,
   LightbulbIcon,
   ListIcon,
+  MapIcon,
+  NavigationIcon,
   PaintbrushIcon,
   PersonStandingIcon,
   PlugIcon,
@@ -100,6 +102,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   AnimationGraphComponent: "ActorComponent",
   BehaviourTreeComponent: "ActorComponent",
   NavAgentComponent: "ActorComponent",
+  NavMeshComponent: "ActorComponent",
 };
 
 const ICON_BY_ID: Record<string, LucideIcon> = {
@@ -115,6 +118,9 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Actor: ACTOR_ICON,
   WidgetComponent: WIDGET_ICON,
   AnimationGraphComponent: FilmIcon,
+  BehaviourTreeComponent: FilmIcon,
+  NavAgentComponent: NavigationIcon,
+  NavMeshComponent: MapIcon,
   MeshComponent: BoxIcon,
   SpriteComponent: ImagesIcon,
   TilemapComponent: Grid3x3Icon,
@@ -156,6 +162,9 @@ const COMPONENT_CLASS_IDS = new Set([
   "ColliderComponent",
   "WidgetComponent",
   "AnimationGraphComponent",
+  "BehaviourTreeComponent",
+  "NavAgentComponent",
+  "NavMeshComponent",
 ]);
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {

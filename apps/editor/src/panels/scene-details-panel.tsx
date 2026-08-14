@@ -19,9 +19,11 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
+import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
 import { defaultPropertiesFor } from "./add-component-catalog";
@@ -37,6 +39,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const { openDocuments, applySceneChange, projectDocument, assetRegistry } =
     useDocuments();
   const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
+  const navBake = useOptionalNavBake();
   const [addComponentOpen, setAddComponentOpen] = useState(false);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
@@ -497,6 +500,22 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 },
               )}
             />
+            {component.classId === "NavMeshComponent" ? (
+              <div className="p-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  data-testid={`navmesh-bake-${component.id}`}
+                  disabled={navBake?.baking}
+                  onClick={() => {
+                    void navBake?.startBake(component.properties);
+                  }}
+                >
+                  Bake NavMesh
+                </Button>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

@@ -74,6 +74,8 @@ export default defineConfig({
         "**/ui-surface.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.
         "**/worker-entry.ts",
+        // Navmesh bake worker; covered by bake-job unit tests + editor host.
+        "**/bake-worker.ts",
         // Physics wasm backends: HavokPlugin path is asserted in havok-v2.test.ts;
         // coverage of the Babylon/Havok wasm surface is environment-dependent.
         "**/havok-backend.ts",

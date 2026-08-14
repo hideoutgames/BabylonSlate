@@ -12,6 +12,7 @@ import {
   encodeBabasset,
   readAssetDocumentHeader,
 } from "@babylonslate/assets";
+import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
 import { createDefaultLogicGraphSerialized } from "./graph-validation";
@@ -252,5 +253,27 @@ describe("project documents as .babasset", () => {
     expect(
       saved.header.chunks.some((chunk) => chunk.id === "document"),
     ).toBe(false);
+  });
+
+  it("writes a Scene navmesh extra chunk without regenerating at Play", async () => {
+    const { service } = await scaffolded();
+    const scene = (await service.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+    const bake = new Uint8Array([11, 22, 33, 44]);
+    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, bake, scene as unknown as Record<string, unknown>);
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
+      bake,
+    );
+    const again = new Uint8Array([99]);
+    await service.writeSceneNavmeshChunk(
+      MAIN_SCENE_FILE,
+      again,
+      scene as unknown as Record<string, unknown>,
+    );
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
+      again,
+    );
   });
 });

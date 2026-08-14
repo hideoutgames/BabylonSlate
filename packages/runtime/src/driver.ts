@@ -14,7 +14,7 @@ import {
   type Actor,
   type TickPhase,
 } from "@babylonslate/object-model";
-import type { SerializedScene } from "@babylonslate/core";
+import { eulerDegreesToQuaternion, type SerializedScene } from "@babylonslate/core";
 import {
   InputRingBuffer,
   InputResolver,
@@ -66,6 +66,14 @@ import {
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { PhysicsWorldSync } from "./physics-sync";
 import type { TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import {
+  createNavigationBackend,
+  facingYawFromVelocity,
+  initNavigation,
+  parseNavAgentParams,
+  type NavigationBackend,
+  type NavPoint,
+} from "@babylonslate/navigation";
 
 export type TransportMode = "in-process" | "sab" | "transferable";
 
@@ -157,6 +165,9 @@ export interface RuntimeDriver {
     tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
     pixelsPerUnit?: number;
   }): void;
+  /** Import a baked Scene navmesh chunk. Never generates. */
+  loadNavMesh(bytes: Uint8Array): Promise<void>;
+  setNavAgentTarget(actorGuid: string, target: NavPoint): boolean;
   readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
@@ -230,6 +241,9 @@ class InProcessRuntime implements RuntimeDriver {
   private pixelsPerUnit = 100;
   private readonly delayWaiters: Array<{ remaining: number; resolve: () => void }> =
     [];
+  private nav: NavigationBackend | null = null;
+  private readonly navAgentByActor = new Map<string, string>();
+  private readonly navYawByActor = new Map<string, number>();
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -567,6 +581,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emitMeshAssignment(actor, slotId);
       }
     }
+    this.registerNavAgents();
     this.world.loadScene(this.playSceneGuid);
   }
 
@@ -594,6 +609,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.world.flushPending();
     this.animEvalBySlot.clear();
+    this.btEvalBySlot.clear();
+    this.clearNavAgents();
     this.playScene = next;
     this.playSceneGuid = key;
     this.playWorldRealized = false;
@@ -681,6 +698,77 @@ class InProcessRuntime implements RuntimeDriver {
       tilesets: this.tilesets,
       pixelsPerUnit: this.pixelsPerUnit,
     });
+  }
+
+  async loadNavMesh(bytes: Uint8Array): Promise<void> {
+    await initNavigation();
+    this.nav ??= createNavigationBackend();
+    this.nav.importNavMesh(bytes);
+    this.clearNavAgents();
+    if (this.playWorldRealized) this.registerNavAgents();
+  }
+
+  setNavAgentTarget(actorGuid: string, target: NavPoint): boolean {
+    const agentId = this.navAgentByActor.get(actorGuid);
+    if (!agentId || !this.nav) return false;
+    return this.nav.setAgentTarget(agentId, target);
+  }
+
+  private clearNavAgents(): void {
+    if (this.nav) {
+      for (const agentId of this.navAgentByActor.values()) {
+        this.nav.removeAgent(agentId);
+      }
+    }
+    this.navAgentByActor.clear();
+    this.navYawByActor.clear();
+  }
+
+  private registerNavAgents(): void {
+    if (!this.nav) return;
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const component = actor.components.find(
+        (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
+      );
+      if (!component || this.navAgentByActor.has(actor.guid)) continue;
+      const params = parseNavAgentParams(
+        Object.fromEntries(component.variables),
+      );
+      const id = this.nav.addAgent(
+        {
+          x: actor.transform.position.x,
+          y: actor.transform.position.y,
+          z: actor.transform.position.z,
+        },
+        params,
+      );
+      if (!id) continue;
+      this.navAgentByActor.set(actor.guid, id);
+    }
+  }
+
+  private tickCrowd(): void {
+    if (!this.nav) return;
+    this.nav.stepCrowd(this.dt);
+    for (const [actorGuid, agentId] of this.navAgentByActor) {
+      const actor = this.world.findActor(actorGuid);
+      if (!actor || actor.destroyed) continue;
+      const position = this.nav.agentPosition(agentId);
+      if (!position) continue;
+      actor.transform.position.x = position.x;
+      actor.transform.position.y = position.y;
+      actor.transform.position.z = position.z;
+      const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
+      const previous = this.navYawByActor.get(actorGuid) ?? 0;
+      const yaw = facingYawFromVelocity(velocity, previous);
+      this.navYawByActor.set(actorGuid, yaw);
+      const quat = eulerDegreesToQuaternion([0, (yaw * 180) / Math.PI, 0]);
+      actor.transform.rotation.x = quat[0];
+      actor.transform.rotation.y = quat[1];
+      actor.transform.rotation.z = quat[2];
+      actor.transform.rotation.w = quat[3];
+    }
   }
 
   private animGraphGuid(component: {
@@ -1186,6 +1274,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.advanceDelays();
     this.tickAnimGraphs();
     this.tickBehaviourTrees();
+    this.tickCrowd();
     this.closePhaseTiming();
 
     this._lastScriptMs = this.phaseScriptMs;

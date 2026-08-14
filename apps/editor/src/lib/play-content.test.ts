@@ -19,6 +19,7 @@ import {
   playAnimGraphsFromOpenDocuments,
   playAnimGraphsFromGuids,
   playLoadTilemapsControl,
+  readPlayNavmeshBytes,
   playSpritePayloadsFromGuids,
   playUiLibraryFromAssets,
   removePlayHudInstance,
@@ -400,5 +401,26 @@ describe("UI logic Play compile", () => {
       "assets/Hero.class.babasset",
       "assets/HUD.ui.babasset",
     ]);
+  });
+});
+
+describe("readPlayNavmeshBytes", () => {
+  it("reads the Scene navmesh extra chunk and never invents bytes", async () => {
+    const bytes = new Uint8Array([9, 8, 7]);
+    const readChunk = async (path: string, chunkId: string) => {
+      expect(path).toBe("assets/Main.scene.babasset");
+      expect(chunkId).toBe("navmesh");
+      return bytes;
+    };
+    expect(
+      await readPlayNavmeshBytes("assets/Main.scene.babasset", readChunk),
+    ).toEqual(bytes);
+  });
+
+  it("returns null when the scene path or chunk is missing", async () => {
+    expect(await readPlayNavmeshBytes(undefined, async () => new Uint8Array([1]))).toBeNull();
+    expect(
+      await readPlayNavmeshBytes("assets/Main.scene.babasset", async () => null),
+    ).toBeNull();
   });
 });

@@ -2,7 +2,7 @@
 
 Shared surface for the tree IR, Blackboard, and deterministic evaluator (engineplan §14.1, checklist `p11-behaviour-tree`). Implementation: `@babylonslate/behaviour-tree`. No React, no Babylon — the evaluator runs in the game worker.
 
-Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. `BehaviourTreeComponent` is addable; `NavAgentComponent` remains catalog-gated.
+Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. `BehaviourTreeComponent` and `NavAgentComponent` are addable. BT MoveTo is still a succeed stub until `p11-nav-blockers-2d`.
 
 ## Package
 
@@ -80,7 +80,7 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 
 | Slice | Work |
 | --- | --- |
-| `p11-nav-editor-host` | NavMesh Place Actor, bake modal, debug draw, runtime import + crowd |
+| `p11-nav-blockers-2d` | Tile-cache obstacles, 2D bake, scripting MoveTo, BT MoveTo crowd |
 | Undo | already via `applyAssetDocumentChange` |
 
 See [navigation.md](navigation.md) for navmesh / MoveTo. Spec: [engineplan.md](../engineplan.md) §14.1.

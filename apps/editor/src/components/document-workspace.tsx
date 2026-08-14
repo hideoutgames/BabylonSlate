@@ -8,6 +8,7 @@ import {
   SceneEditingProvider,
   useSceneEditing,
 } from "../context/scene-editing-context";
+import { NavBakeProvider } from "../context/nav-bake-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { TypeAssetEditingProvider } from "../context/type-asset-editing-context";
@@ -228,6 +229,7 @@ export function DocumentWorkspace() {
               }
               documentGridVisible={sceneContent?.settings.grid.showGrid}
             >
+              <NavBakeProvider>
               <PrefabEditingProvider>
               <GraphEditingProvider>
               {doc.ref.kind === "scene" ? (
@@ -250,6 +252,7 @@ export function DocumentWorkspace() {
               </div>
               </GraphEditingProvider>
               </PrefabEditingProvider>
+              </NavBakeProvider>
             </SceneEditingProvider>
           </DocumentWorkspaceProvider>
         );
