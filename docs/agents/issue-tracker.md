@@ -333,6 +333,17 @@ Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P11 (
 
 ## P11 behaviour trees / navigation
 
-Do not start until the foundation-hardening wave above is merged. Chrome polish (pin flash, multi-select gizmo) is not a reason to skip P11, and is not P11 work. Lighting and cameras are section 2.5 / `p-lighting-camera` — parallel to P11, not P11 work.
+Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo) is not P11 work. Lighting and cameras are section 2.5 / `p-lighting-camera` — parallel to P11, not P11 work. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Design notes | — | `docs/architecture/` | — |
+| Tree + evaluator | `p11-behaviour-tree` | `behaviour-tree`, `scripting` (hook) | Design notes |
+| BT classes + component | `p11-bt-authoring` | `object-model`, `runtime`, `scripting-nodes` | Tree package |
+| BT editor | `p11-bt-editor` | `graph-ui`, `apps/editor`, `debugger` | Authoring |
+| Nav port + bake | `p11-navigation` | `navigation`, `assets` (scene chunk), `apps/editor` | Design notes |
+| Blockers + 2D + nodes | `p11-nav-blockers-2d` | `navigation`, `scripting-nodes`, `apps/editor` | Nav package + BT MoveTo stub |
+
+Do **not** ungate `BehaviourTreeComponent` / `NavAgentComponent` until `p11-bt-authoring`. Do not add editor hosts in the tree-package slice.
 
 

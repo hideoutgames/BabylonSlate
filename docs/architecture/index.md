@@ -22,6 +22,8 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Fonts](fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [Sprites](sprites.md) | Sprite atlas, packer, SpriteComponent quad |
 | [Animation graph](anim-graph.md) | Worker animation graph evaluator |
+| [Behaviour tree](behaviour-tree.md) | Tree IR, blackboard, explicit-stack evaluator |
+| [Navigation](navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
 | [Shader graph](shader-graph.md) | Shader IR to NodeMaterial |
 | [Theming](theming.md) | UI color palette and semantic tokens |
 | [Components](components.md) | Reusable Editor UI primitives and composites |

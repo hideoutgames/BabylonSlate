@@ -118,7 +118,7 @@ type Diagnostic = {
 };
 ```
 
-**Rule registration hook:** `registerValidationRule(rule)` so `behaviour-tree` (P11) adds BT structural rules without a second linter. P5 ships the core rule set only; the hook and its contract are required from day one.
+**Rule registration hook:** `registerValidationRule(rule)` so `behaviour-tree` adds BT structural rules without a second linter. `@babylonslate/behaviour-tree` calls `registerBehaviourTreeValidationRules()`; `TypeContext.behaviourTree` carries the tree payload. See [behaviour-tree.md](behaviour-tree.md).
 
 **Rule groups (engineplan §6.2):** structural, pin typing, references (needs registry), signatures (needs class graph), semantic, ExecuteJavaScript parse, BT (later).
 
