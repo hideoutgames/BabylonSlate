@@ -18,6 +18,11 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 - Prefer `Result` and explicit errors over thrown exceptions in pure packages (as types land in `core`).
 - No `any` without a one-line justification comment.
 
+## Babylon.js
+
+- Engine, scene, **UserInterface**, and **EditorUtilityInterface** work follows the BabylonJS skill (`@babylonjs/gui` / `AdvancedDynamicTexture` for those two asset types). Agent rule: [`.cursor/rules/agent-workflow.mdc`](../.cursor/rules/agent-workflow.mdc).
+- React editor chrome (Dockview, shadcn, `@babylonslate/ui`, editor-kit) is not Babylon GUI; use the editor-ui-components and shadcn skills for that.
+
 ## React / editor
 
 - Chrome and dock tabs use `--chrome-row` (**28px**). Graph pin rows stay **44px** (`--touch-target`). Dockview tab strips are **18px** (fine pointer) / **26px** (coarse).

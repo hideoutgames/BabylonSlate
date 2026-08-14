@@ -18,7 +18,7 @@ UserInterface documents store Babylon GUI fields (alignment, px/%, left/top, lay
 
 `ui-runtime` stays Babylon-free: it validates the GUI fields, migrates legacy RectTransform payloads (schema v2), and builds the nested spec. A `previewRect` helper mirrors Babylon’s published alignment/%/padding formulas for jsdom designer hit-tests; when a live Engine exists the designer prefers ADT `widthInPixels` / `centerX` bounds.
 
-See [ui-runtime.md](ui-runtime.md) and [fonts.md](fonts.md).
+See [ui-runtime.md](ui-runtime.md) and [fonts.md](fonts.md). Agents applying Babylon GUI (UserInterface or EditorUtilityInterface) follow [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md).
 
 `registerView` does not give Play its own WebGL context. Babylon renders into the editor canvas and **2D-blits** that bitmap onto the overlay. `clearBeforeCopy: true` clears the overlay before each copy so skipped or resized frames cannot composite additively (ghosting). `dispose()` calls `engine.stopRenderLoop` with the same callback `runRenderLoop` registered, so Play open/close does not accumulate loops on the shared Engine.
 
