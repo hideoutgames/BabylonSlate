@@ -1,3 +1,4 @@
+import { normalizeEditorUtilityDockKind } from "@babylonslate/core";
 import {
   findDockWindow,
   type DockWindowDefinition,
@@ -66,7 +67,10 @@ export function listEditorUtilityWindows(
     : undefined;
   return options.assets
     .filter((asset) => asset.type === "EditorUtilityInterface")
-    .filter((asset) => asset.payload?.dockKind === dockKind)
+    .filter(
+      (asset) =>
+        normalizeEditorUtilityDockKind(asset.payload?.dockKind) === dockKind,
+    )
     .map((asset) => ({
       id: editorUtilityWindowId(asset.guid),
       component: "editor-utility",

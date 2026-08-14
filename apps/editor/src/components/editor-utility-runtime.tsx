@@ -5,7 +5,9 @@ import { usePlay } from "../context/play-context";
 import {
   EDITOR_UTILITY_EVENTS,
   EDITOR_UTILITY_LIFECYCLE_EVENT,
+  editorUtilityBootEvents,
   fireEditorUtilityEvent,
+  shutdownEditorUtilityHost,
 } from "../lib/editor-utility-scripts";
 
 function editorHostServices(appendLog: (line: string) => void): ScriptHostServices {
@@ -34,21 +36,25 @@ function editorHostServices(appendLog: (line: string) => void): ScriptHostServic
 
 /** In-process ScriptHost for registered EditorUtilityObject classes. */
 export function EditorUtilityRuntime() {
-  const { projectDocument, collectEditorUtilityScripts, projectName } =
-    useDocuments();
+  const {
+    projectDocument,
+    collectEditorUtilityScripts,
+    projectName,
+    openDocuments,
+  } = useDocuments();
   const { appendLog } = usePlay();
   const appendLogRef = useRef(appendLog);
   appendLogRef.current = appendLog;
   const hostRef = useRef<ScriptHost | null>(null);
   const startedRef = useRef(false);
+  const openDocumentsRef = useRef(openDocuments);
+  openDocumentsRef.current = openDocuments;
   const registeredKey = (
     projectDocument?.settings.editorUtilityObjects ?? []
   ).join("|");
 
   useEffect(() => {
     if (!projectName || !projectDocument) {
-      hostRef.current = null;
-      startedRef.current = false;
       return;
     }
     let cancelled = false;
@@ -61,13 +67,20 @@ export function EditorUtilityRuntime() {
       for (const script of scripts) {
         await host.load(script);
       }
-      if (cancelled || startedRef.current) return;
+      if (cancelled) return;
+      const hasOpenScene = openDocumentsRef.current.some(
+        (doc) => doc.ref.kind === "scene",
+      );
+      for (const event of editorUtilityBootEvents(hasOpenScene)) {
+        fireEditorUtilityEvent(host, event);
+      }
       startedRef.current = true;
-      fireEditorUtilityEvent(host, EDITOR_UTILITY_EVENTS.startup);
     });
     return () => {
       cancelled = true;
+      shutdownEditorUtilityHost(hostRef.current, startedRef.current);
       hostRef.current = null;
+      startedRef.current = false;
     };
   }, [collectEditorUtilityScripts, projectDocument, projectName, registeredKey]);
 
@@ -78,6 +91,9 @@ export function EditorUtilityRuntime() {
       const host = hostRef.current;
       if (!name || !host) return;
       fireEditorUtilityEvent(host, name);
+      if (name === EDITOR_UTILITY_EVENTS.shutdown) {
+        startedRef.current = false;
+      }
     };
     window.addEventListener(EDITOR_UTILITY_LIFECYCLE_EVENT, onLifecycle);
     return () => {

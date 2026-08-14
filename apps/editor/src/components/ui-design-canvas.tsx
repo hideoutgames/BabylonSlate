@@ -50,7 +50,10 @@ import {
   type PointerPoint,
   type ScreenRect,
 } from "./ui-design-gestures";
-import { presentLiveUiIfVisible } from "../lib/live-ui-present";
+import {
+  freezeLiveUiSurface,
+  presentLiveUiIfVisible,
+} from "../lib/live-ui-present";
 
 export function UiDesignCanvas({
   ui,
@@ -147,6 +150,7 @@ export function UiDesignCanvas({
       return;
     }
     surfaceRef.current = surface;
+    freezeLiveUiSurface(surface, { panelVisible, documentActive });
     setPreviewError(null);
     setGuiLive(true);
     return () => {
@@ -155,7 +159,14 @@ export function UiDesignCanvas({
       setGuiLive(false);
       setLiveRects({});
     };
+    // panelVisible / documentActive: freezeLiveUiSurface on the new surface this
+    // frame; the next effect updates freeze when those flags change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [sharedEngine, ui.designResolution, ui.scaleRule, viewport.height, viewport.safeArea, viewport.width]);
+
+  useEffect(() => {
+    freezeLiveUiSurface(surfaceRef.current, { panelVisible, documentActive });
+  }, [documentActive, guiLive, panelVisible]);
 
   useEffect(() => {
     const surface = surfaceRef.current;

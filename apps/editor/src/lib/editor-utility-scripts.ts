@@ -49,3 +49,18 @@ export function fireEditorUtilityEvent(
     host.invokeEvent(classId, event);
   }
 }
+
+/** Events to fire after the in-process host loads registered EUO graphs. */
+export function editorUtilityBootEvents(hasOpenScene: boolean): string[] {
+  const events: string[] = [EDITOR_UTILITY_EVENTS.startup];
+  if (hasOpenScene) events.push(EDITOR_UTILITY_EVENTS.sceneOpen);
+  return events;
+}
+
+export function shutdownEditorUtilityHost(
+  host: Pick<ScriptHost, "classIds" | "invokeEvent"> | null,
+  started: boolean,
+): void {
+  if (!host || !started) return;
+  fireEditorUtilityEvent(host, EDITOR_UTILITY_EVENTS.shutdown);
+}

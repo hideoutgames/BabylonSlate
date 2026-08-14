@@ -27,13 +27,30 @@ describe("listEditorUtilityWindows", () => {
       type: "UserInterface",
       payload: {},
     },
+    {
+      guid: "eui-default",
+      name: "LegacyTools",
+      type: "EditorUtilityInterface",
+      payload: {},
+    },
   ];
 
   it("lists scene EditorUtilityInterface assets for a Scene document", () => {
     const windows = listEditorUtilityWindows({ kind: "scene", assets });
-    expect(windows.map((entry) => entry.id)).toEqual(["eui-eui-scene"]);
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "eui-eui-scene",
+      "eui-eui-default",
+    ]);
     expect(windows[0]?.title).toBe("SceneTools");
     expect(windows[0]?.component).toBe("editor-utility");
+  });
+
+  it("treats a missing dockKind as scene", () => {
+    const windows = listEditorUtilityWindows({ kind: "scene", assets });
+    expect(windows.some((entry) => entry.title === "LegacyTools")).toBe(true);
+    expect(
+      listEditorUtilityWindows({ kind: "graph", assets }).map((entry) => entry.title),
+    ).toEqual(["ClassTools"]);
   });
 
   it("lists class EditorUtilityInterface assets for a Class document", () => {
