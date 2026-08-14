@@ -20,7 +20,7 @@ self.onmessage = (event: MessageEvent<BakeRequest>) => {
     .then((bytes) => {
       const copy = bytes.slice();
       const response: BakeResponse = { id: msg.id, ok: true, bytes: copy };
-      (self as DedicatedWorkerGlobalScope).postMessage(response, [copy.buffer]);
+      (self as unknown as Worker).postMessage(response, [copy.buffer]);
     })
     .catch((error: unknown) => {
       const response: BakeResponse = {
@@ -28,6 +28,6 @@ self.onmessage = (event: MessageEvent<BakeRequest>) => {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
       };
-      (self as DedicatedWorkerGlobalScope).postMessage(response);
+      (self as unknown as Worker).postMessage(response);
     });
 };

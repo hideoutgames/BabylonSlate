@@ -10,8 +10,11 @@ import {
  */
 export class NavMeshDebugOverlay {
   mesh: Mesh | null = null;
+  private readonly scene: Scene;
 
-  constructor(private readonly scene: Scene) {}
+  constructor(scene: Scene) {
+    this.scene = scene;
+  }
 
   async sync(bytes: Uint8Array | null): Promise<void> {
     this.clear();

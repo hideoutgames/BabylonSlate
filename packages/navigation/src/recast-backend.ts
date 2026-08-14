@@ -53,14 +53,14 @@ export async function generateNavMesh(input: NavMeshGenerateInput): Promise<Uint
     input.indices,
     toRecastConfig(settings),
   );
-  if (!result.success || !result.navMesh) {
-    throw new Error(result.error ?? "generateNavMesh failed");
+  if (result.success) {
+    try {
+      return exportNavMesh(result.navMesh);
+    } finally {
+      result.navMesh.destroy();
+    }
   }
-  try {
-    return exportNavMesh(result.navMesh);
-  } finally {
-    result.navMesh.destroy();
-  }
+  throw new Error("generateNavMesh failed");
 }
 
 class RecastNavigationBackend implements NavigationBackend {

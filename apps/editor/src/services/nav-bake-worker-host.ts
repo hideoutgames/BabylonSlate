@@ -27,8 +27,11 @@ export function createNavBakeWorker(): NavBakeWorkerHost {
     const waiter = pending.get(msg.id);
     if (!waiter) return;
     pending.delete(msg.id);
-    if (msg.ok) waiter.resolve(msg.bytes);
-    else waiter.reject(new Error(msg.error));
+    if ("error" in msg) {
+      waiter.reject(new Error(msg.error));
+      return;
+    }
+    waiter.resolve(msg.bytes);
   };
   return {
     generate(input) {
