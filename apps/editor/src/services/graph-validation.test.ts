@@ -146,6 +146,10 @@ describe("createDefaultLogicGraphSerialized", () => {
     const types = graph.nodes.map((n) => n.type);
     expect(types).toContain("flow.event.beginPlay");
     expect(types).toContain("flow.event.tick");
+    expect(graph.nodes.map((node) => node.id)).toEqual([
+      "event-begin-play",
+      "event-tick",
+    ]);
     for (const node of graph.nodes) {
       expect(Array.isArray(node.data.__pins)).toBe(true);
       expect((node.data.__pins as unknown[]).length).toBeGreaterThan(0);

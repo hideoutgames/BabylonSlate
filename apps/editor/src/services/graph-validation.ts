@@ -116,6 +116,18 @@ export function hydrateSerializedGraphForEditor(
   };
 }
 
+const DEFAULT_EVENT_NODE_IDS: Record<string, string> = {
+  "flow.event.beginPlay": "event-begin-play",
+  "flow.event.tick": "event-tick",
+};
+
+function defaultEventNodeId(eventType: string): string {
+  return (
+    DEFAULT_EVENT_NODE_IDS[eventType] ??
+    `event-${eventType.replace(/\./g, "-")}`
+  );
+}
+
 /** New graphs seed native events for the class parent (Actor Begin Play + Tick by default). */
 export function createDefaultLogicGraphSerialized(
   nodeRegistry: NodeRegistry = registry,
@@ -131,7 +143,7 @@ export function createDefaultLogicGraphSerialized(
         throw new Error(`Default event node missing from node registry: ${stub.eventType}`);
       }
       return {
-        id: `event-${stub.eventType.replace(/\./g, "-")}`,
+        id: defaultEventNodeId(stub.eventType),
         typeId: def.id,
         position: { x: 80, y: 80 + index * 140 },
         pins: def.pins({}),
