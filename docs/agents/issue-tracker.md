@@ -353,7 +353,8 @@ Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo)
 | Nav port + bake | `p11-navigation` | `navigation` (package landed; crowd `addAgent` / `setAgentTarget`) | Design notes |
 | Nav editor host | `p11-nav-editor-host` | `apps/editor`, `render`, `runtime` (landed) | Nav package |
 | Blockers + 2D + nodes | `p11-nav-blockers-2d` | `navigation`, `scripting-nodes`, `apps/editor`, `runtime` (landed) | Nav editor host |
+| §18 acceptance | `p11-acceptance` | `runtime` harness + `e2e/p11-ai.spec.ts` (landed) | Blockers + editor host |
 
-`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default. Dynamic cost volumes do not carve. P11 §18 acceptance is still open.
+`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default. Dynamic cost volumes do not carve. **P11 is Done** (packages + §18).
 
 

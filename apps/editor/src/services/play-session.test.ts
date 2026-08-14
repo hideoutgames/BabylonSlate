@@ -5,6 +5,7 @@ import {
   applyWorkerPlayStats,
   diagnosticFromCommand,
   playInputStampTick,
+  previewFixtureThrowHint,
   resolvePlayFrameCap,
 } from "./play-session";
 
@@ -119,5 +120,47 @@ describe("Play HUD stats merge", () => {
     expect(afterFps.scriptMs).toBe(4.2);
     expect(afterFps.physicsMs).toBe(1.8);
     expect(afterFps.frameId).toBe(12);
+  });
+});
+
+describe("previewFixtureThrowHint", () => {
+  it("points at the first task node when a behaviour tree is loaded", () => {
+    expect(
+      previewFixtureThrowHint([
+        {
+          guid: "tree-1",
+          document: {
+            name: "Patrol",
+            rootId: "root",
+            blackboardGuid: null,
+            nodes: [
+              {
+                id: "root",
+                kind: "selector",
+                classId: "bt.composite.selector",
+                children: ["task"],
+                decorators: [],
+                services: [],
+                properties: {},
+              },
+              {
+                id: "task",
+                kind: "task",
+                classId: "bt.task.succeed",
+                children: [],
+                decorators: [],
+                services: [],
+                properties: {},
+              },
+            ],
+          },
+        },
+      ]),
+    ).toEqual({ assetGuid: "tree-1", btNodeId: "task" });
+  });
+
+  it("is null when Play has no behaviour tree so the graph fixture stays", () => {
+    expect(previewFixtureThrowHint()).toBeNull();
+    expect(previewFixtureThrowHint([])).toBeNull();
   });
 });

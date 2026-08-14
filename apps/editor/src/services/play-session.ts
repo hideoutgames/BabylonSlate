@@ -157,6 +157,18 @@ export function applyPlayFpsSample(
 const FIXTURE_ASSET = "preview-fixture";
 const FIXTURE_NODE = "throw-node";
 
+/** When Play injects a fixture throw and a tree is loaded, navigate to the task. */
+export function previewFixtureThrowHint(
+  trees?: ReadonlyArray<{ guid: string; document: unknown }>,
+): { assetGuid: string; btNodeId: string } | null {
+  const entry = trees?.[0];
+  if (!entry) return null;
+  const parsed = parseBehaviourTreeDocument(entry.document);
+  const task = parsed?.nodes.find((node) => node.kind === "task");
+  if (!task) return null;
+  return { assetGuid: entry.guid, btNodeId: task.id };
+}
+
 /**
  * Start a fullscreen Play session. Prefers a dedicated game Worker; falls back
  * to in-process runtime. Own Scene on the shared app Engine via registerView.
@@ -523,10 +535,11 @@ export function startPlaySession(options: {
 
   if (options.injectFixtureThrow) {
     queueMicrotask(() => {
+      const hint = previewFixtureThrowHint(options.behaviourTrees);
       if (runtime) {
         const err = new Error("Preview fixture throw");
         err.stack = `Error: Preview fixture throw\n    at run (babylonslate:///${FIXTURE_ASSET}.js:1:1)`;
-        runtime.reportError(err);
+        runtime.reportError(err, undefined, hint ?? undefined);
       } else if (worker) {
         // Worker path: route through the same aggregator a real worker
         // `diagnostic` command would use, rather than a report shortcut.
@@ -534,9 +547,10 @@ export function startPlaySession(options: {
           code: "runtime.uncaught",
           message: "Preview fixture throw",
           severity: "error",
-          assetGuid: FIXTURE_ASSET,
-          graphId: "event-graph",
-          nodeId: FIXTURE_NODE,
+          assetGuid: hint?.assetGuid ?? FIXTURE_ASSET,
+          graphId: hint ? undefined : "event-graph",
+          nodeId: hint ? undefined : FIXTURE_NODE,
+          btNodeId: hint?.btNodeId,
           frameId: 1,
         });
         options.onLog?.("Preview fixture throw", "error");
