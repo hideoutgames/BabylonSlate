@@ -95,7 +95,7 @@ describe("Playwright iPad project filter", () => {
         "Global project search › toolbar search opens a dialog and focuses a scene actor",
         "Global project search › dialog stays a fixed tall height and results scroll when they overflow",
         "P6 first-playable scene editing › scene panels expose touch-sized toolbar controls",
-        "P9 content systems › UserInterface designer on iPad shows the same HUD widgets",
+        "P9 content systems › UserInterface designer on iPad opens a Canvas-only document",
         "P9 content systems › Play overlay stick is reachable on iPad",
       ]),
     );
