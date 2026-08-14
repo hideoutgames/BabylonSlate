@@ -1,6 +1,10 @@
 import { diagnostic, type Diagnostic, type TypeContext } from "@babylonslate/scripting";
 import type { BehaviourTreeDocument, BtNode } from "./types";
 
+export type BehaviourTreeValidateContext = Pick<TypeContext, "assetGuid"> & {
+  blackboardKeys?: readonly string[];
+};
+
 function byId(doc: BehaviourTreeDocument): Map<string, BtNode> {
   return new Map(doc.nodes.map((node) => [node.id, node]));
 }
@@ -26,9 +30,23 @@ function hasCycle(doc: BehaviourTreeDocument, nodes: Map<string, BtNode>): strin
   return walk(doc.rootId);
 }
 
+function referencedKeys(node: BtNode): string[] {
+  const keys: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === "string" && value !== "") keys.push(value);
+  };
+  push(node.properties.key);
+  for (const row of node.decorators) {
+    push(row.properties.key);
+    for (const key of row.observedKeys) push(key);
+  }
+  for (const row of node.services) push(row.properties.key);
+  return [...new Set(keys)];
+}
+
 export function validateBehaviourTree(
   doc: BehaviourTreeDocument,
-  ctx: Pick<TypeContext, "assetGuid">,
+  ctx: BehaviourTreeValidateContext,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const nodes = byId(doc);
@@ -68,6 +86,32 @@ export function validateBehaviourTree(
           nodeId: node.id,
         }),
       );
+    }
+    if (node.kind === "parallel" && node.children.length < 2) {
+      out.push(
+        diagnostic({
+          code: "bt.parallel_too_small",
+          message: `Parallel "${node.id}" needs at least two children`,
+          assetGuid: ctx.assetGuid,
+          graphId,
+          nodeId: node.id,
+        }),
+      );
+    }
+    if (ctx.blackboardKeys) {
+      const known = new Set(ctx.blackboardKeys);
+      for (const key of referencedKeys(node)) {
+        if (known.has(key)) continue;
+        out.push(
+          diagnostic({
+            code: "bt.missing_blackboard_key",
+            message: `Blackboard key "${key}" is not declared`,
+            assetGuid: ctx.assetGuid,
+            graphId,
+            nodeId: node.id,
+          }),
+        );
+      }
     }
     for (const childId of node.children) {
       if (!nodes.has(childId)) {

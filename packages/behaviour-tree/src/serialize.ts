@@ -2,6 +2,7 @@ import { hierarchy, tree } from "d3-hierarchy";
 import type { SerializedGraph } from "@babylonslate/core";
 import type {
   BehaviourTreeDocument,
+  BtAbortMode,
   BtDecorator,
   BtEvalState,
   BtNode,
@@ -9,6 +10,7 @@ import type {
   BtService,
 } from "./types";
 import { createDefaultBehaviourTree } from "./tree";
+import { titleForBtClassId } from "./catalog";
 
 export const BT_NODE_TYPE = "bt.node";
 export const BT_PARENT_HANDLE = "parent";
@@ -120,20 +122,48 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function parseAbortMode(value: unknown): BtAbortMode {
+  if (value === "self" || value === "lowerPriority" || value === "both") {
+    return value;
+  }
+  return "none";
+}
+
 function parseDecorators(value: unknown): BtDecorator[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is BtDecorator => {
+  const out: BtDecorator[] = [];
+  for (const entry of value) {
     const row = asRecord(entry);
-    return typeof row.id === "string" && typeof row.classId === "string";
-  });
+    if (typeof row.id !== "string" || typeof row.classId !== "string") continue;
+    out.push({
+      id: row.id,
+      classId: row.classId,
+      abortMode: parseAbortMode(row.abortMode),
+      observedKeys: Array.isArray(row.observedKeys)
+        ? row.observedKeys.filter((key): key is string => typeof key === "string")
+        : [],
+      properties: asRecord(row.properties),
+    });
+  }
+  return out;
 }
 
 function parseServices(value: unknown): BtService[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is BtService => {
+  const out: BtService[] = [];
+  for (const entry of value) {
     const row = asRecord(entry);
-    return typeof row.id === "string" && typeof row.classId === "string";
-  });
+    if (typeof row.id !== "string" || typeof row.classId !== "string") continue;
+    out.push({
+      id: row.id,
+      classId: row.classId,
+      intervalMs: typeof row.intervalMs === "number" ? row.intervalMs : 0,
+      randomDeviationMs:
+        typeof row.randomDeviationMs === "number" ? row.randomDeviationMs : 0,
+      properties: asRecord(row.properties),
+    });
+  }
+  return out;
 }
 
 function parseKind(value: unknown, classId: string): BtNodeKind {
@@ -159,16 +189,23 @@ export function behaviourTreeToSerialized(
       type: BT_NODE_TYPE,
       position: positions.get(node.id) ?? { x: 0, y: 0 },
       data: {
-        title: node.classId,
+        title: titleForBtClassId(node.classId),
         kind: node.kind,
         classId: node.classId,
         sortIndex: sortIndexFor(doc, node.id),
-        decorators: node.decorators,
-        services: node.services,
+        decorators: node.decorators.map((row) => ({
+          ...row,
+          title: titleForBtClassId(row.classId),
+        })),
+        services: node.services.map((row) => ({
+          ...row,
+          title: titleForBtClassId(row.classId),
+        })),
         properties: node.properties,
         lastResult: overlay?.lastResults[node.id] ?? null,
         running: running.has(node.id),
         __pins: pinsForBtKind(node.kind),
+        __protected: node.id === doc.rootId,
       },
     })),
     edges: doc.nodes.flatMap((node) =>

@@ -382,6 +382,74 @@ describe("evaluateBehaviourTree", () => {
     expect(seen).toEqual(["pulse"]);
   });
 
+  it("loops a succeeding task a finite number of times", () => {
+    const leaf = node("leaf", "task", "bt.task.custom");
+    leaf.decorators.push({
+      id: "loop",
+      classId: "bt.decorator.loop",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { numLoops: 3 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    let ticks = 0;
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: () => {
+          ticks += 1;
+          return "success";
+        },
+      },
+    });
+    expect(next.status).toBe("success");
+    expect(ticks).toBe(3);
+  });
+
+  it("blocks a node during cooldown after it finishes", () => {
+    const leaf = node("leaf", "task", "bt.task.succeed");
+    leaf.decorators.push({
+      id: "cd",
+      classId: "bt.decorator.cooldown",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { durationMs: 100 },
+    });
+    const doc = tree(
+      [node("root", "selector", "bt.composite.selector", ["leaf"]), leaf],
+      "root",
+    );
+    const first = evaluateBehaviourTree(doc, null, 1 / 60);
+    expect(first.status).toBe("success");
+    const cooling = evaluateBehaviourTree(doc, first, 0.05);
+    expect(cooling.status).toBe("failure");
+    const ready = evaluateBehaviourTree(doc, cooling, 0.06);
+    expect(ready.status).toBe("success");
+  });
+
+  it("fails a running node when its time limit elapses", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10_000 };
+    wait.decorators.push({
+      id: "limit",
+      classId: "bt.decorator.timeLimit",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { durationMs: 80 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["wait"]), wait],
+      "root",
+    );
+    const running = evaluateBehaviourTree(doc, null, 0.05);
+    expect(running.status).toBe("running");
+    const timedOut = evaluateBehaviourTree(doc, running, 0.05);
+    expect(timedOut.status).toBe("failure");
+    expect(timedOut.stack).toEqual([]);
+  });
+
   it("reproduces the same service schedule for the same seed", () => {
     const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
     root.services.push({
