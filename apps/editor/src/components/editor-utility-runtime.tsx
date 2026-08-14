@@ -49,12 +49,14 @@ export function EditorUtilityRuntime() {
   const startedRef = useRef(false);
   const openDocumentsRef = useRef(openDocuments);
   openDocumentsRef.current = openDocuments;
+  const collectScriptsRef = useRef(collectEditorUtilityScripts);
+  collectScriptsRef.current = collectEditorUtilityScripts;
   const registeredKey = (
     projectDocument?.settings.editorUtilityObjects ?? []
   ).join("|");
 
   useEffect(() => {
-    if (!projectName || !projectDocument) {
+    if (!projectName) {
       return;
     }
     let cancelled = false;
@@ -62,7 +64,7 @@ export function EditorUtilityRuntime() {
       editorHostServices((line) => appendLogRef.current(line)),
     );
     hostRef.current = host;
-    void collectEditorUtilityScripts().then(async (scripts) => {
+    void collectScriptsRef.current().then(async (scripts) => {
       if (cancelled) return;
       for (const script of scripts) {
         await host.load(script);
@@ -82,7 +84,7 @@ export function EditorUtilityRuntime() {
       hostRef.current = null;
       startedRef.current = false;
     };
-  }, [collectEditorUtilityScripts, projectDocument, projectName, registeredKey]);
+  }, [projectName, registeredKey]);
 
   useEffect(() => {
     const onLifecycle = (event: Event) => {
