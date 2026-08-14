@@ -184,10 +184,20 @@ export function defaultPropertiesForClassId(classId: string): Record<string, unk
   }
 }
 
-export function kindForCatalogClassId(classId: string): BtNodeKind {
-  const canonical = builtinClassId(classId);
-  if (canonical.includes("selector")) return "selector";
-  if (canonical.includes("sequence")) return "sequence";
-  if (canonical.includes("parallel")) return "parallel";
+export function kindForCatalogClassId(
+  classId: string,
+  parentOf?: (id: string) => string | null | undefined,
+): BtNodeKind {
+  let current: string | null | undefined = classId;
+  const seen = new Set<string>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const canonical = builtinClassId(current);
+    if (canonical === "bt.composite.selector") return "selector";
+    if (canonical === "bt.composite.sequence") return "sequence";
+    if (canonical === "bt.composite.parallel") return "parallel";
+    if (current === "BTComposite") return "sequence";
+    current = parentOf?.(current) ?? null;
+  }
   return "task";
 }

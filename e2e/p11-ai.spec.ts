@@ -194,4 +194,35 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     );
     await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
   });
+
+  test("New Class parent BTDecorator lists On Evaluate and appears in Add Decorator", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await showContentBrowser(page);
+    await page.getByTestId("content-browser-new-asset").click();
+    await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+    await page.getByTestId("new-asset-type").click();
+    await page.getByTestId("new-asset-type-Class").click();
+    await page.getByTestId("new-asset-name").fill("Alert");
+    await page.getByTestId("new-asset-parent").click();
+    await page.getByTestId("new-asset-parent-BTDecorator").click();
+    await page.getByTestId("content-browser-new-asset-create").click();
+    await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
+
+    await page.locator('[data-asset-path="assets/Alert.class.babasset"]').dblclick();
+    await expect(page.getByTestId("my-class-panel")).toBeVisible();
+    const events = page.getByTestId("my-blueprint-tree");
+    await expect(events.getByText("On Evaluate")).toBeVisible();
+    await expect(events.getByText("Event Begin Play")).toHaveCount(0);
+
+    await createAsset(page, "BehaviourTree", "Patrol");
+    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await page.getByTestId("bt-add-decorator").click();
+    await expect(page.getByTestId("bt-attachment-catalog")).toBeVisible();
+    await page.getByTestId("bt-attachment-item-Alert").click();
+    await expect(page.getByTestId("bt-attachment-catalog")).toHaveCount(0);
+    await expect(page.locator("[data-testid^='bt-decorator-']")).toBeVisible();
+  });
 });

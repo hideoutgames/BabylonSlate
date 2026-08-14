@@ -49,6 +49,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | Anim graph Add Node pins | `hydrateAnimGraphForEditor` / `animPaletteNodes` inject `in`/`out` | Done (authoring-surface wave) |
 | Anim Graph authoring host | Parameters / States / Details split; persisted node positions; clip picker; blend / exit-time rows | Done (`cursor/anim-graph-authoring-6e70`) |
 | Behaviour tree authoring host | Typed Details, decorator/service catalog, blackboard key pickers, long-press wrap/duplicate/delete, sibling-only drag, canvas diagnostics, Loop/Cooldown/TimeLimit evaluation, running-branch overlay from `btState.stack` | Done (`p-bt-editor-authoring`) |
+| Behaviour tree class events | User `BTTask` / `BTDecorator` / `BTService` graphs seed ancestry-specific events; decorator `onEvaluate` + task `onAbort` hosts; Get/Set Blackboard + Return Condition nodes | Done (`p-bt-class-events`) |
 | Pin flash, multi-select gizmo | Chrome polish | Parked |
 | CustomBlock GLSL IDE; assign shader to a live scene mesh | Preview canvas is the host | Parked |
 
@@ -1266,6 +1267,7 @@ Named slice, not a P-number. Spec: section 2.5. May run beside P12 (different pa
 ### Authoring-surface residuals
 
 - [x] **p-bt-editor-authoring** — Authoring-surface residual (not a P11 reopen): typed Details for built-in tasks/decorators/services, Add Decorator/Service catalog (built-ins + project `BTTask`/`BTDecorator`/`BTService`/`BTComposite` classes), attachment remove/reorder, blackboard key pickers and typed blackboard defaults, Title Case chrome, tree-aware toolbar (hide Break Links/Format, refuse root delete), long-press `ContextMenuOverlay` (Delete / Duplicate / Wrap in Sequence / Add Decorator), sibling-only X drag then re-layout, `validateBehaviourTree` on the canvas (`bt.parallel_too_small`, `bt.missing_blackboard_key`), Loop/Cooldown/TimeLimit evaluation, Play overlay running-branch from `btState.stack`. *Accepts when* e2e adds a Wait child, sets duration, adds a keyed decorator, and removes the attachment
+- [x] **p-bt-class-events** — Authoring-surface residual (do not uncheck `p11-bt-authoring`): Class Events and New Class graphs seed by ancestry (`BTTask` On Activate/Tick/Abort, `BTDecorator` On Evaluate, `BTService` On Tick, `BTComposite` none); Add Node palette hides Actor vs BT leaf events; `BtDecoratorHost` + `BtTaskHost.abort`; Return Condition / Get-Set Blackboard nodes; custom composite `kind` from ancestry (bare `BTComposite` → sequence). *Accepts when* New Class parent `BTDecorator` lists On Evaluate (not Begin Play) and Add Decorator catalogs that class, and a compiled On Evaluate false gates a Wait
 
 ### P12
 

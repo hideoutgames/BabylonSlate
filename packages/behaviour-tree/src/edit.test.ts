@@ -103,6 +103,17 @@ describe("addChildNode", () => {
     const doc = createDefaultBehaviourTree();
     expect(addChildNode(doc, "task", "bt.task.wait")).toBe(doc);
   });
+
+  it("adds a custom BTComposite as a sequence from ancestry", () => {
+    const next = addChildNode(
+      createDefaultBehaviourTree(),
+      "sequence",
+      "MyBrain",
+      (id) => (id === "MyBrain" ? "BTComposite" : null),
+    );
+    const child = next.nodes.find((entry) => entry.classId === "MyBrain");
+    expect(child?.kind).toBe("sequence");
+  });
 });
 
 describe("attachments", () => {

@@ -272,11 +272,12 @@ export function addChildNode(
   doc: BehaviourTreeDocument,
   parentId: string,
   classId: string,
+  parentOf?: (id: string) => string | null | undefined,
 ): BehaviourTreeDocument {
   const parent = doc.nodes.find((node) => node.id === parentId);
   if (!parent || parent.kind === "task") return doc;
   const used = usedIds(doc);
-  const kind = kindForCatalogClassId(classId);
+  const kind = kindForCatalogClassId(classId, parentOf);
   const id = uniqueId(kind === "task" ? "task" : kind, used);
   const child: BtNode = {
     id,

@@ -10,7 +10,7 @@ import type {
   BtService,
 } from "./types";
 import { createDefaultBehaviourTree } from "./tree";
-import { titleForBtClassId } from "./catalog";
+import { kindForCatalogClassId, titleForBtClassId } from "./catalog";
 
 export const BT_NODE_TYPE = "bt.node";
 export const BT_PARENT_HANDLE = "parent";
@@ -170,10 +170,7 @@ function parseKind(value: unknown, classId: string): BtNodeKind {
   if (value === "selector" || value === "sequence" || value === "parallel" || value === "task") {
     return value;
   }
-  if (classId.includes("selector")) return "selector";
-  if (classId.includes("sequence")) return "sequence";
-  if (classId.includes("parallel")) return "parallel";
-  return "task";
+  return kindForCatalogClassId(classId);
 }
 
 export function behaviourTreeToSerialized(

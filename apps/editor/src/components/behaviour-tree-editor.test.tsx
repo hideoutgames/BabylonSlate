@@ -46,6 +46,15 @@ vi.mock("../context/document-context", () => ({
           path: "assets/BTDecorator_Alert.class.babasset",
         },
         {
+          header: {
+            guid: "class-3",
+            name: "MyBrain",
+            type: "Class",
+            parentClass: "BTComposite",
+          },
+          path: "assets/MyBrain.class.babasset",
+        },
+        {
           header: { guid: "bb-1", name: "Guard", type: "Blackboard", parentClass: null },
           path: "assets/Guard.blackboard.babasset",
         },
@@ -191,6 +200,34 @@ describe("BehaviourTreeEditor", () => {
     fireEvent.click(pane!);
     fireEvent.click(pane!);
     expect(screen.getByTestId("node-palette-item-BTTask_Custom")).toBeTruthy();
+  });
+
+  it("adds a project BTComposite as a sequence rather than a task leaf", async () => {
+    function Harness() {
+      const [payload, setPayload] = useState(
+        () => createDefaultBehaviourTree() as unknown as Record<string, unknown>,
+      );
+      const kind = (payload as BehaviourTreeDocument).nodes.find(
+        (node) => node.classId === "MyBrain",
+      )?.kind;
+      return (
+        <>
+          <div data-testid="custom-composite-kind">{kind ?? ""}</div>
+          <BehaviourTreeEditor payload={payload} onChange={setPayload} />
+        </>
+      );
+    }
+    const { container } = render(<Harness />);
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    fireEvent.click(pane!);
+    fireEvent.click(pane!);
+    fireEvent.click(screen.getByTestId("node-palette-item-MyBrain"));
+    await waitFor(() => {
+      expect(screen.getByTestId("custom-composite-kind").textContent).toBe(
+        "sequence",
+      );
+    });
   });
 
   it("lists a project BTDecorator in the attachment catalog", () => {

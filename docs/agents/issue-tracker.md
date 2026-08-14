@@ -379,6 +379,18 @@ Authoring-surface residual, same class as the Anim Graph host pass. Do **not** u
 
 Out of scope: RotateToFace / PlayAnimation / PlaySound hosts; nav cost-carve / auto-bake; Dockview for asset tabs; large-tree iPad virtualization; P12; lighting.
 
+## Behaviour tree class events (`p-bt-class-events`)
+
+Authoring-surface residual. Do **not** uncheck `p11-bt-authoring`. Packages: `apps/editor`, `scripting-nodes`, `behaviour-tree`, `runtime`.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Class Events + palette by ancestry | `p-bt-class-events` | `apps/editor` | `p11-bt-authoring` |
+| Decorator host, abort, Return Condition, blackboard nodes | same | `behaviour-tree`, `scripting-nodes`, `runtime` | Class events |
+| Composite kind from ancestry + e2e | same | `behaviour-tree`, `e2e/p11-ai.spec.ts` | hosts |
+
+Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation / PlaySound hosts; reopening P11; P12; lighting.
+
 ## P12 editor extensions
 
 Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities), §18 P12, Appendix A `p12-editor-extensions`. Lighting/cameras (`p-lighting-camera`) may run beside this slice.
