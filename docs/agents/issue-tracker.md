@@ -191,7 +191,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list. Remaining: **Default Camera** via kit `SceneComponentPicker` (`CameraComponent` only), **Possess Camera** node (global Play camera), `UniversalCamera`, shadows/IBL. May run beside P12. |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | `p-lighting-camera` | Authored lights, range/kind/angle, and editor debug overlays shipped. Spec: [engineplan §2.5](../engineplan.md). Directional/spot still `(0,-1,0)`; Play lights are white; editor sync dispose+recreates; Play cameras are `FreeCamera`; active camera is first in the list. Remaining: **Default Camera** via kit `SceneComponentPicker` (`CameraComponent` only), **Possess Camera** node (global Play camera), `UniversalCamera`, shadows/IBL. May run beside P12 core; serialize `apps/editor` / `render` with `p12-ui-editors`. |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
@@ -286,7 +286,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 
-Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh, **UserInterface designer Dockview host + editing-stage Babylon GUI** (`ui-designer-dockview` — EditorUtilityInterface authoring reuses `UiDesigner`).
+Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. UserInterface / EditorUtilityInterface **authoring** editors (Dockview host + editing-stage Babylon GUI) are last P12 (`p12-ui-editors`), not parked.
 
 ### P9 follow-ups / open deferrals
 
@@ -300,7 +300,7 @@ Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateF
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
-| UserInterface designer on Dockview; editing-stage GUI present | Designer is `AssetDocumentWorkspace` / `UiDesigner`, not Windows. Live EditorUtilityInterface **tabs** are P12 Dockview + `createUiSurface`. Authoring reuses this designer | Parked (`ui-designer-dockview`; not P12) |
+| UserInterface + EditorUtilityInterface **authoring** editors | Designer is `AssetDocumentWorkspace` / `UiDesigner`, not Windows. Live EditorUtilityInterface **tabs** are P12 Dockview + `createUiSurface`. Authoring reuses this designer plus EUI `dockKind` | Last P12 (`p12-ui-editors`) |
 
 ## P10 tilemaps
 
@@ -332,7 +332,7 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 
 ## Lighting and cameras (`p-lighting-camera`)
 
-Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P12 (serialize `render` / `core` / `runtime` / `apps/editor` if another agent holds them). Do not reopen AI packages.
+Spec: [engineplan.md](../engineplan.md) §2.5. Named slice; may run beside P12 **core**. Serialize `apps/editor` / `render` with last-P12 `p12-ui-editors`. Do not reopen AI packages.
 
 | Slice | Checklist | Packages |
 | --- | --- | --- |
@@ -360,14 +360,17 @@ Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo)
 
 ## P12 editor extensions
 
-Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities), §18 P12, Appendix A `p12-editor-extensions`. Lighting/cameras (`p-lighting-camera`) may run beside this slice.
+Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live vs author), §18 P12, Appendix A `p12-editor-extensions` then `p12-ui-editors`. Lighting/cameras (`p-lighting-camera`) may run beside P12 **core**. Serialize `apps/editor` / `render` with `p12-ui-editors`.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| EditorUtilityObject + Interface | `p12-editor-extensions` | `object-model`, `apps/editor`, `render` (Dockview Babylon GUI host via `createUiSurface`), export strip | P11 done |
+| EditorUtilityObject + live Interface tabs | `p12-editor-extensions` | `object-model`, `apps/editor`, `render` (Dockview Babylon GUI host via `createUiSurface`), export strip | P11 done |
+| UserInterface + EditorUtilityInterface **authoring** editors | `p12-ui-editors` | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` (EUI type exists) |
 | Lighting / cameras | `p-lighting-camera` | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5; serialize if another agent holds those packages |
 
-**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that must present Babylon GUI (ADT copy, never `registerView`). Content Browser opens EditorUtilityInterface **authoring** on the existing UserInterface designer (`UiDesigner`). Do **not** convert that designer to Dockview or treat editing-stage GUI bugs as P12 — parked `ui-designer-dockview`.
+**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that must present Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one designer host. Last P12 (`p12-ui-editors`) is a thorough pass so those editors work: Dockview Design / Hierarchy / Details / Logic, editing-stage widgets actually paint (no Preview Unavailable as the normal path), EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
+
+Do not start leftover chrome polish (pin flash, multi-select gizmo). Plugin EUOs are P13.
 
 
 
