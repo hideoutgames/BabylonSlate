@@ -28,7 +28,7 @@ async function createAsset(
 }
 
 test.describe("P9 content systems", () => {
-  test("UserInterface designer switches iPad and desktop presets", async ({
+  test("UserInterface designer switches 4:3, 16:9, and widescreen presets", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -36,31 +36,31 @@ test.describe("P9 content systems", () => {
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
     const canvas = page.getByTestId("ui-design-canvas");
-    await expect(canvas).toHaveAttribute("data-preset", "ipad-landscape");
+    await expect(canvas).toHaveAttribute("data-preset", "desktop-16-9");
     await expect(page.getByTestId("ui-widget-stick")).toBeVisible();
     await expect(page.getByTestId("ui-widget-header")).toBeVisible();
-    const landscapeStickX = await page
+    const sixteenNineStickX = await page
       .getByTestId("ui-widget-stick")
       .getAttribute("data-gui-x");
-    const landscapeHeaderY = await page
+    const sixteenNineHeaderY = await page
       .getByTestId("ui-widget-header")
       .getAttribute("data-gui-y");
 
     await page.getByTestId("ui-device-preset").click();
-    await page.getByTestId("ui-preset-ipad-portrait").click();
-    await expect(canvas).toHaveAttribute("data-preset", "ipad-portrait");
-    const portraitStickX = await page
+    await page.getByTestId("ui-preset-desktop-4-3").click();
+    await expect(canvas).toHaveAttribute("data-preset", "desktop-4-3");
+    const fourThreeStickX = await page
       .getByTestId("ui-widget-stick")
       .getAttribute("data-gui-x");
-    const portraitHeaderY = await page
+    const fourThreeHeaderY = await page
       .getByTestId("ui-widget-header")
       .getAttribute("data-gui-y");
-    expect(portraitStickX).not.toBe(landscapeStickX);
-    expect(portraitHeaderY).not.toBe(landscapeHeaderY);
+    expect(fourThreeStickX).not.toBe(sixteenNineStickX);
+    expect(fourThreeHeaderY).not.toBe(sixteenNineHeaderY);
 
     await page.getByTestId("ui-device-preset").click();
-    await page.getByTestId("ui-preset-desktop-16-9").click();
-    await expect(canvas).toHaveAttribute("data-preset", "desktop-16-9");
+    await page.getByTestId("ui-preset-desktop-21-9").click();
+    await expect(canvas).toHaveAttribute("data-preset", "desktop-21-9");
 
     await page.getByTestId("ui-device-preset").click();
     await page.getByTestId("ui-preset-desired").click();
@@ -285,18 +285,18 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("play-hud")).toBeVisible();
     await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
     // Desktop-chrome also runs @ipad tests (see docs/architecture/testing.md).
-    // Only the iPad projects use 1194×834 / 834×1194, which map to iPad
-    // presets and non-zero safe-area insets.
+    // iPad Playwright viewports are 1194×834 / 834×1194 and now map to 4:3
+    // (closest aspect) with zero safe-area insets.
     const preset = await page.getByTestId("play-hud").getAttribute("data-preset");
     const safeTop = Number(
       await page.getByTestId("play-hud").getAttribute("data-safe-top"),
     );
-    if (testInfo.project.name === "ipad-landscape") {
-      expect(preset).toBe("ipad-landscape");
-      expect(safeTop).toBeGreaterThan(0);
-    } else if (testInfo.project.name === "ipad-portrait") {
-      expect(preset).toBe("ipad-portrait");
-      expect(safeTop).toBeGreaterThan(0);
+    if (
+      testInfo.project.name === "ipad-landscape" ||
+      testInfo.project.name === "ipad-portrait"
+    ) {
+      expect(preset).toBe("desktop-4-3");
+      expect(safeTop).toBe(0);
     } else {
       expect(preset).toBe("desktop-16-9");
       expect(safeTop).toBe(0);

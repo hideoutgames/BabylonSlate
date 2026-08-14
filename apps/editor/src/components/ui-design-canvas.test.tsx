@@ -26,10 +26,10 @@ describe("UiDesignCanvas preview fallback", () => {
   it("shows an error instead of a silent black canvas when the surface fails", () => {
     const ui = createDefaultPlayHud("HUD");
     const viewport = {
-      id: "ipad-landscape",
-      width: 1194,
-      height: 834,
-      safeArea: { left: 0, right: 0, top: 24, bottom: 20 },
+      id: "desktop-16-9",
+      width: 1920,
+      height: 1080,
+      safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
     };
     const layout = layoutUserInterface(ui, viewport, {
       designSpace: true,

@@ -20,6 +20,7 @@ import {
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
+  DEFAULT_DEVICE_PRESET_ID,
   DESIRED_CANVAS_ID,
   contentDesiredSize,
   createWidget,
@@ -92,7 +93,7 @@ export function UiDesigner({
       name: asset.header.name,
       type: asset.header.type,
     }));
-  const [presetId, setPresetId] = useState<DesignerCanvasId>("ipad-landscape");
+  const [presetId, setPresetId] = useState<DesignerCanvasId>(DEFAULT_DEVICE_PRESET_ID);
   const extras = useEngineUiDesignerPresets();
   const devicePresets = mergeDevicePresets(extras);
   useEffect(() => {

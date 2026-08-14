@@ -40,10 +40,15 @@ describe("EngineSettingsForm User Interface presets", () => {
         categoryId="ui"
       />,
     );
-    expect(getByTestId("ui-preset-builtin-ipad-landscape").textContent).toContain(
-      "1194",
+    expect(getByTestId("ui-preset-builtin-desktop-4-3").textContent).toContain(
+      "1600",
     );
-    expect(getByTestId("ui-preset-builtin-desktop-16-9")).toBeTruthy();
+    expect(getByTestId("ui-preset-builtin-desktop-16-9").textContent).toContain(
+      "1920",
+    );
+    expect(getByTestId("ui-preset-builtin-desktop-21-9").textContent).toContain(
+      "2560",
+    );
   });
 
   it("adds a custom preset with default size", () => {

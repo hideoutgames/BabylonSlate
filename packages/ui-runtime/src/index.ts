@@ -1,4 +1,5 @@
 export {
+  DEFAULT_DEVICE_PRESET_ID,
   DESIRED_CANVAS_ID,
   DEVICE_PRESETS,
   designerViewport,

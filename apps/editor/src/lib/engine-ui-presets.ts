@@ -4,6 +4,7 @@ import {
   type EngineSettings,
 } from "@babylonslate/vfs";
 import {
+  DEFAULT_DEVICE_PRESET_ID,
   DESIRED_CANVAS_ID,
   devicePresetById,
   type DevicePreset,
@@ -49,7 +50,7 @@ export function resolveDesignerCanvasId(
 ): string {
   if (presetId === DESIRED_CANVAS_ID) return DESIRED_CANVAS_ID;
   if (devicePresetById(presetId, extras)) return presetId;
-  return "ipad-landscape";
+  return DEFAULT_DEVICE_PRESET_ID;
 }
 
 /** Custom UserInterface designer presets from Engine Settings, live. */

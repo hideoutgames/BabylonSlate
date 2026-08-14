@@ -35,7 +35,7 @@ test("User Interface category can add a custom designer preset", async ({
   await page.getByTestId("engine-settings").click();
   await page.getByTestId("engine-settings-modal-category-ui").click();
 
-  await expect(page.getByTestId("ui-preset-builtin-ipad-landscape")).toBeVisible();
+  await expect(page.getByTestId("ui-preset-builtin-desktop-16-9")).toBeVisible();
   await page.getByTestId("ui-preset-add").click();
   await expect(page.locator('[data-testid^="ui-preset-custom-"]')).toHaveCount(1);
 });
