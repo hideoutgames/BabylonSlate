@@ -78,6 +78,20 @@ describe("evaluateBehaviourTree", () => {
     expect(b.stack).toEqual([]);
   });
 
+  it("restarts a completed Wait from zero on the next tree cycle", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 100 };
+    const doc = tree([wait], "wait");
+    const running = evaluateBehaviourTree(doc, null, 0.05);
+    expect(running.status).toBe("running");
+    const done = evaluateBehaviourTree(doc, running, 0.06);
+    expect(done.status).toBe("success");
+    expect(done.stack).toEqual([]);
+    const again = evaluateBehaviourTree(doc, done, 0.05);
+    expect(again.status).toBe("running");
+    expect(again.btNodeId).toBe("wait");
+  });
+
   it("ticks every parallel child and fails if any fail", () => {
     const doc = tree(
       [

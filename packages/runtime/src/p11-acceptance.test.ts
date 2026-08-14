@@ -228,6 +228,41 @@ function blockingDecoratorScript(): CompiledScript {
   }));
 }
 
+function finishOnActivateScript(): CompiledScript {
+  return compileBtClass("BTTask_Once", "once-class", (registry) => ({
+    id: "event-graph",
+    kind: "event",
+    nodes: [
+      node(registry, "activate", "bt.event.activate"),
+      node(registry, "log", "debug.log", {
+        message: "activated",
+        severity: "log",
+        category: "BT",
+      }),
+      node(registry, "tick", "bt.event.tick"),
+      node(registry, "finish", "bt.finish", {
+        "default:success": true,
+      }),
+    ],
+    edges: [
+      {
+        id: "e1",
+        sourceNodeId: "activate",
+        sourcePinId: "execOut",
+        targetNodeId: "log",
+        targetPinId: "execIn",
+      },
+      {
+        id: "e2",
+        sourceNodeId: "tick",
+        sourcePinId: "execOut",
+        targetNodeId: "finish",
+        targetPinId: "execIn",
+      },
+    ],
+  }));
+}
+
 function abortHoldTaskScript(): CompiledScript {
   return compileBtClass("BTTask_Hold", "hold-class", (registry) => ({
     id: "event-graph",
@@ -449,6 +484,85 @@ describe("P11 §18 acceptance", () => {
     expect(aborted && aborted.type === "btState" ? aborted.btNodeId : "move").not.toBe(
       "move",
     );
+    runtime.stop();
+  });
+
+  it("stops the crowd when a running MoveTo is aborted", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      dt: 1 / 30,
+      playScene: agentScene("3d"),
+      behaviourTrees: { "tree-1": patrolTree() },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadNavMesh(soloBytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    for (let i = 0; i < 24; i += 1) runtime.tick();
+    const running = commands.filter((command) => command.type === "btState").at(-1);
+    expect(running).toMatchObject({ type: "btState", btNodeId: "move" });
+    const movingX = agentX(runtime);
+    expect(movingX).toBeGreaterThan(-4);
+
+    runtime.executeConsoleCommand("snapshot start");
+    runtime.tick();
+    runtime.executeConsoleCommand("snapshot stop");
+    const last = runtime.stopTrace()?.frames.at(-1)?.bt?.[0];
+    expect(last).toBeDefined();
+    runtime.restoreBtFromTrace([
+      {
+        ...last!,
+        blackboard: { ...last!.blackboard, alert: true },
+      },
+    ]);
+    runtime.tick();
+    for (let i = 0; i < 5; i += 1) runtime.tick();
+    const xStopped = agentX(runtime);
+    for (let i = 0; i < 90; i += 1) runtime.tick();
+    expect(Math.abs(agentX(runtime) - xStopped)).toBeLessThan(0.25);
+    expect(agentX(runtime)).toBeLessThan(1);
+    runtime.stop();
+  });
+
+  it("fires On Activate again after a finished custom task restarts", async () => {
+    const commands: CommandMessage[] = [];
+    const tree: BehaviourTreeDocument = {
+      name: "Once",
+      rootId: "once",
+      blackboardGuid: null,
+      nodes: [
+        {
+          id: "once",
+          kind: "task",
+          classId: "BTTask_Once",
+          children: [],
+          decorators: [],
+          services: [],
+          properties: {},
+        },
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: classScene("tree-1"),
+      behaviourTrees: { "tree-1": tree },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([finishOnActivateScript()]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    runtime.tick();
+    const activations = commands.filter(
+      (command) =>
+        command.type === "log" && String(command.message).includes("activated"),
+    );
+    expect(activations).toHaveLength(2);
     runtime.stop();
   });
 

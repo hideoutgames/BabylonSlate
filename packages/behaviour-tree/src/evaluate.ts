@@ -315,6 +315,27 @@ function consumeLoop(
   return count < numLoops ? "restart" : "done";
 }
 
+function cooldownOnlyMemory(
+  memory: Record<string, unknown> | undefined,
+  extraKeep: (key: string) => boolean = () => false,
+): Record<string, unknown> {
+  const keep: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(memory ?? {})) {
+    if (key.startsWith("__cd:") || extraKeep(key)) keep[key] = value;
+  }
+  return keep;
+}
+
+function retainCooldownMemory(
+  nodeMemory: Record<string, Record<string, unknown>>,
+): void {
+  for (const id of Object.keys(nodeMemory)) {
+    const keep = cooldownOnlyMemory(nodeMemory[id]);
+    if (Object.keys(keep).length === 0) delete nodeMemory[id];
+    else nodeMemory[id] = keep;
+  }
+}
+
 function resetSubtreeForLoop(
   nodes: Map<string, BtNode>,
   lastResults: Record<string, BtResult>,
@@ -327,12 +348,9 @@ function resetSubtreeForLoop(
       delete nodeMemory[id];
       continue;
     }
-    const memory = nodeMemory[id] ?? {};
-    const keep: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(memory)) {
-      if (key.startsWith("__loop:") || key.startsWith("__cd:")) keep[key] = value;
-    }
-    nodeMemory[id] = keep;
+    nodeMemory[id] = cooldownOnlyMemory(nodeMemory[id], (key) =>
+      key.startsWith("__loop:"),
+    );
   }
 }
 
@@ -554,6 +572,7 @@ export function evaluateBehaviourTree(
 
   if (stack.length === 0) {
     for (const key of Object.keys(lastResults)) delete lastResults[key];
+    retainCooldownMemory(nodeMemory);
     stack.push({ nodeId: tree.rootId, childIndex: 0, opened: false });
   }
 

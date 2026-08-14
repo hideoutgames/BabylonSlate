@@ -1058,6 +1058,10 @@ class InProcessRuntime implements RuntimeDriver {
   ): void {
     memory.__activated = false;
     delete memory.__btResult;
+    delete memory.__moveRequested;
+    if (builtinClassId(node.classId) === "bt.task.moveTo") {
+      this.stopNavAgent(actor.guid);
+    }
     this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.dt, {
       btFinish: () => undefined,
       btEvaluate: () => undefined,
