@@ -166,7 +166,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [doc?.ref.path, navBake?.lastBytes, navOverlayGeneration, readAssetChunk, scene]);
+  }, [doc?.ref.kind, doc?.ref.path, navBake?.lastBytes, navOverlayGeneration, readAssetChunk, scene]);
 
   /** Turn the mesh state a gizmo drag left behind into one scene command. */
   const commitGizmoTransform = useCallback(() => {
