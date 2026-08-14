@@ -49,8 +49,8 @@ export interface GizmoHost {
   dispose: () => void;
 }
 
-/** Touch handles need to be well past the 44px floor at typical zoom. */
-export const DEFAULT_GIZMO_HANDLE_SCALE = 3.6;
+/** Screen-space scale: 2.4 was too small on touch, 3.6 filled the viewport. */
+export const DEFAULT_GIZMO_HANDLE_SCALE = 2.8;
 
 /** Invisible pick meshes, scaled independently of the thin visual shafts. */
 export const GIZMO_COLLIDER_SCALE = 2.5;

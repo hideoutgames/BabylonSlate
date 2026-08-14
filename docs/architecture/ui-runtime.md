@@ -1,6 +1,8 @@
 # UserInterface runtime (P9)
 
-Shared surface for the widget tree, Babylon GUI layout fields, font-stack compilation, and edit-time cycle checks (engineplan §11). Implementation is split like `debugger` so React and Babylon never share a package:
+Shared surface for the widget tree, Babylon GUI layout fields, font-stack compilation, and edit-time cycle checks (engineplan §11). Implementation is split like `debugger` so React and Babylon never share a package.
+
+Agents working on this surface — or on **EditorUtilityInterface** (P12), which is also Babylon GUI — must follow [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before implementing. Designer chrome around the canvas stays React ([components.md](components.md)); the widget document itself is Babylon GUI.
 
 | Layer | Package | Imports |
 | --- | --- | --- |

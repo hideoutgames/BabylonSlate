@@ -796,10 +796,11 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
-  it("uses a large default handle scale on every tool", () => {
+  it("uses a mid-size default handle scale on every tool", () => {
     const { scene } = createHandle();
     const host = createGizmoHost(scene);
-    expect(DEFAULT_GIZMO_HANDLE_SCALE).toBe(3.6);
+    // 2.4 filled too little of the view; 3.6 filled too much.
+    expect(DEFAULT_GIZMO_HANDLE_SCALE).toBe(2.8);
     expect(host.positionGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
     expect(host.rotationGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
     expect(host.scaleGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);

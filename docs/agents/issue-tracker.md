@@ -78,6 +78,15 @@ Agents must never create visual or spatial media with AI (images, video, icons, 
 - If artwork is missing, stop and ask a human. Do not generate a stand-in.
 - Rule: [.cursor/rules/no-ai-artwork.mdc](../../.cursor/rules/no-ai-artwork.mdc).
 
+## BabylonJS skill
+
+Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work, and before **UserInterface** or **EditorUtilityInterface** work. Both asset types are Babylon GUI (`@babylonjs/gui` / `AdvancedDynamicTexture`), not React chrome.
+
+- **UserInterface** — game HUD, viewport-layer apply, designer canvas ([ui-runtime.md](../architecture/ui-runtime.md)).
+- **EditorUtilityInterface** — widgets opened from **Windows → Editor Utilities** (P12).
+- React editor chrome (Dockview, shadcn, editor-kit) still uses the editor-ui-components and shadcn skills.
+- Rule: [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (BabylonJS).
+
 ## P1 slice ownership
 
 | Slice | Checklist | Packages | Depends on |
