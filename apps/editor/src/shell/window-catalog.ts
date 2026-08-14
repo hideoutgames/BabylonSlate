@@ -5,7 +5,8 @@ export type DockviewDocumentKind =
   | "graph"
   | "enum"
   | "structure"
-  | "script-interface";
+  | "script-interface"
+  | "sprite";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -14,6 +15,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "enum",
   "structure",
   "script-interface",
+  "sprite",
 ]);
 
 export function isDockviewDocumentKind(
@@ -222,6 +224,20 @@ const SCRIPT_INTERFACE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const SPRITE_WINDOWS: DockWindowDefinition[] = [
+  { id: "sprite-preview", component: "sprite-preview", title: "Preview" },
+  {
+    id: "sprite-details",
+    component: "sprite-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "sprite-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
 export function listDockWindows(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
@@ -230,6 +246,7 @@ export function listDockWindows(
   if (kind === "enum") return ENUM_WINDOWS;
   if (kind === "structure") return STRUCTURE_WINDOWS;
   if (kind === "script-interface") return SCRIPT_INTERFACE_WINDOWS;
+  if (kind === "sprite") return SPRITE_WINDOWS;
   if (options?.actorPrefab === false) return OBJECT_GRAPH_WINDOWS;
   return GRAPH_WINDOWS;
 }

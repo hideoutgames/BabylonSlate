@@ -1132,5 +1132,40 @@ describe("GraphEditor", () => {
     );
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("does not delete or copy protected Input nodes", async () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "in-1",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: { __protected: true, title: "Input" },
+            },
+            {
+              id: "log-a",
+              type: "debug.log",
+              position: { x: 200, y: 0 },
+              data: { message: "A", __pins: debugLogPins },
+            },
+          ],
+          edges: [],
+        }}
+        focusedNodeId="in-1"
+        onChange={onChange}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector('.react-flow__node.selected[data-id="in-1"]'),
+      ).not.toBeNull();
+    });
+    expect(getByTestId("graph-delete").hasAttribute("disabled")).toBe(true);
+    expect(getByTestId("graph-copy").hasAttribute("disabled")).toBe(true);
+    expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
+  });
 });
 

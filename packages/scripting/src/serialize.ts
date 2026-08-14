@@ -10,6 +10,7 @@ import { pin } from "./node-registry";
 export function fromSerializedGraph(
   graph: SerializedGraph,
   id = "main",
+  kind: LogicGraph["kind"] = "event",
 ): LogicGraph {
   const nodes: GraphNode[] = graph.nodes.map((n) => {
     if (n.type === "logMessage" || n.type === "debug.log") {
@@ -57,7 +58,7 @@ export function fromSerializedGraph(
     };
   });
 
-  return { id, kind: "event", nodes, edges };
+  return { id, kind, nodes, edges };
 }
 
 function inferPinsFromData(

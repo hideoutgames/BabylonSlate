@@ -25,4 +25,4 @@ Golden: a sprite at world +X renders **right of origin** (Babylon left-handed 2D
 
 ## Editor
 
-Sprite document workspace (`SpriteEditor`): `AssetPicker` filtered to Texture (`property-texture` / `sprite-texture-picker`), pixels per unit, first-frame pivot and duration, and the first clip name. Full frame timeline is still specified; this host is enough to bind a visible sprite in Play. Compose from [components.md](components.md).
+Sprite document workspace is a DockView (**Preview** + **Details**). Details: `AssetPicker` filtered to Texture (`property-texture` / `sprite-texture-picker`) showing `displayAssetTitle` (not the guid), pixels per unit, first-frame pivot and duration, and the first clip name. Preview (`sprite-preview`) loads the Texture `pixels` chunk, crops the current frame UVs on a checkerboard, and overlays a live pivot crosshair. Empty texture shows a muted empty state. Full frame timeline is still specified. Compose from [components.md](components.md).

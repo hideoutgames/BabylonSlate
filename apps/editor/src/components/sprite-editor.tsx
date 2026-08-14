@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
   PanelFrame,
@@ -10,6 +11,126 @@ import {
   type SpritePayload,
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
+import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { displayAssetTitle } from "../lib/content-browser-helpers";
+
+export function SpritePreviewPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const { documentId } = useDocumentWorkspace();
+  const { openDocuments } = useDocuments();
+  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const payload = (doc?.content ?? {}) as Record<string, unknown>;
+  return (
+    <PanelFrame data-testid="sprite-preview-panel">
+      <SpritePreview payload={payload} />
+    </PanelFrame>
+  );
+}
+
+export function SpriteDetailsPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const { documentId } = useDocumentWorkspace();
+  const { openDocuments, applyAssetDocumentChange } = useDocuments();
+  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const payload = (doc?.content ?? {}) as Record<string, unknown>;
+  return (
+    <PanelFrame data-testid="sprite-details-panel" title="Details">
+      <SpriteEditor
+        payload={payload}
+        onChange={(next) => {
+          void applyAssetDocumentChange(documentId, next);
+        }}
+      />
+    </PanelFrame>
+  );
+}
+
+export function SpritePreview({
+  payload,
+}: {
+  payload: Record<string, unknown>;
+}) {
+  const sprite = normalizeSprite(payload);
+  const { assetRegistry, readAssetChunk } = useDocuments();
+  const [url, setUrl] = useState<string | null>(null);
+  const texture = (assetRegistry?.list() ?? []).find(
+    (asset) => asset.header.guid === sprite.textureGuid,
+  );
+  const frame = sprite.frames[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setUrl(null);
+    if (!texture || !readAssetChunk) return;
+    void (async () => {
+      const bytes = await readAssetChunk(texture.path, "pixels");
+      if (!bytes || cancelled || bytes.byteLength === 0) return;
+      objectUrl = URL.createObjectURL(
+        new Blob([bytes], { type: "image/png" }),
+      );
+      if (!cancelled) setUrl(objectUrl);
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [readAssetChunk, texture]);
+
+  const u = frame?.u ?? 0;
+  const v = frame?.v ?? 0;
+  const uSize = Math.max(frame?.uSize ?? 1, 0.0001);
+  const vSize = Math.max(frame?.vSize ?? 1, 0.0001);
+  const pivotX = frame?.pivot.x ?? 0.5;
+  const pivotY = frame?.pivot.y ?? 0.5;
+
+  return (
+    <div className="flex flex-col gap-2 p-3" data-testid="sprite-preview">
+      <div
+        className="relative aspect-square w-full overflow-hidden rounded-md border border-border"
+        style={{
+          backgroundImage:
+            "conic-gradient(#808080 0.25turn, #c0c0c0 0.25turn 0.5turn, #808080 0.5turn 0.75turn, #c0c0c0 0.75turn)",
+          backgroundSize: "16px 16px",
+        }}
+      >
+        {url ? (
+          <div className="absolute inset-0 overflow-hidden">
+            <img
+              src={url}
+              alt=""
+              className="absolute max-w-none"
+              style={{
+                width: `${100 / uSize}%`,
+                height: `${100 / vSize}%`,
+                left: `${(-u / uSize) * 100}%`,
+                top: `${(-v / vSize) * 100}%`,
+              }}
+            />
+          </div>
+        ) : (
+          <p className="absolute inset-0 flex items-center justify-center p-3 text-center text-sm text-muted-foreground">
+            {sprite.textureGuid ? "Loading texture…" : "No Texture"}
+          </p>
+        )}
+        <div
+          data-testid="sprite-pivot-marker"
+          className="pointer-events-none absolute z-10"
+          style={{
+            left: `${pivotX * 100}%`,
+            top: `${pivotY * 100}%`,
+            transform: "translate(-50%, -50%)",
+          }}
+        >
+          <div className="relative size-4">
+            <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-primary" />
+            <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-primary" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function SpriteEditor({
   payload,
@@ -27,6 +148,8 @@ export function SpriteEditor({
     type: asset.header.type,
     path: asset.path,
   }));
+  const textureName = assets.find((asset) => asset.guid === sprite.textureGuid)
+    ?.name;
   const frame = sprite.frames[0];
   const clip = sprite.clips[0];
   const rows: PropertyRow[] = [
@@ -35,6 +158,7 @@ export function SpriteEditor({
       kind: "asset",
       label: "Texture",
       value: sprite.textureGuid,
+      displayLabel: textureName ? displayAssetTitle(textureName) : undefined,
       placeholder: "None",
       onPick: () => setPickerOpen(true),
       onChange: (value) => onChange({ ...sprite, textureGuid: value }),
@@ -91,22 +215,20 @@ export function SpriteEditor({
     },
   ];
   return (
-    <PanelFrame className="flex-1" title="Sprite">
-      <div data-testid="sprite-editor">
-        <PropertyGrid rows={rows} />
-        <AssetPicker
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          assets={assets}
-          allowedTypes={["Texture"]}
-          onPick={(guid) => {
-            onChange({ ...sprite, textureGuid: guid });
-            setPickerOpen(false);
-          }}
-          data-testid="sprite-texture-picker"
-        />
-      </div>
-    </PanelFrame>
+    <div data-testid="sprite-editor">
+      <PropertyGrid rows={rows} />
+      <AssetPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        assets={assets}
+        allowedTypes={["Texture"]}
+        onPick={(guid) => {
+          onChange({ ...sprite, textureGuid: guid });
+          setPickerOpen(false);
+        }}
+        data-testid="sprite-texture-picker"
+      />
+    </div>
   );
 }
 

@@ -228,6 +228,33 @@ describe("graphCompileSignature", () => {
     const b = { path: "assets/b.graph.babasset", content: other };
     expect(graphCompileSignature([a, b])).toBe(graphCompileSignature([b, a]));
   });
+
+  it("changes when a function graph changes", () => {
+    const withFn: SerializedGraph = {
+      ...tickToLog,
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "in",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: { __protected: true },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    const base = graphCompileSignature([
+      { path: "assets/hero.class.babasset", content: tickToLog },
+    ]);
+    expect(
+      graphCompileSignature([
+        { path: "assets/hero.class.babasset", content: withFn },
+      ]),
+    ).not.toBe(base);
+  });
 });
 
 describe("graphsNeedCompile", () => {

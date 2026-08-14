@@ -30,7 +30,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange } = useDocuments();
   const { focusedNodeId } = usePlay();
-  const { setSelectedNodeIds } = useGraphEditing();
+  const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId } =
+    useGraphEditing();
   const {
     diagnostics,
     setDiagnostics,
@@ -61,16 +62,32 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     doc?.ref.kind === "graph" && doc.content
       ? (doc.content as SerializedGraph)
       : null;
-  // `DocumentService.updateGraph` mutates the open-doc object in place, so
-  // depend on `content` (replaced on every command/undo) rather than `doc`.
   const graph = useMemo(() => {
+    const slice =
+      activeFunctionId && graphContent?.functionGraphs?.[activeFunctionId]
+        ? graphContent.functionGraphs[activeFunctionId]
+        : null;
+    const visible: SerializedGraph | null = slice
+      ? {
+          nodes: slice.nodes,
+          edges: slice.edges,
+          members: graphContent?.members,
+          components: graphContent?.components,
+        }
+      : graphContent;
     return hydrateSerializedGraphForEditor(
-      graphContent ?? createDefaultLogicGraphSerialized(registry),
+      visible ?? createDefaultLogicGraphSerialized(registry),
       registry,
     );
-  }, [graphContent]);
+  }, [activeFunctionId, graphContent]);
 
   const assetGuid = doc?.ref.path ?? documentId;
+
+  useEffect(() => {
+    if (activeFunctionId && !graphContent?.functionGraphs?.[activeFunctionId]) {
+      setActiveFunctionId(null);
+    }
+  }, [activeFunctionId, graphContent, setActiveFunctionId]);
 
   // Edit-time validation is debounced so typing in a node does not re-run the
   // whole pass on every keystroke; save and pre-Preview sweeps are immediate.
@@ -100,7 +117,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame data-testid="graph-panel">
       <GraphEditor
-        key={documentId}
+        key={`${documentId}:${activeFunctionId ?? "event"}`}
         initialGraph={graph}
         colorMode="dark"
         defaultZoom={defaultZoom}
@@ -114,10 +131,25 @@ export function GraphPanel(_props: IDockviewPanelProps) {
             doc?.ref.kind === "graph"
               ? (doc.content as SerializedGraph)
               : null;
+          if (!current) return;
+          if (activeFunctionId) {
+            void applyGraphChange(documentId, {
+              ...current,
+              functionGraphs: {
+                ...current.functionGraphs,
+                [activeFunctionId]: {
+                  nodes: next.nodes,
+                  edges: next.edges,
+                },
+              },
+            });
+            return;
+          }
           void applyGraphChange(documentId, {
             ...next,
-            members: next.members ?? current?.members,
-            components: next.components ?? current?.components,
+            members: next.members ?? current.members,
+            components: next.components ?? current.components,
+            functionGraphs: current.functionGraphs,
           } as SerializedGraph);
         }}
       />

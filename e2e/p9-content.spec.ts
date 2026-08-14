@@ -261,6 +261,7 @@ test.describe("P9 content systems", () => {
     await createAsset(page, "Sprite", "Hero");
     await page.locator('[data-asset-path="assets/Hero.sprite.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-sprite")).toBeVisible();
+    await expect(page.getByTestId("sprite-preview")).toBeVisible();
     await expect(page.getByTestId("sprite-editor")).toBeVisible();
     await expect(page.getByTestId("property-texture")).toBeVisible();
 

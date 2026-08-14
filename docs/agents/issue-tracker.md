@@ -277,7 +277,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 
-Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, per-function graphs, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
+Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
 
 ### P9 follow-ups / open deferrals
 

@@ -104,6 +104,10 @@ describe("listDockWindows", () => {
         "script-interface-details",
       ],
     );
+    expect(listDockWindows("sprite").map((entry) => entry.id)).toEqual([
+      "sprite-preview",
+      "sprite-details",
+    ]);
   });
 });
 

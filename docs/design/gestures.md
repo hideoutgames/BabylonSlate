@@ -17,6 +17,7 @@ Two mechanisms, both required:
 
 - `-webkit-touch-callout: none` on the shell stops the iOS text callout.
 - `useSuppressNativeContextMenu` (applied once at the shell) calls `preventDefault` on `contextmenu` document-wide, so long-press and right-click reach our menu instead of the browser's.
+- Pointer-anchored overlays (`ContextMenuOverlay` / `NestedMenu` `OverlayMenu`) clamp to the viewport minus 8px after measuring the panel. Submenus flip to the left of the parent when the right side would clip. Tall menus scroll (`overflow-y-auto`).
 
 Inputs, textareas, `contenteditable` and anything inside `SelectableText` keep the platform menu, since that is where cut/copy/paste is still wanted.
 
