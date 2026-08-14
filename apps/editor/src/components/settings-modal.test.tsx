@@ -37,6 +37,15 @@ vi.mock("../context/document-context", async () => {
             header: { guid: "scene-2", name: "Arena", type: "Scene" },
             path: "assets/Arena.scene.babasset",
           },
+          {
+            header: {
+              guid: "class-tools",
+              name: "Tools",
+              type: "Class",
+              parentClass: "EditorUtilityObject",
+            },
+            path: "assets/Tools.class.babasset",
+          },
         ],
         getByGuid: (guid: string) =>
           guid === "font-1"
@@ -133,5 +142,21 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-width")).toBeTruthy();
     expect(screen.getByTestId("setting-render-height")).toBeTruthy();
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
+  });
+
+  it("registers EditorUtilityObject classes from a ClassPicker list", async () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-general"));
+    fireEvent.click(screen.getByTestId("settings-editor-utility-objects-add"));
+    expect(await screen.findByTestId("search-item-Tools")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-Hero")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-Tools"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        editorUtilityObjects: ["Tools"],
+      }),
+    );
   });
 });

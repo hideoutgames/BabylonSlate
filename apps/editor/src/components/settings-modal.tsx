@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AssetPicker,
   CatalogDialog,
+  ClassPicker,
   InputMappingEditor,
   NamedListEditor,
   NumberField,
@@ -36,6 +37,7 @@ import {
 import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
+import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import {
   EngineSettingsForm,
   type EngineSettingsCategoryId,
@@ -57,7 +59,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "general",
     label: "General",
-    keywords: "project name version touch target",
+    keywords: "project name version touch target editor utility objects",
   },
   {
     id: "input",
@@ -213,6 +215,7 @@ export function SettingsModal({
   const [search, setSearch] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
+  const [utilityPick, setUtilityPick] = useState<"new" | number | null>(null);
   const [activeCategoryId, setActiveCategoryId] = useState(
     scope === "engine" ? "appearance" : "general",
   );
@@ -361,6 +364,33 @@ export function SettingsModal({
                 }}
                 data-testid="settings-autosave-interval"
               />
+            </Field>
+            <Field>
+              <FieldLabel>Editor Utility Objects</FieldLabel>
+              <NamedListEditor
+                values={projectDocument.settings.editorUtilityObjects}
+                onChange={(editorUtilityObjects) =>
+                  updateProjectSettings({ editorUtilityObjects })
+                }
+                addLabel="Add Class"
+                onAdd={() => setUtilityPick("new")}
+                data-testid="settings-editor-utility-objects"
+                renderItem={({ value, index }) => (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                    data-testid={`settings-editor-utility-objects-${index}`}
+                    onClick={() => setUtilityPick(index)}
+                  >
+                    {value}
+                  </Button>
+                )}
+              />
+              <FieldDescription>
+                EditorUtilityObject classes that run in the editor ScriptHost.
+                They are not compiled into Play.
+              </FieldDescription>
             </Field>
           </FieldSet>
         </FieldGroup>
@@ -811,6 +841,39 @@ export function SettingsModal({
             setScenePickerOpen(false);
           }}
           data-testid="settings-startup-scene-picker"
+        />
+      ) : null}
+      {scope === "project" ? (
+        <ClassPicker
+          open={utilityPick !== null}
+          onOpenChange={(next) => {
+            if (!next) setUtilityPick(null);
+          }}
+          classes={editorUtilityObjectClassEntries(assetRegistry?.list() ?? [])}
+          title="Pick Editor Utility Object"
+          allowNone={false}
+          onPick={(classId) => {
+            if (!projectDocument || !classId) {
+              setUtilityPick(null);
+              return;
+            }
+            const current = projectDocument.settings.editorUtilityObjects;
+            if (utilityPick === "new") {
+              if (!current.includes(classId)) {
+                updateProjectSettings({
+                  editorUtilityObjects: [...current, classId],
+                });
+              }
+            } else if (typeof utilityPick === "number") {
+              const next = [...current];
+              next[utilityPick] = classId;
+              updateProjectSettings({
+                editorUtilityObjects: [...new Set(next)],
+              });
+            }
+            setUtilityPick(null);
+          }}
+          data-testid="settings-editor-utility-object-picker"
         />
       ) : null}
     </>
