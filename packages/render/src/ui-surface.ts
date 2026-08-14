@@ -260,6 +260,6 @@ export function presentAdtToCanvas(
 }
 
 /** Thrown present errors are always hard; a 0×0 ADT is skipped without throwing. */
-export function isHardUiPresentFailure(_error: unknown): boolean {
-  return true;
+export function isHardUiPresentFailure(error: unknown): boolean {
+  return error != null;
 }

@@ -97,5 +97,6 @@ describe("isHardUiPresentFailure", () => {
     );
     expect(isHardUiPresentFailure(new Error("standalone ADT failed"))).toBe(true);
     expect(isHardUiPresentFailure(new Error("ADT blit size is 0"))).toBe(true);
+    expect(isHardUiPresentFailure(null)).toBe(false);
   });
 });
