@@ -11,6 +11,7 @@ import {
   applyUiControls,
   createUiSurface,
   FontRegistry,
+  isHardUiPresentFailure,
   type DesignerGizmoState,
   type UiSurface,
 } from "@babylonslate/render";
@@ -49,6 +50,7 @@ import {
   type PointerPoint,
   type ScreenRect,
 } from "./ui-design-gestures";
+import { presentLiveUiIfVisible } from "../lib/live-ui-present";
 
 export function UiDesignCanvas({
   ui,
@@ -64,6 +66,8 @@ export function UiDesignCanvas({
   onSelect,
   onViewChange,
   onLayoutChange,
+  panelVisible = true,
+  documentActive = true,
 }: {
   ui: UserInterfaceDocument;
   viewport: {
@@ -83,6 +87,8 @@ export function UiDesignCanvas({
   onSelect: (id: string) => void;
   onViewChange: (view: DesignView) => void;
   onLayoutChange: (id: string, next: WidgetLayout, mergeKey: string) => void;
+  panelVisible?: boolean;
+  documentActive?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gizmoCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -157,13 +163,21 @@ export function UiDesignCanvas({
     const registry = new FontRegistry();
     void applyFontRegistryToHost(registry, fontEntries, () => {
       surface.designAdt.markAsDirty();
-      try {
-        surface.present();
-      } catch (error) {
-        console.error("UI designer font present failed", error);
-      }
+      presentLiveUiIfVisible({
+        panelVisible,
+        documentActive,
+        present: () => {
+          try {
+            surface.present();
+          } catch (error) {
+            if (isHardUiPresentFailure(error)) {
+              console.error("UI designer font present failed", error);
+            }
+          }
+        },
+      });
     });
-  }, [fontEntries, guiLive]);
+  }, [documentActive, fontEntries, guiLive, panelVisible]);
 
   useEffect(() => {
     const surface = surfaceRef.current;
@@ -171,17 +185,32 @@ export function UiDesignCanvas({
     try {
       surface.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
       applyUiControls(surface.host, controls);
-      surface.present();
-      setPreviewError(null);
-      setLiveRects(surface.host.measureControls());
+      presentLiveUiIfVisible({
+        panelVisible,
+        documentActive,
+        present: () => {
+          surface.present();
+          setPreviewError(null);
+          setLiveRects(surface.host.measureControls());
+        },
+      });
     } catch (error) {
+      if (!isHardUiPresentFailure(error)) return;
       const message =
         error instanceof Error ? error.message : "Failed to present GUI";
       console.error("UI designer present failed", error);
       setPreviewError(message);
       setGuiLive(false);
     }
-  }, [controls, guiLive, ui.scaleRule, viewport.height, viewport.width]);
+  }, [
+    controls,
+    documentActive,
+    guiLive,
+    panelVisible,
+    ui.scaleRule,
+    viewport.height,
+    viewport.width,
+  ]);
 
   const selected = ui.widgets[selectedId];
   const selectedControl = controls.find((row) => row.id === selectedId);
@@ -232,15 +261,23 @@ export function UiDesignCanvas({
       pivot: canTransform ? pivotScreen : null,
     };
     try {
-      surface.presentGizmos(state);
+      presentLiveUiIfVisible({
+        panelVisible,
+        documentActive,
+        present: () => surface.presentGizmos(state),
+      });
     } catch (error) {
-      console.error("UI designer gizmos failed", error);
+      if (isHardUiPresentFailure(error)) {
+        console.error("UI designer gizmos failed", error);
+      }
     }
   }, [
     canTransform,
+    documentActive,
     guiLive,
     handles,
     hasSafeArea,
+    panelVisible,
     pivotScreen,
     safeScreen,
     selectedScreen,

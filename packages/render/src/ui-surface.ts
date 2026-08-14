@@ -232,13 +232,19 @@ export function presentAdtToCanvas(
     throw new Error("ADT backing store is missing");
   }
   const size = adt.getSize();
-  const width = Math.max(1, size.width);
-  const height = Math.max(1, size.height);
   if (!(size.width > 0) || !(size.height > 0)) {
-    throw new Error("ADT blit size is 0");
+    return;
   }
+  const width = size.width;
+  const height = size.height;
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
   context.clearRect(0, 0, width, height);
   context.drawImage(source as CanvasImageSource, 0, 0);
+}
+
+/** Hard failures show Preview Unavailable; a 0×0 ADT is a freeze/layout skip. */
+export function isHardUiPresentFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return !/ADT blit size is 0/i.test(message);
 }
