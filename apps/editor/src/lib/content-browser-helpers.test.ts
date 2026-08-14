@@ -768,11 +768,10 @@ describe("content-browser-helpers", () => {
     expect(selected).not.toBe(current);
   });
 
-  it("re-exports a radial thumb type accent", () => {
+  it("re-exports an inset thumb type outline", () => {
     const accent = assetTypeThumbAccent("var(--asset-texture)");
-    expect(accent.backgroundImage).toContain("radial-gradient");
-    expect(accent.backgroundImage).toContain("var(--card)");
-    expect(accent.boxShadow).toBe("inset 0 -3px 0 var(--asset-texture)");
+    expect(accent.boxShadow).toBe("inset 0 0 0 2px var(--asset-texture)");
+    expect("backgroundImage" in accent).toBe(false);
   });
 
   it("intersects tile menu actions by selection counts", () => {

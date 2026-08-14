@@ -74,7 +74,7 @@ export function ContentBrowserAssetTile({
         {...bind}
       >
         <div
-          className="flex aspect-square w-full items-center justify-center"
+          className="flex aspect-square w-full items-center justify-center bg-card p-0.5"
           style={thumbAccent}
         >
           {thumbnailUrl ? (

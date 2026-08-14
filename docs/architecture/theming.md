@@ -106,7 +106,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-class` (they spawn as Actors). Unknown types fall back to a file glyph and `--muted-foreground`.
 
-Content Browser **asset** tiles tint the **thumbnail well only**: a dark-center `radial-gradient` from `--card` to the type token at the rim, plus a 3px inset kind bar (`typeColorThumbAccent`). The `Card` chrome and text panel stay `--card`. Glyphs still use the raw `--asset-*` token. **Folder cards** are uncolored (`--card` well, muted folder glyph). Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum / Structure / ScriptInterface keep `--asset-script-type` on tiles; Details type columns use **pin** colors via `PinTypePicker`.
+Content Browser **asset** tiles mark the **thumbnail well only** with a 2px inset type-colored outline (`typeColorThumbAccent`). The well, `Card` chrome, and text panel stay `--card`. Glyphs still use the raw `--asset-*` token. **Folder cards** are uncolored (`--card` well, muted folder glyph). Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum / Structure / ScriptInterface keep `--asset-script-type` on tiles; Details type columns use **pin** colors via `PinTypePicker`.
 
 ## Graph sizing tokens
 
