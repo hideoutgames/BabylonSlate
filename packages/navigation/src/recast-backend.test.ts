@@ -67,11 +67,50 @@ describe("recast generate / import round-trip", () => {
     nav.stepCrowd(1 / 60);
   });
 
+  it("adds a crowd agent that steps toward a target", () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(bytes);
+    const id = nav.addAgent({ x: -4, y: 0, z: -4 });
+    expect(id).not.toBe("");
+    const start = nav.agentPosition(id);
+    expect(start).not.toBeNull();
+    expect(start!.x).toBeCloseTo(-4, 0);
+    expect(nav.setAgentTarget(id, { x: 4, y: 0, z: 4 })).toBe(true);
+    for (let i = 0; i < 120; i += 1) nav.stepCrowd(1 / 60);
+    const moved = nav.agentPosition(id);
+    expect(moved).not.toBeNull();
+    expect(moved!.x).toBeGreaterThan(start!.x);
+    nav.removeAgent(id);
+    expect(nav.agentPosition(id)).toBeNull();
+  });
+
+  it("records whether crowd steps are byte-identical across two backends", () => {
+    const run = () => {
+      const nav = createNavigationBackend();
+      nav.importNavMesh(bytes);
+      const id = nav.addAgent({ x: -3, y: 0, z: 0 });
+      nav.setAgentTarget(id, { x: 3, y: 0, z: 0 });
+      const xs: number[] = [];
+      for (let i = 0; i < 30; i += 1) {
+        nav.stepCrowd(1 / 60);
+        xs.push(nav.agentPosition(id)!.x);
+      }
+      return xs;
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+  });
+
   it("returns empty queries before importNavMesh", () => {
     const nav = createNavigationBackend();
     expect(nav.findPath({ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 1 })).toEqual([]);
     expect(nav.closestPoint({ x: 0, y: 0, z: 0 })).toBeNull();
     expect(nav.randomPointInRadius({ x: 0, y: 0, z: 0 }, 1)).toBeNull();
+    expect(nav.addAgent({ x: 0, y: 0, z: 0 })).toBe("");
+    expect(nav.agentPosition("missing")).toBeNull();
+    expect(nav.setAgentTarget("missing", { x: 1, y: 0, z: 0 })).toBe(false);
+    nav.removeAgent("missing");
   });
 
   it("throws when Recast cannot build a mesh", async () => {

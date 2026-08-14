@@ -1,5 +1,6 @@
 import {
   Crowd,
+  type CrowdAgent,
   NavMesh,
   NavMeshQuery,
   exportNavMesh,
@@ -9,6 +10,7 @@ import {
 import { generateSoloNavMesh } from "@recast-navigation/generators";
 import {
   DEFAULT_NAV_MESH_SETTINGS,
+  type NavAgentParams,
   type NavMeshGenerateInput,
   type NavMeshSettings,
   type NavObstacleKind,
@@ -67,6 +69,8 @@ class RecastNavigationBackend implements NavigationBackend {
   private crowd: Crowd | null = null;
   private obstacles = new Map<string, { kind: NavObstacleKind; pose: NavPoint; size: NavPoint }>();
   private nextObstacle = 1;
+  private agents = new Map<string, CrowdAgent>();
+  private nextAgent = 1;
 
   importNavMesh(bytes: Uint8Array): void {
     this.dispose();
@@ -110,6 +114,43 @@ class RecastNavigationBackend implements NavigationBackend {
     this.obstacles.delete(id);
   }
 
+  addAgent(position: NavPoint, params?: NavAgentParams): string {
+    if (!this.crowd) return "";
+    const agent = this.crowd.addAgent(position, {
+      radius: params?.radius ?? 0.5,
+      height: params?.height ?? 1,
+      maxSpeed: params?.maxSpeed ?? 3.5,
+      maxAcceleration: params?.maxAcceleration ?? 8,
+    });
+    const id = `agent-${this.nextAgent}`;
+    this.nextAgent += 1;
+    this.agents.set(id, agent);
+    return id;
+  }
+
+  removeAgent(id: string): void {
+    const agent = this.agents.get(id);
+    if (!agent || !this.crowd) {
+      this.agents.delete(id);
+      return;
+    }
+    this.crowd.removeAgent(agent);
+    this.agents.delete(id);
+  }
+
+  agentPosition(id: string): NavPoint | null {
+    const agent = this.agents.get(id);
+    if (!agent) return null;
+    const point = agent.position();
+    return { x: point.x, y: point.y, z: point.z };
+  }
+
+  setAgentTarget(id: string, target: NavPoint): boolean {
+    const agent = this.agents.get(id);
+    if (!agent) return false;
+    return agent.requestMoveTarget(target);
+  }
+
   stepCrowd(dtSeconds: number): void {
     this.crowd?.update(dtSeconds);
   }
@@ -122,6 +163,7 @@ class RecastNavigationBackend implements NavigationBackend {
     this.query = null;
     this.navMesh = null;
     this.obstacles.clear();
+    this.agents.clear();
   }
 }
 
