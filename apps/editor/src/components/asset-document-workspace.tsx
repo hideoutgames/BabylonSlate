@@ -21,7 +21,13 @@ import { ShaderGraphEditor } from "./shader-graph-editor";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
-import { patchTextureUsage, TEXTURE_USAGE_OPTIONS } from "../lib/asset-settings";
+import {
+  applyTextureMaxDimensionChange,
+  patchTextureUsage,
+  textureMaxDimensionSelectValue,
+  TEXTURE_USAGE_OPTIONS,
+  TEXTURE_MAX_DIMENSION_OPTIONS,
+} from "../lib/asset-settings";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -75,6 +81,8 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
     return (
       <AssetSettingsEditor
         assetType={indexed?.header.type ?? "Texture"}
+        guid={indexed?.header.guid}
+        path={doc.ref.path}
         dependencies={indexed?.header.dependencies ?? []}
         payload={payload}
         onChange={commit}
@@ -374,17 +382,91 @@ function TilesetEditor({
   );
 }
 
+function TexturePreview({
+  path,
+  payload,
+}: {
+  path: string;
+  payload: Record<string, unknown>;
+}) {
+  const { readAssetChunk } = useDocuments();
+  const [url, setUrl] = useState<string | null>(null);
+  const [naturalSize, setNaturalSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    void (async () => {
+      const bytes = await readAssetChunk(path, "pixels");
+      if (!bytes || cancelled || bytes.byteLength === 0) return;
+      objectUrl = URL.createObjectURL(
+        new Blob([bytes], { type: "image/png" }),
+      );
+      if (!cancelled) setUrl(objectUrl);
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [path, readAssetChunk]);
+
+  const payloadWidth =
+    typeof payload.sourceWidth === "number" ? payload.sourceWidth : null;
+  const payloadHeight =
+    typeof payload.sourceHeight === "number" ? payload.sourceHeight : null;
+  const width = naturalSize?.width ?? payloadWidth;
+  const height = naturalSize?.height ?? payloadHeight;
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="texture-preview">
+      <div
+        className="relative aspect-square w-full max-w-64 overflow-hidden rounded-md border border-border"
+        style={{
+          backgroundImage:
+            "conic-gradient(#808080 0.25turn, #c0c0c0 0.25turn 0.5turn, #808080 0.5turn 0.75turn, #c0c0c0 0.75turn)",
+          backgroundSize: "16px 16px",
+        }}
+      >
+        {url ? (
+          <img
+            src={url}
+            alt=""
+            className="size-full object-contain"
+            onLoad={(event) =>
+              setNaturalSize({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              })
+            }
+          />
+        ) : null}
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {width && height ? `${width} × ${height}` : "Source size unknown"}
+      </p>
+    </div>
+  );
+}
+
 function AssetSettingsEditor({
   assetType,
+  guid,
+  path,
   dependencies,
   payload,
   onChange,
 }: {
   assetType: string;
+  guid?: string;
+  path: string;
   dependencies: string[];
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const { retryTextureEncoding } = useDocuments();
   const rows: PropertyRow[] = [];
   if (assetType === "Texture") {
     const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
@@ -408,6 +490,29 @@ function AssetSettingsEditor({
                 : value.charAt(0).toUpperCase() + value.slice(1),
         })),
         onChange: (value) => onChange(patchTextureUsage(payload, value)),
+      },
+      {
+        id: "maxDimension",
+        kind: "enum",
+        label: "Max Dimension",
+        value: textureMaxDimensionSelectValue(payload),
+        options: TEXTURE_MAX_DIMENSION_OPTIONS.map((value) => ({
+          value,
+          label: value === "source" ? "Source" : value,
+        })),
+        onChange: (value) => {
+          const { payload: next, shouldRequeue } =
+            applyTextureMaxDimensionChange(payload, value);
+          onChange(next);
+          if (!guid || !shouldRequeue) return;
+          void retryTextureEncoding(guid, {
+            force: true,
+            maxDimension:
+              typeof next.maxDimension === "number"
+                ? next.maxDimension
+                : undefined,
+          });
+        },
       },
       {
         id: "compression",
@@ -460,7 +565,10 @@ function AssetSettingsEditor({
 
   return (
     <PanelFrame className="flex-1" title={assetType}>
-      <div data-testid="asset-settings">
+      <div className="flex flex-col gap-3" data-testid="asset-settings">
+        {assetType === "Texture" ? (
+          <TexturePreview path={path} payload={payload} />
+        ) : null}
         <PropertyGrid rows={rows} />
       </div>
     </PanelFrame>

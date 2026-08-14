@@ -229,6 +229,110 @@ export function isValidMoveDestination(options: {
   return destinationPath !== parentFolderPath(sourcePath);
 }
 
+export function isValidSelectionMoveDestination(options: {
+  destinationPath: string;
+  operation?: "move" | "copy";
+  assetSourcePaths?: readonly string[];
+  folderSourcePaths?: readonly string[];
+}): boolean {
+  const assetSourcePaths = options.assetSourcePaths ?? [];
+  const folderSourcePaths = options.folderSourcePaths ?? [];
+  if (assetSourcePaths.length + folderSourcePaths.length === 0) return false;
+  for (const sourcePath of folderSourcePaths) {
+    if (
+      !isValidMoveDestination({
+        kind: "folder",
+        sourcePath,
+        destinationPath: options.destinationPath,
+        operation: options.operation,
+      })
+    ) {
+      return false;
+    }
+  }
+  for (const sourcePath of assetSourcePaths) {
+    if (
+      !isValidMoveDestination({
+        kind: "asset",
+        sourcePath,
+        destinationPath: options.destinationPath,
+        operation: options.operation,
+      })
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export type ContentBrowserContextAction =
+  | "duplicate"
+  | "rename"
+  | "move"
+  | "copy"
+  | "show-references"
+  | "delete";
+
+export function contentBrowserContextActions(options: {
+  assetCount: number;
+  folderCount: number;
+}): ContentBrowserContextAction[] {
+  const total = options.assetCount + options.folderCount;
+  if (total === 0) return [];
+  const actions: ContentBrowserContextAction[] = ["duplicate"];
+  if (total === 1) actions.push("rename");
+  actions.push("move", "copy");
+  if (options.assetCount === 1 && options.folderCount === 0) {
+    actions.push("show-references");
+  }
+  actions.push("delete");
+  return actions;
+}
+
+export function contentBrowserMoveDialogTitle(options: {
+  operation: "move" | "copy";
+  itemCount: number;
+  folderCount?: number;
+  assetCount?: number;
+}): string {
+  const verb = options.operation === "copy" ? "Copy" : "Move";
+  if (options.itemCount !== 1) return `${verb} ${options.itemCount} items`;
+  if ((options.folderCount ?? 0) === 1) return `${verb} Folder`;
+  return `${verb} Asset`;
+}
+
+export function contentBrowserMovePreviewName(names: readonly string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0]!;
+  return `${names.length} items`;
+}
+
+export function guidsOutsideSelectedFolders(
+  guids: readonly string[],
+  folderPaths: readonly string[],
+  resolvePath: (guid: string) => string | undefined,
+): string[] {
+  return guids.filter((guid) => {
+    const path = resolvePath(guid);
+    if (!path) return true;
+    const folder = parentFolderPath(path);
+    return !folderPaths.some(
+      (selected) => folder === selected || folder.startsWith(`${selected}/`),
+    );
+  });
+}
+
+export function rootSelectedFolderPaths(
+  folderPaths: readonly string[],
+): string[] {
+  return folderPaths.filter(
+    (path) =>
+      !folderPaths.some(
+        (other) => other !== path && path.startsWith(`${other}/`),
+      ),
+  );
+}
+
 export function filterFolderTreeRows<T extends { path: string; label: string }>(
   rows: T[],
   query: string,
@@ -614,7 +718,8 @@ export function newAssetFileName(
   type: CreatableAssetType,
   name: string,
 ): string {
-  const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_") || "NewAsset";
+  const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
+  if (!safe) return "";
   const suffix =
     type === "Scene"
       ? ".scene.babasset"
@@ -682,7 +787,9 @@ export function isNewAssetNameTaken(
   type: CreatableAssetType,
   name: string,
 ): boolean {
-  const path = joinAssetFolderPath(folderPath, newAssetFileName(type, name));
+  const fileName = newAssetFileName(type, name);
+  if (!fileName) return false;
+  const path = joinAssetFolderPath(folderPath, fileName);
   for (const existing of existingPaths) {
     if (existing === path) return true;
   }

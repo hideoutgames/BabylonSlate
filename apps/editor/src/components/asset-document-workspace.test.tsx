@@ -13,6 +13,10 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const applyAssetDocumentChange = vi.hoisted(() => vi.fn(async () => true));
+const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
+const readAssetChunk = vi.hoisted(() =>
+  vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])),
+);
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
@@ -44,10 +48,36 @@ vi.mock("../context/document-context", () => ({
         layout: null,
         dirty: false,
       },
+      {
+        id: "asset-settings:assets/albedo.babasset",
+        ref: {
+          kind: "asset-settings",
+          path: "assets/albedo.babasset",
+          label: "albedo",
+        },
+        content: { usage: "albedo", compressionState: "pending" },
+        layout: null,
+        dirty: false,
+      },
+      {
+        id: "asset-settings:assets/sprite.babasset",
+        ref: {
+          kind: "asset-settings",
+          path: "assets/sprite.babasset",
+          label: "sprite",
+        },
+        content: { usage: "pixelArt", compressionState: "none" },
+        layout: null,
+        dirty: false,
+      },
     ],
     applyAssetDocumentChange,
+    retryTextureEncoding,
     projectDocument: {
-      settings: { fonts: { defaultFontGuid: null, globalFallback: "sans-serif" } },
+      settings: {
+        fonts: { defaultFontGuid: null, globalFallback: "sans-serif" },
+        textures: { maxTextureDimension: 2048 },
+      },
     },
     assetRegistry: {
       list: () => [
@@ -73,6 +103,24 @@ vi.mock("../context/document-context", () => ({
           header: { guid: "s1", name: "Stats", type: "Structure", payload: {} },
           path: "assets/Stats.structure.babasset",
         },
+        {
+          header: {
+            guid: "tex-albedo",
+            name: "albedo",
+            type: "Texture",
+            payload: { usage: "albedo" },
+          },
+          path: "assets/albedo.babasset",
+        },
+        {
+          header: {
+            guid: "tex-sprite",
+            name: "sprite",
+            type: "Texture",
+            payload: { usage: "pixelArt" },
+          },
+          path: "assets/sprite.babasset",
+        },
       ],
       getByGuid: (guid: string) =>
         guid === "font-2"
@@ -87,13 +135,14 @@ vi.mock("../context/document-context", () => ({
             }
           : undefined,
     },
-    readAssetChunk: vi.fn(async () => new Uint8Array()),
+    readAssetChunk,
   }),
 }));
 
 afterEach(() => {
   cleanup();
   applyAssetDocumentChange.mockClear();
+  retryTextureEncoding.mockClear();
 });
 
 describe("AssetDocumentWorkspace authoring", () => {
@@ -108,5 +157,25 @@ describe("AssetDocumentWorkspace authoring", () => {
       expect.objectContaining({ fallbackGuids: ["font-2"] }),
       undefined,
     );
+  });
+
+  it("shows a Texture preview and Max Dimension without extra filter toggles", () => {
+    render(
+      <AssetDocumentWorkspace documentId="asset-settings:assets/albedo.babasset" />,
+    );
+    expect(screen.getByTestId("texture-preview")).toBeTruthy();
+    expect(screen.getByTestId("property-maxDimension")).toBeTruthy();
+    expect(screen.getByTestId("property-usage")).toBeTruthy();
+    expect(screen.queryByTestId("property-mipmap")).toBeNull();
+    expect(screen.queryByTestId("property-nearest")).toBeNull();
+  });
+
+  it("shows a Texture preview for Pixel Art without encode controls beyond Usage", () => {
+    render(
+      <AssetDocumentWorkspace documentId="asset-settings:assets/sprite.babasset" />,
+    );
+    expect(screen.getByTestId("texture-preview")).toBeTruthy();
+    expect(screen.getByTestId("property-maxDimension")).toBeTruthy();
+    expect(screen.getByTestId("property-usage")).toBeTruthy();
   });
 });

@@ -142,4 +142,20 @@ describe("ContentBrowserMoveDialog", () => {
     expect(screen.getByTestId("tree-row-assets/textures")).toBeTruthy();
     expect(screen.queryByTestId("tree-row-assets/fx")).toBeNull();
   });
+
+  it("titles a multi-item move and blocks destinations that are selected folders", () => {
+    const { onDestinationChange } = renderDialog({
+      kind: "folder",
+      name: "3 items",
+      itemCount: 3,
+      currentFolderPath: "assets",
+      sourcePath: "assets/textures",
+      folderSourcePaths: ["assets/textures", "assets/audio"],
+      assetSourcePaths: ["assets"],
+      destinationPath: "assets/fx",
+    });
+    expect(screen.getByText("Move 3 items")).toBeTruthy();
+    selectRow("assets/textures");
+    expect(onDestinationChange).not.toHaveBeenCalled();
+  });
 });
