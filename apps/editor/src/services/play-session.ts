@@ -247,6 +247,7 @@ export function startPlaySession(options: {
     textureBytes: options.textureBytes,
     modelBytes: options.modelBytes,
     pixelsPerUnit: options.pixelsPerUnit,
+    environmentColor: options.scene?.settings.environmentColor,
   });
   handle.scheduler.invalidate("play");
   liveBefore.meshes = handle.liveObjectCounts().meshes;

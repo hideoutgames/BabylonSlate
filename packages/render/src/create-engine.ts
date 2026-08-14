@@ -22,6 +22,7 @@ import { configureKtx2Transcoder } from "./ktx2-transcoder";
 import {
   documentEditorColorScheme,
   editorClearColor,
+  sceneClearColor,
   type EditorColorScheme,
 } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
@@ -103,6 +104,8 @@ export interface CreateEngineOptions {
   editorFlyEnabled?: () => boolean;
   /** Viewport clear color scheme; defaults from `html.dark` when present. */
   colorScheme?: EditorColorScheme;
+  /** Play `clearColor` from scene `settings.environmentColor`. */
+  environmentColor?: readonly [number, number, number];
   /** Optional fps cap. Play sessions pass project `playFrameCap` (default 60). */
   frameCap?: number;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
@@ -207,11 +210,14 @@ export function createEngine(
 
   const scene = new Scene(engine);
   scene.skipPointerMovePicking = true;
-  scene.clearColor = editorClearColor(
-    options.colorScheme ?? documentEditorColorScheme(),
-  );
+  scene.clearColor = options.environmentColor
+    ? sceneClearColor(options.environmentColor)
+    : editorClearColor(options.colorScheme ?? documentEditorColorScheme());
   if (options.playMode) {
     scene.performancePriority = ScenePerformancePriority.Intermediate;
+    // Intermediate disables color clear (assumes a full-bleed skybox). Play
+    // scenes often have none, so restore autoClear to avoid additive trails.
+    scene.autoClear = true;
   }
 
   setupDefaultViewport(scene);
