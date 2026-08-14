@@ -19,6 +19,7 @@ export default defineConfig({
             "packages/ui-runtime/**/*.test.ts",
             "packages/anim-graph/**/*.test.ts",
             "packages/behaviour-tree/**/*.test.ts",
+            "packages/navigation/**/*.test.ts",
             "packages/shader-graph/**/*.test.ts",
             "packages/input/**/*.test.ts",
             "packages/ui/**/*.test.ts",
@@ -174,6 +175,12 @@ export default defineConfig({
           statements: 60,
         },
         "packages/behaviour-tree/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/navigation/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,

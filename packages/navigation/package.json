@@ -1,0 +1,20 @@
+{
+  "name": "@babylonslate/navigation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/navigation"
+  },
+  "dependencies": {
+    "@recast-navigation/core": "^0.43.1",
+    "@recast-navigation/generators": "^0.43.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  }
+}

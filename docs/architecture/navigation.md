@@ -1,21 +1,33 @@
 # Navigation (P11)
 
-Shared surface for navmesh bake and worker queries (engineplan §14.2, checklist `p11-navigation` / `p11-nav-blockers-2d`). Planned package: `@babylonslate/navigation`. **Not implemented in `p11-behaviour-tree`.** This note locks the port so bake and query can land without a second format.
+Shared surface for navmesh bake and worker queries (engineplan §14.2). Implementation: `@babylonslate/navigation`. Recast wasm is allowed; no React, no Babylon, no `@recast-navigation/babylon`.
+
+Bake UI, Place Actors, debug draw, and runtime crowd tick stay later slices. `NavAgentComponent` stays catalog-gated.
 
 ## Package
 
 | Package | Owns | Must not import |
 | --- | --- | --- |
-| `navigation` | Recast bake/query port, `exportNavMesh` / `importNavMesh` round-trip, crowd step, 2D XY↔XZ remap | React, Babylon (recast wasm is allowed) |
-| `apps/editor` | Geometry collect (main thread), bake worker, blocking bake modal, NavMesh actor Details | Capacitor |
-| `render` | Editor debug draw via `@recast-navigation/babylon` only | React, Capacitor |
-| `runtime` | Load scene `navmesh` chunk; tick crowd; no Babylon | Babylon, DOM |
+| `navigation` | Recast generate / `exportNavMesh` / `importNavMesh` round-trip, `NavigationBackend`, 2D XY↔XZ remap, facing-from-velocity, Scene `navmesh` chunk helpers | React, Babylon, Capacitor, `@recast-navigation/babylon` |
+| `apps/editor` | Geometry collect, bake worker host, blocking bake modal, NavMesh actor Details (later) | Capacitor |
+| `render` | Editor debug draw via `@recast-navigation/babylon` only (later) | React, Capacitor |
+| `runtime` | Load scene `navmesh` chunk; tick crowd (later) | Babylon, DOM |
 
-Do **not** use Babylon `RecastJSPlugin` — it is Scene-coupled and main-thread-only. One library (`@recast-navigation/core` + `generators`) owns the byte format.
+Do **not** use Babylon `RecastJSPlugin`. `@recast-navigation/core` + `generators` own the byte format.
+
+## This slice (`p11-navigation` package)
+
+- `generateNavMesh({ positions, indices, settings? })` → `exportNavMesh()` bytes (solo mesh). Call `initNavigation()` / generate before import.
+- `createNavigationBackend()`: `importNavMesh`, `findPath`, `closestPoint`, `randomPointInRadius`, `addObstacle` / `removeObstacle` (ids; tile-cache carving is later), `stepCrowd`.
+- `worldToRecast` / `recastToWorld`: 2D world `(x, y, _)` ↔ Recast `(x, 0, y)`. Property-tested. No other code touches Recast axes.
+- `facingYawFromVelocity`: Recast XZ yaw (`atan2(x, z)`), keep previous yaw below a min-length guard.
+- `navmeshChunk` / `navmeshBytesFromChunks` / `NAVMESH_CHUNK_ID = "navmesh"`. Pass the chunk as `extraChunks` on Scene save; `extraChunksFromDecoded` already preserves it. Not a Content Browser type.
+
+Recast settings (`NavMeshSettings`) are data: cell size/height, walkable slope/height/climb/radius, edge length, simplification error, region areas, verts per poly, detail sampling.
 
 ## Bytes on the Scene asset
 
-Bake in the editor; **never** generate at Play start.
+Bake in the editor (later); **never** generate at Play start.
 
 | Field | Value |
 | --- | --- |
@@ -24,49 +36,19 @@ Bake in the editor; **never** generate at Play start.
 | Bytes | `exportNavMesh()` |
 | Save | `extraChunksFromDecoded` already preserves non-document chunks |
 
-A NavMesh **actor** in the scene owns Recast settings, bake bounds, solo vs tiled, dynamic-obstacle tile cache toggle, Bake, optional auto-bake-on-save (off by default).
-
-## Port (API to land with `p11-navigation`)
-
-```ts
-type NavPoint = { x: number; y: number; z: number };
-
-type NavigationBackend = {
-  importNavMesh(bytes: Uint8Array): void;
-  findPath(from: NavPoint, to: NavPoint): NavPoint[];
-  closestPoint(point: NavPoint): NavPoint | null;
-  randomPointInRadius(center: NavPoint, radius: number): NavPoint | null;
-  addObstacle(kind: "box" | "cylinder", pose: NavPoint, size: NavPoint): string;
-  removeObstacle(id: string): void;
-  stepCrowd(dtSeconds: number): void;
-};
-```
-
-Agent facing is derived from velocity with a minimum-length guard (Recast crowd has no orientation).
-
-## 2D remap
-
-Single pure pair with round-trip property tests. No other code touches Recast coordinates.
-
-- 2D world `(x, y, _)` → Recast `(x, 0, y)` (XZ plane, Y up in Recast).
-- Paths and crowd positions map back to XY.
-- 2D bake input is tilemap collision chains and 2D colliders, extruded as prisms on Recast Y.
-
-## Bake modal
-
-Main-thread merge cannot run in a worker (Babylon/Recast geometry collect). Pressing Bake:
-
-1. Shows a non-dismissable modal on a painted frame before collect starts.
-2. Names the phase (collect → generate in bake worker → write chunk).
-3. Releases the editor once the worker has the positions/indices (cancellable progress).
-
-## Later slices
+## Later slices (do not start here)
 
 | Slice | Work |
 | --- | --- |
-| `p11-navigation` | Package + bake worker + chunk read/write + NavMesh actor UI |
-| `p11-nav-blockers-2d` | Static vs dynamic `NavMeshBlockerActor`, area cost, scripting FindPathTo / MoveTo / …, BT MoveTo |
+| Nav editor host | Main-thread geometry collect, bake worker wrapping `generateNavMesh`, blocking bake modal, NavMesh Place Actor + Recast settings Details, `@recast-navigation/babylon` debug draw, runtime `importNavMesh` / crowd tick |
+| `p11-nav-blockers-2d` | Static vs dynamic `NavMeshBlockerActor`, area cost, tile-cache obstacles, scripting FindPathTo / MoveTo / …, BT MoveTo |
 
-`BehaviourTreeComponent` MoveTo waits on this port. Catalogs stay gated until authoring lands.
+Bake modal (when the editor host lands):
+
+1. Non-dismissable modal on a painted frame before collect starts.
+2. Names the phase (collect → generate in bake worker → write chunk).
+3. Releases the editor once the worker has positions/indices (cancellable progress).
+
+`BehaviourTreeComponent` MoveTo waits on this port. Catalogs stay gated until `p11-bt-authoring`.
 
 See [behaviour-tree.md](behaviour-tree.md). Spec: [engineplan.md](../engineplan.md) §14.2.

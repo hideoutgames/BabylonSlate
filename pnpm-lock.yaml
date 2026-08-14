@@ -360,6 +360,19 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/navigation:
+    dependencies:
+      '@recast-navigation/core':
+        specifier: ^0.43.1
+        version: 0.43.1
+      '@recast-navigation/generators':
+        specifier: ^0.43.1
+        version: 0.43.1
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/object-model:
     dependencies:
       '@babylonslate/core':
@@ -1493,6 +1506,15 @@ packages:
     resolution: {integrity: sha512-DTcUc8qii+cpHvtOwggMtBRMjKZHXYWdw8syRYu2vtzuq4Wxphqq4NfCs5Zt44L6mA8rfDfj+PHnxFc/FeK6mQ==}
     engines: {node: '>=20'}
     hasBin: true
+
+  '@recast-navigation/core@0.43.1':
+    resolution: {integrity: sha512-4igfPgnoV90O92sDSIA0xHa6tanh3z/udlgGmD0SqGQ6PKV4JS2l9jWO8YnxfZuXP/NV52H4c5FU6pSdZc9WDA==}
+
+  '@recast-navigation/generators@0.43.1':
+    resolution: {integrity: sha512-w7r6k/A93wWxuSN+Lg+PmlsUVXq06r5bqXmBglolxqDt2O/Y776BIhYtb6P2P6pbYqDWORu9NCZZJzfY4FNpaA==}
+
+  '@recast-navigation/wasm@0.43.1':
+    resolution: {integrity: sha512-XFL6PhO8JodwXUHBSAkfaLUdUEweIkJsdP3HTmtJvMs5fkqEWxWJmBskZlACHJepv55NAriqWxOtuLlG3t7+Hg==}
 
   '@rolldown/binding-android-arm64@1.2.3':
     resolution: {integrity: sha512-zrJtHDcaZJ1Fp7xf4hNl+7seH9Cn/N5TwLYkhgXREtBwAd/jaqW3uqeHxpDugJLVICWg4eW44kOQEGJ1r6jCGw==}
@@ -5828,6 +5850,17 @@ snapshots:
   '@playwright/test@1.62.1':
     dependencies:
       playwright: 1.62.1
+
+  '@recast-navigation/core@0.43.1':
+    dependencies:
+      '@recast-navigation/wasm': 0.43.1
+
+  '@recast-navigation/generators@0.43.1':
+    dependencies:
+      '@recast-navigation/core': 0.43.1
+      '@recast-navigation/wasm': 0.43.1
+
+  '@recast-navigation/wasm@0.43.1': {}
 
   '@rolldown/binding-android-arm64@1.2.3':
     optional: true
