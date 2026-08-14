@@ -122,7 +122,7 @@ Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/sh
 
 ## Axis colors
 
-Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`, `--axis-z` is an independent blue (`oklch(0.50 0.14 250)` light / `oklch(0.62 0.14 250)` dark) — not `var(--primary)`, because primary is ink (`text-axis-x` / `y` / `z`). Scene/Prefab transform gizmos in `@babylonslate/render` cannot read CSS; they hardcode matching `Color3`s in `GIZMO_AXIS_COLORS` (`x` 0.86/0.24/0.22, `y` 0.22/0.68/0.38, `z` 0.28/0.48/0.86). Keep those in sync when axis tokens change.
+Vector scrub labels: `--axis-x` → `--destructive`, `--axis-y` → `--success`, `--axis-z` is an independent blue (`oklch(0.50 0.14 250)` light / `oklch(0.62 0.14 250)` dark) — not `var(--primary)`, because primary is ink (`text-axis-x` / `y` / `z`). Scene/Prefab transform gizmos in `@babylonslate/render` cannot read CSS; they hardcode matching `Color3`s in `GIZMO_AXIS_COLORS` (`x` 0.86/0.24/0.22, `y` 0.22/0.68/0.38, `z` 0.28/0.48/0.86). Uniform scale uses unlit `GIZMO_UNIFORM_COLOR` (`0.82/0.84/0.88`) on Babylon’s center octahedron. Keep those in sync when axis tokens change.
 
 ## Other extension tokens
 

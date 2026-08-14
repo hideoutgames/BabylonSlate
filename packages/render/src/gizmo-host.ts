@@ -1,7 +1,5 @@
 import {
-  AxisScaleGizmo,
   Color3,
-  MeshBuilder,
   PositionGizmo,
   RotationGizmo,
   ScaleGizmo,
@@ -52,7 +50,13 @@ export interface GizmoHost {
 }
 
 /** Touch handles need to be well past the 44px floor at typical zoom. */
-export const DEFAULT_GIZMO_HANDLE_SCALE = 2.4;
+export const DEFAULT_GIZMO_HANDLE_SCALE = 3.6;
+
+/** Invisible pick meshes, scaled independently of the thin visual shafts. */
+export const GIZMO_COLLIDER_SCALE = 2.5;
+
+/** Visible translate cones and scale boxes only — not shafts. */
+export const GIZMO_END_CAP_SCALE = 1.6;
 
 /** Thinner than Babylon's default shaft thickness of 1. */
 export const GIZMO_SHAFT_THICKNESS = 0.45;
@@ -72,6 +76,9 @@ export const GIZMO_AXIS_COLORS = {
   y: new Color3(0.22, 0.68, 0.38),
   z: new Color3(0.28, 0.48, 0.86),
 } as const;
+
+/** Unlit center handle for uniform scale (Babylon octahedron). */
+export const GIZMO_UNIFORM_COLOR = new Color3(0.82, 0.84, 0.88);
 
 export interface GizmoAxisEnabledFlags {
   position: { x: boolean; y: boolean; z: boolean };
@@ -182,18 +189,36 @@ function styleEditorGizmos(
       GIZMO_PLANAR_HOVER_ALPHA,
     );
   }
-  const cube = MeshBuilder.CreateBox(
-    "gizmo-uniform-scale",
-    { size: 0.14 },
-    scale.uniformScaleGizmo.gizmoLayer.utilityLayerScene,
+  styleUnlitAxis(
+    scale.coloredMaterial,
+    scale.hoverMaterial,
+    GIZMO_UNIFORM_COLOR,
   );
-  (scale.uniformScaleGizmo as AxisScaleGizmo).setCustomMesh(cube, true);
-  const uniform = new Color3(0.82, 0.84, 0.88);
   styleUnlitAxis(
     scale.uniformScaleGizmo.coloredMaterial,
     scale.uniformScaleGizmo.hoverMaterial,
-    uniform,
+    GIZMO_UNIFORM_COLOR,
   );
+}
+
+function isLeafMesh(mesh: AbstractMesh): boolean {
+  return mesh.getChildMeshes().length === 0;
+}
+
+/** Translate arrow heads sit at z=0.3; shafts sit closer to the origin. */
+function isTranslateCone(mesh: AbstractMesh): boolean {
+  return mesh.name === "cylinder" && Math.abs(mesh.position.z - 0.3) < 0.02;
+}
+
+function enlargeGizmoTouchTargets(root: AbstractMesh): void {
+  for (const mesh of root.getChildMeshes()) {
+    if (!isLeafMesh(mesh)) continue;
+    if (mesh.visibility === 0) {
+      mesh.scaling.scaleInPlace(GIZMO_COLLIDER_SCALE);
+    } else if (mesh.name === "yPosMesh" || isTranslateCone(mesh)) {
+      mesh.scaling.scaleInPlace(GIZMO_END_CAP_SCALE);
+    }
+  }
 }
 
 /**
@@ -218,10 +243,11 @@ export function createGizmoHost(
   const scale = new ScaleGizmo(layer, GIZMO_SHAFT_THICKNESS);
   const gizmos = [position, rotation, scale];
 
-  for (const gizmo of gizmos) {
+  for (const gizmo of [position, rotation]) {
     gizmo.scaleRatio = handleScale;
     gizmo.updateGizmoRotationToMatchAttachedMesh = false;
   }
+  scale.scaleRatio = handleScale;
   position.planarGizmoEnabled = true;
   styleEditorGizmos(position, rotation, scale);
 
@@ -250,7 +276,7 @@ export function createGizmoHost(
     options.onDrag?.();
   };
 
-  for (const axis of [
+  const axisHandles = [
     position.xGizmo,
     position.yGizmo,
     position.zGizmo,
@@ -264,7 +290,9 @@ export function createGizmoHost(
     scale.yGizmo,
     scale.zGizmo,
     scale.uniformScaleGizmo,
-  ]) {
+  ];
+  for (const axis of axisHandles) {
+    enlargeGizmoTouchTargets(axis._rootMesh);
     axis.dragBehavior.onDragStartObservable.add(startDrag);
     axis.dragBehavior.onDragObservable.add(drag);
     axis.dragBehavior.onDragEndObservable.add(endDrag);
