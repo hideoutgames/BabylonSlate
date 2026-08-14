@@ -21,6 +21,7 @@ packages/runtime/     Game worker + in-process driver, snapshot writer, diagnost
 packages/debugger/    Command registry, parser, BDebugCommand helpers, stats budget, trace recorder (P8)
 packages/ui-runtime/  Widget tree, anchors, layout, font-stack compiler, cycle check (P9)
 packages/anim-graph/  AnimationGraph evaluator in the game worker (P9)
+packages/behaviour-tree/ Tree IR, blackboard, explicit-stack evaluator (P11)
 packages/shader-graph/ Shader IR; compile-to-NodeMaterial in render (P9)
 packages/input/       Raw input ring + action/axis mapping model and `InputResolver`
 packages/render/      Snapshot sync, visibility-gated editor loop, resource cache, editor tools, KTX2 transcoder, FontFace registry, Babylon GUI apply
@@ -32,7 +33,7 @@ packages/editor-kit/  Touch-shell hooks, property grid, tree view, panel frame, 
 packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [global-search.md](global-search.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md), [debugger.md](debugger.md), [ui-runtime.md](ui-runtime.md), [fonts.md](fonts.md), [sprites.md](sprites.md), [tilemaps.md](tilemaps.md), [anim-graph.md](anim-graph.md), [shader-graph.md](shader-graph.md), [theming.md](theming.md), [components.md](components.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [global-search.md](global-search.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md), [debugger.md](debugger.md), [ui-runtime.md](ui-runtime.md), [fonts.md](fonts.md), [sprites.md](sprites.md), [tilemaps.md](tilemaps.md), [anim-graph.md](anim-graph.md), [behaviour-tree.md](behaviour-tree.md), [navigation.md](navigation.md), [shader-graph.md](shader-graph.md), [theming.md](theming.md), [components.md](components.md).
 
 ## Threading (P4)
 
@@ -69,7 +70,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
+| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `behaviour-tree`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
 | `physics` | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok` on a worker-local NullEngine Scene. |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |

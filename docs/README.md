@@ -32,6 +32,8 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/sprites.md](architecture/sprites.md) | Sprite atlas, packer, SpriteComponent quad |
 | [architecture/tilemaps.md](architecture/tilemaps.md) | Tileset / Tilemap assets, chunk VertexData, painting, Rapier chains |
 | [architecture/anim-graph.md](architecture/anim-graph.md) | Worker animation graph evaluator |
+| [architecture/behaviour-tree.md](architecture/behaviour-tree.md) | Behaviour tree IR, blackboard, explicit-stack evaluator |
+| [architecture/navigation.md](architecture/navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Shader IR to NodeMaterial |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |

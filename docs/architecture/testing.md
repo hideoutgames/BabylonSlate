@@ -8,7 +8,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/ui-runtime`, `packages/anim-graph`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `apps/docs` (sidebar coverage + repo-link rewriter) — no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/ui-runtime`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `apps/docs` (sidebar coverage + repo-link rewriter) — no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` (`.test.ts` and `.test.tsx`) |
 | `babylon` | node | `packages/render` via `NullEngine` |
 

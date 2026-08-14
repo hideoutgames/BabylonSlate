@@ -50,7 +50,7 @@ Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBod
 
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `AnimationGraphComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
 
-Search and Add Component advertise shipped behaviour: `TilemapComponent` is addable (P10 Play loads chunk meshes and Rapier chains). Behaviour-tree / nav stay registered here and wait for P11; `WidgetComponent` stays registered but is hidden until world-space `CreateForMesh` exists. `AudioComponent` stays registered but is **not** in Search/Add; compiled graphs call `ctx.playSound`, which emits a `playSound` command (Play logs it; there is no mixer yet).
+Search and Add Component advertise shipped behaviour: `TilemapComponent` is addable (P10 Play loads chunk meshes and Rapier chains). Behaviour-tree / nav stay registered here and wait for `p11-bt-authoring`; the tree IR and evaluator live in `@babylonslate/behaviour-tree` ([behaviour-tree.md](behaviour-tree.md)). `WidgetComponent` stays registered but is hidden until world-space `CreateForMesh` exists. `AudioComponent` stays registered but is **not** in Search/Add; compiled graphs call `ctx.playSound`, which emits a `playSound` command (Play logs it; there is no mixer yet).
 
 See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
 

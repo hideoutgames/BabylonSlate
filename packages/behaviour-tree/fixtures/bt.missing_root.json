@@ -1,0 +1,34 @@
+{
+  "name": "missing-root",
+  "rootId": "gone",
+  "blackboardGuid": null,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "selector",
+      "classId": "bt.composite.selector",
+      "children": ["seq"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "seq",
+      "kind": "sequence",
+      "classId": "bt.composite.sequence",
+      "children": ["ok"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "ok",
+      "kind": "task",
+      "classId": "bt.task.succeed",
+      "children": [],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    }
+  ]
+}

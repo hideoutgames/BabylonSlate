@@ -1,0 +1,16 @@
+{
+  "name": "empty-composite",
+  "rootId": "root",
+  "blackboardGuid": null,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "selector",
+      "classId": "bt.composite.selector",
+      "children": [],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    }
+  ]
+}

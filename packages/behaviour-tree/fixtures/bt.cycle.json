@@ -1,0 +1,25 @@
+{
+  "name": "cycle",
+  "rootId": "root",
+  "blackboardGuid": null,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "selector",
+      "classId": "bt.composite.selector",
+      "children": ["seq"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "seq",
+      "kind": "sequence",
+      "classId": "bt.composite.sequence",
+      "children": ["root"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    }
+  ]
+}
