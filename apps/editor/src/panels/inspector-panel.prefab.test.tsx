@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { createMeshComponent } from "@babylonslate/core";
 import { InspectorPanel } from "./inspector-panel";
-import { MyClassPanel } from "./my-class-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
+import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 
 if (
   typeof window !== "undefined" &&
@@ -41,21 +42,20 @@ vi.mock("../context/document-context", () => ({
           edges: [],
           members: [
             { id: "var-1", kind: "variable", name: "Health", typeId: "bool" },
-            { id: "fn-1", kind: "function", name: "Jump", pins: [] },
-            {
-              id: "if-1",
-              kind: "interface",
-              name: "Damageable",
-              assetGuid: "",
-            },
           ],
+          components: [createMeshComponent("prefab-mesh", "box")],
         },
         layout: null,
         dirty: false,
       },
     ],
     applyGraphChange,
-    projectDocument: { settings: { input: { actions: [], axes: [] } } },
+    projectDocument: {
+      settings: {
+        twoD: { sortingLayers: ["Default"] },
+        input: { actions: [], axes: [] },
+      },
+    },
     assetRegistry: { list: () => [] },
   }),
 }));
@@ -71,13 +71,17 @@ vi.mock("../context/play-context", () => ({
   usePlay: () => ({ focusedNodeId: null }),
 }));
 
-function renderMemberInspector(memberId: string, includeClassPanel = false) {
+function renderInspector(options?: {
+  selectedComponentId?: string | null;
+  selectedMemberId?: string | null;
+}) {
   return render(
-    <PrefabEditingProvider>
-      <GraphEditingProvider initialSelectedMemberId={memberId}>
-        {includeClassPanel ? (
-          <MyClassPanel {...({} as IDockviewPanelProps)} />
-        ) : null}
+    <PrefabEditingProvider
+      initialSelectedId={options?.selectedComponentId ?? PREFAB_ROOT_ID}
+    >
+      <GraphEditingProvider
+        initialSelectedMemberId={options?.selectedMemberId ?? null}
+      >
         <InspectorPanel {...({} as IDockviewPanelProps)} />
       </GraphEditingProvider>
     </PrefabEditingProvider>,
@@ -89,25 +93,21 @@ afterEach(() => {
   applyGraphChange.mockClear();
 });
 
-describe("Inspector class member details", () => {
-  it("shows PinTypePicker for a selected variable", () => {
-    renderMemberInspector("var-1", true);
-    expect(screen.getByTestId("class-var-type-var-1")).toBeTruthy();
-    expect(screen.getByTestId("inspector-member-type")).toBeTruthy();
+describe("Inspector prefab component details", () => {
+  it("shows Mesh Kind when a prefab component is selected", () => {
+    renderInspector({ selectedComponentId: "prefab-mesh" });
+    expect(screen.getByTestId("inspector-prefab-component")).toBeTruthy();
+    expect(
+      screen.getByTestId("property-prefab-root-prefab-mesh-meshKind"),
+    ).toBeTruthy();
+  });
+
+  it("keeps class member details when Prefab Root is selected", () => {
+    renderInspector({
+      selectedComponentId: PREFAB_ROOT_ID,
+      selectedMemberId: "var-1",
+    });
     expect(screen.getByTestId("inspector-member-variable")).toBeTruthy();
-  });
-
-  it("shows separate Inputs and Outputs editors for a selected function", () => {
-    renderMemberInspector("fn-1");
-    expect(screen.getByTestId("inspector-member-inputs")).toBeTruthy();
-    expect(screen.getByTestId("inspector-member-outputs")).toBeTruthy();
-    expect(screen.queryByTestId("inspector-member-pins")).toBeNull();
-    expect(screen.getByTestId("class-fn-in-add")).toBeTruthy();
-    expect(screen.getByTestId("class-fn-out-add")).toBeTruthy();
-  });
-
-  it("shows ScriptInterface AssetPicker for a selected interface", () => {
-    renderMemberInspector("if-1");
-    expect(screen.getByTestId("inspector-member-interface-pick")).toBeTruthy();
+    expect(screen.queryByTestId("inspector-prefab-component")).toBeNull();
   });
 });

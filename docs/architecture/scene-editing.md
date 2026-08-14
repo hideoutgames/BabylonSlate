@@ -4,12 +4,12 @@ Shared-surface design note for viewport, outliner, details, and the edit layer. 
 
 ## SerializedScene v3
 
-| Field | Role |
-| --- | --- |
-| `name` | Scene display name |
-| `viewportMode` | `"3d"` \| `"2d"` — per-scene default; toolbar toggle always available |
-| `settings` | Environment, gravity, timestep, `gameInstanceClass`, grid, `cameraBounds2D`, `editorJoystickEnabled` |
-| `actors` | Flat list with `parentId`; hierarchy resolved at apply time |
+| Field          | Role                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------- |
+| `name`         | Scene display name                                                                                   |
+| `viewportMode` | `"3d"` \| `"2d"` — per-scene default; toolbar toggle always available                                |
+| `settings`     | Environment, gravity, timestep, `gameInstanceClass`, grid, `cameraBounds2D`, `editorJoystickEnabled` |
+| `actors`       | Flat list with `parentId`; hierarchy resolved at apply time                                          |
 
 Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / quaternion rotation / scale), `visible`, `locked`, `components[]`. Details shows **Position**, **Rotation**, and **Scale** as one nowrap XYZ row each. Rotation is **Euler degrees** in the UI; `transform.rotation` stays `[x,y,z,w]` quaternion (`quaternionToEulerDegrees` / `eulerDegreesToQuaternion` in `@babylonslate/core`). 2D drops unused axes (Position/Scale XY, Rotation Z).
 
@@ -35,13 +35,13 @@ Panels never mutate selection independently — they consume `useSceneEditing()`
 
 Every scene Details / outliner / viewport mutation routes through `applySceneChange` → `diffSceneCommands` → the undo stack. Notable command types:
 
-| Command | Diff trigger |
-| --- | --- |
-| `SetSceneNameCommand` | `scene.name` |
-| `SetViewportModeCommand` | `scene.viewportMode` |
-| `SetSceneSettingCommand` | any `settings.*` field (including `grid.snapEnabled`, `grid.showGrid`, `gameInstanceClass`) |
-| `ReorderComponentCommand` | component list order change with the same ids |
-| `SetActorTransformCommand` | gizmo drag / Details transform (merge key `transform:{actorId}`) |
+| Command                    | Diff trigger                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `SetSceneNameCommand`      | `scene.name`                                                                                |
+| `SetViewportModeCommand`   | `scene.viewportMode`                                                                        |
+| `SetSceneSettingCommand`   | any `settings.*` field (including `grid.snapEnabled`, `grid.showGrid`, `gameInstanceClass`) |
+| `ReorderComponentCommand`  | component list order change with the same ids                                               |
+| `SetActorTransformCommand` | gizmo drag / Details transform (merge key `transform:{actorId}`)                            |
 
 `RemoveActorCommand` stores a single-actor snapshot (not a full subtree). UI deletes that remove a hierarchy emit one remove per actor.
 
@@ -49,9 +49,9 @@ Every scene Details / outliner / viewport mutation routes through `applySceneCha
 
 Both systems are **mode-parametric** via `ViewportMode` from `@babylonslate/core`:
 
-| Mode | Camera | Gizmo |
-| --- | --- | --- |
-| `3d` | Fly/look: WASD + one-finger (or LMB) look-in-place, pinch/wheel zoom, three-finger pan | Full translate / rotate / scale |
+| Mode | Camera                                                                                                                                                                 | Gizmo                                                |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `3d` | Fly/look: WASD + one-finger (or LMB) look-in-place, pinch/wheel zoom, three-finger pan                                                                                 | Full translate / rotate / scale                      |
 | `2d` | Orthographic; WASD/joystick XY pan, one-finger pan 1:1 with the pointer (hold-then-move marquee), pinch zoom, three-finger pan at the same 1:1 scale (look is a no-op) | XY translate, Z rotate, XY scale; unused axes hidden |
 
 **2D convention** (fixed, left-handed Babylon): content on the **XY plane**, **+Y up**, **+X right**, editor camera at **−Z** looking toward **+Z**. `scene.useRightHandedSystem` stays `false`.
@@ -70,13 +70,13 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 ## Packages
 
-| Package | Responsibility |
-| --- | --- |
-| `@babylonslate/core` | `SerializedScene`, `SceneSettings`, `ViewportMode`, normalisation |
-| `@babylonslate/edit` | Scene commands + `diffSceneCommands`; journal revivers |
-| `@babylonslate/render` | Editor tools: camera, gizmos, grid, outline, sync, gestures |
-| `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker, class picker, input mapping editor |
-| `apps/editor` | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists these dock tabs and toggles them; reopen restores addPanel-relative last placement. |
+| Package                    | Responsibility                                                                                                                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@babylonslate/core`       | `SerializedScene`, `SceneSettings`, `ViewportMode`, normalisation                                                                                                                                                              |
+| `@babylonslate/edit`       | Scene commands + `diffSceneCommands`; journal revivers                                                                                                                                                                         |
+| `@babylonslate/render`     | Editor tools: camera, gizmos, grid, outline, sync, gestures                                                                                                                                                                    |
+| `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker, class picker, input mapping editor                                                                                                                               |
+| `apps/editor`              | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists these dock tabs and toggles them; reopen restores addPanel-relative last placement. |
 
 ## Outliner and Details visuals
 
@@ -92,7 +92,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 - **`cameraBounds2D`**: rectangle drawn in the viewport for the game camera frame.
 - **`pixelsPerUnit`**: project setting (default 100); drives pixel-perfect ortho bounds and grid snapping.
 - **Pixel-perfect sampling**: when `twoD.pixelPerfect` is on in 2D mode, `setPixelPerfect` also runs `applyPixelArtSamplingToScene` (nearest sampling, clamp wrap, anisotropy 1) on every texture currently on the Babylon scene.
-- **Integer zoom steps**: project setting (`twoD.integerZoomSteps`, on in the 2D template) does **not** quantize the editor camera. Pinch and wheel stay continuous so 2D zoom tracks the fingers; pixel-perfect still snaps the camera *target* to the pixel grid. `pixelZoom()` is the live scale.
+- **Integer zoom steps**: project setting (`twoD.integerZoomSteps`, on in the 2D template) does **not** quantize the editor camera. Pinch and wheel stay continuous so 2D zoom tracks the fingers; pixel-perfect still snaps the camera _target_ to the pixel grid. `pixelZoom()` is the live scale.
 - **Sorting layers**: ordered list in Project Settings (`NamedListEditor`); `(sortingLayer, orderInLayer)` compiled to one `alphaIndex` sort key; rendering groups reserved for coarse background / world / foreground / UI separation (`sorting.ts`).
 - **Locked actors**: `isPickable = false` and the viewport gizmo attaches only to pickable meshes. **Locking an actor immediately drops it from `selectedActorIds`** (Outliner lock toggle and Details Locked). Unlock does not reselect. Details then shows scene settings when nothing remains selected.
 
@@ -100,13 +100,13 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 
 Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`. Default class layout:
 
-| Dock | Panels |
-| --- | --- |
-| Center group | **Graph** and **Prefab** as siblings (`direction: "within"`). Selecting Prefab fills the workspace like Viewport does on a Scene. |
-| Left | **Components** above **Class** (My Blueprint member tree with type-colored rows and trailing section +; Inspector shows the selected member). |
-| Right / bottom | Inspector, Compiler Results |
+| Dock           | Panels                                                                                                                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Center group   | **Graph** and **Prefab** as siblings (`direction: "within"`). Selecting Prefab fills the workspace like Viewport does on a Scene.                                                                                                                                               |
+| Left           | **Components** above **Class** (My Blueprint member tree with type-colored rows and trailing section +). Inspector shows the selected **component or** class member (component wins when a real component is selected; Prefab Root / empty space keeps member or node details). |
+| Right / bottom | Inspector, Compiler Results                                                                                                                                                                                                                                                     |
 
-The Prefab viewport reuses `ViewportToolbar` + `createEngine` (unlit gizmos, fly/look camera, settings menu for snap / show-grid / joystick). Drag Select is hidden — Prefab has no actor multi-select. The canvas is full-size, not a 160px sidebar strip, and stays dark like the Scene viewport. Component add/remove/reparent (`parentId`) writes `SerializedGraph.components` through `applyGraphChange` (`graph.setComponents` / `scene.reparentComponent`). Place Actors instantiates those components when spawning a Class asset from an open tab **or** from the class file on disk.
+The Prefab viewport reuses `ViewportToolbar` + `createEngine` (unlit gizmos, fly/look camera, settings menu for snap / show-grid / joystick). Drag Select is hidden — Prefab has no actor multi-select. Tapping the preview mesh selects Prefab Root; tapping empty space clears the tree selection (gizmo detaches). Child components are not separately pickable — the preview is one actor (`createActorMesh` uses the first renderable component). Component property edits in Inspector go through `updateComponent` → `applyGraphChange`. The canvas is full-size, not a 160px sidebar strip, and stays dark like the Scene viewport. Component add/remove/reparent (`parentId`) writes `SerializedGraph.components` through `applyGraphChange` (`graph.setComponents` / `scene.reparentComponent`). Place Actors instantiates those components when spawning a Class asset from an open tab **or** from the class file on disk.
 
 **Focus** (toolbar toggle) closes dock tabs that are not on the Engine Settings Focus keep-list. Class default is Graph only; Scene default is Viewport. Keep-listed tabs stay only if they were already open.
 

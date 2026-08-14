@@ -13,7 +13,12 @@ import { usePlay } from "../context/play-context";
 import { useDocuments } from "../context/document-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
-import { previewSceneFor, PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import {
+  previewSceneFor,
+  PREFAB_ROOT_ID,
+  prefabSelectedActorIds,
+  prefabSelectedIdFromPick,
+} from "../lib/prefab-preview";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -34,7 +39,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
   const joystickLeaseRef = useRef<(() => void) | null>(null);
-  const { components, selectedId } = usePrefabEditing();
+  const { components, selectedId, setSelectedId } = usePrefabEditing();
   const {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
@@ -52,6 +57,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     loadEditorCameraPose,
   } = useSceneEditing();
   const { registerScheduler, playing } = usePlay();
+  const setSelectedIdRef = useRef(setSelectedId);
+  setSelectedIdRef.current = setSelectedId;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -60,6 +67,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       editor: true,
       viewportMode,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
+      onPickActor: (actorId) => {
+        setSelectedIdRef.current(prefabSelectedIdFromPick(actorId));
+      },
     });
     engineRef.current = handle;
     handle.editor?.camera.importSessionState(loadEditorCameraPose());
@@ -165,11 +175,12 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle?.editor) return;
-    handle.editor.setSelectedActors([PREFAB_ROOT_ID]);
+    const selectedActors = prefabSelectedActorIds(selectedId);
+    handle.editor.setSelectedActors(selectedActors);
     const scene = previewSceneFor(components);
     handle.editor.syncSelectionDebug({
       sceneData: scene,
-      selectedActorIds: [PREFAB_ROOT_ID],
+      selectedActorIds: selectedActors,
       selectedComponentIds:
         selectedId && selectedId !== PREFAB_ROOT_ID ? [selectedId] : undefined,
     });
@@ -207,9 +218,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
                 const scheduler = engineRef.current?.scheduler;
                 if (!scheduler) return;
                 if (active) {
-                  joystickLeaseRef.current ??= scheduler.acquireContinuous(
-                    "viewport-joystick",
-                  );
+                  joystickLeaseRef.current ??=
+                    scheduler.acquireContinuous("viewport-joystick");
                 } else {
                   joystickLeaseRef.current?.();
                   joystickLeaseRef.current = null;
