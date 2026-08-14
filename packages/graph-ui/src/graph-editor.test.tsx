@@ -6,6 +6,7 @@ import { GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 import { FORMAT_GAP_X } from "./graph-format";
 import { MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
+import { treeNodeTypes } from "./tree-node";
 
 afterEach(() => {
   cleanup();
@@ -1166,6 +1167,85 @@ describe("GraphEditor", () => {
     expect(getByTestId("graph-delete").hasAttribute("disabled")).toBe(true);
     expect(getByTestId("graph-copy").hasAttribute("disabled")).toBe(true);
     expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
+  });
+
+  it("renders a host-provided node type", async () => {
+    function MarkerNode() {
+      return <div data-testid="custom-marker-node">Marker</div>;
+    }
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "m1",
+              type: "marker",
+              position: { x: 0, y: 0 },
+              data: { title: "M" },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={{ marker: MarkerNode }}
+      />,
+    );
+    await waitFor(() => {
+      expect(getByTestId("custom-marker-node").textContent).toBe("Marker");
+    });
+  });
+
+  it("honors nodesDraggable=false while still allowing selection", () => {
+    const { getByTestId } = render(
+      <GraphEditor initialGraph={graphWithPins()} nodesDraggable={false} />,
+    );
+    expect(getByTestId("graph-editor").getAttribute("data-nodes-draggable")).toBe(
+      "false",
+    );
+  });
+
+  it("renders toolbarExtra next to Format", () => {
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        toolbarExtra={<button type="button" data-testid="graph-relayout">Re-layout</button>}
+      />,
+    );
+    expect(getByTestId("graph-relayout")).toBeTruthy();
+  });
+
+  it("renders behaviour-tree attached decorator rows", async () => {
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "root",
+              type: "bt.node",
+              position: { x: 0, y: 0 },
+              data: {
+                title: "Selector",
+                kind: "selector",
+                classId: "bt.composite.selector",
+                sortIndex: 0,
+                decorators: [
+                  { id: "dec-1", classId: "bt.decorator.blackboardIsSet" },
+                ],
+                services: [],
+              },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={treeNodeTypes}
+        nodesDraggable={false}
+      />,
+    );
+    await waitFor(() => {
+      expect(getByTestId("bt-node-root")).toBeTruthy();
+      expect(getByTestId("bt-decorator-dec-1").textContent).toContain(
+        "blackboardIsSet",
+      );
+    });
   });
 });
 

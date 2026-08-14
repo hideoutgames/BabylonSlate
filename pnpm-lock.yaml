@@ -263,10 +263,19 @@ importers:
 
   packages/behaviour-tree:
     dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
       '@babylonslate/scripting':
         specifier: workspace:*
         version: link:../scripting
+      d3-hierarchy:
+        specifier: ^3.1.2
+        version: 3.1.2
     devDependencies:
+      '@types/d3-hierarchy':
+        specifier: ^3.1.7
+        version: 3.1.7
       typescript:
         specifier: ~5.8.2
         version: 5.8.3

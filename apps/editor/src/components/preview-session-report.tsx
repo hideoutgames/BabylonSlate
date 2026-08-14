@@ -57,7 +57,7 @@ export function PreviewSessionReport({
                 type="button"
                 className="flex min-h-11 w-full flex-col items-start gap-1 rounded-md border border-border px-3 py-2 text-left"
                 data-testid="session-report-row"
-                data-node-id={entry.nodeId ?? ""}
+                data-node-id={entry.btNodeId ?? entry.nodeId ?? ""}
                 onClick={() => onNavigate(entry)}
               >
                 <span className="text-sm font-medium">
@@ -66,7 +66,11 @@ export function PreviewSessionReport({
                 </span>
                 <SelectableText className="text-xs text-muted-foreground">
                   {entry.assetGuid ?? "unknown"}
-                  {entry.nodeId ? ` › ${entry.nodeId}` : ""}
+                  {entry.btNodeId
+                    ? ` › ${entry.btNodeId}`
+                    : entry.nodeId
+                      ? ` › ${entry.nodeId}`
+                      : ""}
                 </SelectableText>
               </button>
             </li>

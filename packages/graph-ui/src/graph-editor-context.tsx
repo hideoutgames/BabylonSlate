@@ -9,6 +9,8 @@ export type GraphEditorContextValue = {
   pinHasError: (nodeId: string, pinId: string) => boolean;
   pinDisplayType: (nodeId: string, pinId: string) => PinTypeRef | undefined;
   onNavigateRequest?: (request: NavigateRequest) => void;
+  selectedAttachmentId?: string | null;
+  onAttachmentSelect?: (id: string | null) => void;
 };
 
 const GraphEditorContext = createContext<GraphEditorContextValue | null>(null);

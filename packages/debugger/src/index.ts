@@ -23,6 +23,7 @@ export { suggestConsoleCompletions } from "./autocomplete";
 export { TICK_BUDGET_MS, isTickOverBudget } from "./stats";
 export {
   TraceRecorder,
+  type TraceBtState,
   type TraceFrame,
   type TracePayload,
   type TraceRecorderOptions,

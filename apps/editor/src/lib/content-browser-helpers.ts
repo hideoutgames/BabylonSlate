@@ -10,6 +10,10 @@ import {
   createDefaultScene,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import {
+  createDefaultBehaviourTree,
+  createDefaultBlackboard,
+} from "@babylonslate/behaviour-tree";
 import { createDefaultShaderGraph } from "@babylonslate/shader-graph";
 import { createDefaultUserInterface } from "@babylonslate/ui-runtime";
 import {
@@ -61,6 +65,8 @@ export const CREATABLE_ASSET_TYPES = [
   "Shader",
   "Tileset",
   "Tilemap",
+  "BehaviourTree",
+  "Blackboard",
   "Enum",
   "Structure",
   "ScriptInterface",
@@ -688,6 +694,24 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "BehaviourTree") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultBehaviourTree(name) as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "Blackboard") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultBlackboard(name) as unknown as Record<string, unknown>,
+    );
+  }
+
   if (type === "Enum" || type === "Structure" || type === "ScriptInterface") {
     const payload: Record<string, unknown> =
       type === "Enum"
@@ -739,8 +763,12 @@ export function newAssetFileName(
                 ? ".shader.babasset"
                 : type === "Tileset"
                   ? ".tileset.babasset"
-                  : type === "Tilemap"
-                    ? ".tilemap.babasset"
+                : type === "Tilemap"
+                  ? ".tilemap.babasset"
+                  : type === "BehaviourTree"
+                    ? ".bt.babasset"
+                    : type === "Blackboard"
+                      ? ".blackboard.babasset"
                     : ".babasset";
   return `${safe}${suffix}`;
 }

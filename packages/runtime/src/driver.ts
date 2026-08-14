@@ -38,6 +38,7 @@ import {
   type CommandRegistry,
   type ConsoleCommandHost,
   type RegisteredCommand,
+  type TraceBtState,
   type TracePayload,
   type UserCommandDef,
 } from "@babylonslate/debugger";
@@ -147,6 +148,7 @@ export interface RuntimeDriver {
   ): void;
   listConsoleCommands(): readonly RegisteredCommand[];
   stopTrace(): TracePayload | null;
+  restoreBtFromTrace(states: readonly TraceBtState[]): void;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;
   registerBlackboard(guid: string, document: BlackboardDocument): void;
@@ -220,6 +222,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly blackboards = new Map<string, BlackboardDocument>();
   private readonly btEvalBySlot = new Map<number, BtEvalState>();
   private readonly btMissingWarned = new Set<string>();
+  private currentBtNodeId: string | null = null;
+  private currentBtAssetGuid: string | null = null;
   private uiInstanceSeq = 0;
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
@@ -625,6 +629,25 @@ class InProcessRuntime implements RuntimeDriver {
     return this.lastTrace;
   }
 
+  restoreBtFromTrace(states: readonly TraceBtState[]): void {
+    this.btEvalBySlot.clear();
+    for (const row of states) {
+      this.btEvalBySlot.set(row.slotId, {
+        stack: row.stack.map((frame) => ({ ...frame })),
+        status: row.status as BtEvalState["status"],
+        lastResults: { ...row.lastResults } as BtEvalState["lastResults"],
+        btNodeId: row.btNodeId,
+        blackboard: { ...row.blackboard },
+        nodeMemory: Object.fromEntries(
+          Object.entries(row.nodeMemory ?? {}).map(([id, memory]) => [
+            id,
+            { ...memory },
+          ]),
+        ),
+      });
+    }
+  }
+
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
     this.animGraphs.set(guid, document);
   }
@@ -746,6 +769,7 @@ class InProcessRuntime implements RuntimeDriver {
     dtSeconds: number,
     memory: Record<string, unknown>,
   ): BtResult {
+    this.currentBtNodeId = node.id;
     if (!this.scriptHost.hasClass(node.classId)) return "failure";
     const extras = {
       btFinish: (result: "success" | "failure") => {
@@ -807,6 +831,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emitBtMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
         continue;
       }
+      this.currentBtAssetGuid = guid;
       const document = this.behaviourTrees.get(guid);
       if (!document) {
         this.emitBtMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
@@ -843,6 +868,8 @@ class InProcessRuntime implements RuntimeDriver {
         },
       });
       this.btEvalBySlot.set(slotId, next);
+      this.currentBtNodeId = null;
+      this.currentBtAssetGuid = null;
       this.emit({
         type: "btState",
         slotId,
@@ -1200,6 +1227,20 @@ class InProcessRuntime implements RuntimeDriver {
           }
           return { type: event.kind, tick: event.tick };
         }),
+        bt: [...this.btEvalBySlot.entries()].map(([slotId, state]) => ({
+          slotId,
+          status: state.status,
+          btNodeId: state.btNodeId,
+          lastResults: { ...state.lastResults },
+          blackboard: { ...state.blackboard },
+          stack: state.stack.map((frame) => ({ ...frame })),
+          nodeMemory: Object.fromEntries(
+            Object.entries(state.nodeMemory).map(([id, memory]) => [
+              id,
+              { ...memory },
+            ]),
+          ),
+        })),
       });
     }
   }
@@ -1246,11 +1287,11 @@ class InProcessRuntime implements RuntimeDriver {
       code: "runtime.uncaught",
       message: err.message,
       severity: "error",
-      assetGuid: anchor?.assetGuid,
+      assetGuid: this.currentBtAssetGuid ?? anchor?.assetGuid,
       graphId: anchor?.graphId,
       nodeId: anchor?.nodeId,
       bodyLine: anchor?.bodyLine,
-      btNodeId: anchor?.btNodeId,
+      btNodeId: this.currentBtNodeId ?? anchor?.btNodeId,
       stack,
       frameId,
       tickIndex: this.world.clock.tickIndex,
@@ -1270,6 +1311,7 @@ class InProcessRuntime implements RuntimeDriver {
       assetGuid: diag.assetGuid,
       graphId: diag.graphId,
       nodeId: diag.nodeId,
+      btNodeId: diag.btNodeId,
       stack: diag.stack,
       frameId,
       severity: "error",

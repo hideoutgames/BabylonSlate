@@ -11,9 +11,12 @@
     "test": "vitest run --config ../../vitest.workspace.ts --project node packages/behaviour-tree"
   },
   "dependencies": {
-    "@babylonslate/scripting": "workspace:*"
+    "@babylonslate/core": "workspace:*",
+    "@babylonslate/scripting": "workspace:*",
+    "d3-hierarchy": "^3.1.2"
   },
   "devDependencies": {
+    "@types/d3-hierarchy": "^3.1.7",
     "typescript": "~5.8.2"
   }
 }

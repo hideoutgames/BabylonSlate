@@ -30,6 +30,7 @@ import type { PlayPhysicsSettings } from "../services/play-physics";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
+import { usePlay } from "../context/play-context";
 import { PlayHudOverlay } from "./play-hud-overlay";
 import {
   applyPlayHudInstance,
@@ -103,6 +104,7 @@ export function PlayOverlay({
   pixelsPerUnit,
   onClose,
 }: PlayOverlayProps) {
+  const { reportBtState } = usePlay();
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
@@ -242,6 +244,7 @@ export function PlayOverlay({
       onLog: (message) =>
         setLogs((prev) => [...prev.slice(-200), message]),
       onPrint: (entry) => printRef.current(entry),
+      onBtState: (state) => reportBtState(state),
       onSetRenderResolution: (width, height) => {
         liveSizeRef.current = {
           width: clampRenderResolution(width),
@@ -289,13 +292,14 @@ export function PlayOverlay({
       resizeObserver.disconnect();
       window.clearInterval(movePoll);
       detachLifecycle();
+      reportBtState(null);
       if (sessionRef.current) {
         sessionRef.current.stop();
         sessionRef.current = null;
       }
       setHudScene(null);
     };
-  }, [sharedEngine, injectFixtureThrow]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState]);
 
   return (
     <div

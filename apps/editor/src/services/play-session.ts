@@ -53,6 +53,7 @@ export function diagnosticFromCommand(
     assetGuid: command.assetGuid,
     graphId: command.graphId,
     nodeId: command.nodeId,
+    btNodeId: command.btNodeId,
     stack: command.stack,
     frameId: command.frameId,
   };
@@ -205,6 +206,13 @@ export function startPlaySession(options: {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   pixelsPerUnit?: number;
   onSetRenderResolution?: (width: number, height: number) => void;
+  onBtState?: (state: {
+    slotId: number;
+    status: string;
+    btNodeId: string | null;
+    lastResults: Record<string, string>;
+    blackboard: Record<string, unknown>;
+  }) => void;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
@@ -317,6 +325,15 @@ export function startPlaySession(options: {
     }
     if (command.type === "setRenderResolution") {
       options.onSetRenderResolution?.(command.width, command.height);
+    }
+    if (command.type === "btState") {
+      options.onBtState?.({
+        slotId: command.slotId,
+        status: command.status,
+        btNodeId: command.btNodeId,
+        lastResults: command.lastResults,
+        blackboard: command.blackboard,
+      });
     }
     if (command.type === "playSound") {
       options.onLog?.(

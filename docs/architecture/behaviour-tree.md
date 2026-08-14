@@ -2,7 +2,7 @@
 
 Shared surface for the tree IR, Blackboard, and deterministic evaluator (engineplan §14.1, checklist `p11-behaviour-tree`). Implementation: `@babylonslate/behaviour-tree`. No React, no Babylon — the evaluator runs in the game worker.
 
-Authoring (`p11-bt-editor`) and nav bake UI stay later slices. `BehaviourTreeComponent` is addable; `NavAgentComponent` remains catalog-gated.
+Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. `BehaviourTreeComponent` is addable; `NavAgentComponent` remains catalog-gated.
 
 ## Package
 
@@ -10,7 +10,7 @@ Authoring (`p11-bt-editor`) and nav bake UI stay later slices. `BehaviourTreeCom
 | --- | --- | --- |
 | `behaviour-tree` | Tree + Blackboard documents, parse/normalize, explicit-stack evaluator, abort matrix, `bt.*` diagnostics, scripting rule registration | React, Babylon, Capacitor |
 | `scripting` | Pin types for blackboard keys; `registerValidationRule` hook | React, Babylon, Capacitor |
-| `graph-ui` / `apps/editor` | React Flow tree host (later) | Babylon, Capacitor |
+| `graph-ui` / `apps/editor` | React Flow tree host (`AssetDocumentWorkspace`, `d3-hierarchy` layout, Play overlay) | Babylon, Capacitor |
 
 `behaviour-tree` may import `@babylonslate/scripting` (pin types, `Diagnostic`, `ValidationRule`) and `@babylonslate/core`.
 
@@ -27,7 +27,7 @@ Parent–child edges, not exec wires. Sibling order is `children[]` (`sortIndex`
 
 Abort modes on a decorator: `none` | `self` | `lowerPriority` | `both` (engineplan §14.1). Observer keys are blackboard names.
 
-Default document: a `selector` root with one `sequence` child and one `bt.task.succeed` leaf. `parseBehaviourTreeDocument` / `parseBlackboardDocument` are the header-payload codecs (JSON round-trip); `.babasset` kinds stay ungated until `p11-bt-editor`.
+Default document: a `selector` root with one `sequence` child and one `bt.task.succeed` leaf. `parseBehaviourTreeDocument` / `parseBlackboardDocument` are the header-payload codecs (JSON round-trip). New Asset creates `.bt.babasset` / `.blackboard.babasset`.
 
 ## Blackboard
 
@@ -67,11 +67,20 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 - Missing `treeGuid` / unloaded tree emits `bt.missing_tree`.
 - Custom `classId` values run compiled `On Activate` / `On Tick` graphs (`bt.event.*`) and finish via `bt.finish`.
 
+## Editor (`p11-bt-editor`)
+
+- New Asset: BehaviourTree (selector → sequence → succeed) and Blackboard.
+- Host is `AssetDocumentWorkspace` (not Dockview). `GraphEditor` takes `nodeTypes` / `nodesDraggable` / `toolbarExtra`. Composites and tasks are React Flow `bt.node` nodes; decorators/services are attached selectable rows.
+- Layout is `d3-hierarchy` top-down; sibling drag snaps to `children[]` order. Re-layout button recomputes positions.
+- Double-tap a task whose `classId` matches a Class asset opens that class document.
+- Play: running branch + last result overlay and blackboard watch from `btState`. Session report `btNodeId` opens the tree and focuses the node.
+- P8: `TraceFrame.bt` records stack, blackboard, lastResults, and nodeMemory. `restoreBtFromTrace` reapplies that state.
+
 ## Later slices (do not start here)
 
 | Slice | Work |
 | --- | --- |
-| `p11-bt-editor` | `AssetDocumentWorkspace` host (not Dockview); parent–child `GraphEditor` nodeTypes; `d3-hierarchy` layout; Play overlay; session-report `btNodeId` navigation; New Asset BehaviourTree / Blackboard |
-| Undo | `SetAssetDocumentCommand` via `applyAssetDocumentChange` |
+| `p11-nav-editor-host` | NavMesh Place Actor, bake modal, debug draw, runtime import + crowd |
+| Undo | already via `applyAssetDocumentChange` |
 
 See [navigation.md](navigation.md) for navmesh / MoveTo. Spec: [engineplan.md](../engineplan.md) §14.1.

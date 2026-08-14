@@ -265,7 +265,7 @@ function NodeErrorBadge({
   );
 }
 
-function BlueprintNodeShell({
+export function BlueprintNodeShell({
   nodeId,
   title,
   role,
@@ -350,7 +350,9 @@ export function LogMessageNode({
 export function resolveNodeType(
   type: string,
   data: Record<string, unknown>,
+  knownTypes: Record<string, unknown> = graphNodeTypes,
 ): string {
+  if (type in knownTypes) return type;
   if (type === "logMessage" && !hasSerializedPins(data)) {
     return "logMessage";
   }

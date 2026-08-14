@@ -16,6 +16,16 @@ export type TraceInputEvent = {
   tick: number;
 };
 
+export type TraceBtState = {
+  slotId: number;
+  status: string;
+  btNodeId: string | null;
+  lastResults: Record<string, string>;
+  blackboard: Record<string, unknown>;
+  stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
+  nodeMemory?: Record<string, Record<string, unknown>>;
+};
+
 export type TraceFrame = {
   tickIndex: number;
   scriptMs: number;
@@ -24,6 +34,7 @@ export type TraceFrame = {
   prints: TracePrintEvent[];
   snapshotText?: string;
   inputEvents?: TraceInputEvent[];
+  bt?: TraceBtState[];
 };
 
 export type TracePayload = {

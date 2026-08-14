@@ -119,6 +119,7 @@ export type CommandMessage =
       assetGuid?: string;
       graphId?: string;
       nodeId?: string;
+      btNodeId?: string;
       stack?: string;
       frameId: number;
       severity: "error" | "warning";

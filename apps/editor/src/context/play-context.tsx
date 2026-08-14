@@ -32,7 +32,7 @@ import {
   playIsEnabled,
   resolvePlayScene,
 } from "../services/play-physics";
-import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
+import { documentIdToRevealForDiagnostic, sessionReportNavigation } from "../services/diagnostic-navigation";
 import type {
   PlayAnimGraphEntry,
   PlayBehaviourTreeEntry,
@@ -52,6 +52,14 @@ import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
+
+export type LiveBtState = {
+  slotId: number;
+  status: string;
+  btNodeId: string | null;
+  lastResults: Record<string, string>;
+  blackboard: Record<string, unknown>;
+};
 
 interface PlayContextValue {
   playing: boolean;
@@ -73,6 +81,8 @@ interface PlayContextValue {
   alwaysRender: boolean;
   setAlwaysRender: (value: boolean) => void;
   renderStats: { renderedFps: number; invalidationsPerSecond: number } | null;
+  liveBtState: LiveBtState | null;
+  reportBtState: (state: LiveBtState | null) => void;
 }
 
 const PlayContext = createContext<PlayContextValue | null>(null);
@@ -100,6 +110,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [reportEntries, setReportEntries] = useState<SessionReportEntry[]>([]);
   const [dropped, setDropped] = useState(0);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
   const [alwaysRender, setAlwaysRenderState] = useState(true);
   const [renderStats, setRenderStats] = useState<{
@@ -155,6 +166,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     openDocuments,
     activeDocumentId,
     setActiveDocument,
+    openDocument,
     projectDocument,
     dirtyDocuments,
     scriptsStale,
@@ -476,6 +488,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     (result: PlaySessionResult) => {
       setPlaying(false);
       setEncodeQueuePauseReason("play", false);
+      setLiveBtState(null);
       setDropped(result.droppedDiagnostics);
       setReportEntries(result.diagnostics);
       setLastRuntimeMode(result.runtimeMode);
@@ -516,6 +529,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       alwaysRender,
       setAlwaysRender,
       renderStats,
+      liveBtState,
+      reportBtState: setLiveBtState,
     }),
     [
       playing,
@@ -535,6 +550,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       alwaysRender,
       setAlwaysRender,
       renderStats,
+      liveBtState,
     ],
   );
 
@@ -610,10 +626,16 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           dropped={dropped}
           onOpenChange={setReportOpen}
           onNavigate={(entry) => {
-            setFocusedNodeId(entry.nodeId ?? PREVIEW_FIXTURE_NODE_ID);
+            const nav = sessionReportNavigation(entry, {
+              getByGuid: (guid) => assetRegistry?.getByGuid(guid),
+            });
+            setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
+            if (nav.document) {
+              void openDocument(nav.document);
+            }
             setReportOpen(false);
             appendLog(
-              `Navigate to node ${entry.nodeId ?? PREVIEW_FIXTURE_NODE_ID}`,
+              `Navigate to node ${nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID}`,
             );
           }}
         />

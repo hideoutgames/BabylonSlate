@@ -10,12 +10,21 @@ import {
   type Connection,
   type Edge,
   type EdgeChange,
+  type EdgeTypes,
   type FinalConnectionState,
   type NodeChange,
+  type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./graph-editor.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   hasSerializedPins,
@@ -86,11 +95,21 @@ export interface GraphEditorProps {
   focusedNodeId?: string;
   diagnostics?: GraphDiagnostic[];
   onNavigateRequest?: (request: NavigateRequest) => void;
+  /** Double-tap / double-click a node (task class navigation). */
+  onNodeDoubleClick?: (nodeId: string) => void;
   paletteNodes?: PaletteNode[];
   colorMode?: "light" | "dark";
   defaultZoom?: number;
   /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
   readOnly?: boolean;
+  /** Override or extend the default pin/log node components. */
+  nodeTypes?: NodeTypes;
+  edgeTypes?: EdgeTypes;
+  /** Defaults to `!readOnly`. Behaviour trees pass false except sibling reorder. */
+  nodesDraggable?: boolean;
+  toolbarExtra?: ReactNode;
+  selectedAttachmentId?: string | null;
+  onAttachmentSelect?: (id: string | null) => void;
 }
 
 const DOUBLE_TAP_MS = 350;
@@ -126,10 +145,13 @@ function styleFlowEdges(
   });
 }
 
-function toCanvasNodes(nodes: GraphDocument["nodes"]): CanvasNode[] {
+function toCanvasNodes(
+  nodes: GraphDocument["nodes"],
+  knownTypes: NodeTypes,
+): CanvasNode[] {
   return nodes.map((node) => ({
     id: node.id,
-    type: resolveNodeType(node.type, node.data),
+    type: resolveNodeType(node.type, node.data, knownTypes),
     position: node.position,
     data: { ...node.data, __nodeType: node.type },
   }));
@@ -193,18 +215,30 @@ function GraphEditorCanvas({
   focusedNodeId,
   diagnostics,
   onNavigateRequest,
+  onNodeDoubleClick,
   paletteNodes,
   colorMode = "dark",
   defaultZoom = GRAPH_DEFAULT_ZOOM,
   readOnly = false,
   onPinSelect,
+  nodeTypes: nodeTypesProp,
+  edgeTypes,
+  nodesDraggable: nodesDraggableProp,
+  toolbarExtra,
+  selectedAttachmentId = null,
+  onAttachmentSelect,
 }: GraphEditorProps) {
+  const knownTypes = useMemo(
+    () => ({ ...graphNodeTypes, ...nodeTypesProp }),
+    [nodeTypesProp],
+  );
+  const nodesDraggable = nodesDraggableProp ?? !readOnly;
   const graphViewport = useMemo(
     () => resolveGraphViewport(defaultZoom),
     [defaultZoom],
   );
   const [nodes, setNodes] = useState<CanvasNode[]>(() =>
-    toCanvasNodes(initialGraph.nodes),
+    toCanvasNodes(initialGraph.nodes, knownTypes),
   );
   const [edges, setEdges] = useState<Edge[]>(() =>
     toFlowEdges(initialGraph.edges),
@@ -309,7 +343,7 @@ function GraphEditorCanvas({
             : (node.type ?? "logMessage");
         return {
           id: node.id,
-          type: resolveNodeType(typeId, data),
+          type: resolveNodeType(typeId, data, knownTypes),
           position: node.position,
           data,
           selected: node.selected,
@@ -330,7 +364,7 @@ function GraphEditorCanvas({
         })),
       ),
     );
-  }, [initialGraph]);
+  }, [initialGraph, knownTypes]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
@@ -545,7 +579,7 @@ function GraphEditorCanvas({
       }
       const nextNode: CanvasNode = {
         id,
-        type: resolveNodeType(paletteNode.id, data),
+        type: resolveNodeType(paletteNode.id, data, knownTypes),
         position,
         data,
       };
@@ -583,7 +617,7 @@ function GraphEditorCanvas({
       });
       setPendingConnect(null);
     },
-    [emitChange, pendingConnect, screenToFlowPosition],
+    [emitChange, pendingConnect, screenToFlowPosition, knownTypes],
   );
 
   const selectedNodes = useMemo(
@@ -843,6 +877,8 @@ function GraphEditorCanvas({
       pinHasError,
       pinDisplayType,
       onNavigateRequest,
+      selectedAttachmentId,
+      onAttachmentSelect,
     }),
     [
       nodeErrorCount,
@@ -851,6 +887,8 @@ function GraphEditorCanvas({
       pendingPin,
       pinDisplayType,
       pinHasError,
+      selectedAttachmentId,
+      onAttachmentSelect,
     ],
   );
 
@@ -861,6 +899,7 @@ function GraphEditorCanvas({
         className="relative h-full w-full touch-manipulation"
         data-testid="graph-editor"
         data-readonly={readOnly ? "true" : undefined}
+        data-nodes-draggable={nodesDraggable ? "true" : "false"}
       >
         {marqueeScreen ? (
           <div
@@ -932,6 +971,7 @@ function GraphEditorCanvas({
             >
               Format
             </Button>
+            {toolbarExtra}
           </div>
         </div>
         )}
@@ -940,8 +980,9 @@ function GraphEditorCanvas({
           colorMode={colorMode}
           nodes={nodes}
           edges={styledEdges}
-          nodeTypes={graphNodeTypes}
-          nodesDraggable={!readOnly}
+          nodeTypes={knownTypes}
+          edgeTypes={edgeTypes}
+          nodesDraggable={nodesDraggable}
           nodesConnectable={!readOnly}
           elementsSelectable
           edgesReconnectable={false}
@@ -949,6 +990,7 @@ function GraphEditorCanvas({
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}
           onConnectEnd={handleConnectEnd}
+          onNodeDoubleClick={(_, node) => onNodeDoubleClick?.(node.id)}
           isValidConnection={readOnly ? () => false : isValidConnection}
           onPaneClick={handlePaneClick}
           panOnDrag={!marqueeArmed}
