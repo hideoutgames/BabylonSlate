@@ -69,6 +69,15 @@ When a parent agent launches Task / subagents, the model is a **hard allowlist**
 - Honor a different model only if the human user explicitly names it in this conversation. A parent agent must not pick Sonnet or any other forbidden family because a task “would benefit.”
 - See [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (Subagent models).
 
+## No AI-generated artwork
+
+Agents must never create visual or spatial media with AI (images, video, icons, logos, textures, sprites, 3D art assets). The ban is absolute — placeholders, tests, docs, and user requests do not override it.
+
+- **Forbidden:** `GenerateImage` (and equivalents); invented PNG/SVG/WebP/MP4/GLB (and similar) as product or placeholder art.
+- **Allowed:** Lucide / project `iconLibrary`; existing `engine-logos/` and `public/branding/` copies; engine primitives (`CreateBox`, debug overlays) as product features; solid-color test fixtures; captures of the real running app.
+- If artwork is missing, stop and ask a human. Do not generate a stand-in.
+- Rule: [.cursor/rules/no-ai-artwork.mdc](../../.cursor/rules/no-ai-artwork.mdc).
+
 ## P1 slice ownership
 
 | Slice | Checklist | Packages | Depends on |
