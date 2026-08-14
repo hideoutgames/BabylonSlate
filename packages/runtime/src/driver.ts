@@ -997,6 +997,7 @@ class InProcessRuntime implements RuntimeDriver {
       btFinish: (result: "success" | "failure") => {
         memory.__btResult = result;
       },
+      btEvaluate: () => undefined,
       getBlackboard: (key: string) => blackboard[key],
       setBlackboard: (key: string, value: unknown) => {
         blackboard[key] = value;
@@ -1044,6 +1045,44 @@ class InProcessRuntime implements RuntimeDriver {
       position.z - target.z,
     );
     return distance <= accept ? "success" : "running";
+  }
+
+  private abortBtTask(
+    actor: Actor,
+    node: { classId: string },
+    blackboard: BlackboardValues,
+    memory: Record<string, unknown>,
+  ): void {
+    memory.__activated = false;
+    delete memory.__btResult;
+    this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.dt, {
+      btFinish: () => undefined,
+      btEvaluate: () => undefined,
+      getBlackboard: (key) => blackboard[key],
+      setBlackboard: (key, value) => {
+        blackboard[key] = value;
+      },
+    });
+  }
+
+  private evaluateBtDecorator(
+    actor: Actor,
+    classId: string,
+    blackboard: BlackboardValues,
+  ): boolean {
+    if (!this.scriptHost.hasClass(classId)) return true;
+    let result = true;
+    this.scriptHost.invokeBtEvent(classId, "onEvaluate", actor, this.dt, {
+      btFinish: () => undefined,
+      btEvaluate: (value) => {
+        result = Boolean(value);
+      },
+      getBlackboard: (key) => blackboard[key],
+      setBlackboard: (key, value) => {
+        blackboard[key] = value;
+      },
+    });
+    return result;
   }
 
   private emitBtMissing(actorGuid: string, message: string): void {
@@ -1098,6 +1137,12 @@ class InProcessRuntime implements RuntimeDriver {
         host: {
           tick: (node, board, dtSeconds, memory) =>
             this.tickBtTask(actor, node, board, dtSeconds, memory),
+          abort: (node, board, memory) =>
+            this.abortBtTask(actor, node, board, memory),
+        },
+        decoratorHost: {
+          evaluate: (decorator, _node, board) =>
+            this.evaluateBtDecorator(actor, decorator.classId, board),
         },
         serviceHost: {
           tick: (service, _node, board, dtSeconds) => {
@@ -1108,6 +1153,7 @@ class InProcessRuntime implements RuntimeDriver {
               dtSeconds,
               {
                 btFinish: () => undefined,
+                btEvaluate: () => undefined,
                 getBlackboard: (key) => board[key],
                 setBlackboard: (key, value) => {
                   board[key] = value;

@@ -5,6 +5,7 @@ import {
   BT_SERVICE_CATALOG,
   BT_TASK_CATALOG,
   defaultPropertiesForClassId,
+  kindForCatalogClassId,
   propertyFieldsForClassId,
   titleForBtClassId,
 } from "./catalog";
@@ -77,5 +78,40 @@ describe("defaultPropertiesForClassId", () => {
       destination: { x: 0, y: 0, z: 0 },
       acceptRadius: 0.5,
     });
+  });
+});
+
+describe("kindForCatalogClassId", () => {
+  const parentOf = (id: string) => {
+    if (id === "MyBrain" || id === "BTComposite_PatrolSelector") return "BTComposite";
+    if (id === "MySel") return "BTComposite_Selector";
+    if (id === "BTComposite_Selector" || id === "BTComposite_Sequence" || id === "BTComposite_Parallel") {
+      return "BTComposite";
+    }
+    if (id === "BTComposite") return "BObject";
+    return null;
+  };
+
+  it("maps built-in composite aliases without using the user class name", () => {
+    expect(kindForCatalogClassId("bt.composite.selector")).toBe("selector");
+    expect(kindForCatalogClassId("BTComposite_Sequence")).toBe("sequence");
+    expect(kindForCatalogClassId("BTComposite_Parallel")).toBe("parallel");
+    expect(kindForCatalogClassId("bt.task.wait")).toBe("task");
+  });
+
+  it("does not treat a class whose id contains sequence as a composite", () => {
+    expect(kindForCatalogClassId("custom.sequence.helper")).toBe("task");
+  });
+
+  it("maps a bare BTComposite subclass to sequence from ancestry", () => {
+    expect(kindForCatalogClassId("MyBrain", parentOf)).toBe("sequence");
+    expect(kindForCatalogClassId("BTComposite", parentOf)).toBe("sequence");
+    expect(kindForCatalogClassId("BTComposite_PatrolSelector", parentOf)).toBe(
+      "sequence",
+    );
+  });
+
+  it("maps subclasses of Selector / Parallel built-ins from ancestry", () => {
+    expect(kindForCatalogClassId("MySel", parentOf)).toBe("selector");
   });
 });

@@ -20,6 +20,7 @@ import {
   recastWalkableQuadFromXy,
 } from "@babylonslate/navigation";
 import {
+  BOOL,
   compileGraph,
   type GraphNode,
   type LogicGraph,
@@ -165,9 +166,24 @@ function node(
   };
 }
 
-function throwingTaskScript(): CompiledScript {
+function compileBtClass(
+  classId: string,
+  assetGuid: string,
+  build: (registry: NodeRegistry) => LogicGraph,
+): CompiledScript {
   const registry = createDefaultNodeRegistry();
-  const graph: LogicGraph = {
+  const compiled = compileGraph(build(registry), { assetGuid, registry });
+  return {
+    assetGuid,
+    classId,
+    source: compiled.source,
+    anchors: compiled.anchors,
+    entryPoints: compiled.entryPoints,
+  };
+}
+
+function throwingTaskScript(): CompiledScript {
+  return compileBtClass("BTTask_Boom", "boom-class", (registry) => ({
     id: "event-graph",
     kind: "event",
     nodes: [
@@ -187,14 +203,100 @@ function throwingTaskScript(): CompiledScript {
         targetPinId: "execIn",
       },
     ],
-  };
-  const compiled = compileGraph(graph, { assetGuid: "boom-class", registry });
+  }));
+}
+
+function blockingDecoratorScript(): CompiledScript {
+  return compileBtClass("BTDecorator_Alert", "alert-class", (registry) => ({
+    id: "event-graph",
+    kind: "event",
+    nodes: [
+      node(registry, "eval", "bt.event.evaluate"),
+      node(registry, "ret", "bt.returnCondition", {
+        "default:condition": false,
+      }),
+    ],
+    edges: [
+      {
+        id: "e1",
+        sourceNodeId: "eval",
+        sourcePinId: "execOut",
+        targetNodeId: "ret",
+        targetPinId: "execIn",
+      },
+    ],
+  }));
+}
+
+function abortHoldTaskScript(): CompiledScript {
+  return compileBtClass("BTTask_Hold", "hold-class", (registry) => ({
+    id: "event-graph",
+    kind: "event",
+    nodes: [
+      node(registry, "tick", "bt.event.tick"),
+      node(registry, "abort", "bt.event.abort"),
+      node(registry, "log", "debug.log", {
+        message: "aborted",
+        severity: "log",
+        category: "BT",
+      }),
+    ],
+    edges: [
+      {
+        id: "e1",
+        sourceNodeId: "abort",
+        sourcePinId: "execOut",
+        targetNodeId: "log",
+        targetPinId: "execIn",
+      },
+    ],
+  }));
+}
+
+function pulseServiceScript(): CompiledScript {
+  return compileBtClass("BTService_Pulse", "pulse-class", (registry) => ({
+    id: "event-graph",
+    kind: "event",
+    nodes: [
+      node(registry, "tick", "bt.event.tick"),
+      node(registry, "set", "bt.blackboard.set", {
+        "default:key": "pulse",
+        "default:value": true,
+      }),
+    ],
+    edges: [
+      {
+        id: "e1",
+        sourceNodeId: "tick",
+        sourcePinId: "execOut",
+        targetNodeId: "set",
+        targetPinId: "execIn",
+      },
+    ],
+  }));
+}
+
+function classScene(
+  treeGuid: string,
+  blackboardGuid?: string,
+): SerializedScene {
   return {
-    assetGuid: "boom-class",
-    classId: "BTTask_Boom",
-    source: compiled.source,
-    anchors: compiled.anchors,
-    entryPoints: compiled.entryPoints,
+    name: "BtClass",
+    viewportMode: "3d",
+    settings: createDefaultSceneSettings(),
+    actors: [
+      createActor("guard", "Guard", {
+        components: [
+          {
+            id: "bt",
+            classId: "BehaviourTreeComponent",
+            properties: blackboardGuid
+              ? { treeGuid, blackboardGuid }
+              : { treeGuid },
+          },
+        ],
+      }),
+    ],
   };
 }
 
@@ -438,5 +540,181 @@ describe("P11 §18 acceptance", () => {
     expect(continued?.btNodeId).toBe("move");
     expect(continued?.stack.some((frame) => frame.nodeId === "move")).toBe(true);
     replay.stop();
+  });
+
+  it("fails a Wait when a subclassed decorator returns false from On Evaluate", async () => {
+    const commands: CommandMessage[] = [];
+    const tree: BehaviourTreeDocument = {
+      name: "Gated",
+      rootId: "wait",
+      blackboardGuid: null,
+      nodes: [
+        {
+          id: "wait",
+          kind: "task",
+          classId: "bt.task.wait",
+          children: [],
+          decorators: [
+            {
+              id: "gate",
+              classId: "BTDecorator_Alert",
+              abortMode: "none",
+              observedKeys: [],
+              properties: {},
+            },
+          ],
+          services: [],
+          properties: { durationMs: 10_000 },
+        },
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: classScene("tree-1"),
+      behaviourTrees: { "tree-1": tree },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([blockingDecoratorScript()]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    const state = commands.filter((command) => command.type === "btState").at(-1);
+    expect(state).toMatchObject({ type: "btState", status: "failure" });
+    runtime.stop();
+  });
+
+  it("fires On Abort when a running custom task is popped", async () => {
+    const commands: CommandMessage[] = [];
+    const tree: BehaviourTreeDocument = {
+      name: "Hold",
+      rootId: "root",
+      blackboardGuid: null,
+      nodes: [
+        {
+          id: "root",
+          kind: "sequence",
+          classId: "bt.composite.sequence",
+          children: ["hold"],
+          decorators: [
+            {
+              id: "alive",
+              classId: "bt.decorator.blackboardIsSet",
+              abortMode: "self",
+              observedKeys: ["ok"],
+              properties: { key: "ok" },
+            },
+          ],
+          services: [],
+          properties: {},
+        },
+        {
+          id: "hold",
+          kind: "task",
+          classId: "BTTask_Hold",
+          children: [],
+          decorators: [],
+          services: [],
+          properties: {},
+        },
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      dt: 0.05,
+      playScene: classScene("tree-1", "bb-1"),
+      behaviourTrees: { "tree-1": tree },
+      blackboards: {
+        "bb-1": {
+          name: "Guard",
+          keys: [{ name: "ok", type: BOOL, defaultValue: true }],
+        },
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([abortHoldTaskScript()]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.executeConsoleCommand("snapshot start");
+    runtime.tick();
+    const running = commands.filter((command) => command.type === "btState").at(-1);
+    expect(running).toMatchObject({ type: "btState", status: "running", btNodeId: "hold" });
+    runtime.executeConsoleCommand("snapshot stop");
+    const payload = runtime.stopTrace();
+    const last = payload?.frames.at(-1)?.bt?.[0];
+    expect(last).toBeDefined();
+    runtime.restoreBtFromTrace([
+      {
+        ...last!,
+        blackboard: {},
+      },
+    ]);
+    runtime.tick();
+    const logs = commands.filter((command) => command.type === "log");
+    expect(
+      logs.some(
+        (command) => command.type === "log" && String(command.message).includes("aborted"),
+      ),
+    ).toBe(true);
+    runtime.stop();
+  });
+
+  it("lets a custom service set a blackboard key from On Tick", async () => {
+    const commands: CommandMessage[] = [];
+    const tree: BehaviourTreeDocument = {
+      name: "Pulse",
+      rootId: "root",
+      blackboardGuid: null,
+      nodes: [
+        {
+          id: "root",
+          kind: "sequence",
+          classId: "bt.composite.sequence",
+          children: ["idle"],
+          decorators: [],
+          services: [
+            {
+              id: "pulse",
+              classId: "BTService_Pulse",
+              intervalMs: 0,
+              randomDeviationMs: 0,
+              properties: {},
+            },
+          ],
+          properties: {},
+        },
+        {
+          id: "idle",
+          kind: "task",
+          classId: "bt.task.wait",
+          children: [],
+          decorators: [],
+          services: [],
+          properties: { durationMs: 10_000 },
+        },
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: classScene("tree-1"),
+      behaviourTrees: { "tree-1": tree },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([pulseServiceScript()]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    const state = commands.filter((command) => command.type === "btState").at(-1);
+    expect(state).toMatchObject({
+      type: "btState",
+      status: "running",
+      blackboard: { pulse: true },
+    });
+    runtime.stop();
   });
 });

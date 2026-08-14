@@ -99,6 +99,19 @@ describe("My Class members", () => {
     expect(membersForGraph(null)).toEqual([]);
   });
 
+  it("lists On Evaluate instead of Begin Play for a BTDecorator class", () => {
+    expect(
+      membersForGraph({ nodes: [], edges: [] }, { parentClass: "BTDecorator" }),
+    ).toEqual([
+      {
+        kind: "event",
+        name: "On Evaluate",
+        detail: "native:bt.event.evaluate",
+        eventType: "bt.event.evaluate",
+      },
+    ]);
+  });
+
   it("marks parent Class custom events as inherited", () => {
     const members = membersForGraph(
       { nodes: [], edges: [] },

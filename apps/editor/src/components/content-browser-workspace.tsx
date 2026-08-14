@@ -1430,12 +1430,20 @@ export function ContentBrowserWorkspace() {
               <Field>
                 <FieldLabel htmlFor="new-asset-parent">Parent class</FieldLabel>
                 <Select value={newAssetParent} onValueChange={setNewAssetParent}>
-                  <SelectTrigger id="new-asset-parent" className="min-h-[var(--touch-target,44px)] w-full">
+                  <SelectTrigger
+                    id="new-asset-parent"
+                    data-testid="new-asset-parent"
+                    className="min-h-[var(--touch-target,44px)] w-full"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {ENGINE_BASE_CLASSES.map((base) => (
-                      <SelectItem key={base} value={base}>
+                      <SelectItem
+                        key={base}
+                        value={base}
+                        data-testid={`new-asset-parent-${base}`}
+                      >
                         <span className="flex items-center gap-2">
                           <TypeVisualIcon
                             visual={resolveTypeVisual({

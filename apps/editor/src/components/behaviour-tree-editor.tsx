@@ -158,18 +158,21 @@ export function BehaviourTreeEditor({
   const paletteNodes: PaletteNode[] = [
     ...catalogPalette(BT_COMPOSITE_CATALOG),
     ...catalogPalette(BT_TASK_CATALOG),
-    ...customEntries("BTComposite").map((asset) => ({
-      id: asset.name,
-      title: titleForBtClassId(asset.name),
-      category: "Composites",
-      nodeType: BT_NODE_TYPE,
-      pins: pinsForBtKind("selector"),
-      defaultData: {
+    ...customEntries("BTComposite").map((asset) => {
+      const kind = kindForCatalogClassId(asset.name, parentOf);
+      return {
+        id: asset.name,
         title: titleForBtClassId(asset.name),
-        classId: asset.name,
-        kind: "selector" as const,
-      },
-    })),
+        category: "Composites",
+        nodeType: BT_NODE_TYPE,
+        pins: pinsForBtKind(kind),
+        defaultData: {
+          title: titleForBtClassId(asset.name),
+          classId: asset.name,
+          kind,
+        },
+      };
+    }),
     ...customEntries("BTTask").map((asset) => ({
       id: asset.name,
       title: titleForBtClassId(asset.name),
@@ -318,7 +321,7 @@ export function BehaviourTreeEditor({
         commit(
           patchNode(doc, selected.id, {
             classId,
-            kind: kindForCatalogClassId(classId),
+            kind: kindForCatalogClassId(classId, parentOf),
             properties: { ...selected.properties },
           }),
         ),
