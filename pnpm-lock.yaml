@@ -255,6 +255,16 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/behaviour-tree:
+    dependencies:
+      '@babylonslate/scripting':
+        specifier: workspace:*
+        version: link:../scripting
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/bridge:
     dependencies:
       '@babylonslate/core':

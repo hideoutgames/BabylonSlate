@@ -27,7 +27,7 @@ Parent–child edges, not exec wires. Sibling order is `children[]` (`sortIndex`
 
 Abort modes on a decorator: `none` | `self` | `lowerPriority` | `both` (engineplan §14.1). Observer keys are blackboard names.
 
-Default document: a `selector` root with one `sequence` child and one `bt.task.succeed` leaf.
+Default document: a `selector` root with one `sequence` child and one `bt.task.succeed` leaf. `parseBehaviourTreeDocument` / `parseBlackboardDocument` are the header-payload codecs (JSON round-trip); `.babasset` kinds stay ungated until `p11-bt-editor`.
 
 ## Blackboard
 
@@ -55,7 +55,7 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 
 ## Validation
 
-`validateBehaviourTree(doc, ctx)` emits `Diagnostic` values (`bt.missing_root`, `bt.unknown_child`, `bt.cycle`, `bt.composite_empty`, `bt.task_has_children`, `bt.decorator_on_missing_node`). One broken tree per code in `packages/behaviour-tree/fixtures/`.
+`validateBehaviourTree(doc, ctx)` emits `Diagnostic` values (`bt.missing_root`, `bt.unknown_child`, `bt.cycle`, `bt.composite_empty`, `bt.task_has_children`). One broken tree per code in `packages/behaviour-tree/fixtures/`.
 
 `registerBehaviourTreeValidationRules()` installs a `bt.structural` rule on the scripting hook. `validateGraphs([], { assetGuid, behaviourTree })` runs the same codes so Compiler Results stay one list. `TypeContext.behaviourTree` is an optional unknown payload (parsed in this package).
 

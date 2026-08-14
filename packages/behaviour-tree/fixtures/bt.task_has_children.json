@@ -1,0 +1,25 @@
+{
+  "name": "task-children",
+  "rootId": "root",
+  "blackboardGuid": null,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "task",
+      "classId": "bt.task.succeed",
+      "children": ["seq"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "seq",
+      "kind": "sequence",
+      "classId": "bt.composite.sequence",
+      "children": [],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    }
+  ]
+}

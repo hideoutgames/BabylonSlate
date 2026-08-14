@@ -9,6 +9,8 @@ export type TypeContext = {
   knownGuids?: ReadonlySet<string>;
   /** Optional known class ids. */
   knownClassIds?: ReadonlySet<string>;
+  /** Optional BehaviourTree document payload for `bt.structural` rules. */
+  behaviourTree?: unknown;
 };
 
 export type ValidationRule = {

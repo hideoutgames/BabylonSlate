@@ -1,0 +1,16 @@
+{
+  "name": "unknown-child",
+  "rootId": "root",
+  "blackboardGuid": null,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "selector",
+      "classId": "bt.composite.selector",
+      "children": ["missing-child"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    }
+  ]
+}
