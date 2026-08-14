@@ -244,6 +244,20 @@ export class AssetRegistry {
     return this.indexHeader(rootId, path, header);
   }
 
+  /** Re-read a .babasset header after an in-place save so catalog fields stay current. */
+  async reindexPath(path: string): Promise<IndexedAsset | null> {
+    if (!(await this.storage.exists(path))) return null;
+    const existing = this.byPath.get(path);
+    const rootId =
+      existing?.rootId ??
+      [...this.roots.values()].find(
+        (root) => path === root.pathPrefix || path.startsWith(`${root.pathPrefix}/`),
+      )?.id;
+    if (!rootId) return null;
+    const header = readBabassetHeader(await this.storage.readBinary(path));
+    return this.indexHeader(rootId, path, header);
+  }
+
   async deleteAsset(guid: string): Promise<void> {
     const asset = this.byGuid.get(guid);
     if (!asset) return;

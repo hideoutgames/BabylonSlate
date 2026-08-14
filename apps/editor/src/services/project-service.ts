@@ -760,6 +760,7 @@ export class ProjectService {
         },
       );
       await this.storage.writeBinary(path, bytes);
+      await this.assetRegistry?.reindexPath(path);
     } else {
       await this.storage.writeText(
         path,

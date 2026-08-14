@@ -19,6 +19,8 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-14 | cursor/p11-p12-quality-b945 | p11-behaviour-tree | Spec | Empty-stack restart ran in the same tick as root TimeLimit/abort; Parallel starved nested siblings and skipped abort/TimeLimit/services on yielded children; Loop ignored failure; self-abort skipped Cooldown | Resolved |
+| 2026-08-14 | cursor/p11-p12-quality-b945 | p12-editor-extensions | Spec | Saving EditorUtilityInterface `dockKind` wrote the header but did not reindex `AssetRegistry`, so Windows → Editor Utilities kept the stale filter until remount | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p11-acceptance / p12-editor-extensions | Spec | Tree restart kept Wait/MoveTo/custom `nodeMemory` (instant re-success); MoveTo abort did not `stopNavAgent`; EUO ScriptHost rebooted on any `projectDocument` identity change | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p12-ui-editors / p11-nav-editor-host | Spec | Live EUI present failures were silent (e2e asserted a missing `ui-gui-preview-error`); `isHardUiPresentFailure` treated a throw that production never emits; Auto Bake On Save Details toggle was unwired | Resolved |
 | 2026-08-11 | cursor/p3-object-model-e177 / cursor/p3-spawn-deferral-e177 | p3-object-model | Standards | `spawnActorNow` ignored mid-tick and committed immediately (doc requires deferral) | Resolved |

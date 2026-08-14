@@ -13,7 +13,7 @@ Editor-only types that never ship in Play or export. Spec: [engineplan.md](../en
 
 ## Live tabs
 
-- **Windows → Editor Utilities** lists EUI assets whose header `dockKind` matches the active document (Scene → `"scene"`, Class → `"class"`). Missing `dockKind` normalizes to `"scene"`. They are **not** in the Scene default layout.
+- **Windows → Editor Utilities** lists EUI assets whose header `dockKind` matches the active document (Scene → `"scene"`, Class → `"class"`). Missing `dockKind` normalizes to `"scene"`. They are **not** in the Scene default layout. Saving an EUI reindexes that `.babasset` header so a changed `dockKind` shows up in the menu without remounting the project.
 - Opening a utility adds a Dockview panel (`eui-<guid>`, component `editor-utility`). Last placement is stored in `layout.json` like any other tab. Focus keep-lists can include them.
 - The panel hosts Babylon GUI through `createUiSurface` + `presentAdtToCanvas` on the **shared Engine**. It never `registerView`s the GUI canvas. Interactive picking is forwarded from the 2D canvas into the standalone ADT. Hidden tabs call `UiSurface.setFrozen(true)` so ADT Canvas2D copies (`present`, `markDirty`, pointer `afterPick`) skip. Close disposes the Scene and ADTs. Hard present failures show the same **Babylon GUI Preview Unavailable** Empty as the designer (`ui-gui-preview-error`).
 

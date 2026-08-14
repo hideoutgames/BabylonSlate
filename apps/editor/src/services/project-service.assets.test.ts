@@ -293,6 +293,11 @@ describe("project documents as .babasset", () => {
         { headerMeta: { dockKind: "scene" } },
       ),
     );
+    await service.remountRegistry();
+    expect(
+      service.registry?.list().find((asset) => asset.path === path)?.header.payload
+        .dockKind,
+    ).toBe("scene");
     const loaded = (await service.loadDocument("ui", path)) as Record<
       string,
       unknown
@@ -311,5 +316,9 @@ describe("project documents as .babasset", () => {
     >;
     expect(reloaded.dockKind).toBe("class");
     expect(reloaded.name).toBe("ClassTools");
+    expect(
+      service.registry?.list().find((asset) => asset.path === path)?.header.payload
+        .dockKind,
+    ).toBe("class");
   });
 });
