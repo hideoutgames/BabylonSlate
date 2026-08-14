@@ -129,11 +129,9 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Wait");
     await page.getByTestId("node-palette-item-bt.task.wait").click();
-    const waitNode = page.locator('[data-testid^="bt-node-bt.task.wait"]');
-    await expect(waitNode).toBeVisible();
-
-    await waitNode.click({ force: true });
+    await expect(page.getByTestId("node-palette")).toHaveCount(0);
     const duration = page.getByTestId("property-durationMs");
+    await expect(duration).toBeVisible({ timeout: 15_000 });
     await duration.fill("250");
     await duration.blur();
 

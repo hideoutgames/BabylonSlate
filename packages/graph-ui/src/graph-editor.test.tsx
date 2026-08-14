@@ -1343,6 +1343,32 @@ describe("GraphEditor", () => {
     expect(wrap).toHaveBeenCalled();
   });
 
+  it("selects a node added from the palette after the pane click cleared selection", async () => {
+    const onSelectionChange = vi.fn();
+    const { container, getByText } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        focusedNodeId="log-a"
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenCalledWith(["log-a"]);
+    });
+    onSelectionChange.mockClear();
+    openPalette(container);
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenCalledWith([]);
+    });
+    fireEvent.click(getByText("Log"));
+    await waitFor(() => {
+      const last = onSelectionChange.mock.calls.at(-1)?.[0] as string[] | undefined;
+      expect(last).toHaveLength(1);
+      expect(last?.[0]).toMatch(/^debug\.log-/);
+    });
+  });
+
   it("uses PaletteNode.nodeType when adding from the palette", async () => {
     const onChange = vi.fn();
     const { container, getByTestId } = render(

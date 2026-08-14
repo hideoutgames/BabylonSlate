@@ -623,11 +623,15 @@ function GraphEditorCanvas({
           knownTypes,
         ),
         position,
+        selected: true,
         data,
       };
 
       setNodes((current) => {
-        const next = [...current, nextNode];
+        const next = [
+          ...current.map((node) => ({ ...node, selected: false })),
+          nextNode,
+        ];
         const connect = pendingConnect;
         let nextEdges = graphStateRef.current.edges;
         if (connect?.pin && connect.nodeId) {

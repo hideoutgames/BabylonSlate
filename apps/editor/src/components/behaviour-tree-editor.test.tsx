@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   addDecorator,
   createDefaultBehaviourTree,
@@ -158,6 +159,24 @@ describe("BehaviourTreeEditor", () => {
     };
     const task = next.nodes.find((node) => node.id === "task");
     expect(task?.properties.durationMs).toBe(250);
+  });
+
+  it("selects a Wait node added from the palette so Details show duration", async () => {
+    function Harness() {
+      const [payload, setPayload] = useState(
+        () => createDefaultBehaviourTree() as unknown as Record<string, unknown>,
+      );
+      return <BehaviourTreeEditor payload={payload} onChange={setPayload} />;
+    }
+    const { container } = render(<Harness />);
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    fireEvent.click(pane!);
+    fireEvent.click(pane!);
+    fireEvent.click(screen.getByTestId("node-palette-item-bt.task.wait"));
+    await waitFor(() => {
+      expect(screen.getByTestId("property-durationMs")).toBeTruthy();
+    });
   });
 
   it("lists a project BTTask in the add-node palette", () => {

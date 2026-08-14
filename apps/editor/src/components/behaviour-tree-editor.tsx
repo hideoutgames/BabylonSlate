@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDecorator,
   addService,
@@ -108,6 +108,20 @@ export function BehaviourTreeEditor({
     onChange(next as unknown as Record<string, unknown>);
   };
   const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
+  const knownNodeIds = useRef<Set<string> | null>(null);
+  const nodeIdKey = doc.nodes.map((node) => node.id).join("\0");
+  useEffect(() => {
+    const current = new Set(doc.nodes.map((node) => node.id));
+    if (knownNodeIds.current === null) {
+      knownNodeIds.current = current;
+      return;
+    }
+    const added = [...current].filter((id) => !knownNodeIds.current!.has(id));
+    knownNodeIds.current = current;
+    if (added.length === 0) return;
+    setSelectedId(added[added.length - 1]!);
+    setAttachmentId(null);
+  }, [doc.nodes, nodeIdKey]);
   const overlay: BtGraphOverlay | undefined =
     play.playing && play.liveBtState
       ? {
@@ -585,10 +599,11 @@ export function BehaviourTreeEditor({
           contextMenuItemsForAttachment={attachmentMenu}
           hiddenToolbarActions={["breakLinks", "format"]}
           onSelectionChange={(nodeIds) => {
-            const nextId = nodeIds[0] ?? null;
+            const nextId = nodeIds[0];
+            if (!nextId) return;
             setSelectedId(nextId);
             setAttachmentId((current) => {
-              if (!current || !nextId) return null;
+              if (!current) return null;
               const owner = doc.nodes.find((node) => node.id === nextId);
               if (!owner) return null;
               const onNode =
