@@ -77,11 +77,11 @@ Each line is one JSON object:
 
 ## Dirty / autosave
 
-Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, append journal lines, and schedule `saveProject` after `ProjectSettings.autoSaveIntervalMs` (default **120000**). A second edit does **not** reset an already-running timer. **Save All** writes immediately and cancels the pending timer. **Play** is another explicit save trigger: if documents are dirty or graphs are compile-stale, Play saves and compiles first (progress dialog) and waits before launching Preview. When a save runs and `compileOnSave` is on (default **true**), open graphs compile. Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
+Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, then **immediately** bump chrome (Undo / Redo / Save All dirty) and schedule `saveProject` after `ProjectSettings.autoSaveIntervalMs` (default **120000**). Crash-journal append runs after that bump and is caught so a slow or failed journal cannot leave Undo disabled. A second edit does **not** reset an already-running timer. **Save All** writes immediately and cancels the pending timer. **Play** is another explicit save trigger: if documents are dirty or graphs are compile-stale, Play saves and compiles first (progress dialog) and waits before launching Preview. When a save runs and `compileOnSave` is on (default **true**), open graphs compile. Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
 
 ## Scene apply path
 
-`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → journal append → scheduled save. Undo/redo on scene tabs uses the same per-document stack as graphs.
+`applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → `notifyDocumentEdited` (bump + scheduled save, then journal). Undo/redo on scene tabs uses the same per-document stack as graphs.
 
 See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 
