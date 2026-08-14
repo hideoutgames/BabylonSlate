@@ -138,7 +138,7 @@ describe("ContentBrowserAssetTile", () => {
     renderTile();
     const glyph = screen.getByTestId("content-item-type-icon-hero-1");
     expect(glyph.getAttribute("data-type-icon")).toBe("Texture");
-    expect(glyph.style.color).toBe("var(--asset-texture)");
+    expect(glyph.getAttribute("stroke")).toBe("var(--asset-texture)");
   });
 
   it("keeps the type glyph compact instead of filling the thumb", () => {
@@ -148,6 +148,9 @@ describe("ContentBrowserAssetTile", () => {
     expect(className).toContain("size-10");
     expect(className).not.toContain("size-full");
     expect(className).not.toContain("p-4");
+    expect(glyph.getAttribute("width")).toBe("40");
+    expect(glyph.getAttribute("height")).toBe("40");
+    expect(glyph.getAttribute("stroke-width")).toBe("1.5");
   });
 
   it("outlines the thumb well, leaving the card and text panel on card chrome", () => {
