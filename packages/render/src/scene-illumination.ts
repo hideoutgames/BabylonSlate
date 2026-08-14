@@ -224,13 +224,12 @@ export function updateAuthoredCameraTransform(
   position: { x: number; y: number; z: number },
   rotation: { x: number; y: number; z: number; w: number },
 ): void {
-  if ("position" in camera) {
-    (camera as UniversalCamera).position.set(position.x, position.y, position.z);
+  const gameCamera = camera as UniversalCamera;
+  gameCamera.position.set(position.x, position.y, position.z);
+  if (!gameCamera.rotationQuaternion) {
+    gameCamera.rotationQuaternion = Quaternion.Identity();
   }
-  if (!camera.rotationQuaternion) {
-    camera.rotationQuaternion = Quaternion.Identity();
-  }
-  camera.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+  gameCamera.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
 }
 
 function refreshShadowCasters(scene: Scene, generator: ShadowGenerator): void {
