@@ -297,6 +297,38 @@ function GalleryComposites() {
             />
             <span className="text-[10px] text-muted-foreground">Class tile</span>
           </div>
+          <div className="flex flex-col items-center gap-1">
+            <TypeVisualIcon
+              visual={resolveTypeVisual({ assetType: "UserInterface" })}
+              size={TYPE_VISUAL_ICON_TILE_SIZE}
+              data-testid="gallery-type-visual-user-interface"
+            />
+            <span className="text-[10px] text-muted-foreground">User Interface</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <TypeVisualIcon
+              visual={resolveTypeVisual({ assetType: "AnimationGraph" })}
+              size={TYPE_VISUAL_ICON_TILE_SIZE}
+              data-testid="gallery-type-visual-animation-graph"
+            />
+            <span className="text-[10px] text-muted-foreground">Animation Graph</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <TypeVisualIcon
+              visual={resolveTypeVisual({ assetType: "BehaviourTree" })}
+              size={TYPE_VISUAL_ICON_TILE_SIZE}
+              data-testid="gallery-type-visual-behaviour-tree"
+            />
+            <span className="text-[10px] text-muted-foreground">Behaviour Tree</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <TypeVisualIcon
+              visual={resolveTypeVisual({ assetType: "Model" })}
+              size={TYPE_VISUAL_ICON_TILE_SIZE}
+              data-testid="gallery-type-visual-model"
+            />
+            <span className="text-[10px] text-muted-foreground">Model</span>
+          </div>
         </div>
       </div>
       <div className="h-40 overflow-hidden rounded-lg border border-border">

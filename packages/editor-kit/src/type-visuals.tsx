@@ -1,6 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  AppWindowIcon,
   BoxIcon,
   BoxesIcon,
   BracesIcon,
@@ -18,13 +17,16 @@ import {
   LayoutGridIcon,
   LightbulbIcon,
   ListIcon,
+  ListTreeIcon,
   MapIcon,
   NavigationIcon,
   PaintbrushIcon,
+  PanelTopIcon,
   PersonStandingIcon,
   PlugIcon,
   TypeIcon,
   Volume2Icon,
+  WorkflowIcon,
 } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { ASSET_COLOR_TOKENS, assetColorVar } from "@babylonslate/ui/lib/data-types";
@@ -62,7 +64,7 @@ export type TypeVisualQuery = {
 
 const OBJECT_ICON = HexagonIcon;
 const ACTOR_ICON = PersonStandingIcon;
-const WIDGET_ICON = AppWindowIcon;
+const WIDGET_ICON = PanelTopIcon;
 
 const ENGINE_PARENT: Record<string, string | null> = {
   BObject: null,
@@ -118,8 +120,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   ActorComponent: OBJECT_ICON,
   Actor: ACTOR_ICON,
   WidgetComponent: WIDGET_ICON,
-  AnimationGraphComponent: FilmIcon,
-  BehaviourTreeComponent: FilmIcon,
+  AnimationGraphComponent: WorkflowIcon,
+  BehaviourTreeComponent: ListTreeIcon,
   NavAgentComponent: NavigationIcon,
   NavMeshComponent: MapIcon,
   NavMeshBlockerComponent: BoxIcon,
@@ -139,8 +141,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Audio: Volume2Icon,
   Font: TypeIcon,
   Animation: FilmIcon,
-  AnimationGraph: FilmIcon,
-  BehaviourTree: FilmIcon,
+  AnimationGraph: WorkflowIcon,
+  BehaviourTree: ListTreeIcon,
   Blackboard: ListIcon,
   Shader: PaintbrushIcon,
   Sprite: ImagesIcon,
@@ -306,7 +308,8 @@ export function resolveActorTypeVisual(actor: {
 
 export const TYPE_VISUAL_ICON_CHROME_SIZE = 16;
 export const TYPE_VISUAL_ICON_TILE_SIZE = 40;
-export const TYPE_VISUAL_ICON_TILE_STROKE_WIDTH = 1.5;
+/** Lucide design stroke in CSS px when `absoluteStrokeWidth` is set on tiles. */
+export const TYPE_VISUAL_ICON_TILE_STROKE_WIDTH = 2;
 
 export function TypeVisualIcon({
   visual,
@@ -320,17 +323,14 @@ export function TypeVisualIcon({
   "data-testid"?: string;
 }) {
   const Icon = visual.icon;
-  const sizeClass =
-    size >= TYPE_VISUAL_ICON_TILE_SIZE ? "size-10" : "size-4";
+  const isTile = size >= TYPE_VISUAL_ICON_TILE_SIZE;
+  const sizeClass = isTile ? "size-10" : "size-4";
   return (
     <Icon
       size={size}
       color={visual.colorVar}
-      strokeWidth={
-        size >= TYPE_VISUAL_ICON_TILE_SIZE
-          ? TYPE_VISUAL_ICON_TILE_STROKE_WIDTH
-          : 2
-      }
+      strokeWidth={TYPE_VISUAL_ICON_TILE_STROKE_WIDTH}
+      absoluteStrokeWidth={isTile}
       className={cn(sizeClass, "shrink-0 overflow-visible", className)}
       data-testid={testId}
       data-type-family={visual.family}

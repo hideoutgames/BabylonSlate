@@ -150,7 +150,35 @@ describe("ContentBrowserAssetTile", () => {
     expect(className).not.toContain("p-4");
     expect(glyph.getAttribute("width")).toBe("40");
     expect(glyph.getAttribute("height")).toBe("40");
-    expect(glyph.getAttribute("stroke-width")).toBe("1.5");
+    expect(glyph.getAttribute("stroke-width")).toBe("1.2");
+  });
+
+  it("renders the UserInterface tile with the panel glyph and graph stroke color", () => {
+    const ui: IndexedAsset = {
+      ...asset(),
+      path: "assets/hud.babasset",
+      header: {
+        ...asset().header,
+        guid: "hud-1",
+        type: "UserInterface",
+        name: "HUD",
+      },
+    };
+    render(
+      <ContentBrowserAssetTile
+        asset={ui}
+        selected={false}
+        thumbnailUrl={null}
+        typeVisual={resolveTypeVisual({ assetType: "UserInterface" })}
+        onOpen={vi.fn()}
+        onSelect={vi.fn()}
+        onLongPressMenu={vi.fn()}
+      />,
+    );
+    const glyph = screen.getByTestId("content-item-type-icon-hud-1");
+    expect(glyph.getAttribute("data-type-icon")).toBe("UserInterface");
+    expect(glyph.getAttribute("stroke")).toBe("var(--asset-graph)");
+    expect(glyph.getAttribute("stroke-width")).toBe("1.2");
   });
 
   it("outlines the thumb well, leaving the card and text panel on card chrome", () => {
