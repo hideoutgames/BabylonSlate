@@ -301,20 +301,34 @@ export function resolveActorTypeVisual(actor: {
   });
 }
 
+export const TYPE_VISUAL_ICON_CHROME_SIZE = 16;
+export const TYPE_VISUAL_ICON_TILE_SIZE = 40;
+export const TYPE_VISUAL_ICON_TILE_STROKE_WIDTH = 1.5;
+
 export function TypeVisualIcon({
   visual,
+  size = TYPE_VISUAL_ICON_CHROME_SIZE,
   className,
   "data-testid": testId,
 }: {
   visual: TypeVisual;
+  size?: number;
   className?: string;
   "data-testid"?: string;
 }) {
   const Icon = visual.icon;
+  const sizeClass =
+    size >= TYPE_VISUAL_ICON_TILE_SIZE ? "size-10" : "size-4";
   return (
     <Icon
-      className={cn("size-4 shrink-0", className)}
-      style={{ color: visual.colorVar }}
+      size={size}
+      color={visual.colorVar}
+      strokeWidth={
+        size >= TYPE_VISUAL_ICON_TILE_SIZE
+          ? TYPE_VISUAL_ICON_TILE_STROKE_WIDTH
+          : 2
+      }
+      className={cn(sizeClass, "shrink-0 overflow-visible", className)}
       data-testid={testId}
       data-type-family={visual.family}
       data-type-icon={visual.iconKey}

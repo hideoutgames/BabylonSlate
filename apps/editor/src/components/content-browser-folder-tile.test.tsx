@@ -120,6 +120,8 @@ describe("ContentBrowserFolderTile", () => {
     expect(thumb?.innerHTML).not.toContain("--asset-folder");
     const icon = thumb?.querySelector("svg");
     expect(icon?.getAttribute("class") ?? "").toContain("text-muted-foreground");
+    expect(icon?.getAttribute("width")).toBe("40");
+    expect(icon?.getAttribute("height")).toBe("40");
   });
 
   it("does not bubble pointer events to an empty-grid listener", () => {

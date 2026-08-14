@@ -1,6 +1,7 @@
 import type { IndexedAsset } from "@babylonslate/assets";
 import {
   SelectableText,
+  TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
   type TypeVisual,
 } from "@babylonslate/editor-kit";
@@ -88,7 +89,7 @@ export function ContentBrowserAssetTile({
           ) : (
             <TypeVisualIcon
               visual={typeVisual}
-              className="size-10"
+              size={TYPE_VISUAL_ICON_TILE_SIZE}
               data-testid={`content-item-type-icon-${asset.header.guid}`}
             />
           )}

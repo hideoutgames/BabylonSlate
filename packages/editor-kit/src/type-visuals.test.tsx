@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import {
+  TYPE_VISUAL_ICON_CHROME_SIZE,
+  TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
   engineParentOf,
   resolveActorTypeVisual,
@@ -194,6 +196,36 @@ describe("TypeVisualIcon", () => {
     const glyph = getByTestId("glyph");
     expect(glyph.getAttribute("data-type-family")).toBe("scene");
     expect(glyph.getAttribute("data-type-icon")).toBe("Scene");
-    expect(glyph.style.color).toBe("var(--asset-scene)");
+    expect(glyph.getAttribute("stroke")).toBe("var(--asset-scene)");
+  });
+
+  it("rasterizes chrome glyphs at 16px with Lucide fill none", () => {
+    const visual = resolveTypeVisual({ assetType: "Scene" });
+    const { getByTestId } = render(
+      <TypeVisualIcon visual={visual} data-testid="glyph" />,
+    );
+    const glyph = getByTestId("glyph");
+    expect(glyph.tagName.toLowerCase()).toBe("svg");
+    expect(glyph.getAttribute("width")).toBe(String(TYPE_VISUAL_ICON_CHROME_SIZE));
+    expect(glyph.getAttribute("height")).toBe(String(TYPE_VISUAL_ICON_CHROME_SIZE));
+    expect(glyph.getAttribute("fill")).toBe("none");
+    expect(glyph.getAttribute("class") ?? "").toContain("size-4");
+    expect(glyph.getAttribute("class") ?? "").toContain("overflow-visible");
+  });
+
+  it("rasterizes tile glyphs at 40px with a tighter stroke", () => {
+    const visual = resolveTypeVisual({ assetType: "Texture" });
+    const { getByTestId } = render(
+      <TypeVisualIcon
+        visual={visual}
+        size={TYPE_VISUAL_ICON_TILE_SIZE}
+        data-testid="glyph"
+      />,
+    );
+    const glyph = getByTestId("glyph");
+    expect(glyph.getAttribute("width")).toBe(String(TYPE_VISUAL_ICON_TILE_SIZE));
+    expect(glyph.getAttribute("height")).toBe(String(TYPE_VISUAL_ICON_TILE_SIZE));
+    expect(glyph.getAttribute("stroke-width")).toBe("1.5");
+    expect(glyph.getAttribute("class") ?? "").toContain("size-10");
   });
 });

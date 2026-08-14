@@ -166,6 +166,9 @@ export {
 } from "./flags-field";
 export {
   ASSET_COLOR_TOKENS,
+  TYPE_VISUAL_ICON_CHROME_SIZE,
+  TYPE_VISUAL_ICON_TILE_SIZE,
+  TYPE_VISUAL_ICON_TILE_STROKE_WIDTH,
   TypeVisualIcon,
   engineParentOf,
   resolveActorTypeVisual,
