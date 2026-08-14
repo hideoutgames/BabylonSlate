@@ -19,7 +19,15 @@ import {
   gridCoverageWorld,
   snapGridOrigin,
 } from "./editor-grid";
-import { createGizmoHost, gizmoAxisEnabledFlags, GIZMO_AXIS_COLORS } from "./gizmo-host";
+import {
+  createGizmoHost,
+  gizmoAxisEnabledFlags,
+  GIZMO_AXIS_COLORS,
+  GIZMO_UNIFORM_COLOR,
+  DEFAULT_GIZMO_HANDLE_SCALE,
+  GIZMO_COLLIDER_SCALE,
+  GIZMO_END_CAP_SCALE,
+} from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
 import { editorMeshName } from "./scene-loader";
@@ -643,6 +651,124 @@ describe("gizmo host", () => {
     expect(host.positionGizmo.xPlaneGizmo.coloredMaterial.alpha).toBeGreaterThan(
       0.1,
     );
+    host.dispose();
+  });
+
+  it("keeps the uniform scale handle small and does not inject a custom cube", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    const host = createGizmoHost(scene, { tool: "scale" });
+    host.attachTo(sync.meshForActor("a"));
+
+    const layerScene = host.scaleGizmo.uniformScaleGizmo.gizmoLayer.utilityLayerScene;
+    expect(layerScene.getMeshByName("gizmo-uniform-scale")).toBeNull();
+
+    const root = host.scaleGizmo.uniformScaleGizmo._rootMesh;
+    root.computeWorldMatrix(true);
+    const rootScale = Math.max(
+      Math.abs(root.absoluteScaling.x),
+      Math.abs(root.absoluteScaling.y),
+      Math.abs(root.absoluteScaling.z),
+      1e-6,
+    );
+    let maxHalfExtent = 0;
+    for (const mesh of root.getChildMeshes()) {
+      if (mesh.visibility <= 0) continue;
+      mesh.computeWorldMatrix(true);
+      mesh.refreshBoundingInfo();
+      const size = mesh.getBoundingInfo().boundingBox.extendSizeWorld;
+      maxHalfExtent = Math.max(maxHalfExtent, size.x, size.y, size.z);
+    }
+    const relativeExtent = (maxHalfExtent * 2) / rootScale;
+    expect(relativeExtent).toBeGreaterThan(0);
+    expect(relativeExtent).toBeLessThan(0.05);
+    host.dispose();
+  });
+
+  it("styles the uniform scale handle unlit with a light-gray emissive", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene, { tool: "scale" });
+    const { coloredMaterial, hoverMaterial } = host.scaleGizmo;
+    const uniform = host.scaleGizmo.uniformScaleGizmo;
+    expect(coloredMaterial.disableLighting).toBe(true);
+    expect(hoverMaterial.disableLighting).toBe(true);
+    expect(uniform.coloredMaterial.disableLighting).toBe(true);
+    expect(uniform.hoverMaterial.disableLighting).toBe(true);
+    expect(coloredMaterial.emissiveColor.r).toBeCloseTo(GIZMO_UNIFORM_COLOR.r);
+    expect(coloredMaterial.emissiveColor.g).toBeCloseTo(GIZMO_UNIFORM_COLOR.g);
+    expect(coloredMaterial.emissiveColor.b).toBeCloseTo(GIZMO_UNIFORM_COLOR.b);
+    expect(uniform.coloredMaterial.emissiveColor.r).toBeCloseTo(
+      GIZMO_UNIFORM_COLOR.r,
+    );
+    expect(hoverMaterial.emissiveColor.r).toBeGreaterThan(
+      coloredMaterial.emissiveColor.r - 0.001,
+    );
+    host.dispose();
+  });
+
+  it("uses a large default handle scale on every tool", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    expect(DEFAULT_GIZMO_HANDLE_SCALE).toBe(3.6);
+    expect(host.positionGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
+    expect(host.rotationGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
+    expect(host.scaleGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
+    host.dispose();
+  });
+
+  it("enlarges leaf collider meshes past the visible shafts", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    const children = host.positionGizmo.xGizmo._rootMesh.getChildMeshes();
+    const visualShaft = children.find(
+      (mesh) =>
+        mesh.name === "cylinder" &&
+        mesh.visibility > 0 &&
+        Math.abs(mesh.position.z - 0.3) > 0.05,
+    );
+    const colliderShaft = children.find(
+      (mesh) =>
+        mesh.name === "cylinder" &&
+        mesh.visibility === 0 &&
+        mesh.getChildMeshes().length === 0 &&
+        Math.abs(mesh.position.z - 0.3) > 0.05,
+    );
+    expect(visualShaft).toBeDefined();
+    expect(colliderShaft).toBeDefined();
+    expect(colliderShaft!.scaling.x / visualShaft!.scaling.x).toBeCloseTo(
+      GIZMO_COLLIDER_SCALE,
+    );
+    host.dispose();
+  });
+
+  it("enlarges visible translate cones and scale boxes, not shafts", () => {
+    const { scene } = createHandle();
+    const host = createGizmoHost(scene);
+    const translate = host.positionGizmo.xGizmo._rootMesh.getChildMeshes();
+    const cone = translate.find(
+      (mesh) =>
+        mesh.name === "cylinder" &&
+        mesh.visibility > 0 &&
+        Math.abs(mesh.position.z - 0.3) < 0.02,
+    );
+    const shaft = translate.find(
+      (mesh) =>
+        mesh.name === "cylinder" &&
+        mesh.visibility > 0 &&
+        Math.abs(mesh.position.z - 0.3) > 0.05,
+    );
+    expect(cone).toBeDefined();
+    expect(shaft).toBeDefined();
+    expect(cone!.scaling.x).toBeCloseTo(GIZMO_END_CAP_SCALE);
+    expect(shaft!.scaling.x).toBeCloseTo(1);
+
+    const scaleAxis = host.scaleGizmo.xGizmo._rootMesh.getChildMeshes();
+    const box = scaleAxis.find(
+      (mesh) => mesh.name === "yPosMesh" && mesh.visibility > 0,
+    );
+    expect(box).toBeDefined();
+    expect(box!.scaling.x).toBeCloseTo(0.1 * GIZMO_END_CAP_SCALE);
     host.dispose();
   });
 });
