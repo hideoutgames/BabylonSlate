@@ -57,4 +57,73 @@ describe("collectNavBakeGeometry", () => {
     expect(geometry.indices.length).toBeGreaterThan(3);
     sync.dispose();
   });
+
+  it("includes static NavMeshBlockerComponent solids and skips dynamic ones", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const sync = new EditorSceneSync(handle.scene);
+    const ground = createActor("ground", "Ground", {
+      components: [createMeshComponent("mesh", "ground")],
+    });
+    const sceneWithout: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [ground],
+    };
+    const sceneWith: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        ground,
+        createActor("block", "Blocker", {
+          transform: {
+            position: [0, 1, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [4, 2, 4],
+          },
+          components: [
+            {
+              id: "blocker",
+              classId: "NavMeshBlockerComponent",
+              properties: { dynamic: false, kind: "box", area: "unwalkable" },
+            },
+          ],
+        }),
+        createActor("door", "Door", {
+          components: [
+            {
+              id: "dyn",
+              classId: "NavMeshBlockerComponent",
+              properties: { dynamic: true, kind: "box", area: "unwalkable" },
+            },
+          ],
+        }),
+      ],
+    };
+    sync.apply(sceneWith);
+    const base = collectNavBakeGeometry(sync, sceneWithout);
+    const withBlocker = collectNavBakeGeometry(sync, sceneWith);
+    expect(withBlocker.positions.length).toBeGreaterThan(base.positions.length);
+    sync.dispose();
+  });
+
+  it("builds a Recast walkable quad for 2D scenes without MeshComponent", () => {
+    const sceneData: SerializedScene = {
+      ...createDefaultScene("2d"),
+      viewportMode: "2d",
+      actors: [
+        createActor("hero", "Hero", {
+          transform: {
+            position: [1, 2, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        }),
+      ],
+    };
+    const geometry = collectNavBakeGeometry(
+      { meshForActor: () => null },
+      sceneData,
+    );
+    expect(geometry.indices).toEqual([0, 3, 2, 0, 2, 1]);
+    expect(geometry.positions[1]).toBe(0);
+  });
 });

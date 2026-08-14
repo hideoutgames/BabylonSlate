@@ -5,6 +5,7 @@ import {
 } from "@babylonslate/physics";
 import {
   DEFAULT_NAV_AGENT_PARAMS,
+  defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
 } from "@babylonslate/navigation";
 
@@ -92,6 +93,8 @@ export function defaultPropertiesFor(
       return { ...DEFAULT_NAV_AGENT_PARAMS };
     case "NavMeshComponent":
       return { ...defaultNavMeshComponentProperties() };
+    case "NavMeshBlockerComponent":
+      return { ...defaultNavMeshBlockerComponentProperties() };
     case "CameraComponent":
       return { fieldOfView: 60, orthographicSize: 5 };
     case "LightComponent":

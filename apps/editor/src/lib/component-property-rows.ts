@@ -629,6 +629,39 @@ export function componentPropertyRows(
           onChange: (next) => update("maxAcceleration", next),
         },
       ];
+    case "NavMeshBlockerComponent":
+      return [
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "dynamic"),
+          label: "Dynamic",
+          value: component.properties.dynamic === true,
+          onChange: (next) => update("dynamic", next),
+        },
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "kind"),
+          label: "Kind",
+          value:
+            component.properties.kind === "cylinder" ? "cylinder" : "box",
+          options: [
+            { value: "box", label: "Box" },
+            { value: "cylinder", label: "Cylinder" },
+          ],
+          onChange: (next) => update("kind", next),
+        },
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "area"),
+          label: "Area",
+          value: component.properties.area === "cost" ? "cost" : "unwalkable",
+          options: [
+            { value: "unwalkable", label: "Unwalkable" },
+            { value: "cost", label: "Cost" },
+          ],
+          onChange: (next) => update("area", next),
+        },
+      ];
     case "RigidBodyComponent":
       return [
         {

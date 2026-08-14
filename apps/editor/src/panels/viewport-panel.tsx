@@ -128,13 +128,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     if (!navBake) return;
-    navBake.registerCollector(() => {
+    navBake.registerCollector((extras) => {
       const handle = engineRef.current;
       const current = sceneRef.current;
       if (!handle?.editor || !current) {
         return { positions: [], indices: [] };
       }
-      return collectNavBakeGeometry(handle.editor.sync, current);
+      return collectNavBakeGeometry(handle.editor.sync, current, extras);
     });
     return () => navBake.registerCollector(null);
   }, [navBake]);

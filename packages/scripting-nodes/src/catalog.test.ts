@@ -28,6 +28,8 @@ describe("node catalog", () => {
     expect(registry.get("render.setResolution")).toBeDefined();
     expect(registry.get("bt.event.activate")).toBeDefined();
     expect(registry.get("bt.finish")).toBeDefined();
+    expect(registry.get("navigation.findPathTo")).toBeDefined();
+    expect(registry.get("navigation.moveTo")).toBeDefined();
   });
 
   it("has a WildcardTo* converter for every concrete target", () => {

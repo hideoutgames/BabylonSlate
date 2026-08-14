@@ -103,6 +103,9 @@ describe("resolveTypeVisual", () => {
     expect(resolveTypeVisual({ classId: "NavMeshComponent" }).iconKey).toBe(
       "NavMeshComponent",
     );
+    expect(resolveTypeVisual({ classId: "NavMeshBlockerComponent" }).iconKey).toBe(
+      "NavMeshBlockerComponent",
+    );
   });
 
   it("uses a distinct glyph for TilemapComponent now that P10 Play load exists", () => {

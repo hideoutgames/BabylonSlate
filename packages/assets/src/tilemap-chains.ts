@@ -1,4 +1,5 @@
 import { tilesetTileById, type TilesetPayload } from "./tileset-payload";
+import type { TilemapPayload } from "./tilemap-payload";
 
 export interface TilemapChain {
   points: Array<{ x: number; y: number }>;
@@ -67,6 +68,33 @@ export function tilemapChunkChains(options: {
   }
 
   return [...outlineChains(unitEdges), ...custom.filter((c) => c.points.length >= 2)];
+}
+
+/** Collision-layer chains for every chunk in a tilemap (nav bake / Rapier). */
+export function tilemapCollisionChains(
+  map: TilemapPayload,
+  tileset: TilesetPayload,
+  worldTileWidth: number,
+  worldTileHeight: number,
+): TilemapChain[] {
+  const chains: TilemapChain[] = [];
+  for (const layer of map.layers) {
+    if (!layer.collision) continue;
+    for (const chunk of layer.chunks) {
+      chains.push(
+        ...tilemapChunkChains({
+          tiles: chunk.tiles,
+          chunkSize: map.chunkSize,
+          chunkX: chunk.cx,
+          chunkY: chunk.cy,
+          tileset,
+          worldTileWidth,
+          worldTileHeight,
+        }),
+      );
+    }
+  }
+  return chains;
 }
 
 function outlineChains(directed: Array<[Point, Point]>): TilemapChain[] {

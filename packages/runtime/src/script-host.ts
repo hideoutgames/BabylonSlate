@@ -65,6 +65,17 @@ export interface ScriptHostServices {
   changeScene?(scene: string): void;
   playSound?(asset: string, volume?: number): void;
   setRenderResolution?(width: number, height: number): void;
+  findPathTo?(
+    from: Vec3,
+    to: Vec3,
+  ): Vec3[];
+  moveTo?(actor: Actor | null | undefined, destination: Vec3): void;
+  stopMovement?(actor: Actor | null | undefined): void;
+  isPathValid?(from: Vec3, to: Vec3): boolean;
+  getClosestNavigablePoint?(point: Vec3): Vec3 | null;
+  getRandomPointInRadius?(center: Vec3, radius: number): Vec3 | null;
+  addObstacle?(kind: string, pose: Vec3, size: Vec3): string;
+  removeObstacle?(id: string): void;
 }
 
 export interface ScriptContext {
@@ -145,6 +156,14 @@ export interface ScriptContext {
   btFinish(result: "success" | "failure"): void;
   getBlackboard(key: string): unknown;
   setBlackboard(key: string, value: unknown): void;
+  findPathTo(from: Vec3, to: Vec3): Vec3[];
+  moveTo(actor: Actor | null | undefined, destination: Vec3): void;
+  stopMovement(actor: Actor | null | undefined): void;
+  isPathValid(from: Vec3, to: Vec3): boolean;
+  getClosestNavigablePoint(point: Vec3): Vec3 | null;
+  getRandomPointInRadius(center: Vec3, radius: number): Vec3 | null;
+  addObstacle(kind: string, pose: Vec3, size: Vec3): string;
+  removeObstacle(id: string): void;
 }
 
 export type CompiledScript = ScriptBundleEntry;
@@ -434,6 +453,23 @@ export class ScriptHost {
       },
       setRenderResolution: (width, height) => {
         services.setRenderResolution?.(Number(width), Number(height));
+      },
+      findPathTo: (from, to) => services.findPathTo?.(from, to) ?? [],
+      moveTo: (actor, destination) => {
+        services.moveTo?.(actor ?? self, destination);
+      },
+      stopMovement: (actor) => {
+        services.stopMovement?.(actor ?? self);
+      },
+      isPathValid: (from, to) => services.isPathValid?.(from, to) ?? false,
+      getClosestNavigablePoint: (point) =>
+        services.getClosestNavigablePoint?.(point) ?? null,
+      getRandomPointInRadius: (center, radius) =>
+        services.getRandomPointInRadius?.(center, radius) ?? null,
+      addObstacle: (kind, pose, size) =>
+        services.addObstacle?.(kind, pose, size) ?? "",
+      removeObstacle: (id) => {
+        services.removeObstacle?.(id);
       },
       btFinish: extras?.btFinish ?? (() => undefined),
       getBlackboard: extras?.getBlackboard ?? (() => undefined),

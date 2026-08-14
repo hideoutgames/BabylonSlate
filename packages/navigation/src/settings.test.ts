@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_NAV_MESH_SETTINGS } from "./types";
 import {
+  defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
   parseNavAgentParams,
   parseNavMeshActorSettings,
+  parseNavMeshBlockerProperties,
 } from "./settings";
 
 describe("nav mesh settings", () => {
@@ -39,5 +41,20 @@ describe("nav mesh settings", () => {
       maxSpeed: 8,
       maxAcceleration: 8,
     });
+  });
+
+  it("defaults and parses NavMeshBlockerComponent properties", () => {
+    expect(defaultNavMeshBlockerComponentProperties()).toEqual({
+      dynamic: false,
+      kind: "box",
+      area: "unwalkable",
+    });
+    expect(
+      parseNavMeshBlockerProperties({
+        dynamic: true,
+        kind: "cylinder",
+        area: "cost",
+      }),
+    ).toEqual({ dynamic: true, kind: "cylinder", area: "cost" });
   });
 });

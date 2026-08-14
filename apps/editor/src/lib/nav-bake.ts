@@ -1,4 +1,7 @@
-import type { NavMeshGenerateInput, NavMeshSettings } from "@babylonslate/navigation";
+import type {
+  NavMeshGenerateInput,
+  NavMeshGenerateSettings,
+} from "@babylonslate/navigation";
 
 export type NavBakePhase =
   | "showing"
@@ -13,10 +16,10 @@ export type NavBakeGeometry = {
 
 export type RunNavBakeOptions = {
   waitPaintedFrame: () => Promise<void>;
-  collect: () => NavBakeGeometry;
+  collect: () => NavBakeGeometry | Promise<NavBakeGeometry>;
   generate: (input: NavMeshGenerateInput) => Promise<Uint8Array>;
   write: (bytes: Uint8Array) => Promise<void>;
-  settings: Partial<NavMeshSettings>;
+  settings: NavMeshGenerateSettings;
   onPhase: (phase: NavBakePhase) => void;
   signal?: AbortSignal;
 };
@@ -33,7 +36,7 @@ export async function runNavBake(options: RunNavBakeOptions): Promise<Uint8Array
   await options.waitPaintedFrame();
   throwIfAborted(options.signal);
   options.onPhase("collecting");
-  const geometry = options.collect();
+  const geometry = await options.collect();
   if (
     geometry.positions.length < 9 ||
     geometry.indices.length < 3

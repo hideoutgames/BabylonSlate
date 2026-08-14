@@ -17,6 +17,8 @@ export type NavigationBackend = {
   addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;
   removeObstacle(id: string): void;
   addAgent(position: NavPoint, params?: NavAgentParams): string;
+  /** Clears the crowd agent's current move target. */
+  stopAgent(id: string): void;
   removeAgent(id: string): void;
   agentPosition(id: string): NavPoint | null;
   agentVelocity(id: string): NavPoint | null;
@@ -41,10 +43,14 @@ export type NavMeshSettings = {
   detailSampleMaxError: number;
 };
 
+export type NavMeshGenerateSettings = Partial<NavMeshSettings> & {
+  supportDynamicObstacles?: boolean;
+};
+
 export type NavMeshGenerateInput = {
   positions: ArrayLike<number>;
   indices: ArrayLike<number>;
-  settings?: Partial<NavMeshSettings>;
+  settings?: NavMeshGenerateSettings;
 };
 
 export const DEFAULT_NAV_MESH_SETTINGS: NavMeshSettings = {

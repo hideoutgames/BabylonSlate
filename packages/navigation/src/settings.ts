@@ -103,6 +103,27 @@ export function parseNavMeshSettings(
   };
 }
 
+export type NavMeshBlockerProperties = {
+  dynamic: boolean;
+  kind: "box" | "cylinder";
+  area: "unwalkable" | "cost";
+};
+
+export function defaultNavMeshBlockerComponentProperties(): NavMeshBlockerProperties {
+  return { dynamic: false, kind: "box", area: "unwalkable" };
+}
+
+export function parseNavMeshBlockerProperties(
+  properties: Record<string, unknown>,
+): NavMeshBlockerProperties {
+  const defaults = defaultNavMeshBlockerComponentProperties();
+  return {
+    dynamic: asBoolean(properties.dynamic, defaults.dynamic),
+    kind: properties.kind === "cylinder" ? "cylinder" : "box",
+    area: properties.area === "cost" ? "cost" : "unwalkable",
+  };
+}
+
 export function parseNavAgentParams(
   properties: Record<string, unknown>,
 ): Required<NavAgentParams> {

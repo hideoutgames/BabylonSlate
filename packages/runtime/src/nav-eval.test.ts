@@ -12,6 +12,7 @@ import {
   createNavigationBackend,
   generateNavMesh,
   initNavigation,
+  recastWalkableQuadFromXy,
 } from "@babylonslate/navigation";
 import { createInProcessRuntime } from "./driver";
 
@@ -87,6 +88,192 @@ describe("runtime navmesh import and crowd", () => {
         ? slot
         : readActorSlot(buf, 1);
     expect(agentSlot.position.x).toBeGreaterThan(-4);
+    runtime.stop();
+  });
+
+  it("ticks BT MoveTo through the crowd until the destination", async () => {
+    const tree = {
+      name: "Patrol",
+      rootId: "move",
+      blackboardGuid: null,
+      nodes: [
+        {
+          id: "move",
+          kind: "task" as const,
+          classId: "BTTask_MoveTo",
+          children: [],
+          decorators: [],
+          services: [],
+          properties: { destination: { x: 4, y: 0, z: 4 }, acceptRadius: 1.5 },
+        },
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      playScene: {
+        name: "Nav",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        actors: [
+          createActor("guard", "Guard", {
+            transform: {
+              position: [-4, 0, -4],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [
+              {
+                id: "nav",
+                classId: "NavAgentComponent",
+                properties: { radius: 0.5, height: 2, maxSpeed: 3.5 },
+              },
+              {
+                id: "bt",
+                classId: "BehaviourTreeComponent",
+                properties: { treeGuid: "tree-1" },
+              },
+            ],
+          }),
+        ],
+      },
+      behaviourTrees: { "tree-1": tree },
+    });
+    await runtime.loadNavMesh(bytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    for (let i = 0; i < 180; i += 1) runtime.tick();
+    const buf = new Float32Array(snapshotFloatCount(8));
+    runtime.copySnapshot(buf);
+    const slot = readActorSlot(buf, 0);
+    expect(slot.position.x).toBeGreaterThan(-3);
+    runtime.stop();
+  });
+
+  it("registers dynamic blockers onto a tile-cache mesh", async () => {
+    const tileBytes = await generateNavMesh({
+      ...groundPrism(),
+      settings: { supportDynamicObstacles: true },
+    });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      playScene: {
+        name: "Nav",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        actors: [
+          createActor("agent", "Agent", {
+            transform: {
+              position: [-4, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [
+              {
+                id: "nav",
+                classId: "NavAgentComponent",
+                properties: { radius: 0.5, height: 2, maxSpeed: 3.5 },
+              },
+            ],
+          }),
+          createActor("door", "Door", {
+            transform: {
+              position: [0, 1, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [2, 2, 8],
+            },
+            components: [
+              {
+                id: "block",
+                classId: "NavMeshBlockerComponent",
+                properties: {
+                  dynamic: true,
+                  kind: "box",
+                  area: "unwalkable",
+                },
+              },
+            ],
+          }),
+        ],
+      },
+    });
+    await runtime.loadNavMesh(tileBytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    const path = runtime.findNavPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 });
+    expect(path.length).toBeGreaterThan(1);
+    expect(
+      path.some((point) => Math.abs(point.x) < 1 && Math.abs(point.z) < 1),
+    ).toBe(false);
+    runtime.stop();
+  });
+
+  it("registers 2D dynamic blockers onto a remapped tile-cache mesh", async () => {
+    const floor = recastWalkableQuadFromXy({
+      minX: -10,
+      minY: -10,
+      maxX: 10,
+      maxY: 10,
+    });
+    const tileBytes = await generateNavMesh({
+      ...floor,
+      settings: { supportDynamicObstacles: true },
+    });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      playScene: {
+        name: "Nav2d",
+        viewportMode: "2d",
+        settings: createDefaultSceneSettings("2d"),
+        actors: [
+          createActor("agent", "Agent", {
+            transform: {
+              position: [-4, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [
+              {
+                id: "nav",
+                classId: "NavAgentComponent",
+                properties: { radius: 0.5, height: 2, maxSpeed: 3.5 },
+              },
+            ],
+          }),
+          createActor("door", "Door", {
+            transform: {
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [2, 8, 1],
+            },
+            components: [
+              {
+                id: "block",
+                classId: "NavMeshBlockerComponent",
+                properties: {
+                  dynamic: true,
+                  kind: "box",
+                  area: "unwalkable",
+                },
+              },
+            ],
+          }),
+        ],
+      },
+    });
+    await runtime.loadNavMesh(tileBytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    const path = runtime.findNavPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 });
+    expect(path.length).toBeGreaterThan(1);
+    expect(
+      path.some((point) => Math.abs(point.x) < 1 && Math.abs(point.y) < 1),
+    ).toBe(false);
     runtime.stop();
   });
 });

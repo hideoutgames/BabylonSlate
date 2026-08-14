@@ -86,10 +86,11 @@ function tickTask(
   memory: Record<string, unknown>,
   host?: BtTaskHost,
 ): BtResult {
-  if (host && !BUILTIN_TASKS.has(builtinClassId(node.classId))) {
+  const classId = builtinClassId(node.classId);
+  if (host && (!BUILTIN_TASKS.has(classId) || classId === "bt.task.moveTo")) {
     return host.tick(node, blackboard, dtSeconds, memory);
   }
-  switch (builtinClassId(node.classId)) {
+  switch (classId) {
     case "bt.task.succeed":
     case "bt.task.moveTo":
     case "bt.task.rotateToFace":

@@ -21,6 +21,7 @@ import { functionCallNodes } from "./functions";
 import { castingNodes } from "./casting";
 import { timerNodes } from "./timers";
 import { behaviourTreeNodes } from "./behaviour-tree";
+import { navigationNodes } from "./navigation";
 
 export * from "./flow";
 export * from "./math";
@@ -44,6 +45,7 @@ export * from "./functions";
 export * from "./casting";
 export * from "./timers";
 export * from "./behaviour-tree";
+export * from "./navigation";
 
 export const ALL_NODE_CATEGORIES = [
   "flow",
@@ -68,6 +70,7 @@ export const ALL_NODE_CATEGORIES = [
   "casting",
   "timers",
   "behaviour-tree",
+  "navigation",
 ] as const;
 
 export function allNodeDefinitions(): NodeDefinition[] {
@@ -94,6 +97,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...castingNodes,
     ...timerNodes,
     ...behaviourTreeNodes,
+    ...navigationNodes,
   ];
 }
 

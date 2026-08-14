@@ -22,6 +22,7 @@ export type PlaceActorKind =
   | { type: "light"; lightKind: string }
   | { type: "camera" }
   | { type: "navmesh" }
+  | { type: "navmesh-blocker" }
   | { type: "empty" }
   | {
       type: "asset";
@@ -72,6 +73,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "NavMesh",
     category: "Navigation",
     kind: { type: "navmesh" },
+  },
+  {
+    id: "navmesh-blocker",
+    title: "NavMesh Blocker",
+    category: "Navigation",
+    kind: { type: "navmesh-blocker" },
   },
 ];
 
@@ -135,6 +142,12 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "navmesh") {
     return resolveTypeVisual({ classId: "NavMeshComponent", family: "class" });
   }
+  if (kind.type === "navmesh-blocker") {
+    return resolveTypeVisual({
+      classId: "NavMeshBlockerComponent",
+      family: "class",
+    });
+  }
   if (kind.type === "asset") {
     return resolveTypeVisual({ assetType: kind.assetType });
   }
@@ -192,6 +205,17 @@ export function spawnPlacedActor(
           id: `${id}-navmesh`,
           classId: "NavMeshComponent",
           properties: defaultPropertiesFor("NavMeshComponent"),
+        },
+      ],
+    });
+  }
+  if (kind.type === "navmesh-blocker") {
+    return createActor(id, "NavMesh Blocker", {
+      components: [
+        {
+          id: `${id}-blocker`,
+          classId: "NavMeshBlockerComponent",
+          properties: defaultPropertiesFor("NavMeshBlockerComponent"),
         },
       ],
     });

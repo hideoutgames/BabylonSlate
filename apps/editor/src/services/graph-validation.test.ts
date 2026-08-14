@@ -185,5 +185,6 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.function.input")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.function.output")).toBe(false);
     expect(nodes.some((node) => node.id === "functions.call")).toBe(true);
+    expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
   });
 });
