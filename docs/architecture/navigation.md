@@ -2,7 +2,7 @@
 
 Shared surface for navmesh bake and worker queries (engineplan §14.2). Implementation: `@babylonslate/navigation`. Recast wasm is allowed; no React, no Babylon, no `@recast-navigation/babylon`.
 
-Tile-cache obstacles, 2D bake input, scripting nodes, and crowd `MoveTo` are in (`p11-nav-blockers-2d`). Auto-bake-on-save stays **off**. Dynamic **cost** volumes are recorded but do not carve (Recast tile cache has no cost-area obstacle).
+Tile-cache obstacles, 2D bake input, scripting nodes, and crowd `MoveTo` are in (`p11-nav-blockers-2d`). Auto-bake-on-save stays **off**. Dynamic **cost** volumes are recorded but do not carve (Recast tile cache has no cost-area obstacle). §18 acceptance: `packages/runtime/src/p11-acceptance.test.ts` plus `e2e/p11-ai.spec.ts`.
 
 ## Package
 

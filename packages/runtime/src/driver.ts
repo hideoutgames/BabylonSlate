@@ -136,7 +136,11 @@ export interface RuntimeDriver {
   getLogRing(): LogRingBuffer;
   getDiagnostics(): SessionDiagnosticAggregator;
   registerAnchors(assetGuid: string, anchors: readonly AnchorEntry[]): void;
-  reportError(error: unknown, frameId?: number): RuntimeDiagnostic | null;
+  reportError(
+    error: unknown,
+    frameId?: number,
+    hint?: { btNodeId?: string; assetGuid?: string },
+  ): RuntimeDiagnostic | null;
   /** Load compiled graph modules and register their source anchors. */
   loadScripts(scripts: readonly CompiledScript[]): Promise<void>;
   /** Spawn an actor whose lifecycle hooks run its class's compiled graphs. */
@@ -1526,7 +1530,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.anchors.set(assetGuid, anchors);
   }
 
-  reportError(error: unknown, frameId = this.frameId): RuntimeDiagnostic | null {
+  reportError(
+    error: unknown,
+    frameId = this.frameId,
+    hint?: { btNodeId?: string; assetGuid?: string },
+  ): RuntimeDiagnostic | null {
     const err = error instanceof Error ? error : new Error(String(error));
     const stack = err.stack ?? "";
     const anchor = mapStackToAnchor(stack, this.anchors);
@@ -1534,11 +1542,11 @@ class InProcessRuntime implements RuntimeDriver {
       code: "runtime.uncaught",
       message: err.message,
       severity: "error",
-      assetGuid: this.currentBtAssetGuid ?? anchor?.assetGuid,
+      assetGuid: hint?.assetGuid ?? this.currentBtAssetGuid ?? anchor?.assetGuid,
       graphId: anchor?.graphId,
-      nodeId: anchor?.nodeId,
+      nodeId: hint?.btNodeId ? undefined : anchor?.nodeId,
       bodyLine: anchor?.bodyLine,
-      btNodeId: this.currentBtNodeId ?? anchor?.btNodeId,
+      btNodeId: hint?.btNodeId ?? this.currentBtNodeId ?? anchor?.btNodeId,
       stack,
       frameId,
       tickIndex: this.world.clock.tickIndex,

@@ -2,7 +2,7 @@
 
 Shared surface for the tree IR, Blackboard, and deterministic evaluator (engineplan §14.1, checklist `p11-behaviour-tree`). Implementation: `@babylonslate/behaviour-tree`. No React, no Babylon — the evaluator runs in the game worker.
 
-Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. `BehaviourTreeComponent` and `NavAgentComponent` are addable. Runtime `BTTask_MoveTo` drives the crowd when a navmesh and `NavAgentComponent` are present; the package evaluator still succeeds immediately when no task host is provided.
+Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. `BehaviourTreeComponent` and `NavAgentComponent` are addable. Runtime `BTTask_MoveTo` drives the crowd when a navmesh and `NavAgentComponent` are present; the package evaluator still succeeds immediately when no task host is provided. §18 acceptance: `packages/runtime/src/p11-acceptance.test.ts` plus `e2e/p11-ai.spec.ts`.
 
 ## Package
 
