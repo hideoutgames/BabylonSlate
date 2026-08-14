@@ -34,10 +34,13 @@ describe("data-types", () => {
     expect(ASSET_COLOR_VAR.folder).toBe("var(--asset-folder)");
   });
 
-  it("builds an inset type-colored outline without a radial wash", () => {
+  it("builds a type-colored border outline without a radial wash", () => {
     const colorVar = "var(--asset-texture)";
     const accent = typeColorThumbAccent(colorVar);
-    expect(accent.boxShadow).toBe("inset 0 0 0 2px var(--asset-texture)");
+    expect(accent.border).toBe("2px solid var(--asset-texture)");
+    expect(accent.borderTopLeftRadius).toBe("calc(var(--radius-xl) - 2px)");
+    expect(accent.borderTopRightRadius).toBe("calc(var(--radius-xl) - 2px)");
+    expect("boxShadow" in accent).toBe(false);
     expect("backgroundImage" in accent).toBe(false);
     expect("backgroundColor" in accent).toBe(false);
   });

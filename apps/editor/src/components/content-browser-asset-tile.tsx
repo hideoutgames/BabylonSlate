@@ -73,10 +73,11 @@ export function ContentBrowserAssetTile({
         onDoubleClick={onOpen}
         {...bind}
       >
-        <div
-          className="flex aspect-square w-full items-center justify-center bg-card p-0.5"
-          style={thumbAccent}
-        >
+        <div className="aspect-square w-full overflow-hidden rounded-t-xl p-0.5">
+          <div
+            className="flex size-full items-center justify-center bg-card"
+            style={thumbAccent}
+          >
           {thumbnailUrl ? (
             <img
               src={thumbnailUrl}
@@ -91,6 +92,7 @@ export function ContentBrowserAssetTile({
               data-testid={`content-item-type-icon-${asset.header.guid}`}
             />
           )}
+          </div>
         </div>
         <CardHeader className="gap-0.5 p-1.5">
           <CardTitle className="truncate text-xs font-medium">
