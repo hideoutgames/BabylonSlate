@@ -57,9 +57,9 @@ describe("asDevicePresets", () => {
 describe("resolveDesignerCanvasId", () => {
   it("keeps Desired and known presets, and falls back when a custom id is gone", () => {
     expect(resolveDesignerCanvasId("desired", [])).toBe("desired");
-    expect(resolveDesignerCanvasId("ipad-landscape", [])).toBe("ipad-landscape");
+    expect(resolveDesignerCanvasId("desktop-16-9", [])).toBe("desktop-16-9");
     expect(resolveDesignerCanvasId("custom-phone", [phone])).toBe("custom-phone");
-    expect(resolveDesignerCanvasId("custom-gone", [phone])).toBe("ipad-landscape");
+    expect(resolveDesignerCanvasId("custom-gone", [phone])).toBe("desktop-16-9");
   });
 });
 

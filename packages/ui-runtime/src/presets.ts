@@ -9,34 +9,40 @@ export interface DevicePreset {
   safeArea: EdgeInsets;
 }
 
-/** Logical CSS pixels matching Playwright iPad Pro 11 and a 16:9 desktop. */
+/** Logical CSS pixels for common game HUD frames. */
 export const DEVICE_PRESETS: readonly DevicePreset[] = [
   {
-    id: "ipad-landscape",
-    label: "iPad Landscape",
-    width: 1194,
-    height: 834,
-    safeArea: { left: 0, right: 0, top: 24, bottom: 20 },
-  },
-  {
-    id: "ipad-portrait",
-    label: "iPad Portrait",
-    width: 834,
-    height: 1194,
-    safeArea: { left: 0, right: 0, top: 24, bottom: 21 },
+    id: "desktop-4-3",
+    label: "4:3",
+    width: 1600,
+    height: 1200,
+    safeArea: { ...ZERO_INSETS },
   },
   {
     id: "desktop-16-9",
-    label: "Desktop 16:9",
+    label: "16:9",
     width: 1920,
     height: 1080,
-    safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+    safeArea: { ...ZERO_INSETS },
+  },
+  {
+    id: "desktop-21-9",
+    label: "Widescreen",
+    width: 2560,
+    height: 1080,
+    safeArea: { ...ZERO_INSETS },
   },
 ];
+
+export const DEFAULT_DEVICE_PRESET_ID = "desktop-16-9" as const;
 
 export const DESIRED_CANVAS_ID = "desired" as const;
 
 const BUILTIN_IDS = new Set(DEVICE_PRESETS.map((preset) => preset.id));
+
+function defaultDevicePreset(): DevicePreset {
+  return DEVICE_PRESETS.find((preset) => preset.id === DEFAULT_DEVICE_PRESET_ID)!;
+}
 
 export function mergeDevicePresets(
   custom: readonly DevicePreset[] = [],
@@ -71,8 +77,8 @@ export function devicePresetById(
 }
 
 /**
- * Closest device preset for a live viewport. Exact CSS-pixel matches first
- * (Playwright iPad Pro 11 is 1194×834 / 834×1194), then aspect + size.
+ * Closest device preset for a live viewport. Exact CSS-pixel matches first,
+ * then aspect + size.
  */
 export function devicePresetForViewport(
   width: number,
@@ -85,7 +91,7 @@ export function devicePresetForViewport(
   );
   if (exact) return exact;
   const aspect = height > 0 ? width / height : 1;
-  let best = presets[0]!;
+  let best = defaultDevicePreset();
   let bestAspect = Number.POSITIVE_INFINITY;
   let bestSize = Number.POSITIVE_INFINITY;
   for (const preset of presets) {
@@ -120,7 +126,7 @@ export function designerViewport(
       safeArea: { ...ZERO_INSETS },
     };
   }
-  const preset = devicePresetById(presetId, extras) ?? DEVICE_PRESETS[0]!;
+  const preset = devicePresetById(presetId, extras) ?? defaultDevicePreset();
   return {
     id: preset.id,
     width: preset.width,

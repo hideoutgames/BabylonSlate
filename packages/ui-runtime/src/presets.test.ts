@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_DEVICE_PRESET_ID,
   DESIRED_CANVAS_ID,
   DEVICE_PRESETS,
   designerViewport,
@@ -8,28 +9,43 @@ import {
   mergeDevicePresets,
 } from "./presets";
 
+const ZERO = { left: 0, right: 0, top: 0, bottom: 0 };
+
 describe("device presets", () => {
-  it("exposes iPad landscape, iPad portrait, and desktop 16:9", () => {
+  it("exposes 4:3, 16:9, and widescreen canvases with zero safe area", () => {
     expect(DEVICE_PRESETS.map((preset) => preset.id)).toEqual([
-      "ipad-landscape",
-      "ipad-portrait",
+      "desktop-4-3",
       "desktop-16-9",
+      "desktop-21-9",
     ]);
-    expect(devicePresetById("ipad-landscape")?.width).toBeGreaterThan(
-      devicePresetById("ipad-portrait")?.width ?? 0,
-    );
+    expect(DEFAULT_DEVICE_PRESET_ID).toBe("desktop-16-9");
+    expect(devicePresetById("desktop-4-3")).toMatchObject({
+      label: "4:3",
+      width: 1600,
+      height: 1200,
+      safeArea: ZERO,
+    });
     expect(devicePresetById("desktop-16-9")).toMatchObject({
+      label: "16:9",
       width: 1920,
       height: 1080,
+      safeArea: ZERO,
     });
-    expect(devicePresetById("ipad-landscape")?.safeArea.top).toBeGreaterThan(0);
+    expect(devicePresetById("desktop-21-9")).toMatchObject({
+      label: "Widescreen",
+      width: 2560,
+      height: 1080,
+      safeArea: ZERO,
+    });
   });
 
-  it("matches Playwright iPad Pro 11 sizes exactly and picks desktop by aspect", () => {
-    expect(devicePresetForViewport(1194, 834).id).toBe("ipad-landscape");
-    expect(devicePresetForViewport(834, 1194).id).toBe("ipad-portrait");
+  it("matches exact sizes and nearest aspect when the viewport is not a built-in", () => {
+    expect(devicePresetForViewport(1600, 1200).id).toBe("desktop-4-3");
+    expect(devicePresetForViewport(1920, 1080).id).toBe("desktop-16-9");
+    expect(devicePresetForViewport(2560, 1080).id).toBe("desktop-21-9");
     expect(devicePresetForViewport(1280, 720).id).toBe("desktop-16-9");
-    expect(devicePresetForViewport(1194, 834).safeArea.top).toBeGreaterThan(0);
+    expect(devicePresetForViewport(1194, 834).id).toBe("desktop-4-3");
+    expect(devicePresetForViewport(834, 1194).id).toBe("desktop-4-3");
     expect(devicePresetForViewport(1280, 720).safeArea.top).toBe(0);
   });
 
@@ -44,8 +60,11 @@ describe("device presets", () => {
       height: 64,
       safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
     });
-    expect(designerViewport("ipad-landscape", { width: 240, height: 64 }).id).toBe(
-      "ipad-landscape",
+    expect(designerViewport("desktop-16-9", { width: 240, height: 64 }).id).toBe(
+      "desktop-16-9",
+    );
+    expect(designerViewport("gone", { width: 240, height: 64 }).id).toBe(
+      DEFAULT_DEVICE_PRESET_ID,
     );
   });
 
@@ -59,13 +78,13 @@ describe("device presets", () => {
     };
     const merged = mergeDevicePresets([
       phone,
-      { ...phone, id: "ipad-landscape", label: "Hijack" },
+      { ...phone, id: "desktop-16-9", label: "Hijack" },
       { ...phone, id: "desired", label: "Desired Clone" },
     ]);
     expect(merged.map((preset) => preset.id)).toEqual([
-      "ipad-landscape",
-      "ipad-portrait",
+      "desktop-4-3",
       "desktop-16-9",
+      "desktop-21-9",
       "custom-phone",
     ]);
     expect(merged.find((preset) => preset.id === "custom-phone")).toEqual(phone);
