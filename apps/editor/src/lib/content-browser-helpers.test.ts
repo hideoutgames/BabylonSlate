@@ -666,6 +666,10 @@ describe("content-browser-helpers", () => {
     expect(hud.version).toBe(2);
     expect(hud.payload.rootId).toBe("canvas");
     expect(hud.payload.viewportLayer).toBe(true);
+    expect(Object.keys(hud.payload.widgets as object).sort()).toEqual(["canvas"]);
+    expect(
+      (hud.payload.widgets as { canvas: { children: string[] } }).canvas.children,
+    ).toEqual([]);
     expect(hud.chunks.some((chunk) => chunk.id === "document")).toBe(true);
   });
 

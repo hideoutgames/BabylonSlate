@@ -268,7 +268,7 @@ export function createDefaultUserInterface(name = "HUD"): UserInterfaceDocument 
   };
 }
 
-/** Default viewport HUD used by New Asset → UserInterface (joystick + title). */
+/** Sample viewport HUD (joystick + title) for layout and designer tests. */
 export function createDefaultPlayHud(name = "HUD"): UserInterfaceDocument {
   const doc = createDefaultUserInterface(name);
   const header = createWidget("header", "Text", "Title", {

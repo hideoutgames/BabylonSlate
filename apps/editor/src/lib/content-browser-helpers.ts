@@ -11,7 +11,7 @@ import {
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import { createDefaultShaderGraph } from "@babylonslate/shader-graph";
-import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
+import { createDefaultUserInterface } from "@babylonslate/ui-runtime";
 import {
   engineParentOf,
   resolveTypeVisual,
@@ -633,7 +633,7 @@ export function buildNewAssetResult(options: {
 
   if (type === "UserInterface") {
     const payload = {
-      ...createDefaultPlayHud(name),
+      ...createDefaultUserInterface(name),
       logic: createDefaultLogicGraphSerialized(),
     } as unknown as Record<string, unknown>;
     return documentAsset(type, name, guid, payload);
