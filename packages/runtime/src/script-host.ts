@@ -172,6 +172,8 @@ type BtScriptExtras = Pick<
   "btFinish" | "btEvaluate" | "getBlackboard" | "setBlackboard"
 >;
 
+export type CompiledScript = ScriptBundleEntry;
+
 type LoadedScript = {
   script: CompiledScript;
   exports: CompiledModuleExports;
