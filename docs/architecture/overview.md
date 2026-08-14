@@ -51,7 +51,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 ## Data flow today
 
 - **Lifecycle**: Homepage opens/creates a `.babproject`; editor shell only runs against an open project.
-- **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. The global **Windows** menu toggles dock panels for the active Scene, Class, Enum, Structure, or ScriptInterface document and stores last **addPanel-relative** placements in `layout.json`.
+- **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. The global **Windows** menu toggles dock panels for the active DockView document (Scene, Class, Enum, Structure, ScriptInterface, Sprite, …) and stores last **addPanel-relative** placements in `layout.json`. New asset editors must be DockView documents — see [Asset document docks](#asset-document-docks).
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
 - **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only).
 - **Global search**: `ProjectSearchIndex` (same package) may load Scene/Graph document JSON for actors/nodes; it must not load binary payloads. Toolbar Search opens a centered dialog; see [global-search.md](global-search.md).
@@ -64,6 +64,14 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
 - **Visual scripting (P5)**: `@babylonslate/scripting` compiles logic graphs to JS modules with anchor tables; `@babylonslate/scripting-nodes` supplies the catalog; `runtime.ScriptHost` loads those modules and binds Begin Play / Tick entry points to actor lifecycle hooks, and Preview ships compiled project graphs to the worker (see [scripting.md](scripting.md)). `ExecuteConsoleCommand` runs through `@babylonslate/debugger` (see [debugger.md](debugger.md)).
 - **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); visible editor canvases render at `viewportFrameCap` and freeze when hidden or a modal is open; Play holds a continuous lease and renders at project `playFrameCap` (default 60). Play hosts viewport-layer HUD as a Babylon GUI Layer on the Play scene (`BabylonUiApplyHost`); TouchJoystick / TouchDPad / TouchButton write `touchAxis` into the P6 input ring (default Move + Jump).
+
+## Asset document docks
+
+New editor tabs for assets are per-document **DockView** layouts (`DockviewShell`), not a full-page `AssetDocumentWorkspace` and not shadcn `Tabs` as the document shell. That keeps panels resizable, dockable beside each other, and able to host extra tabs or **Windows → Editor Utilities** widgets later.
+
+Wire every new kind through `apps/editor/src/shell/window-catalog.ts` (`DockviewDocumentKind` + `listDockWindows`), `panel-registry.tsx`, `document-workspace.tsx` (`DockviewShell` with the real kind), `documentKindForAssetType`, and `FOCUS_PRIMARY_PANEL`. **Windows** stays disabled unless `isDockviewDocumentKind(activeKind)` is true. Agent rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../../.cursor/rules/dockview-editor-tabs.mdc).
+
+Existing compact Texture / Material / Model / Audio / Animation `asset-settings` tabs and pinned Content Browser are exceptions until converted — do not add new types to that path.
 
 ## Package rules
 

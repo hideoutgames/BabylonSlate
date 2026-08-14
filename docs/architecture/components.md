@@ -6,6 +6,8 @@ Tokens and action-vs-pressed rules: [theming.md](theming.md). Spec: [engineplan.
 
 This page lists **kit** components currently in the repo. Feature screens (Homepage, Play overlay, Settings modals, dock panels) are not listed. When you add, change, or remove a reusable component, update this page in the same change (`.cursor/rules/editor-ui-components.mdc`).
 
+**Asset document shells** are DockView (`DockviewShell` + `window-catalog.ts`), not shadcn `Tabs` and not a new `AssetDocumentWorkspace` page. Register every panel so the toolbar **Windows** menu can show, hide, and restore it. Rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../../.cursor/rules/dockview-editor-tabs.mdc). Compose each dock tab from this catalog (`PanelFrame`, `PropertyGrid`, …).
+
 ## Primitives (`@babylonslate/ui`)
 
 Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Import as `@babylonslate/ui/components/<name>`. Composition parts (`DialogTitle`, `FieldLabel`, …) belong with the family, not as separate rows.

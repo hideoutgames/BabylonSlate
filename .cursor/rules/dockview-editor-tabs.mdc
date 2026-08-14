@@ -1,0 +1,60 @@
+---
+description: New asset editor tabs must be DockView panels wired into the Windows menu
+alwaysApply: true
+---
+
+# DockView asset editor tabs
+
+New editor tabs for assets use **DockView panels** (`dockview-react` via `DockviewShell`), not a full-page workspace or shadcn `Tabs` as the document shell. Panels must be resizable, dockable next to each other, and able to host extra tabs or Editor Utility windows later.
+
+The toolbar **Windows** menu only works when the active document kind is in `DockviewDocumentKind`. If Windows stays disabled or omits a panel, the catalog wiring is incomplete.
+
+## Required wiring
+
+Do all of these in the same change:
+
+1. Add the kind to `DockviewDocumentKind` / `DOCKVIEW_KINDS` in `apps/editor/src/shell/window-catalog.ts`.
+2. Add a `DockWindowDefinition[]` (stable `id`, `component`, Title Case `title`, `defaultPosition` relative to a primary panel).
+3. Register the `component` in `apps/editor/src/shell/panel-registry.tsx` (`IDockviewPanelProps`).
+4. Implement panels under `apps/editor/src/panels/` with `PanelFrame` (omit a duplicate title when DockView already shows the tab name).
+5. Mount `DockviewShell` for that kind in `apps/editor/src/components/document-workspace.tsx` and pass the **real** `documentKind` — do not fall through to the scene/graph branch.
+6. Map the asset type in `documentKindForAssetType` (`packages/core/src/document.ts`).
+7. Add `FOCUS_PRIMARY_PANEL` in `apps/editor/src/shell/layout-ops.ts`.
+8. Cover the catalog in `window-catalog.test.ts`.
+
+`WindowsMenu` lists `listDockWindows(kind)` automatically. `registerDockviewApi` persists placements in `layout.json`.
+
+## Editor Utilities
+
+Widgets opened from **Windows → Editor Utilities** register in `listEditorUtilityWindows()` (`apps/editor/src/shell/editor-utility-windows.ts`) as `DockWindowDefinition`s. They add into the **active document’s** DockView, not a separate chrome window.
+
+## Do not
+
+```tsx
+// ❌ BAD — document shell is shadcn Tabs / AssetDocumentWorkspace
+<Tabs>
+  <TabsList>
+    <TabsTrigger>Preview</TabsTrigger>
+    <TabsTrigger>Details</TabsTrigger>
+  </TabsList>
+</Tabs>
+```
+
+```ts
+// ✅ GOOD — Sprite-style catalog; Windows toggles these ids
+{ id: "sprite-preview", component: "sprite-preview", title: "Preview" },
+{
+  id: "sprite-details",
+  component: "sprite-details",
+  title: "Details",
+  defaultPosition: {
+    referencePanelId: "sprite-preview",
+    direction: "right",
+    initialWidth: 280,
+  },
+}
+```
+
+- Do not hand-roll split panes or a new `asset-settings` kind for a full editor.
+- Nested shadcn `Tabs` belong only inside **one** panel (mutually exclusive modes), never as the document layout.
+- Content Browser stays a pinned chrome tab (not DockView). Existing compact Texture / Material / Model / Audio / Animation `asset-settings` stay until converted — do not add new types there.

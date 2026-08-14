@@ -19,6 +19,7 @@ Match the task to a row:
 
 | Need | Typical catalog pick |
 | --- | --- |
+| Asset document workspace | DockView via `DockviewShell` + `window-catalog.ts` (not shadcn `Tabs`). Wire **Windows**. Rule: `.cursor/rules/dockview-editor-tabs.mdc` |
 | Docked panel chrome | `PanelFrame`, optional `ToolbarStrip` |
 | Details / typed properties | `PropertyGrid`, `NumericDragField`, `NumberField` |
 | Hierarchy / folders | `TreeView` |
@@ -56,3 +57,4 @@ If nothing in the catalog fits, add a real reusable component in the right packa
 - Tokens: `docs/architecture/theming.md`
 - Touch targets: `.cursor/rules/touch-editor.mdc`
 - Title Case labels: `.cursor/rules/display-names.mdc`
+- Asset document docks: `.cursor/rules/dockview-editor-tabs.mdc`
