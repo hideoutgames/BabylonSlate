@@ -190,6 +190,7 @@ export function ViewportToolbar({
         contentTestId={`${testIdPrefix}viewport-settings-menu`}
         trigger={
           <Button
+            type="button"
             size="sm"
             variant="outline"
             aria-label="Viewport Settings"

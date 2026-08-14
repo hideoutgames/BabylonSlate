@@ -106,6 +106,9 @@ test.describe("P6 first-playable scene editing", () => {
       "aria-pressed",
       "true",
     );
+    // Local toolbar state updates before the scene command lands; wait for dirty
+    // so undo reverts viewport mode rather than the previous actor edit.
+    await expect(page.getByTestId("save-all-dirty")).toBeVisible();
     await page.getByTestId("undo-document").click();
     await expect(page.getByTestId("viewport-mode-3d")).toHaveAttribute(
       "aria-pressed",
@@ -116,6 +119,7 @@ test.describe("P6 first-playable scene editing", () => {
       "aria-pressed",
       "true",
     );
+    await expect(page.getByTestId("save-all-dirty")).toBeVisible();
     await saveAllIfEnabled(page);
 
     await closeProjectViaSettings(page);

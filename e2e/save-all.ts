@@ -9,4 +9,5 @@ export async function saveAllIfEnabled(page: Page): Promise<void> {
   }
   // force: the tooltip trigger span can intercept the first click on coarse pointers.
   await button.click({ force: true });
+  await expect(button).toBeDisabled();
 }
