@@ -74,7 +74,6 @@ export function gridCoverageWorld(
 function ensureGridShaders(): void {
   const vertexKey = `${GRID_SHADER_NAME}VertexShader`;
   const fragmentKey = `${GRID_SHADER_NAME}FragmentShader`;
-  if (Effect.ShadersStore[vertexKey]) return;
   Effect.ShadersStore[vertexKey] = `
 attribute vec3 position;
 uniform mat4 world;
@@ -86,8 +85,11 @@ void main() {
   gl_Position = worldViewProjection * vec4(position, 1.0);
 }
 `;
+  // GLES 1.00 body: Babylon rewrites this for WebGL2. Do not declare
+  // GL_OES_standard_derivatives — that extension is invalid in GLSL 300 es
+  // and fails compile on typical CI Chromium. WebGL1 processors inject it
+  // when they see fwidth.
   Effect.ShadersStore[fragmentKey] = `
-#extension GL_OES_standard_derivatives : enable
 varying vec3 vWorldPos;
 uniform vec3 majorColor;
 uniform vec3 minorColor;

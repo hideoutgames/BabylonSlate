@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Mesh, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Effect, Mesh, StandardMaterial, Vector3 } from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
@@ -443,6 +443,16 @@ describe("EditorSceneSync", () => {
 });
 
 describe("editor grid", () => {
+  it("registers a GLES shader without the WebGL1 derivatives extension", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "3d" });
+    const fragment = Effect.ShadersStore.editorGridFragmentShader;
+    expect(fragment).toBeDefined();
+    expect(fragment).not.toMatch(/GL_OES_standard_derivatives/);
+    expect(fragment).toContain("fwidth");
+    grid.dispose();
+  });
+
   it("snaps the plane origin to the camera target on the grid plane", () => {
     expect(snapGridOrigin("3d", { x: 3.6, y: 10, z: -1.4 }, 1)).toEqual({
       x: 4,
