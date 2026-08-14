@@ -285,7 +285,7 @@ function GalleryComposites() {
               size={TYPE_VISUAL_ICON_TILE_SIZE}
               data-testid="gallery-type-visual-tile"
             />
-            <span className="text-[10px] text-muted-foreground">Tile 40</span>
+            <span className="text-[10px] text-muted-foreground">Tile 96</span>
           </div>
           <div className="flex flex-col items-center gap-1">
             <TypeVisualIcon

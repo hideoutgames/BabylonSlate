@@ -1,9 +1,5 @@
 import { FolderIcon } from "lucide-react";
-import {
-  SelectableText,
-  TYPE_VISUAL_ICON_TILE_SIZE,
-  TYPE_VISUAL_ICON_TILE_STROKE_WIDTH,
-} from "@babylonslate/editor-kit";
+import { SelectableText, TYPE_VISUAL_ICON_TILE_SIZE } from "@babylonslate/editor-kit";
 import {
   Card,
   CardDescription,
@@ -61,9 +57,7 @@ export function ContentBrowserFolderTile({
         <div className="flex aspect-square w-full items-center justify-center bg-card">
           <FolderIcon
             size={TYPE_VISUAL_ICON_TILE_SIZE}
-            strokeWidth={TYPE_VISUAL_ICON_TILE_STROKE_WIDTH}
-            absoluteStrokeWidth
-            className="size-10 shrink-0 overflow-visible text-muted-foreground"
+            className="size-24 shrink-0 text-muted-foreground"
             aria-hidden
           />
         </div>

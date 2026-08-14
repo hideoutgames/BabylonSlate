@@ -307,9 +307,7 @@ export function resolveActorTypeVisual(actor: {
 }
 
 export const TYPE_VISUAL_ICON_CHROME_SIZE = 16;
-export const TYPE_VISUAL_ICON_TILE_SIZE = 40;
-/** Lucide design stroke in CSS px when `absoluteStrokeWidth` is set on tiles. */
-export const TYPE_VISUAL_ICON_TILE_STROKE_WIDTH = 2;
+export const TYPE_VISUAL_ICON_TILE_SIZE = 96;
 
 export function TypeVisualIcon({
   visual,
@@ -323,14 +321,16 @@ export function TypeVisualIcon({
   "data-testid"?: string;
 }) {
   const Icon = visual.icon;
-  const isTile = size >= TYPE_VISUAL_ICON_TILE_SIZE;
-  const sizeClass = isTile ? "size-10" : "size-4";
+  const sizeClass =
+    size === TYPE_VISUAL_ICON_TILE_SIZE
+      ? "size-24"
+      : size === TYPE_VISUAL_ICON_CHROME_SIZE
+        ? "size-4"
+        : undefined;
   return (
     <Icon
       size={size}
       color={visual.colorVar}
-      strokeWidth={TYPE_VISUAL_ICON_TILE_STROKE_WIDTH}
-      absoluteStrokeWidth={isTile}
       className={cn(sizeClass, "shrink-0 overflow-visible", className)}
       data-testid={testId}
       data-type-family={visual.family}

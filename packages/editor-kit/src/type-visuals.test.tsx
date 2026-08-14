@@ -254,7 +254,7 @@ describe("TypeVisualIcon", () => {
     expect(glyph.getAttribute("class") ?? "").toContain("overflow-visible");
   });
 
-  it("keeps tile glyph stroke at 2 CSS px via Lucide absoluteStrokeWidth", () => {
+  it("rasterizes tile glyphs at 96px with Lucide default proportional stroke", () => {
     const visual = resolveTypeVisual({ assetType: "Texture" });
     const { getByTestId } = render(
       <TypeVisualIcon
@@ -266,9 +266,8 @@ describe("TypeVisualIcon", () => {
     const glyph = getByTestId("glyph");
     expect(glyph.getAttribute("width")).toBe(String(TYPE_VISUAL_ICON_TILE_SIZE));
     expect(glyph.getAttribute("height")).toBe(String(TYPE_VISUAL_ICON_TILE_SIZE));
-    expect(glyph.getAttribute("stroke-width")).toBe(
-      String((2 * 24) / TYPE_VISUAL_ICON_TILE_SIZE),
-    );
-    expect(glyph.getAttribute("class") ?? "").toContain("size-10");
+    expect(glyph.getAttribute("fill")).toBe("none");
+    expect(glyph.getAttribute("stroke-width")).toBe("2");
+    expect(glyph.getAttribute("class") ?? "").toContain("size-24");
   });
 });
