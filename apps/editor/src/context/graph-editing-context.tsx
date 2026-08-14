@@ -12,6 +12,9 @@ export interface GraphEditingContextValue {
   setSelectedNodeIds: (nodeIds: string[]) => void;
   selectedMemberId: string | null;
   setSelectedMemberId: (id: string | null) => void;
+  /** Null means the Class event graph. */
+  activeFunctionId: string | null;
+  setActiveFunctionId: (id: string | null) => void;
 }
 
 const GraphEditingContext = createContext<GraphEditingContextValue | null>(
@@ -41,13 +44,18 @@ export function resolveInspectorNodeId(
 export function GraphEditingProvider({
   children,
   initialSelectedMemberId = null,
+  initialActiveFunctionId = null,
 }: {
   children: ReactNode;
   initialSelectedMemberId?: string | null;
+  initialActiveFunctionId?: string | null;
 }) {
   const [selectedNodeIds, setSelectedNodeIdsState] = useState<string[]>([]);
   const [selectedMemberId, setSelectedMemberIdState] = useState<string | null>(
     initialSelectedMemberId,
+  );
+  const [activeFunctionId, setActiveFunctionIdState] = useState<string | null>(
+    initialActiveFunctionId,
   );
 
   const setSelectedNodeIds = useCallback((nodeIds: string[]) => {
@@ -66,14 +74,27 @@ export function GraphEditingProvider({
     }
   }, []);
 
+  const setActiveFunctionId = useCallback((id: string | null) => {
+    setActiveFunctionIdState(id);
+  }, []);
+
   const value = useMemo<GraphEditingContextValue>(
     () => ({
       selectedNodeIds,
       setSelectedNodeIds,
       selectedMemberId,
       setSelectedMemberId,
+      activeFunctionId,
+      setActiveFunctionId,
     }),
-    [selectedMemberId, selectedNodeIds, setSelectedMemberId, setSelectedNodeIds],
+    [
+      activeFunctionId,
+      selectedMemberId,
+      selectedNodeIds,
+      setActiveFunctionId,
+      setSelectedMemberId,
+      setSelectedNodeIds,
+    ],
   );
 
   return (

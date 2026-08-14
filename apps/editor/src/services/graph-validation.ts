@@ -150,7 +150,13 @@ export function createDefaultLogicGraphSerialized(
 export function scriptPaletteNodes(
   nodeRegistry: NodeRegistry = registry,
 ): PaletteNode[] {
-  return nodeRegistry.list().map((def) => {
+  return nodeRegistry
+    .list()
+    .filter(
+      (def) =>
+        def.id !== "flow.function.input" && def.id !== "flow.function.output",
+    )
+    .map((def) => {
     const defaultData: Record<string, unknown> = {};
     if (def.id === "debug.log") {
       defaultData.message = "";
@@ -182,9 +188,10 @@ export function hydrateClassDocumentPayload(
 export function materializeLogicGraph(
   content: SerializedGraph | LogicGraph,
   graphId: string,
+  kind: LogicGraph["kind"] = "event",
 ): LogicGraph {
   if (isLogicGraphPayload(content)) return content;
-  const logic = fromSerializedGraph(content, graphId);
+  const logic = fromSerializedGraph(content, graphId, kind);
   // Overlay __pins when present.
   for (let i = 0; i < logic.nodes.length; i++) {
     const data = content.nodes[i]?.data as

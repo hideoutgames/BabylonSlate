@@ -17,6 +17,7 @@ import { renderNodes } from "./render";
 import { debugNodes } from "./debug";
 import { interfaceNodes } from "./interface";
 import { variableNodes } from "./variables";
+import { functionCallNodes } from "./functions";
 import { castingNodes } from "./casting";
 import { timerNodes } from "./timers";
 
@@ -38,6 +39,7 @@ export * from "./render";
 export * from "./debug";
 export * from "./interface";
 export * from "./variables";
+export * from "./functions";
 export * from "./casting";
 export * from "./timers";
 
@@ -60,6 +62,7 @@ export const ALL_NODE_CATEGORIES = [
   "debug",
   "interface",
   "variables",
+  "functions",
   "casting",
   "timers",
 ] as const;
@@ -84,6 +87,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...debugNodes,
     ...interfaceNodes,
     ...variableNodes,
+    ...functionCallNodes,
     ...castingNodes,
     ...timerNodes,
   ];

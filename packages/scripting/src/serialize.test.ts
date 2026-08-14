@@ -67,6 +67,23 @@ describe("serialize adapter", () => {
     expect(logic.edges[0]?.sourceNodeId).toBe("a");
     expect(logic.edges[0]?.targetNodeId).toBe("b");
   });
+
+  it("compiles a function graph slice as kind function", () => {
+    const slice: SerializedGraph = {
+      nodes: [
+        {
+          id: "in",
+          type: "flow.function.input",
+          position: { x: 0, y: 0 },
+          data: { __protected: true },
+        },
+      ],
+      edges: [],
+    };
+    const logic = fromSerializedGraph(slice, "Jump", "function");
+    expect(logic.kind).toBe("function");
+    expect(logic.id).toBe("Jump");
+  });
 });
 
 describe("type helpers", () => {

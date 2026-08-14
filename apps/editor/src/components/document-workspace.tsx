@@ -164,6 +164,24 @@ export function DocumentWorkspace() {
           doc.ref.kind === "structure" ||
           doc.ref.kind === "script-interface";
 
+        if (doc.ref.kind === "sprite") {
+          if (!shouldMount) return null;
+          return (
+            <DocumentWorkspaceProvider key={id} documentId={id}>
+              <div
+                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                data-testid="document-workspace-sprite"
+              >
+                <RegisteredDockviewShell
+                  id={id}
+                  documentKind="sprite"
+                  initialLayout={doc.layout}
+                />
+              </div>
+            </DocumentWorkspaceProvider>
+          );
+        }
+
         if (isTypeAsset) {
           if (!shouldMount) return null;
           return (

@@ -29,6 +29,30 @@ function serializedNodeData(data: unknown): Record<string, unknown> {
   return rest;
 }
 
+const PROTECTED_NODE_TYPES = new Set([
+  "flow.function.input",
+  "flow.function.output",
+]);
+
+export function isProtectedNode(node: {
+  type?: string;
+  data?: unknown;
+}): boolean {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  if (data.__protected === true) return true;
+  const type =
+    typeof data.__nodeType === "string" ? data.__nodeType : node.type;
+  return typeof type === "string" && PROTECTED_NODE_TYPES.has(type);
+}
+
+export function deletableNodeIds(
+  nodes: ReadonlyArray<{ id: string; selected?: boolean; data?: unknown; type?: string }>,
+): string[] {
+  return nodes
+    .filter((node) => node.selected && !isProtectedNode(node))
+    .map((node) => node.id);
+}
+
 /**
  * Projects React Flow's canvas nodes back onto the serialized graph shape.
  * Kept pure so it is testable without mounting a canvas.

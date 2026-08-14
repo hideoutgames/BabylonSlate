@@ -103,7 +103,7 @@ Prefab is a **window of the class document**, not a fourth chrome `DocumentKind`
 | Dock | Panels |
 | --- | --- |
 | Center group | **Graph** and **Prefab** as siblings (`direction: "within"`). Selecting Prefab fills the workspace like Viewport does on a Scene. |
-| Left | **Components** above **Class** (My Blueprint member tree with type-colored rows; Add/Remove toolbar; Inspector shows the selected member). |
+| Left | **Components** above **Class** (My Blueprint member tree with type-colored rows and trailing section +; Inspector shows the selected member). |
 | Right / bottom | Inspector, Compiler Results |
 
 The Prefab viewport reuses `ViewportToolbar` + `createEngine` (unlit gizmos, fly/look camera, settings menu for snap / show-grid / joystick). Drag Select is hidden — Prefab has no actor multi-select. The canvas is full-size, not a 160px sidebar strip, and stays dark like the Scene viewport. Component add/remove/reparent (`parentId`) writes `SerializedGraph.components` through `applyGraphChange` (`graph.setComponents` / `scene.reparentComponent`). Place Actors instantiates those components when spawning a Class asset from an open tab **or** from the class file on disk.

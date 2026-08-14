@@ -3,7 +3,7 @@ import type {
   ScriptBundleEntry,
   ScriptConsoleCommand,
 } from "@babylonslate/bridge";
-import { compileGraph, type LogicGraph } from "@babylonslate/scripting";
+import { compileGraph, type LogicGraph, isLogicGraphPayload } from "@babylonslate/scripting";
 import { defaultNodeRegistry, materializeLogicGraph } from "./graph-validation";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
@@ -83,24 +83,69 @@ export function consoleCommandFromGraph(
   };
 }
 
+function jsIdent(name: string): string {
+  const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
+  return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
+}
+
 export function compileGraphDocument(
   content: SerializedGraph | LogicGraph,
   options: { path: string; graphId?: string },
 ): ScriptBundleEntry | null {
   const graphId = options.graphId ?? "event-graph";
+  const serialized = isLogicGraphPayload(content) ? null : content;
   const logic = materializeLogicGraph(content, graphId);
-  if (logic.nodes.length === 0) return null;
-  const compiled = compileGraph(logic, {
-    assetGuid: options.path,
-    registry: defaultNodeRegistry,
-  });
+  const compiledPieces = [];
+  if (logic.nodes.length > 0) {
+    compiledPieces.push(
+      compileGraph(logic, {
+        assetGuid: options.path,
+        registry: defaultNodeRegistry,
+      }),
+    );
+  }
+  if (serialized?.functionGraphs) {
+    for (const [memberId, slice] of Object.entries(serialized.functionGraphs)) {
+      const member = serialized.members?.find((entry) => entry.id === memberId);
+      const exportName = jsIdent(member?.name ?? memberId);
+      const fnLogic = materializeLogicGraph(
+        { nodes: slice.nodes, edges: slice.edges },
+        exportName,
+        "function",
+      );
+      if (fnLogic.nodes.length === 0) continue;
+      compiledPieces.push(
+        compileGraph(fnLogic, {
+          assetGuid: options.path,
+          registry: defaultNodeRegistry,
+          exportName,
+        }),
+      );
+    }
+  }
+  if (compiledPieces.length === 0) return null;
+  let source = compiledPieces[0]!.source;
+  const anchors = [...compiledPieces[0]!.anchors];
+  const entryPoints = [...compiledPieces[0]!.entryPoints];
+  for (const extra of compiledPieces.slice(1)) {
+    const extraBody = extra.source
+      .split("\n")
+      .filter((line) => !line.startsWith("//# sourceURL"))
+      .join("\n");
+    const offset = source.split("\n").length - (source.endsWith("\n") ? 1 : 0);
+    source = `${source.replace(/\n$/, "")}\n${extraBody}`;
+    for (const anchor of extra.anchors) {
+      anchors.push({ ...anchor, line: anchor.line + offset });
+    }
+    entryPoints.push(...extra.entryPoints);
+  }
   const classId = classIdForGraphPath(options.path);
   return {
     assetGuid: options.path,
     classId,
-    source: compiled.source,
-    anchors: compiled.anchors,
-    entryPoints: compiled.entryPoints,
+    source,
+    anchors,
+    entryPoints,
     command: consoleCommandFromGraph(logic, classId),
   };
 }
@@ -150,6 +195,7 @@ export function graphCompileSignature(
         .sort((a, b) => a.id.localeCompare(b.id)),
       edges: [...doc.content.edges].sort((a, b) => a.id.localeCompare(b.id)),
       members: doc.content.members ?? [],
+      functionGraphs: doc.content.functionGraphs ?? {},
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   return JSON.stringify(payload);

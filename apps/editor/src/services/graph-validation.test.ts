@@ -182,5 +182,8 @@ describe("scriptPaletteNodes", () => {
     const begin = nodes.find((node) => node.id === "flow.event.beginPlay");
     expect(begin?.title).toBeTruthy();
     expect(begin?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.function.input")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.function.output")).toBe(false);
+    expect(nodes.some((node) => node.id === "functions.call")).toBe(true);
   });
 });

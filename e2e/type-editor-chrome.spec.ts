@@ -81,7 +81,6 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
-    await page.getByTestId("class-add-member").click();
     await page.getByTestId("class-add-variables").click();
     await page.getByTestId("name-prompt-input").fill("Health");
     await page.getByTestId("name-prompt-confirm").click();

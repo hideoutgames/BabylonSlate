@@ -185,6 +185,14 @@ export interface SerializedGraph {
   members?: GraphClassMember[];
   /** Actor prefab components authored on Class documents. */
   components?: SerializedComponent[];
+  /** Per-function graphs keyed by function member id. Event graph stays in nodes/edges. */
+  functionGraphs?: Record<
+    string,
+    {
+      nodes: SerializedGraph["nodes"];
+      edges: SerializedGraph["edges"];
+    }
+  >;
 }
 
 

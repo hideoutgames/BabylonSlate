@@ -58,7 +58,8 @@ describe("MyClassPanel name prompt", () => {
         <MyClassPanel {...({} as IDockviewPanelProps)} />
       </GraphEditingProvider>,
     );
-    fireEvent.click(screen.getByTestId("class-add-member"));
+    expect(screen.queryByTestId("class-add-member")).toBeNull();
+    expect(screen.queryByTestId("class-remove-member")).toBeNull();
     fireEvent.click(screen.getByTestId("class-add-functions"));
     expect(prompt).not.toHaveBeenCalled();
     fireEvent.change(screen.getByTestId("name-prompt-input"), {

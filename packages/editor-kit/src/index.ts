@@ -17,6 +17,10 @@ export {
   type NestedMenuItem,
   type NestedMenuProps,
 } from "./nested-menu";
+export {
+  clampOverlayMenuPosition,
+  overlaySubmenuOrigin,
+} from "./clamp-overlay-menu";
 export { useSuppressNativeContextMenu } from "./use-suppress-native-context-menu";
 export { useSuppressIosEditingGestures } from "./use-suppress-ios-editing-gestures";
 export {
@@ -72,10 +76,12 @@ export {
 export {
   PIN_PICKER_TYPES,
   PIN_PICKER_LABEL,
+  FUNCTION_PIN_PICKER_TYPES,
   pinPickerColorVar,
   pinPickerLabel,
   isPinPickerType,
   type PinPickerType,
+  type FunctionPinPickerType,
 } from "./pin-types";
 export {
   NumericDragField,

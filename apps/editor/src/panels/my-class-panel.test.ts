@@ -20,7 +20,24 @@ describe("My Class members", () => {
       edges: [],
     };
     expect(membersForGraph(graph)).toEqual([
-      { kind: "event", name: "Event On Hit", detail: "hit" },
+      {
+        kind: "event",
+        name: "Event Begin Play",
+        detail: "native:flow.event.beginPlay",
+        eventType: "flow.event.beginPlay",
+      },
+      {
+        kind: "event",
+        name: "Event Tick",
+        detail: "native:flow.event.tick",
+        eventType: "flow.event.tick",
+      },
+      {
+        kind: "event",
+        name: "Event On Hit",
+        detail: "hit",
+        eventType: "flow.event.custom",
+      },
     ]);
   });
 
@@ -49,14 +66,68 @@ describe("My Class members", () => {
       edges: [],
     };
     expect(membersForGraph(graph)).toEqual([
-      { kind: "event", name: "Event Begin Play", detail: "begin" },
-      { kind: "event", name: "Event Tick", detail: "tick" },
+      {
+        kind: "event",
+        name: "Event Begin Play",
+        detail: "begin",
+        eventType: "flow.event.beginPlay",
+      },
+      {
+        kind: "event",
+        name: "Event Tick",
+        detail: "tick",
+        eventType: "flow.event.tick",
+      },
     ]);
   });
 
-  it("reports nothing for a graph with no events", () => {
-    expect(membersForGraph({ nodes: [], edges: [] })).toEqual([]);
+  it("still lists native Begin Play and Tick stubs when the graph has no event nodes", () => {
+    expect(membersForGraph({ nodes: [], edges: [] })).toEqual([
+      {
+        kind: "event",
+        name: "Event Begin Play",
+        detail: "native:flow.event.beginPlay",
+        eventType: "flow.event.beginPlay",
+      },
+      {
+        kind: "event",
+        name: "Event Tick",
+        detail: "native:flow.event.tick",
+        eventType: "flow.event.tick",
+      },
+    ]);
     expect(membersForGraph(null)).toEqual([]);
+  });
+
+  it("marks parent Class custom events as inherited", () => {
+    const members = membersForGraph(
+      { nodes: [], edges: [] },
+      {
+        parentClass: "HeroBase",
+        parentGraphs: {
+          HeroBase: {
+            nodes: [
+              {
+                id: "hit",
+                type: "flow.event.custom",
+                position: { x: 0, y: 0 },
+                data: { name: "On Hit", title: "Event On Hit" },
+              },
+            ],
+            edges: [],
+          },
+        },
+      },
+    );
+    expect(members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "event",
+          name: "Event On Hit",
+          inherited: true,
+        }),
+      ]),
+    );
   });
 
   it("places event members under Events and leaves other sections empty", () => {
@@ -73,7 +144,18 @@ describe("My Class members", () => {
     };
     const members = membersForGraph(graph);
     expect(membersForSection(members, "event")).toEqual([
-      { kind: "event", name: "Event Begin Play", detail: "begin" },
+      {
+        kind: "event",
+        name: "Event Begin Play",
+        detail: "begin",
+        eventType: "flow.event.beginPlay",
+      },
+      {
+        kind: "event",
+        name: "Event Tick",
+        detail: "native:flow.event.tick",
+        eventType: "flow.event.tick",
+      },
     ]);
     expect(membersForSection(members, "function")).toEqual([]);
     expect(membersForSection(members, "variable")).toEqual([]);
@@ -99,6 +181,7 @@ describe("My Class members", () => {
       "section-variables",
       "section-events",
       "begin",
+      "native:flow.event.tick",
       "section-interfaces",
     ]);
     expect(rows.find((row) => row.id === "begin")?.label).toBe(
@@ -134,6 +217,8 @@ describe("My Class members", () => {
       edges: [],
       members: [{ id: "var-1", kind: "variable", name: "Health", typeId: "bool" }],
     });
-    expect(members[0]?.typeId).toBe("bool");
+    expect(members.find((member) => member.kind === "variable")?.typeId).toBe(
+      "bool",
+    );
   });
 });

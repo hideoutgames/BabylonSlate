@@ -13,7 +13,7 @@ export type PinTypePickerProps = {
   onChange: (type: PinPickerType) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  types?: readonly PinPickerType[];
+  types?: readonly string[];
   "data-testid"?: string;
 };
 
@@ -26,9 +26,7 @@ export function PinTypePicker({
   types = PIN_PICKER_TYPES,
   "data-testid": testId = "pin-type-picker",
 }: PinTypePickerProps) {
-  const selected = (types.includes(value as PinPickerType)
-    ? value
-    : "float") as PinPickerType;
+  const selected = types.includes(value) ? value : "float";
   return (
     <SearchDropdown
       open={open}
