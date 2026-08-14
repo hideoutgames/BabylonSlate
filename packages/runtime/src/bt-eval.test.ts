@@ -86,4 +86,58 @@ describe("runtime behaviour tree evaluation", () => {
     );
     runtime.stop();
   });
+
+  it("records BT stack/blackboard and restores them from the trace", () => {
+    const waitTree = {
+      name: "Wait",
+      rootId: "wait",
+      blackboardGuid: null,
+      nodes: [
+        {
+          id: "wait",
+          kind: "task" as const,
+          classId: "bt.task.wait",
+          children: [],
+          decorators: [],
+          services: [],
+          properties: { durationMs: 1000 },
+        },
+      ],
+    };
+    const options = {
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false as const,
+      playScene: aiScene({ treeGuid: "tree-1" }),
+      behaviourTrees: { "tree-1": waitTree },
+      dt: 0.1,
+    };
+    const recorded = createInProcessRuntime(options);
+    recorded.start();
+    recorded.realizePlayWorld();
+    recorded.executeConsoleCommand("snapshot start");
+    recorded.tick();
+    recorded.tick();
+    recorded.executeConsoleCommand("snapshot stop");
+    const payload = recorded.stopTrace();
+    const last = payload?.frames.at(-1)?.bt?.[0];
+    expect(last?.btNodeId).toBe("wait");
+    expect(last?.stack.some((frame) => frame.nodeId === "wait")).toBe(true);
+    const elapsed = Number(last?.nodeMemory?.wait?.elapsedMs ?? 0);
+    expect(elapsed).toBeGreaterThan(100);
+    recorded.stop();
+
+    const replay = createInProcessRuntime(options);
+    replay.start();
+    replay.realizePlayWorld();
+    replay.restoreBtFromTrace(payload!.frames.at(-1)!.bt!);
+    replay.executeConsoleCommand("snapshot start");
+    replay.tick();
+    replay.executeConsoleCommand("snapshot stop");
+    const restored = replay.stopTrace()?.frames[0]?.bt?.[0];
+    expect(Number(restored?.nodeMemory?.wait?.elapsedMs ?? 0)).toBeGreaterThan(
+      elapsed,
+    );
+    replay.stop();
+  });
 });

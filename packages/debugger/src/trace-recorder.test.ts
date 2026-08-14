@@ -13,6 +13,16 @@ describe("TraceRecorder", () => {
       prints: [],
       snapshotText: "tick=1",
       inputEvents: [{ type: "key", code: "KeyW", down: true, tick: 1 }],
+      bt: [
+        {
+          slotId: 0,
+          status: "running",
+          btNodeId: "wait",
+          lastResults: { wait: "running" },
+          blackboard: { alert: false },
+          stack: [{ nodeId: "wait", childIndex: 0, opened: true }],
+        },
+      ],
     });
     const payload = recorder.stop();
     expect(payload).not.toBeNull();
@@ -21,6 +31,10 @@ describe("TraceRecorder", () => {
     expect(payload!.frames).toHaveLength(1);
     expect(payload!.frames[0]?.snapshotText).toBe("tick=1");
     expect(payload!.frames[0]?.inputEvents?.[0]).toMatchObject({ code: "KeyW" });
+    expect(payload!.frames[0]?.bt?.[0]).toMatchObject({
+      btNodeId: "wait",
+      blackboard: { alert: false },
+    });
   });
 
   it("is a no-op when not recording", () => {

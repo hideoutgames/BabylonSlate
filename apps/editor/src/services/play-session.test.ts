@@ -17,6 +17,7 @@ describe("diagnosticFromCommand", () => {
       assetGuid: "asset-1",
       graphId: "graph-1",
       nodeId: "node-1",
+      btNodeId: "wait",
       stack: "Error: boom",
       frameId: 7,
       severity: "error",
@@ -28,6 +29,7 @@ describe("diagnosticFromCommand", () => {
       assetGuid: "asset-1",
       graphId: "graph-1",
       nodeId: "node-1",
+      btNodeId: "wait",
       stack: "Error: boom",
       frameId: 7,
     });

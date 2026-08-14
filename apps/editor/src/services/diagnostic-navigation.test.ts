@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { documentIdToRevealForDiagnostic } from "./diagnostic-navigation";
+import {
+  documentIdToRevealForDiagnostic,
+  sessionReportNavigation,
+} from "./diagnostic-navigation";
 
 describe("documentIdToRevealForDiagnostic", () => {
   it("returns the graph document id when that tab is already open", () => {
@@ -18,5 +21,28 @@ describe("documentIdToRevealForDiagnostic", () => {
         ["content-browser", "scene:assets/main.scene.babasset"],
       ),
     ).toBeNull();
+  });
+});
+
+describe("sessionReportNavigation", () => {
+  it("opens the behaviour tree asset and focuses btNodeId", () => {
+    const nav = sessionReportNavigation(
+      { assetGuid: "tree-1", btNodeId: "wait", nodeId: "throw-node" },
+      {
+        getByGuid: (guid) =>
+          guid === "tree-1"
+            ? {
+                header: { type: "BehaviourTree", name: "Patrol" },
+                path: "assets/Patrol.bt.babasset",
+              }
+            : undefined,
+      },
+    );
+    expect(nav.focusedNodeId).toBe("wait");
+    expect(nav.document).toEqual({
+      kind: "behaviour-tree",
+      path: "assets/Patrol.bt.babasset",
+      label: "Patrol",
+    });
   });
 });

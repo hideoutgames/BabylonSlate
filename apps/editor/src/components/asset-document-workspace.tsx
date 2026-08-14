@@ -17,6 +17,8 @@ import { TilemapEditor } from "./tilemap-editor";
 import { UiDesigner } from "./ui-designer";
 import { AnimGraphEditor } from "./anim-graph-editor";
 import { ShaderGraphEditor } from "./shader-graph-editor";
+import { BehaviourTreeEditor } from "./behaviour-tree-editor";
+import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
@@ -68,6 +70,12 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   }
   if (doc.ref.kind === "anim-graph") {
     return <AnimGraphEditor payload={payload} onChange={commit} />;
+  }
+  if (doc.ref.kind === "behaviour-tree") {
+    return <BehaviourTreeEditor payload={payload} onChange={commit} />;
+  }
+  if (doc.ref.kind === "blackboard") {
+    return <BlackboardEditor payload={payload} onChange={commit} />;
   }
   if (doc.ref.kind === "shader") {
     return <ShaderGraphEditor payload={payload} onChange={commit} />;

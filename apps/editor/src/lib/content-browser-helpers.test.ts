@@ -641,6 +641,12 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("Tilemap", "Overworld")).toBe(
       "Overworld.tilemap.babasset",
     );
+    expect(newAssetFileName("BehaviourTree", "Patrol")).toBe(
+      "Patrol.bt.babasset",
+    );
+    expect(newAssetFileName("Blackboard", "Guard")).toBe(
+      "Guard.blackboard.babasset",
+    );
     expect(newAssetFileName("Scene", "")).toBe("");
     expect(newAssetFileName("Scene", "   ")).toBe("");
     expect(isNewAssetNameTaken(["assets/NewAsset.scene.babasset"], "assets", "Scene", "")).toBe(
@@ -680,6 +686,28 @@ describe("content-browser-helpers", () => {
     expect(hud.chunks.some((chunk) => chunk.id === "document")).toBe(true);
   });
 
+  it("seeds BehaviourTree and Blackboard New Asset documents", () => {
+    const tree = buildNewAssetResult({
+      type: "BehaviourTree",
+      name: "Patrol",
+      guid: "bt-1",
+      parentClass: null,
+    });
+    expect(tree.type).toBe("BehaviourTree");
+    expect(tree.payload.rootId).toBe("root");
+    expect(
+      (tree.payload.nodes as Array<{ kind: string }>).map((node) => node.kind),
+    ).toEqual(["selector", "sequence", "task"]);
+    const board = buildNewAssetResult({
+      type: "Blackboard",
+      name: "Guard",
+      guid: "bb-1",
+      parentClass: null,
+    });
+    expect(board.type).toBe("Blackboard");
+    expect(Array.isArray(board.payload.keys)).toBe(true);
+  });
+
   it("lists only authored types in New Asset", () => {
     expect([...CREATABLE_ASSET_TYPES]).toEqual([
       "Scene",
@@ -690,6 +718,8 @@ describe("content-browser-helpers", () => {
       "Shader",
       "Tileset",
       "Tilemap",
+      "BehaviourTree",
+      "Blackboard",
       "Enum",
       "Structure",
       "ScriptInterface",
