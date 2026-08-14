@@ -33,7 +33,11 @@ import {
   resolvePlayScene,
 } from "../services/play-physics";
 import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
-import type { PlayAnimGraphEntry } from "../lib/play-content";
+import type {
+  PlayAnimGraphEntry,
+  PlayBehaviourTreeEntry,
+  PlayBlackboardEntry,
+} from "../lib/play-content";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -113,6 +117,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
     [],
   );
+  const [playBehaviourTrees, setPlayBehaviourTrees] = useState<
+    PlayBehaviourTreeEntry[]
+  >([]);
+  const [playBlackboards, setPlayBlackboards] = useState<PlayBlackboardEntry[]>(
+    [],
+  );
   const [playSpritePayloads, setPlaySpritePayloads] = useState<
     Map<string, SpritePayload>
   >(() => new Map());
@@ -135,6 +145,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayPreviewScripts,
     collectPlayUiLibrary,
     collectPlayAnimGraphs,
+    collectPlayBehaviourTrees,
+    collectPlayBlackboards,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
@@ -339,6 +351,24 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayAnimGraphs([]);
         }
+        try {
+          setPlayBehaviourTrees(
+            await collectPlayBehaviourTrees(resolvedScene?.scene),
+          );
+        } catch (error) {
+          appendLog(
+            `BehaviourTree load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayBehaviourTrees([]);
+        }
+        try {
+          setPlayBlackboards(await collectPlayBlackboards(resolvedScene?.scene));
+        } catch (error) {
+          appendLog(
+            `Blackboard load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayBlackboards([]);
+        }
         let sprites = new Map<string, SpritePayload>();
         let tilesets = new Map<string, TilesetPayload>();
         try {
@@ -408,6 +438,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectPlayUiLibrary,
       collectPlayAnimGraphs,
+      collectPlayBehaviourTrees,
+      collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
@@ -551,6 +583,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             uiLibrary={playUiLibrary}
             fontEntries={playFontEntries}
             animGraphs={playAnimGraphs}
+            behaviourTrees={playBehaviourTrees}
+            blackboards={playBlackboards}
             spritePayloads={playSpritePayloads}
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}

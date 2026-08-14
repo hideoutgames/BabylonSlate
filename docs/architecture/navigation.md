@@ -50,6 +50,6 @@ Bake modal (when the editor host lands):
 2. Names the phase (collect → generate in bake worker → write chunk).
 3. Releases the editor once the worker has positions/indices (cancellable progress).
 
-`BehaviourTreeComponent` MoveTo waits on this port. Catalogs stay gated until `p11-bt-authoring`.
+`BehaviourTreeComponent` MoveTo is a succeed stub until the nav editor host. Catalogs: `BehaviourTreeComponent` is addable; `NavAgentComponent` stays gated.
 
 See [behaviour-tree.md](behaviour-tree.md). Spec: [engineplan.md](../engineplan.md) §14.2.

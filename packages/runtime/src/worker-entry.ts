@@ -4,6 +4,10 @@
  */
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
+  parseBehaviourTreeDocument,
+  parseBlackboardDocument,
+} from "@babylonslate/behaviour-tree";
+import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
@@ -59,6 +63,18 @@ function handleControl(msg: ControlMessage): void {
       for (const entry of msg.graphs) {
         const document = parseAnimGraphDocument(entry.document);
         if (document) rt.registerAnimGraph(entry.guid, document);
+      }
+      return;
+    }
+    case "loadBehaviourTrees": {
+      const rt = ensureRuntime();
+      for (const entry of msg.trees) {
+        const document = parseBehaviourTreeDocument(entry.document);
+        if (document) rt.registerBehaviourTree(entry.guid, document);
+      }
+      for (const entry of msg.blackboards ?? []) {
+        const document = parseBlackboardDocument(entry.document);
+        if (document) rt.registerBlackboard(entry.guid, document);
       }
       return;
     }

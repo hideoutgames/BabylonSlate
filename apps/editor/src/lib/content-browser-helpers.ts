@@ -45,6 +45,10 @@ export const ENGINE_BASE_CLASSES = [
   "GameInstance",
   "FunctionLibrary",
   "BDebugCommand",
+  "BTTask",
+  "BTDecorator",
+  "BTService",
+  "BTComposite",
 ] as const;
 
 /** Asset types creatable from the Content Browser New Asset flow. */

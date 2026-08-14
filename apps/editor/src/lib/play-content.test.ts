@@ -11,6 +11,8 @@ import {
   animationGraphGuidsFromScene,
   applyPlayHudInstance,
   asUiDocument,
+  behaviourTreeGuidsFromScene,
+  blackboardGuidsFromScene,
   logicGraphFromUiPayload,
   mergePlayScriptDocuments,
   mergePlayAnimGraphs,
@@ -191,6 +193,23 @@ describe("scene-referenced Play content", () => {
       }),
     );
     expect(animationGraphGuidsFromScene(scene)).toEqual(["loco-guid"]);
+  });
+
+  it("collects BehaviourTreeComponent treeGuid values from a closed scene", () => {
+    const scene = createDefaultScene();
+    scene.actors.push(
+      createActor("guard", "Guard", {
+        components: [
+          {
+            id: "bt",
+            classId: "BehaviourTreeComponent",
+            properties: { treeGuid: "tree-guid", blackboardGuid: "bb-guid" },
+          },
+        ],
+      }),
+    );
+    expect(behaviourTreeGuidsFromScene(scene)).toEqual(["tree-guid"]);
+    expect(blackboardGuidsFromScene(scene)).toEqual(["bb-guid"]);
   });
 
   it("collects SpriteComponent assetGuid values from a closed scene", () => {

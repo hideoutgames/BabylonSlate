@@ -49,6 +49,7 @@ function componentAssetGuid(component: SerializedComponent): string | null {
   return (
     stringProp(component.properties, "assetGuid") ??
     stringProp(component.properties, "graphGuid") ??
+    stringProp(component.properties, "treeGuid") ??
     stringProp(component.properties, "uiAssetGuid")
   );
 }

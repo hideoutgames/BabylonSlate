@@ -1,5 +1,9 @@
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
+  parseBehaviourTreeDocument,
+  parseBlackboardDocument,
+} from "@babylonslate/behaviour-tree";
+import {
   createPlayBootCoordinator,
   createRuntimeFromLoad,
   SessionDiagnosticAggregator,
@@ -189,6 +193,9 @@ export function startPlaySession(options: {
   onUiRemove?: (instanceId: string) => void;
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
+  /** BehaviourTree / Blackboard documents for worker load. */
+  behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
+  blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** Sprite payloads keyed by asset guid for Play clip UV seeks. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
@@ -353,6 +360,16 @@ export function startPlaySession(options: {
         graphs: [...(options.animGraphs ?? [])],
       });
     }
+    if (
+      (options.behaviourTrees?.length ?? 0) > 0 ||
+      (options.blackboards?.length ?? 0) > 0
+    ) {
+      worker.postControl({
+        type: "loadBehaviourTrees",
+        trees: [...(options.behaviourTrees ?? [])],
+        blackboards: [...(options.blackboards ?? [])],
+      });
+    }
     const tilemapsControl = playLoadTilemapsControl(
       options.tilemapPayloads,
       options.tilesetPayloads,
@@ -383,6 +400,14 @@ export function startPlaySession(options: {
     for (const entry of options.animGraphs ?? []) {
       const document = parseAnimGraphDocument(entry.document);
       if (document) inProcess.registerAnimGraph(entry.guid, document);
+    }
+    for (const entry of options.behaviourTrees ?? []) {
+      const document = parseBehaviourTreeDocument(entry.document);
+      if (document) inProcess.registerBehaviourTree(entry.guid, document);
+    }
+    for (const entry of options.blackboards ?? []) {
+      const document = parseBlackboardDocument(entry.document);
+      if (document) inProcess.registerBlackboard(entry.guid, document);
     }
     if (
       (options.tilemapPayloads && options.tilemapPayloads.size > 0) ||

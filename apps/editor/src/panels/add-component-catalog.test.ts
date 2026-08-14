@@ -11,6 +11,8 @@ describe("Add Component catalog", () => {
     expect(ids).not.toContain("WidgetComponent");
     expect(ids).toContain("TilemapComponent");
     expect(ids).toContain("AnimationGraphComponent");
+    expect(ids).toContain("BehaviourTreeComponent");
+    expect(ids).not.toContain("NavAgentComponent");
     expect(ids).toContain("RigidBodyComponent");
     expect(ids).toContain("ColliderComponent");
   });
@@ -25,6 +27,7 @@ describe("Add Component catalog", () => {
     expect([...byCategory.keys()]).toEqual([
       "Rendering",
       "Animation",
+      "AI",
       "Camera",
       "Physics",
     ]);
@@ -36,6 +39,7 @@ describe("Add Component catalog", () => {
     ]);
     expect(byCategory.get("UI")).toBeUndefined();
     expect(byCategory.get("Animation")).toEqual(["AnimationGraphComponent"]);
+    expect(byCategory.get("AI")).toEqual(["BehaviourTreeComponent"]);
     expect(byCategory.get("Camera")).toEqual(["CameraComponent"]);
     expect(byCategory.get("Physics")).toEqual([
       "RigidBodyComponent",
@@ -54,15 +58,12 @@ describe("Add Component catalog", () => {
   });
 
   it("seeds Sprite and Tilemap asset-guid defaults", () => {
-    expect(defaultPropertiesFor("SpriteComponent")).toEqual({
-      assetGuid: null,
-      sortingLayer: "Default",
-      orderInLayer: 0,
+    expect(defaultPropertiesFor("AnimationGraphComponent")).toEqual({
+      graphGuid: null,
     });
-    expect(defaultPropertiesFor("TilemapComponent")).toEqual({
-      assetGuid: null,
-      sortingLayer: "Default",
-      orderInLayer: 0,
+    expect(defaultPropertiesFor("BehaviourTreeComponent")).toEqual({
+      treeGuid: null,
+      blackboardGuid: null,
     });
   });
 

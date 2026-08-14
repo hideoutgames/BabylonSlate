@@ -20,6 +20,7 @@ import { variableNodes } from "./variables";
 import { functionCallNodes } from "./functions";
 import { castingNodes } from "./casting";
 import { timerNodes } from "./timers";
+import { behaviourTreeNodes } from "./behaviour-tree";
 
 export * from "./flow";
 export * from "./math";
@@ -42,6 +43,7 @@ export * from "./variables";
 export * from "./functions";
 export * from "./casting";
 export * from "./timers";
+export * from "./behaviour-tree";
 
 export const ALL_NODE_CATEGORIES = [
   "flow",
@@ -65,6 +67,7 @@ export const ALL_NODE_CATEGORIES = [
   "functions",
   "casting",
   "timers",
+  "behaviour-tree",
 ] as const;
 
 export function allNodeDefinitions(): NodeDefinition[] {
@@ -90,6 +93,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...functionCallNodes,
     ...castingNodes,
     ...timerNodes,
+    ...behaviourTreeNodes,
   ];
 }
 

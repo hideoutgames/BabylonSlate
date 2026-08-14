@@ -91,9 +91,17 @@ import {
 } from "../lib/listed-projects";
 import {
   animationGraphGuidsFromScene,
+  behaviourTreeGuidsFromScene,
+  blackboardGuidsFromScene,
   mergePlayAnimGraphs,
+  mergePlayBehaviourTrees,
+  mergePlayBlackboards,
   playAnimGraphsFromGuids,
   playAnimGraphsFromOpenDocuments,
+  playBehaviourTreesFromGuids,
+  playBehaviourTreesFromOpenDocuments,
+  playBlackboardsFromGuids,
+  playBlackboardsFromOpenDocuments,
   playSpritePayloadsFromGuids,
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
@@ -105,6 +113,8 @@ import {
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
   type PlayAnimGraphEntry,
+  type PlayBehaviourTreeEntry,
+  type PlayBlackboardEntry,
 } from "../lib/play-content";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 export type AppRoute = "home" | "editor";
@@ -220,6 +230,12 @@ interface DocumentContextValue {
   collectPlayAnimGraphs: (
     scene?: SerializedScene | null,
   ) => Promise<PlayAnimGraphEntry[]>;
+  collectPlayBehaviourTrees: (
+    scene?: SerializedScene | null,
+  ) => Promise<PlayBehaviourTreeEntry[]>;
+  collectPlayBlackboards: (
+    scene?: SerializedScene | null,
+  ) => Promise<PlayBlackboardEntry[]>;
   /** Sprite payloads referenced by the Play scene for clip UV seeks. */
   collectPlaySpritePayloads: (
     scene?: SerializedScene | null,
@@ -1205,7 +1221,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const loadPlayAssetContent = useCallback(
     async (
-      kind: "anim-graph" | "sprite" | "ui" | "tileset" | "tilemap",
+      kind:
+        | "anim-graph"
+        | "behaviour-tree"
+        | "blackboard"
+        | "sprite"
+        | "ui"
+        | "tileset"
+        | "tilemap",
       path: string,
     ): Promise<unknown | null> => {
       const openDoc = documentService
@@ -1249,6 +1272,70 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return mergePlayAnimGraphs(
         openEntries,
         playAnimGraphsFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
+      );
+    },
+    [documentService, loadPlayAssetContent, projectService],
+  );
+
+  const collectPlayBehaviourTrees = useCallback(
+    async (scene?: SerializedScene | null): Promise<PlayBehaviourTreeEntry[]> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "BehaviourTree")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const openEntries = playBehaviourTreesFromOpenDocuments(
+        [...documentService.getState().openDocuments.values()],
+        (path) =>
+          assets.find((asset) => asset.path === path)?.header.guid ?? null,
+      );
+      const needed = new Set([
+        ...behaviourTreeGuidsFromScene(scene),
+        ...openEntries.map((entry) => entry.guid),
+      ]);
+      const loaded = new Map<string, unknown>();
+      for (const guid of needed) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("behaviour-tree", asset.path);
+        if (content) loaded.set(guid, content);
+      }
+      return mergePlayBehaviourTrees(
+        openEntries,
+        playBehaviourTreesFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
+      );
+    },
+    [documentService, loadPlayAssetContent, projectService],
+  );
+
+  const collectPlayBlackboards = useCallback(
+    async (scene?: SerializedScene | null): Promise<PlayBlackboardEntry[]> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Blackboard")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const openEntries = playBlackboardsFromOpenDocuments(
+        [...documentService.getState().openDocuments.values()],
+        (path) =>
+          assets.find((asset) => asset.path === path)?.header.guid ?? null,
+      );
+      const needed = new Set([
+        ...blackboardGuidsFromScene(scene),
+        ...openEntries.map((entry) => entry.guid),
+      ]);
+      const loaded = new Map<string, unknown>();
+      for (const guid of needed) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const content = await loadPlayAssetContent("blackboard", asset.path);
+        if (content) loaded.set(guid, content);
+      }
+      return mergePlayBlackboards(
+        openEntries,
+        playBlackboardsFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
       );
     },
     [documentService, loadPlayAssetContent, projectService],
@@ -1943,6 +2030,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectPlayUiLibrary,
       collectPlayAnimGraphs,
+      collectPlayBehaviourTrees,
+      collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
@@ -1976,6 +2065,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectPlayUiLibrary,
       collectPlayAnimGraphs,
+      collectPlayBehaviourTrees,
+      collectPlayBlackboards,
       collectPlaySpritePayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,

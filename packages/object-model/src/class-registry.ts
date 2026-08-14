@@ -1,6 +1,7 @@
 import { err, ok, type Result } from "@babylonslate/core";
 import {
   ENGINE_BASE_CLASS_IDS,
+  ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
 } from "./ids";
 
@@ -84,6 +85,24 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
+    for (const id of ["BTTask", "BTDecorator", "BTService", "BTComposite"] as const) {
+      this.register({
+        id,
+        parentClassId: "BObject",
+        kind: "other",
+        variables: [],
+        implementedInterfaces: [],
+      });
+    }
+    for (const entry of ENGINE_BT_BUILTIN_CLASSES) {
+      this.register({
+        id: entry.id,
+        parentClassId: entry.parentClassId,
+        kind: "other",
+        variables: [],
+        implementedInterfaces: [],
+      });
+    }
     for (const id of ENGINE_COMPONENT_CLASS_IDS) {
       this.register({
         id,

@@ -12,12 +12,7 @@ import type {
   EvaluateBehaviourTreeOptions,
 } from "./types";
 
-const BUILTIN_TASKS = new Set([
-  "bt.task.succeed",
-  "bt.task.fail",
-  "bt.task.wait",
-  "bt.task.setBlackboard",
-]);
+import { BUILTIN_TASKS, builtinClassId } from "./builtins";
 
 function cloneMemory(
   source: Record<string, Record<string, unknown>> | undefined,
@@ -33,14 +28,49 @@ function isSet(value: unknown): boolean {
   return value !== undefined && value !== null && value !== false;
 }
 
+function compareBlackboard(
+  left: unknown,
+  op: unknown,
+  right: unknown,
+): boolean {
+  switch (op) {
+    case "neq":
+      return left !== right;
+    case "gt":
+      return Number(left) > Number(right);
+    case "gte":
+      return Number(left) >= Number(right);
+    case "lt":
+      return Number(left) < Number(right);
+    case "lte":
+      return Number(left) <= Number(right);
+    case "eq":
+    default:
+      return left === right;
+  }
+}
+
 function decoratorCondition(decorator: BtDecorator, blackboard: BlackboardValues): boolean {
-  if (decorator.classId === "bt.decorator.blackboardIsSet") {
+  const classId = builtinClassId(decorator.classId);
+  if (classId === "bt.decorator.blackboardIsSet") {
     const key =
       typeof decorator.properties.key === "string"
         ? decorator.properties.key
         : decorator.observedKeys[0];
     if (!key) return false;
     return isSet(blackboard[key]);
+  }
+  if (classId === "bt.decorator.compareBlackboardValue") {
+    const key =
+      typeof decorator.properties.key === "string"
+        ? decorator.properties.key
+        : decorator.observedKeys[0];
+    if (!key) return false;
+    return compareBlackboard(
+      blackboard[key],
+      decorator.properties.op,
+      decorator.properties.value,
+    );
   }
   return true;
 }
@@ -56,11 +86,15 @@ function tickTask(
   memory: Record<string, unknown>,
   host?: BtTaskHost,
 ): BtResult {
-  if (host && !BUILTIN_TASKS.has(node.classId)) {
+  if (host && !BUILTIN_TASKS.has(builtinClassId(node.classId))) {
     return host.tick(node, blackboard, dtSeconds, memory);
   }
-  switch (node.classId) {
+  switch (builtinClassId(node.classId)) {
     case "bt.task.succeed":
+    case "bt.task.moveTo":
+    case "bt.task.rotateToFace":
+    case "bt.task.playAnimation":
+    case "bt.task.playSound":
       return "success";
     case "bt.task.fail":
       return "failure";
@@ -213,7 +247,7 @@ function fireService(
   memory: Record<string, unknown>,
   host?: BtServiceHost,
 ): void {
-  if (service.classId === "bt.service.setBlackboard") {
+  if (service.classId === "bt.service.setBlackboard" || builtinClassId(service.classId) === "bt.service.setBlackboard") {
     const key = typeof service.properties.key === "string" ? service.properties.key : "";
     if (key) blackboard[key] = service.properties.value;
     return;

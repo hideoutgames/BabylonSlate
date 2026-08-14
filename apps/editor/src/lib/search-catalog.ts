@@ -1,9 +1,11 @@
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { ENGINE_BT_BUILTIN_CLASSES } from "@babylonslate/object-model";
 import { ENGINE_BASE_CLASSES } from "./content-browser-helpers";
 
-/** Engine class ids indexed as catalog hits (shipped types only; unbuilt P10/P11 ids stay in object-model). */
+/** Engine class ids indexed as catalog hits (shipped types only; unbuilt P11 nav stays gated). */
 export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   ...ENGINE_BASE_CLASSES,
+  ...ENGINE_BT_BUILTIN_CLASSES.map((entry) => entry.id),
   "MeshComponent",
   "SpriteComponent",
   "TilemapComponent",
@@ -12,6 +14,7 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   "RigidBodyComponent",
   "ColliderComponent",
   "AnimationGraphComponent",
+  "BehaviourTreeComponent",
 ];
 
 const nodeRegistry = createDefaultNodeRegistry();

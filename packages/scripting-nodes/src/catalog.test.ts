@@ -26,6 +26,8 @@ describe("node catalog", () => {
     expect(registry.get("debug.executeJavaScript")).toBeDefined();
     expect(registry.get("debug.print")).toBeDefined();
     expect(registry.get("render.setResolution")).toBeDefined();
+    expect(registry.get("bt.event.activate")).toBeDefined();
+    expect(registry.get("bt.finish")).toBeDefined();
   });
 
   it("has a WildcardTo* converter for every concrete target", () => {

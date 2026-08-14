@@ -14,7 +14,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components |
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
-| `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` | Stable string ids for engine types (`BObject`, `Actor`, `BDebugCommand`, …) |
+| `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` | Stable string ids for engine types (`BObject`, `Actor`, `BTTask`, …) |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play |
 
@@ -50,7 +50,7 @@ Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBod
 
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `AnimationGraphComponent`, `BehaviourTreeComponent`, `NavAgentComponent`.
 
-Search and Add Component advertise shipped behaviour: `TilemapComponent` is addable (P10 Play loads chunk meshes and Rapier chains). Behaviour-tree / nav stay registered here and wait for `p11-bt-authoring`; the tree IR and evaluator live in `@babylonslate/behaviour-tree` ([behaviour-tree.md](behaviour-tree.md)). `WidgetComponent` stays registered but is hidden until world-space `CreateForMesh` exists. `AudioComponent` stays registered but is **not** in Search/Add; compiled graphs call `ctx.playSound`, which emits a `playSound` command (Play logs it; there is no mixer yet).
+Search and Add Component advertise shipped behaviour: `TilemapComponent` is addable (P10 Play loads chunk meshes and Rapier chains). `BehaviourTreeComponent` is addable (`p11-bt-authoring`); `NavAgentComponent` stays gated until `p11-nav-editor-host`. `BTTask` / `BTDecorator` / `BTService` / `BTComposite` plus the built-in Wait / MoveTo / … classes are inheritable engine bases. `WidgetComponent` stays registered but is hidden until world-space `CreateForMesh` exists. `AudioComponent` stays registered but is **not** in Search/Add; compiled graphs call `ctx.playSound`, which emits a `playSound` command (Play logs it; there is no mixer yet).
 
 See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
 

@@ -1,5 +1,6 @@
 export {
   ENGINE_BASE_CLASS_IDS,
+  ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
   type EngineBaseClassId,
   type EngineComponentClassId,

@@ -14,6 +14,13 @@ describe("ClassRegistry", () => {
     for (const id of ENGINE_COMPONENT_CLASS_IDS) {
       expect(registry.has(id)).toBe(true);
     }
+    expect(registry.isA("BTTask", "BObject")).toBe(true);
+    expect(registry.isA("BTDecorator", "BObject")).toBe(true);
+    expect(registry.isA("BTService", "BObject")).toBe(true);
+    expect(registry.isA("BTComposite", "BObject")).toBe(true);
+    expect(registry.isA("BTTask_Wait", "BTTask")).toBe(true);
+    expect(registry.isA("BTTask_MoveTo", "BTTask")).toBe(true);
+    expect(registry.isA("BTDecorator_BlackboardIsSet", "BTDecorator")).toBe(true);
   });
 
   it("supports user class inheritance queries", () => {
