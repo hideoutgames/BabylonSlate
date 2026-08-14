@@ -762,6 +762,20 @@ describe("content-browser-helpers", () => {
     expect(eui.payload.widgets).toBeTruthy();
   });
 
+  it("seeds a BTDecorator class with On Evaluate instead of Begin Play", () => {
+    const klass = buildNewAssetResult({
+      type: "Class",
+      name: "Alert",
+      guid: "class-2",
+      parentClass: "BTDecorator",
+    });
+    const types = (klass.payload.nodes as Array<{ type?: string }>).map(
+      (node) => node.type,
+    );
+    expect(types).toContain("bt.event.evaluate");
+    expect(types).not.toContain("flow.event.beginPlay");
+  });
+
   it("writes new Scene assets at the current migration schema version", () => {
     const scene = buildNewAssetResult({
       type: "Scene",

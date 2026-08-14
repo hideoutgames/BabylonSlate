@@ -55,6 +55,8 @@ describe("behaviour tree serialize", () => {
     ]);
     const sequence = graph.nodes.find((entry) => entry.id === "sequence");
     expect(sequence?.data.sortIndex).toBe(0);
+    expect(sequence?.data.title).toBe("Sequence");
+    expect(graph.nodes.find((entry) => entry.id === "root")?.data.__protected).toBe(true);
     expect(Array.isArray(sequence?.data.decorators)).toBe(true);
   });
 
@@ -75,12 +77,30 @@ describe("behaviour tree serialize", () => {
       "task",
     ]);
     expect(graph.nodes.find((entry) => entry.id === "sequence")?.data.decorators).toEqual(
-      sequence.decorators,
+      sequence.decorators.map((row) => ({
+        ...row,
+        title: "Blackboard Is Set",
+      })),
     );
     const restored = serializedToBehaviourTree(graph, tree);
     expect(restored.nodes.find((entry) => entry.id === "sequence")?.decorators).toEqual(
       sequence.decorators,
     );
+  });
+
+  it("marks every node on the running stack, not only the leaf", () => {
+    const graph = behaviourTreeToSerialized(createDefaultBehaviourTree(), {
+      lastResults: {},
+      btNodeId: "task",
+      stack: [
+        { nodeId: "root", childIndex: 0, opened: true },
+        { nodeId: "sequence", childIndex: 0, opened: true },
+        { nodeId: "task", childIndex: 0, opened: true },
+      ],
+    });
+    expect(
+      graph.nodes.filter((entry) => entry.data.running === true).map((entry) => entry.id),
+    ).toEqual(["root", "sequence", "task"]);
   });
 
   it("lays out the root above its children", () => {

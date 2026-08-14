@@ -10,10 +10,8 @@ import {
 import type { SerializedComponent } from "@babylonslate/core";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
-import {
-  PREFAB_ROOT_ID,
-  childrenOfPrefabParent,
-} from "../lib/prefab-preview";
+import { useGraphEditing } from "../context/graph-editing-context";
+import { PREFAB_ROOT_ID, childrenOfPrefabParent } from "../lib/prefab-preview";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
 
@@ -69,6 +67,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     removeSelected,
     reparentComponent,
   } = usePrefabEditing();
+  const { setSelectedMemberId, setSelectedNodeIds } = useGraphEditing();
   const [addOpen, setAddOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
@@ -104,7 +103,13 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         <TreeView
           nodes={nodes}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={(id) => {
+            setSelectedId(id);
+            if (id && id !== PREFAB_ROOT_ID) {
+              setSelectedMemberId(null);
+              setSelectedNodeIds([]);
+            }
+          }}
           onToggleExpanded={(id) =>
             setCollapsed((current) => {
               const next = new Set(current);

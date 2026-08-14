@@ -127,6 +127,86 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("emits light and Default Camera properties on assignMesh", () => {
+    const commands: CommandMessage[] = [];
+    const settings = createDefaultSceneSettings();
+    settings.mainCameraActorId = "cam";
+    settings.mainCameraComponentId = "cam-comp";
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/lit.scene.babasset",
+        scene: {
+          name: "Lit",
+          viewportMode: "3d",
+          settings,
+          actors: [
+            createActor("lamp", "Lamp", {
+              components: [
+                {
+                  id: "light-comp",
+                  classId: "LightComponent",
+                  properties: {
+                    lightKind: "spot",
+                    color: [0.2, 0.4, 0.8],
+                    intensity: 3.5,
+                    enabled: true,
+                    range: 12,
+                    innerAngle: 20,
+                    outerAngle: 40,
+                    castShadows: true,
+                  },
+                },
+              ],
+            }),
+            createActor("cam", "Camera", {
+              components: [
+                {
+                  id: "cam-comp",
+                  classId: "CameraComponent",
+                  properties: {
+                    projectionMode: "perspective",
+                    fieldOfView: 50,
+                    nearClip: 0.2,
+                    farClip: 800,
+                  },
+                },
+              ],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    const assigns = commands.filter((c) => c.type === "assignMesh");
+    expect(assigns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          meshKind: "light:spot",
+          light: expect.objectContaining({
+            color: [0.2, 0.4, 0.8],
+            intensity: 3.5,
+            range: 12,
+            innerAngle: 20,
+            outerAngle: 40,
+            castShadows: true,
+          }),
+        }),
+        expect.objectContaining({
+          meshKind: "camera",
+          camera: expect.objectContaining({
+            isDefault: true,
+            fieldOfView: 50,
+            nearClip: 0.2,
+            farClip: 800,
+          }),
+        }),
+      ]),
+    );
+    runtime.stop();
+  });
+
   it("steps authored rigid bodies after realizePlayWorld", () => {
     const runtime = createInProcessRuntime({
       seed: 3,

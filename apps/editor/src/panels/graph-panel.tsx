@@ -14,6 +14,7 @@ import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
+import { classParentLookup } from "../lib/content-browser-helpers";
 import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
@@ -28,7 +29,7 @@ const VALIDATION_DEBOUNCE_MS = 250;
 export function GraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange } = useDocuments();
+  const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
   const { focusedNodeId } = usePlay();
   const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId } =
     useGraphEditing();
@@ -58,6 +59,12 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   }, []);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
+  const indexed = (assetRegistry?.list() ?? []).find(
+    (asset) => asset.path === doc?.ref.path,
+  );
+  const parentClass = indexed?.header.parentClass ?? null;
+  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
+  const classEventOptions = { parentClass, parentOf };
   const graphContent =
     doc?.ref.kind === "graph" && doc.content
       ? (doc.content as SerializedGraph)
@@ -76,10 +83,10 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         }
       : graphContent;
     return hydrateSerializedGraphForEditor(
-      visible ?? createDefaultLogicGraphSerialized(registry),
+      visible ?? createDefaultLogicGraphSerialized(registry, classEventOptions),
       registry,
     );
-  }, [activeFunctionId, graphContent]);
+  }, [activeFunctionId, graphContent, parentClass, parentOf]);
 
   const assetGuid = doc?.ref.path ?? documentId;
 
@@ -100,7 +107,10 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     return () => window.clearTimeout(handle);
   }, [graph, assetGuid, documentId, setDiagnostics]);
 
-  const paletteNodes = useMemo((): PaletteNode[] => scriptPaletteNodes(registry), []);
+  const paletteNodes = useMemo(
+    (): PaletteNode[] => scriptPaletteNodes(registry, { parentClass, parentOf }),
+    [parentClass, parentOf],
+  );
 
   const focusId = focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined;
   const graphDiagnostics = useMemo(

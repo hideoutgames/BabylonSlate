@@ -1,0 +1,34 @@
+{
+  "name": "missing-blackboard-key",
+  "rootId": "root",
+  "blackboardGuid": null,
+  "blackboardKeys": ["alert"],
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "selector",
+      "classId": "bt.composite.selector",
+      "children": ["ok"],
+      "decorators": [
+        {
+          "id": "need",
+          "classId": "bt.decorator.blackboardIsSet",
+          "abortMode": "none",
+          "observedKeys": ["gone"],
+          "properties": { "key": "gone" }
+        }
+      ],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "ok",
+      "kind": "task",
+      "classId": "bt.task.succeed",
+      "children": [],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    }
+  ]
+}

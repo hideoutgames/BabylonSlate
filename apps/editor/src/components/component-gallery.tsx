@@ -4,6 +4,7 @@ import {
   AssetPicker,
   CatalogDialog,
   ClassPicker,
+  SceneComponentPicker,
   ContextMenuOverlay,
   InputMappingEditor,
   NamedListEditor,
@@ -139,6 +140,8 @@ function GalleryComposites() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
+  const [sceneComponentPickerOpen, setSceneComponentPickerOpen] =
+    useState(false);
   const [namePromptOpen, setNamePromptOpen] = useState(false);
   const [layers, setLayers] = useState(["Default", "Foreground"]);
   const [mappings, setMappings] = useState(createDefaultInputMappings);
@@ -370,6 +373,9 @@ function GalleryComposites() {
         <Button variant="outline" onClick={() => setClassPickerOpen(true)}>
           Open class picker
         </Button>
+        <Button variant="outline" onClick={() => setSceneComponentPickerOpen(true)}>
+          Open scene component picker
+        </Button>
         <Button variant="outline" onClick={() => setNamePromptOpen(true)}>
           Open name prompt
         </Button>
@@ -417,6 +423,22 @@ function GalleryComposites() {
         ]}
         onPick={() => {}}
         data-testid="gallery-class-picker"
+      />
+      <SceneComponentPicker
+        open={sceneComponentPickerOpen}
+        onOpenChange={setSceneComponentPickerOpen}
+        components={[
+          {
+            actorId: "hero",
+            componentId: "hero-cam",
+            actorName: "Hero",
+            componentTitle: "Camera",
+            classId: "CameraComponent",
+          },
+        ]}
+        allowedClassIds={["CameraComponent"]}
+        onPick={() => {}}
+        data-testid="gallery-scene-component-picker"
       />
       <NamePromptDialog
         open={namePromptOpen}

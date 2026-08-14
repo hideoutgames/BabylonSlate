@@ -17,7 +17,9 @@ export function nextPrefabComponentId(
   components: readonly SerializedComponent[],
 ): string {
   let index = components.length + 1;
-  while (components.some((component) => component.id === `prefab-component-${index}`)) {
+  while (
+    components.some((component) => component.id === `prefab-component-${index}`)
+  ) {
     index += 1;
   }
   return `prefab-component-${index}`;
@@ -45,7 +47,9 @@ export function instantiatePrefabComponents(
         ? (idMap.get(component.parentId) ?? null)
         : null;
     return {
-      id: idMap.get(component.id) ?? `${actorId}-${component.classId}-${index + 1}`,
+      id:
+        idMap.get(component.id) ??
+        `${actorId}-${component.classId}-${index + 1}`,
       classId: component.classId,
       properties: { ...component.properties },
       parentId,
@@ -92,8 +96,7 @@ export function reparentPrefabComponents(
   targetId: string | null,
 ): SerializedComponent[] {
   if (dragId === PREFAB_ROOT_ID) return components;
-  const parentId =
-    !targetId || targetId === PREFAB_ROOT_ID ? null : targetId;
+  const parentId = !targetId || targetId === PREFAB_ROOT_ID ? null : targetId;
   if (parentId === dragId) return components;
   if (wouldCreateComponentCycle(components, dragId, parentId)) {
     return components;
@@ -101,6 +104,21 @@ export function reparentPrefabComponents(
   return components.map((component) =>
     component.id === dragId ? { ...component, parentId } : component,
   );
+}
+
+/** Viewport tap: the preview actor, or nothing on empty space. */
+export function prefabSelectedIdFromPick(
+  actorId: string | null,
+): string | null {
+  return actorId === PREFAB_ROOT_ID ? PREFAB_ROOT_ID : null;
+}
+
+/**
+ * Gizmo attachment for the single preview mesh. Components have no local
+ * transform, so a tree-selected component still gizmos the prefab root.
+ */
+export function prefabSelectedActorIds(selectedId: string | null): string[] {
+  return selectedId == null ? [] : [PREFAB_ROOT_ID];
 }
 
 /** Preview scene holding the prefab's components on a single actor. */

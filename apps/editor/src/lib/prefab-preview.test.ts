@@ -5,6 +5,8 @@ import {
   defaultPrefabComponents,
   instantiatePrefabComponents,
   prefabComponentsFromGraph,
+  prefabSelectedActorIds,
+  prefabSelectedIdFromPick,
   previewSceneFor,
   reparentPrefabComponents,
   componentSubtreeIds,
@@ -18,9 +20,7 @@ describe("prefabComponentsFromGraph", () => {
   });
 
   it("falls back to the default mesh when the class has no prefab field", () => {
-    expect(prefabComponentsFromGraph({})).toEqual(
-      defaultPrefabComponents(),
-    );
+    expect(prefabComponentsFromGraph({})).toEqual(defaultPrefabComponents());
     expect(prefabComponentsFromGraph(null)).toEqual(defaultPrefabComponents());
   });
 
@@ -38,7 +38,10 @@ describe("prefabComponentsFromGraph", () => {
 
   it("remaps nested parentIds onto the spawned actor", () => {
     const root = createMeshComponent("root", "box");
-    const child = { ...createMeshComponent("child", "sphere"), parentId: "root" };
+    const child = {
+      ...createMeshComponent("child", "sphere"),
+      parentId: "root",
+    };
     const spawned = instantiatePrefabComponents([root, child], "hero");
     expect(spawned[1]?.parentId).toBe(spawned[0]?.id);
   });
@@ -73,7 +76,10 @@ describe("reparentPrefabComponents", () => {
 describe("componentSubtreeIds", () => {
   it("includes nested children", () => {
     const root = createMeshComponent("root", "box");
-    const child = { ...createMeshComponent("child", "sphere"), parentId: "root" };
+    const child = {
+      ...createMeshComponent("child", "sphere"),
+      parentId: "root",
+    };
     expect([...componentSubtreeIds([root, child], "root")].sort()).toEqual([
       "child",
       "root",
@@ -89,5 +95,18 @@ describe("previewSceneFor", () => {
     expect(scene.actors).toHaveLength(1);
     expect(scene.actors[0]?.id).toBe("prefab-root");
     expect(scene.actors[0]?.components).toEqual([mesh]);
+  });
+});
+
+describe("prefab viewport pick", () => {
+  it("selects Prefab Root on a hit and clears on a miss", () => {
+    expect(prefabSelectedIdFromPick(PREFAB_ROOT_ID)).toBe(PREFAB_ROOT_ID);
+    expect(prefabSelectedIdFromPick(null)).toBeNull();
+  });
+
+  it("attaches the gizmo only while something is selected", () => {
+    expect(prefabSelectedActorIds(null)).toEqual([]);
+    expect(prefabSelectedActorIds(PREFAB_ROOT_ID)).toEqual([PREFAB_ROOT_ID]);
+    expect(prefabSelectedActorIds("prefab-mesh")).toEqual([PREFAB_ROOT_ID]);
   });
 });

@@ -72,7 +72,7 @@ describe("createCommandRegistry", () => {
       output: "changed scene to level-2",
     });
     expect(registry.execute("renderquality high", host).success).toBe(true);
-    expect(registry.execute("shadowquality low", host).success).toBe(true);
+    expect(registry.execute("shadowquality 1024", host).success).toBe(true);
     expect(registry.execute("resolutionscale 0.75", host).success).toBe(true);
     expect(registry.execute("framecap 30", host).success).toBe(true);
     expect(registry.execute("volume 0.5", host).success).toBe(true);
@@ -83,7 +83,7 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual([
       "changeScene:level-2",
       "renderquality:high",
-      "shadowquality:low",
+      "shadowquality:1024",
       "resolutionscale:0.75",
       "framecap:30",
       "volume:0.5",
@@ -154,6 +154,11 @@ describe("createCommandRegistry", () => {
       success: false,
       output:
         'parameter "level" expects one of low, medium, high, got "ultra"',
+    });
+    expect(registry.execute("shadowquality low", recordingHost())).toEqual({
+      success: false,
+      output:
+        'parameter "level" expects one of off, 512, 1024, 2048, got "low"',
     });
     expect(registry.execute("changescene", recordingHost()).success).toBe(false);
   });

@@ -100,7 +100,26 @@ export type CommandMessage =
       meshAssetGuid: string | null;
       /** Primitive mesh kind from MeshComponent (`box`, `sphere`, …). */
       meshKind?: string | null;
+      light?: {
+        color: [number, number, number];
+        intensity: number;
+        enabled: boolean;
+        range?: number;
+        innerAngle?: number;
+        outerAngle?: number;
+        castShadows?: boolean;
+      };
+      camera?: {
+        projectionMode?: "perspective" | "orthographic";
+        fieldOfView?: number;
+        orthographicSize?: number;
+        nearClip?: number;
+        farClip?: number;
+        isDefault?: boolean;
+      };
     }
+  | { type: "possessCamera"; slotId: number }
+  | { type: "setShadowQuality"; level: string }
   | {
       type: "assignMaterial";
       slotId: number;
@@ -180,6 +199,7 @@ export type CommandMessage =
       btNodeId: string | null;
       lastResults: Record<string, string>;
       blackboard: Record<string, unknown>;
+      stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
     }
   | {
       type: "playSound";

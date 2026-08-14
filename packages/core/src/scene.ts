@@ -8,7 +8,10 @@
  * v3 adds `settings.physicsWorld` (`"3d"` | `"2d"`). Older documents default
  * from `viewportMode` on normalize. `editorJoystickEnabled` is additive on v3
  * (missing keys normalize to false). `grid.showGrid` is additive (missing keys
- * normalize to true so older scenes keep the editor grid).
+ * normalize to true so older scenes keep the editor grid). Fog color/start/end,
+ * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
+ * keys normalize to defaults; a Default Camera pick requires both actor and
+ * component ids).
  */
 
 export type ViewportMode = "3d" | "2d";
@@ -68,6 +71,15 @@ export interface SceneSettings {
   /** Clear colour as [r, g, b] in 0..1. */
   environmentColor: [number, number, number];
   fogEnabled: boolean;
+  /** Linear fog colour as [r, g, b] in 0..1. */
+  fogColor: [number, number, number];
+  fogStart: number;
+  fogEnd: number;
+  /** Optional IBL cube texture asset guid. */
+  environmentTextureGuid: string | null;
+  /** Default Camera actor id; both ids required to resolve. */
+  mainCameraActorId: string | null;
+  mainCameraComponentId: string | null;
   gravity: [number, number, number];
   fixedTimestepMs: number;
   /** GameInstance class override for this scene, null to use the project default. */
@@ -107,6 +119,12 @@ export function createDefaultSceneSettings(
   return {
     environmentColor: [0.06, 0.07, 0.09],
     fogEnabled: false,
+    fogColor: [0.5, 0.5, 0.5],
+    fogStart: 0,
+    fogEnd: 100,
+    environmentTextureGuid: null,
+    mainCameraActorId: null,
+    mainCameraComponentId: null,
     gravity: [0, -9.81, 0],
     fixedTimestepMs: 16.6667,
     gameInstanceClass: null,
@@ -219,6 +237,22 @@ function normalizeActor(value: unknown, index: number): SerializedActor {
   };
 }
 
+function asNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function normalizeMainCamera(
+  actorId: unknown,
+  componentId: unknown,
+): { mainCameraActorId: string | null; mainCameraComponentId: string | null } {
+  const mainCameraActorId = asNullableString(actorId);
+  const mainCameraComponentId = asNullableString(componentId);
+  if (!mainCameraActorId || !mainCameraComponentId) {
+    return { mainCameraActorId: null, mainCameraComponentId: null };
+  }
+  return { mainCameraActorId, mainCameraComponentId };
+}
+
 export function normalizeSceneSettings(
   value: unknown,
   viewportMode: ViewportMode = "3d",
@@ -237,6 +271,15 @@ export function normalizeSceneSettings(
       defaults.environmentColor,
     ),
     fogEnabled: source.fogEnabled === true,
+    fogColor: asNumberTuple3(source.fogColor, defaults.fogColor),
+    fogStart:
+      typeof source.fogStart === "number" ? source.fogStart : defaults.fogStart,
+    fogEnd: typeof source.fogEnd === "number" ? source.fogEnd : defaults.fogEnd,
+    environmentTextureGuid: asNullableString(source.environmentTextureGuid),
+    ...normalizeMainCamera(
+      source.mainCameraActorId,
+      source.mainCameraComponentId,
+    ),
     gravity: asNumberTuple3(source.gravity, defaults.gravity),
     fixedTimestepMs:
       typeof source.fixedTimestepMs === "number"

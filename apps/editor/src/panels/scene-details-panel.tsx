@@ -5,6 +5,7 @@ import {
   ClassPicker,
   PanelFrame,
   PropertyGrid,
+  SceneComponentPicker,
   TypeVisualIcon,
   resolveTypeVisual,
   type PropertyRow,
@@ -32,6 +33,10 @@ import {
   gameInstanceClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
+import {
+  sceneComponentDisplayLabel,
+  sceneComponentEntries,
+} from "../lib/scene-component-entries";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -43,6 +48,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const [addComponentOpen, setAddComponentOpen] = useState(false);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
+  const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
+  const [envTexturePickOpen, setEnvTexturePickOpen] = useState(false);
   const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
@@ -176,6 +183,80 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         defaultValue: defaults.fogEnabled,
         onChange: (fogEnabled) =>
           mutate({ ...scene, settings: { ...scene.settings, fogEnabled } }),
+      },
+      {
+        kind: "color",
+        id: "scene-fog-color",
+        label: "Fog Color",
+        value: scene.settings.fogColor,
+        defaultValue: defaults.fogColor,
+        onChange: (fogColor) =>
+          mutate({
+            ...scene,
+            settings: { ...scene.settings, fogColor },
+          }),
+      },
+      {
+        kind: "number",
+        id: "scene-fog-start",
+        label: "Fog Start",
+        value: scene.settings.fogStart,
+        defaultValue: defaults.fogStart,
+        onChange: (fogStart) =>
+          mutate({
+            ...scene,
+            settings: { ...scene.settings, fogStart },
+          }),
+      },
+      {
+        kind: "number",
+        id: "scene-fog-end",
+        label: "Fog End",
+        value: scene.settings.fogEnd,
+        defaultValue: defaults.fogEnd,
+        onChange: (fogEnd) =>
+          mutate({
+            ...scene,
+            settings: { ...scene.settings, fogEnd },
+          }),
+      },
+      {
+        kind: "asset",
+        id: "scene-environment-texture",
+        label: "Environment Texture",
+        value: scene.settings.environmentTextureGuid,
+        displayLabel: scene.settings.environmentTextureGuid
+          ? assetLabel(scene.settings.environmentTextureGuid)
+          : undefined,
+        placeholder: "None",
+        onPick: () => setEnvTexturePickOpen(true),
+        onChange: (environmentTextureGuid) =>
+          mutate({
+            ...scene,
+            settings: { ...scene.settings, environmentTextureGuid },
+          }),
+      },
+      {
+        kind: "asset",
+        id: "scene-default-camera",
+        label: "Default Camera",
+        value: scene.settings.mainCameraComponentId,
+        displayLabel: sceneComponentDisplayLabel(
+          scene,
+          scene.settings.mainCameraActorId,
+          scene.settings.mainCameraComponentId,
+        ),
+        placeholder: "None",
+        onPick: () => setCameraPickerOpen(true),
+        onChange: () =>
+          mutate({
+            ...scene,
+            settings: {
+              ...scene.settings,
+              mainCameraActorId: null,
+              mainCameraComponentId: null,
+            },
+          }),
       },
       {
         kind: "boolean",
@@ -317,6 +398,42 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             setClassPickerOpen(false);
           }}
           data-testid="scene-game-instance-picker"
+        />
+        <AssetPicker
+          open={envTexturePickOpen}
+          onOpenChange={setEnvTexturePickOpen}
+          assets={pickerAssets}
+          allowedTypes={["Texture"]}
+          title="Pick Environment Texture"
+          allowNone
+          onPick={(environmentTextureGuid) => {
+            mutate({
+              ...scene,
+              settings: { ...scene.settings, environmentTextureGuid },
+            });
+            setEnvTexturePickOpen(false);
+          }}
+          data-testid="scene-environment-texture-picker"
+        />
+        <SceneComponentPicker
+          open={cameraPickerOpen}
+          onOpenChange={setCameraPickerOpen}
+          components={sceneComponentEntries(scene, ["CameraComponent"])}
+          allowedClassIds={["CameraComponent"]}
+          title="Pick Default Camera"
+          allowNone
+          onPick={(ref) => {
+            mutate({
+              ...scene,
+              settings: {
+                ...scene.settings,
+                mainCameraActorId: ref?.actorId ?? null,
+                mainCameraComponentId: ref?.componentId ?? null,
+              },
+            });
+            setCameraPickerOpen(false);
+          }}
+          data-testid="scene-default-camera-picker"
         />
       </PanelFrame>
     );
@@ -563,6 +680,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 properties: defaultPropertiesFor(
                   classId,
                   scene.settings.physicsWorld,
+                  scene.viewportMode,
                 ),
               },
             ],

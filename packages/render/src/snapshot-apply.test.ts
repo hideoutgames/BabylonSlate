@@ -4,7 +4,9 @@ import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { ResourceCache } from "./resource-cache";
 import { encodeTriangleGlb } from "./model-mesh";
+import { setupDefaultViewport } from "./viewport";
 import {
+  applyAssignMesh,
   createPlayMesh,
   createSnapshotSceneBinding,
   applySnapshotToScene,
@@ -54,13 +56,20 @@ describe("createPlayMesh", () => {
     expect(light!.name).toBe("authoredLight:4");
   });
 
-  it("binds the first camera slot as activeCamera and follows snapshot position", () => {
+  it("does not steal activeCamera for a camera that is not the Default Camera", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
+    setupDefaultViewport(scene);
+    const orbit = scene.activeCamera;
     const binding = createSnapshotSceneBinding();
-    createPlayMesh(scene, 0, "camera", null, binding);
-    expect(scene.activeCamera?.name).toBe("authoredCamera:0");
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: false, projectionMode: "perspective" },
+    });
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
@@ -77,11 +86,81 @@ describe("createPlayMesh", () => {
       ],
     });
     const camera = binding.cameras.get(0);
-    expect(scene.activeCamera).toBe(camera);
+    expect(scene.activeCamera).toBe(orbit);
+    expect(scene.activeCamera).not.toBe(camera);
     expect(camera).toBeDefined();
     if (camera && "position" in camera) {
       expect((camera as { position: { x: number; y: number; z: number } }).position.x).toBeCloseTo(3);
       expect((camera as { position: { y: number } }).position.y).toBeCloseTo(4);
     }
+  });
+
+  it("applies authored light color and intensity from assignMesh", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "light:point",
+      light: {
+        color: [0.2, 0.4, 0.8],
+        intensity: 3.5,
+        enabled: true,
+        range: 12,
+      },
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 4,
+          position: { x: 0, y: 1, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    const light = binding.lights.get(4);
+    expect(light).toBeInstanceOf(PointLight);
+    expect(light!.intensity).toBeCloseTo(3.5);
+    expect(light!.diffuse.r).toBeCloseTo(0.2);
+    expect(light!.diffuse.b).toBeCloseTo(0.8);
+  });
+
+  it("steals activeCamera only when assignMesh marks the Default Camera", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: true, projectionMode: "perspective" },
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 1,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    expect(scene.activeCamera).toBe(binding.cameras.get(1));
   });
 });

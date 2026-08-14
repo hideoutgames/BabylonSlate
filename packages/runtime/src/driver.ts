@@ -11,7 +11,8 @@ import {
   createActorsFromSerializedScene,
   createWorldSnapshot,
   stringifyWorldSnapshot,
-  type Actor,
+  Actor,
+  ActorComponent,
   type TickPhase,
 } from "@babylonslate/object-model";
 import { eulerDegreesToQuaternion, type SerializedScene } from "@babylonslate/core";
@@ -489,6 +490,12 @@ class InProcessRuntime implements RuntimeDriver {
           height: nextHeight,
         });
       },
+      possessCamera: (target) => {
+        this.possessCamera(target);
+      },
+      updateIllumination: (target) => {
+        this.reemitIllumination(target);
+      },
       playSound: (asset, volume) => {
         this.emit({
           type: "playSound",
@@ -592,9 +599,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
     this.scriptHost.bindInterfaceHandlers(actor);
-    this.world.spawnActorNow(actor);
-    const slotId = this.assignSlot(actor);
-    this.emitMeshAssignment(actor, slotId);
+    this.realizeActor(actor);
     return actor;
   }
 
@@ -617,9 +622,7 @@ class InProcessRuntime implements RuntimeDriver {
       );
       for (const actor of actors) {
         this.scriptHost.bindInterfaceHandlers(actor);
-        this.world.spawnActorNow(actor);
-        const slotId = this.assignSlot(actor);
-        this.emitMeshAssignment(actor, slotId);
+        this.realizeActor(actor);
       }
     }
     this.registerNavAgents();
@@ -997,6 +1000,7 @@ class InProcessRuntime implements RuntimeDriver {
       btFinish: (result: "success" | "failure") => {
         memory.__btResult = result;
       },
+      btEvaluate: () => undefined,
       getBlackboard: (key: string) => blackboard[key],
       setBlackboard: (key: string, value: unknown) => {
         blackboard[key] = value;
@@ -1044,6 +1048,44 @@ class InProcessRuntime implements RuntimeDriver {
       position.z - target.z,
     );
     return distance <= accept ? "success" : "running";
+  }
+
+  private abortBtTask(
+    actor: Actor,
+    node: { classId: string },
+    blackboard: BlackboardValues,
+    memory: Record<string, unknown>,
+  ): void {
+    memory.__activated = false;
+    delete memory.__btResult;
+    this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.dt, {
+      btFinish: () => undefined,
+      btEvaluate: () => undefined,
+      getBlackboard: (key) => blackboard[key],
+      setBlackboard: (key, value) => {
+        blackboard[key] = value;
+      },
+    });
+  }
+
+  private evaluateBtDecorator(
+    actor: Actor,
+    classId: string,
+    blackboard: BlackboardValues,
+  ): boolean {
+    if (!this.scriptHost.hasClass(classId)) return true;
+    let result = true;
+    this.scriptHost.invokeBtEvent(classId, "onEvaluate", actor, this.dt, {
+      btFinish: () => undefined,
+      btEvaluate: (value) => {
+        result = Boolean(value);
+      },
+      getBlackboard: (key) => blackboard[key],
+      setBlackboard: (key, value) => {
+        blackboard[key] = value;
+      },
+    });
+    return result;
   }
 
   private emitBtMissing(actorGuid: string, message: string): void {
@@ -1098,6 +1140,12 @@ class InProcessRuntime implements RuntimeDriver {
         host: {
           tick: (node, board, dtSeconds, memory) =>
             this.tickBtTask(actor, node, board, dtSeconds, memory),
+          abort: (node, board, memory) =>
+            this.abortBtTask(actor, node, board, memory),
+        },
+        decoratorHost: {
+          evaluate: (decorator, _node, board) =>
+            this.evaluateBtDecorator(actor, decorator.classId, board),
         },
         serviceHost: {
           tick: (service, _node, board, dtSeconds) => {
@@ -1108,6 +1156,7 @@ class InProcessRuntime implements RuntimeDriver {
               dtSeconds,
               {
                 btFinish: () => undefined,
+                btEvaluate: () => undefined,
                 getBlackboard: (key) => board[key],
                 setBlackboard: (key, value) => {
                   board[key] = value;
@@ -1127,6 +1176,7 @@ class InProcessRuntime implements RuntimeDriver {
         btNodeId: next.btNodeId,
         lastResults: next.lastResults,
         blackboard: next.blackboard,
+        stack: next.stack,
       });
     }
   }
@@ -1146,7 +1196,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.applyChangeScene(scene);
       },
       setRenderQuality: (level) => emitSetting("renderquality", level),
-      setShadowQuality: (level) => emitSetting("shadowquality", level),
+      setShadowQuality: (level) => {
+        emitSetting("shadowquality", level);
+        this.emit({ type: "setShadowQuality", level: String(level) });
+      },
       setResolutionScale: (scale) => emitSetting("resolutionscale", scale),
       setFrameCap: (fps) => emitSetting("framecap", fps),
       setVolume: (volume) => emitSetting("volume", volume),
@@ -1235,11 +1288,21 @@ class InProcessRuntime implements RuntimeDriver {
     );
     if (light) {
       const kind = light.getVariable("lightKind");
+      const color = rgbTuple(light.getVariable("color"));
       this.emit({
         type: "assignMesh",
         slotId,
         meshAssetGuid: null,
         meshKind: `light:${typeof kind === "string" ? kind : "point"}`,
+        light: {
+          color,
+          intensity: Number(light.getVariable("intensity") ?? 1),
+          enabled: light.getVariable("enabled") !== false,
+          range: Number(light.getVariable("range") ?? 10),
+          innerAngle: Number(light.getVariable("innerAngle") ?? 30),
+          outerAngle: Number(light.getVariable("outerAngle") ?? 45),
+          castShadows: light.getVariable("castShadows") === true,
+        },
       });
       return;
     }
@@ -1248,13 +1311,49 @@ class InProcessRuntime implements RuntimeDriver {
         component.classId === "CameraComponent" && !component.destroyed,
     );
     if (camera) {
+      const projection = camera.getVariable("projectionMode");
+      const settings = this.playScene?.settings;
+      const isDefault =
+        settings?.mainCameraActorId === actor.guid &&
+        settings.mainCameraComponentId === camera.guid;
       this.emit({
         type: "assignMesh",
         slotId,
         meshAssetGuid: null,
         meshKind: "camera",
+        camera: {
+          projectionMode:
+            projection === "orthographic" ? "orthographic" : "perspective",
+          fieldOfView: Number(camera.getVariable("fieldOfView") ?? 60),
+          orthographicSize: Number(camera.getVariable("orthographicSize") ?? 5),
+          nearClip: Number(camera.getVariable("nearClip") ?? 0.1),
+          farClip: Number(camera.getVariable("farClip") ?? 1000),
+          isDefault,
+        },
       });
     }
+  }
+
+  private realizeActor(actor: Actor): void {
+    const slotId = this.assignSlot(actor);
+    this.emitMeshAssignment(actor, slotId);
+    this.world.spawnActorNow(actor);
+  }
+
+  private possessCamera(target: unknown): void {
+    const actor = actorFromIlluminationTarget(target);
+    if (!actor) return;
+    const slotId = this.slotByGuid.get(actor.guid);
+    if (slotId === undefined) return;
+    this.emit({ type: "possessCamera", slotId });
+  }
+
+  private reemitIllumination(target: unknown): void {
+    const actor = actorFromIlluminationTarget(target);
+    if (!actor) return;
+    const slotId = this.slotByGuid.get(actor.guid);
+    if (slotId === undefined) return;
+    this.emitMeshAssignment(actor, slotId);
   }
 
   private guardScript(run: () => void): void {
@@ -1617,6 +1716,34 @@ class InProcessRuntime implements RuntimeDriver {
   private emit(command: CommandMessage): void {
     this.onCommand?.(command);
   }
+}
+
+function rgbTuple(value: unknown): [number, number, number] {
+  if (Array.isArray(value) && value.length >= 3) {
+    return [
+      Number(value[0]) || 0,
+      Number(value[1]) || 0,
+      Number(value[2]) || 0,
+    ];
+  }
+  if (value && typeof value === "object") {
+    const row = value as { x?: unknown; y?: unknown; z?: unknown };
+    if (typeof row.x === "number") {
+      return [
+        row.x,
+        typeof row.y === "number" ? row.y : 0,
+        typeof row.z === "number" ? row.z : 0,
+      ];
+    }
+  }
+  return [1, 1, 1];
+}
+
+function actorFromIlluminationTarget(target: unknown): Actor | null {
+  if (!target || typeof target !== "object") return null;
+  if (target instanceof Actor) return target;
+  if (target instanceof ActorComponent) return target.owner;
+  return null;
 }
 
 function nowMs(): number {

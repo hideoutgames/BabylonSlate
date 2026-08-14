@@ -1,4 +1,4 @@
-import type { PhysicsWorldKind } from "@babylonslate/core";
+import type { PhysicsWorldKind, ViewportMode } from "@babylonslate/core";
 import {
   parseColliderProperties,
   parseRigidBodyProperties,
@@ -75,6 +75,7 @@ export const ADDABLE_COMPONENT_CLASSES = [
 export function defaultPropertiesFor(
   classId: string,
   physicsWorld: PhysicsWorldKind = "3d",
+  viewportMode: ViewportMode = "3d",
 ): Record<string, unknown> {
   switch (classId) {
     case "MeshComponent":
@@ -96,7 +97,13 @@ export function defaultPropertiesFor(
     case "NavMeshBlockerComponent":
       return { ...defaultNavMeshBlockerComponentProperties() };
     case "CameraComponent":
-      return { fieldOfView: 60, orthographicSize: 5 };
+      return {
+        fieldOfView: 60,
+        orthographicSize: 5,
+        projectionMode: viewportMode === "2d" ? "orthographic" : "perspective",
+        nearClip: 0.1,
+        farClip: 1000,
+      };
     case "LightComponent":
       return {
         intensity: 1,
@@ -104,6 +111,9 @@ export function defaultPropertiesFor(
         lightKind: "point",
         range: 10,
         outerAngle: 45,
+        innerAngle: 30,
+        enabled: true,
+        castShadows: false,
       };
     case "RigidBodyComponent":
       return { ...parseRigidBodyProperties({}) };

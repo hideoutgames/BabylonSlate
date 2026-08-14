@@ -50,4 +50,36 @@ describe("validateBehaviourTree", () => {
     task.children = [extra.id];
     expect(codes(doc)).toContain("bt.task_has_children");
   });
+
+  it("flags a parallel with fewer than two children", () => {
+    const doc = createDefaultBehaviourTree();
+    const sequence = doc.nodes.find((node) => node.id === "sequence")!;
+    sequence.kind = "parallel";
+    sequence.classId = "bt.composite.parallel";
+    expect(codes(doc)).toContain("bt.parallel_too_small");
+  });
+
+  it("flags a missing blackboard key when keys are provided", () => {
+    const doc = createDefaultBehaviourTree();
+    const task = doc.nodes.find((node) => node.kind === "task")!;
+    task.decorators.push({
+      id: "need",
+      classId: "bt.decorator.blackboardIsSet",
+      abortMode: "none",
+      observedKeys: ["alert"],
+      properties: { key: "missing" },
+    });
+    const diags = validateBehaviourTree(doc, {
+      assetGuid: "tree-1",
+      blackboardKeys: ["alert"],
+    });
+    expect(diags.map((row) => row.code)).toContain("bt.missing_blackboard_key");
+  });
+
+  it("skips missing-key checks when no blackboard key list is provided", () => {
+    const doc = createDefaultBehaviourTree();
+    const task = doc.nodes.find((node) => node.kind === "task")!;
+    task.properties = { key: "anything" };
+    expect(codes(doc)).not.toContain("bt.missing_blackboard_key");
+  });
 });

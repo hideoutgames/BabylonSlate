@@ -23,7 +23,7 @@ import {
   type TypeVisual,
 } from "@babylonslate/editor-kit";
 import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
-import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
+import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
 
 export const ASSETS_ROOT = "assets";
 
@@ -620,7 +620,9 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Class") {
-    const payload = createDefaultLogicGraphSerialized() as unknown as Record<
+    const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry, {
+      parentClass,
+    }) as unknown as Record<
       string,
       unknown
     >;

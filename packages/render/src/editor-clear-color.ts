@@ -20,6 +20,13 @@ export function applyEditorClearColor(
   scene.clearColor = editorClearColor(scheme);
 }
 
+/** Opaque Babylon clear from a scene `environmentColor` RGB triple. */
+export function sceneClearColor(
+  rgb: readonly [number, number, number],
+): Color4 {
+  return new Color4(rgb[0], rgb[1], rgb[2], 1);
+}
+
 export function documentEditorColorScheme(): EditorColorScheme {
   if (typeof document === "undefined") return "dark";
   return document.documentElement.classList.contains("dark") ? "dark" : "light";

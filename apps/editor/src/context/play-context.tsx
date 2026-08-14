@@ -60,6 +60,7 @@ export type LiveBtState = {
   btNodeId: string | null;
   lastResults: Record<string, string>;
   blackboard: Record<string, unknown>;
+  stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
 };
 
 interface PlayContextValue {

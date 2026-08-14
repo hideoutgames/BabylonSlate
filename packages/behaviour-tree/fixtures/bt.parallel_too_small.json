@@ -1,0 +1,25 @@
+{
+  "name": "parallel-too-small",
+  "rootId": "root",
+  "blackboardGuid": null,
+  "nodes": [
+    {
+      "id": "root",
+      "kind": "parallel",
+      "classId": "bt.composite.parallel",
+      "children": ["ok"],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    },
+    {
+      "id": "ok",
+      "kind": "task",
+      "classId": "bt.task.succeed",
+      "children": [],
+      "decorators": [],
+      "services": [],
+      "properties": {}
+    }
+  ]
+}

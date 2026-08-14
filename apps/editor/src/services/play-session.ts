@@ -226,6 +226,7 @@ export function startPlaySession(options: {
     btNodeId: string | null;
     lastResults: Record<string, string>;
     blackboard: Record<string, unknown>;
+    stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
   }) => void;
 }): PlaySession {
   const { canvas, sharedEngine } = options;
@@ -246,7 +247,11 @@ export function startPlaySession(options: {
     textureBytes: options.textureBytes,
     modelBytes: options.modelBytes,
     pixelsPerUnit: options.pixelsPerUnit,
+    environmentColor: options.scene?.settings.environmentColor,
   });
+  if (options.scene) {
+    handle.applySceneEnvironment(options.scene);
+  }
   handle.scheduler.invalidate("play");
   liveBefore.meshes = handle.liveObjectCounts().meshes;
 
@@ -289,6 +294,9 @@ export function startPlaySession(options: {
       spawnedActorGuids.push(command.actorGuid);
     }
     if (command.type === "assignMesh") {
+      handle.applyCommand(command);
+    }
+    if (command.type === "possessCamera" || command.type === "setShadowQuality") {
       handle.applyCommand(command);
     }
     if (command.type === "animState") {
@@ -347,6 +355,7 @@ export function startPlaySession(options: {
         btNodeId: command.btNodeId,
         lastResults: command.lastResults,
         blackboard: command.blackboard,
+        stack: command.stack,
       });
     }
     if (command.type === "playSound") {

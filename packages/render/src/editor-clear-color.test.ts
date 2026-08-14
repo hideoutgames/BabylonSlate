@@ -5,6 +5,7 @@ import {
   documentEditorColorScheme,
   editorClearColor,
   EDITOR_CANVAS_COLOR_SCHEME,
+  sceneClearColor,
 } from "./editor-clear-color";
 
 describe("editorClearColor", () => {
@@ -38,5 +39,13 @@ describe("editorClearColor", () => {
 
   it("locks editor canvases to the dark scheme", () => {
     expect(EDITOR_CANVAS_COLOR_SCHEME).toBe("dark");
+  });
+
+  it("builds an opaque Color4 from scene environmentColor", () => {
+    const color = sceneClearColor([0.1, 0.2, 0.3]);
+    expect(color.r).toBeCloseTo(0.1);
+    expect(color.g).toBeCloseTo(0.2);
+    expect(color.b).toBeCloseTo(0.3);
+    expect(color.a).toBe(1);
   });
 });

@@ -146,10 +146,50 @@ describe("createDefaultLogicGraphSerialized", () => {
     const types = graph.nodes.map((n) => n.type);
     expect(types).toContain("flow.event.beginPlay");
     expect(types).toContain("flow.event.tick");
+    expect(graph.nodes.map((node) => node.id)).toEqual([
+      "event-begin-play",
+      "event-tick",
+    ]);
     for (const node of graph.nodes) {
       expect(Array.isArray(node.data.__pins)).toBe(true);
       expect((node.data.__pins as unknown[]).length).toBeGreaterThan(0);
     }
+  });
+
+  it("seeds On Evaluate for a BTDecorator class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "BTDecorator",
+    });
+    expect(graph.nodes.map((node) => node.type)).toEqual(["bt.event.evaluate"]);
+    expect(graph.nodes.some((node) => node.type === "flow.event.beginPlay")).toBe(
+      false,
+    );
+  });
+
+  it("seeds Activate, Tick, and Abort for a BTTask class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "BTTask",
+    });
+    expect(graph.nodes.map((node) => node.type)).toEqual([
+      "bt.event.activate",
+      "bt.event.tick",
+      "bt.event.abort",
+    ]);
+  });
+
+  it("seeds editor lifecycle events for an EditorUtilityObject class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "EditorUtilityObject",
+    });
+    expect(graph.nodes.map((node) => node.type)).toEqual([
+      "flow.event.editorStartup",
+      "flow.event.sceneOpen",
+      "flow.event.sceneSaved",
+      "flow.event.editorShutdown",
+    ]);
+    expect(graph.nodes.some((node) => node.type === "flow.event.beginPlay")).toBe(
+      false,
+    );
   });
 });
 
@@ -186,5 +226,57 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.function.output")).toBe(false);
     expect(nodes.some((node) => node.id === "functions.call")).toBe(true);
     expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
+  });
+
+  it("hides behaviour-tree events on Actor class graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    expect(nodes.some((node) => node.id === "bt.event.evaluate")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.finish")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+  });
+
+  it("shows On Evaluate and hides Begin Play on BTDecorator class graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "BTDecorator" });
+    expect(nodes.some((node) => node.id === "bt.event.evaluate")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.blackboard.set")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.finish")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.event.activate")).toBe(false);
+  });
+
+  it("shows Finish Execute on BTTask class graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "BTTask" });
+    expect(nodes.some((node) => node.id === "bt.finish")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.event.activate")).toBe(true);
+    expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+  });
+
+  it("shows editor lifecycle events and hides Begin Play on EditorUtilityObject graphs", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "EditorUtilityObject",
+    });
+    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+      true,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.sceneOpen")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.event.activate")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.finish")).toBe(false);
+  });
+
+  it("hides editor lifecycle events on Actor class graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.editorShutdown")).toBe(
+      false,
+    );
   });
 });

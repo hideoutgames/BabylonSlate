@@ -131,10 +131,22 @@ describe("Play createEngine view", () => {
     expect(resize).toHaveBeenCalled();
   });
 
-  it("syncEditorPlayState only pauses while Play is open", () => {
-    const { handle } = editorHandle(sharedEngine());
-    handle.scheduler.invalidate("manual");
-    syncEditorPlayState(handle, true);
-    expect(handle.scheduler.shouldRender()).toBe(false);
+  it("keeps Play autoClear on after Intermediate so frames do not accumulate", () => {
+    const { handle } = playHandle(sharedEngine());
+    expect(handle.scene.autoClear).toBe(true);
+  });
+
+  it("uses authored environmentColor as the Play clear color", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      environmentColor: [0.2, 0.4, 0.6],
+    });
+    handles.push(handle);
+    expect(handle.scene.clearColor.r).toBeCloseTo(0.2);
+    expect(handle.scene.clearColor.g).toBeCloseTo(0.4);
+    expect(handle.scene.clearColor.b).toBeCloseTo(0.6);
+    expect(handle.scene.clearColor.a).toBe(1);
   });
 });
