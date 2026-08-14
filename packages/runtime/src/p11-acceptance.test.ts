@@ -265,40 +265,51 @@ describe("P11 §18 acceptance", () => {
   });
 
   it("reacts to a dynamic obstacle closing the straight route", async () => {
+    const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
       seedDemoActors: false,
-      playScene: agentScene("3d", [
-        createActor("door", "Door", {
-          transform: {
-            position: [0, 1, 0],
-            rotation: [0, 0, 0, 1],
-            scale: [2, 2, 8],
-          },
-          components: [
-            {
-              id: "block",
-              classId: "NavMeshBlockerComponent",
-              properties: {
-                dynamic: true,
-                kind: "box",
-                area: "unwalkable",
-              },
-            },
-          ],
-        }),
-      ]),
+      playScene: agentScene("3d"),
       behaviourTrees: { "tree-1": patrolTree() },
+      onCommand: (command) => commands.push(command),
     });
     await runtime.loadNavMesh(tileBytes);
     runtime.start();
     runtime.realizePlayWorld();
-    const path = runtime.findNavPath({ x: -4, y: 0, z: -4 }, { x: 4, y: 0, z: 4 });
-    expect(path.length).toBeGreaterThan(1);
+    const open = runtime.findNavPath(
+      { x: -4, y: 0, z: 0 },
+      { x: 4, y: 0, z: 0 },
+    );
+    expect(open.length).toBeGreaterThan(1);
+    expect(Math.max(...open.map((point) => Math.abs(point.z)))).toBeLessThan(1);
+
+    for (let i = 0; i < 12; i += 1) runtime.tick();
+    expect(commands.filter((command) => command.type === "btState").at(-1)).toMatchObject({
+      type: "btState",
+      btNodeId: "move",
+    });
+
+    runtime.addNavObstacle("box", { x: 0, y: 1, z: 0 }, { x: 2, y: 2, z: 8 });
+    const closed = runtime.findNavPath(
+      { x: -4, y: 0, z: 0 },
+      { x: 4, y: 0, z: 0 },
+    );
+    expect(closed.length).toBeGreaterThan(open.length);
+    expect(Math.max(...closed.map((point) => Math.abs(point.z)))).toBeGreaterThan(1.5);
+
+    const samples: Array<{ x: number; z: number }> = [];
+    for (let i = 0; i < 160; i += 1) {
+      runtime.tick();
+      const buf = new Float32Array(snapshotFloatCount(8));
+      runtime.copySnapshot(buf);
+      const slot = readActorSlot(buf, 0);
+      samples.push({ x: slot.position.x, z: slot.position.z });
+    }
     expect(
-      path.some((point) => Math.abs(point.x) < 1 && Math.abs(point.z) < 1),
+      samples.some((point) => Math.abs(point.x) < 1 && Math.abs(point.z) < 1),
     ).toBe(false);
+    expect(agentX(runtime)).toBeGreaterThan(-3);
     runtime.stop();
   });
 

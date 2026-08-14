@@ -2,7 +2,7 @@
 
 Shared surface for the tree IR, Blackboard, and deterministic evaluator (engineplan §14.1, checklist `p11-behaviour-tree`). Implementation: `@babylonslate/behaviour-tree`. No React, no Babylon — the evaluator runs in the game worker.
 
-Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. `BehaviourTreeComponent` and `NavAgentComponent` are addable. Runtime `BTTask_MoveTo` drives the crowd when a navmesh and `NavAgentComponent` are present; the package evaluator still succeeds immediately when no task host is provided. §18 acceptance: `packages/runtime/src/p11-acceptance.test.ts` plus `e2e/p11-ai.spec.ts`.
+Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. `BehaviourTreeComponent` and `NavAgentComponent` are addable. Runtime `BTTask_MoveTo` drives the crowd when a navmesh and `NavAgentComponent` are present; the package evaluator still succeeds immediately when no task host is provided. **P11 is Done.** §18: `packages/runtime/src/p11-acceptance.test.ts` plus `e2e/p11-ai.spec.ts`.
 
 ## Package
 
@@ -62,7 +62,7 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 
 ## Authoring (`p11-bt-authoring`)
 
-- Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (crowd when the runtime host is attached), RotateToFace, PlayAnimation, PlaySound, SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue.
+- Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (crowd when the runtime host is attached), SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue. RotateToFace, PlayAnimation, and PlaySound are catalogued and **succeed** without a host (no facing / clip / mixer).
 - `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`) and `tickBehaviourTrees()` emits `btState`.
 - Missing `treeGuid` / unloaded tree emits `bt.missing_tree`.
 - Custom `classId` values run compiled `On Activate` / `On Tick` graphs (`bt.event.*`) and finish via `bt.finish`.
@@ -76,11 +76,10 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 - Play: running branch + last result overlay and blackboard watch from `btState`. Session report `btNodeId` opens the tree and focuses the node.
 - P8: `TraceFrame.bt` records stack, blackboard, lastResults, and nodeMemory. `restoreBtFromTrace` reapplies that state.
 
-## Later slices (do not start here)
+## Honest residuals
 
-| Slice | Work |
-| --- | --- |
-| P11 §18 acceptance | Same tree patrols 2D and 3D baked navmesh; blackboard abort; dynamic obstacle; session-report `btNodeId`; `.babtrace` replay |
-| Undo | already via `applyAssetDocumentChange` |
+- RotateToFace / PlayAnimation / PlaySound succeed without a host.
+- §18 patrol, live obstacle close, abort, compiled throw, and `.babtrace` BT replay are the headless harness. Editor e2e covers New Asset, bake, and session-report `btNodeId` (Playwright Preview throw is test-mode `previewThrow` when a tree is attached).
+- Undo is already via `applyAssetDocumentChange`.
 
 See [navigation.md](navigation.md) for navmesh / MoveTo. Spec: [engineplan.md](../engineplan.md) §14.1.
