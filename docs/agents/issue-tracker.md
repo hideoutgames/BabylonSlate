@@ -286,7 +286,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 
-Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh.
+Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh, **UserInterface designer Dockview host + editing-stage Babylon GUI** (`ui-designer-dockview` — EditorUtilityInterface authoring reuses `UiDesigner`).
 
 ### P9 follow-ups / open deferrals
 
@@ -300,6 +300,7 @@ Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateF
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
+| UserInterface designer on Dockview; editing-stage GUI present | Designer is `AssetDocumentWorkspace` / `UiDesigner`, not Windows. Live EditorUtilityInterface **tabs** are P12 Dockview + `createUiSurface`. Authoring reuses this designer | Parked (`ui-designer-dockview`; not P12) |
 
 ## P10 tilemaps
 
@@ -363,8 +364,10 @@ Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities), §18
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| EditorUtilityObject + Interface | `p12-editor-extensions` | `object-model`, `apps/editor`, export strip | P11 done |
+| EditorUtilityObject + Interface | `p12-editor-extensions` | `object-model`, `apps/editor`, `render` (Dockview Babylon GUI host via `createUiSurface`), export strip | P11 done |
 | Lighting / cameras | `p-lighting-camera` | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5; serialize if another agent holds those packages |
+
+**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that must present Babylon GUI (ADT copy, never `registerView`). Content Browser opens EditorUtilityInterface **authoring** on the existing UserInterface designer (`UiDesigner`). Do **not** convert that designer to Dockview or treat editing-stage GUI bugs as P12 — parked `ui-designer-dockview`.
 
 
 

@@ -6,6 +6,8 @@ Main-thread Babylon view owned by `@babylonslate/render` (engineplan §2.1, §2.
 
 One `Engine` for the editor process. Editor viewport and Play each own a `Scene`. Play binds its overlay canvas with `registerView(canvas, undefined, true)` / `unRegisterView` — never a second `Engine` (WebGL context caps). The UserInterface designer uses the same shared Engine: `createUiSurface` builds a dedicated Scene + standalone `CreateFullscreenUI` (`@babylonjs/gui` is a `@babylonslate/render` dependency only) and **copies the ADT Canvas2D** onto the document canvas (`presentAdtToCanvas` throws if the 2D context or backing store is missing). It does not `registerView` that canvas — extra views blit the last 3D framebuffer (editor / Play) onto the tab. Play HUD is a foreground ADT Layer on the Play scene (`attachFullscreenGui`). Dispose the designer Scene + ADTs when the document tab closes so Play’s texture-cache invariant still holds.
 
+**Dockview GUI host (P12):** EditorUtilityInterface **live** tabs are Dockview panels, not the designer. They need the same ADT-copy path inside a Dockview tab (resize with the panel, freeze when the tab is hidden, dispose on close). Do not `registerView` a utility canvas. Converting the UserInterface **designer** onto Dockview and fixing editing-stage present is parked as `ui-designer-dockview` ([engineplan.md](../engineplan.md)); EditorUtilityInterface **authoring** reuses that designer until then.
+
 ## Game UI apply (Babylon-native)
 
 UserInterface documents store Babylon GUI fields (alignment, px/%, left/top, layout padding, transform center). `packages/render` copies those fields onto nested controls — there is no RectTransform solver and no letterbox math in the Play path.
