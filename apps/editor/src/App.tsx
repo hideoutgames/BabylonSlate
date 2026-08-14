@@ -15,7 +15,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
-import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@babylonslate/ui/components/alert";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { ComponentGallery } from "./components/component-gallery";
@@ -27,6 +31,10 @@ import { EditorThemeProvider } from "./context/theme-context";
 import { PlayProvider, usePlay } from "./context/play-context";
 import { ProjectSearchProvider } from "./context/project-search-context";
 import { ValidationProvider } from "./context/validation-context";
+import {
+  shouldPromptBeforeUnload,
+  tabCloseDecision,
+} from "./lib/dirty-document-prompts";
 
 function DirtyCloseDialog({
   dirtyNames,
@@ -61,7 +69,9 @@ function DirtyCloseDialog({
           ))}
         </ul>
         <AlertDialogFooter>
-          <AlertDialogCancel data-testid="dirty-cancel">Cancel</AlertDialogCancel>
+          <AlertDialogCancel data-testid="dirty-cancel">
+            Cancel
+          </AlertDialogCancel>
           <Button
             variant="secondary"
             data-testid="dirty-discard"
@@ -110,7 +120,9 @@ function MigrationPrompt({
           ))}
         </ul>
         <AlertDialogFooter>
-          <AlertDialogCancel data-testid="migrate-cancel">Cancel</AlertDialogCancel>
+          <AlertDialogCancel data-testid="migrate-cancel">
+            Cancel
+          </AlertDialogCancel>
           <AlertDialogAction data-testid="migrate-approve" onClick={onApprove}>
             Migrate on save
           </AlertDialogAction>
@@ -130,11 +142,12 @@ function RecoveryBanner() {
     >
       <AlertTitle>Recovery journal found</AlertTitle>
       <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-        <span>
-          Replay unsaved graph edits, or discard the journal.
-        </span>
+        <span>Replay unsaved graph edits, or discard the journal.</span>
         <div className="flex gap-2">
-          <Button data-testid="recover-journal" onClick={() => void keepRecovery()}>
+          <Button
+            data-testid="recover-journal"
+            onClick={() => void keepRecovery()}
+          >
             Recover edits
           </Button>
           <Button
@@ -161,6 +174,8 @@ function EditorLayout() {
     confirmExclusiveSceneOpen,
     cancelExclusiveSceneOpen,
     approveMigrationsAndSave,
+    closeDocument,
+    openDocuments,
   } = useDocuments();
   const {
     playAwaitingMigration,
@@ -169,10 +184,24 @@ function EditorLayout() {
   } = usePlay();
   const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
   const [showMigrate, setShowMigrate] = useState(false);
+  const [pendingTabClose, setPendingTabClose] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
     if (playAwaitingMigration) setShowMigrate(true);
   }, [playAwaitingMigration]);
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!shouldPromptBeforeUnload(dirtyDocuments.length)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirtyDocuments.length]);
 
   const requestClose = async () => {
     const result = await closeProject();
@@ -186,7 +215,19 @@ function EditorLayout() {
         .filter((doc) => doc.ref.kind === "scene")
         .map((doc) => doc.ref.label)
     : [];
-  const promptNames = dirtyPrompt ?? exclusiveDirtyNames;
+  const promptNames = pendingTabClose
+    ? [pendingTabClose.name]
+    : (dirtyPrompt ?? exclusiveDirtyNames);
+
+  const requestCloseDocument = (id: string) => {
+    const doc = openDocuments.find((entry) => entry.id === id);
+    if (!doc) return;
+    if (tabCloseDecision(doc.dirty) === "prompt") {
+      setPendingTabClose({ id: doc.id, name: doc.ref.label });
+      return;
+    }
+    closeDocument(id);
+  };
 
   const requestSave = async () => {
     if (migrationPending.length > 0) {
@@ -201,6 +242,7 @@ function EditorLayout() {
       <EditorChromeBar
         onCloseProject={() => void requestClose()}
         onSaveProject={() => void requestSave()}
+        onCloseDocument={requestCloseDocument}
       />
       <RecoveryBanner />
       <main className="flex min-h-0 flex-1 flex-col">
@@ -208,12 +250,22 @@ function EditorLayout() {
       </main>
       <DirtyCloseDialog
         dirtyNames={promptNames}
-        open={dirtyPrompt !== null || pendingExclusiveScene !== null}
+        open={
+          dirtyPrompt !== null ||
+          pendingExclusiveScene !== null ||
+          pendingTabClose !== null
+        }
         onCancel={() => {
           setDirtyPrompt(null);
+          setPendingTabClose(null);
           cancelExclusiveSceneOpen();
         }}
         onDiscard={() => {
+          if (pendingTabClose) {
+            closeDocument(pendingTabClose.id);
+            setPendingTabClose(null);
+            return;
+          }
           if (pendingExclusiveScene) {
             void confirmExclusiveSceneOpen("discard");
             return;
@@ -222,6 +274,20 @@ function EditorLayout() {
           void forceCloseProject();
         }}
         onSave={() => {
+          if (pendingTabClose) {
+            const id = pendingTabClose.id;
+            void (async () => {
+              if (migrationPending.length > 0) {
+                setShowMigrate(true);
+                return;
+              }
+              const saved = await saveAll();
+              if (!saved) return;
+              setPendingTabClose(null);
+              closeDocument(id);
+            })();
+            return;
+          }
           if (pendingExclusiveScene) {
             void confirmExclusiveSceneOpen("save");
             return;
