@@ -142,6 +142,9 @@ export interface ScriptContext {
   removeUserInterface(instanceId: string): void;
   changeScene(scene: string): void;
   setRenderResolution(width: number, height: number): void;
+  btFinish(result: "success" | "failure"): void;
+  getBlackboard(key: string): unknown;
+  setBlackboard(key: string, value: unknown): void;
 }
 
 export type CompiledScript = ScriptBundleEntry;
@@ -222,6 +225,22 @@ export class ScriptHost {
     this.dispatchEvent(loaded, event, self, 0, 0);
   }
 
+  hasClass(classId: string): boolean {
+    return (this.byClassId.get(classId)?.length ?? 0) > 0;
+  }
+
+  invokeBtEvent(
+    classId: string,
+    event: string,
+    self: Actor | null,
+    deltaSeconds: number,
+    extras: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
+  ): void {
+    const loaded = this.byClassId.get(classId);
+    if (!loaded || loaded.length === 0) return;
+    this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, undefined, extras);
+  }
+
   /**
    * Register compiled custom events as interface handlers on `actor`.
    * Keys match `interfaceHandlerKey` (`guid:method`).
@@ -253,6 +272,7 @@ export class ScriptHost {
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
+    extras?: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
   ): void {
     for (const entry of loaded) {
       for (const point of entry.script.entryPoints) {
@@ -267,6 +287,7 @@ export class ScriptHost {
           tickIndex,
           commandArgs,
           tick,
+          extras,
         );
         try {
           const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
@@ -305,6 +326,7 @@ export class ScriptHost {
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
+    extras?: Pick<ScriptContext, "btFinish" | "getBlackboard" | "setBlackboard">,
   ): ScriptContext {
     const services = this.services;
     return {
@@ -413,6 +435,9 @@ export class ScriptHost {
       setRenderResolution: (width, height) => {
         services.setRenderResolution?.(Number(width), Number(height));
       },
+      btFinish: extras?.btFinish ?? (() => undefined),
+      getBlackboard: extras?.getBlackboard ?? (() => undefined),
+      setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
   }
 }

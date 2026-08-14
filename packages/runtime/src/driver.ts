@@ -54,6 +54,14 @@ import {
   type AnimGraphDocument,
   type AnimGraphInputs,
 } from "@babylonslate/anim-graph";
+import {
+  evaluateBehaviourTree,
+  type BehaviourTreeDocument,
+  type BlackboardDocument,
+  type BlackboardValues,
+  type BtEvalState,
+  type BtResult,
+} from "@babylonslate/behaviour-tree";
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { PhysicsWorldSync } from "./physics-sync";
 import type { TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -88,6 +96,9 @@ export interface RuntimeDriverOptions {
   includeDebugCommands?: boolean;
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
   animGraphs?: Readonly<Record<string, AnimGraphDocument>>;
+  /** BehaviourTree documents keyed by asset guid (worker `loadBehaviourTrees`). */
+  behaviourTrees?: Readonly<Record<string, BehaviourTreeDocument>>;
+  blackboards?: Readonly<Record<string, BlackboardDocument>>;
   tilemaps?: Readonly<Record<string, TilemapPayload>>;
   tilesets?: Readonly<Record<string, TilesetPayload>>;
   pixelsPerUnit?: number;
@@ -137,6 +148,8 @@ export interface RuntimeDriver {
   listConsoleCommands(): readonly RegisteredCommand[];
   stopTrace(): TracePayload | null;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
+  registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;
+  registerBlackboard(guid: string, document: BlackboardDocument): void;
   registerTileContent(options: {
     tilemaps: Readonly<Record<string, TilemapPayload>> | ReadonlyMap<string, TilemapPayload>;
     tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
@@ -203,6 +216,10 @@ class InProcessRuntime implements RuntimeDriver {
   private tickPrints: Array<{ message: string; key: string }> = [];
   private readonly animGraphs = new Map<string, AnimGraphDocument>();
   private readonly animEvalBySlot = new Map<number, AnimEvalState>();
+  private readonly behaviourTrees = new Map<string, BehaviourTreeDocument>();
+  private readonly blackboards = new Map<string, BlackboardDocument>();
+  private readonly btEvalBySlot = new Map<number, BtEvalState>();
+  private readonly btMissingWarned = new Set<string>();
   private uiInstanceSeq = 0;
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
@@ -248,6 +265,16 @@ class InProcessRuntime implements RuntimeDriver {
     if (options.animGraphs) {
       for (const [guid, document] of Object.entries(options.animGraphs)) {
         this.animGraphs.set(guid, document);
+      }
+    }
+    if (options.behaviourTrees) {
+      for (const [guid, document] of Object.entries(options.behaviourTrees)) {
+        this.behaviourTrees.set(guid, document);
+      }
+    }
+    if (options.blackboards) {
+      for (const [guid, document] of Object.entries(options.blackboards)) {
+        this.blackboards.set(guid, document);
       }
     }
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
@@ -602,6 +629,14 @@ class InProcessRuntime implements RuntimeDriver {
     this.animGraphs.set(guid, document);
   }
 
+  registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void {
+    this.behaviourTrees.set(guid, document);
+  }
+
+  registerBlackboard(guid: string, document: BlackboardDocument): void {
+    this.blackboards.set(guid, document);
+  }
+
   registerTileContent(options: {
     tilemaps: Readonly<Record<string, TilemapPayload>> | ReadonlyMap<string, TilemapPayload>;
     tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
@@ -678,6 +713,143 @@ class InProcessRuntime implements RuntimeDriver {
         blendWeights: next.blendWeights,
         clipName: clip?.clipName,
         clipKind: clip?.kind,
+      });
+    }
+  }
+
+  private stringGuid(value: unknown): string | null {
+    return typeof value === "string" && value.length > 0 ? value : null;
+  }
+
+  private behaviourTreeGuid(component: {
+    assetGuid: string | null;
+    getVariable(name: string): unknown;
+  }): string | null {
+    return this.stringGuid(component.getVariable("treeGuid")) ?? component.assetGuid;
+  }
+
+  private blackboardDefaults(guid: string | null): BlackboardValues {
+    if (!guid) return {};
+    const document = this.blackboards.get(guid);
+    if (!document) return {};
+    const values: BlackboardValues = {};
+    for (const key of document.keys) {
+      if (key.defaultValue !== undefined) values[key.name] = key.defaultValue;
+    }
+    return values;
+  }
+
+  private tickBtTask(
+    actor: Actor,
+    node: { id: string; classId: string },
+    blackboard: BlackboardValues,
+    dtSeconds: number,
+    memory: Record<string, unknown>,
+  ): BtResult {
+    if (!this.scriptHost.hasClass(node.classId)) return "failure";
+    const extras = {
+      btFinish: (result: "success" | "failure") => {
+        memory.__btResult = result;
+      },
+      getBlackboard: (key: string) => blackboard[key],
+      setBlackboard: (key: string, value: unknown) => {
+        blackboard[key] = value;
+      },
+    };
+    if (memory.__activated !== true) {
+      memory.__activated = true;
+      this.scriptHost.invokeBtEvent(
+        node.classId,
+        "onActivate",
+        actor,
+        dtSeconds,
+        extras,
+      );
+    }
+    this.scriptHost.invokeBtEvent(node.classId, "onBtTick", actor, dtSeconds, extras);
+    const result = memory.__btResult;
+    if (result === "success" || result === "failure") return result;
+    return "running";
+  }
+
+  private emitBtMissing(actorGuid: string, message: string): void {
+    if (this.btMissingWarned.has(actorGuid)) return;
+    this.btMissingWarned.add(actorGuid);
+    const diag: RuntimeDiagnostic = {
+      code: "bt.missing_tree",
+      message,
+      severity: "error",
+      frameId: this.frameId,
+      tickIndex: this.world.clock.tickIndex,
+    };
+    this.diagnostics.push(diag);
+    this.emit({
+      type: "diagnostic",
+      code: diag.code,
+      message: diag.message,
+      frameId: this.frameId,
+      severity: "error",
+    });
+  }
+
+  private tickBehaviourTrees(): void {
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (slotId === undefined) continue;
+      const component = actor.components.find(
+        (entry) =>
+          entry.classId === "BehaviourTreeComponent" && !entry.destroyed,
+      );
+      if (!component) continue;
+      const guid = this.behaviourTreeGuid(component);
+      if (!guid) {
+        this.emitBtMissing(actor.guid, "BehaviourTreeComponent has no treeGuid");
+        continue;
+      }
+      const document = this.behaviourTrees.get(guid);
+      if (!document) {
+        this.emitBtMissing(actor.guid, `Behaviour tree not loaded: ${guid}`);
+        continue;
+      }
+      const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid"));
+      const previous = this.btEvalBySlot.get(slotId) ?? null;
+      const blackboard: BlackboardValues = previous
+        ? { ...previous.blackboard }
+        : this.blackboardDefaults(blackboardGuid);
+      const next = evaluateBehaviourTree(document, previous, this.dt, {
+        seed: this.seed,
+        blackboard,
+        host: {
+          tick: (node, board, dtSeconds, memory) =>
+            this.tickBtTask(actor, node, board, dtSeconds, memory),
+        },
+        serviceHost: {
+          tick: (service, _node, board, dtSeconds, _memory) => {
+            this.scriptHost.invokeBtEvent(
+              service.classId,
+              "onBtTick",
+              actor,
+              dtSeconds,
+              {
+                btFinish: () => undefined,
+                getBlackboard: (key) => board[key],
+                setBlackboard: (key, value) => {
+                  board[key] = value;
+                },
+              },
+            );
+          },
+        },
+      });
+      this.btEvalBySlot.set(slotId, next);
+      this.emit({
+        type: "btState",
+        slotId,
+        status: next.status,
+        btNodeId: next.btNodeId,
+        lastResults: next.lastResults,
+        blackboard: next.blackboard,
       });
     }
   }
@@ -986,6 +1158,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.world.tick();
     this.advanceDelays();
     this.tickAnimGraphs();
+    this.tickBehaviourTrees();
     this.closePhaseTiming();
 
     this._lastScriptMs = this.phaseScriptMs;

@@ -95,6 +95,9 @@ importers:
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../../packages/assets
+      '@babylonslate/behaviour-tree':
+        specifier: workspace:*
+        version: link:../../packages/behaviour-tree
       '@babylonslate/bridge':
         specifier: workspace:*
         version: link:../../packages/bridge
@@ -116,6 +119,9 @@ importers:
       '@babylonslate/input':
         specifier: workspace:*
         version: link:../../packages/input
+      '@babylonslate/object-model':
+        specifier: workspace:*
+        version: link:../../packages/object-model
       '@babylonslate/physics':
         specifier: workspace:*
         version: link:../../packages/physics
@@ -444,6 +450,9 @@ importers:
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../assets
+      '@babylonslate/behaviour-tree':
+        specifier: workspace:*
+        version: link:../behaviour-tree
       '@babylonslate/bridge':
         specifier: workspace:*
         version: link:../bridge

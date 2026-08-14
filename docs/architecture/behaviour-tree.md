@@ -2,7 +2,7 @@
 
 Shared surface for the tree IR, Blackboard, and deterministic evaluator (engineplan §14.1, checklist `p11-behaviour-tree`). Implementation: `@babylonslate/behaviour-tree`. No React, no Babylon — the evaluator runs in the game worker.
 
-Authoring (`p11-bt-editor`), `BTTask` class graphs (`p11-bt-authoring`), and `BehaviourTreeComponent` Play tick stay later slices. `BehaviourTreeComponent` / `NavAgentComponent` remain catalog-gated.
+Authoring (`p11-bt-editor`) and nav bake UI stay later slices. `BehaviourTreeComponent` is addable; `NavAgentComponent` remains catalog-gated.
 
 ## Package
 
@@ -23,7 +23,7 @@ Parent–child edges, not exec wires. Sibling order is `children[]` (`sortIndex`
 | `selector` | First child that succeeds |
 | `sequence` | All children in order |
 | `parallel` | Tick every child each step; fail if any fail, succeed if all succeed, otherwise running |
-| `task` | Leaf. Built-in `classId` values (`bt.task.wait`, `bt.task.succeed`, `bt.task.fail`, `bt.task.setBlackboard`) or a later `BTTask` subclass |
+| `task` | Leaf. Built-in `classId` values (`bt.task.wait`, `BTTask_Wait`, `BTTask_MoveTo` stub, …) or a user `BTTask` subclass |
 
 Abort modes on a decorator: `none` | `self` | `lowerPriority` | `both` (engineplan §14.1). Observer keys are blackboard names.
 
@@ -60,12 +60,18 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 
 `registerBehaviourTreeValidationRules()` installs a `bt.structural` rule on the scripting hook. `validateGraphs([], { assetGuid, behaviourTree })` runs the same codes so Compiler Results stay one list. `TypeContext.behaviourTree` is an optional unknown payload (parsed in this package).
 
+## Authoring (`p11-bt-authoring`)
+
+- Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (succeeds without nav), RotateToFace, PlayAnimation, PlaySound, SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue.
+- `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`) and `tickBehaviourTrees()` emits `btState`.
+- Missing `treeGuid` / unloaded tree emits `bt.missing_tree`.
+- Custom `classId` values run compiled `On Activate` / `On Tick` graphs (`bt.event.*`) and finish via `bt.finish`.
+
 ## Later slices (do not start here)
 
 | Slice | Work |
 | --- | --- |
-| `p11-bt-authoring` | `BTTask` / `BTDecorator` / `BTService` / `BTComposite` base classes; ungate `BehaviourTreeComponent`; worker `tickBehaviourTrees()` (mirror `tickAnimGraphs`); built-in Wait / MoveTo (stub until nav) / blackboard conditions as classes |
-| `p11-bt-editor` | `AssetDocumentWorkspace` host (not Dockview); parent–child `GraphEditor` nodeTypes; `d3-hierarchy` layout; Play overlay; session-report `btNodeId` navigation |
+| `p11-bt-editor` | `AssetDocumentWorkspace` host (not Dockview); parent–child `GraphEditor` nodeTypes; `d3-hierarchy` layout; Play overlay; session-report `btNodeId` navigation; New Asset BehaviourTree / Blackboard |
 | Undo | `SetAssetDocumentCommand` via `applyAssetDocumentChange` |
 
 See [navigation.md](navigation.md) for navmesh / MoveTo. Spec: [engineplan.md](../engineplan.md) §14.1.

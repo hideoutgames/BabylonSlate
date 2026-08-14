@@ -30,6 +30,12 @@ export const ADDABLE_COMPONENT_CLASSES = [
     category: "Animation",
   },
   {
+    id: "BehaviourTreeComponent",
+    label: "Behaviour Tree",
+    description: "Worker-evaluated behaviour tree",
+    category: "AI",
+  },
+  {
     id: "LightComponent",
     label: "Light",
     description: "Scene light",
@@ -70,6 +76,8 @@ export function defaultPropertiesFor(
       return { uiAssetGuid: null, viewportLayer: false };
     case "AnimationGraphComponent":
       return { graphGuid: null };
+    case "BehaviourTreeComponent":
+      return { treeGuid: null, blackboardGuid: null };
     case "CameraComponent":
       return { fieldOfView: 60, orthographicSize: 5 };
     case "LightComponent":

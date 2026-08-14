@@ -622,6 +622,13 @@ describe("content-browser-helpers", () => {
     expect(ENGINE_BASE_CLASSES).toContain("BDebugCommand");
   });
 
+  it("offers behaviour-tree bases as Class parents", () => {
+    expect(ENGINE_BASE_CLASSES).toContain("BTTask");
+    expect(ENGINE_BASE_CLASSES).toContain("BTDecorator");
+    expect(ENGINE_BASE_CLASSES).toContain("BTService");
+    expect(ENGINE_BASE_CLASSES).toContain("BTComposite");
+  });
+
   it("seeds P9 document assets with typed suffixes", () => {
     expect(newAssetFileName("UserInterface", "HUD")).toBe("HUD.ui.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");

@@ -230,6 +230,36 @@ describe("evaluateBehaviourTree", () => {
     expect(evaluateBehaviourTree(doc, null, 1 / 60).status).toBe("failure");
   });
 
+  it("succeeds a MoveTo stub without a navmesh", () => {
+    const leaf = node("move", "task", "BTTask_MoveTo");
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["move"]), leaf],
+      "root",
+    );
+    expect(evaluateBehaviourTree(doc, null, 1 / 60).status).toBe("success");
+  });
+
+  it("compares a blackboard value on a decorator", () => {
+    const leaf = node("leaf", "task", "bt.task.succeed");
+    leaf.decorators.push({
+      id: "need",
+      classId: "BTDecorator_CompareBlackboardValue",
+      abortMode: "none",
+      observedKeys: ["hp"],
+      properties: { key: "hp", op: "gte", value: 10 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["leaf"]), leaf],
+      "root",
+    );
+    expect(
+      evaluateBehaviourTree(doc, null, 1 / 60, { blackboard: { hp: 4 } }).status,
+    ).toBe("failure");
+    expect(
+      evaluateBehaviourTree(doc, null, 1 / 60, { blackboard: { hp: 10 } }).status,
+    ).toBe("success");
+  });
+
   it("succeeds a zero-duration wait on the first tick", () => {
     const wait = node("wait", "task", "bt.task.wait");
     wait.properties = { durationMs: 0 };

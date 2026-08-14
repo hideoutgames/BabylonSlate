@@ -56,6 +56,8 @@ export interface PlayOverlayProps {
   uiLibrary?: Record<string, UserInterfaceDocument>;
   fontEntries?: readonly FontAssetEntry[];
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
+  behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
+  blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
@@ -91,6 +93,8 @@ export function PlayOverlay({
   uiLibrary = {},
   fontEntries = [],
   animGraphs,
+  behaviourTrees,
+  blackboards,
   spritePayloads,
   tilemapPayloads,
   tilesetPayloads,
@@ -131,6 +135,10 @@ export function PlayOverlay({
   scriptsRef.current = scripts;
   const animGraphsRef = useRef(animGraphs);
   animGraphsRef.current = animGraphs;
+  const behaviourTreesRef = useRef(behaviourTrees);
+  behaviourTreesRef.current = behaviourTrees;
+  const blackboardsRef = useRef(blackboards);
+  blackboardsRef.current = blackboards;
   const spritePayloadsRef = useRef(spritePayloads);
   spritePayloadsRef.current = spritePayloads;
   const tilemapPayloadsRef = useRef(tilemapPayloads);
@@ -201,6 +209,8 @@ export function PlayOverlay({
       scenes: sceneRef.current.scenes,
       frameCap: initialFrameCapRef.current,
       animGraphs: animGraphsRef.current,
+      behaviourTrees: behaviourTreesRef.current,
+      blackboards: blackboardsRef.current,
       spritePayloads: spritePayloadsRef.current,
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,

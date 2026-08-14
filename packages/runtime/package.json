@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@babylonslate/anim-graph": "workspace:*",
+    "@babylonslate/behaviour-tree": "workspace:*",
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",

@@ -8,6 +8,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "font",
   "sprite",
   "anim-graph",
+  "behaviour-tree",
+  "blackboard",
   "shader",
   "tileset",
   "tilemap",
@@ -57,6 +59,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Sprite";
     case "anim-graph":
       return "AnimationGraph";
+    case "behaviour-tree":
+      return "BehaviourTree";
+    case "blackboard":
+      return "Blackboard";
     case "shader":
       return "Shader";
     case "tileset":
@@ -89,6 +95,10 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "sprite";
     case "AnimationGraph":
       return "anim-graph";
+    case "BehaviourTree":
+      return "behaviour-tree";
+    case "Blackboard":
+      return "blackboard";
     case "Shader":
       return "shader";
     case "Tileset":
@@ -130,6 +140,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Sprite";
     case "anim-graph":
       return "Anim Graph";
+    case "behaviour-tree":
+      return "Behaviour Tree";
+    case "blackboard":
+      return "Blackboard";
     case "shader":
       return "Shader";
     case "tileset":

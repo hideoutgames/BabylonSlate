@@ -68,6 +68,11 @@ export type ControlMessage =
       graphs: Array<{ guid: string; document: unknown }>;
     }
   | {
+      type: "loadBehaviourTrees";
+      trees: Array<{ guid: string; document: unknown }>;
+      blackboards?: Array<{ guid: string; document: unknown }>;
+    }
+  | {
       type: "loadTilemaps";
       tilemaps: Array<{ guid: string; document: unknown }>;
       tilesets: Array<{ guid: string; document: unknown }>;
@@ -165,6 +170,14 @@ export type CommandMessage =
       blendWeights: Record<string, number>;
       clipName?: string;
       clipKind?: "animation" | "sprite";
+    }
+  | {
+      type: "btState";
+      slotId: number;
+      status: "success" | "failure" | "running";
+      btNodeId: string | null;
+      lastResults: Record<string, string>;
+      blackboard: Record<string, unknown>;
     }
   | {
       type: "playSound";

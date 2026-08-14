@@ -14,7 +14,11 @@ describe("P9 document kinds", () => {
   it("maps UserInterface / Sprite / AnimationGraph / Shader kinds", () => {
     expect(documentKindForAssetType("UserInterface")).toBe("ui");
     expect(assetTypeForDocumentKind("ui")).toBe("UserInterface");
-    expect(assetTypeForDocumentKind("anim-graph")).toBe("AnimationGraph");
+    expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
+    expect(documentKindForAssetType("BehaviourTree")).toBe("behaviour-tree");
+    expect(documentKindForAssetType("Blackboard")).toBe("blackboard");
+    expect(assetTypeForDocumentKind("behaviour-tree")).toBe("BehaviourTree");
+    expect(assetTypeForDocumentKind("blackboard")).toBe("Blackboard");
     expect(isAssetDocumentKind("font")).toBe(true);
     expect(isAssetDocumentKind("content-browser")).toBe(false);
   });

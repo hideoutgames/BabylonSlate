@@ -24,4 +24,5 @@ export {
 } from "./tree";
 export { validateBehaviourTree } from "./validate";
 export { evaluateBehaviourTree } from "./evaluate";
+export { builtinClassId, BT_CLASS_ALIASES } from "./builtins";
 export { registerBehaviourTreeValidationRules } from "./rules";

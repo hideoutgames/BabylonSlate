@@ -13,6 +13,7 @@
   "dependencies": {
     "@babylonjs/core": "^9.20.0",
     "@babylonslate/anim-graph": "workspace:*",
+    "@babylonslate/behaviour-tree": "workspace:*",
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",
@@ -21,6 +22,7 @@
     "@babylonslate/editor-kit": "workspace:*",
     "@babylonslate/graph-ui": "workspace:*",
     "@babylonslate/input": "workspace:*",
+    "@babylonslate/object-model": "workspace:*",
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/render": "workspace:*",
     "@babylonslate/runtime": "workspace:*",

@@ -79,4 +79,26 @@ describe("createActorsFromSerializedScene", () => {
     });
     expect(actors[0]!.components[0]!.assetGuid).toBe("graph-guid");
   });
+
+  it("copies treeGuid onto BehaviourTreeComponent assetGuid", () => {
+    const world = testWorld();
+    const actors = createActorsFromSerializedScene(world, {
+      name: "AI",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      actors: [
+        createActor("guard", "Guard", {
+          components: [
+            {
+              id: "bt-1",
+              classId: "BehaviourTreeComponent",
+              properties: { treeGuid: "tree-guid", blackboardGuid: "bb-guid" },
+            },
+          ],
+        }),
+      ],
+    });
+    expect(actors[0]!.components[0]!.assetGuid).toBe("tree-guid");
+    expect(actors[0]!.components[0]!.getVariable("blackboardGuid")).toBe("bb-guid");
+  });
 });

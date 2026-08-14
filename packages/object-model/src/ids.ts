@@ -6,6 +6,10 @@ export const ENGINE_BASE_CLASS_IDS = [
   "GameInstance",
   "FunctionLibrary",
   "BDebugCommand",
+  "BTTask",
+  "BTDecorator",
+  "BTService",
+  "BTComposite",
 ] as const;
 
 export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
@@ -28,3 +32,22 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
 
 export type EngineComponentClassId =
   (typeof ENGINE_COMPONENT_CLASS_IDS)[number];
+
+/** Built-in behaviour-tree classes users can inherit (engineplan §14.1). */
+export const ENGINE_BT_BUILTIN_CLASSES = [
+  { id: "BTTask_Wait", parentClassId: "BTTask" },
+  { id: "BTTask_MoveTo", parentClassId: "BTTask" },
+  { id: "BTTask_RotateToFace", parentClassId: "BTTask" },
+  { id: "BTTask_PlayAnimation", parentClassId: "BTTask" },
+  { id: "BTTask_PlaySound", parentClassId: "BTTask" },
+  { id: "BTTask_SetBlackboardValue", parentClassId: "BTTask" },
+  { id: "BTDecorator_Loop", parentClassId: "BTDecorator" },
+  { id: "BTDecorator_Cooldown", parentClassId: "BTDecorator" },
+  { id: "BTDecorator_TimeLimit", parentClassId: "BTDecorator" },
+  { id: "BTDecorator_BlackboardIsSet", parentClassId: "BTDecorator" },
+  { id: "BTDecorator_CompareBlackboardValue", parentClassId: "BTDecorator" },
+  { id: "BTService_SetBlackboardValue", parentClassId: "BTService" },
+  { id: "BTComposite_Selector", parentClassId: "BTComposite" },
+  { id: "BTComposite_Sequence", parentClassId: "BTComposite" },
+  { id: "BTComposite_Parallel", parentClassId: "BTComposite" },
+] as const;

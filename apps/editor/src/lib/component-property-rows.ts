@@ -417,6 +417,35 @@ export function componentPropertyRows(
         ),
         ...genericRows(actorId, component, update, new Set(["graphGuid"])),
       ];
+    case "BehaviourTreeComponent":
+      return [
+        assetRow(
+          actorId,
+          component,
+          "treeGuid",
+          "Behaviour Tree",
+          ["BehaviourTree"],
+          update,
+          context,
+          "Pick Behaviour Tree",
+        ),
+        assetRow(
+          actorId,
+          component,
+          "blackboardGuid",
+          "Blackboard",
+          ["Blackboard"],
+          update,
+          context,
+          "Pick Blackboard",
+        ),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["treeGuid", "blackboardGuid"]),
+        ),
+      ];
     case "RigidBodyComponent":
       return [
         {

@@ -1,4 +1,8 @@
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
+import {
+  parseBehaviourTreeDocument,
+  parseBlackboardDocument,
+} from "@babylonslate/behaviour-tree";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
   normalizeTilemapPayload,
@@ -147,6 +151,8 @@ export function resolvePlayHudDocuments(
 }
 
 export type PlayAnimGraphEntry = { guid: string; document: unknown };
+export type PlayBehaviourTreeEntry = { guid: string; document: unknown };
+export type PlayBlackboardEntry = { guid: string; document: unknown };
 
 /**
  * Open AnimationGraph documents for the worker `loadAnimGraphs` control.
@@ -202,6 +208,23 @@ export function animationGraphGuidsFromScene(
   ]);
 }
 
+export function behaviourTreeGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "BehaviourTreeComponent", [
+    "treeGuid",
+    "assetGuid",
+  ]);
+}
+
+export function blackboardGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "BehaviourTreeComponent", [
+    "blackboardGuid",
+  ]);
+}
+
 /** Sprite asset guids referenced by scene SpriteComponents. */
 export function spriteAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
@@ -235,6 +258,86 @@ export function mergePlayAnimGraphs(
   ...groups: readonly PlayAnimGraphEntry[][]
 ): PlayAnimGraphEntry[] {
   const byGuid = new Map<string, PlayAnimGraphEntry>();
+  for (const group of groups) {
+    for (const entry of group) byGuid.set(entry.guid, entry);
+  }
+  return [...byGuid.values()];
+}
+
+export function playBehaviourTreesFromOpenDocuments(
+  documents: readonly PlayContentDocument[],
+  guidForPath: (path: string) => string | null,
+): PlayBehaviourTreeEntry[] {
+  const trees: PlayBehaviourTreeEntry[] = [];
+  for (const entry of documents) {
+    if (entry.ref.kind !== "behaviour-tree" || !entry.content) continue;
+    const parsed = parseBehaviourTreeDocument(entry.content);
+    if (!parsed) continue;
+    const guid = guidForPath(entry.ref.path) ?? entry.ref.path;
+    trees.push({ guid, document: parsed });
+  }
+  return trees;
+}
+
+export function playBehaviourTreesFromGuids(
+  guids: readonly string[],
+  documentForGuid: (guid: string) => unknown | null,
+): PlayBehaviourTreeEntry[] {
+  const trees: PlayBehaviourTreeEntry[] = [];
+  for (const guid of guids) {
+    const content = documentForGuid(guid);
+    if (!content) continue;
+    const parsed = parseBehaviourTreeDocument(content);
+    if (!parsed) continue;
+    trees.push({ guid, document: parsed });
+  }
+  return trees;
+}
+
+export function mergePlayBehaviourTrees(
+  ...groups: readonly PlayBehaviourTreeEntry[][]
+): PlayBehaviourTreeEntry[] {
+  const byGuid = new Map<string, PlayBehaviourTreeEntry>();
+  for (const group of groups) {
+    for (const entry of group) byGuid.set(entry.guid, entry);
+  }
+  return [...byGuid.values()];
+}
+
+export function playBlackboardsFromOpenDocuments(
+  documents: readonly PlayContentDocument[],
+  guidForPath: (path: string) => string | null,
+): PlayBlackboardEntry[] {
+  const boards: PlayBlackboardEntry[] = [];
+  for (const entry of documents) {
+    if (entry.ref.kind !== "blackboard" || !entry.content) continue;
+    const parsed = parseBlackboardDocument(entry.content);
+    if (!parsed) continue;
+    const guid = guidForPath(entry.ref.path) ?? entry.ref.path;
+    boards.push({ guid, document: parsed });
+  }
+  return boards;
+}
+
+export function playBlackboardsFromGuids(
+  guids: readonly string[],
+  documentForGuid: (guid: string) => unknown | null,
+): PlayBlackboardEntry[] {
+  const boards: PlayBlackboardEntry[] = [];
+  for (const guid of guids) {
+    const content = documentForGuid(guid);
+    if (!content) continue;
+    const parsed = parseBlackboardDocument(content);
+    if (!parsed) continue;
+    boards.push({ guid, document: parsed });
+  }
+  return boards;
+}
+
+export function mergePlayBlackboards(
+  ...groups: readonly PlayBlackboardEntry[][]
+): PlayBlackboardEntry[] {
+  const byGuid = new Map<string, PlayBlackboardEntry>();
   for (const group of groups) {
     for (const entry of group) byGuid.set(entry.guid, entry);
   }

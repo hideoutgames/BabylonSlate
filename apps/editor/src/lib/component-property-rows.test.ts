@@ -123,6 +123,24 @@ describe("componentPropertyRows", () => {
     expect(graph.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTypes: ["AnimationGraph"] }),
     );
+
+    const tree = rowsFor({
+      id: "ai",
+      classId: "BehaviourTreeComponent",
+      properties: { treeGuid: "tree-1", blackboardGuid: "bb-1" },
+    });
+    const treeRow = tree.rows.find((row) => row.id.endsWith("-treeGuid"));
+    const boardRow = tree.rows.find((row) => row.id.endsWith("-blackboardGuid"));
+    expect(treeRow).toMatchObject({ kind: "asset" });
+    expect(boardRow).toMatchObject({ kind: "asset" });
+    if (treeRow?.kind === "asset") treeRow.onPick();
+    expect(tree.onPickAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedTypes: ["BehaviourTree"] }),
+    );
+    if (boardRow?.kind === "asset") boardRow.onPick();
+    expect(tree.onPickAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedTypes: ["Blackboard"] }),
+    );
   });
 
   it("exposes RigidBody motionType as an enum and Light color as a color row", () => {
