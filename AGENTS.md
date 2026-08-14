@@ -4,4 +4,4 @@ Agent workflow, git automation, and architecture rules live in `.cursor/rules/ag
 
 The engine architecture and delivery plan is in [docs/engineplan.md](docs/engineplan.md).
 
-Subagent model preference (soft): prefer Composer 2.5 or Grok 4.6 (any effort, not Fast) when choosing a model for Task subagents; inherit is fine — do not hard-require an explicit slug. Details in [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
+Subagent model allowlist (hard): Task / subagents may inherit, or use Composer 2.5 / Grok 4.5 / Grok 4.6 (not Fast). Claude/Sonnet and other families are forbidden. Details in [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).

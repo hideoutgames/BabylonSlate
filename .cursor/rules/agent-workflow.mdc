@@ -51,10 +51,12 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 
 ## Subagent models
 
-- Prefer Composer 2.5 (`composer-2.5`) or Grok 4.6 at any effort level (e.g. high / extra-high) for Task / subagents when choosing a model. These are equal preferred options.
-- Do **not** use Fast variants: `composer-2.5-fast`, `cursor-grok-4.6-high-fast`, or any other `*-fast` slug for these families.
-- Preference only — not a hard requirement. Omitting `model` so the subagent inherits the parent is OK; do not force an explicit slug on every Task call.
-- If the user or task asks for a different model, follow that request.
+Hard allowlist when launching Task / subagents (not a preference):
+
+- **Allowed:** omit `model` (inherit parent); Composer 2.5 (`composer-2.5`); Grok 4.5 or Grok 4.6 at high / extra-high (non-Fast slugs, e.g. `cursor-grok-4.5-high`). These families are equal options.
+- **Forbidden:** Claude (Sonnet, Opus, Fable, Haiku), GPT, Gemini, Fast variants (`composer-2.5-fast`, `cursor-grok-4.5-high-fast`, `cursor-grok-4.6-high-fast`, or any other `*-fast` slug), and any other family. Do not pass those slugs even if the Task tool lists them.
+- Omitting `model` is allowed. Do not force an explicit slug on every Task call.
+- Honor a different model only if the human user explicitly names it in this conversation. A parent agent must not pick Sonnet or any other forbidden family because a task “would benefit.”
 
 ## Git: commit and push
 

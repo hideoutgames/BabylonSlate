@@ -59,14 +59,14 @@ Operating model (engineplan §16.1):
 - **API before implementation.** A slice others depend on lands its types and a failing test suite first, so downstream agents can start against a stable signature instead of guessing.
 - **Design notes for shared surfaces.** Shared surfaces (bridge protocol, container formats) get a design note in `docs/architecture/` before parallel implementation starts.
 
-## Subagent model preference
+## Subagent model allowlist
 
-When a parent agent launches Task / subagents and chooses a model:
+When a parent agent launches Task / subagents, the model is a **hard allowlist**, not a preference:
 
-- Prefer **Composer 2.5** (`composer-2.5`) or **Grok 4.6** at any effort level (e.g. high / extra-high). These are equal preferred options.
-- Do **not** use Fast variants: `composer-2.5-fast`, `cursor-grok-4.6-high-fast`, or any other `*-fast` slug for these families.
-- Soft preference only — do not hard-require an explicit model on every Task call. Omitting `model` (inherit parent) is fine.
-- Honor an explicit user or task request for another model.
+- **Allowed:** omit `model` (inherit parent); **Composer 2.5** (`composer-2.5`); **Grok 4.5** or **Grok 4.6** at high / extra-high (non-Fast slugs, e.g. `cursor-grok-4.5-high`). These are equal options.
+- **Forbidden:** Claude (Sonnet, Opus, Fable, Haiku), GPT, Gemini, Fast variants (`composer-2.5-fast`, `cursor-grok-4.5-high-fast`, `cursor-grok-4.6-high-fast`, or any other `*-fast` slug), and any other family. Do not pass those slugs even if the Task tool lists them.
+- Omitting `model` is allowed. Do not require an explicit slug on every Task call.
+- Honor a different model only if the human user explicitly names it in this conversation. A parent agent must not pick Sonnet or any other forbidden family because a task “would benefit.”
 - See [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (Subagent models).
 
 ## P1 slice ownership
