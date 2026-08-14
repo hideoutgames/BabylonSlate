@@ -25,6 +25,7 @@ import {
   type EditorColorScheme,
 } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
+import { applySceneEnvironment as applySerializedSceneEnvironment } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import { ResourceCache } from "./resource-cache";
@@ -33,6 +34,8 @@ import { SnapshotInterpolator } from "./snapshot-sync";
 import {
   applySnapshotToScene,
   applyAssignMesh,
+  applyPossessCamera,
+  applyShadowQuality,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
@@ -72,6 +75,9 @@ export interface EngineHandle {
   lastActorPositions: () => PlayActorPosition[];
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
+  /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
+  applySceneEnvironment: (sceneData: SerializedScene) => void;
+  setShadowQuality: (level: string) => void;
 }
 
 export interface CreateEngineOptions {
@@ -153,6 +159,9 @@ export interface EditorTools {
     rotation: [number, number, number, number];
     scale: [number, number, number];
   } | null;
+  /** Preview the named Default Camera without replacing the stored orbit pose. */
+  setPreviewGameCamera: (enabled: boolean) => void;
+  setShadowQuality: (level: string) => void;
 }
 
 export type PlayActorPosition = {
@@ -374,6 +383,14 @@ export function createEngine(
           scale: [mesh.scaling.x, mesh.scaling.y, mesh.scaling.z],
         };
       },
+      setPreviewGameCamera: (enabled: boolean) => {
+        editorSync.setGameCameraPreview(enabled, cameraController.camera);
+        scheduler.invalidate("camera");
+      },
+      setShadowQuality: (level: string) => {
+        editorSync.setShadowQuality(level);
+        scheduler.invalidate("asset");
+      },
     };
   }
 
@@ -494,6 +511,14 @@ export function createEngine(
         applyAssignMesh(scene, binding, command);
         scheduler.invalidate("snapshot");
       }
+      if (command.type === "possessCamera") {
+        applyPossessCamera(scene, binding, command.slotId);
+        scheduler.invalidate("camera");
+      }
+      if (command.type === "setShadowQuality") {
+        applyShadowQuality(scene, binding, command.level);
+        scheduler.invalidate("asset");
+      }
       if (command.type === "animState") {
         applyAnimStateToScene(
           {
@@ -529,6 +554,18 @@ export function createEngine(
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
       editorSync?.setMeshAssets(assets);
+    },
+    applySceneEnvironment: (sceneData: SerializedScene) => {
+      applySerializedSceneEnvironment(scene, sceneData, {
+        applyClearColor: true,
+        assets: binding,
+      });
+      scheduler.invalidate("asset");
+    },
+    setShadowQuality: (level: string) => {
+      applyShadowQuality(scene, binding, level);
+      editor?.setShadowQuality(level);
+      scheduler.invalidate("asset");
     },
   };
 }

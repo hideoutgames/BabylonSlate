@@ -69,6 +69,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     dragSelectActive,
     setDragSelectActive,
     setFrameActorHandler,
+    previewGameCamera,
   } = useSceneEditing();
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
   const navBake = useOptionalNavBake();
@@ -347,6 +348,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
   }, [viewportMode]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.setPreviewGameCamera(previewGameCamera);
+  }, [previewGameCamera]);
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);
