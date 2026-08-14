@@ -94,17 +94,15 @@ export async function generateNavMesh(
       maxObstacles: 128,
       tileCacheMeshProcess: walkableTileCacheMeshProcess(),
     });
-    if (!result.success) {
-      throw new Error(
-        result.error ? String(result.error) : "generateNavMesh failed",
-      );
+    if (result.success) {
+      try {
+        return wrapTileCacheBytes(exportTileCache(result.navMesh, result.tileCache));
+      } finally {
+        result.tileCache.destroy();
+        result.navMesh.destroy();
+      }
     }
-    try {
-      return wrapTileCacheBytes(exportTileCache(result.navMesh, result.tileCache));
-    } finally {
-      result.tileCache.destroy();
-      result.navMesh.destroy();
-    }
+    throw new Error("generateNavMesh failed");
   }
   const result = generateSoloNavMesh(
     input.positions,
@@ -291,7 +289,7 @@ class RecastNavigationBackend implements NavigationBackend {
     this.query = null;
     this.tileCache = null;
     this.navMesh = null;
-    this.tileCacheKeepAlive = [];
+    this.tileCacheKeepAlive.length = 0;
     this.obstacles.clear();
     this.agents.clear();
   }
