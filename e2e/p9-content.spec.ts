@@ -37,26 +37,19 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
     const canvas = page.getByTestId("ui-design-canvas");
     await expect(canvas).toHaveAttribute("data-preset", "desktop-16-9");
-    await expect(page.getByTestId("ui-widget-stick")).toBeVisible();
-    await expect(page.getByTestId("ui-widget-header")).toBeVisible();
-    const sixteenNineStickX = await page
-      .getByTestId("ui-widget-stick")
-      .getAttribute("data-gui-x");
-    const sixteenNineHeaderY = await page
-      .getByTestId("ui-widget-header")
-      .getAttribute("data-gui-y");
+    await expect(page.getByTestId("ui-widget-canvas")).toBeVisible();
+    await expect(page.getByTestId("ui-widget-stick")).toHaveCount(0);
+    await expect(page.getByTestId("ui-widget-header")).toHaveCount(0);
+    const sixteenNineBox = await canvas.boundingBox();
+    expect(sixteenNineBox).not.toBeNull();
 
     await page.getByTestId("ui-device-preset").click();
     await page.getByTestId("ui-preset-desktop-4-3").click();
     await expect(canvas).toHaveAttribute("data-preset", "desktop-4-3");
-    const fourThreeStickX = await page
-      .getByTestId("ui-widget-stick")
-      .getAttribute("data-gui-x");
-    const fourThreeHeaderY = await page
-      .getByTestId("ui-widget-header")
-      .getAttribute("data-gui-y");
-    expect(fourThreeStickX).not.toBe(sixteenNineStickX);
-    expect(fourThreeHeaderY).not.toBe(sixteenNineHeaderY);
+    const fourThreeBox = await canvas.boundingBox();
+    expect(fourThreeBox).not.toBeNull();
+    expect(fourThreeBox!.width / fourThreeBox!.height).toBeCloseTo(4 / 3, 1);
+    expect(sixteenNineBox!.width / sixteenNineBox!.height).toBeCloseTo(16 / 9, 1);
 
     await page.getByTestId("ui-device-preset").click();
     await page.getByTestId("ui-preset-desktop-21-9").click();
@@ -80,19 +73,22 @@ test.describe("P9 content systems", () => {
     await createAsset(page, "UserInterface", "HUD");
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
     await expect(page.getByTestId("ui-design-viewport")).toBeVisible();
-    const stick = page.getByTestId("ui-widget-stick");
-    const before = await stick.getAttribute("data-gui-x");
-    const box = await stick.boundingBox();
+    await page.getByTestId("ui-add-widget").click();
+    await page.getByTestId("ui-add-widget-Button").click();
+    const button = page.locator('[data-testid^="ui-widget-button-"]');
+    await expect(button).toBeVisible();
+    const before = await button.getAttribute("data-gui-x");
+    const box = await button.boundingBox();
     expect(box).not.toBeNull();
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await page.mouse.down();
     await page.mouse.move(box!.x + box!.width / 2 + 80, box!.y + box!.height / 2);
     await page.mouse.up();
     await expect
-      .poll(async () => stick.getAttribute("data-gui-x"))
+      .poll(async () => button.getAttribute("data-gui-x"))
       .not.toBe(before);
     await page.getByTestId("undo-document").click();
-    await expect.poll(async () => stick.getAttribute("data-gui-x")).toBe(before);
+    await expect.poll(async () => button.getAttribute("data-gui-x")).toBe(before);
 
     await page.getByTestId("ui-design-viewport").hover();
     await page.mouse.wheel(0, -180);
@@ -100,8 +96,8 @@ test.describe("P9 content systems", () => {
       "data-zoom",
       "1",
     );
-    await page.getByTestId("ui-widget-header").click();
-    await expect(page.getByTestId("property-name")).toHaveValue("Title");
+    await button.click();
+    await expect(page.getByTestId("property-name")).toHaveValue("Button");
     await expect(page.getByTestId("property-left")).toBeVisible();
     await expect(page.getByTestId("property-top")).toBeVisible();
     await expect(page.getByTestId("property-width")).toBeVisible();
@@ -135,7 +131,7 @@ test.describe("P9 content systems", () => {
     await expect(canvas).toHaveAttribute("data-preset", presetId);
   });
 
-  test("UserInterface designer on iPad shows the same HUD widgets", {
+  test("UserInterface designer on iPad opens a Canvas-only document", {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {
     await openTestProject(page);
@@ -143,7 +139,8 @@ test.describe("P9 content systems", () => {
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
     await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
-    await expect(page.getByTestId("ui-widget-stick")).toBeVisible();
+    await expect(page.getByTestId("ui-widget-canvas")).toBeVisible();
+    await expect(page.getByTestId("ui-widget-stick")).toHaveCount(0);
   });
 
   test("Font editor sample preview uses the compiled stack", async ({ page }) => {
