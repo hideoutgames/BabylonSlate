@@ -29,6 +29,7 @@ interface ContentRoot {
 | API | Role |
 | --- | --- |
 | `mountRoot` / `unmountRoot` | Add or remove a content root and (re)scan headers |
+| `reindexPath` | Re-read one `.babasset` header after an in-place save (e.g. EUI `dockKind`) |
 | `getByGuid` / `list` / `folderTree` | Index queries (folder tree includes marker-backed empty folders) |
 | `createFolder` / `moveFolder` | Empty folders (`.babylonslate-folder`) and folder moves |
 | `moveAsset` / `renameAsset` / `duplicateAsset` / `copyAsset` | Path ops; guid stable on move/rename |

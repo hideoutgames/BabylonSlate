@@ -161,6 +161,9 @@ describe("componentPropertyRows", () => {
       navMesh.rows.find((row) => row.id.endsWith("-supportDynamicObstacles")),
     ).toMatchObject({ kind: "boolean", value: false });
     expect(
+      navMesh.rows.find((row) => row.id.endsWith("-autoBakeOnSave")),
+    ).toBeUndefined();
+    expect(
       navMesh.rows.find((row) => row.id.endsWith("-debugOverlay")),
     ).toMatchObject({ kind: "boolean", value: true });
 

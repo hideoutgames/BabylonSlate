@@ -66,9 +66,7 @@ describe("UiDesignCanvas preview fallback", () => {
   });
 
   it("does not show Preview Unavailable when present skips a zero-size ADT", () => {
-    const present = vi.fn(() => {
-      throw new Error("ADT blit size is 0");
-    });
+    const present = vi.fn();
     createUiSurfaceMock.mockReturnValue({
       present,
       setFrozen: vi.fn(),
@@ -86,6 +84,7 @@ describe("UiDesignCanvas preview fallback", () => {
       gizmoAdt: null,
     });
     render(<UiDesignCanvas {...hudCanvasProps()} />);
+    expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
   });
 

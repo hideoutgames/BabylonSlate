@@ -66,6 +66,44 @@ describe("AssetRegistry", () => {
     expect(registry.accountedPayloadBytes).toBe(0);
   });
 
+  it("reindexes a saved header payload without remounting", async () => {
+    const storage = await createStorage();
+    const path = "assets/tools.eui.babasset";
+    const dir = "assets";
+    await storage.mkdir(dir, true);
+    const write = async (dockKind: string) => {
+      const bytes = await encodeBabasset({
+        header: {
+          guid: "eui-1",
+          type: "EditorUtilityInterface",
+          name: "tools",
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: [],
+          parentClass: null,
+          payload: { dockKind },
+        },
+        chunks: [
+          {
+            id: "payload",
+            kind: "payload",
+            mime: "application/octet-stream",
+            data: new Uint8Array([1]),
+          },
+        ],
+      });
+      await storage.writeBinary(path, bytes);
+    };
+    await write("scene");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.getByGuid("eui-1")?.header.payload.dockKind).toBe("scene");
+    await write("class");
+    await registry.reindexPath(path);
+    expect(registry.getByGuid("eui-1")?.header.payload.dockKind).toBe("class");
+  });
+
   it("mounts a second synthetic root and resolves references across roots", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/scene.babasset", {

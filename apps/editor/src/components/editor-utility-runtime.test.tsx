@@ -75,6 +75,27 @@ describe("EditorUtilityRuntime", () => {
     );
   });
 
+  it("does not reboot when project settings identity changes with the same list", async () => {
+    const view = render(<EditorUtilityRuntime />);
+    await waitFor(() => {
+      expect(invokeEvent).toHaveBeenCalledWith(
+        "Tools",
+        EDITOR_UTILITY_EVENTS.startup,
+      );
+    });
+    const loads = docs.collectEditorUtilityScripts.mock.calls.length;
+    invokeEvent.mockClear();
+    docs.projectDocument = {
+      settings: { editorUtilityObjects: ["Tools"] },
+    };
+    view.rerender(<EditorUtilityRuntime />);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    expect(docs.collectEditorUtilityScripts).toHaveBeenCalledTimes(loads);
+    expect(invokeEvent).not.toHaveBeenCalled();
+  });
+
   it("re-fires startup after the Project Settings list changes", async () => {
     const view = render(<EditorUtilityRuntime />);
     await waitFor(() => {

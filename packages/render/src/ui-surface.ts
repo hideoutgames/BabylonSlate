@@ -259,8 +259,7 @@ export function presentAdtToCanvas(
   context.drawImage(source as CanvasImageSource, 0, 0);
 }
 
-/** Hard failures show Preview Unavailable; a 0×0 ADT is a freeze/layout skip. */
+/** Thrown present errors are always hard; a 0×0 ADT is skipped without throwing. */
 export function isHardUiPresentFailure(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return !/ADT blit size is 0/i.test(message);
+  return error != null;
 }

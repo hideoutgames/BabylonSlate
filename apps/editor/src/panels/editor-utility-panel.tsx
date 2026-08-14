@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import {
   applyUiControls,
   createUiSurface,
+  isHardUiPresentFailure,
   type UiSurface,
 } from "@babylonslate/render";
 import {
@@ -10,6 +11,12 @@ import {
   layoutUserInterface,
 } from "@babylonslate/ui-runtime";
 import { PanelFrame } from "@babylonslate/editor-kit";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
@@ -36,6 +43,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const surfaceRef = useRef<UiSurface | null>(null);
   const [payload, setPayload] = useState<unknown>(null);
   const [panelVisible, setPanelVisible] = useState(props.api.isVisible);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
     const api = props.api as IDockviewPanelProps["api"] & {
@@ -92,9 +100,13 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       });
     } catch (error) {
       console.error("Editor utility surface failed", error);
+      setPreviewError(
+        error instanceof Error ? error.message : "Failed to create GUI surface",
+      );
       return;
     }
     surfaceRef.current = surface;
+    setPreviewError(null);
     freezeLiveUiSurface(surface, { panelVisible, documentActive });
     return () => {
       surface?.dispose();
@@ -128,8 +140,13 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
         present: () => {
           try {
             surface.present();
+            setPreviewError(null);
           } catch (error) {
+            if (!isHardUiPresentFailure(error)) return;
             console.error("Editor utility present failed", error);
+            setPreviewError(
+              error instanceof Error ? error.message : "Failed to present GUI",
+            );
           }
         },
       });
@@ -143,11 +160,24 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
 
   return (
     <PanelFrame data-testid="editor-utility-panel">
-      <canvas
-        ref={canvasRef}
-        className="h-full w-full touch-none"
-        data-testid="editor-utility-canvas"
-      />
+      <div className="relative h-full min-h-0">
+        <canvas
+          ref={canvasRef}
+          className="h-full w-full touch-none"
+          data-testid="editor-utility-canvas"
+        />
+        {previewError ? (
+          <Empty
+            data-testid="ui-gui-preview-error"
+            className="pointer-events-none absolute inset-0 border-0"
+          >
+            <EmptyHeader>
+              <EmptyTitle>Babylon GUI Preview Unavailable</EmptyTitle>
+              <EmptyDescription>{previewError}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : null}
+      </div>
     </PanelFrame>
   );
 }
