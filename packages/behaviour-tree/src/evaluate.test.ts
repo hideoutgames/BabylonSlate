@@ -92,6 +92,29 @@ describe("evaluateBehaviourTree", () => {
     expect(again.btNodeId).toBe("wait");
   });
 
+  it("clears MoveTo host memory so the next cycle requests again", () => {
+    const leaf = node("move", "task", "BTTask_MoveTo");
+    const doc = tree([leaf], "move");
+    const host = {
+      tick: (
+        _node: { id: string },
+        _blackboard: Record<string, unknown>,
+        _dt: number,
+        memory: Record<string, unknown>,
+      ) => {
+        if (memory.__moveRequested === true) return "success" as const;
+        memory.__moveRequested = true;
+        return "running" as const;
+      },
+    };
+    const running = evaluateBehaviourTree(doc, null, 1 / 60, { host });
+    expect(running.status).toBe("running");
+    const done = evaluateBehaviourTree(doc, running, 1 / 60, { host });
+    expect(done.status).toBe("success");
+    const again = evaluateBehaviourTree(doc, done, 1 / 60, { host });
+    expect(again.status).toBe("running");
+  });
+
   it("ticks every parallel child and fails if any fail", () => {
     const doc = tree(
       [
