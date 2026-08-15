@@ -667,6 +667,97 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("binds ScriptInterface handlers from the class registry without a hand-passed array", async () => {
+    const registry = createDefaultNodeRegistry();
+    const implGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "hit", "flow.event.custom", { name: "ApplyDamage" }),
+        node(registry, "log", "debug.log", { message: "damaged" }),
+      ],
+      edges: [edge("e1", "hit", "execOut", "log", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 8,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        ...toScript(implGraph, registry, "Bruiser", "bruiser-asset"),
+        implementedInterfaces: ["iface-damageable"],
+      },
+    ]);
+    const actor = runtime.spawnScriptedActor({ classId: "Bruiser" });
+    expect(actor).not.toBeNull();
+    expect(actor!.implementedInterfaces).toEqual(["iface-damageable"]);
+    expect(
+      actor!.interfaceHandlers.has(
+        interfaceHandlerKey("iface-damageable", "ApplyDamage"),
+      ),
+    ).toBe(true);
+    runtime.stop();
+  });
+
+  it("Call Interface returns pin defaults when the target does not implement the interface", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "call", "interface.call", {
+          interfaceGuid: "iface-damageable",
+          method: "ApplyDamage",
+        }),
+        node(registry, "print", "debug.print", {
+          key: "iface",
+          duration: 1,
+        }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "call", "execIn"),
+        edge("e2", "self", "out", "call", "target"),
+        edge("e3", "call", "execOut", "print", "execIn"),
+        edge("e4", "call", "result", "print", "value"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 3,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.getWorld().interfaceRegistry.register({
+      guid: "iface-damageable",
+      name: "Damageable",
+      methods: [
+        {
+          name: "ApplyDamage",
+          outputs: { applied: false, remaining: 0 },
+        },
+      ],
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Dummy", "dummy-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Dummy" });
+    runtime.start();
+    runtime.tick();
+    expect(commands.filter((c) => c.type === "print")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "iface",
+          message: "{applied: false, remaining: 0}",
+        }),
+      ]),
+    );
+    runtime.stop();
+  });
+
   it("LineTrace from a compiled graph returns a hit on the same tick", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

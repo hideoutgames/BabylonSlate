@@ -360,4 +360,59 @@ describe("p7-play-scene-load", () => {
     ).toBe(true);
     runtime.stop();
   });
+
+  it("scene-spawned actors inherit ScriptInterface guids registered from loadScripts", async () => {
+    const registry = createDefaultNodeRegistry();
+    const implGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "hit", "flow.event.custom", { name: "ApplyDamage" }),
+        node(registry, "log", "debug.log", { message: "damaged" }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "hit",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(implGraph, {
+      assetGuid: "bruiser-asset",
+      registry,
+    });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "Arena",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        actors: [createActor("guard", "Guard", { classId: "Bruiser" })],
+      },
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "bruiser-asset",
+        classId: "Bruiser",
+        source: compiled.source,
+        anchors: compiled.anchors,
+        entryPoints: compiled.entryPoints,
+        implementedInterfaces: ["iface-damageable"],
+      },
+    ]);
+    runtime.realizePlayWorld();
+    const guard = runtime.getWorld().findActor("guard");
+    expect(guard?.implementedInterfaces).toEqual(["iface-damageable"]);
+    expect(
+      guard?.interfaceHandlers.has(
+        "iface-damageable:ApplyDamage",
+      ),
+    ).toBe(true);
+    runtime.stop();
+  });
 });

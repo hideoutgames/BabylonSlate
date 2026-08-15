@@ -483,6 +483,7 @@ describe("UI logic Play compile", () => {
       "assets/Hero.class.babasset",
       "assets/HUD.ui.babasset",
     ]);
+    expect(collected[0]?.parentClassId).toBe("Actor");
   });
 
   it("strips EditorUtilityInterface logic even if it is merged into the Play list", () => {

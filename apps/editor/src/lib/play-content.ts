@@ -122,12 +122,19 @@ export function collectPlayScriptDocuments(
   uiAssets: ReadonlyArray<{ path: string; payload: unknown }>,
   headers: Record<string, { type: string; parentClass?: string | null }>,
   parentOf: (id: string) => string | null | undefined,
-): Array<{ path: string; content: SerializedGraph }> {
+): Array<{
+  path: string;
+  content: SerializedGraph;
+  parentClassId?: string | null;
+}> {
   return filterPlayScriptDocuments(
     mergePlayScriptDocuments(classGraphs, uiAssets),
     headers,
     parentOf,
-  );
+  ).map((graph) => ({
+    ...graph,
+    parentClassId: headers[graph.path]?.parentClass ?? null,
+  }));
 }
 
 export type PlayHudInstance = { instanceId: string; assetGuid: string };

@@ -19,6 +19,9 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Spec | ClassRegistry unused at spawn; Play `callInterface` skipped `dispatchInterface` so scene actors never received class-declared interface guids | Resolved |
+| 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Standards | Engine components and BT builtins were reparentable (`MeshComponent` → `Actor`) | Resolved |
+| 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model / p3-harness | Spec | Remaining accepted P3 cuts: World-owned spawn API (spec wording), flat runtime components (`SerializedComponent.parentId` dropped at Play), VFS fixtures decoupled from the 120-tick golden | Accepted |
 | 2026-08-14 | cursor/scene-open-old-project-crash-82b9 | scene-open crash | Standards | Alert catalog “Used for” omitted `WorkspaceErrorBoundary` | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p11-behaviour-tree | Spec | Empty-stack restart ran in the same tick as root TimeLimit/abort; Parallel starved nested siblings and skipped abort/TimeLimit/services on yielded children; Loop ignored failure; self-abort skipped Cooldown | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p12-editor-extensions | Spec | Saving EditorUtilityInterface `dockKind` wrote the header but did not reindex `AssetRegistry`, so Windows → Editor Utilities kept the stale filter until remount | Resolved |
@@ -128,6 +131,8 @@ Design notes: [command-layer.md](../architecture/command-layer.md), [asset-regis
 | Deterministic harness | `p3-harness` | `test-kit`, `object-model`, `vfs` | Object model |
 
 Design notes: [object-model.md](../architecture/object-model.md).
+
+`World.createActor` / `createComponent` / `createGameInstance` apply `ClassRegistry.inheritedVariables` and `inheritedInterfaces` (caller overrides win). `RuntimeDriver.loadScripts` registers session class ids from `ScriptBundleEntry` metadata. Play `ctx.callInterface` uses `dispatchInterface` (pin defaults on miss). Nested runtime component `parentId` and VFS-backed 120-tick fixtures stay out of this wiring.
 
 ## P4 slice ownership
 

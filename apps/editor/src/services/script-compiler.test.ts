@@ -104,6 +104,35 @@ describe("script compiler service", () => {
     expect(script!.anchors.some((a) => a.nodeId === "log")).toBe(true);
   });
 
+  it("copies Class member interfaces, variables, and parentClass onto the bundle", () => {
+    const script = compileGraphDocument(
+      {
+        ...tickToLog,
+        members: [
+          {
+            id: "var-health",
+            kind: "variable",
+            name: "health",
+            typeId: "float",
+            defaultValue: 80,
+          },
+          {
+            id: "iface-1",
+            kind: "interface",
+            name: "Damageable",
+            assetGuid: "iface-damageable",
+          },
+        ],
+      },
+      { path: "assets/Hero.class.babasset", parentClassId: "Actor" },
+    );
+    expect(script?.parentClassId).toBe("Actor");
+    expect(script?.implementedInterfaces).toEqual(["iface-damageable"]);
+    expect(script?.variables).toEqual([
+      { name: "health", type: "float", defaultValue: 80 },
+    ]);
+  });
+
   it("returns null for an empty graph", () => {
     expect(
       compileGraphDocument({ nodes: [], edges: [] }, { path: "a.graph.babasset" }),
