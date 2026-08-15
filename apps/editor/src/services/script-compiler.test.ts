@@ -4,6 +4,7 @@ import {
   classIdForGraphPath,
   compileGraphDocument,
   compileGraphDocuments,
+  compileGraphDocumentsForExport,
   graphCompileSignature,
   graphsNeedCompile,
   spawnListForScripts,
@@ -195,10 +196,13 @@ describe("script compiler service", () => {
     });
     expect(play?.source).toContain("ctx.print");
     expect(play?.source).toContain("ctx.log");
-    const exported = compileGraphDocuments(
-      [{ path: "assets/main.class.babasset", content: tickToPrint }],
-      { stripDevelopmentOnly: true },
-    );
+    const preview = compileGraphDocuments([
+      { path: "assets/main.class.babasset", content: tickToPrint },
+    ]);
+    expect(preview[0]?.source).toContain("ctx.print");
+    const exported = compileGraphDocumentsForExport([
+      { path: "assets/main.class.babasset", content: tickToPrint },
+    ]);
     expect(exported[0]?.source).not.toContain("ctx.print");
     expect(exported[0]?.source).toContain("ctx.log");
   });

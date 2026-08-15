@@ -3,7 +3,7 @@ import { compileGraph } from "./compile";
 import { isDevelopmentOnlyNode } from "./development-only";
 import type { GraphNode, LogicGraph } from "./ir";
 import { NodeRegistry, pin } from "./node-registry";
-import { EXEC, FLOAT, STRING } from "./types";
+import { BOOL, EXEC, FLOAT, STRING } from "./types";
 
 function registryWithDebugNodes(): NodeRegistry {
   const registry = new NodeRegistry();
@@ -38,6 +38,45 @@ function registryWithDebugNodes(): NodeRegistry {
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.log(${ctx.input("message")});`);
+    },
+  });
+  registry.register({
+    id: "flow.sequence",
+    title: "Sequence",
+    category: "flow",
+    pins: (properties) => {
+      const count = Math.max(1, Number(properties.count ?? 2));
+      const pins = [pin("execIn", "exec", "in", EXEC)];
+      for (let i = 0; i < count; i++) {
+        pins.push(pin(`then${i}`, `then_${i}`, "out", EXEC));
+      }
+      return pins;
+    },
+    codegen: () => {},
+  });
+  registry.register({
+    id: "flow.branch",
+    title: "Branch",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("condition", "condition", "in", BOOL, "data", true),
+      pin("true", "true", "out", EXEC),
+      pin("false", "false", "out", EXEC),
+    ],
+    codegen: () => {},
+  });
+  registry.register({
+    id: "debug.use",
+    title: "Use",
+    category: "debug",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("value", "value", "in", FLOAT),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.use(${ctx.input("value")});`);
     },
   });
   registry.register({
@@ -200,6 +239,274 @@ describe("compileGraph stripDevelopmentOnly", () => {
       stripDevelopmentOnly: true,
     });
     expect(exported.source).not.toContain("execJs_js");
+    expect(exported.source).not.toContain("ctx.log");
+  });
+
+  it("skips a flagged Sequence as a no-op and still runs then_0 then then_1", () => {
+    const registry = registryWithDebugNodes();
+    const sequenceDef = registry.get("flow.sequence")!;
+    const entryDef = registry.get("flow.entry")!;
+    const logDef = registry.get("debug.log")!;
+    const seqProps = { developmentOnly: true, count: 2 };
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node("flow.entry", "entry", {}, entryDef.pins({})),
+        node("flow.sequence", "seq", seqProps, sequenceDef.pins(seqProps)),
+        node(
+          "debug.log",
+          "logA",
+          { message: "a" },
+          logDef.pins({ message: "a" }),
+        ),
+        node(
+          "debug.log",
+          "logB",
+          { message: "b" },
+          logDef.pins({ message: "b" }),
+        ),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "entry",
+          sourcePinId: "execOut",
+          targetNodeId: "seq",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "seq",
+          sourcePinId: "then0",
+          targetNodeId: "logA",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "seq",
+          sourcePinId: "then1",
+          targetNodeId: "logB",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const exported = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      stripDevelopmentOnly: true,
+    });
+    const logA = exported.source.indexOf('ctx.log("a")');
+    const logB = exported.source.indexOf('ctx.log("b")');
+    expect(logA).toBeGreaterThan(-1);
+    expect(logB).toBeGreaterThan(-1);
+    expect(logA).toBeLessThan(logB);
+  });
+
+  it("does not enter exclusive Branch arms when the Branch is stripped", () => {
+    const registry = registryWithDebugNodes();
+    const branchDef = registry.get("flow.branch")!;
+    const entryDef = registry.get("flow.entry")!;
+    const logDef = registry.get("debug.log")!;
+    const branchProps = { developmentOnly: true, condition: true };
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node("flow.entry", "entry", {}, entryDef.pins({})),
+        node("flow.branch", "branch", branchProps, branchDef.pins(branchProps)),
+        node(
+          "debug.log",
+          "logTrue",
+          { message: "true" },
+          logDef.pins({ message: "true" }),
+        ),
+        node(
+          "debug.log",
+          "logFalse",
+          { message: "false" },
+          logDef.pins({ message: "false" }),
+        ),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "entry",
+          sourcePinId: "execOut",
+          targetNodeId: "branch",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "branch",
+          sourcePinId: "true",
+          targetNodeId: "logTrue",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "branch",
+          sourcePinId: "false",
+          targetNodeId: "logFalse",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const exported = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      stripDevelopmentOnly: true,
+    });
+    expect(exported.source).not.toContain("ctx.log");
+  });
+
+  it("walks consecutive stripped Prints and still reaches Log", () => {
+    const registry = registryWithDebugNodes();
+    const printDef = registry.get("debug.print")!;
+    const logDef = registry.get("debug.log")!;
+    const entryDef = registry.get("flow.entry")!;
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node("flow.entry", "entry", {}, entryDef.pins({})),
+        node("debug.print", "print1", { value: "one" }, printDef.pins({})),
+        node("debug.print", "print2", { value: "two" }, printDef.pins({})),
+        node(
+          "debug.log",
+          "log",
+          { message: "kept" },
+          logDef.pins({ message: "kept" }),
+        ),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "entry",
+          sourcePinId: "execOut",
+          targetNodeId: "print1",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "print1",
+          sourcePinId: "execOut",
+          targetNodeId: "print2",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "print2",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const exported = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      stripDevelopmentOnly: true,
+    });
+    expect(exported.source).not.toContain("ctx.print");
+    expect(exported.source).toContain("ctx.log");
+  });
+
+  it("compiles data pins from a stripped ExecuteJavaScript as type defaults", () => {
+    const registry = registryWithDebugNodes();
+    const jsDef = registry.get("debug.executeJavaScript")!;
+    const useDef = registry.get("debug.use")!;
+    const entryDef = registry.get("flow.entry")!;
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node("flow.entry", "entry", {}, entryDef.pins({})),
+        node(
+          "debug.executeJavaScript",
+          "js",
+          { developmentOnly: true, value: 7 },
+          jsDef.pins({}),
+        ),
+        node("debug.use", "use", {}, useDef.pins({})),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "entry",
+          sourcePinId: "execOut",
+          targetNodeId: "js",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "js",
+          sourcePinId: "execOut",
+          targetNodeId: "use",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "js",
+          sourcePinId: "out_result",
+          targetNodeId: "use",
+          targetPinId: "value",
+        },
+      ],
+    };
+    const exported = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      stripDevelopmentOnly: true,
+    });
+    expect(exported.source).not.toContain("execJs_js");
+    expect(exported.source).toContain("ctx.use(0)");
+  });
+
+  it("omits a flagged event entry from the export module", () => {
+    const registry = registryWithDebugNodes();
+    registry.register({
+      id: "flow.event.tick",
+      title: "Event Tick",
+      category: "flow",
+      pins: () => [pin("execOut", "then", "out", EXEC)],
+      codegen: () => {},
+    });
+    const tickDef = registry.get("flow.event.tick")!;
+    const logDef = registry.get("debug.log")!;
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(
+          "flow.event.tick",
+          "tick",
+          { developmentOnly: true },
+          tickDef.pins({}),
+        ),
+        node(
+          "debug.log",
+          "log",
+          { message: "tick" },
+          logDef.pins({ message: "tick" }),
+        ),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "tick",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const exported = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      stripDevelopmentOnly: true,
+    });
+    expect(exported.source).not.toContain("function onTick");
     expect(exported.source).not.toContain("ctx.log");
   });
 });

@@ -206,7 +206,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Play console + stats HUD | P8 | Landed (`p8-console-hud`) |
 | Trace recorder / `.babtrace` | P8 | Landed (`p8-trace-recorder`) |
 | Keyed Print HUD polish | P8 / export | Print works; HUD polish deferred |
-| Development Only node flag | Done | Inspector checkbox; Print defaults on; export `compileGraphDocuments(..., { stripDevelopmentOnly: true })` skips the node and continues exec. P14 release export must pass that flag |
+| Development Only node flag | Done | Inspector checkbox; Print defaults on; `compileGraphDocumentsForExport` skips the node and continues exec (`then` / Sequence `then_*`). P14 release export must call that helper |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio / UI node runtime helpers beyond stubs | P9 | `setWidgetVisible` / `applyUserInterface` / `removeUserInterface` emit UI commands; audio helpers still stubs |
 

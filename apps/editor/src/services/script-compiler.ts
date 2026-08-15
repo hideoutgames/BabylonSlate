@@ -277,3 +277,14 @@ export function compileGraphDocuments(
   }
   return scripts;
 }
+
+/** Release / packed export compile — always omits Development Only nodes. */
+export function compileGraphDocumentsForExport(
+  documents: ReadonlyArray<{
+    path: string;
+    content: SerializedGraph | LogicGraph;
+    parentClassId?: string | null;
+  }>,
+): ScriptBundleEntry[] {
+  return compileGraphDocuments(documents, { stripDevelopmentOnly: true });
+}

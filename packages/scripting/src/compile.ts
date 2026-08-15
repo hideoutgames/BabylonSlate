@@ -71,7 +71,7 @@ export type CompileOptions = {
   exportName?: string;
   /**
    * Export compiles omit Development Only nodes (Print defaults on) and
-   * continue exec at `then`. Editor Play leaves this unset.
+   * continue exec at `then` / Sequence `then_*`. Editor Play leaves this unset.
    */
   stripDevelopmentOnly?: boolean;
 };
@@ -94,9 +94,28 @@ function edgeToInput(
     : undefined;
 }
 
+function isPassthroughExecOut(pin: GraphPin): boolean {
+  return (
+    pin.kind === "exec" &&
+    pin.direction === "out" &&
+    (pin.name === "then" || pin.name.startsWith("then_"))
+  );
+}
+
+/**
+ * Skip-as-no-op: continue at `then`, or Sequence `then_*` pins in order.
+ * Exclusive Branch true/false (and any other multi-out that is not `then`)
+ * are not entered — the stripped node cannot choose an arm.
+ */
 function stripExecSuccessors(graph: LogicGraph, node: GraphNode): string[] {
-  const thenTargets = execSuccessors(graph, node.id, "then");
-  if (thenTargets.length > 0) return thenTargets;
+  const passthrough = node.pins.filter(isPassthroughExecOut);
+  if (passthrough.length > 0) {
+    const targets: string[] = [];
+    for (const out of passthrough) {
+      targets.push(...execSuccessors(graph, node.id, out.name));
+    }
+    return targets;
+  }
   const outs = node.pins.filter(
     (pin) => pin.kind === "exec" && pin.direction === "out",
   );

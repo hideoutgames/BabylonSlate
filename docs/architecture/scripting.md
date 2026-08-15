@@ -147,7 +147,7 @@ IR → **plain JavaScript ES modules** (no TypeScript in the browser).
 | Determinism | Stable text; golden tests are the primary gate |
 | Anchors | Per-statement `{ line, column, assetGuid, graphId, nodeId, bodyLine? }` + `//# sourceURL=babylonslate:///<assetGuid>.js` |
 | Load | `runtime.loadCompiledModule` (blob URL, `new Function` fallback) |
-| Development Only | `properties.developmentOnly`; Print defaults on. Editor Play keeps the node. Export `compileGraph({ stripDevelopmentOnly: true })` skips codegen and continues exec at `then` (exclusive Branch/Sequence arms are not entered). Data pins from a stripped node compile as type defaults. |
+| Development Only | `properties.developmentOnly`; Print defaults on. Editor Play keeps the node. Export `compileGraphDocumentsForExport` (`stripDevelopmentOnly: true`) skips codegen and continues exec at `then`, or Sequence `then_*` pins in order (skip as no-op). Exclusive Branch `true`/`false` arms are not entered. Data pins from a stripped node compile as type defaults. A flagged event entry is omitted from the export module. |
 | Output location | Derived data outside the project folder (compiled scripts + anchor tables) |
 
 Validator and compiler share the **type context builder** so a graph that validates compiles.
@@ -321,7 +321,7 @@ Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tr
 
 Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, copies tick input into `ctx`, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers Tick→Print plus Tick→GetAxis2D (injected gamepad). Play with no scene tab is disabled. **Possess Camera** (`camera.possess`) emits `{ type: "possessCamera"; slotId }` for the global Play `activeCamera`. Camera/light property nodes mutate component variables and re-emit `assignMesh`.
 
-**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals). **Development Only** (Inspector flag, Print default, export `stripDevelopmentOnly`) is landed — do not reopen Print-strip as a P5 gap. Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **Enum / Structure / ScriptInterface DockView editors** are landed.
+**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals). **Development Only** (Inspector flag, Print default, `compileGraphDocumentsForExport`) is landed — do not reopen Print-strip as a P5 gap. Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **Enum / Structure / ScriptInterface DockView editors** are landed.
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design Class panel UX against `ClassRegistry.reparent` from the start.
