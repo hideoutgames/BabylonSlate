@@ -6,6 +6,7 @@ import {
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
 import { humanizePropertyLabel } from "@babylonslate/editor-kit";
+import { isDevelopmentOnlyNode } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
@@ -265,20 +266,37 @@ function NodeErrorBadge({
   );
 }
 
+function shellIsDevelopmentOnly(
+  nodeId: string,
+  data: Record<string, unknown> | undefined,
+): boolean {
+  if (!data) return false;
+  return isDevelopmentOnlyNode({
+    id: nodeId,
+    typeId: typeof data.__nodeType === "string" ? data.__nodeType : "",
+    position: { x: 0, y: 0 },
+    pins: [],
+    properties: data,
+  });
+}
+
 export function BlueprintNodeShell({
   nodeId,
   title,
   role,
   selected,
+  data,
   children,
 }: {
   nodeId: string;
   title: string;
   role: NodeVisualRole;
   selected?: boolean;
+  data?: Record<string, unknown>;
   children: ReactNode;
 }) {
   const { nodeErrorCount } = useGraphEditorContext();
+  const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
 
   return (
     <div className="relative">
@@ -299,6 +317,14 @@ export function BlueprintNodeShell({
           {title}
         </div>
         {children}
+        {developmentOnly ? (
+          <div
+            className="graph-node-dev-only-tape pointer-events-none h-5 select-none"
+            data-testid="development-only-banner"
+            role="img"
+            aria-label="Development Only"
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -315,6 +341,7 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
       title={title}
       role={role}
       selected={selected}
+      data={data}
     >
       <div className="flex flex-col py-1">
         {rows.map((row, index) => (
@@ -341,6 +368,7 @@ export function LogMessageNode({
       title="Log Message"
       role="debug"
       selected={selected}
+      data={data}
     >
       <div className="px-3 py-2 text-sm">{data.message}</div>
     </BlueprintNodeShell>

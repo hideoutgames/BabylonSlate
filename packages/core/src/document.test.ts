@@ -167,6 +167,7 @@ describe("document ids and layouts", () => {
       documents: {},
       tabOrder: [],
       activeDocumentId: null,
+      showPluginContent: false,
     });
     const legacy = { grid: { root: "viewport" } };
     expect(migrateLegacyLayout(legacy, "scene:main")).toEqual({

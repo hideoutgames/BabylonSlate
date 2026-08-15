@@ -55,6 +55,8 @@ const NODE_TOKENS = [
   "--node-variable-set",
   "--node-latent",
   "--node-debug",
+  "--node-dev-only-tape",
+  "--node-dev-only-stripe",
 ] as const;
 
 function cssBlock(css: string, selector: string): string {
@@ -183,6 +185,16 @@ describe("Minimal Neutral theme tokens", () => {
   it("defines node role tokens", () => {
     for (const name of NODE_TOKENS) {
       expect(tokenValue(dark, name), name).not.toBe("");
+      expect(tokenValue(root, name), name).not.toBe("");
+    }
+  });
+
+  it("keeps Development Only tape hues identical in both schemes", () => {
+    for (const name of [
+      "--node-dev-only-tape",
+      "--node-dev-only-stripe",
+    ] as const) {
+      expect(tokenValue(dark, name), name).toBe(tokenValue(root, name));
     }
   });
 
