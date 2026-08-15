@@ -27,8 +27,9 @@ import {
   DEFAULT_GIZMO_HANDLE_SCALE,
   GIZMO_COLLIDER_SCALE,
   GIZMO_END_CAP_SCALE,
-  GIZMO_ROTATION_COLLIDER_SCALE,
+  GIZMO_ROTATION_THICKNESS,
   GIZMO_SCALE_SENSITIVITY,
+  GIZMO_SHAFT_THICKNESS,
 } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
@@ -893,21 +894,39 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
-  it("fattens invisible rotation-ring colliders more than translate colliders", () => {
+  it("builds rotation rings thicker than translate shafts, with aligned colliders", () => {
+    expect(GIZMO_ROTATION_THICKNESS).toBe(8);
+    expect(GIZMO_ROTATION_THICKNESS).toBeGreaterThan(GIZMO_SHAFT_THICKNESS);
+
     const { scene } = createHandle();
     const host = createGizmoHost(scene);
     const children = host.rotationGizmo.xGizmo._rootMesh.getChildMeshes();
     const visual = children.find(
-      (mesh) => mesh.visibility > 0 && mesh.getChildMeshes().length === 0,
+      (mesh) =>
+        mesh.visibility > 0 &&
+        mesh.name !== "rotationDisplay" &&
+        mesh.getChildMeshes().length === 0,
     );
-    const collider = children.find(
-      (mesh) => mesh.visibility === 0 && mesh.getChildMeshes().length === 0,
-    );
+    const collider = children.find((mesh) => mesh.name === "ignore");
     expect(visual).toBeDefined();
     expect(collider).toBeDefined();
-    expect(GIZMO_ROTATION_COLLIDER_SCALE).toBe(8);
-    expect(collider!.scaling.x).toBeCloseTo(GIZMO_ROTATION_COLLIDER_SCALE);
     expect(visual!.scaling.x).toBeCloseTo(1);
+    expect(collider!.scaling.x).toBeCloseTo(1);
+
+    visual!.computeWorldMatrix(true);
+    visual!.refreshBoundingInfo();
+    collider!.computeWorldMatrix(true);
+    collider!.refreshBoundingInfo();
+    const visualBox = visual!.getBoundingInfo().boundingBox;
+    const colliderBox = collider!.getBoundingInfo().boundingBox;
+    const minExtent = (v: Vector3) => Math.min(v.x, v.y, v.z);
+    const maxExtent = (v: Vector3) => Math.max(v.x, v.y, v.z);
+    // Hairline at shaft thickness 0.45 is ~0.001; thickness 8 is ~0.02.
+    expect(minExtent(visualBox.extendSize)).toBeGreaterThan(0.01);
+    expect(
+      maxExtent(colliderBox.extendSizeWorld) /
+        maxExtent(visualBox.extendSizeWorld),
+    ).toBeLessThan(2);
     host.dispose();
   });
 });

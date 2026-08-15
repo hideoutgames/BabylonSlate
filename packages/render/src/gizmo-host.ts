@@ -55,8 +55,8 @@ export const DEFAULT_GIZMO_HANDLE_SCALE = 1.8;
 /** Invisible pick meshes, scaled independently of the thin visual shafts. */
 export const GIZMO_COLLIDER_SCALE = 2.5;
 
-/** Invisible rotation tori — fat enough for a finger without growing the ring. */
-export const GIZMO_ROTATION_COLLIDER_SCALE = 8;
+/** Rotation torus tube multiplier; independent of thin translate/scale shafts. */
+export const GIZMO_ROTATION_THICKNESS = 8;
 
 /** Compensates Babylon's dragStrength ÷ rootMesh.scaling (grows with handle size). */
 export const GIZMO_SCALE_SENSITIVITY = 10;
@@ -220,11 +220,9 @@ function enlargeGizmoTouchTargets(root: AbstractMesh): void {
   for (const mesh of root.getChildMeshes()) {
     if (!isLeafMesh(mesh)) continue;
     if (mesh.visibility === 0) {
-      const scale =
-        mesh.name === "ignore"
-          ? GIZMO_ROTATION_COLLIDER_SCALE
-          : GIZMO_COLLIDER_SCALE;
-      mesh.scaling.scaleInPlace(scale);
+      // Uniform torus scale would grow the ring off the visible line.
+      if (mesh.name === "ignore") continue;
+      mesh.scaling.scaleInPlace(GIZMO_COLLIDER_SCALE);
     } else if (mesh.name === "yPosMesh" || isTranslateCone(mesh)) {
       mesh.scaling.scaleInPlace(GIZMO_END_CAP_SCALE);
     }
@@ -248,7 +246,7 @@ export function createGizmoHost(
     layer,
     GIZMO_ROTATION_TESSELLATION,
     false,
-    GIZMO_SHAFT_THICKNESS,
+    GIZMO_ROTATION_THICKNESS,
   );
   const scale = new ScaleGizmo(layer, GIZMO_SHAFT_THICKNESS);
   const gizmos = [position, rotation, scale];
