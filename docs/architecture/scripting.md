@@ -147,7 +147,7 @@ IR → **plain JavaScript ES modules** (no TypeScript in the browser).
 | Determinism | Stable text; golden tests are the primary gate |
 | Anchors | Per-statement `{ line, column, assetGuid, graphId, nodeId, bodyLine? }` + `//# sourceURL=babylonslate:///<assetGuid>.js` |
 | Load | `runtime.loadCompiledModule` (blob URL, `new Function` fallback) |
-| Development Only | `properties.developmentOnly`; Print defaults on. Canvas nodes draw a Unreal-style yellow/black hazard-tape footer (`DEVELOPMENT ONLY`). Editor Play keeps the node. Export `compileGraphDocumentsForExport` (`stripDevelopmentOnly: true`) skips codegen and continues exec at `then`, or Sequence `then_*` pins in order (skip as no-op). Exclusive Branch `true`/`false` arms are not entered. Data pins from a stripped node compile as type defaults. A flagged event entry is omitted from the export module. |
+| Development Only | `properties.developmentOnly`; Print defaults on. Canvas nodes draw a Unreal-style yellow/black hazard-tape footer. Editor Play keeps the node. Export `compileGraphDocumentsForExport` (`stripDevelopmentOnly: true`) skips codegen and continues exec at `then`, or Sequence `then_*` pins in order (skip as no-op). Exclusive Branch `true`/`false` arms are not entered. Data pins from a stripped node compile as type defaults. A flagged event entry is omitted from the export module. |
 | Output location | Derived data outside the project folder (compiled scripts + anchor tables) |
 
 Validator and compiler share the **type context builder** so a graph that validates compiles.

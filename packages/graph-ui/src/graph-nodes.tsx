@@ -319,12 +319,11 @@ export function BlueprintNodeShell({
         {children}
         {developmentOnly ? (
           <div
-            className="graph-node-dev-only-tape pointer-events-none select-none px-3 py-0.5 text-center text-[10px] font-bold tracking-[0.18em]"
+            className="graph-node-dev-only-tape pointer-events-none h-5 select-none"
             data-testid="development-only-banner"
+            role="img"
             aria-label="Development Only"
-          >
-            DEVELOPMENT ONLY
-          </div>
+          />
         ) : null}
       </div>
     </div>

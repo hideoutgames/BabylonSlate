@@ -595,9 +595,9 @@ describe("GraphEditor", () => {
     };
 
     const { getByTestId } = render(<GraphEditor initialGraph={graph} />);
-    expect(getByTestId("development-only-banner").textContent).toMatch(
-      /DEVELOPMENT ONLY/,
-    );
+    const banner = getByTestId("development-only-banner");
+    expect(banner.getAttribute("aria-label")).toBe("Development Only");
+    expect(banner.textContent?.trim()).toBe("");
   });
 
   it("hides the Development Only tape when Print opts out", () => {

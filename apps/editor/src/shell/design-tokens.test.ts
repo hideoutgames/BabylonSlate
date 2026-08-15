@@ -57,7 +57,6 @@ const NODE_TOKENS = [
   "--node-debug",
   "--node-dev-only-tape",
   "--node-dev-only-stripe",
-  "--node-dev-only-foreground",
 ] as const;
 
 function cssBlock(css: string, selector: string): string {
@@ -194,7 +193,6 @@ describe("Minimal Neutral theme tokens", () => {
     for (const name of [
       "--node-dev-only-tape",
       "--node-dev-only-stripe",
-      "--node-dev-only-foreground",
     ] as const) {
       expect(tokenValue(dark, name), name).toBe(tokenValue(root, name));
     }

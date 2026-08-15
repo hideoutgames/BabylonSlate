@@ -86,7 +86,6 @@ Title-bar fills for Blueprint-like nodes:
 | `--node-title-foreground` | title text on those bars |
 | `--node-dev-only-tape` | Development Only hazard-tape yellow (same in light and dark) |
 | `--node-dev-only-stripe` | Development Only hazard-tape black stripe |
-| `--node-dev-only-foreground` | `DEVELOPMENT ONLY` stamp text on the tape |
 
 ## Asset type colors
 

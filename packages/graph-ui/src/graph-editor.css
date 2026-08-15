@@ -37,8 +37,4 @@
     var(--node-dev-only-tape) 6px,
     var(--node-dev-only-tape) 12px
   );
-  color: var(--node-dev-only-foreground);
-  text-shadow:
-    0 0 2px var(--node-dev-only-tape),
-    0 0 4px var(--node-dev-only-tape);
 }
