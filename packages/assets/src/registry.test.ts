@@ -593,6 +593,19 @@ describe("AssetRegistry", () => {
       }),
     ).rejects.toThrow(/read-only/i);
   });
+
+  it("records DirEntry mtime on indexed assets", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/tex.babasset", {
+      guid: "tex-mtime",
+      type: "Texture",
+      name: "tex",
+    });
+    const expected = (await storage.stat("assets/tex.babasset")).mtime;
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.getByGuid("tex-mtime")?.mtime).toBe(expected);
+  });
 });
 
 describe("ThumbnailDecodeLru", () => {

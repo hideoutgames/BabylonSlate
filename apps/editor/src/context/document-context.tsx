@@ -120,6 +120,12 @@ import {
   mergePluginEditorUtilityObjects,
   playSceneLibraryPaths,
 } from "../lib/plugin-ui";
+import { readProjectJsonMtime } from "../lib/external-change";
+import {
+  classifyExternalChanges,
+  snapshotIndexedMtimes,
+  type ExternalChangeClassification,
+} from "@babylonslate/assets";
 import {
   listedProjectsFromRecents,
   type ListedProject,
@@ -265,6 +271,10 @@ interface DocumentContextValue {
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   sourceControl: SourceControlService;
   prefillSourceControlFromGit: () => Promise<GitConfigPrefill>;
+  externalChangePrompt: ExternalChangeClassification | null;
+  confirmExternalChangeReloadProject: () => Promise<void>;
+  confirmExternalChangeReloadDocs: (paths: string[]) => Promise<void>;
+  dismissExternalChange: () => void;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -407,6 +417,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const secretStore = useMemo(() => createSecretStore(), []);
   const nativeHttp = useMemo(() => createNativeHttp(), []);
   const [sourceControlTick, setSourceControlTick] = useState(0);
+  const [externalChangePrompt, setExternalChangePrompt] =
+    useState<ExternalChangeClassification | null>(null);
+  const mtimeSnapshotRef = useRef<{
+    assets: Record<string, number | null>;
+    projectJson: number | null;
+  } | null>(null);
   const editSessionRef = useRef(
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
@@ -453,6 +469,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [],
   );
   const documentService = documentServiceRef.current;
+  const runForegroundRescanRef = useRef<() => Promise<void>>(async () => {});
+
+  const captureMtimeSnapshot = useCallback(async () => {
+    mtimeSnapshotRef.current = {
+      assets: snapshotIndexedMtimes(projectService.registry?.list() ?? []),
+      projectJson: await readProjectJsonMtime(projectService.storagePort),
+    };
+  }, [projectService]);
 
   useEffect(() => {
     return sourceControlRef.current.subscribe(() => {
@@ -489,6 +513,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return;
       }
       sourceControlRef.current.resumePolling();
+      void runForegroundRescanRef.current();
     });
   }, []);
 
@@ -607,6 +632,90 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     bump();
   }, [bump, projectDocument, projectService]);
+
+  const reloadDocumentsFromDisk = useCallback(
+    async (paths: string[]) => {
+      for (const path of paths) {
+        const doc = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.path === path,
+        );
+        if (!doc || doc.ref.kind === "content-browser") continue;
+        try {
+          const content = await projectService.loadDocument(
+            doc.ref.kind,
+            doc.ref.path,
+          );
+          documentService.replaceLoadedContent(doc.id, content);
+          editSessionRef.current.dropDocument(doc.id);
+        } catch {
+          // Deleted or unreadable on disk.
+        }
+      }
+      bump();
+    },
+    [bump, documentService, projectService],
+  );
+
+  const runForegroundRescan = useCallback(async () => {
+    if (!projectDocumentRef.current) return;
+    const previous = mtimeSnapshotRef.current;
+    await projectService.remountRegistry();
+    bump();
+    const nextAssets = snapshotIndexedMtimes(
+      projectService.registry?.list() ?? [],
+    );
+    const nextProject = await readProjectJsonMtime(projectService.storagePort);
+    if (previous) {
+      const openDocs = documentService
+        .getOpenDocumentsOrdered()
+        .filter((doc) => doc.ref.kind !== "content-browser")
+        .map((doc) => ({ path: doc.ref.path, dirty: doc.dirty }));
+      const result = classifyExternalChanges({
+        previousAssets: previous.assets,
+        nextAssets,
+        previousProjectJsonMtime: previous.projectJson,
+        nextProjectJsonMtime: nextProject,
+        openDocs,
+      });
+      if (result.kind !== "none") {
+        setExternalChangePrompt(result);
+      }
+    }
+    mtimeSnapshotRef.current = {
+      assets: nextAssets,
+      projectJson: nextProject,
+    };
+  }, [bump, documentService, projectService]);
+  runForegroundRescanRef.current = runForegroundRescan;
+
+  const confirmExternalChangeReloadProject = useCallback(async () => {
+    const { document } = await projectService.loadCurrentProject();
+    setProjectDocument(document);
+    const paths = documentService
+      .getOpenDocumentsOrdered()
+      .filter((doc) => doc.ref.kind !== "content-browser")
+      .map((doc) => doc.ref.path);
+    await reloadDocumentsFromDisk(paths);
+    await captureMtimeSnapshot();
+    setExternalChangePrompt(null);
+  }, [
+    captureMtimeSnapshot,
+    documentService,
+    projectService,
+    reloadDocumentsFromDisk,
+  ]);
+
+  const confirmExternalChangeReloadDocs = useCallback(
+    async (paths: string[]) => {
+      await reloadDocumentsFromDisk(paths);
+      setExternalChangePrompt(null);
+    },
+    [reloadDocumentsFromDisk],
+  );
+
+  const dismissExternalChange = useCallback(() => {
+    setExternalChangePrompt(null);
+  }, []);
 
   const applyPluginOverrides = useCallback(
     async (overrides: Record<string, { enabled: boolean }>) => {
@@ -762,6 +871,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       await recordRecent(projectService.storagePort.getCurrentFolder());
       await refreshProjectList();
+      await captureMtimeSnapshot();
       bump();
     },
     [
@@ -772,6 +882,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectService,
       recordRecent,
       refreshProjectList,
+      captureMtimeSnapshot,
     ],
   );
 
@@ -990,6 +1101,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setMigrationPending([]);
     setLastCompiledSignature(null);
     setRoute("home");
+    mtimeSnapshotRef.current = null;
+    setExternalChangePrompt(null);
     await refreshProjectList();
     bump();
   }, [
@@ -1937,6 +2050,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           placeholder: boolean;
         } | null>;
         activeTilemapTile: (gx: number, gy: number) => number | null;
+        touchAssetOnDisk: (path: string) => Promise<void>;
+        runForegroundRescan: () => Promise<void>;
       };
       __babylonslateSourceControl?: SourceControlService;
     };
@@ -2134,6 +2249,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!layerId) return null;
         return getTile(map, layerId, gx, gy);
       },
+      touchAssetOnDisk: async (path: string) => {
+        const storage = projectService.storagePort;
+        if (!(await storage.exists(path))) return;
+        const bytes = await storage.readBinary(path);
+        await storage.writeBinary(path, bytes);
+      },
+      runForegroundRescan: () => runForegroundRescanRef.current(),
     };
     return () => {
       delete host.__babylonslateTest;
@@ -2458,6 +2580,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateProjectSettings,
       sourceControl: sourceControlRef.current,
       prefillSourceControlFromGit,
+      externalChangePrompt,
+      confirmExternalChangeReloadProject,
+      confirmExternalChangeReloadDocs,
+      dismissExternalChange,
       undoActiveDocument,
       redoActiveDocument,
       canUndoActiveDocument: (() => {
@@ -2603,6 +2729,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateProjectSettings,
       prefillSourceControlFromGit,
       sourceControlTick,
+      externalChangePrompt,
+      confirmExternalChangeReloadProject,
+      confirmExternalChangeReloadDocs,
+      dismissExternalChange,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,

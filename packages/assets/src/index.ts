@@ -25,6 +25,7 @@ export * from "./plugin-package";
 export * from "./plugin-settings";
 export * from "./starter-content";
 export * from "./registry";
+export * from "./mtime-diff";
 export * from "./semver-range";
 export * from "./search-index";
 export * from "./templates";

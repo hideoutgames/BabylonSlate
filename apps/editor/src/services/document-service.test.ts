@@ -314,6 +314,25 @@ describe("DocumentService", () => {
     expect(doc?.ref.label).toBe("Palette Enum");
     expect((doc?.content as { members: unknown[] }).members).toHaveLength(2);
   });
+
+  it("reloads document content from disk without marking dirty", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const projectService = createMockProjectService();
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    await service.initializeFromProject(projectService, project, {
+      ...createEmptyLayouts(),
+      tabOrder: [graphId],
+    });
+    service.updateGraph(graphId, { nodes: [{ id: "n1" }], edges: [] } as never);
+    expect(service.getDocument(graphId)?.dirty).toBe(true);
+    service.replaceLoadedContent(graphId, { nodes: [], edges: [] });
+    expect(service.getDocument(graphId)?.dirty).toBe(false);
+    expect(service.getDocument(graphId)?.content).toEqual({
+      nodes: [],
+      edges: [],
+    });
+  });
 });
 
 describe("layout migration", () => {

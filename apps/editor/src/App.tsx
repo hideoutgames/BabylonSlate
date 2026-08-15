@@ -25,6 +25,7 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import { ComponentGallery } from "./components/component-gallery";
 import { EditorChromeBar } from "./components/editor-chrome-bar";
 import { DocumentWorkspace } from "./components/document-workspace";
+import { ExternalChangeDialogs } from "./components/external-change-dialogs";
 import { Homepage } from "./components/homepage";
 import { DocumentProvider, useDocuments } from "./context/document-context";
 import { EditorThemeProvider } from "./context/theme-context";
@@ -177,6 +178,10 @@ function EditorLayout() {
     approveMigrationsAndSave,
     closeDocument,
     openDocuments,
+    externalChangePrompt,
+    confirmExternalChangeReloadProject,
+    confirmExternalChangeReloadDocs,
+    dismissExternalChange,
   } = useDocuments();
   const {
     playAwaitingMigration,
@@ -316,6 +321,17 @@ function EditorLayout() {
             }
           })();
         }}
+      />
+      <ExternalChangeDialogs
+        prompt={externalChangePrompt}
+        onReloadProject={() => {
+          void confirmExternalChangeReloadProject();
+        }}
+        onReloadDocs={(paths) => {
+          void confirmExternalChangeReloadDocs(paths);
+        }}
+        onKeepEdits={dismissExternalChange}
+        onDismiss={dismissExternalChange}
       />
       <span className="sr-only" data-testid="dirty-count">
         {dirtyDocuments.length}
