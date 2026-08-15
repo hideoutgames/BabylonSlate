@@ -194,14 +194,19 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
-| Full Enum / Structure / ScriptInterface row editors | `apps/editor`, `editor-kit` | DockView member tables, ScriptInterface method preview, `PinListEditor` / `PinTypePicker` |
+| Class re-parent UX | later polish (`apps/editor`, object-model) | `ClassRegistry.reparent` exists; Class panel has no change-parent UI |
+| ExecuteJavaScript editor gaps | later polish (`apps/editor`) | Identifier uniqueness / `execJs_` prefix, Inspector async toggle, lazy CodeMirror chunk, import disclosure of JS bodies |
+| Engine Settings “don’t ask again” | later polish (`apps/editor`) | Play Anyway exists; no permanent skip preference |
+| Class / outliner validation icons | later polish (`apps/editor`) | `hasError` on Class members is never set |
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Play now validates the compiled project graph set (`collectPlayPreviewScripts`); startup-map / GameInstance / plugin EUO sweep still deferred |
+| Validator fixture per diagnostic code | later polish (`scripting`) | CI has `type.mismatch` and `js.parse` fixtures; other codes are unit-tested |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed (`p8-command-system`) |
 | BDebugCommand + parameter list | P8 | Landed (`p8-bdebugcommand`) |
 | Play console + stats HUD | P8 | Landed (`p8-console-hud`) |
 | Trace recorder / `.babtrace` | P8 | Landed (`p8-trace-recorder`) |
-| Keyed Print HUD polish + strip-on-export preset UI | P8 / export | Print works; export strip preset + HUD polish deferred |
+| Keyed Print HUD polish | P8 / export | Print works; HUD polish deferred |
+| Development Only node flag | Done | Inspector checkbox; Print defaults on; export `compileGraphDocuments(..., { stripDevelopmentOnly: true })` skips the node and continues exec. P14 release export must pass that flag |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio / UI node runtime helpers beyond stubs | P9 | `setWidgetVisible` / `applyUserInterface` / `removeUserInterface` emit UI commands; audio helpers still stubs |
 

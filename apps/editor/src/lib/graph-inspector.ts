@@ -11,6 +11,7 @@ import {
   STRING,
   colorRgbToPinDefault,
   defaultJsValue,
+  isDevelopmentOnlyNode,
   listUnconnectedLiteralPinDefaults,
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
@@ -275,6 +276,29 @@ export function logNodePropertyRows(
       value: pinDefaultAsString(data.category) || "Script",
       defaultValue: "Script",
       onChange: (value) => onPatch({ category: value }),
+    },
+  ];
+}
+
+export function developmentOnlyPropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  return [
+    {
+      kind: "boolean",
+      id: "developmentOnly",
+      label: "Development Only",
+      value: isDevelopmentOnlyNode({
+        id: typeId,
+        typeId,
+        position: { x: 0, y: 0 },
+        pins: [],
+        properties: data,
+      }),
+      defaultValue: typeId === "debug.print",
+      onChange: (value) => onPatch({ developmentOnly: value }),
     },
   ];
 }

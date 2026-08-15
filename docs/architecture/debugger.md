@@ -84,4 +84,4 @@ Output Log, keyed Print, and the Preview session report are unchanged.
 
 ## Export settings (P14)
 
-Project Settings: bundle debugger (off for release), strip Print (defaults to following it). A non-debug player still links `@babylonslate/debugger` **core** commands. Debug-tier modules are the tree-shaken part.
+Project Settings: bundle debugger (off for release). Release export compiles with `stripDevelopmentOnly: true` (Print and any Inspector **Development Only** node are omitted from generated JS). A non-debug player still links `@babylonslate/debugger` **core** commands. Debug-tier modules are the tree-shaken part.

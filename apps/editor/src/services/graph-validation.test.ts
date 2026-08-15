@@ -226,6 +226,8 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.function.output")).toBe(false);
     expect(nodes.some((node) => node.id === "functions.call")).toBe(true);
     expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
+    const print = nodes.find((node) => node.id === "debug.print");
+    expect(print?.defaultData).toMatchObject({ developmentOnly: true });
   });
 
   it("hides behaviour-tree events on Actor class graphs", () => {

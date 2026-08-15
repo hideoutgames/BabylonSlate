@@ -3,6 +3,7 @@ import { COLOR, FLOAT, STRING, VEC2, VEC4, enumRef, pin } from "@babylonslate/sc
 import {
   collectEnumMemberNames,
   connectedInputPinIds,
+  developmentOnlyPropertyRows,
   inspectorLiteralPinDefaults,
   logNodePropertyRows,
   parameterRowsFromPinList,
@@ -228,6 +229,36 @@ describe("collectEnumMemberNames", () => {
       "enum-1": ["Idle", "Run"],
       "enum-2": ["Red", "Blue"],
     });
+  });
+});
+
+describe("developmentOnlyPropertyRows", () => {
+  it("shows Development Only checked for Print by default", () => {
+    const onPatch = vi.fn();
+    const rows = developmentOnlyPropertyRows("debug.print", {}, onPatch);
+    expect(rows).toMatchObject([
+      {
+        kind: "boolean",
+        id: "developmentOnly",
+        label: "Development Only",
+        value: true,
+      },
+    ]);
+    const row = rows[0];
+    if (row?.kind === "boolean") row.onChange(false);
+    expect(onPatch).toHaveBeenCalledWith({ developmentOnly: false });
+  });
+
+  it("shows Development Only unchecked for Log unless flagged", () => {
+    const onPatch = vi.fn();
+    const rows = developmentOnlyPropertyRows("debug.log", {}, onPatch);
+    expect(rows[0]).toMatchObject({ kind: "boolean", value: false });
+    const flagged = developmentOnlyPropertyRows(
+      "debug.log",
+      { developmentOnly: true },
+      onPatch,
+    );
+    expect(flagged[0]).toMatchObject({ kind: "boolean", value: true });
   });
 });
 
