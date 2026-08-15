@@ -5,6 +5,7 @@ export * from "./type-context";
 export * from "./validate";
 export * from "./node-registry";
 export * from "./compile";
+export * from "./development-only";
 export * from "./wildcard";
 export * from "./wildcard-resolve";
 export * from "./serialize";

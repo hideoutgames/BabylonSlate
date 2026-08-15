@@ -2,6 +2,7 @@ import type { LogicGraph, GraphNode, GraphPin } from "./ir";
 import { findNode, findPin } from "./ir";
 import type { NodeRegistry, CodegenContext, HoistBodyAnchor } from "./node-registry";
 import { defaultValueLiteral } from "./types";
+import { isDevelopmentOnlyNode } from "./development-only";
 
 export type CompileAnchor = {
   line: number;
@@ -68,6 +69,11 @@ export type CompileOptions = {
   assetGuid: string;
   registry: NodeRegistry;
   exportName?: string;
+  /**
+   * Export compiles omit Development Only nodes (Print defaults on) and
+   * continue exec at `then` / Sequence `then_*`. Editor Play leaves this unset.
+   */
+  stripDevelopmentOnly?: boolean;
 };
 
 function jsIdent(name: string): string {
@@ -86,6 +92,37 @@ function edgeToInput(
   return edge
     ? { sourceNodeId: edge.sourceNodeId, sourcePinId: edge.sourcePinId }
     : undefined;
+}
+
+function isPassthroughExecOut(pin: GraphPin): boolean {
+  return (
+    pin.kind === "exec" &&
+    pin.direction === "out" &&
+    (pin.name === "then" || pin.name.startsWith("then_"))
+  );
+}
+
+/**
+ * Skip-as-no-op: continue at `then`, or Sequence `then_*` pins in order.
+ * Exclusive Branch true/false (and any other multi-out that is not `then`)
+ * are not entered — the stripped node cannot choose an arm.
+ */
+function stripExecSuccessors(graph: LogicGraph, node: GraphNode): string[] {
+  const passthrough = node.pins.filter(isPassthroughExecOut);
+  if (passthrough.length > 0) {
+    const targets: string[] = [];
+    for (const out of passthrough) {
+      targets.push(...execSuccessors(graph, node.id, out.name));
+    }
+    return targets;
+  }
+  const outs = node.pins.filter(
+    (pin) => pin.kind === "exec" && pin.direction === "out",
+  );
+  if (outs.length === 1) {
+    return execSuccessors(graph, node.id, outs[0]!.name);
+  }
+  return [];
 }
 
 function execSuccessors(
@@ -153,6 +190,8 @@ export function compileGraph(
   const hoisted: HoistChunk[] = [];
   type BodyLine = { text: string; anchor?: Omit<CompileAnchor, "line"> };
   const body: BodyLine[] = [];
+  const shouldStrip = (node: GraphNode) =>
+    options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
   const exprCache = new Map<string, string>();
   /**
    * Impure output slots are declared once at the top of the entry point so a
@@ -174,6 +213,11 @@ export function compileGraph(
     if (incoming) {
       const srcNode = findNode(graph, incoming.sourceNodeId)!;
       const srcPin = findPin(srcNode, incoming.sourcePinId)!;
+      if (shouldStrip(srcNode)) {
+        const lit = defaultValueLiteral(dataPin.type);
+        exprCache.set(key, lit);
+        return lit;
+      }
       ensurePure(srcNode);
       const varName = exprCache.get(`${srcNode.id}:${srcPin.id}`);
       if (varName) {
@@ -231,6 +275,7 @@ export function compileGraph(
   }
 
   function ensurePure(node: GraphNode) {
+    if (shouldStrip(node)) return;
     const def = options.registry.get(node.typeId);
     if (!def?.pure) return;
     if (
@@ -260,6 +305,16 @@ export function compileGraph(
       visited.add(current);
       const node = findNode(graph, current);
       if (!node) break;
+      if (shouldStrip(node)) {
+        const targets = stripExecSuccessors(graph, node);
+        if (targets.length === 0) break;
+        if (targets.length === 1) {
+          current = targets[0];
+          continue;
+        }
+        for (const t of targets) emitExecChain(t, new Set(visited));
+        break;
+      }
       const def = options.registry.get(node.typeId);
       if (!def) {
         emitBody(`  // missing node type ${node.typeId}`, {
@@ -389,12 +444,14 @@ export function compileGraph(
   const usedNames = new Set<string>();
 
   for (const entry of entries.length > 0 ? entries : [null]) {
+    if (entry && shouldStrip(entry)) continue;
     body.length = 0;
     outputDecls.clear();
     exprCache.clear();
     isAsync = false;
 
     for (const node of graph.nodes) {
+      if (shouldStrip(node)) continue;
       if (options.registry.get(node.typeId)?.pure) ensurePure(node);
     }
 

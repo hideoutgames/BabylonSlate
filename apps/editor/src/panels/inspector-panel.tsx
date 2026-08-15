@@ -53,6 +53,7 @@ import {
   collectEnumMemberNames,
   commandParameterRows,
   commandParametersFromRows,
+  developmentOnlyPropertyRows,
   inspectorLiteralPinDefaults,
   logNodePropertyRows,
   parameterRowsFromPinList,
@@ -564,6 +565,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const logRows = isLog
     ? logNodePropertyRows(selectedNode.data, updateNodeData)
     : [];
+  const developmentOnlyRows = developmentOnlyPropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+  );
 
   return (
     <PanelFrame data-testid="inspector-panel">
@@ -572,6 +578,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         {logRows.length > 0 ? (
           <PropertyGrid rows={logRows} data-testid="inspector-log-properties" />
         ) : null}
+        <PropertyGrid
+          rows={developmentOnlyRows}
+          data-testid="inspector-development-only"
+        />
         {pinDefaultRows.length > 0 ? (
           <PropertyGrid
             title="Defaults"
