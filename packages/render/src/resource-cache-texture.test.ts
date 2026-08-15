@@ -96,6 +96,42 @@ describe("explicit tap picking", () => {
     scene.dispose();
     engine.dispose();
   });
+
+  it("walks parents to resolve tilemap chunk hits to actor-N slotId", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const root = { name: "actor-7", parent: null };
+    const chunk = { name: "actor-7:layer:0:0", parent: root };
+    vi.spyOn(scene, "pick").mockReturnValue({
+      hit: true,
+      pickedMesh: chunk,
+    } as never);
+
+    const hit = pickAtCanvas(scene, 12, 34);
+    expect(hit).toMatchObject({ meshName: "actor-7", slotId: 7 });
+    expect(scene.pick).toHaveBeenCalledWith(12, 34, undefined, false);
+
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("returns the mesh name with null slotId when no actor-* ancestor exists", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = { name: "gizmo-ring", parent: null };
+    vi.spyOn(scene, "pick").mockReturnValue({
+      hit: true,
+      pickedMesh: mesh,
+    } as never);
+
+    expect(pickAtCanvas(scene, 1, 2)).toMatchObject({
+      meshName: "gizmo-ring",
+      slotId: null,
+    });
+
+    scene.dispose();
+    engine.dispose();
+  });
 });
 
 describe("encode queue pause reasons (editor helper contract)", () => {
