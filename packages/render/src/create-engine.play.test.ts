@@ -104,6 +104,28 @@ describe("Play createEngine view", () => {
     expect(handle.scheduler.shouldRender()).toBe(true);
   });
 
+  it("snapshots _drawCalls after scene.render instead of reading unset engine.drawCalls", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const callback = runRenderLoop.mock.calls[0]?.[0];
+    expect(callback).toBeTypeOf("function");
+    expect((engine as { drawCalls?: number }).drawCalls).toBeUndefined();
+    expect(handle.drawCalls()).toBe(0);
+
+    vi.spyOn(handle.scene, "render").mockImplementation(() => {
+      engine._drawCalls.addCount(2, false);
+    });
+    callback!();
+    expect(handle.drawCalls()).toBe(2);
+
+    vi.spyOn(handle.scene, "render").mockImplementation(() => {
+      engine._drawCalls.addCount(1, false);
+    });
+    callback!();
+    expect(handle.drawCalls()).toBe(1);
+  });
+
   it("honors an explicit Play frame cap", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

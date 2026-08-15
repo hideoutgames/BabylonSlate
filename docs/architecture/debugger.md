@@ -74,7 +74,7 @@ The shared `ParameterListEditor` in `editor-kit` authors those rows (types, opti
 Play overlay **extends** the existing FPS / `scriptMs` / `physicsMs` strip:
 
 - Bottom-sheet console (`DebugConsole`): history, registry autocomplete including enum values, accessory key bar, `SelectableText` transcript. Executes through in-process `runtime.executeConsoleCommand` or worker `{ type: "console" }`.
-- ~5 Hz `StatsHud`: tick-budget flag (`isTickOverBudget`), accounted resource-cache bytes, mesh/texture counts, draw calls when the engine reports them, bridge messages/s. Worker `stats` commands own `scriptMs` / `physicsMs`; the main-thread rAF pump only merges FPS so it cannot zero those timings. Editor Always Render FPS stays on the chrome Debug menu.
+- ~5 Hz `StatsHud`: tick-budget flag (`isTickOverBudget`), accounted resource-cache bytes, mesh/texture counts, last-frame draw calls (Babylon `_drawCalls.current` snapshotted after Play `scene.render()` — not `engine.drawCalls`, which is unset), bridge messages/s. Worker `stats` commands own `scriptMs` / `physicsMs`; the main-thread rAF pump only merges FPS so it cannot zero those timings. Editor Always Render FPS stays on the chrome Debug menu.
 
 Output Log, keyed Print, and the Preview session report are unchanged.
 
