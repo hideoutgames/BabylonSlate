@@ -99,4 +99,77 @@ describe("loadExportDocuments", () => {
     });
     expect(loaded.payloadByGuid("sprite-1")).toEqual({ textureGuid: "tex-atlas" });
   });
+
+  it("reads the Scene navmesh extra chunk for packed Play", async () => {
+    const scene = createDefaultScene();
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/main.scene.babasset",
+          header: {
+            guid: "scene-1",
+            type: "Scene",
+            name: "Main",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: {},
+            chunks: [
+              {
+                id: "navmesh",
+                kind: "bytes",
+                mime: "application/octet-stream",
+                sha256: "cc",
+                locator: { inline: { offset: 0, length: 3 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async () => scene,
+      readAssetChunk: async (_path, chunkId) =>
+        chunkId === "navmesh" ? new Uint8Array([1, 2, 3]) : null,
+    });
+    expect(loaded.navmeshByGuid("scene-1")).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("loads Font documents into payloads without replacing source bytes", async () => {
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Display.font.babasset",
+          header: {
+            guid: "font-1",
+            type: "Font",
+            name: "Custom Font",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: {},
+            chunks: [
+              {
+                id: "source",
+                kind: "bytes",
+                mime: "font/ttf",
+                sha256: "dd",
+                locator: { inline: { offset: 0, length: 3 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async (kind) => {
+        expect(kind).toBe("font");
+        return { family: "Display" };
+      },
+      readAssetChunk: async (_path, chunkId) =>
+        chunkId === "source" ? new Uint8Array([7, 8, 9]) : null,
+    });
+    expect(loaded.payloadByGuid("font-1")).toEqual({ family: "Display" });
+    expect(loaded.bytesByGuid("font-1")).toEqual(new Uint8Array([7, 8, 9]));
+  });
 });

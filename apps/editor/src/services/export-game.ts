@@ -3,6 +3,8 @@ import {
   exportGame,
   zipExport,
   MISSING_STARTUP_SCENE_MESSAGE,
+  NAVMESH_EXPORT_TYPE,
+  navmeshExportGuid,
   type ExportAssetBytes,
   type ExportIndexedAsset,
   type ExportArtifact,
@@ -16,13 +18,17 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { resolvePluginEnabled } from "@babylonslate/assets";
+import {
+  normalizeFontPayload,
+  resolvePluginEnabled,
+  type IndexedAsset,
+} from "@babylonslate/assets";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   compileGraphDocuments,
   compileGraphDocumentsForExport,
 } from "./script-compiler";
-import type { IndexedAsset } from "@babylonslate/assets";
+import { logicGraphFromUiPayload } from "../lib/play-content";
 
 export { MISSING_STARTUP_SCENE_MESSAGE };
 
@@ -55,8 +61,11 @@ export type CollectExportGameParams = {
   graphByGuid: (guid: string) => SerializedGraph | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
   payloadByGuid?: (guid: string) => unknown | null;
+  navmeshByGuid?: (guid: string) => Uint8Array | null;
   customResolution: RenderProjectSettings;
   playFrameCap: number;
+  pixelsPerUnit?: number;
+  pixelPerfect?: boolean;
   physicsWorld: "2d" | "3d";
   playerFiles: Map<string, Uint8Array>;
   extraFiles?: Map<string, Uint8Array>;
@@ -147,6 +156,13 @@ export async function collectAndExportGame(
         });
       }
     }
+    if (asset.type === "UserInterface") {
+      const uiGraph = logicGraphFromUiPayload(
+        `assets/${asset.name}.ui.babasset`,
+        params.payloadByGuid?.(guid) ?? null,
+      );
+      if (uiGraph) graphDocs.push(uiGraph);
+    }
     const bytes = params.bytesByGuid(guid);
     if (bytes) {
       exportAssets.push({
@@ -154,8 +170,26 @@ export async function collectAndExportGame(
         type: asset.type,
         sceneGuid: sceneGuidForAsset(guid, startup, params.assets, params.sceneByGuid),
         bytes,
+        name:
+          asset.type === "Font"
+            ? normalizeFontPayload(params.payloadByGuid?.(guid), asset.name).family
+            : asset.name,
       });
     }
+  }
+  for (const guid of closure.value) {
+    const asset = params.assets.find((entry) => entry.guid === guid);
+    if (!asset || asset.type !== "Scene") continue;
+    const nav = params.navmeshByGuid?.(guid);
+    if (!nav || nav.byteLength === 0) continue;
+    exportAssets.push({
+      guid: navmeshExportGuid(guid),
+      type: NAVMESH_EXPORT_TYPE,
+      sceneGuid: guid,
+      bytes: nav,
+      encoding: "bytes",
+      name: `${asset.name} NavMesh`,
+    });
   }
 
   params.onPhase?.("Compiling");
@@ -170,6 +204,8 @@ export async function collectAndExportGame(
     startupSceneGuid: startup,
     customResolution: params.customResolution,
     playFrameCap: params.playFrameCap,
+    pixelsPerUnit: params.pixelsPerUnit,
+    pixelPerfect: params.pixelPerfect,
     physicsWorld: params.physicsWorld,
     scripts,
     assets: exportAssets,
