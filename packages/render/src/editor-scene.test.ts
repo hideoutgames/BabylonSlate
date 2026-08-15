@@ -914,9 +914,9 @@ describe("gizmo host", () => {
     expect(collider!.scaling.x).toBeCloseTo(1);
 
     visual!.computeWorldMatrix(true);
-    visual!.refreshBoundingInfo();
+    visual!.refreshBoundingInfo(false, false);
     collider!.computeWorldMatrix(true);
-    collider!.refreshBoundingInfo();
+    collider!.refreshBoundingInfo(false, false);
     const visualBox = visual!.getBoundingInfo().boundingBox;
     const colliderBox = collider!.getBoundingInfo().boundingBox;
     const minExtent = (v: Vector3) => Math.min(v.x, v.y, v.z);
