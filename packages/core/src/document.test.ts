@@ -112,4 +112,25 @@ describe("Class and settings documents", () => {
       }).label,
     ).toBe("Hit Script Interface");
   });
+
+  it("opens PluginSettings as its own document kind", () => {
+    expect(documentKindForAssetType("PluginSettings")).toBe("plugin-settings");
+    expect(assetTypeForDocumentKind("plugin-settings")).toBe("PluginSettings");
+    expect(documentKindLabel("plugin-settings")).toBe("Plugin Settings");
+    expect(isAssetDocumentKind("plugin-settings")).toBe(true);
+    expect(
+      parseDocumentId("plugin-settings:plugins/pack/pack.plugin.babasset"),
+    ).toEqual({
+      kind: "plugin-settings",
+      path: "plugins/pack/pack.plugin.babasset",
+    });
+    expect(labelFromPath("plugins/pack/pack.plugin.babasset")).toBe("Pack");
+    expect(
+      createDocumentRef(
+        "plugin-settings",
+        "plugins/pack/pack.plugin.babasset",
+        { name: "Pack" },
+      ).label,
+    ).toBe("Pack Plugin Settings");
+  });
 });

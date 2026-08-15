@@ -19,6 +19,15 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | PluginSettings Details used `Guid` (not Title Case `GUID`); identity omitted the plugin guid | Resolved |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | Project Settings dependency status was lowercase (`missing` / `cycle` / `engine`) | Resolved |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-model | Spec | Any dependency cycle returned `order: []`, unmounting independent plugins | Resolved |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-model | Spec | `pluginOverrides` guids were always indexed as Unresolved, including discovered plugins (PluginSettings lives outside the mounted `assets/` root) | Resolved |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | Open / Export / Delete plugin row buttons were `size="sm"` without a 44px min touch target | Resolved |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin / p13-plugin-settings-ui | Spec | Game-export packing and export-preset layer-3 consumption deferred to P14 (`collectEnabledPluginAssets` + empty `exportPresets` only) | Accepted |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-engine-plugin | Spec | Missing-plugin e2e seeds an override on an open project rather than cold-loading a project whose plugin folder is absent; unit tests cover remount replacing placeholders | Accepted |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin | Spec | Import e2e asserts the class guid in Place Actors after discard, not a scene actor edge (the scene lives in the project, not the `.babplugin`) | Accepted |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin | Spec | Same guid + different version updates in place; Keep/Replace is same guid+version (locked design). Spec §10.5 “version conflict” prompt is the identical-version case | Accepted |
 | 2026-08-15 | cursor/p4-followups-55e8 | p4-preview-report | Spec | Log Error never entered the session report; ExecuteJavaScript `bodyLine` was not compiled, not on the worker diagnostic command, and navigate did not set CodeMirror focus | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Spec | ClassRegistry unused at spawn; Play `callInterface` skipped `dispatchInterface` so scene actors never received class-declared interface guids | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Standards | Engine components and BT builtins were reparentable (`MeshComponent` → `Actor`) | Resolved |
@@ -442,7 +451,20 @@ Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live 
 
 **Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one Dockview designer host (`p12-ui-editors`): Design / Hierarchy / Details / Logic, editing-stage widgets paint on a healthy Engine, EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
 
-Do not start leftover chrome polish (pin flash, multi-select gizmo). Plugin EUOs are P13.
+Do not start leftover chrome polish (pin flash, multi-select gizmo).
+
+## P13 plugins
+
+Spec: [engineplan.md](../engineplan.md) §10, Appendix A `p13-*`. Design note: [plugins.md](../architecture/plugins.md).
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| PluginSettings + PluginHost | Done (`p13-plugin-model`) | `core`, `assets` | P12 done |
+| Settings UI + Show Plugin Content | Done (`p13-plugin-settings-ui`) | `apps/editor`, `editor-kit` | plugin model |
+| `.babplugin` export/import | Done (`p13-babplugin`) | `assets`, `apps/editor` | plugin model |
+| Starter Content + e2e | Done (`p13-engine-plugin`) | `engine-plugins/`, `apps/editor`, `e2e/p13-plugins.spec.ts` | `.babplugin` |
+
+**P13 is Done.** Native plugins, marketplace, packed itch export (`p14-*`), and Content Browser drag between roots are out of scope (cross-root move is a design note in `plugins.md`).
 
 
 

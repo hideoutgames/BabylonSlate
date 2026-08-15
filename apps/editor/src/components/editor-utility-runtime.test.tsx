@@ -16,6 +16,10 @@ const { invokeEvent, load, docs } = vi.hoisted(() => ({
     } as { settings: { editorUtilityObjects: string[] } } | null,
     openDocuments: [] as Array<{ ref: { kind: string } }>,
     collectEditorUtilityScripts: vi.fn(async () => [{ classId: "Tools" }]),
+    pluginDescriptors: [] as Array<{
+      pluginGuid: string;
+      settings: { editorUtilityObjects: string[]; enabledByDefault: boolean };
+    }>,
   },
 }));
 
@@ -45,6 +49,7 @@ afterEach(() => {
   };
   docs.openDocuments = [];
   docs.collectEditorUtilityScripts.mockClear();
+  docs.pluginDescriptors = [];
 });
 
 describe("EditorUtilityRuntime", () => {
@@ -136,6 +141,33 @@ describe("EditorUtilityRuntime", () => {
     );
     invokeEvent.mockClear();
     view.unmount();
+    expect(invokeEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not reboot for a disabled plugin's editor utility objects", async () => {
+    const view = render(<EditorUtilityRuntime />);
+    await waitFor(() => {
+      expect(invokeEvent).toHaveBeenCalledWith(
+        "Tools",
+        EDITOR_UTILITY_EVENTS.startup,
+      );
+    });
+    const loads = docs.collectEditorUtilityScripts.mock.calls.length;
+    invokeEvent.mockClear();
+    docs.pluginDescriptors = [
+      {
+        pluginGuid: "off",
+        settings: {
+          editorUtilityObjects: ["PackTools"],
+          enabledByDefault: false,
+        },
+      },
+    ];
+    view.rerender(<EditorUtilityRuntime />);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    expect(docs.collectEditorUtilityScripts).toHaveBeenCalledTimes(loads);
     expect(invokeEvent).not.toHaveBeenCalled();
   });
 });

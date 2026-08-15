@@ -1,5 +1,6 @@
 node_modules
 dist
+apps/editor/public/engine-plugins
 .DS_Store
 *.local
 .env

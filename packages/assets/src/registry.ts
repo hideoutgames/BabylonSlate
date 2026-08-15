@@ -1,4 +1,5 @@
 import type { ProjectStorage } from "@babylonslate/core";
+import { ENGINE_VERSION } from "@babylonslate/core";
 import {
   decodeBabasset,
   encodeBabasset,
@@ -38,6 +39,8 @@ export interface IndexedAsset {
   rootId: string;
   path: string;
   header: BabassetHeader;
+  /** Missing plugin/dependency guid kept so references do not drop. */
+  placeholder?: boolean;
 }
 
 export type ThumbnailWriter = (
@@ -136,6 +139,33 @@ export class AssetRegistry {
     return [...this.roots.values()];
   }
 
+  storageFor(rootId: string): ProjectStorage {
+    return this.roots.get(rootId)?.storage ?? this.storage;
+  }
+
+  blobsFor(rootId: string): BlobStore {
+    const root = this.roots.get(rootId);
+    return root ? this.blobsOf(root) : this.blobs;
+  }
+
+  indexPlaceholder(guid: string): IndexedAsset {
+    const existing = this.byGuid.get(guid);
+    if (existing && !existing.placeholder) return existing;
+    const header: BabassetHeader = {
+      chunks: [],
+      dependencies: [],
+      engineVersion: ENGINE_VERSION,
+      guid,
+      mode: "thin",
+      name: "Missing Asset",
+      parentClass: null,
+      payload: {},
+      type: "Unresolved",
+      version: 0,
+    };
+    return this.indexHeader("unresolved", `__unresolved__/${guid}`, header, true);
+  }
+
   getByGuid(guid: string): IndexedAsset | undefined {
     return this.byGuid.get(guid);
   }
@@ -215,13 +245,15 @@ export class AssetRegistry {
     result: ImportResult,
   ): Promise<IndexedAsset> {
     const root = this.getRootOrThrow(rootId);
+    this.assertWritable(root);
+    const storage = this.storageOf(root);
     const path = joinRootPath(root, relativePath);
-    if (this.byPath.has(path) || (await this.storage.exists(path))) {
+    if (this.byPath.has(path) || (await storage.exists(path))) {
       throw new Error(`Asset already exists: ${path}`);
     }
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     if (dir) {
-      await this.storage.mkdir(dir, true);
+      await storage.mkdir(dir, true);
     }
 
     const bytes = await encodeBabasset({
@@ -237,16 +269,15 @@ export class AssetRegistry {
         payload: result.payload,
       },
       chunks: result.chunks,
-      writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
+      writeBlob: (sha256, data) => this.blobsOf(root).writeBlob(sha256, data),
     });
-    await this.storage.writeBinary(path, bytes);
+    await storage.writeBinary(path, bytes);
     const header = readBabassetHeader(bytes);
     return this.indexHeader(rootId, path, header);
   }
 
   /** Re-read a .babasset header after an in-place save so catalog fields stay current. */
   async reindexPath(path: string): Promise<IndexedAsset | null> {
-    if (!(await this.storage.exists(path))) return null;
     const existing = this.byPath.get(path);
     const rootId =
       existing?.rootId ??
@@ -254,19 +285,29 @@ export class AssetRegistry {
         (root) => path === root.pathPrefix || path.startsWith(`${root.pathPrefix}/`),
       )?.id;
     if (!rootId) return null;
-    const header = readBabassetHeader(await this.storage.readBinary(path));
+    const storage = this.storageFor(rootId);
+    if (!(await storage.exists(path))) return null;
+    const header = readBabassetHeader(await storage.readBinary(path));
     return this.indexHeader(rootId, path, header);
   }
 
   async deleteAsset(guid: string): Promise<void> {
     const asset = this.byGuid.get(guid);
     if (!asset) return;
-    await this.storage.remove(asset.path);
+    if (asset.placeholder) {
+      this.removeFromIndex(asset);
+      return;
+    }
+    const root = this.roots.get(asset.rootId);
+    if (root) this.assertWritable(root);
+    await this.storageForAsset(asset).remove(asset.path);
     this.removeFromIndex(asset);
   }
 
   async deleteFolder(rootId: string, relativeFolder: string): Promise<void> {
     const root = this.getRootOrThrow(rootId);
+    this.assertWritable(root);
+    const storage = this.storageOf(root);
     const folderPath = joinRootPath(root, relativeFolder);
     for (const asset of [...this.byGuid.values()]) {
       if (asset.rootId === rootId && isWithinFolder(asset.path, folderPath)) {
@@ -278,23 +319,25 @@ export class AssetRegistry {
         this.knownFolders.delete(known);
       }
     }
-    await this.storage.remove(folderPath);
+    await storage.remove(folderPath);
   }
 
   async createFolder(rootId: string, relativeFolder: string): Promise<void> {
     const root = this.getRootOrThrow(rootId);
+    this.assertWritable(root);
+    const storage = this.storageOf(root);
     const folderPath = joinRootPath(root, relativeFolder);
     if (!relativeFolder.replace(/^\/+|\/+$/g, "")) {
       throw new Error("Cannot create the assets root folder");
     }
     if (
       this.knownFolders.has(folderPath) ||
-      (await this.storage.exists(folderPath))
+      (await storage.exists(folderPath))
     ) {
       throw new Error(`Folder already exists: ${folderPath}`);
     }
-    await this.storage.mkdir(folderPath, true);
-    await this.storage.writeText(
+    await storage.mkdir(folderPath, true);
+    await storage.writeText(
       `${folderPath}/${FOLDER_MARKER_NAME}`,
       "# BabylonSlate folder marker\n",
     );
@@ -323,18 +366,20 @@ export class AssetRegistry {
       throw new Error("Cross-root moves are not supported yet");
     }
     const root = this.getRootOrThrow(rootId);
+    this.assertWritable(root);
+    const storage = this.storageOf(root);
     const newPath = joinRootPath(root, newRelativePath);
     if (newPath === asset.path) return asset;
     if (this.byPath.has(newPath)) {
       throw new Error(`Target path already exists: ${newPath}`);
     }
-    const bytes = await this.storage.readBinary(asset.path);
+    const bytes = await storage.readBinary(asset.path);
     const dir = newPath.includes("/")
       ? newPath.slice(0, newPath.lastIndexOf("/"))
       : "";
-    if (dir) await this.storage.mkdir(dir, true);
-    await this.storage.writeBinary(newPath, bytes);
-    await this.storage.remove(asset.path);
+    if (dir) await storage.mkdir(dir, true);
+    await storage.writeBinary(newPath, bytes);
+    await storage.remove(asset.path);
     // Keep inbound refs: guid identity is unchanged, only the storage path moves.
     if (this.byPath.get(asset.path) === asset) {
       this.byPath.delete(asset.path);
@@ -348,6 +393,10 @@ export class AssetRegistry {
   async renameAsset(guid: string, newName: string): Promise<IndexedAsset> {
     const asset = this.byGuid.get(guid);
     if (!asset) throw new Error(`Unknown asset ${guid}`);
+    const root = this.roots.get(asset.rootId);
+    if (root) this.assertWritable(root);
+    const storage = this.storageForAsset(asset);
+    const blobs = this.blobsForAsset(asset);
     const safe = sanitizeFileName(newName);
     if (!safe) throw new Error("Invalid asset name");
     const dir = asset.path.includes("/")
@@ -357,9 +406,9 @@ export class AssetRegistry {
     if (newPath !== asset.path && this.byPath.has(newPath)) {
       throw new Error(`Target path already exists: ${newPath}`);
     }
-    const fileBytes = await this.storage.readBinary(asset.path);
+    const fileBytes = await storage.readBinary(asset.path);
     const decoded = await decodeBabasset(fileBytes, (sha256) =>
-      this.blobs.readBlob(sha256),
+      blobs.readBlob(sha256),
     );
     const chunksById = new Map<string, ChunkInput>();
     for (const entry of decoded.header.chunks) {
@@ -378,19 +427,19 @@ export class AssetRegistry {
     const encoded = await encodeBabasset({
       header: { ...headerRest, name: safe },
       chunks: [...chunksById.values()],
-      writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
+      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
     if (newPath !== asset.path) {
       const parent = newPath.includes("/")
         ? newPath.slice(0, newPath.lastIndexOf("/"))
         : "";
-      if (parent) await this.storage.mkdir(parent, true);
-      await this.storage.writeBinary(newPath, encoded);
-      await this.storage.remove(asset.path);
+      if (parent) await storage.mkdir(parent, true);
+      await storage.writeBinary(newPath, encoded);
+      await storage.remove(asset.path);
       this.removeFromIndex(asset);
       return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded));
     }
-    await this.storage.writeBinary(asset.path, encoded);
+    await storage.writeBinary(asset.path, encoded);
     this.removeFromIndex(asset);
     return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded));
   }
@@ -403,9 +452,14 @@ export class AssetRegistry {
     const asset = this.byGuid.get(guid);
     if (!asset) throw new Error(`Unknown asset ${guid}`);
     const root = this.getRootOrThrow(rootId);
-    const fileBytes = await this.storage.readBinary(asset.path);
+    this.assertWritable(root);
+    const sourceStorage = this.storageForAsset(asset);
+    const sourceBlobs = this.blobsForAsset(asset);
+    const destStorage = this.storageOf(root);
+    const destBlobs = this.blobsOf(root);
+    const fileBytes = await sourceStorage.readBinary(asset.path);
     const decoded = await decodeBabasset(fileBytes, (sha256) =>
-      this.blobs.readBlob(sha256),
+      sourceBlobs.readBlob(sha256),
     );
     const chunksById = new Map<string, ChunkInput>();
     for (const entry of decoded.header.chunks) {
@@ -451,13 +505,13 @@ export class AssetRegistry {
     const encoded = await encodeBabasset({
       header: { ...headerRest, guid: newGuid, name: uniqueName },
       chunks: [...chunksById.values()],
-      writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
+      writeBlob: (sha256, data) => destBlobs.writeBlob(sha256, data),
     });
     const dir = candidate.includes("/")
       ? candidate.slice(0, candidate.lastIndexOf("/"))
       : "";
-    if (dir) await this.storage.mkdir(dir, true);
-    await this.storage.writeBinary(candidate, encoded);
+    if (dir) await destStorage.mkdir(dir, true);
+    await destStorage.writeBinary(candidate, encoded);
     return this.indexHeader(rootId, candidate, readBabassetHeader(encoded));
   }
 
@@ -476,10 +530,12 @@ export class AssetRegistry {
     targetParentRelative: string,
   ): Promise<string> {
     const root = this.getRootOrThrow(rootId);
+    this.assertWritable(root);
+    const storage = this.storageOf(root);
     const fromPath = joinRootPath(root, relativeFolder);
     if (
       !this.knownFolders.has(fromPath) &&
-      !(await this.storage.exists(fromPath))
+      !(await storage.exists(fromPath))
     ) {
       throw new Error(`Unknown folder ${relativeFolder}`);
     }
@@ -549,6 +605,8 @@ export class AssetRegistry {
     newName?: string,
   ): Promise<void> {
     const root = this.getRootOrThrow(rootId);
+    this.assertWritable(root);
+    const storage = this.storageOf(root);
     const fromPath = joinRootPath(root, relativeFolder);
     const currentName = relativeFolder.includes("/")
       ? relativeFolder.slice(relativeFolder.lastIndexOf("/") + 1)
@@ -585,15 +643,15 @@ export class AssetRegistry {
       const next = suffix ? `${toPath}/${suffix}` : toPath;
       this.knownFolders.add(next);
       const markerFrom = `${folder}/${FOLDER_MARKER_NAME}`;
-      if (await this.storage.exists(markerFrom)) {
-        await this.storage.mkdir(next, true);
-        const text = await this.storage.readText(markerFrom);
-        await this.storage.writeText(`${next}/${FOLDER_MARKER_NAME}`, text);
+      if (await storage.exists(markerFrom)) {
+        await storage.mkdir(next, true);
+        const text = await storage.readText(markerFrom);
+        await storage.writeText(`${next}/${FOLDER_MARKER_NAME}`, text);
       }
     }
 
-    if (await this.storage.exists(fromPath)) {
-      await this.storage.remove(fromPath);
+    if (await storage.exists(fromPath)) {
+      await storage.remove(fromPath);
     }
     this.knownFolders.add(toPath);
   }
@@ -604,7 +662,7 @@ export class AssetRegistry {
     fileName: string,
     bytes: Uint8Array,
   ): Promise<IndexedAsset[]> {
-    this.getRootOrThrow(rootId);
+    this.assertWritable(this.getRootOrThrow(rootId));
     const options: ImportOptions = {
       fileName,
       existingGuids: new Set(this.byGuid.keys()),
@@ -739,10 +797,12 @@ export class AssetRegistry {
   }
 
   /** Paths of Scene and Graph assets for ProjectDocument reconciliation. */
-  listDocumentPaths(): { scenes: string[]; graphs: string[] } {
+  listDocumentPaths(filter?: { rootId?: string }): { scenes: string[]; graphs: string[] } {
     const scenes: string[] = [];
     const graphs: string[] = [];
     for (const asset of this.byGuid.values()) {
+      if (asset.placeholder || asset.header.type === "Unresolved") continue;
+      if (filter?.rootId && asset.rootId !== filter.rootId) continue;
       if (asset.header.type === "Scene") scenes.push(asset.path);
       else if (asset.header.type === "Graph" || asset.header.type === "Class") {
         graphs.push(asset.path);
@@ -791,8 +851,12 @@ export class AssetRegistry {
   ): Promise<{ bytes: Uint8Array; mime?: string } | null> {
     const pixels = asset.header.chunks.find((chunk) => chunk.kind === "pixels");
     if (!pixels) return null;
-    const fileBytes = await this.storage.readBinary(asset.path);
-    const bytes = await this.loader.loadChunk(fileBytes, pixels);
+    const fileBytes = await this.storageForAsset(asset).readBinary(asset.path);
+    const bytes = await this.loader.loadChunk(
+      fileBytes,
+      pixels,
+      this.blobsForAsset(asset),
+    );
     if (!bytes) return null;
     return { bytes, mime: pixels.mime };
   }
@@ -827,9 +891,11 @@ export class AssetRegistry {
   ): Promise<void> {
     const asset = this.byGuid.get(guid);
     if (!asset) return;
-    const fileBytes = await this.storage.readBinary(asset.path);
+    const storage = this.storageForAsset(asset);
+    const blobs = this.blobsForAsset(asset);
+    const fileBytes = await storage.readBinary(asset.path);
     const decoded = await decodeBabasset(fileBytes, (sha256) =>
-      this.blobs.readBlob(sha256),
+      blobs.readBlob(sha256),
     );
     const chunksById = new Map<string, ChunkInput>();
     for (const entry of decoded.header.chunks) {
@@ -849,9 +915,9 @@ export class AssetRegistry {
     const bytes = await encodeBabasset({
       header: next.header,
       chunks: [...next.chunks.values()],
-      writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
+      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
-    await this.storage.writeBinary(asset.path, bytes);
+    await storage.writeBinary(asset.path, bytes);
     const header = readBabassetHeader(bytes);
     this.indexHeader(asset.rootId, asset.path, header);
   }
@@ -862,8 +928,10 @@ export class AssetRegistry {
     if (!asset) {
       throw new Error(`Cannot attach representation: no asset for guid ${guid}`);
     }
-    const fileBytes = await this.storage.readBinary(asset.path);
-    const decoded = await decodeBabasset(fileBytes, (sha256) => this.blobs.readBlob(sha256));
+    const storage = this.storageForAsset(asset);
+    const blobs = this.blobsForAsset(asset);
+    const fileBytes = await storage.readBinary(asset.path);
+    const decoded = await decodeBabasset(fileBytes, (sha256) => blobs.readBlob(sha256));
 
     const chunksById = new Map<string, ChunkInput>();
     for (const entry of decoded.header.chunks) {
@@ -881,11 +949,36 @@ export class AssetRegistry {
     const bytes = await encodeBabasset({
       header: { ...headerRest, payload: { ...headerRest.payload, ...result.payload } },
       chunks: [...chunksById.values()],
-      writeBlob: (sha256, data) => this.blobs.writeBlob(sha256, data),
+      writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
-    await this.storage.writeBinary(asset.path, bytes);
+    await storage.writeBinary(asset.path, bytes);
     const header = readBabassetHeader(bytes);
     this.indexHeader(asset.rootId, asset.path, header);
+  }
+
+  private storageOf(root: ContentRoot): ProjectStorage {
+    return root.storage ?? this.storage;
+  }
+
+  private blobsOf(root: ContentRoot): BlobStore {
+    const storage = this.storageOf(root);
+    const dir = `${root.pathPrefix}/.blobs`;
+    if (storage === this.storage && dir === "assets/.blobs") return this.blobs;
+    return createVfsBlobStore(storage, dir);
+  }
+
+  private assertWritable(root: ContentRoot): void {
+    if (root.readOnly) {
+      throw new Error(`Content root "${root.id}" is read-only`);
+    }
+  }
+
+  private storageForAsset(asset: IndexedAsset): ProjectStorage {
+    return this.storageFor(asset.rootId);
+  }
+
+  private blobsForAsset(asset: IndexedAsset): BlobStore {
+    return this.blobsFor(asset.rootId);
   }
 
   private getRootOrThrow(rootId: string): ContentRoot {
@@ -897,9 +990,10 @@ export class AssetRegistry {
   }
 
   private async walk(root: ContentRoot, dir: string): Promise<void> {
+    const storage = this.storageOf(root);
     let entries;
     try {
-      entries = await this.storage.readdir(dir);
+      entries = await storage.readdir(dir);
     } catch {
       return;
     }
@@ -916,19 +1010,24 @@ export class AssetRegistry {
         continue;
       }
       if (!path.endsWith(".babasset")) continue;
-      const bytes = await this.storage.readBinary(path);
+      const bytes = await storage.readBinary(path);
       const header = readBabassetHeader(bytes);
       this.indexHeader(root.id, path, header);
     }
   }
 
-  private indexHeader(rootId: string, path: string, header: BabassetHeader): IndexedAsset {
+  private indexHeader(
+    rootId: string,
+    path: string,
+    header: BabassetHeader,
+    placeholder = false,
+  ): IndexedAsset {
     const existingAtPath = this.byPath.get(path);
     if (existingAtPath) this.removeFromIndex(existingAtPath);
     const existingByGuid = this.byGuid.get(header.guid);
     if (existingByGuid) this.removeFromIndex(existingByGuid);
 
-    const indexed: IndexedAsset = { rootId, path, header };
+    const indexed: IndexedAsset = { rootId, path, header, placeholder };
     this.byGuid.set(header.guid, indexed);
     this.byPath.set(path, indexed);
     for (const dep of header.dependencies) {

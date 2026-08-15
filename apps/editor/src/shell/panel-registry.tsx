@@ -32,6 +32,7 @@ import {
   UiSettingsPanel,
 } from "../panels/ui-editor-panels";
 import { EditorUtilityPanel } from "../panels/editor-utility-panel";
+import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
 
 export const panelComponents = {
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
@@ -95,5 +96,8 @@ export const panelComponents = {
   "ui-settings": (props: IDockviewPanelProps) => <UiSettingsPanel {...props} />,
   "editor-utility": (props: IDockviewPanelProps) => (
     <EditorUtilityPanel {...props} />
+  ),
+  "plugin-settings-details": (props: IDockviewPanelProps) => (
+    <PluginSettingsDetailsPanel {...props} />
   ),
 };
