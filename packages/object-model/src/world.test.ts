@@ -124,6 +124,102 @@ describe("World tick", () => {
     expect(order).toEqual(["a1", "a1", "child"]);
   });
 
+  it("applies inherited variable defaults and interfaces from the class registry", () => {
+    const world = createTestWorld();
+    world.classRegistry.register({
+      id: "Enemy",
+      parentClassId: "Actor",
+      kind: "actor",
+      variables: [
+        { name: "health", type: "float", defaultValue: 100 },
+        { name: "speed", type: "float", defaultValue: 1 },
+      ],
+      implementedInterfaces: ["iface-damageable"],
+    });
+    const actor = world.createActor({ classId: "Enemy" });
+    expect(actor.getVariable("health")).toBe(100);
+    expect(actor.getVariable("speed")).toBe(1);
+    expect(actor.implementedInterfaces).toEqual(["iface-damageable"]);
+  });
+
+  it("lets caller variables and interfaces override class defaults", () => {
+    const world = createTestWorld();
+    world.classRegistry.register({
+      id: "Enemy",
+      parentClassId: "Actor",
+      kind: "actor",
+      variables: [{ name: "health", type: "float", defaultValue: 100 }],
+      implementedInterfaces: ["iface-damageable"],
+    });
+    const actor = world.createActor({
+      classId: "Enemy",
+      variables: { health: 50, tag: "elite" },
+      implementedInterfaces: ["iface-stunned"],
+    });
+    expect(actor.getVariable("health")).toBe(50);
+    expect(actor.getVariable("tag")).toBe("elite");
+    expect(actor.implementedInterfaces).toEqual(["iface-stunned"]);
+  });
+
+  it("applies inherited component variable defaults", () => {
+    const world = createTestWorld();
+    world.classRegistry.register({
+      id: "HealthComponent",
+      parentClassId: "ActorComponent",
+      kind: "component",
+      variables: [{ name: "max", type: "float", defaultValue: 10 }],
+      implementedInterfaces: [],
+    });
+    const component = world.createComponent({ classId: "HealthComponent" });
+    expect(component.getVariable("max")).toBe(10);
+  });
+
+  it("runs GameInstance creation, start, scene loaded, and end hooks", () => {
+    const events: string[] = [];
+    const world = createTestWorld();
+    world.setGameInstance(
+      new GameInstance({
+        classId: "GameInstance",
+        guid: "gi",
+        hooks: {
+          onCreation: () => events.push("create"),
+          onGameStart: () => events.push("start"),
+          onTick: () => events.push("tick"),
+          onGameEnd: () => events.push("end"),
+          onSceneLoaded: (_self, sceneName) => events.push(`scene:${sceneName}`),
+        },
+      }),
+    );
+    world.start();
+    world.loadScene("Level1");
+    world.tick();
+    world.end();
+    expect(events).toEqual([
+      "create",
+      "start",
+      "scene:Level1",
+      "tick",
+      "end",
+    ]);
+  });
+
+  it("flushes spawn then destroy in the same tick so the actor does not remain", () => {
+    const world = createTestWorld();
+    const events: string[] = [];
+    const actor = world.createActor({
+      classId: "Actor",
+      hooks: {
+        onCreation: () => events.push("create"),
+        onDestroyed: () => events.push("destroy"),
+      },
+    });
+    world.spawnActor(actor);
+    world.destroyActor(actor.guid);
+    world.tick();
+    expect(world.getActors()).toHaveLength(0);
+    expect(events).toEqual(["create", "destroy"]);
+  });
+
   it("produces identical snapshots for the same seed", () => {
     const run = (seed: number) => {
       const world = createTestWorld(seed);

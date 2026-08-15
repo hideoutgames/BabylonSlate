@@ -1,8 +1,8 @@
 import { err, ok, type Result } from "@babylonslate/core";
 import {
-  ENGINE_BASE_CLASS_IDS,
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
+  isLockedEngineClassId,
 } from "./ids";
 
 export type VariableDef = {
@@ -183,14 +183,60 @@ export class ClassRegistry {
     return [...byName.values()];
   }
 
+  /** Interface guids declared on ancestors then self, unique, ancestor-first. */
+  inheritedInterfaces(classId: string): string[] {
+    const chain = this.ancestry(classId).reverse();
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const id of chain) {
+      const def = this.classes.get(id);
+      if (!def) continue;
+      for (const iface of def.implementedInterfaces) {
+        if (seen.has(iface)) continue;
+        seen.add(iface);
+        ordered.push(iface);
+      }
+    }
+    return ordered;
+  }
+
+  /**
+   * Register `def` if missing; otherwise merge variables (by name) and
+   * unique-union interface guids. Engine locked classes are left unchanged.
+   */
+  ensure(def: ClassDef): Result<void, string> {
+    if (isLockedEngineClassId(def.id)) {
+      return this.classes.has(def.id)
+        ? ok(undefined)
+        : err(`unknown engine class: ${def.id}`);
+    }
+    const existing = this.classes.get(def.id);
+    if (!existing) {
+      return this.register(def);
+    }
+    const byName = new Map(
+      existing.variables.map((variable) => [variable.name, { ...variable }]),
+    );
+    for (const variable of def.variables) {
+      byName.set(variable.name, { ...variable });
+    }
+    existing.variables = [...byName.values()];
+    const interfaces = new Set(existing.implementedInterfaces);
+    for (const iface of def.implementedInterfaces) {
+      interfaces.add(iface);
+    }
+    existing.implementedInterfaces = [...interfaces];
+    return ok(undefined);
+  }
+
   reparent(
     classId: string,
     newParentId: string,
   ): Result<ReparentResult, string> {
     const def = this.classes.get(classId);
     if (!def) return err(`unknown class: ${classId}`);
-    if (ENGINE_BASE_CLASS_IDS.includes(classId as never)) {
-      return err(`cannot reparent engine base class: ${classId}`);
+    if (isLockedEngineClassId(classId)) {
+      return err(`cannot reparent engine class: ${classId}`);
     }
     if (!this.classes.has(newParentId)) {
       return err(`unknown parent class: ${newParentId}`);

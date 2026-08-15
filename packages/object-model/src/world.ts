@@ -5,8 +5,15 @@ import {
   type Rng,
 } from "@babylonslate/core";
 import type { ClassRegistry } from "./class-registry";
-import type { InterfaceRegistry } from "./interfaces";
-import { Actor, ActorComponent, GameInstance, type TickContext } from "./objects";
+import { InterfaceRegistry } from "./interfaces";
+import {
+  Actor,
+  ActorComponent,
+  GameInstance,
+  type GameInstanceHooks,
+  type LifecycleHooks,
+  type TickContext,
+} from "./objects";
 import { TICK_PHASES, TickClock, type PhaseHook, type TickPhase } from "./tick";
 
 export type WorldInputProvider = Pick<
@@ -37,7 +44,7 @@ export interface WorldOptions {
 
 export class World {
   readonly classRegistry: ClassRegistry;
-  readonly interfaceRegistry: InterfaceRegistry | null;
+  readonly interfaceRegistry: InterfaceRegistry;
   readonly clock: TickClock;
   readonly rng: Rng;
   private readonly guidFactory?: GuidFactory;
@@ -57,7 +64,7 @@ export class World {
 
   constructor(options: WorldOptions) {
     this.classRegistry = options.classRegistry;
-    this.interfaceRegistry = options.interfaceRegistry ?? null;
+    this.interfaceRegistry = options.interfaceRegistry ?? new InterfaceRegistry();
     this.clock = new TickClock(options.dt);
     this.rng = createSeededRng(options.seed);
     this.guidFactory = options.guidFactory;
@@ -228,12 +235,15 @@ export class World {
     classId: string;
     guid?: Guid;
     variables?: Record<string, unknown>;
-    hooks?: import("./objects").LifecycleHooks<Actor>;
+    hooks?: LifecycleHooks<Actor>;
     implementedInterfaces?: string[];
     transform?: ConstructorParameters<typeof Actor>[0]["transform"];
   }): Actor {
+    const defaults = this.classDefaults(options.classId, options);
     return new Actor({
       ...options,
+      variables: defaults.variables,
+      implementedInterfaces: defaults.implementedInterfaces,
       guidFactory: this.guidFactory,
     });
   }
@@ -242,12 +252,55 @@ export class World {
     classId: string;
     guid?: Guid;
     variables?: Record<string, unknown>;
-    hooks?: import("./objects").LifecycleHooks<ActorComponent>;
+    hooks?: LifecycleHooks<ActorComponent>;
+    implementedInterfaces?: string[];
     assetGuid?: Guid | null;
   }): ActorComponent {
+    const defaults = this.classDefaults(options.classId, options);
     return new ActorComponent({
       ...options,
+      variables: defaults.variables,
+      implementedInterfaces: defaults.implementedInterfaces,
       guidFactory: this.guidFactory,
     });
+  }
+
+  createGameInstance(options: {
+    classId: string;
+    guid?: Guid;
+    variables?: Record<string, unknown>;
+    hooks?: GameInstanceHooks;
+    implementedInterfaces?: string[];
+  }): GameInstance {
+    const defaults = this.classDefaults(options.classId, options);
+    return new GameInstance({
+      ...options,
+      variables: defaults.variables,
+      implementedInterfaces: defaults.implementedInterfaces,
+      guidFactory: this.guidFactory,
+    });
+  }
+
+  private classDefaults(
+    classId: string,
+    options: {
+      variables?: Record<string, unknown>;
+      implementedInterfaces?: string[];
+    },
+  ): {
+    variables: Record<string, unknown>;
+    implementedInterfaces: string[];
+  } {
+    const variables: Record<string, unknown> = {};
+    for (const variable of this.classRegistry.inheritedVariables(classId)) {
+      if (variable.defaultValue !== undefined) {
+        variables[variable.name] = variable.defaultValue;
+      }
+    }
+    Object.assign(variables, options.variables ?? {});
+    const implementedInterfaces =
+      options.implementedInterfaces ??
+      this.classRegistry.inheritedInterfaces(classId);
+    return { variables, implementedInterfaces };
   }
 }
