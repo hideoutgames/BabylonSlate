@@ -7,6 +7,7 @@ import {
   STRING,
   compileGraph,
   enumRef,
+  objectRef,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -40,10 +41,10 @@ describe("functions.call", () => {
     expect(registry.get("functions.call")?.category).toBe("functions");
   });
 
-  it("defaults to exec in/out when no pin rows are authored", () => {
+  it("defaults to exec in/out and Target when implicitSelf is not true", () => {
     const def = createDefaultNodeRegistry().get("functions.call")!;
     expect(
-      def.pins({}).map((pin) => ({
+      def.pins({ classId: "Guard" }).map((pin) => ({
         id: pin.id,
         direction: pin.direction,
         type: pin.type,
@@ -51,12 +52,16 @@ describe("functions.call", () => {
     ).toEqual([
       { id: "execIn", direction: "in", type: EXEC },
       { id: "execOut", direction: "out", type: EXEC },
+      { id: "target", direction: "in", type: objectRef("Guard") },
     ]);
   });
 
-  it("maps authored pin rows and coerces type ids", () => {
+  it("omits Target and maps signature pins when implicitSelf is true", () => {
     const def = createDefaultNodeRegistry().get("functions.call")!;
     const pins = def.pins({
+      functionName: "Jump",
+      classId: "Hero",
+      implicitSelf: true,
       pins: [
         { name: "exec", typeId: "exec", direction: "in" },
         { name: "amount", typeId: "float", direction: "in" },
@@ -65,6 +70,7 @@ describe("functions.call", () => {
         { name: "label", typeId: "string", direction: "in" },
         { name: "kind", typeId: "enum", direction: "in" },
         { name: "then", typeId: "exec", direction: "out" },
+        { name: "result", typeId: "float", direction: "out" },
         { name: "", typeId: "float", direction: "in" },
         null,
       ],
@@ -77,13 +83,31 @@ describe("functions.call", () => {
       })),
     ).toEqual([
       { id: "exec", direction: "in", type: EXEC },
+      { id: "then", direction: "out", type: EXEC },
       { id: "amount", direction: "in", type: FLOAT },
       { id: "flag", direction: "in", type: BOOL },
       { id: "count", direction: "in", type: INT },
       { id: "label", direction: "in", type: STRING },
       { id: "kind", direction: "in", type: enumRef("") },
-      { id: "then", direction: "out", type: EXEC },
+      { id: "result", direction: "out", type: FLOAT },
     ]);
+  });
+
+  it("keeps a required Target pin when implicitSelf is false", () => {
+    const def = createDefaultNodeRegistry().get("functions.call")!;
+    const pins = def.pins({
+      functionName: "Alert",
+      classId: "Guard",
+      implicitSelf: false,
+      pins: [
+        { name: "exec", typeId: "exec", direction: "in" },
+        { name: "then", typeId: "exec", direction: "out" },
+      ],
+    });
+    expect(pins.some((pin) => pin.id === "target")).toBe(true);
+    expect(pins.find((pin) => pin.id === "target")?.type).toEqual(
+      objectRef("Guard"),
+    );
   });
 
   it("compiles to a sanitized JS identifier call", () => {

@@ -121,7 +121,7 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "flow.function.input" || nodeId === "flow.function.output") {
     return false;
   }
-  if (nodeId === "flow.event.call") {
+  if (nodeId === "flow.event.call" || nodeId === "functions.call") {
     return false;
   }
   const chain = ancestryChain(options);
@@ -327,11 +327,26 @@ function syncFunctionGraphPins(
   pins: GraphClassMemberPin[],
 ): SerializedGraph {
   const slice = graph.functionGraphs?.[memberId];
-  if (!slice) return graph;
-  return {
+  const member = (graph.members ?? []).find((entry) => entry.id === memberId);
+  const withCalls: SerializedGraph = {
     ...graph,
+    nodes: graph.nodes.map((node) => {
+      if (
+        node.type !== "functions.call" ||
+        node.data.functionName !== member?.name
+      ) {
+        return node;
+      }
+      const nextData: Record<string, unknown> = { ...node.data, pins };
+      delete nextData.__pins;
+      return { ...node, data: nextData };
+    }),
+  };
+  if (!slice) return withCalls;
+  return {
+    ...withCalls,
     functionGraphs: {
-      ...graph.functionGraphs,
+      ...withCalls.functionGraphs,
       [memberId]: {
         ...slice,
         nodes: slice.nodes.map((node) => {
