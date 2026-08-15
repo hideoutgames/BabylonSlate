@@ -32,9 +32,9 @@ Not `header.dependencies` alone — scene saves often leave those empty.
 5. Recurse to a fixed point. Drop EditorUtilityObject / EditorUtilityInterface / PluginSettings (`isEditorOnlyAsset`).
 6. Scene library keys in the pack are **asset guids** (overlay Play may keep path-based document ids).
 
-Release zip compiles with `compileGraphDocumentsForExport` (skips Inspector **Development Only**). Preview Build and a preset with `bundleDebugger: true` keep those nodes.
+Release zip compiles Class/Graph **and UserInterface `logic`** with `compileGraphDocumentsForExport` (skips Inspector **Development Only**). Preview Build and a preset with `bundleDebugger: true` keep those nodes. UI graphs use path `assets/<name>.ui.babasset` so `classIdForGraphPath` matches overlay Play.
 
-Textures: pack only `selectTextureChunk`’s chosen variant (KTX2 when present).
+Textures: pack only `selectTextureChunk`’s chosen variant (KTX2 when present). Scene `navmesh` extra chunks pack as sidecar assets (`type: "NavMesh"`, guid `navmesh:<sceneGuid>`) so they do not collide with the Scene JSON guid.
 
 ## Packed layout (default)
 
@@ -42,7 +42,7 @@ Textures: pack only `selectTextureChunk`’s chosen variant (KTX2 when present).
 index.html          # CSS inlined; itch requires this at zip root
 player.js           # Vite `codeSplitting: false`; workers stay separate files
 scripts.js          # class registry (`globalThis.__babylonslateScripts`)
-game.json           # GameManifest: startupSceneGuid, render, packs, assets[]
+game.json           # GameManifest: startupSceneGuid, render, 2D PPU, packs, assets[]
 boot.babpack        # startup scene + assets reached through that scene
 scene-<guid>.babpack
 coi-serviceworker.js
@@ -50,6 +50,8 @@ havok/HavokPhysics.wasm   # 3d only
 # or assets/rapier.es-*.js  # 2d only
 ktx2/…              # transcoder files the player needs
 ```
+
+`GameManifest` records `startupSceneGuid`, `render`, `playFrameCap`, project `twoD.pixelsPerUnit` / `pixelPerfect` (defaults 100 / false), `packs`, `physicsWorld`, and `assets[]`. Font index entries include `name` (authored `family`, else the asset name) so the player can `FontFace(family, bytes)`.
 
 `loose` is an explicit preset option (`packed: false`): tree-shaken `assets/<guid>.bin`, no `.babpack`. Wasm, transcoder, and `coi-serviceworker.js` stay real files in both modes.
 
@@ -70,7 +72,9 @@ Preview packs are in-memory only. Capacitor and Electron host the **editor**, no
 
 Vite canvas host: `@babylonslate/runtime` + `@babylonslate/render` + bridge/physics/debugger. No Dockview, editor chrome, or React shell. Dedicated Engine (do not `registerView` onto the editor Engine). Boot `startupSceneGuid`; apply `render.customResolution` (WxH framebuffer + stretch or black bars) via the shared `play-preview-aspect` math in `@babylonslate/core`.
 
-`includeDebugCommands: manifest.bundleDebugger`. Release player uses `createCommandRegistry({ includeDebug: false })`; core commands (`changescene`, …) stay. When the debugger is bundled, a small vanilla DOM HUD (not the editor `PlayOverlay`) shows fps / scriptMs / physicsMs / draws. Packed fonts use `FontFace(family, bytes)` — not blob URLs.
+`includeDebugCommands: manifest.bundleDebugger`. Release player uses `createCommandRegistry({ includeDebug: false })`; core commands (`changescene`, …) stay. When the debugger is bundled, a small vanilla DOM HUD (not the editor `PlayOverlay`) shows fps / scriptMs / physicsMs / draws. Packed fonts use `FontFace(family, bytes)` — family from the manifest `name`, falling back to the guid; not blob URLs.
+
+Boot hydrates packed **Sprite / Tilemap / Tileset / AnimationGraph / BehaviourTree / Blackboard** payloads into `createEngine` and the worker (`loadAnimGraphs`, `loadTilemaps`, `loadNavMesh`, …) **before** `play`. In-process fallback registers the same content and runs a rAF `advance` pump; both paths capture canvas input into the input ring. Overlay Play remains the path that mounts UserInterface **widget trees** onto Babylon GUI (`PlayHudOverlay`); the packaged player compiles UI logic into `scripts.js` and packs the UI JSON.
 
 `?preview=1` waits for a same-origin `postMessage` pack. Destroying the iframe drops that WebGL context.
 
@@ -80,6 +84,7 @@ Debug-dropdown checkbox only (`debuggerDefaults.previewBuild`, default **off**).
 
 ## Tests
 
-- Closure BFS (GameInstance, EUO strip, plugin disable, sprite `textureGuid` payloads), zip `index.html` at root, packed boot + per-scene packs, Havok XOR Rapier, file-count warn/fail, range + whole-fetch dual servers.
+- Closure BFS (GameInstance, EUO strip, plugin disable, sprite `textureGuid` payloads), zip `index.html` at root, packed boot + per-scene packs, Havok XOR Rapier, file-count warn/fail, range + whole-fetch dual servers, `pixelsPerUnit` / Font `name` on `game.json`, UserInterface logic in `scripts.js`, Scene navmesh sidecars.
+- Player `packedContentFromGame` hydrates sprite/tilemap/navmesh payloads from the pack.
 - `e2e/p14-export.spec.ts`: unzip, serve range-capable **and** range-blind, assert boot + ticks on `startupSceneGuid`, file count &lt; 800, no `main.scene.babasset`.
 - `e2e/p14-preview-build.spec.ts`: default overlay Play; toggle on/off; missing startup scene alert.
