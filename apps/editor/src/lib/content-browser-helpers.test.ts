@@ -601,6 +601,18 @@ describe("content-browser-helpers", () => {
     expect(isFolderTreeRoot("assets")).toBe(true);
     expect(isFolderTreeRoot("assets/textures")).toBe(false);
     expect(isFolderTreeRoot("content", "content")).toBe(true);
+    expect(
+      isFolderTreeRoot("plugins/pack/assets", [
+        "assets",
+        "plugins/pack/assets",
+      ]),
+    ).toBe(true);
+    expect(
+      isFolderTreeRoot("plugins/pack/assets/actors", [
+        "assets",
+        "plugins/pack/assets",
+      ]),
+    ).toBe(false);
   });
 
   it("resolves Class tiles to the parent engine icon", () => {

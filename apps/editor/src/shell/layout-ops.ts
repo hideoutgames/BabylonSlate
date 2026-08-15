@@ -39,6 +39,7 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   tileset: "tileset-preview",
   tilemap: "tilemap-paint",
   ui: "ui-design",
+  "plugin-settings": "plugin-settings-details",
 };
 
 /**

@@ -56,6 +56,12 @@ vi.mock("../context/document-context", async () => {
             : undefined,
       },
       openDocuments: [],
+      pluginDescriptors: [],
+      pluginDiagnostics: [],
+      applyPluginOverrides: vi.fn(),
+      createProjectPlugin: vi.fn(),
+      deleteProjectPlugin: vi.fn(),
+      openDocument: vi.fn(),
     }),
   };
 });
@@ -158,5 +164,14 @@ describe("SettingsModal project authoring", () => {
         editorUtilityObjects: ["Tools"],
       }),
     );
+  });
+
+  it("opens a Plugins category for enablement and New Plugin", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-plugins"));
+    expect(screen.getByTestId("settings-plugins-panel")).toBeTruthy();
+    expect(screen.getByTestId("settings-plugin-new")).toBeTruthy();
   });
 });

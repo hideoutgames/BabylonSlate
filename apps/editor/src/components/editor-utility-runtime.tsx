@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { ScriptHost, type ScriptHostServices } from "@babylonslate/runtime";
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
+import { resolvePluginEnabled } from "@babylonslate/assets";
 import {
   EDITOR_UTILITY_EVENTS,
   EDITOR_UTILITY_LIFECYCLE_EVENT,
@@ -9,6 +10,7 @@ import {
   fireEditorUtilityEvent,
   shutdownEditorUtilityHost,
 } from "../lib/editor-utility-scripts";
+import { mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
 
 function editorHostServices(appendLog: (line: string) => void): ScriptHostServices {
   return {
@@ -41,6 +43,7 @@ export function EditorUtilityRuntime() {
     collectEditorUtilityScripts,
     projectName,
     openDocuments,
+    pluginDescriptors,
   } = useDocuments();
   const { appendLog } = usePlay();
   const appendLogRef = useRef(appendLog);
@@ -51,8 +54,17 @@ export function EditorUtilityRuntime() {
   openDocumentsRef.current = openDocuments;
   const collectScriptsRef = useRef(collectEditorUtilityScripts);
   collectScriptsRef.current = collectEditorUtilityScripts;
-  const registeredKey = (
-    projectDocument?.settings.editorUtilityObjects ?? []
+  const registeredKey = mergePluginEditorUtilityObjects(
+    projectDocument?.settings.editorUtilityObjects ?? [],
+    pluginDescriptors
+      .filter((plugin) =>
+        resolvePluginEnabled(
+          plugin.settings.enabledByDefault,
+          projectDocument?.settings.pluginOverrides?.[plugin.pluginGuid]
+            ?.enabled,
+        ),
+      )
+      .map((plugin) => plugin.settings),
   ).join("|");
 
   useEffect(() => {

@@ -5,6 +5,7 @@ import {
   FilmIcon,
   ListTreeIcon,
   PanelTopIcon,
+  PuzzleIcon,
   WorkflowIcon,
 } from "lucide-react";
 import {
@@ -48,6 +49,14 @@ describe("resolveTypeVisual", () => {
     expect(ifaceVisual.colorVar).toBe(enumVisual.colorVar);
     expect(enumVisual.icon).not.toBe(structVisual.icon);
     expect(structVisual.icon).not.toBe(ifaceVisual.icon);
+  });
+
+  it("gives PluginSettings the Puzzle glyph and script-type color", () => {
+    const visual = resolveTypeVisual({ assetType: "PluginSettings" });
+    expect(visual.family).toBe("scriptType");
+    expect(visual.colorVar).toBe("var(--asset-script-type)");
+    expect(visual.iconKey).toBe("PluginSettings");
+    expect(visual.icon).toBe(PuzzleIcon);
   });
 
   it("shares Class color for Object, Actor, and Widget with different icons", () => {

@@ -29,11 +29,14 @@ import {
   truncateJournal,
   type AssetRegistry,
   type MigrationPending,
+  type PluginDescriptor,
+  type PluginDiagnostic,
   type ProjectSearchIndex,
   type ProjectTemplate,
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
+  resolvePluginEnabled,
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
@@ -90,6 +93,10 @@ import {
   classParentLookup,
 } from "../lib/content-browser-helpers";
 import {
+  classAssetPaths,
+  mergePluginEditorUtilityObjects,
+} from "../lib/plugin-ui";
+import {
   listedProjectsFromRecents,
   type ListedProject,
 } from "../lib/listed-projects";
@@ -136,6 +143,15 @@ interface DocumentContextValue {
   /** Bumps when encode/import mutates registry payloads in place. */
   registryVersion: number;
   refreshAssetRegistry: () => Promise<void>;
+  pluginDescriptors: PluginDescriptor[];
+  pluginDiagnostics: PluginDiagnostic[];
+  showPluginContent: boolean;
+  setShowPluginContent: (show: boolean) => void;
+  applyPluginOverrides: (
+    overrides: Record<string, { enabled: boolean }>,
+  ) => Promise<void>;
+  createProjectPlugin: (displayName: string) => Promise<PluginDescriptor>;
+  deleteProjectPlugin: (guid: string) => Promise<void>;
   /** Retarget open tabs after a Scene/Graph file move or rename. */
   repathDocument: (
     kind: AssetDocumentKind,
@@ -511,6 +527,31 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump();
   }, [bump, projectDocument, projectService]);
 
+  const applyPluginOverrides = useCallback(
+    async (overrides: Record<string, { enabled: boolean }>) => {
+      await projectService.applyPluginOverrides(overrides);
+      bump();
+    },
+    [bump, projectService],
+  );
+
+  const createProjectPlugin = useCallback(
+    async (displayName: string) => {
+      const created = await projectService.createProjectPlugin(displayName);
+      bump();
+      return created;
+    },
+    [bump, projectService],
+  );
+
+  const deleteProjectPlugin = useCallback(
+    async (guid: string) => {
+      await projectService.deleteProjectPlugin(guid);
+      bump();
+    },
+    [bump, projectService],
+  );
+
   const repathDocument = useCallback(
     (kind: AssetDocumentKind, oldPath: string, newPath: string) => {
       documentService.repathDocument(kind, oldPath, newPath);
@@ -782,6 +823,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void saveProject();
     }, interval);
   }, [saveProject]);
+
+  const setShowPluginContent = useCallback(
+    (show: boolean) => {
+      documentService.setShowPluginContent(show);
+      scheduleDebouncedSave();
+      bump();
+    },
+    [bump, documentService, scheduleDebouncedSave],
+  );
 
   const approveMigrationsAndSave = useCallback(async () => {
     if (!projectDocument) return;
@@ -1183,7 +1233,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const loadClassGraphDocuments = useCallback(async (): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
-    const paths = projectDocument?.graphs ?? [];
+    const paths = classAssetPaths(projectService.registry?.list() ?? []);
     const open = documentService.getState().openDocuments;
     const documents: Array<{ path: string; content: SerializedGraph }> = [];
     for (const path of paths) {
@@ -1203,7 +1253,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
     return documents;
-  }, [documentService, projectDocument, projectService]);
+  }, [documentService, projectService]);
 
   const loadProjectGraphDocuments = useCallback(async (): Promise<
     Array<{ path: string; content: SerializedGraph }>
@@ -1260,8 +1310,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ]),
     );
     const parentOf = classParentLookup(assets);
-    const registered =
-      projectDocumentRef.current?.settings.editorUtilityObjects ?? [];
+    const registered = mergePluginEditorUtilityObjects(
+      projectDocumentRef.current?.settings.editorUtilityObjects ?? [],
+      projectService.plugins
+        .filter((plugin) =>
+          resolvePluginEnabled(
+            plugin.settings.enabledByDefault,
+            projectDocumentRef.current?.settings.pluginOverrides[plugin.pluginGuid]
+              ?.enabled,
+          ),
+        )
+        .map((plugin) => plugin.settings),
+    );
     const selected = selectEditorUtilityGraphs(documents, {
       headers,
       parentOf,
@@ -2159,6 +2219,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       assetRegistry: projectService.registry,
       registryVersion,
       refreshAssetRegistry,
+      pluginDescriptors: projectService.plugins,
+      pluginDiagnostics: projectService.pluginGraphDiagnostics,
+      showPluginContent:
+        documentService.getState().showPluginContent === true,
+      setShowPluginContent,
+      applyPluginOverrides,
+      createProjectPlugin,
+      deleteProjectPlugin,
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,
@@ -2196,6 +2264,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService,
       projectService,
       refreshAssetRegistry,
+      setShowPluginContent,
+      applyPluginOverrides,
+      createProjectPlugin,
+      deleteProjectPlugin,
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,

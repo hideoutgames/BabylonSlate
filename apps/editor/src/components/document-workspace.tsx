@@ -200,7 +200,12 @@ export function DocumentWorkspace() {
           );
         }
 
-        if (doc.ref.kind === "sprite" || doc.ref.kind === "tileset" || doc.ref.kind === "tilemap") {
+        if (
+          doc.ref.kind === "sprite" ||
+          doc.ref.kind === "tileset" ||
+          doc.ref.kind === "tilemap" ||
+          doc.ref.kind === "plugin-settings"
+        ) {
           if (!shouldMount) return null;
           return (
             <WorkspaceErrorBoundary key={id}>
