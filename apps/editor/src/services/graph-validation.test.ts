@@ -104,6 +104,36 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(hydrated.nodes[0]?.data.__pins).toEqual(customPins);
   });
 
+  it("regenerates Call Custom Event pins so same-class Calls drop Target", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "call",
+          type: "flow.event.call",
+          position: { x: 0, y: 0 },
+          data: {
+            name: "On Hit",
+            classId: "Hero",
+            implicitSelf: true,
+            __pins: [
+              {
+                id: "target",
+                name: "target",
+                kind: "data",
+                direction: "in",
+                type: { kind: "objectRef", classId: "Hero" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins?.some((pin) => pin.id === "target")).toBe(false);
+  });
+
   it("injects node visual metadata from the registry", () => {
     const graph: SerializedGraph = {
       nodes: [
@@ -328,7 +358,7 @@ describe("scriptPaletteNodes", () => {
     expect(local?.pins?.some((pin) => pin.id === "amount" && pin.direction === "in")).toBe(
       true,
     );
-    expect(local?.pins?.some((pin) => pin.id === "target")).toBe(true);
+    expect(local?.pins?.some((pin) => pin.id === "target")).toBe(false);
     const other = nodes.find(
       (node) => node.id === "flow.event.call:Guard:On Alert",
     );
@@ -338,6 +368,7 @@ describe("scriptPaletteNodes", () => {
       classId: "Guard",
       implicitSelf: false,
     });
+    expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
   });
 
   it("marks inherited parent-class custom events as implicit-self Calls", () => {
@@ -362,5 +393,6 @@ describe("scriptPaletteNodes", () => {
       classId: "Actor",
       implicitSelf: true,
     });
+    expect(inherited?.pins?.some((pin) => pin.id === "target")).toBe(false);
   });
 });

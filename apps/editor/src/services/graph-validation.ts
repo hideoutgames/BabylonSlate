@@ -26,6 +26,18 @@ function hasNonEmptyPins(data: Record<string, unknown>): boolean {
   return Array.isArray(data.__pins) && data.__pins.length > 0;
 }
 
+function catalogTypeId(node: {
+  type: string;
+  data: Record<string, unknown>;
+}): string {
+  const hinted = node.data.__nodeType;
+  return typeof hinted === "string" ? hinted : node.type;
+}
+
+function shouldRegeneratePins(typeId: string): boolean {
+  return typeId === "flow.event.call" || typeId === "functions.call";
+}
+
 function withVisualMeta(
   data: Record<string, unknown>,
   def: { category: string; pure?: boolean; latent?: boolean } | undefined,
@@ -54,9 +66,8 @@ export function hydrateSerializedGraphForEditor(
     ...graph,
     nodes: graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
-      const typeIdHint =
-        typeof rawData.__nodeType === "string" ? rawData.__nodeType : node.type;
-      if (hasNonEmptyPins(rawData)) {
+      const typeIdHint = catalogTypeId({ type: node.type, data: rawData });
+      if (hasNonEmptyPins(rawData) && !shouldRegeneratePins(typeIdHint)) {
         return {
           ...node,
           data: withVisualMeta(

@@ -173,6 +173,7 @@ export function membersForGraph(
   const listedTypes = new Set(stubs.map((stub) => stub.eventType));
   for (const node of graph.nodes) {
     if (!node.type.startsWith("flow.event.")) continue;
+    if (node.type === "flow.event.call") continue;
     if (listedTypes.has(node.type) && node.type !== "flow.event.custom") {
       continue;
     }

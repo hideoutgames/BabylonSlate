@@ -94,19 +94,20 @@ describe("flow nodes", () => {
     ]);
   });
 
-  it("maps Call Custom Event pins as Target plus data inputs and Then only", () => {
+  it("omits Target on same-class Call Custom Event and keeps it for other classes", () => {
     const call = flowNodes.find((node) => node.id === "flow.event.call");
     expect(call?.title).toBe("Call Custom Event");
-    const pins = call?.pins({
+    const selfPins = call?.pins({
       name: "On Hit",
       classId: "Hero",
+      implicitSelf: true,
       pins: [
         { name: "amount", typeId: "float", direction: "out" },
         { name: "then", typeId: "exec", direction: "out" },
       ],
     });
     expect(
-      pins?.map((pin) => ({
+      selfPins?.map((pin) => ({
         id: pin.id,
         direction: pin.direction,
         type: pin.type,
@@ -114,11 +115,17 @@ describe("flow nodes", () => {
     ).toEqual([
       { id: "execIn", direction: "in", type: EXEC },
       { id: "execOut", direction: "out", type: EXEC },
-      { id: "target", direction: "in", type: objectRef("Hero") },
       { id: "amount", direction: "in", type: FLOAT },
     ]);
-    expect(pins?.filter((pin) => pin.direction === "out")).toEqual([
-      expect.objectContaining({ id: "execOut", type: EXEC }),
-    ]);
+    const otherPins = call?.pins({
+      name: "On Alert",
+      classId: "Guard",
+      implicitSelf: false,
+      pins: [{ name: "amount", typeId: "float", direction: "out" }],
+    });
+    expect(otherPins?.some((pin) => pin.id === "target")).toBe(true);
+    expect(otherPins?.find((pin) => pin.id === "target")?.type).toEqual(
+      objectRef("Guard"),
+    );
   });
 });

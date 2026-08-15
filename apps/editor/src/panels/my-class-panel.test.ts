@@ -99,6 +99,44 @@ describe("My Class members", () => {
     expect(membersForGraph(null)).toEqual([]);
   });
 
+  it("does not list Call Custom Event canvas nodes as Class events", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "hit",
+          type: "flow.event.custom",
+          position: { x: 0, y: 0 },
+          data: { name: "On Hit", title: "Event On Hit" },
+        },
+        {
+          id: "call",
+          type: "flow.event.call",
+          position: { x: 200, y: 0 },
+          data: {
+            title: "Call On Hit",
+            name: "On Hit",
+            classId: "Hero",
+            implicitSelf: true,
+          },
+        },
+      ],
+      edges: [],
+    };
+    const events = membersForSection(membersForGraph(graph), "event");
+    expect(events.filter((row) => row.eventType === "flow.event.call")).toEqual(
+      [],
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "flow.event.custom",
+          name: "Event On Hit",
+          detail: "hit",
+        }),
+      ]),
+    );
+  });
+
   it("lists On Evaluate instead of Begin Play for a BTDecorator class", () => {
     expect(
       membersForGraph({ nodes: [], edges: [] }, { parentClass: "BTDecorator" }),
