@@ -184,37 +184,38 @@ export function startPlayer(options: {
     worker.postControl({ type: "play" });
   } catch {
     worker = null;
-    runtime = createRuntimeFromLoad(loadControl, (command) =>
+    const inProcess = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command as never),
     );
+    runtime = inProcess;
     const boot = createPlayBootCoordinator();
     if (game.scripts.length > 0) {
-      boot.queueScripts(runtime, game.scripts, spawn);
+      boot.queueScripts(inProcess, game.scripts, spawn);
     }
     for (const entry of content.animGraphs) {
       const document = parseAnimGraphDocument(entry.document);
-      if (document) runtime.registerAnimGraph(entry.guid, document);
+      if (document) inProcess.registerAnimGraph(entry.guid, document);
     }
     for (const entry of content.behaviourTrees) {
       const document = parseBehaviourTreeDocument(entry.document);
-      if (document) runtime.registerBehaviourTree(entry.guid, document);
+      if (document) inProcess.registerBehaviourTree(entry.guid, document);
     }
     for (const entry of content.blackboards) {
       const document = parseBlackboardDocument(entry.document);
-      if (document) runtime.registerBlackboard(entry.guid, document);
+      if (document) inProcess.registerBlackboard(entry.guid, document);
     }
     if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
-      runtime.registerTileContent({
+      inProcess.registerTileContent({
         tilemaps: content.tilemapPayloads,
         tilesets: content.tilesetPayloads,
         pixelsPerUnit: content.pixelsPerUnit,
       });
     }
     if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {
-      boot.queueNavMesh(runtime, content.navmeshBytes);
+      boot.queueNavMesh(inProcess, content.navmeshBytes);
     }
-    void boot.play(runtime).catch((error) => {
-      runtime.reportError(error);
+    void boot.play(inProcess).catch((error) => {
+      inProcess.reportError(error);
     });
   }
 
