@@ -15,19 +15,29 @@ describe("pack sources", () => {
     const pack = await encodeBabpack([{ guid: "a", bytes }]);
     const decoded = (await import("./babpack")).decodeBabpack(pack);
     const entry = decoded.entries[0]!;
+    const ranges: string[] = [];
     const fetchFn: typeof fetch = async (_url, init) => {
       const range = String(
         (init?.headers as Record<string, string> | undefined)?.Range ?? "",
       );
-      expect(range).toBe(`bytes=${entry.offset}-${entry.offset + entry.length - 1}`);
-      const slice = pack.subarray(entry.offset, entry.offset + entry.length);
-      return new Response(slice, {
+      ranges.push(range);
+      const match = /^bytes=(\d+)-(\d+)$/.exec(range);
+      expect(match).not.toBeNull();
+      const start = Number(match![1]);
+      const end = Number(match![2]) + 1;
+      return new Response(pack.subarray(start, end), {
         status: 206,
-        headers: { "Content-Range": `bytes ${entry.offset}-${entry.offset + entry.length - 1}/${pack.byteLength}` },
+        headers: {
+          "Content-Range": `bytes ${start}-${end - 1}/${pack.byteLength}`,
+        },
       });
     };
     const source = createHttpPackSource("boot.babpack", undefined, fetchFn);
     expect(await source.read("a")).toEqual(bytes);
+    expect(ranges[0]).toBe("bytes=0-7");
+    expect(ranges).toContain(
+      `bytes=${entry.offset}-${entry.offset + entry.length - 1}`,
+    );
   });
 
   it("range-capable servers never need a whole-pack GET", async () => {
