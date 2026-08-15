@@ -20,6 +20,7 @@ When the code-review skill reports Standards or Spec findings:
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
 | 2026-08-15 | cursor/p4-followups-55e8 | p4-preview-report | Spec | Log Error never entered the session report; ExecuteJavaScript `bodyLine` was not compiled, not on the worker diagnostic command, and navigate did not set CodeMirror focus | Resolved |
+| 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Spec | ClassRegistry unused at spawn; Play `callInterface` skipped `dispatchInterface` so scene actors never received class-declared interface guids | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Standards | Engine components and BT builtins were reparentable (`MeshComponent` → `Actor`) | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model / p3-harness | Spec | Remaining accepted P3 cuts: World-owned spawn API (spec wording), flat runtime components (`SerializedComponent.parentId` dropped at Play), VFS fixtures decoupled from the 120-tick golden | Accepted |
 | 2026-08-14 | cursor/scene-open-old-project-crash-82b9 | scene-open crash | Standards | Alert catalog “Used for” omitted `WorkspaceErrorBoundary` | Resolved |

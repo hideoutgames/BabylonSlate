@@ -6,6 +6,7 @@ import {
 /**
  * Play / Compiler Results tap-to-navigate should show the graph that owns the
  * diagnostic. `graphId` is the open document id (`documentId({ kind: "graph", path })`).
+ * Session-report rows also open the owning Class / BehaviourTree asset by guid.
  */
 export function documentIdToRevealForDiagnostic(
   diagnostic: { graphId: string },
@@ -30,7 +31,7 @@ export function sessionReportNavigation(
   },
 ): { focusedNodeId: string; document?: DocumentRef; bodyLine?: number } {
   const focusedNodeId = entry.btNodeId ?? entry.nodeId ?? "";
-  if (!entry.btNodeId || !entry.assetGuid) {
+  if (!entry.assetGuid) {
     return { focusedNodeId, bodyLine: entry.bodyLine };
   }
   const asset = lookup.getByGuid?.(entry.assetGuid);

@@ -1,6 +1,6 @@
 import type { LogicGraph, GraphNode, GraphPin } from "./ir";
 import { findNode, findPin } from "./ir";
-import type { NodeRegistry, CodegenContext } from "./node-registry";
+import type { NodeRegistry, CodegenContext, HoistBodyAnchor } from "./node-registry";
 import { defaultValueLiteral } from "./types";
 
 export type CompileAnchor = {
@@ -148,7 +148,7 @@ export function compileGraph(
   type HoistChunk = {
     source: string;
     nodeId: string;
-    bodyAnchors?: readonly { relativeLine: number; bodyLine: number }[];
+    bodyAnchors?: readonly HoistBodyAnchor[];
   };
   const hoisted: HoistChunk[] = [];
   type BodyLine = { text: string; anchor?: Omit<CompileAnchor, "line"> };

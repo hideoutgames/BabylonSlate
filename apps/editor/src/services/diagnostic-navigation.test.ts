@@ -46,12 +46,25 @@ describe("sessionReportNavigation", () => {
     });
   });
 
-  it("passes ExecuteJavaScript bodyLine through for CodeMirror focus", () => {
+  it("opens the class asset and passes bodyLine for CodeMirror focus", () => {
     const nav = sessionReportNavigation(
       { nodeId: "js", bodyLine: 3, assetGuid: "class-1" },
-      {},
+      {
+        getByGuid: (guid) =>
+          guid === "class-1"
+            ? {
+                header: { type: "Class", name: "Hero" },
+                path: "assets/Hero.class.babasset",
+              }
+            : undefined,
+      },
     );
     expect(nav.focusedNodeId).toBe("js");
     expect(nav.bodyLine).toBe(3);
+    expect(nav.document).toEqual({
+      kind: "graph",
+      path: "assets/Hero.class.babasset",
+      label: "Hero",
+    });
   });
 });
