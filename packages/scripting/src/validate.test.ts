@@ -13,6 +13,7 @@ import {
   INT,
   RESOLVING_WILDCARD,
   STRING,
+  BOXED_WILDCARD,
   actorRef,
   arrayOf,
   classRef,
@@ -224,6 +225,29 @@ describe("validateGraphs", () => {
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
     expect(diags.some((d) => d.code === "pin.invalid_default")).toBe(false);
+  });
+
+  it("does not error pin.invalid_default for a boxedWildcard Print value", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "print",
+          typeId: "debug.print",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("value", "value", "in", BOXED_WILDCARD),
+          ],
+          properties: { value: "jumped" },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pin.invalid_default")).toBe(false);
+    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
   });
 
   it("flags incompatible wildcard resolution groups", () => {

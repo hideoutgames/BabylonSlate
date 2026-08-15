@@ -6,6 +6,7 @@ import {
   INT,
   STRING,
   compileGraph,
+  enumRef,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -80,7 +81,7 @@ describe("functions.call", () => {
       { id: "flag", direction: "in", type: BOOL },
       { id: "count", direction: "in", type: INT },
       { id: "label", direction: "in", type: STRING },
-      { id: "kind", direction: "in", type: STRING },
+      { id: "kind", direction: "in", type: enumRef("") },
       { id: "then", direction: "out", type: EXEC },
     ]);
   });

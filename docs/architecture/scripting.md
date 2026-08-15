@@ -230,7 +230,7 @@ Unconnected data inputs can store a literal used at compile time when no wire is
 | --- | --- |
 | `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `vec4` (XYZW scrubs), `rotator`, `color` (RGB; preserve `w`), `enumRef` (member-name Select from open Enum documents / registry), `classRef` (`ClassPicker` filtered to subclasses of the pin’s `classId`; default is that constraint id) | `exec`, `objectRef` / `actorRef` (live instances — no Inspector default; implicit-self Target on Call is the exception), delegate, wildcards, `array`, `map`, `structRef`, `transform` |
 
-Authored defaults on types that **accept** literals clear `pin.missing_input`. A stored default on a type that cannot take one is `pin.invalid_default`; the compiler ignores it and emits the type-table literal (`null` for object/actor). Spawn Actor / Add Component `classId` pins are `classRef("Actor")` / `classRef("ActorComponent")`.
+Authored defaults on types that **accept** literals clear `pin.missing_input`. A stored default on an object/actor **instance** pin is `pin.invalid_default`; the compiler ignores it and emits `null`. Boxed-wildcard node values (Print, Set Blackboard) still compile. Spawn Actor / Add Component `classId` pins are `classRef("Actor")` / `classRef("ActorComponent")`.
 
 ### Validation UX (`p5-graph-validation`)
 

@@ -7,7 +7,7 @@ import {
   type ValidateOptions,
 } from "./type-context";
 import { isAssignable } from "./types";
-import { pinAcceptsLiteralDefault, readPinDefault } from "./pin-defaults";
+import { pinAcceptsLiteralDefault, pinRejectsStoredDefault, readPinDefault } from "./pin-defaults";
 import {
   pinTypeKey,
   resolveWildcardPinTypes,
@@ -256,7 +256,7 @@ function validatePinTyping(
       );
       const stored = readPinDefault(node.properties, pin.name);
       const hasStored = stored !== undefined;
-      if (hasStored && !pinAcceptsLiteralDefault(pin.type)) {
+      if (hasStored && pinRejectsStoredDefault(pin.type)) {
         out.push(
           diagnostic({
             code: "pin.invalid_default",
@@ -274,7 +274,9 @@ function validatePinTyping(
           node.properties.implicitSelf === true &&
           (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
         const defaultClearsMissing =
-          hasStored && pinAcceptsLiteralDefault(pin.type);
+          hasStored &&
+          (pinAcceptsLiteralDefault(pin.type) ||
+            pin.type.kind === "boxedWildcard");
         if (!defaultClearsMissing && !implicitSelfTarget) {
           out.push(
             diagnostic({

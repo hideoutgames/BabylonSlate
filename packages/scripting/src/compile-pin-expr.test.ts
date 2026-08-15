@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "./compile";
 import type { LogicGraph } from "./ir";
 import { NodeRegistry, pin } from "./node-registry";
-import { EXEC, actorRef, classRef, objectRef } from "./types";
+import { EXEC, actorRef, classRef, objectRef, BOXED_WILDCARD } from "./types";
 
 function registry(): NodeRegistry {
   const nodes = new NodeRegistry();
@@ -39,6 +39,19 @@ function registry(): NodeRegistry {
     codegen: (ctx) => {
       const out = ctx.output("out");
       ctx.emit(`${out} = ctx.spawnActor(${ctx.input("classId")});`);
+    },
+  });
+  nodes.register({
+    id: "debug.print",
+    title: "Print",
+    category: "debug",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("value", "value", "in", BOXED_WILDCARD),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.print(${ctx.input("value")});`);
     },
   });
   return nodes;
@@ -121,5 +134,44 @@ describe("compile pinExpr defaults", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry: registry() });
     expect(compiled.source).toContain('ctx.spawnActor("Pawn")');
+  });
+
+  it("still compiles a boxedWildcard Print value stored on the node", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "print",
+          typeId: "debug.print",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("value", "value", "in", BOXED_WILDCARD),
+          ],
+          properties: { value: "jumped" },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "print",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry: registry() });
+    expect(compiled.source).toContain('ctx.print("jumped")');
+    expect(compiled.source).not.toContain('tag: "null"');
   });
 });

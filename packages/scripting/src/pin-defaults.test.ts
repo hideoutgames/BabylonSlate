@@ -24,6 +24,7 @@ import {
   defaultJsValue,
   listUnconnectedLiteralPinDefaults,
   pinAcceptsLiteralDefault,
+  pinRejectsStoredDefault,
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
   pinDefaultAsString,
@@ -60,6 +61,16 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(objectRef("Actor"))).toBe(false);
     expect(pinAcceptsLiteralDefault(actorRef("Actor"))).toBe(false);
     expect(pinAcceptsLiteralDefault(BOXED_WILDCARD)).toBe(false);
+  });
+});
+
+describe("pinRejectsStoredDefault", () => {
+  it("rejects only live object and actor instance pins", () => {
+    expect(pinRejectsStoredDefault(objectRef("Actor"))).toBe(true);
+    expect(pinRejectsStoredDefault(actorRef("Actor"))).toBe(true);
+    expect(pinRejectsStoredDefault(classRef("Actor"))).toBe(false);
+    expect(pinRejectsStoredDefault(BOXED_WILDCARD)).toBe(false);
+    expect(pinRejectsStoredDefault(STRING)).toBe(false);
   });
 });
 

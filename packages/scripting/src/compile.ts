@@ -2,7 +2,7 @@ import type { LogicGraph, GraphNode, GraphPin } from "./ir";
 import { findNode, findPin } from "./ir";
 import type { NodeRegistry, CodegenContext, HoistBodyAnchor } from "./node-registry";
 import { defaultValueLiteral } from "./types";
-import { pinAcceptsLiteralDefault } from "./pin-defaults";
+import { pinRejectsStoredDefault } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
 
 export type CompileAnchor = {
@@ -230,7 +230,7 @@ export function compileGraph(
       node.properties[`default:${dataPin.name}`] ??
       node.properties[dataPin.name];
     const lit =
-      prop !== undefined && pinAcceptsLiteralDefault(dataPin.type)
+      prop !== undefined && !pinRejectsStoredDefault(dataPin.type)
         ? JSON.stringify(prop)
         : defaultValueLiteral(dataPin.type);
     exprCache.set(key, lit);
