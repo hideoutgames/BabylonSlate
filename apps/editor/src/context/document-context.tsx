@@ -14,6 +14,7 @@ import type {
   DocumentRef,
   ProjectDocument,
   ProjectFolderHandle,
+  Result,
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
@@ -69,6 +70,11 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
+import {
+  compileGraphDocuments,
+  graphCompileSignature,
+  graphsNeedCompile as compileSignatureIsStale,
+} from "../services/script-compiler";
 import type { CreateProjectOptions } from "../lib/create-project";
 import type { ExportArtifact } from "@babylonslate/exporter";
 import {
@@ -211,9 +217,7 @@ interface DocumentContextValue {
   exportGameArtifact: (options?: {
     previewBuild?: boolean;
     playerFiles?: Map<string, Uint8Array>;
-  }) => Promise<
-    { ok: true; value: ExportArtifact } | { ok: false; error: string }
-  >;
+  }) => Promise<Result<ExportArtifact, string>>;
   zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
   dismissRecovery: () => Promise<void>;
   keepRecovery: () => void;

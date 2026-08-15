@@ -4,6 +4,8 @@ import {
   createDefaultScene,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   defaultExportPreset,
+  isErr,
+  isOk,
 } from "@babylonslate/core";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "@babylonslate/exporter";
 import { collectAndExportGame } from "./export-game";
@@ -42,8 +44,9 @@ describe("collectAndExportGame", () => {
       playerFiles,
     });
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toBe(MISSING_STARTUP_SCENE_MESSAGE);
+    if (isErr(result)) {
+      expect(result.error).toBe(MISSING_STARTUP_SCENE_MESSAGE);
+    }
   });
 
   it("packs the startup scene guid and strips editor-only classes", async () => {
@@ -92,7 +95,7 @@ describe("collectAndExportGame", () => {
       playerFiles,
     });
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (!isOk(result)) return;
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
     expect(result.value.manifest.mode).toBe("packed");
     expect(result.value.manifest.bundleDebugger).toBe(false);
@@ -121,7 +124,7 @@ describe("collectAndExportGame", () => {
       playerFiles,
     });
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (!isOk(result)) return;
     expect(result.value.manifest.bundleDebugger).toBe(true);
   });
 });

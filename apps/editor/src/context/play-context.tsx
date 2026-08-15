@@ -12,6 +12,7 @@ import type { Engine } from "@babylonjs/core";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+  isErr,
 } from "@babylonslate/core";
 import { createAppEngine, type FontAssetEntry } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
@@ -399,7 +400,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         previewBuild: true,
         playerFiles,
       });
-      if (!packed.ok) {
+      if (isErr(packed)) {
         if (packed.error === MISSING_STARTUP_SCENE_MESSAGE) {
           setStartupAlertOpen(true);
         } else {

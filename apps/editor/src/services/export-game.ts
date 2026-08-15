@@ -11,6 +11,8 @@ import {
   defaultExportPreset,
   type ExportPreset,
   type RenderProjectSettings,
+  isErr,
+  type Result,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -101,7 +103,7 @@ function sceneGuidForAsset(
 
 export async function collectAndExportGame(
   params: CollectExportGameParams,
-): Promise<{ ok: true; value: ExportArtifact } | { ok: false; error: string }> {
+): Promise<Result<ExportArtifact, string>> {
   const preset = params.preset ?? defaultExportPreset();
   const bundleDebugger = params.previewBuild === true ? true : preset.bundleDebugger;
   const mode = preset.packed === false ? "loose" : "packed";
@@ -118,7 +120,9 @@ export async function collectAndExportGame(
     sceneByGuid: params.sceneByGuid,
     graphByGuid: params.graphByGuid,
   });
-  if (!closure.ok) return closure;
+  if (isErr(closure)) {
+    return { ok: false, error: closure.error };
+  }
 
   const startup = params.startupSceneGuid!;
   const graphDocs: Array<{

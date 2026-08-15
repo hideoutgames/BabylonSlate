@@ -37,9 +37,9 @@ function registerIpc(): void {
       return null;
     }
   });
-  ipcMain.handle("settings:write", async (_event, json: string) => {
+  ipcMain.handle("settings:write", async (_event, json) => {
     await mkdir(dirname(settingsPath), { recursive: true });
-    await writeFile(settingsPath, json);
+    await writeFile(settingsPath, String(json));
   });
 
   ipcMain.handle("project:pickFolder", async () => {
@@ -51,51 +51,44 @@ function registerIpc(): void {
     }
     return storage.openAbsoluteFolder(picked.filePaths[0]);
   });
-  ipcMain.handle("project:openDocuments", async (_event, name: string) => {
-    return storage.openDocumentsProject(name);
+  ipcMain.handle("project:openDocuments", async (_event, name) => {
+    return storage.openDocumentsProject(String(name));
   });
-  ipcMain.handle(
-    "project:openKnown",
-    async (_event, handle: ProjectFolderHandle) => {
-      if (handle.id.startsWith("node:")) {
-        return storage.openAbsoluteFolder(
-          handle.id.slice("node:".length),
-          handle.name,
-          handle.tier,
-        );
-      }
-      return storage.openKnownFolder(handle);
-    },
-  );
+  ipcMain.handle("project:openKnown", async (_event, handle) => {
+    const folder = handle as ProjectFolderHandle;
+    if (folder.id.startsWith("node:")) {
+      return storage.openAbsoluteFolder(
+        folder.id.slice("node:".length),
+        folder.name,
+        folder.tier,
+      );
+    }
+    return storage.openKnownFolder(folder);
+  });
   ipcMain.handle("project:list", async () => storage.listProjects());
   ipcMain.handle("project:current", async () => storage.getCurrentFolder());
   ipcMain.handle("project:release", async () => storage.releaseFolder());
-  ipcMain.handle("project:readBinary", async (_event, path: string) => {
-    const bytes = await storage.readBinary(path);
+  ipcMain.handle("project:readBinary", async (_event, path) => {
+    const bytes = await storage.readBinary(String(path));
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   });
-  ipcMain.handle(
-    "project:writeBinary",
-    async (_event, path: string, data: ArrayBuffer) => {
-      await storage.writeBinary(path, new Uint8Array(data));
-    },
+  ipcMain.handle("project:writeBinary", async (_event, path, data) => {
+    await storage.writeBinary(String(path), new Uint8Array(data as ArrayBuffer));
+  });
+  ipcMain.handle("project:exists", async (_event, path) =>
+    storage.exists(String(path)),
   );
-  ipcMain.handle("project:exists", async (_event, path: string) =>
-    storage.exists(path),
+  ipcMain.handle("project:readdir", async (_event, path) =>
+    storage.readdir(String(path)),
   );
-  ipcMain.handle("project:readdir", async (_event, path: string) =>
-    storage.readdir(path),
+  ipcMain.handle("project:mkdir", async (_event, path, recursive) =>
+    storage.mkdir(String(path), recursive !== false),
   );
-  ipcMain.handle(
-    "project:mkdir",
-    async (_event, path: string, recursive?: boolean) =>
-      storage.mkdir(path, recursive),
+  ipcMain.handle("project:remove", async (_event, path) =>
+    storage.remove(String(path)),
   );
-  ipcMain.handle("project:remove", async (_event, path: string) =>
-    storage.remove(path),
-  );
-  ipcMain.handle("project:stat", async (_event, path: string) =>
-    storage.stat(path),
+  ipcMain.handle("project:stat", async (_event, path) =>
+    storage.stat(String(path)),
   );
 }
 

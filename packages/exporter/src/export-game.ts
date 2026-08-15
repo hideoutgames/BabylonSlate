@@ -1,5 +1,4 @@
 import { err, ok, type Result } from "@babylonslate/core";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {

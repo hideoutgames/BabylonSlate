@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { AddressInfo } from "node:net";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { encodeBabpack } from "./babpack";
 import { createHttpPackSource } from "./pack-source";

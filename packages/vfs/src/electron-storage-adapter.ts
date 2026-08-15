@@ -21,10 +21,11 @@ function toBuffer(data: Uint8Array): ArrayBuffer {
  */
 export class ElectronStorageAdapter implements ProjectStorage {
   private folder: ProjectFolderHandle | null = null;
+  private readonly bridge: ElectronProjectBridge | null;
 
-  constructor(
-    private readonly bridge: ElectronProjectBridge | null = getElectronProjectBridge(),
-  ) {}
+  constructor(bridge: ElectronProjectBridge | null = getElectronProjectBridge()) {
+    this.bridge = bridge;
+  }
 
   private requireBridge(): ElectronProjectBridge {
     if (!this.bridge) {

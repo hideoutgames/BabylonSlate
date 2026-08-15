@@ -10,7 +10,7 @@ import {
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
 import type { ProjectInputSettings } from "@babylonslate/core";
-import { defaultExportPreset } from "@babylonslate/core";
+import { defaultExportPreset, isErr } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
@@ -296,7 +296,7 @@ export function SettingsModal({
     setExportGameError(null);
     try {
       const result = await exportGameArtifact();
-      if (!result.ok) {
+      if (isErr(result)) {
         setExportGameError(result.error);
         return;
       }
