@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { SerializedComponent, SerializedGraph } from "@babylonslate/core";
+import { identitySerializedTransform } from "@babylonslate/core";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import {
@@ -74,6 +75,7 @@ export function PrefabEditingProvider({
           classId,
           properties: defaultPropertiesFor(classId),
           parentId: null,
+          transform: identitySerializedTransform(),
         },
       ]);
     },

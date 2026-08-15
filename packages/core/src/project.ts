@@ -2,6 +2,7 @@ import {
   createActor,
   createDefaultSceneSettings,
   createMeshComponent,
+  normalizeTransform,
   type SerializedComponent,
   type SerializedScene,
   type ViewportMode,
@@ -575,6 +576,7 @@ export function normalizeGraphComponents(value: unknown): SerializedComponent[] 
       classId,
       properties,
       parentId: typeof row.parentId === "string" ? row.parentId : null,
+      transform: normalizeTransform(row.transform),
     });
   }
   return components;

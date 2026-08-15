@@ -32,8 +32,23 @@ describe("prefabComponentsFromGraph", () => {
         classId: "MeshComponent",
         properties: { ...mesh.properties },
         parentId: null,
+        transform: mesh.transform,
       },
     ]);
+  });
+
+  it("copies authored local transforms onto spawned components", () => {
+    const mesh = {
+      ...createMeshComponent("prefab-mesh", "box"),
+      transform: {
+        position: [3, 0, 1] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    expect(instantiatePrefabComponents([mesh], "hero")[0]?.transform).toEqual(
+      mesh.transform,
+    );
   });
 
   it("remaps nested parentIds onto the spawned actor", () => {

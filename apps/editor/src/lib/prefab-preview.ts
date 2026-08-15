@@ -2,6 +2,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  identitySerializedTransform,
   wouldCreateComponentCycle,
   type SerializedComponent,
   type SerializedScene,
@@ -53,6 +54,22 @@ export function instantiatePrefabComponents(
       classId: component.classId,
       properties: { ...component.properties },
       parentId,
+      transform: component.transform
+        ? {
+            position: [...component.transform.position] as [
+              number,
+              number,
+              number,
+            ],
+            rotation: [...component.transform.rotation] as [
+              number,
+              number,
+              number,
+              number,
+            ],
+            scale: [...component.transform.scale] as [number, number, number],
+          }
+        : identitySerializedTransform(),
     };
   });
 }

@@ -191,4 +191,41 @@ describe("scene schema", () => {
       "sphere",
     );
   });
+
+  it("creates mesh components with an identity local transform", () => {
+    expect(createMeshComponent("c1", "sphere").transform).toEqual({
+      position: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    });
+  });
+
+  it("normalizes missing component transforms to identity and keeps authored ones", () => {
+    const scene = normalizeScene({
+      actors: [
+        {
+          id: "a",
+          components: [
+            { id: "mesh", classId: "MeshComponent", properties: { meshKind: "box" } },
+            {
+              id: "offset",
+              classId: "MeshComponent",
+              properties: { meshKind: "sphere" },
+              transform: { position: [1, 2, 3] },
+            },
+          ],
+        },
+      ],
+    });
+    expect(scene.actors[0]?.components[0]?.transform).toEqual({
+      position: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    });
+    expect(scene.actors[0]?.components[1]?.transform).toEqual({
+      position: [1, 2, 3],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    });
+  });
 });
