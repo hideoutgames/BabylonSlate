@@ -130,6 +130,26 @@ describe("DocumentService", () => {
     expect(layouts.tabOrder[0]).toBe(CONTENT_BROWSER_ID);
     expect(layouts.documents[sceneId]).toBeDefined();
     expect(layouts.activeDocumentId).toBe(CONTENT_BROWSER_ID);
+    expect(layouts.showPluginContent).toBe(false);
+  });
+
+  it("persists Show Plugin Content in layout.json", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const projectService = createMockProjectService();
+
+    await service.initializeFromProject(projectService, project, {
+      documents: {},
+      tabOrder: [],
+      activeDocumentId: CONTENT_BROWSER_ID,
+      showPluginContent: true,
+    });
+
+    expect(service.getState().showPluginContent).toBe(true);
+    service.setShowPluginContent(false);
+    expect(service.buildLayouts().showPluginContent).toBe(false);
+    service.setShowPluginContent(true);
+    expect(service.buildLayouts().showPluginContent).toBe(true);
   });
 
   it("round-trips panel placements in buildLayouts", async () => {

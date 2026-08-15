@@ -9,6 +9,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [VFS](vfs.md) | Binary VFS, storage tiers, app settings |
 | [Command layer](command-layer.md) | Undo, journal, dirty saves |
 | [Asset registry](asset-registry.md) | Header-only guid index and importers |
+| [Plugins](plugins.md) | PluginSettings, content roots, `.babplugin`, Starter Content |
 | [Global search](global-search.md) | Project-wide text search |
 | [Object model](object-model.md) | World, actors, tick |
 | [Bridge](bridge.md) | Transports, snapshot layout, channels |

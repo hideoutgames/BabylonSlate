@@ -18,6 +18,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "VFS", link: "/architecture/vfs" },
       { text: "Command layer", link: "/architecture/command-layer" },
       { text: "Asset registry", link: "/architecture/asset-registry" },
+      { text: "Plugins", link: "/architecture/plugins" },
       { text: "Global search", link: "/architecture/global-search" },
       { text: "Object model", link: "/architecture/object-model" },
       { text: "Bridge", link: "/architecture/bridge" },

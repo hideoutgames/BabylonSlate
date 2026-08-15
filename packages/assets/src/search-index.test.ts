@@ -318,4 +318,41 @@ describe("ProjectSearchIndex", () => {
     expect(hits).toHaveLength(5);
     expect(hits[0]?.label).toBe("Needle");
   });
+
+  it("indexes class documents from a plugin content root storage", async () => {
+    const project = await createStorage();
+    const engine = new MemoryStorageAdapter("opfs");
+    await engine.openDocumentsProject("engine-plugins");
+    await writeDocument(engine, "starter/assets/StarterActor.class.babasset", {
+      guid: "hero-1",
+      type: "Class",
+      name: "StarterActor",
+      parentClass: "Actor",
+      payload: {
+        nodes: [
+          {
+            id: "n1",
+            type: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+        ],
+        edges: [],
+      },
+    });
+    const registry = new AssetRegistry(project);
+    await registry.mountRoot(projectContentRoot());
+    await registry.mountRoot({
+      id: "plugin:engine-1",
+      kind: "plugin",
+      pathPrefix: "starter/assets",
+      readOnly: true,
+      storage: engine,
+    });
+    const index = new ProjectSearchIndex(project);
+    await index.rebuild(registry);
+    const hits = index.query("StarterActor");
+    expect(hits.some((hit) => hit.label === "StarterActor")).toBe(true);
+  });
 });
+

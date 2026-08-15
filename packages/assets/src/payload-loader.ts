@@ -22,7 +22,11 @@ export class AccountedPayloadLoader {
     this.blobs = options.blobs ?? createVfsBlobStore(storage);
   }
 
-  async loadChunk(fileBytes: Uint8Array, entry: ChunkEntry): Promise<Uint8Array> {
+  async loadChunk(
+    fileBytes: Uint8Array,
+    entry: ChunkEntry,
+    blobs: BlobStore = this.blobs,
+  ): Promise<Uint8Array> {
     let data: Uint8Array;
     if ("inline" in entry.locator) {
       const headerLen = readU32LE(fileBytes, 8);
@@ -30,7 +34,7 @@ export class AccountedPayloadLoader {
       const { offset, length } = entry.locator.inline;
       data = fileBytes.subarray(payloadStart + offset, payloadStart + offset + length);
     } else {
-      data = await this.blobs.readBlob(entry.locator.blob);
+      data = await blobs.readBlob(entry.locator.blob);
     }
     this.accounted += data.byteLength;
     return data;

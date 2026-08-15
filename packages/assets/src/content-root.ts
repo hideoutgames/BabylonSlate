@@ -1,3 +1,4 @@
+import type { ProjectStorage } from "@babylonslate/core";
 import { ASSETS_DIR } from "./babproject";
 
 /**
@@ -12,8 +13,27 @@ export interface ContentRoot {
   kind: ContentRootKind;
   /** Path prefix inside ProjectStorage holding this root's `.babasset` tree. */
   pathPrefix: string;
+  /** Engine plugin roots refuse create/delete/move. */
+  readOnly?: boolean;
+  /** Engine plugins mount from a separate storage; defaults to the registry's. */
+  storage?: ProjectStorage;
 }
 
 export function projectContentRoot(id = "project"): ContentRoot {
   return { id, kind: "project", pathPrefix: ASSETS_DIR };
+}
+
+export function pluginContentRoot(options: {
+  id: string;
+  pathPrefix: string;
+  readOnly?: boolean;
+  storage?: ProjectStorage;
+}): ContentRoot {
+  return {
+    id: options.id,
+    kind: "plugin",
+    pathPrefix: options.pathPrefix,
+    readOnly: options.readOnly,
+    storage: options.storage,
+  };
 }

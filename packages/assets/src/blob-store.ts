@@ -12,13 +12,16 @@ export interface BlobStore {
  * Blobs are immutable: an existing hash is never rewritten, so re-saving an
  * asset whose large chunks did not change costs no bytes.
  */
-export function createVfsBlobStore(storage: ProjectStorage): BlobStore {
-  const pathFor = (sha256: string) => `${BLOBS_DIR}/${sha256}`;
+export function createVfsBlobStore(
+  storage: ProjectStorage,
+  blobDir = BLOBS_DIR,
+): BlobStore {
+  const pathFor = (sha256: string) => `${blobDir}/${sha256}`;
 
   return {
     async writeBlob(sha256, data) {
       if (await storage.exists(pathFor(sha256))) return;
-      await storage.mkdir(BLOBS_DIR, true);
+      await storage.mkdir(blobDir, true);
       await storage.writeBinary(pathFor(sha256), data);
     },
     async readBlob(sha256) {

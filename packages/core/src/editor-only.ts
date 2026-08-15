@@ -9,7 +9,7 @@ export function normalizeEditorUtilityDockKind(
 }
 
 export function isEditorOnlyAssetType(type: string): boolean {
-  return type === "EditorUtilityInterface";
+  return type === "EditorUtilityInterface" || type === "PluginSettings";
 }
 
 export function isEditorUtilityObjectClass(

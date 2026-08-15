@@ -133,6 +133,12 @@ describe("listDockWindows", () => {
       "ui-logic",
       "ui-settings",
     ]);
+    expect(listDockWindows("plugin-settings").map((entry) => entry.id)).toEqual([
+      "plugin-settings-details",
+    ]);
+    expect(listDockWindows("plugin-settings").map((entry) => entry.title)).toEqual([
+      "Details",
+    ]);
   });
 });
 

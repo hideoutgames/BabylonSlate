@@ -16,6 +16,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "enum",
   "structure",
   "script-interface",
+  "plugin-settings",
   "asset-settings",
 ] as const;
 
@@ -75,6 +76,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Structure";
     case "script-interface":
       return "ScriptInterface";
+    case "plugin-settings":
+      return "PluginSettings";
     case "asset-settings":
       return "Texture";
   }
@@ -123,6 +126,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "structure";
     case "ScriptInterface":
       return "script-interface";
+    case "PluginSettings":
+      return "plugin-settings";
     case "Texture":
     case "Material":
     case "Model":
@@ -168,6 +173,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Structure";
     case "script-interface":
       return "Script Interface";
+    case "plugin-settings":
+      return "Plugin Settings";
     case "asset-settings":
       return "Settings";
   }
@@ -216,10 +223,17 @@ export interface ProjectLayouts {
   tabOrder: string[];
   activeDocumentId?: string | null;
   panelPlacements?: Record<string, Record<string, PanelPlacement>>;
+  /** Content Browser visibility filter for mounted plugin roots. Default off. */
+  showPluginContent?: boolean;
 }
 
 export function createEmptyLayouts(): ProjectLayouts {
-  return { documents: {}, tabOrder: [], activeDocumentId: null };
+  return {
+    documents: {},
+    tabOrder: [],
+    activeDocumentId: null,
+    showPluginContent: false,
+  };
 }
 
 export function migrateLegacyLayout(
@@ -239,7 +253,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|eui|ui|sprite|anim|shader|class|tileset|tilemap)\.(babasset|json)$/i,
+        /\.(scene|graph|eui|ui|sprite|anim|shader|class|tileset|tilemap|plugin)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "") ?? path;

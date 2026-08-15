@@ -79,7 +79,7 @@ export class ProjectSearchIndex {
   async rebuild(registry: AssetRegistry): Promise<void> {
     this.entries = [];
     for (const asset of registry.list()) {
-      await this.indexAsset(asset);
+      await this.indexAsset(asset, registry);
     }
     this.addCatalogClasses();
   }
@@ -92,7 +92,7 @@ export class ProjectSearchIndex {
       this.removeAsset(path);
       return;
     }
-    await this.indexAsset(asset);
+    await this.indexAsset(asset, registry);
   }
 
   upsertDocument(asset: IndexedAsset, payload: Record<string, unknown>): void {
@@ -122,13 +122,19 @@ export class ProjectSearchIndex {
     return scored.slice(0, limit).map((row) => row.entry);
   }
 
-  private async indexAsset(asset: IndexedAsset): Promise<void> {
+  private async indexAsset(
+    asset: IndexedAsset,
+    registry?: AssetRegistry,
+  ): Promise<void> {
     this.removeBySource(asset.header.guid, asset.path);
     this.addHeaderEntries(asset);
+    if (asset.placeholder || asset.header.type === "Unresolved") return;
     if (!DOCUMENT_TYPES.has(asset.header.type)) return;
     try {
-      const bytes = await this.storage.readBinary(asset.path);
-      const document = await decodeAssetDocument(bytes, { blobs: this.blobs });
+      const storage = registry?.storageFor(asset.rootId) ?? this.storage;
+      const blobs = registry?.blobsFor(asset.rootId) ?? this.blobs;
+      const bytes = await storage.readBinary(asset.path);
+      const document = await decodeAssetDocument(bytes, { blobs });
       this.addDocumentEntries(asset, document.payload);
     } catch {
       // Header-only fallback when the document chunk is missing or corrupt.

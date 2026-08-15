@@ -11,6 +11,7 @@ import {
   normalizeGraphMembers,
   normalizeGraphComponents,
   normalizeProjectSettings,
+  type ProjectSettings,
 } from "./project";
 
 describe("project schema", () => {
@@ -286,6 +287,56 @@ describe("project schema", () => {
         editorUtilityObjects: ["  Tools  ", "Tools", "", "Inspector"],
       }).editorUtilityObjects,
     ).toEqual(["Tools", "Inspector"]);
+  });
+
+  it("defaults pluginOverrides to an empty map and exportPresets to an empty list", () => {
+    const defaults = normalizeProjectSettings(undefined);
+    expect(defaults.pluginOverrides).toEqual({});
+    expect(defaults.exportPresets).toEqual([]);
+    expect(createEmptyProject("Demo").settings.pluginOverrides).toEqual({});
+    expect(createEmptyProject("Demo").settings.exportPresets).toEqual([]);
+  });
+
+  it("normalizes pluginOverrides keyed by guid", () => {
+    expect(
+      normalizeProjectSettings({
+        pluginOverrides: {
+          "  plug-1  ": { enabled: true },
+          "plug-2": { enabled: false },
+          "": { enabled: true },
+          "plug-3": {},
+        },
+      } as unknown as Partial<ProjectSettings>).pluginOverrides,
+    ).toEqual({
+      "plug-1": { enabled: true },
+      "plug-2": { enabled: false },
+    });
+  });
+
+  it("normalizes export preset plugin overrides", () => {
+    expect(
+      normalizeProjectSettings({
+        exportPresets: [
+          {
+            id: " web ",
+            name: "Web",
+            pluginOverrides: { "plug-1": { enabled: false } },
+          },
+          { id: "", name: "Skip" },
+          {
+            id: "web",
+            name: "Duplicate",
+            pluginOverrides: { "plug-1": { enabled: true } },
+          },
+        ],
+      } as unknown as Partial<ProjectSettings>).exportPresets,
+    ).toEqual([
+      {
+        id: "web",
+        name: "Web",
+        pluginOverrides: { "plug-1": { enabled: false } },
+      },
+    ]);
   });
 
   it("keeps fill Play layout when custom resolution is missing or off", () => {
