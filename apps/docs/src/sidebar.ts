@@ -40,6 +40,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Components", link: "/architecture/components" },
       { text: "Editor extensions", link: "/architecture/editor-extensions" },
       { text: "Exporter", link: "/architecture/exporter" },
+      { text: "Source control", link: "/architecture/source-control" },
       { text: "Testing", link: "/architecture/testing" },
     ],
   },

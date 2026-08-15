@@ -270,6 +270,8 @@ interface DocumentContextValue {
   /** Persist project.json settings (Input, 2D units, textures, …). */
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   sourceControl: SourceControlService;
+  /** Bumps when SourceControlService emits so dock and Content Browser consumers re-render. */
+  sourceControlTick: number;
   prefillSourceControlFromGit: () => Promise<GitConfigPrefill>;
   externalChangePrompt: ExternalChangeClassification | null;
   confirmExternalChangeReloadProject: () => Promise<void>;

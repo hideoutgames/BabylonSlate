@@ -40,6 +40,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
 | [architecture/editor-extensions.md](architecture/editor-extensions.md) | EditorUtilityObject / Interface, live Dockview GUI tabs |
 | [architecture/exporter.md](architecture/exporter.md) | Itch zip, `.babpack`, Preview Build, `apps/player` |
+| [architecture/source-control.md](architecture/source-control.md) | Git LFS locking, SecretStore, advisory UX, mtime rescan |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |
 | [agents/issue-tracker.md](agents/issue-tracker.md) | Issue and spec workflow for agents |
 

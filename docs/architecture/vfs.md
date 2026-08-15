@@ -74,3 +74,18 @@ Decided for P1, in this order:
 **Pack format is not adopted.** One `.babasset` per asset stays the unit on disk; revisit only if device numbers show the first three are insufficient. That keeps the P2 registry and Content Browser free of a pack indirection they would otherwise have to assume.
 
 CI covers memory, OPFS (jsdom memory fallback) and Documents-via-fake-filesystem; Playwright exercises real OPFS. Device Capacitor timings still need an iPad and remain open.
+
+## SecretStore and nativeHttp (P15)
+
+Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never leak into `@babylonslate/source-control` or the editor. Detail: [source-control.md](source-control.md).
+
+`SecretStore`: `get` / `set` / `delete(key)` keyed `source-control:{projectGuid}`.
+
+| Host | Backend |
+| --- | --- |
+| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. |
+| Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage.encryptString` / `decryptString` |
+| Web | `UnavailableSecretStore` (`available: false`) — Source Control UI hidden |
+
+`nativeHttp`: `{ method, url, headers, body? }` → `{ status, bodyText }`. iOS/Android use `CapacitorHttp` (bypasses CORS). Electron uses IPC `lfs:fetch` → `net.fetch`. Web returns `null` (unused). Playwright covers lock UX with `FakeLockProvider` instead.
+

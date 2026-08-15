@@ -480,5 +480,17 @@ Spec: [engineplan.md](../engineplan.md) §10, Appendix A `p13-*`. Design note: [
 
 **P13 is Done.** Native plugins, marketplace, packed itch export (`p14-*`), and Content Browser drag between roots are out of scope (cross-root move is a design note in `plugins.md`).
 
+## P15 source control
+
+Spec: [engineplan.md](../engineplan.md) §12, Appendix A `p15-*`. Design note: [source-control.md](../architecture/source-control.md).
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| LockProvider + Git LFS client + Fake + secrets/HTTP | Done (`p15-lock-provider`) | `source-control`, `core` (`sourceControl` settings), `vfs` (SecretStore, nativeHttp), `apps/desktop` IPC | P14 done |
+| Settings, auto-lock, advisory open, CB decoration, Locks panel | Done (`p15-lock-ux`) | `apps/editor`, `source-control` | lock provider |
+| Foreground mtime rescan + reload prompts | Done (`p15-external-change`) | `assets` (`IndexedAsset.mtime`), `apps/editor` | lock UX |
+
+**P15 is Done** in CI (FakeLockProvider + Playwright). Two-device GitHub lock visibility and Working Copy branch-switch on a real iPad remain **manual** native acceptance. Out of scope: git clone/commit/pull/push UI, `lockable` in `.gitattributes`, git status badges, CORS proxy, web production source control.
+
 
 
