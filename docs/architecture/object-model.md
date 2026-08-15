@@ -10,11 +10,11 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `Actor` | World-placed object with transform and ordered component list |
 | `ActorComponent` | Attached to an Actor; own tick |
 | `GameInstance` | Session singleton: `onGameStart` / `onTick` / `onGameEnd` / `onSceneLoaded` |
-| `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot |
-| `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components |
+| `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot. `createActor` / `createComponent` / `createGameInstance` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). |
+| `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components. `ensure` merges session class metadata; `inheritedInterfaces` walks ancestry. |
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
-| `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` | Stable string ids for engine types (`BObject`, `Actor`, `EditorUtilityObject`, `BTTask`, …) |
+| `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` / `isLockedEngineClassId` | Stable string ids for engine types; locked ids cannot be reparented |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play |
 
@@ -61,14 +61,18 @@ See [physics.md](physics.md) for RigidBody / Collider property schemas and backe
 - An interface def is a guid plus method signatures (name, input/output pin defaults as plain values).
 - `dispatchInterface(target, interfaceGuid, method, args)` invokes a registered handler or returns pin defaults (no-op).
 - Classes declare implemented interface guids; handlers are injectable so P5 can bind compiled graphs without changing the dispatch shape (see [scripting.md](scripting.md)).
+- `World.createActor` copies `ClassRegistry.inheritedInterfaces` onto the instance unless the caller passes `implementedInterfaces`.
+- Play `ScriptHost.callInterface` calls `dispatchInterface` against the world's `InterfaceRegistry` so a missing implementation returns pin defaults instead of `undefined`.
 
 ## Re-parenting
 
 `ClassRegistry.reparent(classId, newParentId)`:
 
 - Rejects cycles.
+- Rejects engine locked ids (`isLockedEngineClassId`: bases, engine components, BT builtins).
 - Returns an invalidation list of inherited members that break under the new parent.
 - Editor UX for re-parenting stays in P5; P3 owns the registry API only.
+- `ensure(def)` registers a user class or merges variables / interface guids onto an existing user class. `RuntimeDriver.loadScripts` uses this so Play spawn can apply class metadata.
 
 ## Deterministic harness (`@babylonslate/test-kit`)
 

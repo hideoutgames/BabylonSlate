@@ -36,6 +36,17 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
 export type EngineComponentClassId =
   (typeof ENGINE_COMPONENT_CLASS_IDS)[number];
 
+/** Engine types that must not be reparented (bases, components, BT builtins). */
+export function isLockedEngineClassId(classId: string): boolean {
+  if ((ENGINE_BASE_CLASS_IDS as readonly string[]).includes(classId)) {
+    return true;
+  }
+  if ((ENGINE_COMPONENT_CLASS_IDS as readonly string[]).includes(classId)) {
+    return true;
+  }
+  return ENGINE_BT_BUILTIN_CLASSES.some((entry) => entry.id === classId);
+}
+
 /** Built-in behaviour-tree classes users can inherit (engineplan §14.1). */
 export const ENGINE_BT_BUILTIN_CLASSES = [
   { id: "BTTask_Wait", parentClassId: "BTTask" },

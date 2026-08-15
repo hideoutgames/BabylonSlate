@@ -3,7 +3,10 @@ import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   Actor,
   ActorComponent,
+  dispatchInterface,
   interfaceHandlerKey,
+  type InterfaceDispatchTarget,
+  type InterfaceRegistry,
   type LifecycleHooks,
   type TickContext,
 } from "@babylonslate/object-model";
@@ -25,6 +28,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
+  interfaceRegistry?: InterfaceRegistry;
   log(severity: LogSeverity, category: string, message: string): void;
   addComponent?(
     actor: Actor | null | undefined,
@@ -396,11 +401,16 @@ export class ScriptHost {
         services.executeConsoleCommand(command),
       delay: (seconds) => services.delay(seconds),
       callInterface: (target, interfaceGuid, method) => {
-        const receiver = target ?? self;
-        const handler = receiver?.interfaceHandlers.get(
-          interfaceHandlerKey(String(interfaceGuid), String(method)),
+        const receiver = (target ?? self) as InterfaceDispatchTarget | null;
+        const registry = services.interfaceRegistry;
+        if (!registry || !receiver) return {};
+        return dispatchInterface(
+          registry,
+          receiver,
+          String(interfaceGuid),
+          String(method),
+          {},
         );
-        return handler ? handler({}) : undefined;
       },
       getComponent: (actor, classId) =>
         (actor ?? self)?.components.find((c) => c.classId === classId) ?? null,

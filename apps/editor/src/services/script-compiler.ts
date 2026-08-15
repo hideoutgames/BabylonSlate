@@ -1,4 +1,4 @@
-import type { SerializedGraph } from "@babylonslate/core";
+import type { GraphClassMember, SerializedGraph } from "@babylonslate/core";
 import type {
   ScriptBundleEntry,
   ScriptConsoleCommand,
@@ -90,7 +90,7 @@ function jsIdent(name: string): string {
 
 export function compileGraphDocument(
   content: SerializedGraph | LogicGraph,
-  options: { path: string; graphId?: string },
+  options: { path: string; graphId?: string; parentClassId?: string | null },
 ): ScriptBundleEntry | null {
   const graphId = options.graphId ?? "event-graph";
   const serialized = isLogicGraphPayload(content) ? null : content;
@@ -140,6 +140,7 @@ export function compileGraphDocument(
     entryPoints.push(...extra.entryPoints);
   }
   const classId = classIdForGraphPath(options.path);
+  const metadata = classMetadataFromGraph(content, options.parentClassId);
   return {
     assetGuid: options.path,
     classId,
@@ -147,6 +148,42 @@ export function compileGraphDocument(
     anchors,
     entryPoints,
     command: consoleCommandFromGraph(logic, classId),
+    ...metadata,
+  };
+}
+
+function classMetadataFromGraph(
+  content: SerializedGraph | LogicGraph,
+  parentClassId?: string | null,
+): Pick<
+  ScriptBundleEntry,
+  "parentClassId" | "implementedInterfaces" | "variables"
+> {
+  const members: GraphClassMember[] = isLogicGraphPayload(content)
+    ? []
+    : (content.members ?? []);
+  const implementedInterfaces = members.flatMap((member) =>
+    member.kind === "interface" && member.assetGuid
+      ? [member.assetGuid]
+      : [],
+  );
+  const variables = members.flatMap((member) => {
+    if (member.kind !== "variable") return [];
+    return [
+      {
+        name: member.name,
+        type: member.typeId ?? "float",
+        ...(member.defaultValue !== undefined
+          ? { defaultValue: member.defaultValue }
+          : {}),
+      },
+    ];
+  });
+  const parent = parentClassId?.trim();
+  return {
+    ...(parent ? { parentClassId: parent } : {}),
+    ...(implementedInterfaces.length > 0 ? { implementedInterfaces } : {}),
+    ...(variables.length > 0 ? { variables } : {}),
   };
 }
 
@@ -212,12 +249,16 @@ export function compileGraphDocuments(
   documents: ReadonlyArray<{
     path: string;
     content: SerializedGraph | LogicGraph;
+    parentClassId?: string | null;
   }>,
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
   for (const doc of documents) {
     try {
-      const script = compileGraphDocument(doc.content, { path: doc.path });
+      const script = compileGraphDocument(doc.content, {
+        path: doc.path,
+        parentClassId: doc.parentClassId,
+      });
       if (script) scripts.push(script);
     } catch (error) {
       // A graph that fails codegen must not stop Preview; the validator has

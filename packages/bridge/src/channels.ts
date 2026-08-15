@@ -38,6 +38,12 @@ export type ScriptBundleEntry = {
   }>;
   /** Present when the graph is a BDebugCommand OnCommandRun handler. */
   command?: ScriptConsoleCommand;
+  /** Class registry parent; omitted scripts default to Actor at load. */
+  parentClassId?: string;
+  /** ScriptInterface asset guids this class implements. */
+  implementedInterfaces?: string[];
+  /** Class variable defaults applied at spawn when the caller omits them. */
+  variables?: Array<{ name: string; type: string; defaultValue?: unknown }>;
 };
 
 export type ControlMessage =

@@ -99,4 +99,60 @@ describe("ClassRegistry", () => {
     const registry = new ClassRegistry();
     expect(registry.reparent("Actor", "BObject").ok).toBe(false);
   });
+
+  it("rejects reparenting engine components and BT builtins", () => {
+    const registry = new ClassRegistry();
+    expect(registry.reparent("MeshComponent", "Actor").ok).toBe(false);
+    expect(registry.reparent("BTTask_Wait", "BTDecorator").ok).toBe(false);
+  });
+
+  it("ensure registers a new class and merges interfaces on a later call", () => {
+    const registry = new ClassRegistry();
+    expect(
+      registry.ensure({
+        id: "Enemy",
+        parentClassId: "Actor",
+        kind: "actor",
+        variables: [{ name: "health", type: "float", defaultValue: 100 }],
+        implementedInterfaces: ["iface-a"],
+      }).ok,
+    ).toBe(true);
+    expect(
+      registry.ensure({
+        id: "Enemy",
+        parentClassId: "Actor",
+        kind: "actor",
+        variables: [{ name: "armor", type: "float", defaultValue: 0 }],
+        implementedInterfaces: ["iface-b"],
+      }).ok,
+    ).toBe(true);
+    expect(registry.inheritedVariables("Enemy").map((v) => v.name)).toEqual(
+      expect.arrayContaining(["health", "armor"]),
+    );
+    expect(registry.inheritedInterfaces("Enemy")).toEqual(
+      expect.arrayContaining(["iface-a", "iface-b"]),
+    );
+  });
+
+  it("inheritedInterfaces walks the parent chain", () => {
+    const registry = new ClassRegistry();
+    registry.register({
+      id: "BaseEnemy",
+      parentClassId: "Actor",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: ["iface-base"],
+    });
+    registry.register({
+      id: "Boss",
+      parentClassId: "BaseEnemy",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: ["iface-boss"],
+    });
+    expect(registry.inheritedInterfaces("Boss")).toEqual([
+      "iface-base",
+      "iface-boss",
+    ]);
+  });
 });

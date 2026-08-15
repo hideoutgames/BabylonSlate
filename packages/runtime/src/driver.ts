@@ -6,13 +6,13 @@ import {
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
-  GameInstance,
   World,
   createActorsFromSerializedScene,
   createWorldSnapshot,
   stringifyWorldSnapshot,
   Actor,
   ActorComponent,
+  type ClassKind,
   type TickPhase,
 } from "@babylonslate/object-model";
 import { eulerDegreesToQuaternion, type SerializedScene } from "@babylonslate/core";
@@ -389,6 +389,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      interfaceRegistry: this.world.interfaceRegistry,
       log: (severity, category, message) => {
         this.logs.push({
           severity,
@@ -568,6 +569,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
     for (const script of scripts) {
+      this.registerScriptClass(script);
       await this.scriptHost.load(script);
       if (script.anchors.length > 0) {
         this.registerAnchors(script.assetGuid, script.anchors);
@@ -579,6 +581,26 @@ class InProcessRuntime implements RuntimeDriver {
         });
       }
     }
+  }
+
+  private registerScriptClass(script: CompiledScript): void {
+    const requestedParent = script.parentClassId?.trim() || "Actor";
+    const parentClassId = this.world.classRegistry.has(requestedParent)
+      ? requestedParent
+      : "Actor";
+    const kind: ClassKind =
+      this.world.classRegistry.get(parentClassId)?.kind ?? "actor";
+    this.world.classRegistry.ensure({
+      id: script.classId,
+      parentClassId,
+      kind,
+      variables: (script.variables ?? []).map((variable) => ({
+        name: variable.name,
+        type: variable.type,
+        defaultValue: variable.defaultValue,
+      })),
+      implementedInterfaces: [...(script.implementedInterfaces ?? [])],
+    });
   }
 
   spawnScriptedActor(options: {
@@ -1444,7 +1466,7 @@ class InProcessRuntime implements RuntimeDriver {
     const classId = this.gameInstanceClass;
     const hooks = this.scriptHost.hooksFor(classId);
     this.world.setGameInstance(
-      new GameInstance({
+      this.world.createGameInstance({
         classId,
         guid: "runtime-gi",
         variables: { ticks: 0 },
