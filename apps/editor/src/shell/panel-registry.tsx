@@ -33,6 +33,7 @@ import {
 } from "../panels/ui-editor-panels";
 import { EditorUtilityPanel } from "../panels/editor-utility-panel";
 import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
+import { LocksPanel } from "../panels/locks-panel";
 
 export const panelComponents = {
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
@@ -100,4 +101,5 @@ export const panelComponents = {
   "plugin-settings-details": (props: IDockviewPanelProps) => (
     <PluginSettingsDetailsPanel {...props} />
   ),
+  locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
 };

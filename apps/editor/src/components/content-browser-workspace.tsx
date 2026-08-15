@@ -24,7 +24,7 @@ import {
   useContextMenu,
   type TypeVisual,
 } from "@babylonslate/editor-kit";
-import { documentId, documentKindForAssetType, labelFromPath } from "@babylonslate/core";
+import { documentId, documentKindForAssetType, labelFromPath, CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -72,6 +72,7 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { useDocuments } from "../context/document-context";
+import { refuseTheirsPaths } from "../lib/source-control-file-ops";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
@@ -158,6 +159,8 @@ export function ContentBrowserWorkspace() {
     pluginDescriptors,
     showPluginContent,
     setShowPluginContent,
+    sourceControl,
+    activeDocumentId,
   } = useDocuments();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
   const { diagnostics } = useValidation();
@@ -168,6 +171,12 @@ export function ContentBrowserWorkspace() {
     }
     return set;
   }, [diagnostics]);
+
+  useEffect(() => {
+    if (activeDocumentId !== CONTENT_BROWSER_ID) return;
+    if (!sourceControl.enabled) return;
+    sourceControl.requestRefresh();
+  }, [activeDocumentId, sourceControl, sourceControl.enabled]);
 
   const [selectedFolderPath, setSelectedFolderPath] = useState(ASSETS_ROOT);
   const [search, setSearch] = useState("");
@@ -713,6 +722,16 @@ export function ContentBrowserWorkspace() {
 
   const confirmDelete = useCallback(async () => {
     if (!assetRegistry || !deleteTarget) return;
+    const locked = refuseTheirsPaths(
+      deleteTarget.guids
+        .map((guid) => assetRegistry.getByGuid(guid)?.path)
+        .filter((path): path is string => Boolean(path)),
+      (path) => sourceControl.refuseIfTheirs(path),
+    );
+    if (locked) {
+      setOpenError(locked);
+      return;
+    }
     setBusy(true);
     try {
       const folders =
@@ -745,7 +764,7 @@ export function ContentBrowserWorkspace() {
     } finally {
       setBusy(false);
     }
-  }, [assetRegistry, browserRoots, deleteTarget, refreshAssetRegistry]);
+  }, [assetRegistry, browserRoots, deleteTarget, refreshAssetRegistry, sourceControl]);
 
   const importPickedFiles = useCallback(
     async (files: Array<{ name: string; bytes: Uint8Array }>) => {
@@ -909,6 +928,11 @@ export function ContentBrowserWorkspace() {
         if (moveTarget.operation === "copy") {
           await assetRegistry.copyAsset(guid, dest.rootId, destRelative);
         } else {
+          const refused = sourceControl.refuseIfTheirs(before.path);
+          if (refused) {
+            setOpenError(refused);
+            return;
+          }
           const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
           const relative = destRelative
             ? `${destRelative}/${fileName}`
@@ -918,6 +942,9 @@ export function ContentBrowserWorkspace() {
             dest.rootId,
             relative,
           );
+          if (sourceControl.lockStateForPath(before.path) === "mine") {
+            await sourceControl.transferLock(before.path, moved.path);
+          }
           repairDocumentPath(before.path, moved.path, moved.header.type);
           setSelectedFolderPath(destPath);
         }
@@ -934,6 +961,7 @@ export function ContentBrowserWorkspace() {
     refreshAssetRegistry,
     repairDocumentPath,
     browserRoots,
+    sourceControl,
   ]);
 
   const handleImport = useCallback(async () => {
@@ -1117,6 +1145,11 @@ export function ContentBrowserWorkspace() {
           } else if (move.guid) {
             const before = assetRegistry.getByGuid(move.guid);
             if (!before) return;
+            const refused = sourceControl.refuseIfTheirs(before.path);
+            if (refused) {
+              setOpenError(refused);
+              return;
+            }
             const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
             const dest = contentBrowserFolderOps(
               move.destinationPath,
@@ -1131,6 +1164,9 @@ export function ContentBrowserWorkspace() {
               dest.rootId,
               relative,
             );
+            if (sourceControl.lockStateForPath(before.path) === "mine") {
+              await sourceControl.transferLock(before.path, moved.path);
+            }
             repairDocumentPath(before.path, moved.path, moved.header.type);
             setSelectedFolderPath(move.destinationPath);
           }
@@ -1148,6 +1184,7 @@ export function ContentBrowserWorkspace() {
       rootPrefixes,
       refreshAssetRegistry,
       repairDocumentPath,
+      sourceControl,
     ],
   );
 
@@ -1434,6 +1471,11 @@ export function ContentBrowserWorkspace() {
                     )
                   }
                   onOpen={() => void openOrFocusDocument(asset)}
+                  sourceControlEnabled={sourceControl.enabled}
+                  lockState={sourceControl.lockStateForPath(asset.path)}
+                  lockOwnerName={
+                    sourceControl.lockForPath(asset.path)?.ownerName
+                  }
                   onLongPressMenu={(x, y) =>
                     openTileMenu(asset.header.guid, x, y)
                   }

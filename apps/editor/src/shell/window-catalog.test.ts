@@ -140,6 +140,50 @@ describe("listDockWindows", () => {
       "Details",
     ]);
   });
+
+  it("omits the Locks window when source control is off", () => {
+    for (const kind of [
+      "scene",
+      "graph",
+      "enum",
+      "structure",
+      "script-interface",
+      "sprite",
+      "tileset",
+      "tilemap",
+      "ui",
+      "plugin-settings",
+    ] as const) {
+      expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
+        false,
+      );
+    }
+  });
+
+  it("appends Locks below each kind's primary panel when source control is on", () => {
+    const scene = listDockWindows("scene", { sourceControl: true });
+    expect(scene.map((entry) => entry.id)).toContain("locks");
+    expect(scene.find((entry) => entry.id === "locks")).toEqual({
+      id: "locks",
+      component: "locks",
+      title: "Locks",
+      defaultPosition: {
+        referencePanelId: "viewport",
+        direction: "below",
+        initialHeight: 180,
+      },
+    });
+    expect(
+      listDockWindows("graph", { sourceControl: true }).find(
+        (entry) => entry.id === "locks",
+      )?.defaultPosition?.referencePanelId,
+    ).toBe("graph");
+    expect(
+      listDockWindows("sprite", { sourceControl: true }).find(
+        (entry) => entry.id === "locks",
+      )?.defaultPosition?.referencePanelId,
+    ).toBe("sprite-preview");
+  });
 });
 
 describe("listEditorUtilityWindows", () => {

@@ -18,7 +18,7 @@ import type {
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -57,6 +57,8 @@ import {
   defaultEngineSettings,
   getHostPlatform,
   isTestModeEnabled,
+  createSecretStore,
+  createNativeHttp,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
@@ -66,6 +68,16 @@ import {
   type OpenDocument,
 } from "../services/document-service";
 import { ProjectService, type PluginImportResult } from "../services/project-service";
+import type { GitConfigPrefill } from "@babylonslate/source-control";
+import {
+  readGitPrefill,
+  SourceControlService,
+} from "../services/source-control-service";
+import { attachLifecyclePause } from "../services/lifecycle-pause";
+import {
+  afterMutatingApply,
+  isMutatingApplyBlocked,
+} from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
@@ -251,6 +263,8 @@ interface DocumentContextValue {
   ) => Promise<void>;
   /** Persist project.json settings (Input, 2D units, textures, …). */
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
+  sourceControl: SourceControlService;
+  prefillSourceControlFromGit: () => Promise<GitConfigPrefill>;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -356,6 +370,7 @@ function dockOptionsForIndexed(
     | { header: { type: string; parentClass?: string | null } }
     | undefined,
   parentOf: (id: string) => string | null | undefined,
+  sourceControlEnabled = false,
 ): DockWindowOptions {
   return {
     actorPrefab:
@@ -365,6 +380,7 @@ function dockOptionsForIndexed(
         assetType: indexed.header.type,
       }),
     editorUtilityInterface: indexed?.header.type === "EditorUtilityInterface",
+    sourceControl: sourceControlEnabled,
   };
 }
 
@@ -387,6 +403,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const settingsStore = useMemo(() => createAppSettingsStore(), []);
   const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());
+  const sourceControlRef = useRef(new SourceControlService());
+  const secretStore = useMemo(() => createSecretStore(), []);
+  const nativeHttp = useMemo(() => createNativeHttp(), []);
+  const [sourceControlTick, setSourceControlTick] = useState(0);
   const editSessionRef = useRef(
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
@@ -433,6 +453,44 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [],
   );
   const documentService = documentServiceRef.current;
+
+  useEffect(() => {
+    return sourceControlRef.current.subscribe(() => {
+      setSourceControlTick((tick) => tick + 1);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!projectDocument) {
+      sourceControlRef.current.dispose();
+      return;
+    }
+    void sourceControlRef.current.configure({
+      settings:
+        projectDocument.settings.sourceControl ??
+        DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
+      projectGuid: projectService.guid,
+      platform: getHostPlatform(),
+      testMode: isTestModeEnabled(),
+      secretStore,
+      nativeHttp,
+    });
+  }, [
+    nativeHttp,
+    projectDocument,
+    projectService.guid,
+    secretStore,
+  ]);
+
+  useEffect(() => {
+    return attachLifecyclePause((paused) => {
+      if (paused) {
+        sourceControlRef.current.pausePolling();
+        return;
+      }
+      sourceControlRef.current.resumePolling();
+    });
+  }, []);
 
   const disposeDockSubscriptions = useCallback((id?: string) => {
     if (id) {
@@ -919,6 +977,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
     await projectService.closeProject();
+    sourceControlRef.current.dispose();
     projectService.setDerivedStorage(null);
     dockviewApisRef.current.clear();
     disposeDockSubscriptions();
@@ -1064,6 +1123,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (ref.kind === "scene") {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneOpen);
       }
+      sourceControlRef.current.onOpenDocument(ref.path);
       bump();
     },
     [bump, captureLayoutForId, closeDocument, documentService, projectService],
@@ -1179,6 +1239,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               ...current.settings.fonts,
               ...settings.fonts,
             },
+            sourceControl: {
+              ...current.settings.sourceControl,
+              ...settings.sourceControl,
+            },
             input: settings.input
               ? settings.input
               : current.settings.input,
@@ -1195,13 +1259,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, scheduleDebouncedSave],
   );
 
+  const prefillSourceControlFromGit = useCallback(async () => {
+    return readGitPrefill(projectService.storagePort);
+  }, [projectService]);
+
   const applyGraphChange = useCallback(
     async (id: string, next: SerializedGraph): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
       if (!doc || doc.ref.kind !== "graph" || !doc.content) {
         return false;
       }
-      if (isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
+      if (isMutatingApplyBlocked(
+        sourceControlRef.current,
+        doc.ref.path,
+        isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+      )) {
         return false;
       }
       const previous = doc.content as SerializedGraph;
@@ -1236,6 +1308,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           }
         },
       });
+      void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
@@ -1247,7 +1320,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!doc || doc.ref.kind !== "scene" || !doc.content) {
         return false;
       }
-      if (isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
+      if (isMutatingApplyBlocked(
+        sourceControlRef.current,
+        doc.ref.path,
+        isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+      )) {
         return false;
       }
       const previous = doc.content as SerializedScene;
@@ -1282,6 +1359,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           }
         },
       });
+      void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
@@ -1303,7 +1381,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ) {
         return false;
       }
-      if (isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
+      if (isMutatingApplyBlocked(
+        sourceControlRef.current,
+        doc.ref.path,
+        isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+      )) {
         return false;
       }
       const previous = doc.content as Record<string, unknown>;
@@ -1330,6 +1412,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
         },
       });
+      void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
@@ -1855,7 +1938,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         } | null>;
         activeTilemapTile: (gx: number, gy: number) => number | null;
       };
+      __babylonslateSourceControl?: SourceControlService;
     };
+    host.__babylonslateSourceControl = sourceControlRef.current;
     host.__babylonslateTest = {
       cancelDebouncedSave: () => {
         if (saveDebounceRef.current) {
@@ -2052,6 +2137,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
     return () => {
       delete host.__babylonslateTest;
+      delete host.__babylonslateSourceControl;
       delete (globalThis as { __babylonslateTestGamepad?: unknown })
         .__babylonslateTestGamepad;
       delete (globalThis as { __babylonslateTestTouchAxes?: unknown })
@@ -2131,7 +2217,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ?.list()
         .find((asset) => asset.path === doc?.ref.path);
       const parentOf = classParentLookup(projectService.registry?.list() ?? []);
-      const dockOptions = dockOptionsForIndexed(kind ?? "", indexed, parentOf);
+      const dockOptions = dockOptionsForIndexed(
+        kind ?? "",
+        indexed,
+        parentOf,
+        sourceControlRef.current.enabled,
+      );
       for (const panel of listDockPanels(dock)) {
         const def = isDockviewDocumentKind(kind)
           ? findWindowDefinition(
@@ -2177,7 +2268,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ?.list()
       .find((asset) => asset.path === doc.ref.path);
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
-    const dockOptions = dockOptionsForIndexed(doc.ref.kind, indexed, parentOf);
+    const dockOptions = dockOptionsForIndexed(
+      doc.ref.kind,
+      indexed,
+      parentOf,
+      sourceControlRef.current.enabled,
+    );
     const def = findWindowDefinition(
       doc.ref.kind,
       panelId,
@@ -2360,6 +2456,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       readAssetChunk,
       writeSceneNavmeshChunk,
       updateProjectSettings,
+      sourceControl: sourceControlRef.current,
+      prefillSourceControlFromGit,
       undoActiveDocument,
       redoActiveDocument,
       canUndoActiveDocument: (() => {
@@ -2503,6 +2601,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       readAssetChunk,
       writeSceneNavmeshChunk,
       updateProjectSettings,
+      prefillSourceControlFromGit,
+      sourceControlTick,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,

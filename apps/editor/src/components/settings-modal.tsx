@@ -14,6 +14,7 @@ import { defaultExportPreset, isErr } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
+import { Input } from "@babylonslate/ui/components/input";
 import {
   Field,
   FieldDescription,
@@ -33,8 +34,11 @@ import { Switch } from "@babylonslate/ui/components/switch";
 import {
   createAppSettingsStore,
   defaultEngineSettings,
+  getHostPlatform,
+  isTestModeEnabled,
   type EngineSettings,
 } from "@babylonslate/vfs";
+import { isSourceControlHost } from "@babylonslate/source-control";
 import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
@@ -100,6 +104,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords: "export project zip download startup scene packaged player export game packed debugger file count",
   },
   {
+    id: "sourceControl",
+    label: "Source Control",
+    keywords: "git lfs lock token repository branch poll auto lock",
+  },
+  {
     id: "project",
     label: "Close",
     keywords: "close project homepage dirty save",
@@ -107,7 +116,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Project", ids: ["general", "input", "twoD", "fonts", "rendering", "textures", "plugins", "export"] },
+  { label: "Project", ids: ["general", "input", "twoD", "fonts", "rendering", "textures", "plugins", "export", "sourceControl"] },
   { label: "Session", ids: ["project"] },
 ];
 
@@ -220,8 +229,11 @@ export function SettingsModal({
     updateProjectSettings,
     assetRegistry,
     openDocuments,
+    sourceControl,
+    prefillSourceControlFromGit,
   } = useDocuments();
   const [search, setSearch] = useState("");
+  const [tokenDraft, setTokenDraft] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
   const [exportGameError, setExportGameError] = useState<string | null>(null);
@@ -261,14 +273,26 @@ export function SettingsModal({
   );
 
   const source = scope === "engine" ? ENGINE_CATEGORIES : PROJECT_CATEGORIES;
-  const groups = scope === "engine" ? ENGINE_GROUPS : PROJECT_GROUPS;
+  const showSourceControl = isSourceControlHost(
+    getHostPlatform(),
+    isTestModeEnabled(),
+  );
+  const groups = useMemo(() => {
+    if (scope === "engine") return ENGINE_GROUPS;
+    if (showSourceControl) return PROJECT_GROUPS;
+    return PROJECT_GROUPS.map((group) => ({
+      ...group,
+      ids: group.ids.filter((id) => id !== "sourceControl"),
+    }));
+  }, [scope, showSourceControl]);
 
   const categories = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return source.filter((category) =>
-      matchesSearch(category.label, category.keywords, needle),
-    );
-  }, [search, source]);
+    return source.filter((category) => {
+      if (category.id === "sourceControl" && !showSourceControl) return false;
+      return matchesSearch(category.label, category.keywords, needle);
+    });
+  }, [search, source, showSourceControl]);
 
   useEffect(() => {
     if (!categories.some((category) => category.id === activeCategoryId)) {
@@ -907,6 +931,166 @@ export function SettingsModal({
             >
               Export Project
             </Button>
+          </FieldSet>
+        </FieldGroup>
+      ) : null}
+
+      {showProjectBody &&
+      projectDocument &&
+      activeCategoryId === "sourceControl" ? (
+        <FieldGroup>
+          <FieldSet>
+            <FieldLegend>Source Control</FieldLegend>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="settings-source-control-enabled">
+                Enable
+              </FieldLabel>
+              <Switch
+                id="settings-source-control-enabled"
+                checked={projectDocument.settings.sourceControl.enabled}
+                onCheckedChange={(checked) => {
+                  const enabled = checked === true;
+                  const current = projectDocument.settings.sourceControl;
+                  updateProjectSettings({
+                    sourceControl: { ...current, enabled },
+                  });
+                  if (enabled && !current.repositoryUrl) {
+                    void prefillSourceControlFromGit().then((prefill) => {
+                      if (!prefill.repositoryUrl && !prefill.branch) return;
+                      updateProjectSettings({
+                        sourceControl: {
+                          ...current,
+                          enabled: true,
+                          repositoryUrl:
+                            prefill.repositoryUrl || current.repositoryUrl,
+                          branch: prefill.branch || current.branch,
+                        },
+                      });
+                    });
+                  }
+                }}
+                data-testid="settings-source-control-enabled"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-source-control-url">
+                Repository URL
+              </FieldLabel>
+              <Input
+                id="settings-source-control-url"
+                value={projectDocument.settings.sourceControl.repositoryUrl}
+                onChange={(event) =>
+                  updateProjectSettings({
+                    sourceControl: {
+                      ...projectDocument.settings.sourceControl,
+                      repositoryUrl: event.target.value,
+                    },
+                  })
+                }
+                data-testid="settings-source-control-url"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-source-control-branch">
+                Branch
+              </FieldLabel>
+              <Input
+                id="settings-source-control-branch"
+                value={projectDocument.settings.sourceControl.branch}
+                onChange={(event) =>
+                  updateProjectSettings({
+                    sourceControl: {
+                      ...projectDocument.settings.sourceControl,
+                      branch: event.target.value,
+                    },
+                  })
+                }
+                data-testid="settings-source-control-branch"
+              />
+            </Field>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="settings-source-control-auto-lock">
+                Auto-Lock On First Edit
+              </FieldLabel>
+              <Switch
+                id="settings-source-control-auto-lock"
+                checked={projectDocument.settings.sourceControl.autoLockOnEdit}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({
+                    sourceControl: {
+                      ...projectDocument.settings.sourceControl,
+                      autoLockOnEdit: checked === true,
+                    },
+                  })
+                }
+                data-testid="settings-source-control-auto-lock"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-source-control-poll">
+                Poll Interval (seconds)
+              </FieldLabel>
+              <NumberField
+                id="settings-source-control-poll"
+                min={1}
+                className="min-h-[var(--chrome-row,28px)]"
+                value={Math.round(
+                  projectDocument.settings.sourceControl.pollIntervalMs / 1000,
+                )}
+                onChange={(seconds) =>
+                  updateProjectSettings({
+                    sourceControl: {
+                      ...projectDocument.settings.sourceControl,
+                      pollIntervalMs: Math.round(seconds * 1000),
+                    },
+                  })
+                }
+                data-testid="settings-source-control-poll"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-source-control-token">
+                Token
+              </FieldLabel>
+              <Input
+                id="settings-source-control-token"
+                type="password"
+                autoComplete="off"
+                value={tokenDraft}
+                onChange={(event) => setTokenDraft(event.target.value)}
+                data-testid="settings-source-control-token"
+              />
+              <FieldDescription>
+                {sourceControl.hasToken ? "Token Saved" : "Not saved"}
+              </FieldDescription>
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid="settings-source-control-save-token"
+                disabled={!tokenDraft}
+                onClick={() => {
+                  void sourceControl.saveToken(tokenDraft).then(() => {
+                    setTokenDraft("");
+                  });
+                }}
+              >
+                Save Token
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--touch-target,44px)]"
+                data-testid="settings-source-control-clear-token"
+                onClick={() => {
+                  void sourceControl.clearToken();
+                  setTokenDraft("");
+                }}
+              >
+                Clear Token
+              </Button>
+            </div>
           </FieldSet>
         </FieldGroup>
       ) : null}

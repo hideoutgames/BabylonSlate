@@ -11,9 +11,25 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const { updateProjectSettings } = vi.hoisted(() => ({
+const { updateProjectSettings, sourceControl, host } = vi.hoisted(() => ({
   updateProjectSettings: vi.fn(),
+  sourceControl: {
+    hasToken: false,
+    saveToken: vi.fn(async () => undefined),
+    clearToken: vi.fn(async () => undefined),
+    readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
+  },
+  host: { platform: "electron", testMode: true },
 }));
+
+vi.mock("@babylonslate/vfs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
+  return {
+    ...actual,
+    getHostPlatform: () => host.platform,
+    isTestModeEnabled: () => host.testMode,
+  };
+});
 
 vi.mock("../context/document-context", async () => {
   const { createEmptyProject: emptyProject } = await import("@babylonslate/core");
@@ -25,6 +41,8 @@ vi.mock("../context/document-context", async () => {
       zipExportedGame: vi.fn(),
       retryFailedTextureEncoding: vi.fn(),
       updateProjectSettings,
+      sourceControl,
+      prefillSourceControlFromGit: sourceControl.readGitPrefill,
       assetRegistry: {
         list: () => [
           {
@@ -73,6 +91,11 @@ vi.mock("../context/document-context", async () => {
 afterEach(() => {
   cleanup();
   updateProjectSettings.mockClear();
+  sourceControl.saveToken.mockClear();
+  sourceControl.clearToken.mockClear();
+  sourceControl.hasToken = false;
+  host.platform = "electron";
+  host.testMode = true;
 });
 
 describe("SettingsModal project authoring", () => {
@@ -198,5 +221,31 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-plugin-new")).toBeTruthy();
     expect(screen.getByTestId("settings-plugin-import")).toBeTruthy();
     expect(screen.getByTestId("import-plugin-input")).toBeTruthy();
+  });
+
+  it("hides Source Control on production web", () => {
+    host.platform = "web";
+    host.testMode = false;
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    expect(screen.queryByTestId("settings-modal-category-sourceControl")).toBeNull();
+  });
+
+  it("saves the token through the secret store, not project.json", async () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.change(screen.getByTestId("settings-source-control-token"), {
+      target: { value: "ghp_secret" },
+    });
+    fireEvent.click(screen.getByTestId("settings-source-control-save-token"));
+    expect(sourceControl.saveToken).toHaveBeenCalledWith("ghp_secret");
+    expect(updateProjectSettings).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceControl: expect.objectContaining({ token: "ghp_secret" }),
+      }),
+    );
   });
 });
