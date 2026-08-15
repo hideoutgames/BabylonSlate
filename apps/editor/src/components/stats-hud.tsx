@@ -94,7 +94,7 @@ export function StatsHud({
           </span>
         ) : null}
         {draws != null ? (
-          <span data-testid="stats-hud-draws">
+          <span data-testid="stats-hud-draws" data-draws={String(draws)}>
             <SelectableText>draws {draws}</SelectableText>
           </span>
         ) : null}

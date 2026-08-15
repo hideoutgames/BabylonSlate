@@ -6,7 +6,11 @@ import {
   type ProjectFolderHandle,
 } from "@babylonslate/core";
 import { NumberField } from "@babylonslate/editor-kit";
-import { getHostPlatform, isTestModeEnabled } from "@babylonslate/vfs";
+import {
+  getHostPlatform,
+  isTestModeEnabled,
+  type HostPlatform,
+} from "@babylonslate/vfs";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -48,7 +52,10 @@ import {
 import { Input } from "@babylonslate/ui/components/input";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { displayProjectName } from "../lib/display-project-name";
-import type { ListedProject } from "../lib/listed-projects";
+import {
+  listedProjectLocationLabel,
+  type ListedProject,
+} from "../lib/listed-projects";
 import {
   defaultCreateProjectDisplayName,
   normalizeProjectFolderName,
@@ -56,6 +63,19 @@ import {
 } from "../lib/create-project";
 import { BrandLogo } from "./brand-logo";
 import { SettingsModal } from "./settings-modal";
+
+function createProjectCardDescription(
+  templateCount: number,
+  hostPlatform: HostPlatform,
+): string {
+  if (templateCount > 0) {
+    return "Creating from a template copies the project and rewrites only its name and identity.";
+  }
+  if (hostPlatform === "web") {
+    return "Start with Empty or 2D.";
+  }
+  return "Start with Empty or 2D. Optional templates appear when a templates folder is set in Engine Settings.";
+}
 
 interface HomepageProps {
   projects: ListedProject[];
@@ -195,10 +215,8 @@ export function Homepage({
         <Card>
           <CardHeader>
             <CardTitle>Create Project</CardTitle>
-            <CardDescription>
-              {templates.length === 0
-                ? "Template cards appear when a templates folder is set in Engine Settings (not available on web)."
-                : "Creating from a template copies the project and rewrites only its name and identity."}
+            <CardDescription data-testid="create-project-description">
+              {createProjectCardDescription(templates.length, hostPlatform)}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -250,53 +268,63 @@ export function Homepage({
               </Empty>
             ) : (
               <ul className="flex flex-col gap-2" data-testid="project-list">
-                {projects.map((project) => (
-                  <li key={project.id}>
-                    <ContextMenu>
-                      <ContextMenuTrigger className="block">
-                        <Button
-                          variant="outline"
-                          className="h-auto min-h-[var(--touch-target,44px)] w-full justify-between px-4 py-3"
-                          data-testid={`open-listed-project-${project.name}`}
-                          disabled={busy}
-                          onClick={() => void run(() => onOpenProject(project))}
-                        >
-                          <span className="font-medium">
-                            {displayProjectName(project.label)}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {project.tier}
-                          </span>
-                        </Button>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent data-testid="homepage-project-menu">
-                        <ContextMenuGroup>
-                          <ContextMenuItem
-                            data-testid="homepage-project-open"
+                {projects.map((project) => {
+                  const location = listedProjectLocationLabel(
+                    projects,
+                    project,
+                  );
+                  return (
+                    <li key={project.id}>
+                      <ContextMenu>
+                        <ContextMenuTrigger className="block">
+                          <Button
+                            variant="outline"
+                            className="h-auto min-h-[var(--touch-target,44px)] w-full justify-between px-4 py-3"
+                            data-testid={`open-listed-project-${project.name}`}
+                            disabled={busy}
                             onClick={() => void run(() => onOpenProject(project))}
                           >
-                            Open
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            data-testid="homepage-project-rename"
-                            onClick={() => {
-                              setRenameTarget(project);
-                              setRenameValue(displayProjectName(project.label));
-                            }}
-                          >
-                            Rename
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            data-testid="homepage-project-remove"
-                            onClick={() => void run(() => onRemoveFromList(project))}
-                          >
-                            Remove from list
-                          </ContextMenuItem>
-                        </ContextMenuGroup>
-                      </ContextMenuContent>
-                    </ContextMenu>
-                  </li>
-                ))}
+                            <span className="font-medium">
+                              {displayProjectName(project.label)}
+                            </span>
+                            {location ? (
+                              <span className="text-xs text-muted-foreground">
+                                {location}
+                              </span>
+                            ) : null}
+                          </Button>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent data-testid="homepage-project-menu">
+                          <ContextMenuGroup>
+                            <ContextMenuItem
+                              data-testid="homepage-project-open"
+                              onClick={() => void run(() => onOpenProject(project))}
+                            >
+                              Open
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              data-testid="homepage-project-rename"
+                              onClick={() => {
+                                setRenameTarget(project);
+                                setRenameValue(displayProjectName(project.label));
+                              }}
+                            >
+                              Rename
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              data-testid="homepage-project-remove"
+                              onClick={() =>
+                                void run(() => onRemoveFromList(project))
+                              }
+                            >
+                              Remove from list
+                            </ContextMenuItem>
+                          </ContextMenuGroup>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </CardContent>
