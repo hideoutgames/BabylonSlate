@@ -4,7 +4,7 @@ import { isTestModeEnabled, TEST_PROJECT_NAME } from "./test-mode";
 /**
  * The VITE_TEST_MODE branch is not reachable from unit tests: vi.stubEnv does
  * not reach import.meta.env. It is covered by the Playwright suite, which
- * builds with VITE_TEST_MODE=true and asserts the Test mode badge.
+ * builds with VITE_TEST_MODE=true so Create Project prefills TestProject.
  */
 describe("test mode detection", () => {
   afterEach(() => {

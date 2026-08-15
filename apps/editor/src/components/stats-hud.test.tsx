@@ -22,6 +22,10 @@ describe("StatsHud", () => {
     );
     expect(screen.getByTestId("stats-hud-over-budget")).toBeTruthy();
     expect(screen.getByTestId("stats-hud-memory").textContent).toContain("KB");
+    expect(screen.getByTestId("stats-hud-draws").textContent).toContain("12");
+    expect(screen.getByTestId("stats-hud-draws").getAttribute("data-draws")).toBe(
+      "12",
+    );
     expect(screen.getByTestId("stats-hud-graph")).toBeTruthy();
   });
 

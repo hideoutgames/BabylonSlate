@@ -107,6 +107,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | Tap / click a tile | Add to selection (does not replace) |
 | Tap / click empty grid (padding, gaps — not a tile) | Clear asset and folder selection |
 | Toolbar **Deselect All** | Clear asset and folder selection |
+| Toolbar **Delete (N)** | Open the delete confirm. Counted outline control; does not delete on the first tap. |
 | Double-tap / double-click an asset tile | Open the document (`openOrFocusDocument`) |
 | Double-tap / double-click a folder tile | Navigate into that folder |
 | Move before ~500ms on the grid | Scroll (do not open the menu) |

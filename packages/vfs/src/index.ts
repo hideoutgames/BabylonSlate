@@ -6,6 +6,7 @@ export * from "./documents-adapter";
 export * from "./electron-app-settings";
 export * from "./import-picker";
 export * from "./memory-adapter";
+export * from "./read-only-storage";
 export * from "./memory-app-settings";
 export * from "./mobile-storage-adapter";
 export * from "./platform";

@@ -47,6 +47,7 @@ import { pickAtCanvas } from "./picking";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
+import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 
 export interface EngineHandle {
   engine: Engine;
@@ -65,6 +66,8 @@ export interface EngineHandle {
   setPaused: (paused: boolean) => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
   liveObjectCounts: () => { meshes: number; textures: number };
+  /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
+  drawCalls: () => number;
   /** Explicit tap pick (hover picking is disabled). */
   pickAt: (
     canvasX: number,
@@ -424,6 +427,7 @@ export function createEngine(
 
   let interpAlpha = 1;
   let lastPositions: PlayActorPosition[] = [];
+  let lastDrawCalls = 0;
   const renderLoop = () => {
     if (!scheduler.shouldRender()) {
       return;
@@ -438,7 +442,9 @@ export function createEngine(
     // between frames, and feeding that gap to the scaling valve would read
     // as a catastrophic frame time and drop quality for no reason.
     const renderStart = performance.now();
+    beginEngineDrawCallFrame(engine);
     scene.render();
+    lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered();
     scaling.noteFrameTime(performance.now() - renderStart);
   };
@@ -548,6 +554,7 @@ export function createEngine(
       meshes: scene.meshes.length,
       textures: engine.getLoadedTexturesCache().length,
     }),
+    drawCalls: () => lastDrawCalls,
     pickAt: (x, y) => {
       const hit = pickAtCanvas(scene, x, y);
       return hit

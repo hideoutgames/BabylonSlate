@@ -21,6 +21,7 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 | Documents | iPad default | `@capacitor/filesystem` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
 | Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; `openKnownFolder` reopens without picker; Reconnect on staleness |
 | Memory | Tests | In-memory tree |
+| Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` throw |
 | Node | CI / tools | Real filesystem under a root path |
 
 `openKnownFolder(handle)` rebinds a previously known project (Documents / OPFS / external bookmark) without showing a picker. The picker is only for first bind and Reconnect.
@@ -33,7 +34,7 @@ Sustained I/O into a file provider needs `NSFileCoordinator`, process-lifetime s
 
 1. **Default (iPad):** app Documents — Create Project writes here with no prompt; cold reopen needs no picker. The Create Project dialog prefills `MyGame` (`TestProject` in `/?test=1` / `VITE_TEST_MODE`). Native **Choose folder…** is optional and picks then scaffolds; web location is read-only OPFS.
 2. **Opt-in external:** iCloud / Working Copy / any folder via picker; bookmarks persist in app settings.
-3. **Web:** OPFS only; Export Project to get bytes out.
+3. **Web:** OPFS only; Export Project to get bytes out. Recents never show the `opfs` API name: hide the location when every listed project is the same tier; mixed lists (Documents vs a picked folder) use **On this device** and **Chosen folder**.
 
 ## App settings port
 
@@ -53,7 +54,7 @@ Number fields (frame cap, hardware scaling, pointer scale, undo length, graph de
 
 ## Templates folder
 
-`createTemplateStorage(folder)` binds the Engine Settings templates folder in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends. Web has no folder picker for a templates location, so it offers **Empty only**; other hosts show a card per `*.babproject` entry that has a manifest. Entries without a manifest are skipped rather than failing the Homepage.
+`createTemplateStorage(folder)` binds the Engine Settings templates folder in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends. Web has no folder picker for a templates location. Create Project still offers built-in **Empty** and **2D** cards; the Homepage copy does not advertise Engine Settings templates on web. Other hosts show a card per `*.babproject` entry that has a manifest. Entries without a manifest are skipped rather than failing the Homepage.
 
 ## Write performance decision (§19)
 
