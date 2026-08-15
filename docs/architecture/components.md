@@ -14,7 +14,7 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **Alert** (`AlertTitle`, `AlertDescription`, `AlertAction`) | Inline status callout. | Boot / project errors in `App` and Homepage; gallery. |
+| **Alert** (`AlertTitle`, `AlertDescription`, `AlertAction`) | Inline status callout. | Boot / project errors in `App` and Homepage; document tab `WorkspaceErrorBoundary`; gallery. |
 | **AlertDialog** (`AlertDialogTitle`, `AlertDialogAction`, `AlertDialogCancel`, …) | Modal confirm / blocking error. | Unsaved close, Play blocked, Content Browser destructive confirms; NamePromptDialog. |
 | **Badge** | Compact status chip. | Compilation errors, Content Browser type tags, global-search result kinds, live-wire “Add Node”. |
 | **Button** | Pressable action. Sizes include `touch` / `touch-icon` (44px). Outline = visible action; ghost = tabs / close. | Chrome, panels, catalogs, overlays. |
