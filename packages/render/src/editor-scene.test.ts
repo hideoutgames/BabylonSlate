@@ -641,6 +641,43 @@ describe("EditorSceneSync", () => {
     expect(sync.actorCount()).toBe(0);
     expect(scene.getMeshByName(editorMeshName("a"))).toBeNull();
   });
+
+  it("keeps mesh identity when setMeshAssets is called with equivalent payloads", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    sync.setMeshAssets({
+      textureBytes: new Map([["tex-1", bytes]]),
+      spritePayloads: new Map(),
+    });
+    const afterFirst = sync.meshForActor("a");
+    expect(afterFirst).not.toBeNull();
+
+    sync.setMeshAssets({
+      textureBytes: new Map([["tex-1", bytes]]),
+      spritePayloads: new Map(),
+    });
+    expect(sync.meshForActor("a")).toBe(afterFirst);
+    expect(afterFirst!.isDisposed()).toBe(false);
+  });
+
+  it("rebuilds meshes when setMeshAssets payloads actually change", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    sync.setMeshAssets({
+      textureBytes: new Map([["tex-1", new Uint8Array([1, 2, 3, 4])]]),
+    });
+    const before = sync.meshForActor("a");
+    sync.setMeshAssets({
+      textureBytes: new Map([["tex-1", new Uint8Array([9, 9, 9, 9, 9])]]),
+    });
+    const after = sync.meshForActor("a");
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
+    expect(before!.isDisposed()).toBe(true);
+  });
 });
 
 describe("editor grid", () => {

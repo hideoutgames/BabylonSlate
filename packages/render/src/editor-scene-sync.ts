@@ -1,7 +1,10 @@
 import type { Camera, Mesh, Scene } from "@babylonjs/core";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
 import type { RenderScheduler } from "./render-scheduler";
-import type { MeshAssetContext } from "./mesh-assets";
+import {
+  meshAssetFingerprint,
+  type MeshAssetContext,
+} from "./mesh-assets";
 import {
   actorIdFromMeshName,
   actorVisualFingerprint,
@@ -47,6 +50,7 @@ export class EditorSceneSync {
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
+  private lastAssetFingerprint: string | null = null;
   private lastScene: SerializedScene | null = null;
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
@@ -63,12 +67,23 @@ export class EditorSceneSync {
       layers.length > 0 ? [...layers] : [...DEFAULT_SORTING_LAYERS];
   }
 
-  setMeshAssets(assets: MeshAssetContext | undefined): void {
+  /**
+   * Swap sprite/tilemap/model bytes. Returns true when editor meshes were
+   * disposed and rebuilt. Equivalent payloads (new Maps, same guids/sizes) are
+   * a no-op so a gizmo transform commit does not drop selection.
+   */
+  setMeshAssets(assets: MeshAssetContext | undefined): boolean {
+    const fingerprint = meshAssetFingerprint(assets);
     this.assets = assets;
+    if (fingerprint === this.lastAssetFingerprint) {
+      return false;
+    }
+    this.lastAssetFingerprint = fingerprint;
     for (const mesh of this.meshes.values()) mesh.dispose();
     this.meshes.clear();
     this.meshKinds.clear();
     if (this.lastScene) this.apply(this.lastScene);
+    return true;
   }
 
   setGameCameraPreview(enabled: boolean, restoreCamera?: Camera | null): void {

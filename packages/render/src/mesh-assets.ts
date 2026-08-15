@@ -20,6 +20,43 @@ export interface MeshAssetContext {
   pixelsPerUnit?: number;
 }
 
+function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
+  if (!map || map.size === 0) return "";
+  return [...map.keys()].sort().join(",");
+}
+
+function assetByteLength(bytes: Uint8Array | Blob): number {
+  return bytes instanceof Uint8Array ? bytes.byteLength : bytes.size;
+}
+
+function byteMapFingerprint(
+  map: ReadonlyMap<string, Uint8Array | Blob> | undefined,
+): string {
+  if (!map || map.size === 0) return "";
+  return [...map.entries()]
+    .map(([guid, bytes]) => `${guid}:${assetByteLength(bytes)}`)
+    .sort()
+    .join(",");
+}
+
+/**
+ * Stable key for editor mesh rebuilds. Transform-only scene commits reuse the
+ * same payloads (new Map instances), so identity of the maps must not matter.
+ */
+export function meshAssetFingerprint(
+  assets: MeshAssetContext | undefined,
+): string {
+  if (!assets) return "";
+  return [
+    `ppu:${assets.pixelsPerUnit ?? ""}`,
+    `sprites:${sortedMapKeys(assets.spritePayloads)}`,
+    `tilemaps:${sortedMapKeys(assets.tilemaps)}`,
+    `tilesets:${sortedMapKeys(assets.tilesets)}`,
+    `tex:${byteMapFingerprint(assets.textureBytes)}`,
+    `models:${byteMapFingerprint(assets.modelBytes)}`,
+  ].join("|");
+}
+
 export function applyAlbedoTexture(
   mesh: Mesh,
   scene: Scene,
