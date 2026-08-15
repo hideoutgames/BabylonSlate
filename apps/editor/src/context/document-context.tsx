@@ -217,6 +217,7 @@ interface DocumentContextValue {
   exportGameArtifact: (options?: {
     previewBuild?: boolean;
     playerFiles?: Map<string, Uint8Array>;
+    onPhase?: (phase: "Compiling" | "Writing Pack") => void;
   }) => Promise<Result<ExportArtifact, string>>;
   zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
   dismissRecovery: () => Promise<void>;
@@ -958,6 +959,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (options?: {
       previewBuild?: boolean;
       playerFiles?: Map<string, Uint8Array>;
+      onPhase?: (phase: "Compiling" | "Writing Pack") => void;
     }) => {
       const list = projectService.registry?.list() ?? [];
       const loaded = await loadExportDocuments({
@@ -983,6 +985,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         parentOf: classParentLookup(list),
         sceneByGuid: loaded.sceneByGuid,
         graphByGuid: loaded.graphByGuid,
+        payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
         customResolution:
           projectDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -996,6 +999,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             : "3d",
         playerFiles,
         previewBuild: options?.previewBuild,
+        onPhase: options?.onPhase,
       });
     },
     [projectDocument, projectService],

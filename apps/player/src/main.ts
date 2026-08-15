@@ -3,6 +3,7 @@ import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayer } from "./boot";
 import { mountPlayerHud, unlockAudioOnFirstGesture } from "./hud";
 import { applyPlayerLayout } from "./layout";
+import { registerPackedFonts } from "./fonts";
 import {
   filesFromPreviewPack,
   isPreviewPackMessage,
@@ -49,24 +50,6 @@ async function launchFromFiles(files: Map<string, Uint8Array>): Promise<void> {
 async function launchFromHttp(): Promise<void> {
   const game = await loadGameFromHttp(document.baseURI);
   await launchLoaded(game);
-}
-
-async function registerPackedFonts(
-  fontBytes: Map<string, Uint8Array>,
-): Promise<void> {
-  if (typeof FontFace === "undefined" || !document.fonts) return;
-  for (const [guid, bytes] of fontBytes) {
-    const copy = new Uint8Array(bytes.byteLength);
-    copy.set(bytes);
-    const blob = new Blob([copy.buffer], { type: "font/ttf" });
-    const url = URL.createObjectURL(blob);
-    try {
-      const face = new FontFace(guid, `url(${url})`);
-      document.fonts.add(await face.load());
-    } catch {
-      URL.revokeObjectURL(url);
-    }
-  }
 }
 
 async function launchLoaded(

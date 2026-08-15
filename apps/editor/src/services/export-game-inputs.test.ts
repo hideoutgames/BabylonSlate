@@ -74,4 +74,29 @@ describe("loadExportDocuments", () => {
       scene.name,
     );
   });
+
+  it("exposes sprite document payloads for the export closure", async () => {
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Hero.sprite.babasset",
+          header: {
+            guid: "sprite-1",
+            type: "Sprite",
+            name: "Hero",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: {},
+            chunks: [],
+          },
+        },
+      ],
+      loadDocument: async () => ({ textureGuid: "tex-atlas" }),
+      readAssetChunk: async () => null,
+    });
+    expect(loaded.payloadByGuid("sprite-1")).toEqual({ textureGuid: "tex-atlas" });
+  });
 });

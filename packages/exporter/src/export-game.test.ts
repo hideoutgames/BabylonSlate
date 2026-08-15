@@ -252,6 +252,60 @@ describe("exportGame", () => {
     expect(parseScriptRegistry(scripts)[0]?.anchors[0]?.line).toBe(1);
   });
 
+  it("packs Havok wasm for 3d and Rapier for 2d, not both", async () => {
+    const player = new Map([
+      ["index.html", new TextEncoder().encode("<html></html>")],
+      ["player.js", new TextEncoder().encode("void 0")],
+      ["havok/HavokPhysics.wasm", new Uint8Array([1])],
+      ["assets/HavokPhysics_es.js", new TextEncoder().encode("havok")],
+      ["assets/rapier.es.js", new TextEncoder().encode("rapier")],
+      ["coi-serviceworker.js", new TextEncoder().encode("/* coi */")],
+    ]);
+    const three = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      physicsWorld: "3d",
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: player,
+    });
+    expect(three.ok).toBe(true);
+    if (!three.ok) return;
+    expect(three.value.files.has("havok/HavokPhysics.wasm")).toBe(true);
+    expect(three.value.files.has("assets/HavokPhysics_es.js")).toBe(true);
+    expect(three.value.files.has("assets/rapier.es.js")).toBe(false);
+
+    const two = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      physicsWorld: "2d",
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: player,
+    });
+    expect(two.ok).toBe(true);
+    if (!two.ok) return;
+    expect(two.value.files.has("assets/rapier.es.js")).toBe(true);
+    expect(two.value.files.has("havok/HavokPhysics.wasm")).toBe(false);
+    expect(two.value.files.has("assets/HavokPhysics_es.js")).toBe(false);
+  });
+
   it("inlines CSS into index.html and keeps wasm as a real file", async () => {
     const result = await exportGame({
       bundleDebugger: false,
