@@ -151,8 +151,17 @@ export const debugNodes: NodeDefinition[] = [
       const outReturn = `{ ${outputs.map((o) => o.name).join(", ")} }`;
       const params = inputs.map((i) => i.name).join(", ");
       const asyncKw = isAsync ? "async " : "";
+      const header = `${asyncKw}function ${fnName}(${params}) {\n${outDecls}\n  // --- user body ---`;
+      const footer = `  // --- end user body ---\n  return ${outReturn};\n}`;
+      const bodyLines = body.split("\n");
+      const source = `${header}\n${bodyLines.join("\n")}\n${footer}`;
+      const headerLineCount = header.split("\n").length;
       ctx.hoist(
-        `${asyncKw}function ${fnName}(${params}) {\n${outDecls}\n  // --- user body ---\n${body}\n  // --- end user body ---\n  return ${outReturn};\n}`,
+        source,
+        bodyLines.map((_, index) => ({
+          relativeLine: headerLineCount + index + 1,
+          bodyLine: index + 1,
+        })),
       );
       const args = inputs.map((i) => ctx.input(i.name)).join(", ");
       if (isAsync) ctx.requestAsync();

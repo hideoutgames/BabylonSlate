@@ -1,6 +1,12 @@
 import type { PinType } from "./types";
 import type { GraphNode, GraphPin, LogicGraph } from "./ir";
 
+/** 1-based line in a hoist chunk mapped to an ExecuteJavaScript body line. */
+export type HoistBodyAnchor = {
+  relativeLine: number;
+  bodyLine: number;
+};
+
 export type CodegenContext = {
   graph: LogicGraph;
   node: GraphNode;
@@ -10,8 +16,14 @@ export type CodegenContext = {
   output(pinName: string): string;
   /** Emit a statement with an optional anchor override. */
   emit(statement: string, anchorNodeId?: string): void;
-  /** Hoist a module-scope function (ExecuteJavaScript). */
-  hoist(source: string): void;
+  /**
+   * Hoist a module-scope function (ExecuteJavaScript).
+   * `bodyAnchors` are 1-based lines within this chunk that map to the user body.
+   */
+  hoist(
+    source: string,
+    bodyAnchors?: readonly HoistBodyAnchor[],
+  ): void;
   /**
    * Mark the entry point `async`. Required before emitting `await`; latent
    * definitions are marked automatically.

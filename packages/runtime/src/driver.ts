@@ -405,6 +405,35 @@ class InProcessRuntime implements RuntimeDriver {
           message,
           frameId: this.frameId,
         });
+        if (severity === "error") {
+          const stack = new Error().stack ?? "";
+          const anchor = mapStackToAnchor(stack, this.anchors);
+          const diag: RuntimeDiagnostic = {
+            code: "runtime.log",
+            message,
+            severity: "error",
+            assetGuid: anchor?.assetGuid,
+            graphId: anchor?.graphId,
+            nodeId: anchor?.nodeId,
+            bodyLine: anchor?.bodyLine,
+            stack,
+            frameId: this.frameId,
+            tickIndex: this.world.clock.tickIndex,
+          };
+          this.diagnostics.push(diag);
+          this.emit({
+            type: "diagnostic",
+            code: diag.code,
+            message: diag.message,
+            assetGuid: diag.assetGuid,
+            graphId: diag.graphId,
+            nodeId: diag.nodeId,
+            bodyLine: diag.bodyLine,
+            stack: diag.stack,
+            frameId: this.frameId,
+            severity: "error",
+          });
+        }
       },
       print: (message, key, duration, color) => {
         this.tickPrints.push({ message, key });
@@ -1692,6 +1721,7 @@ class InProcessRuntime implements RuntimeDriver {
       graphId: diag.graphId,
       nodeId: diag.nodeId,
       btNodeId: diag.btNodeId,
+      bodyLine: diag.bodyLine,
       stack: diag.stack,
       frameId,
       severity: "error",

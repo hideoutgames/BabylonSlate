@@ -19,6 +19,7 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-15 | cursor/p4-followups-55e8 | p4-preview-report | Spec | Log Error never entered the session report; ExecuteJavaScript `bodyLine` was not compiled, not on the worker diagnostic command, and navigate did not set CodeMirror focus | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Spec | ClassRegistry unused at spawn; Play `callInterface` skipped `dispatchInterface` so scene actors never received class-declared interface guids | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Standards | Engine components and BT builtins were reparentable (`MeshComponent` → `Actor`) | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model / p3-harness | Spec | Remaining accepted P3 cuts: World-owned spawn API (spec wording), flat runtime components (`SerializedComponent.parentId` dropped at Play), VFS fixtures decoupled from the 120-tick golden | Accepted |
@@ -35,7 +36,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-11 | cursor/p4-harden-2497 | p4-resource-cache | Spec | `ResourceCache.getTexture` + sampling-key path; idle zero-frame + encode pause reason-set; tap picking | Resolved |
 | 2026-08-11 | cursor/p4-bridge-play-2497 | p4-render-sync | Standards | Per-frame ActorSlot/Set alloc in snapshot sync — fixed to reuse scratch | Resolved |
 | 2026-08-11 | cursor/p4-bridge-play-2497 | p4-bridge | Spec | Multi-transport parity harness now exercises SAB + transferable against in-process snapshot payload | Resolved |
-| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-preview-report | Spec | Navigate focuses fixture node id (full graph/bodyLine navigation waits on P5 compiler) | Accepted |
+| 2026-08-11 | cursor/p4-bridge-play-2497 | p4-preview-report | Spec | Navigate focuses fixture node id (full graph/bodyLine navigation waits on P5 compiler) | Resolved (`bodyLine` compile → diagnostic → CodeMirror) |
 | 2026-08-11 | cursor/p4-bridge-play-2497 | p4-input-capture | Spec | Synthetic encode/decode tested; full harness replay-through-runtime deferred with action mappings to P6 | Resolved (P6 `p6-input-mappings`) |
 | 2026-08-12 | cursor/p4-implementation-review-79b7 | p4-preview-report | Spec | Worker-mode Play never populated the session report (`play-session.ts` `onCommand` used an ad hoc type missing `code`/`assetGuid`/`nodeId`/`stack`, so real worker `diagnostic` commands were logged but never aggregated — only the injected fixture-throw path faked report entries) | Resolved |
 | 2026-08-12 | cursor/p4-implementation-review-79b7 | p4-render-on-demand | Standards | `create-engine.ts` fed the hardware-scaling valve the wall-clock gap since the last rendered frame instead of render cost; render-on-demand's idle gaps (by design, seconds) would read as a catastrophic frame and drop resolution quality for no reason | Resolved |
@@ -146,6 +147,27 @@ Design notes: [object-model.md](../architecture/object-model.md).
 | Play + report | `p4-play-overlay`, `p4-preview-report` | `apps/editor`, `runtime` | Runtime + Render + Input |
 
 Design notes: [bridge.md](../architecture/bridge.md), [render.md](../architecture/render.md).
+
+Appendix A `p4-*` checkboxes are landed as a vertical Play path. Leftovers below are **not** implied done.
+
+### P4 follow-ups / open deferrals
+
+| Item | Owner | Notes |
+| --- | --- | --- |
+| Live SAB zero-copy (main thread reads shared buffer, no per-frame `postMessage`) | later polish (`runtime` worker-entry) | `SeqLockSnapshotPair` unit-tested; Play always uses `TransferablePingPong`. Accepted 2026-08-12 |
+| Multi-transport parity as three hosts | later polish (`test-kit`) | `transport-parity.test.ts` republishes one in-process buffer through SAB/transferable; not three independent runtimes |
+| Typed RPC on the live worker path | later polish (`bridge`, `runtime`) | Types + unit test only; Play uses control/command/input/snapshot |
+| `remap` command | later polish (`bridge`) | Docs mention guid↔slotId via spawn/despawn/remap; types have spawn/despawn only |
+| Play 60fps on A16 iPad | `p14-perf-smoke` / `p1-device-spikes` | CI does not prove device frame rate |
+| WKWebView `Error.stack` parse | `p1-device-spikes` | V8 + WebKit-shaped strings unit-tested; hardware WKWebView unconfirmed |
+| Capacitor app-state pause | later polish (`vfs`) | Editor listens for `babylonslate:appstate`; no vfs emitter yet. `visibilitychange` works |
+| `renderquality` / Engine Settings `hardwareScalingLevel` → Engine | later polish (`render`, `runtime`, editor) | Valve exists; console `renderquality` logs; settings field is persisted only |
+| §2.4 editor idle freezes + scene-load shader warm | later polish (`render`) | No `freezeActiveMeshes` / `material.freeze` / `useGeometryUniqueIdsMap`; `forceCompilationAsync` is shader-graph only |
+| Context-loss user notify | later polish (`render`, editor) | Restore drops a quality tier and flushes LRU; no one-shot toast |
+| Mesh live-object assert on Play close | later polish (`play-session`) | Texture-cache growth is logged; mesh counts are captured unused |
+| Snapshot interpolation α in the live loop | documented | `SnapshotInterpolator` can lerp; Play samples α=1 (latest) while render and tick share the 60 Hz cap. Time-based α waits on a render/tick mismatch |
+| Log Error → session report | Done (this branch) | `ctx.log(..., "error")` pushes `runtime.log` diagnostics |
+| ExecuteJavaScript `bodyLine` navigation | Done (this branch) | Hoisted body lines carry `bodyLine`; session report focuses CodeMirror |
 
 ## P5 slice ownership
 

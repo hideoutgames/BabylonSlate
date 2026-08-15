@@ -54,6 +54,7 @@ export function diagnosticFromCommand(
     graphId: command.graphId,
     nodeId: command.nodeId,
     btNodeId: command.btNodeId,
+    bodyLine: command.bodyLine,
     stack: command.stack,
     frameId: command.frameId,
   };

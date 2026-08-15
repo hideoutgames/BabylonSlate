@@ -19,6 +19,7 @@ describe("diagnosticFromCommand", () => {
       graphId: "graph-1",
       nodeId: "node-1",
       btNodeId: "wait",
+      bodyLine: 4,
       stack: "Error: boom",
       frameId: 7,
       severity: "error",
@@ -31,6 +32,7 @@ describe("diagnosticFromCommand", () => {
       graphId: "graph-1",
       nodeId: "node-1",
       btNodeId: "wait",
+      bodyLine: 4,
       stack: "Error: boom",
       frameId: 7,
     });

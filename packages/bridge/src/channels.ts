@@ -146,6 +146,7 @@ export type CommandMessage =
       graphId?: string;
       nodeId?: string;
       btNodeId?: string;
+      bodyLine?: number;
       stack?: string;
       frameId: number;
       severity: "error" | "warning";

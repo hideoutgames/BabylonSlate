@@ -220,6 +220,104 @@ describe("script host runs compiled graphs", () => {
     expect(diagnostic?.graphId).toBe("event-graph");
   });
 
+  it("records Log error severity into the session report", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "log", "debug.log", {
+          severity: "error",
+          message: "script failed",
+        }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "log", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Logger", "logger-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Logger" });
+    runtime.start();
+    runtime.tick();
+
+    const entries = runtime.getDiagnostics().entries();
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "runtime.log",
+          message: "script failed",
+          severity: "error",
+          nodeId: "log",
+          assetGuid: "logger-asset",
+        }),
+      ]),
+    );
+    expect(commands.filter((c) => c.type === "diagnostic")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "diagnostic",
+          code: "runtime.log",
+          nodeId: "log",
+        }),
+      ]),
+    );
+    runtime.stop();
+  });
+
+  it("maps a throw inside ExecuteJavaScript to bodyLine", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "js", "debug.executeJavaScript", {
+          inputs: [],
+          outputs: [],
+          body: "const a = 1;\nthrow new Error('from body');",
+        }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "js", "execIn")],
+    };
+    const compiled = compileGraph(graph, {
+      assetGuid: "js-asset",
+      registry,
+    });
+    const throwAnchor = compiled.anchors.find((a) => a.bodyLine === 2);
+    expect(throwAnchor).toBeDefined();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Thrower", "js-asset"),
+    ]);
+    const err = new Error("from body");
+    err.stack = `Error: from body\n    at execJs_js (babylonslate:///js-asset.js:${throwAnchor!.line}:1)`;
+    const diagnostic = runtime.reportError(err);
+    expect(diagnostic?.nodeId).toBe("js");
+    expect(diagnostic?.bodyLine).toBe(2);
+    expect(commands.filter((c) => c.type === "diagnostic")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "diagnostic",
+          nodeId: "js",
+          bodyLine: 2,
+        }),
+      ]),
+    );
+    runtime.stop();
+  });
+
   it("does not re-enter a latent entry point while it is pending", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
