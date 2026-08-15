@@ -9,6 +9,7 @@ export const PIN_PICKER_TYPES = [
   "vec2",
   "vec3",
   "object",
+  "class",
   "struct",
 ] as const;
 
@@ -29,6 +30,7 @@ export const PIN_PICKER_LABEL: Record<string, string> = {
   vec2: "Vector 2",
   vec3: "Vector 3",
   object: "Object",
+  class: "Class",
   struct: "Struct",
 };
 
@@ -41,6 +43,7 @@ const PIN_PICKER_KIND: Record<PinPickerType, string> = {
   vec2: "vec2",
   vec3: "vec3",
   object: "objectRef",
+  class: "classRef",
   struct: "structRef",
 };
 

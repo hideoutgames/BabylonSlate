@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AssetPicker,
+  ClassPicker,
   FUNCTION_PIN_PICKER_TYPES,
   PIN_PICKER_TYPES,
   PanelFrame,
@@ -46,6 +47,7 @@ import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import {
   componentPropertyRows,
+  subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
@@ -60,7 +62,9 @@ import {
   parameterRowsFromPinList,
   pinDefaultPropertyRows,
   pinListFromParameterRows,
+  pinsFromNodeData,
 } from "../lib/graph-inspector";
+import { pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { patchClassMember } from "../lib/class-members";
 
 function ClassMemberDetails({
@@ -392,6 +396,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     updateComponentTransform,
   } = usePrefabEditing();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
+  const [classPinPick, setClassPinPick] = useState<{
+    pinId: string;
+    name: string;
+    constraintClassId: string;
+  } | null>(null);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
@@ -586,6 +595,16 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       actionNames: inputMappings.actions.map((action) => action.name),
       axisNames: inputMappings.axes.map((axis) => axis.name),
       enumMembers,
+      classEntries: subclassClassEntries(
+        "BObject",
+        assetRegistry?.list() ?? [],
+      ),
+      onPickClass: (pinId, constraintClassId) => {
+        const name =
+          pinsFromNodeData(selectedNode.data).find((pin) => pin.id === pinId)
+            ?.name ?? pinId;
+        setClassPinPick({ pinId, name, constraintClassId });
+      },
     },
   );
   const logRows = isLog
@@ -726,6 +745,30 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           />
         ) : null}
       </div>
+      <ClassPicker
+        open={classPinPick !== null}
+        onOpenChange={(open) => {
+          if (!open) setClassPinPick(null);
+        }}
+        classes={
+          classPinPick
+            ? subclassClassEntries(
+                classPinPick.constraintClassId,
+                assetRegistry?.list() ?? [],
+              )
+            : []
+        }
+        allowNone={false}
+        onPick={(classId) => {
+          if (classPinPick && classId) {
+            updateNodeData({
+              [pinDefaultPropertyKey(classPinPick.name)]: classId,
+            });
+          }
+          setClassPinPick(null);
+        }}
+        data-testid="inspector-class-picker"
+      />
     </PanelFrame>
   );
 }

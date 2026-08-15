@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOOL, FLOAT, VEC3, objectRef } from "@babylonslate/scripting";
+import { BOOL, FLOAT, VEC3, objectRef, classRef, structRef, enumRef } from "@babylonslate/scripting";
 import { jsIdent, pinTypeForMember } from "./member-pins";
 
 describe("pinTypeForMember", () => {
@@ -7,6 +7,9 @@ describe("pinTypeForMember", () => {
     expect(pinTypeForMember("bool")).toEqual(BOOL);
     expect(pinTypeForMember("vec3")).toEqual(VEC3);
     expect(pinTypeForMember("object")).toEqual(objectRef("BObject"));
+    expect(pinTypeForMember("class")).toEqual(classRef("BObject"));
+    expect(pinTypeForMember("struct")).toEqual(structRef(""));
+    expect(pinTypeForMember("enum")).toEqual(enumRef(""));
     expect(pinTypeForMember("float")).toEqual(FLOAT);
   });
 });

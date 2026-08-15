@@ -2,8 +2,8 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  STRING,
   actorRef,
+  classRef,
   objectRef,
   BOOL,
 } from "@babylonslate/scripting";
@@ -61,7 +61,7 @@ export const actorNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("classId", "classId", "in", STRING),
+      pin("classId", "classId", "in", classRef("Actor")),
       pin("out", "out", "out", actorRef("Actor")),
     ],
     codegen: (ctx) => {

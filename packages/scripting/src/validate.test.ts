@@ -13,7 +13,10 @@ import {
   INT,
   RESOLVING_WILDCARD,
   STRING,
+  actorRef,
   arrayOf,
+  classRef,
+  objectRef,
 } from "./types";
 import { diagnostic } from "./diagnostics";
 
@@ -153,6 +156,74 @@ describe("validateGraphs", () => {
     };
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.filter((d) => d.code === "pin.missing_input")).toHaveLength(2);
+  });
+
+  it("errors pin.invalid_default when an objectRef stores a literal", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "destroy",
+          typeId: "actor.destroy",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("target", "target", "in", objectRef("Actor")),
+          ],
+          properties: { "default:target": "Hero" },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pin.invalid_default")).toBe(true);
+    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(true);
+  });
+
+  it("does not warn pin.missing_input for an implicit-self Target", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "call",
+          typeId: "flow.event.call",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("target", "target", "in", objectRef("Hero")),
+          ],
+          properties: { implicitSelf: true, name: "On Hit", classId: "Hero" },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
+  });
+
+  it("clears pin.missing_input for an unconnected classRef with a stored default", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "spawn",
+          typeId: "actor.spawn",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("classId", "classId", "in", classRef("Actor")),
+            pin("out", "out", "out", actorRef("Actor")),
+          ],
+          properties: { "default:classId": "Pawn" },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
+    expect(diags.some((d) => d.code === "pin.invalid_default")).toBe(false);
   });
 
   it("flags incompatible wildcard resolution groups", () => {

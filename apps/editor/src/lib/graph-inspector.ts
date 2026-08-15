@@ -103,6 +103,8 @@ export function pinDefaultPropertyRows(
     actionNames?: readonly string[];
     axisNames?: readonly string[];
     enumMembers?: Record<string, readonly string[]>;
+    classEntries?: ReadonlyArray<{ id: string; name: string }>;
+    onPickClass?: (pinId: string, constraintClassId: string) => void;
   },
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
@@ -244,6 +246,26 @@ export function pinDefaultPropertyRows(
           value: current,
           defaultValue: pinDefaultAsString(typeDefault),
           options: options.map((name) => ({ value: name, label: name })),
+          onChange: (value) => onPatch({ [key]: value }),
+        });
+        break;
+      }
+      case "classRef": {
+        const current =
+          pinDefaultAsString(entry.value) || pinDefaultAsString(typeDefault);
+        const display =
+          mappingNames?.classEntries?.find((item) => item.id === current)
+            ?.name ?? current;
+        rows.push({
+          kind: "asset",
+          id: entry.pinId,
+          label: entry.name,
+          value: current || null,
+          defaultValue: pinDefaultAsString(typeDefault) || null,
+          displayLabel: display || undefined,
+          placeholder: entry.type.classId,
+          onPick: () =>
+            mappingNames?.onPickClass?.(entry.pinId, entry.type.classId),
           onChange: (value) => onPatch({ [key]: value }),
         });
         break;

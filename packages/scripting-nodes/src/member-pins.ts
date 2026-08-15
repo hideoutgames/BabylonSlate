@@ -7,7 +7,10 @@ import {
   STRING,
   VEC2,
   VEC3,
+  classRef,
+  enumRef,
   objectRef,
+  structRef,
   type PinType,
 } from "@babylonslate/scripting";
 
@@ -31,7 +34,6 @@ export function pinTypeForMember(typeId: string | undefined): PinType {
     case "int":
       return INT;
     case "string":
-    case "enum":
       return STRING;
     case "vec2":
       return VEC2;
@@ -39,6 +41,12 @@ export function pinTypeForMember(typeId: string | undefined): PinType {
       return VEC3;
     case "object":
       return objectRef("BObject");
+    case "class":
+      return classRef("BObject");
+    case "struct":
+      return structRef("");
+    case "enum":
+      return enumRef("");
     default:
       return FLOAT;
   }
