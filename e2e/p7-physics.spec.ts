@@ -23,6 +23,7 @@ test.describe("P7 Play physics timings", () => {
 
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await page.getByTestId("play-stats-toggle").click();
     await expect(page.getByTestId("stats-hud")).toBeVisible();
     await expect
       .poll(async () => {
