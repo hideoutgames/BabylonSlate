@@ -38,6 +38,16 @@ function cloneTransform(t: PhysicsTransform): PhysicsTransform {
   };
 }
 
+function colliderWorldPosition(desc: ColliderDesc, bodyPos: Vec3): Vec3 {
+  const offset = desc.translation;
+  if (!offset) return bodyPos;
+  return {
+    x: bodyPos.x + offset.x,
+    y: bodyPos.y + offset.y,
+    z: bodyPos.z + offset.z,
+  };
+}
+
 function aabbForShape(
   shape: ColliderShape,
   position: Vec3,
@@ -290,14 +300,17 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       if (collider.desc.isTrigger) continue;
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body || body.desc.motionType !== "dynamic") continue;
-      const a = aabbForShape(collider.desc.shape, body.transform.position);
+      const a = aabbForShape(
+        collider.desc.shape,
+        colliderWorldPosition(collider.desc, body.transform.position),
+      );
       for (const other of this.colliders.values()) {
         if (other.desc.id === collider.desc.id || other.desc.isTrigger) continue;
         const otherBody = this.bodies.get(other.desc.bodyId);
         if (!otherBody || otherBody.desc.motionType === "dynamic") continue;
         const b = aabbForShape(
           other.desc.shape,
-          otherBody.transform.position,
+          colliderWorldPosition(other.desc, otherBody.transform.position),
         );
         if (!aabbOverlap(a, b)) continue;
         const overlapY = Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y);
@@ -324,7 +337,10 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
-      const box = aabbForShape(collider.desc.shape, body.transform.position);
+      const box = aabbForShape(
+        collider.desc.shape,
+        colliderWorldPosition(collider.desc, body.transform.position),
+      );
       const t = rayAabb(start, dir, box.min, box.max);
       if (t === null || t < 0 || t > 1 || t >= bestT) continue;
       bestT = t;
@@ -351,7 +367,10 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
-      const box = aabbForShape(collider.desc.shape, body.transform.position);
+      const box = aabbForShape(
+        collider.desc.shape,
+        colliderWorldPosition(collider.desc, body.transform.position),
+      );
       const cx = Math.max(box.min.x, Math.min(center.x, box.max.x));
       const cy = Math.max(box.min.y, Math.min(center.y, box.max.y));
       const cz = Math.max(box.min.z, Math.min(center.z, box.max.z));
@@ -422,8 +441,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         (c) => c.desc.bodyId === body.desc.id,
       );
       if (!selfCollider) continue;
-      const a = aabbForShape(selfCollider.desc.shape, body.transform.position);
-      const b = aabbForShape(collider.desc.shape, other.transform.position);
+      const a = aabbForShape(
+        selfCollider.desc.shape,
+        colliderWorldPosition(selfCollider.desc, body.transform.position),
+      );
+      const b = aabbForShape(
+        collider.desc.shape,
+        colliderWorldPosition(collider.desc, other.transform.position),
+      );
       if (!aabbOverlap(a, b)) continue;
       const overlapX =
         Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x);

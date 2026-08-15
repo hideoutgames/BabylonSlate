@@ -92,6 +92,12 @@ describe("project schema", () => {
         { id: "light-1", classId: "  ", properties: {} },
         { classId: "CameraComponent", properties: {} },
         { id: "sprite-1", classId: "SpriteComponent" },
+        {
+          id: "offset-1",
+          classId: "MeshComponent",
+          properties: { meshKind: "sphere" },
+          transform: { position: [2, 0, 0] },
+        },
       ]),
     ).toEqual([
       {
@@ -99,12 +105,33 @@ describe("project schema", () => {
         classId: "MeshComponent",
         properties: { meshKind: "box" },
         parentId: null,
+        transform: {
+          position: [0, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+        },
       },
       {
         id: "sprite-1",
         classId: "SpriteComponent",
         properties: {},
         parentId: null,
+        transform: {
+          position: [0, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+        },
+      },
+      {
+        id: "offset-1",
+        classId: "MeshComponent",
+        properties: { meshKind: "sphere" },
+        parentId: null,
+        transform: {
+          position: [2, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+        },
       },
     ]);
     expect(normalizeGraphMembers(undefined)).toEqual([]);

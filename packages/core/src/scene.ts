@@ -33,6 +33,8 @@ export interface SerializedComponent {
   properties: Record<string, unknown>;
   /** Prefab / actor component attach parent; missing documents normalize to null. */
   parentId?: string | null;
+  /** Local TRS relative to parent component, or the actor origin when unparented. */
+  transform?: SerializedTransform;
 }
 
 export interface SerializedActor {
@@ -152,6 +154,7 @@ export function createMeshComponent(
     classId: "MeshComponent",
     properties: { meshKind, assetGuid: null },
     parentId: null,
+    transform: identitySerializedTransform(),
   };
 }
 
@@ -218,6 +221,7 @@ function normalizeComponent(
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
     parentId: typeof source.parentId === "string" ? source.parentId : null,
+    transform: normalizeTransform(source.transform),
   };
 }
 

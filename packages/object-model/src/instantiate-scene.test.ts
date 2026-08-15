@@ -56,7 +56,36 @@ describe("createActorsFromSerializedScene", () => {
     ]);
     expect(actor.components[0]!.guid).toBe("mesh-1");
     expect(actor.components[0]!.getVariable("meshKind")).toBe("sphere");
+    expect(actor.components[0]!.transform.position).toEqual({ x: 0, y: 0, z: 0 });
     expect(actor.components[1]!.getVariable("mass")).toBe(4);
+  });
+
+  it("copies serialized component transforms onto runtime components", () => {
+    const world = testWorld();
+    const actors = createActorsFromSerializedScene(world, {
+      name: "Offset",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [
+            {
+              ...createMeshComponent("mesh-1", "box"),
+              transform: {
+                position: [2, 0, 0],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+              },
+            },
+          ],
+        }),
+      ],
+    });
+    expect(actors[0]!.components[0]!.transform.position).toEqual({
+      x: 2,
+      y: 0,
+      z: 0,
+    });
   });
 
   it("copies graphGuid onto AnimationGraphComponent assetGuid", () => {

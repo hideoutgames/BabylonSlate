@@ -102,6 +102,13 @@ describe("Inspector prefab component details", () => {
     ).toBeTruthy();
   });
 
+  it("shows Position Rotation and Scale for the selected prefab component", () => {
+    renderInspector({ selectedComponentId: "prefab-mesh" });
+    expect(screen.getByTestId("property-vector3-prefab-mesh-position")).toBeTruthy();
+    expect(screen.getByTestId("property-vector3-prefab-mesh-rotation")).toBeTruthy();
+    expect(screen.getByTestId("property-vector3-prefab-mesh-scale")).toBeTruthy();
+  });
+
   it("keeps class member details when Prefab Root is selected", () => {
     renderInspector({
       selectedComponentId: PREFAB_ROOT_ID,
@@ -109,5 +116,10 @@ describe("Inspector prefab component details", () => {
     });
     expect(screen.getByTestId("inspector-member-variable")).toBeTruthy();
     expect(screen.queryByTestId("inspector-prefab-component")).toBeNull();
+  });
+
+  it("describes Prefab Origin when Prefab Root is selected without a member", () => {
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    expect(screen.getByTestId("inspector-prefab-origin")).toBeTruthy();
   });
 });

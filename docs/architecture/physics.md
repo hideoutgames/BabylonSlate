@@ -59,7 +59,7 @@ Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld(
 | Component | Properties (core) |
 | --- | --- |
 | `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale` |
-| `ColliderComponent` | `shape` (3D or 2D variant), `friction`, `restitution`, `isTrigger`, `layer`, `mask` |
+| `ColliderComponent` | `shape` (3D or 2D variant), `friction`, `restitution`, `isTrigger`, `layer`, `mask`. Local `component.transform` position is passed as `ColliderDesc.translation` (Rapier `setTranslation`, software AABB offset, Havok shape center). Collider rotation stays actor-aligned in this pass. |
 
 Spawn/attach creates bodies; destroy removes them. Transforms after `step` overwrite Actor world transforms before `postPhysics`.
 

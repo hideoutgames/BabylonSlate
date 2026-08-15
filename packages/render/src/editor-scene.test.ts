@@ -32,7 +32,7 @@ import {
 } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
-import { editorMeshName } from "./scene-loader";
+import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 
 const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
   [];
@@ -520,6 +520,86 @@ describe("EditorSceneSync", () => {
     expect(sync.actorForMesh(editorMeshName("a"))).toBe("a");
     expect(sync.actorForMesh(editorMeshName("missing"))).toBeNull();
     expect(sync.actorForMesh("actor-2")).toBeNull();
+  });
+
+  it("keeps the actor origin at actor.transform while component meshes use locals", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    const box = createMeshComponent("box", "box");
+    const sphere = {
+      ...createMeshComponent("sphere", "sphere"),
+      transform: {
+        position: [3, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    sync.apply(
+      sceneWith([
+        createActor("hero", "Hero", {
+          transform: {
+            position: [10, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [box, sphere],
+        }),
+      ]),
+    );
+    const root = sync.meshForActor("hero");
+    expect(root?.position.x).toBe(10);
+    expect(sync.actorForMesh(editorComponentMeshName("hero", "sphere"))).toBe(
+      "hero",
+    );
+    const sphereMesh = scene.getMeshByName(
+      editorComponentMeshName("hero", "sphere"),
+    );
+    expect(sphereMesh?.parent).toBe(root);
+    expect(sphereMesh?.position.x).toBe(3);
+    expect(
+      sync.visualMeshesForActor("hero").map((mesh) => mesh.name),
+    ).toEqual([
+      editorComponentMeshName("hero", "box"),
+      editorComponentMeshName("hero", "sphere"),
+    ]);
+  });
+
+  it("parents a nested child actor origin to the parent actor origin", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    const sphere = {
+      ...createMeshComponent("sphere", "sphere"),
+      transform: {
+        position: [2, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    sync.apply(
+      sceneWith([
+        createActor("parent", "Parent", {
+          components: [createMeshComponent("box", "box")],
+        }),
+        createActor("child", "Child", {
+          parentId: "parent",
+          transform: {
+            position: [4, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [sphere],
+        }),
+      ]),
+    );
+    const parentRoot = sync.meshForActor("parent");
+    const childRoot = sync.meshForActor("child");
+    expect(childRoot?.parent).toBe(parentRoot);
+    expect(childRoot?.position.x).toBe(4);
+    const childSphere = scene.getMeshByName(
+      editorComponentMeshName("child", "sphere"),
+    );
+    expect(childSphere?.parent).toBe(childRoot);
+    expect(childSphere?.position.x).toBe(2);
   });
 
   it("maps a tilemap chunk child name back to the actor", () => {

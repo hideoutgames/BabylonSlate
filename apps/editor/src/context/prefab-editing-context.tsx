@@ -6,10 +6,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SerializedComponent, SerializedGraph } from "@babylonslate/core";
+import {
+  identitySerializedTransform,
+  type SerializedComponent,
+  type SerializedGraph,
+  type SerializedTransform,
+} from "@babylonslate/core";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import {
+  applyPrefabComponentTransform,
+  applyPrefabPivotDelta,
   componentSubtreeIds,
   nextPrefabComponentId,
   prefabComponentsFromGraph,
@@ -30,6 +37,11 @@ interface PrefabEditingContextValue {
     property: string,
     value: unknown,
   ) => void;
+  updateComponentTransform: (
+    componentId: string,
+    transform: SerializedTransform,
+  ) => void;
+  applyPivotTransform: (transform: SerializedTransform) => void;
 }
 
 const PrefabEditingContext = createContext<PrefabEditingContextValue | null>(
@@ -74,6 +86,7 @@ export function PrefabEditingProvider({
           classId,
           properties: defaultPropertiesFor(classId),
           parentId: null,
+          transform: identitySerializedTransform(),
         },
       ]);
     },
@@ -110,6 +123,20 @@ export function PrefabEditingProvider({
     [components, persist],
   );
 
+  const updateComponentTransform = useCallback(
+    (componentId: string, transform: SerializedTransform) => {
+      persist(applyPrefabComponentTransform(components, componentId, transform));
+    },
+    [components, persist],
+  );
+
+  const applyPivotTransform = useCallback(
+    (transform: SerializedTransform) => {
+      persist(applyPrefabPivotDelta(components, transform));
+    },
+    [components, persist],
+  );
+
   const value = useMemo(
     () => ({
       components,
@@ -119,14 +146,18 @@ export function PrefabEditingProvider({
       removeSelected,
       reparentComponent,
       updateComponent,
+      updateComponentTransform,
+      applyPivotTransform,
     }),
     [
       addComponent,
+      applyPivotTransform,
       components,
       removeSelected,
       reparentComponent,
       selectedId,
       updateComponent,
+      updateComponentTransform,
     ],
   );
 

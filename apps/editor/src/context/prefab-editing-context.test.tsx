@@ -39,15 +39,30 @@ vi.mock("./document-context", () => ({
 }));
 
 function UpdateProbe() {
-  const { updateComponent } = usePrefabEditing();
+  const { updateComponent, updateComponentTransform } = usePrefabEditing();
   return (
-    <button
-      type="button"
-      data-testid="update-mesh-kind"
-      onClick={() => updateComponent("prefab-mesh", "meshKind", "sphere")}
-    >
-      Patch
-    </button>
+    <>
+      <button
+        type="button"
+        data-testid="update-mesh-kind"
+        onClick={() => updateComponent("prefab-mesh", "meshKind", "sphere")}
+      >
+        Patch
+      </button>
+      <button
+        type="button"
+        data-testid="update-mesh-transform"
+        onClick={() =>
+          updateComponentTransform("prefab-mesh", {
+            position: [1, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          })
+        }
+      >
+        Move
+      </button>
+    </>
   );
 }
 
@@ -71,6 +86,30 @@ describe("PrefabEditingContext updateComponent", () => {
           expect.objectContaining({
             id: "prefab-mesh",
             properties: expect.objectContaining({ meshKind: "sphere" }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("applyGraphChange with a component local transform", () => {
+    render(
+      <PrefabEditingProvider>
+        <UpdateProbe />
+      </PrefabEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("update-mesh-transform"));
+    expect(applyGraphChange).toHaveBeenCalledWith(
+      "graph:assets/Hero.class.babasset",
+      expect.objectContaining({
+        components: [
+          expect.objectContaining({
+            id: "prefab-mesh",
+            transform: {
+              position: [1, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
           }),
         ],
       }),

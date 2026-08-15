@@ -4,9 +4,11 @@ import type { RenderScheduler } from "./render-scheduler";
 import type { MeshAssetContext } from "./mesh-assets";
 import {
   actorIdFromMeshName,
+  actorVisualFingerprint,
   applyActorTransform,
+  applyComponentChildTransforms,
   createActorMesh,
-  editorMeshKindOf,
+  visualMeshesOfActorRoot,
 } from "./scene-loader";
 import { syncAuthoredIllumination } from "./scene-illumination";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
@@ -85,7 +87,7 @@ export class EditorSceneSync {
 
     for (const actor of sceneData.actors) {
       this.liveIds.add(actor.id);
-      const kind = editorMeshKindOf(actor);
+      const kind = actorVisualFingerprint(actor);
       let mesh = this.meshes.get(actor.id);
       if (mesh && this.meshKinds.get(actor.id) !== kind) {
         mesh.dispose();
@@ -97,18 +99,22 @@ export class EditorSceneSync {
         this.meshKinds.set(actor.id, kind);
       }
       applyActorTransform(mesh, actor);
+      applyComponentChildTransforms(mesh, actor);
       applyEditorBillboardFromActor(mesh, actor);
+      for (const child of visualMeshesOfActorRoot(mesh)) {
+        applyEditorBillboardFromActor(child, actor);
+      }
 
       const sorting = spriteSortingOf(actor);
       if (sorting) {
-        applySortingToMesh(
-          mesh,
-          resolveSortingLayer(
-            this.sortingLayers,
-            sorting.layer,
-            sorting.orderInLayer,
-          ),
+        const layer = resolveSortingLayer(
+          this.sortingLayers,
+          sorting.layer,
+          sorting.orderInLayer,
         );
+        for (const target of visualMeshesOfActorRoot(mesh)) {
+          applySortingToMesh(target, layer);
+        }
       }
     }
 
@@ -148,6 +154,11 @@ export class EditorSceneSync {
 
   meshForActor(actorId: string): Mesh | null {
     return this.meshes.get(actorId) ?? null;
+  }
+
+  visualMeshesForActor(actorId: string): Mesh[] {
+    const mesh = this.meshes.get(actorId);
+    return mesh ? visualMeshesOfActorRoot(mesh) : [];
   }
 
   actorForMesh(meshName: string): string | null {

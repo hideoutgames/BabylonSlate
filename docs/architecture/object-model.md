@@ -54,7 +54,7 @@ Search and Add Component advertise shipped behaviour: `TilemapComponent` is adda
 
 See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
 
-`createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, transforms, and component properties — so Play can instantiate the authored document without the editor touching Babylon.
+`createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, actor transforms, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon.
 
 ## ScriptInterface dispatch
 

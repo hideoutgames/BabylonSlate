@@ -10,6 +10,8 @@ import {
   previewSceneFor,
   reparentPrefabComponents,
   componentSubtreeIds,
+  applyPrefabComponentTransform,
+  applyPrefabPivotDelta,
 } from "./prefab-preview";
 
 describe("prefabComponentsFromGraph", () => {
@@ -32,8 +34,23 @@ describe("prefabComponentsFromGraph", () => {
         classId: "MeshComponent",
         properties: { ...mesh.properties },
         parentId: null,
+        transform: mesh.transform,
       },
     ]);
+  });
+
+  it("copies authored local transforms onto spawned components", () => {
+    const mesh = {
+      ...createMeshComponent("prefab-mesh", "box"),
+      transform: {
+        position: [3, 0, 1] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    expect(instantiatePrefabComponents([mesh], "hero")[0]?.transform).toEqual(
+      mesh.transform,
+    );
   });
 
   it("remaps nested parentIds onto the spawned actor", () => {
@@ -88,25 +105,121 @@ describe("componentSubtreeIds", () => {
 });
 
 describe("previewSceneFor", () => {
-  it("builds a one-actor preview scene from prefab components", () => {
-    const mesh = createMeshComponent("prefab-mesh", "box");
-    const scene = previewSceneFor([mesh]);
+  it("builds a preview actor per component plus Prefab Root at the origin", () => {
+    const mesh = {
+      ...createMeshComponent("prefab-mesh", "box"),
+      transform: {
+        position: [2, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    const child = {
+      ...createMeshComponent("child-mesh", "sphere"),
+      parentId: "prefab-mesh",
+    };
+    const scene = previewSceneFor([mesh, child]);
     expect(scene.name).toBe("Prefab preview");
-    expect(scene.actors).toHaveLength(1);
-    expect(scene.actors[0]?.id).toBe("prefab-root");
-    expect(scene.actors[0]?.components).toEqual([mesh]);
+    expect(scene.actors.map((actor) => actor.id)).toEqual([
+      PREFAB_ROOT_ID,
+      "prefab-mesh",
+      "child-mesh",
+    ]);
+    expect(scene.actors[0]?.transform.position).toEqual([0, 0, 0]);
+    expect(scene.actors[0]?.parentId).toBeNull();
+    expect(scene.actors[0]?.components[0]?.properties.meshKind).toBe("pivot");
+    expect(scene.actors[1]?.transform).toEqual(mesh.transform);
+    expect(scene.actors[1]?.parentId).toBeNull();
+    expect(scene.actors[1]?.components).toHaveLength(1);
+    expect(scene.actors[1]?.components[0]).toMatchObject({
+      id: "prefab-mesh",
+      classId: "MeshComponent",
+      parentId: null,
+      properties: { meshKind: "box" },
+    });
+    expect(scene.actors[1]?.components[0]?.transform).toEqual({
+      position: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    });
+    expect(scene.actors[2]?.parentId).toBe("prefab-mesh");
+    expect(scene.actors[2]?.transform).toEqual(child.transform);
   });
 });
 
 describe("prefab viewport pick", () => {
-  it("selects Prefab Root on a hit and clears on a miss", () => {
-    expect(prefabSelectedIdFromPick(PREFAB_ROOT_ID)).toBe(PREFAB_ROOT_ID);
-    expect(prefabSelectedIdFromPick(null)).toBeNull();
+  const componentIds = new Set(["prefab-mesh", "child-mesh"]);
+
+  it("selects Prefab Root or a component on a hit and clears on a miss", () => {
+    expect(prefabSelectedIdFromPick(PREFAB_ROOT_ID, componentIds)).toBe(
+      PREFAB_ROOT_ID,
+    );
+    expect(prefabSelectedIdFromPick("prefab-mesh", componentIds)).toBe(
+      "prefab-mesh",
+    );
+    expect(prefabSelectedIdFromPick("unknown", componentIds)).toBeNull();
+    expect(prefabSelectedIdFromPick(null, componentIds)).toBeNull();
   });
 
-  it("attaches the gizmo only while something is selected", () => {
+  it("attaches the gizmo to the selected preview actor", () => {
     expect(prefabSelectedActorIds(null)).toEqual([]);
     expect(prefabSelectedActorIds(PREFAB_ROOT_ID)).toEqual([PREFAB_ROOT_ID]);
-    expect(prefabSelectedActorIds("prefab-mesh")).toEqual([PREFAB_ROOT_ID]);
+    expect(prefabSelectedActorIds("prefab-mesh")).toEqual(["prefab-mesh"]);
+  });
+});
+
+describe("applyPrefabComponentTransform", () => {
+  it("writes a local transform onto the matching component", () => {
+    const mesh = createMeshComponent("prefab-mesh", "box");
+    const next = applyPrefabComponentTransform(mesh ? [mesh] : [], "prefab-mesh", {
+      position: [1, 2, 3],
+      rotation: [0, 0, 0, 1],
+      scale: [2, 2, 2],
+    });
+    expect(next[0]?.transform).toEqual({
+      position: [1, 2, 3],
+      rotation: [0, 0, 0, 1],
+      scale: [2, 2, 2],
+    });
+  });
+});
+
+describe("applyPrefabPivotDelta", () => {
+  it("offsets root-level locals by the inverse helper translation and leaves nested locals", () => {
+    const root = {
+      ...createMeshComponent("root", "box"),
+      transform: {
+        position: [2, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    const nested = {
+      ...createMeshComponent("child", "sphere"),
+      parentId: "root",
+      transform: {
+        position: [4, 1, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    const next = applyPrefabPivotDelta([root, nested], {
+      position: [1, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    });
+    expect(next[0]?.transform?.position).toEqual([1, 0, 0]);
+    expect(next[1]?.transform?.position).toEqual([4, 1, 0]);
+  });
+
+  it("returns the same list when the helper is identity", () => {
+    const mesh = createMeshComponent("prefab-mesh", "box");
+    expect(
+      applyPrefabPivotDelta([mesh], {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+      }),
+    ).toEqual([mesh]);
   });
 });

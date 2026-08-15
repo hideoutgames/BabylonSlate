@@ -13,7 +13,8 @@ import {
   type Light,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
-import type { SerializedActor, SerializedScene } from "@babylonslate/core";
+import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";
+import { identitySerializedTransform } from "@babylonslate/core";
 import { DEFAULT_LIGHT_INTENSITY } from "./viewport";
 import type { MeshAssetContext } from "./mesh-assets";
 
@@ -112,6 +113,27 @@ function actorRotation(actor: SerializedActor): Quaternion {
   return new Quaternion(x, y, z, w);
 }
 
+function composeActorComponentTransform(
+  actor: SerializedActor,
+  component: SerializedComponent | undefined,
+): { position: Vector3; rotation: Quaternion } {
+  const local = component?.transform ?? identitySerializedTransform();
+  const parentPos = actorPosition(actor);
+  const parentRot = actorRotation(actor);
+  const [sx, sy, sz] = actor.transform.scale;
+  const localPos = new Vector3(
+    local.position[0] * sx,
+    local.position[1] * sy,
+    local.position[2] * sz,
+  );
+  const rotated = localPos.applyRotationQuaternion(parentRot);
+  const [lx, ly, lz, lw] = local.rotation;
+  return {
+    position: parentPos.add(rotated),
+    rotation: parentRot.multiply(new Quaternion(lx, ly, lz, lw)),
+  };
+}
+
 export function actorForwardFromRotation(rotation: {
   x: number;
   y: number;
@@ -121,11 +143,6 @@ export function actorForwardFromRotation(rotation: {
   return Vector3.Forward().applyRotationQuaternion(
     new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
   );
-}
-
-function actorForward(actor: SerializedActor): Vector3 {
-  const [x, y, z, w] = actor.transform.rotation;
-  return actorForwardFromRotation({ x, y, z, w });
 }
 
 function lightKindOf(component: { properties: Record<string, unknown> }): string {
@@ -178,29 +195,42 @@ function detachCameraInputs(camera: UniversalCamera): void {
 function createLight(
   scene: Scene,
   actor: SerializedActor,
+  component: SerializedComponent,
   kind: string,
 ): Light {
   const name = `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
-  const position = actorPosition(actor);
-  const direction = actorForward(actor);
+  const composed = composeActorComponentTransform(actor, component);
+  const direction = actorForwardFromRotation(composed.rotation);
   if (kind === "directional") {
     const light = new DirectionalLight(name, direction, scene);
-    light.position.copyFrom(position);
+    light.position.copyFrom(composed.position);
     return light;
   }
   if (kind === "spot") {
-    return new SpotLight(name, position, direction, Math.PI / 3, 2, scene);
+    return new SpotLight(
+      name,
+      composed.position,
+      direction,
+      Math.PI / 3,
+      2,
+      scene,
+    );
   }
-  return new PointLight(name, position, scene);
+  return new PointLight(name, composed.position, scene);
 }
 
-function createCamera(scene: Scene, actor: SerializedActor): UniversalCamera {
+function createCamera(
+  scene: Scene,
+  actor: SerializedActor,
+  component: SerializedComponent,
+): UniversalCamera {
+  const composed = composeActorComponentTransform(actor, component);
   const camera = new UniversalCamera(
     `${AUTHORED_CAMERA_PREFIX}${actor.id}`,
-    actorPosition(actor),
+    composed.position,
     scene,
   );
-  camera.rotationQuaternion = actorRotation(actor);
+  camera.rotationQuaternion = composed.rotation;
   detachCameraInputs(camera);
   return camera;
 }
@@ -349,25 +379,28 @@ export function syncAuthoredIllumination(
         light = undefined;
       }
       if (!light) {
-        light = createLight(scene, actor, kind);
+        light = createLight(scene, actor, lightComponent, kind);
         state.lights.set(actor.id, light);
         state.lightKinds.set(actor.id, kind);
       }
       applyAuthoredLightProperties(light, lightComponent.properties);
-      updateAuthoredLightTransform(
-        light,
-        {
-          x: actor.transform.position[0],
-          y: actor.transform.position[1],
-          z: actor.transform.position[2],
-        },
-        {
-          x: actor.transform.rotation[0],
-          y: actor.transform.rotation[1],
-          z: actor.transform.rotation[2],
-          w: actor.transform.rotation[3],
-        },
-      );
+      {
+        const composed = composeActorComponentTransform(actor, lightComponent);
+        updateAuthoredLightTransform(
+          light,
+          {
+            x: composed.position.x,
+            y: composed.position.y,
+            z: composed.position.z,
+          },
+          {
+            x: composed.rotation.x,
+            y: composed.rotation.y,
+            z: composed.rotation.z,
+            w: composed.rotation.w,
+          },
+        );
+      }
       if (lightComponent.properties.castShadows === true) {
         shadowCandidates.push(actor.id);
       }
@@ -379,24 +412,27 @@ export function syncAuthoredIllumination(
       liveCameras.add(actor.id);
       let camera = state.cameras.get(actor.id);
       if (!camera) {
-        camera = createCamera(scene, actor);
+        camera = createCamera(scene, actor, cameraComponent);
         state.cameras.set(actor.id, camera);
       }
       applyAuthoredCameraProperties(camera, cameraComponent.properties);
-      updateAuthoredCameraTransform(
-        camera,
-        {
-          x: actor.transform.position[0],
-          y: actor.transform.position[1],
-          z: actor.transform.position[2],
-        },
-        {
-          x: actor.transform.rotation[0],
-          y: actor.transform.rotation[1],
-          z: actor.transform.rotation[2],
-          w: actor.transform.rotation[3],
-        },
-      );
+      {
+        const composed = composeActorComponentTransform(actor, cameraComponent);
+        updateAuthoredCameraTransform(
+          camera,
+          {
+            x: composed.position.x,
+            y: composed.position.y,
+            z: composed.position.z,
+          },
+          {
+            x: composed.rotation.x,
+            y: composed.rotation.y,
+            z: composed.rotation.z,
+            w: composed.rotation.w,
+          },
+        );
+      }
     }
   }
 

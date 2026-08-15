@@ -230,4 +230,8 @@ export function useSceneEditing(): SceneEditingContextValue {
   }
   return context;
 }
+
+export function useOptionalSceneEditing(): SceneEditingContextValue | null {
+  return useContext(SceneEditingContext);
+}
 /* eslint-enable react-refresh/only-export-components */

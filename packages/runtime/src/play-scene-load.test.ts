@@ -127,6 +127,62 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("emits assignMesh.parts for a two-mesh actor", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/parts.scene.babasset",
+        scene: {
+          name: "Parts",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          actors: [
+            createActor("hero", "Hero", {
+              components: [
+                createMeshComponent("box", "box"),
+                {
+                  ...createMeshComponent("sphere", "sphere"),
+                  transform: {
+                    position: [2, 0, 0],
+                    rotation: [0, 0, 0, 1],
+                    scale: [1, 1, 1],
+                  },
+                },
+              ],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    const meshAssign = commands.filter((c) => c.type === "assignMesh");
+    expect(meshAssign).toHaveLength(1);
+    expect(meshAssign[0]).toMatchObject({
+      type: "assignMesh",
+      slotId: 0,
+      meshKind: "box",
+    });
+    expect(meshAssign[0]).toEqual(
+      expect.objectContaining({
+        parts: [
+          expect.objectContaining({
+            componentId: "box",
+            meshKind: "box",
+            position: [0, 0, 0],
+          }),
+          expect.objectContaining({
+            componentId: "sphere",
+            meshKind: "sphere",
+            position: [2, 0, 0],
+          }),
+        ],
+      }),
+    );
+    runtime.stop();
+  });
+
   it("emits light and Default Camera properties on assignMesh", () => {
     const commands: CommandMessage[] = [];
     const settings = createDefaultSceneSettings();

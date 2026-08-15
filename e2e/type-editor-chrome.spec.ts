@@ -160,6 +160,29 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(child).toHaveAttribute("data-depth", "2");
   });
 
+  test("selecting a prefab component shows Position Rotation and Scale", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("tree-row-prefab-mesh")).toBeVisible();
+    await page.getByTestId("tree-row-prefab-mesh").click();
+    await expect(
+      page.getByTestId("property-vector3-prefab-mesh-position"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("property-vector3-prefab-mesh-rotation"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("property-vector3-prefab-mesh-scale"),
+    ).toBeVisible();
+  });
+
   test("dirty Class tab close prompts Save / Discard / Cancel", async ({
     page,
   }) => {
