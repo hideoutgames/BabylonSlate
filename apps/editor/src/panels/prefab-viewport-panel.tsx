@@ -39,7 +39,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
   const joystickLeaseRef = useRef<(() => void) | null>(null);
-  const { components, selectedId, setSelectedId } = usePrefabEditing();
+  const { components, selectedId, setSelectedId, updateComponentTransform } =
+    usePrefabEditing();
   const {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
@@ -59,6 +60,12 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const { registerScheduler, playing } = usePlay();
   const setSelectedIdRef = useRef(setSelectedId);
   setSelectedIdRef.current = setSelectedId;
+  const componentsRef = useRef(components);
+  componentsRef.current = components;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const updateComponentTransformRef = useRef(updateComponentTransform);
+  updateComponentTransformRef.current = updateComponentTransform;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -68,7 +75,18 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       viewportMode,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       onPickActor: (actorId) => {
-        setSelectedIdRef.current(prefabSelectedIdFromPick(actorId));
+        const ids = new Set(componentsRef.current.map((component) => component.id));
+        setSelectedIdRef.current(prefabSelectedIdFromPick(actorId, ids));
+      },
+      onGizmoDragEnd: () => {
+        const live = engineRef.current?.editor?.attachedActorTransform();
+        const selected = selectedIdRef.current;
+        if (!live || !selected || selected === PREFAB_ROOT_ID) return;
+        updateComponentTransformRef.current(selected, {
+          position: live.position,
+          rotation: live.rotation,
+          scale: live.scale,
+        });
       },
     });
     engineRef.current = handle;

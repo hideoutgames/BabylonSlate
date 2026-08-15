@@ -123,28 +123,89 @@ export function reparentPrefabComponents(
   );
 }
 
-/** Viewport tap: the preview actor, or nothing on empty space. */
+/** Viewport tap: Prefab Root, a component actor, or nothing on empty space. */
 export function prefabSelectedIdFromPick(
   actorId: string | null,
+  componentIds: ReadonlySet<string>,
 ): string | null {
-  return actorId === PREFAB_ROOT_ID ? PREFAB_ROOT_ID : null;
+  if (actorId == null) return null;
+  if (actorId === PREFAB_ROOT_ID) return PREFAB_ROOT_ID;
+  return componentIds.has(actorId) ? actorId : null;
 }
 
-/**
- * Gizmo attachment for the single preview mesh. Components have no local
- * transform, so a tree-selected component still gizmos the prefab root.
- */
+/** Gizmo attaches to the selected preview actor (component or Prefab Root). */
 export function prefabSelectedActorIds(selectedId: string | null): string[] {
-  return selectedId == null ? [] : [PREFAB_ROOT_ID];
+  return selectedId == null ? [] : [selectedId];
 }
 
-/** Preview scene holding the prefab's components on a single actor. */
+export function applyPrefabComponentTransform(
+  components: readonly SerializedComponent[],
+  componentId: string,
+  transform: {
+    position: [number, number, number];
+    rotation: [number, number, number, number];
+    scale: [number, number, number];
+  },
+): SerializedComponent[] {
+  return components.map((component) =>
+    component.id === componentId
+      ? {
+          ...component,
+          transform: {
+            position: [...transform.position] as [number, number, number],
+            rotation: [...transform.rotation] as [
+              number,
+              number,
+              number,
+              number,
+            ],
+            scale: [...transform.scale] as [number, number, number],
+          },
+        }
+      : component,
+  );
+}
+
+function previewVisualComponent(
+  component: SerializedComponent,
+): SerializedComponent {
+  return {
+    ...component,
+    parentId: null,
+    transform: identitySerializedTransform(),
+  };
+}
+
+function prefabRootPreviewActor() {
+  return createActor(PREFAB_ROOT_ID, "Prefab Root", {
+    components: [
+      {
+        id: `${PREFAB_ROOT_ID}-marker`,
+        classId: "MeshComponent",
+        properties: { meshKind: "pivot", assetGuid: null },
+        parentId: null,
+        transform: identitySerializedTransform(),
+      },
+    ],
+  });
+}
+
+/** Preview: Prefab Root at the origin plus one actor per component. */
 export function previewSceneFor(
   components: SerializedComponent[],
 ): SerializedScene {
   return {
     ...createDefaultScene(),
     name: "Prefab preview",
-    actors: [createActor(PREFAB_ROOT_ID, "Prefab", { components })],
+    actors: [
+      prefabRootPreviewActor(),
+      ...components.map((component) =>
+        createActor(component.id, component.classId, {
+          parentId: component.parentId ?? null,
+          transform: component.transform ?? identitySerializedTransform(),
+          components: [previewVisualComponent(component)],
+        }),
+      ),
+    ],
   };
 }

@@ -6,11 +6,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { SerializedComponent, SerializedGraph } from "@babylonslate/core";
-import { identitySerializedTransform } from "@babylonslate/core";
+import {
+  identitySerializedTransform,
+  type SerializedComponent,
+  type SerializedGraph,
+  type SerializedTransform,
+} from "@babylonslate/core";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import {
+  applyPrefabComponentTransform,
   componentSubtreeIds,
   nextPrefabComponentId,
   prefabComponentsFromGraph,
@@ -30,6 +35,10 @@ interface PrefabEditingContextValue {
     componentId: string,
     property: string,
     value: unknown,
+  ) => void;
+  updateComponentTransform: (
+    componentId: string,
+    transform: SerializedTransform,
   ) => void;
 }
 
@@ -112,6 +121,13 @@ export function PrefabEditingProvider({
     [components, persist],
   );
 
+  const updateComponentTransform = useCallback(
+    (componentId: string, transform: SerializedTransform) => {
+      persist(applyPrefabComponentTransform(components, componentId, transform));
+    },
+    [components, persist],
+  );
+
   const value = useMemo(
     () => ({
       components,
@@ -121,6 +137,7 @@ export function PrefabEditingProvider({
       removeSelected,
       reparentComponent,
       updateComponent,
+      updateComponentTransform,
     }),
     [
       addComponent,
@@ -129,6 +146,7 @@ export function PrefabEditingProvider({
       reparentComponent,
       selectedId,
       updateComponent,
+      updateComponentTransform,
     ],
   );
 
