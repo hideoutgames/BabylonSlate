@@ -7,7 +7,9 @@ import {
   filterBabpluginFiles,
   inboundRefsFromOtherRoots,
   isBabpluginFile,
+  isPluginDocumentReadOnly,
   isPluginSettingsReadOnly,
+  playSceneLibraryPaths,
   mergePluginEditorUtilityObjects,
   pluginDependencyStatus,
   pluginEnableNeedsConfirm,
@@ -235,5 +237,50 @@ describe("plugin editor utilities and class paths", () => {
       "assets/Hero.class.babasset",
       "plugins/pack/assets/PackActor.class.babasset",
     ]);
+  });
+
+  it("lists Scene assets from every mounted root for Play changescene", () => {
+    expect(
+      playSceneLibraryPaths(["assets/main.scene.babasset"], [
+        { path: "assets/main.scene.babasset", header: { type: "Scene" } },
+        {
+          path: "plugins/pack/assets/Arena.scene.babasset",
+          header: { type: "Scene" },
+        },
+        {
+          path: "__unresolved__/missing",
+          placeholder: true,
+          header: { type: "Scene" },
+        },
+        { path: "assets/Hero.class.babasset", header: { type: "Class" } },
+      ]),
+    ).toEqual([
+      "assets/main.scene.babasset",
+      "plugins/pack/assets/Arena.scene.babasset",
+    ]);
+  });
+
+  it("treats engine plugin documents as read-only", () => {
+    const plugins = [
+      {
+        folderPath: "starter-content",
+        settingsPath: "starter-content/starter-content.plugin.babasset",
+        readOnly: true,
+      },
+      {
+        folderPath: "plugins/pack",
+        settingsPath: "plugins/pack/pack.plugin.babasset",
+        readOnly: false,
+      },
+    ];
+    expect(
+      isPluginDocumentReadOnly(
+        plugins,
+        "starter-content/assets/StarterActor.class.babasset",
+      ),
+    ).toBe(true);
+    expect(
+      isPluginDocumentReadOnly(plugins, "plugins/pack/assets/Hero.class.babasset"),
+    ).toBe(false);
   });
 });

@@ -13,7 +13,7 @@ plugins/<folder>/assets/                  # content root (own .blobs)
 
 **`.babplugin` zip** uses the same codec as `.babproject` with `kind: "plugin"` ([containers.md](containers.md)). `plugin.json` is that **container manifest only**, derived from PluginSettings at export. In-project discovery scans for `type: "PluginSettings"`; it does **not** require `plugin.json` on disk.
 
-**Engine plugins** live in repo `engine-plugins/` (directory form in git). Vite packs each folder to `public/engine-plugins/<id>.babplugin` plus `index.json`. The editor fetches the index and unpacks into a **separate** Memory `ProjectStorage` that stays **read-only**. **New projects** (empty / 2D scaffold and `createFromTemplate`) copy each engine plugin into `plugins/<folder>/` with the **same guids** so the copy is editable. A project plugin with guid X **shadows** the engine plugin with guid X (one Project Settings row). Opening an existing project does not copy. Deleting the project copy unmasks the engine original again.
+**Engine plugins** live in repo `engine-plugins/` (directory form in git). Vite packs each folder to `public/engine-plugins/<id>.babplugin` plus `index.json`. The editor fetches the index and unpacks into a **separate** Memory `ProjectStorage` wrapped read-only (`createReadOnlyProjectStorage` — writes throw). **New projects** (empty / 2D scaffold and `createFromTemplate`) copy each engine plugin into `plugins/<folder>/` with the **same guids** so the copy is editable. Copies keep `enabledByDefault: false` so the user still enables them to mount. A project plugin with guid X **shadows** the engine plugin with guid X (one Project Settings row). Opening an existing project does not copy. Deleting the project copy unmasks the engine original again.
 
 First engine plugin: `engine-plugins/starter-content/` — display name **Starter Content**, `enabledByDefault: false`, Actor class **StarterActor**, Lucide `Puzzle`, no artwork. Stable guids: plugin `c0ffee00-0000-4000-8000-000000000001`, class `c0ffee00-0000-4000-8000-000000000002`. `UPDATE_GOLDENS=1` rewrites the committed directory from `buildStarterContentFiles()`.
 
@@ -60,7 +60,7 @@ Override guids with **no discovered plugin** become Unresolved placeholders. Dis
 - **Export Plugin** — `encodeProjectZip` with `kind: "plugin"`, PluginSettings, `assets/`, per-plugin blobs. Download path matches Export Project.
 - **Import Plugin** — unpack under `plugins/<safeName>/`. Dedupe by **plugin guid + version**; same guid+version → Keep / Replace; same guid newer/older version → update in place; guid remap only if the incoming PluginSettings guid collides with a **different** plugin (or another occupied guid). `.babplugin` files are never listed as assets.
 - **Export Project** remains a full backup (includes disabled project plugins on disk).
-- `collectEnabledPluginAssets(registry, enabledGuids)` is the P14 tree-shake helper; disabled roots are absent.
+- `collectEnabledPluginAssets(registry, enabledGuids)` is the P14 tree-shake helper; disabled roots are absent. Packed itch export still lands in P14.
 
 ## Editor ScriptHost
 

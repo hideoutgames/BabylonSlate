@@ -43,6 +43,12 @@ describe("loadEnginePluginStorage", () => {
     expect(
       await storage.exists("starter-content/assets/StarterActor.class.babasset"),
     ).toBe(true);
+    await expect(
+      storage.writeBinary(
+        "starter-content/assets/hack.class.babasset",
+        new Uint8Array([1]),
+      ),
+    ).rejects.toThrow(/read-only/i);
   });
 
   it("returns empty storage when the index is missing", async () => {

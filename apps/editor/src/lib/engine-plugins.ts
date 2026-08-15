@@ -2,7 +2,10 @@ import {
   discoverEnginePlugins,
   unpackEnginePluginZip,
 } from "@babylonslate/assets";
-import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import {
+  MemoryStorageAdapter,
+  createReadOnlyProjectStorage,
+} from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
 
 export const ENGINE_PLUGIN_INDEX_FILE = "index.json";
@@ -54,7 +57,7 @@ export async function loadEnginePluginStorage(options: {
     );
     if (!response.ok) {
       lastEnginePluginLoad.errors.push(`index ${response.status}`);
-      return storage;
+      return createReadOnlyProjectStorage(storage);
     }
     entries = parseIndex(await response.json());
     lastEnginePluginLoad.entries = entries.length;
@@ -62,7 +65,7 @@ export async function loadEnginePluginStorage(options: {
     lastEnginePluginLoad.errors.push(
       `index ${error instanceof Error ? error.message : String(error)}`,
     );
-    return storage;
+    return createReadOnlyProjectStorage(storage);
   }
   for (const entry of entries) {
     try {
@@ -83,7 +86,7 @@ export async function loadEnginePluginStorage(options: {
       continue;
     }
   }
-  return storage;
+  return createReadOnlyProjectStorage(storage);
 }
 
 let cachedEnginePluginStorage: ProjectStorage | null = null;
