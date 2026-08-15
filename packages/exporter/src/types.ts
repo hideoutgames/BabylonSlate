@@ -7,6 +7,8 @@ export type ExportIndexedAsset = {
   guid: string;
   type: string;
   name: string;
+  /** Asset path; UserInterface logic compiles from this so class ids match overlay Play. */
+  path?: string;
   parentClass?: string | null;
   dependencies: string[];
   rootId: string;

@@ -23,6 +23,7 @@ export type PackedGameContent = {
   behaviourTrees: Array<{ guid: string; document: unknown }>;
   blackboards: Array<{ guid: string; document: unknown }>;
   navmeshBytes: Uint8Array | null;
+  navmeshByScene: Map<string, Uint8Array>;
   pixelsPerUnit: number;
   pixelPerfect: boolean;
 };
@@ -92,7 +93,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   }
 
   const startup = game.manifest.startupSceneGuid;
-  const navmeshBytes = game.navmeshBytes.get(startup) ?? null;
+  const navmeshByScene = new Map(game.navmeshBytes);
+  const navmeshBytes = navmeshByScene.get(startup) ?? null;
   const pixelsPerUnit =
     typeof game.manifest.pixelsPerUnit === "number" && game.manifest.pixelsPerUnit > 0
       ? game.manifest.pixelsPerUnit
@@ -106,6 +108,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     behaviourTrees,
     blackboards,
     navmeshBytes,
+    navmeshByScene,
     pixelsPerUnit,
     pixelPerfect: game.manifest.pixelPerfect === true,
   };

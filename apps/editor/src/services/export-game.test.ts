@@ -256,7 +256,12 @@ describe("collectAndExportGame", () => {
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({ guid: "ui-1", type: "UserInterface", name: "HUD" }),
+        asset({
+          guid: "ui-1",
+          type: "UserInterface",
+          name: "Status",
+          path: "assets/HUD.ui.babasset",
+        }),
       ],
       plugins: [],
       projectPluginOverrides: {},

@@ -11,6 +11,14 @@ export interface InputCaptureHandle {
   dispose: () => void;
 }
 
+/** Tick stamp for canvas events. In-process uses World.clock; worker uses last stats tick. */
+export function playInputStampTick(
+  inProcessTickIndex: number | undefined,
+  lastWorkerTickIndex: number,
+): number {
+  return inProcessTickIndex ?? lastWorkerTickIndex;
+}
+
 /** Raw input capture on the packaged player canvas. */
 export function attachInputCapture(
   canvas: HTMLCanvasElement,

@@ -39,6 +39,7 @@ export function assetsFromIndexed(
     guid: asset.header.guid,
     type: asset.header.type,
     name: asset.header.name,
+    path: asset.path,
     parentClass: asset.header.parentClass ?? null,
     dependencies: asset.header.dependencies ?? [],
     rootId: asset.rootId,
@@ -157,8 +158,12 @@ export async function collectAndExportGame(
       }
     }
     if (asset.type === "UserInterface") {
+      const uiPath =
+        asset.path && /\.ui\.(babasset|json)$/i.test(asset.path)
+          ? asset.path
+          : `assets/${asset.name}.ui.babasset`;
       const uiGraph = logicGraphFromUiPayload(
-        `assets/${asset.name}.ui.babasset`,
+        uiPath,
         params.payloadByGuid?.(guid) ?? null,
       );
       if (uiGraph) graphDocs.push(uiGraph);

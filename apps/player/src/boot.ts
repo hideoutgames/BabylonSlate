@@ -16,7 +16,7 @@ import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import type { LoadedGame } from "./artifact";
 import { packedContentFromGame, packedPlayControls } from "./hydrate";
-import { attachInputCapture } from "./input";
+import { attachInputCapture, playInputStampTick } from "./input";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 
@@ -46,13 +46,6 @@ function havokWasmUrl(): string {
 
 function ktx2BasePath(): string {
   return new URL("./ktx2/", document.baseURI).href;
-}
-
-function playInputStampTick(
-  inProcessTickIndex: number | undefined,
-  lastWorkerTickIndex: number,
-): number {
-  return inProcessTickIndex ?? lastWorkerTickIndex;
 }
 
 export type PlayerDiagnostic = {
@@ -220,7 +213,9 @@ export function startPlayer(options: {
     if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {
       boot.queueNavMesh(runtime, content.navmeshBytes);
     }
-    void boot.play(runtime);
+    void boot.play(runtime).catch((error) => {
+      runtime.reportError(error);
+    });
   }
 
   const input = attachInputCapture(canvas);

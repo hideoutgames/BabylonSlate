@@ -32,7 +32,7 @@ Not `header.dependencies` alone — scene saves often leave those empty.
 5. Recurse to a fixed point. Drop EditorUtilityObject / EditorUtilityInterface / PluginSettings (`isEditorOnlyAsset`).
 6. Scene library keys in the pack are **asset guids** (overlay Play may keep path-based document ids).
 
-Release zip compiles Class/Graph **and UserInterface `logic`** with `compileGraphDocumentsForExport` (skips Inspector **Development Only**). Preview Build and a preset with `bundleDebugger: true` keep those nodes. UI graphs use path `assets/<name>.ui.babasset` so `classIdForGraphPath` matches overlay Play.
+Release zip compiles Class/Graph **and UserInterface `logic`** with `compileGraphDocumentsForExport` (skips Inspector **Development Only**). Preview Build and a preset with `bundleDebugger: true` keep those nodes. UI graphs compile from the asset path (`assets/<name>.ui.babasset`) so `classIdForGraphPath` matches overlay Play.
 
 Textures: pack only `selectTextureChunk`’s chosen variant (KTX2 when present). Scene `navmesh` extra chunks pack as sidecar assets (`type: "NavMesh"`, guid `navmesh:<sceneGuid>`) so they do not collide with the Scene JSON guid.
 
