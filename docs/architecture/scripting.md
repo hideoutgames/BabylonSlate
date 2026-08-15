@@ -128,7 +128,7 @@ type Diagnostic = {
 | --- | --- |
 | Edit (≈300ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
-| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; Play loads the **open scene tab** and the scene `gameInstanceClass`. No scene tab → Play disabled. Plugin EUO sweep still later polish |
+| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; Play loads the **open scene tab** and the scene `gameInstanceClass`. No scene tab → Play disabled. Enabled plugin Class graphs participate via `registry.list()`; plugin EUOs stay on the editor ScriptHost ([plugins.md](plugins.md)) |
 | Export | Hard gate + export-only rules (Print strip, debug-tier commands) |
 | CI | Golden fixture projects |
 

@@ -35,7 +35,7 @@ magic "BABA" (4) | version u32 LE | headerLen u32 LE | header JSON (utf8) | chun
 | `sha256` | Content hash (hex) |
 | `locator` | Either `{ "inline": { offset, length } }` or `{ "blob": "<sha256>" }` |
 
-Inline locators point at byte ranges after the header. Blob locators name `assets/.blobs/<sha256>` inside a project. Chunks above the externalise threshold use blob locators by default when saving thin assets; bundled mode always inlines.
+Inline locators point at byte ranges after the header. Blob locators name `{pathPrefix}/.blobs/<sha256>` inside that content root (the project root keeps `assets/.blobs`). Plugin roots use `plugins/<folder>/assets/.blobs` so a `.babplugin` is self-contained. Chunks above the externalise threshold use blob locators by default when saving thin assets; bundled mode always inlines.
 
 ### Header-only read
 
@@ -64,12 +64,16 @@ One logical tree, two backends behind one codec, parameterized by **manifest kin
 
 ```
 MyGame.babproject/          (directory)  or  MyGame.babproject (zip)
-  project.json              # or plugin.json for kind=plugin
+  project.json              # kind=project
   layout.json               # editor dock layout (projects only)
   assets/                   # .babasset tree = Content Browser tree
     .blobs/                 # content-addressed immutable chunks
-  plugins/                  # project plugins (kind=project only)
+  plugins/<folder>/         # project plugins (kind=project only)
+    <name>.plugin.babasset  # PluginSettings (identity = asset guid)
+    assets/                 # plugin content root + .blobs
 ```
+
+`.babplugin` zip (kind=plugin): `plugin.json` + PluginSettings + `assets/` (no `layout.json`). `plugin.json` is the **zip manifest only** — in-project discovery scans for `type: "PluginSettings"`. Detail: [plugins.md](plugins.md).
 
 - **Directory backend** — incremental writes (iPad Documents / external folder / desktop).
 - **Zip backend** — single-file zip (`fflate`); used for web Export Project and interchange.

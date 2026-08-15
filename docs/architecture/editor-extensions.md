@@ -19,11 +19,13 @@ Editor-only types that never ship in Play or export. Spec: [engineplan.md](../en
 
 ## Project Settings
 
-`ProjectSettings.editorUtilityObjects` is a unique list of class ids. The General page adds classes via `ClassPicker` filtered to the EditorUtilityObject lineage. Only those classes load into the in-process editor `ScriptHost`.
+`ProjectSettings.editorUtilityObjects` is a unique list of class ids. The General page adds classes via `ClassPicker` filtered to the EditorUtilityObject lineage.
+
+Enabled plugins also contribute class ids from `PluginSettings.editorUtilityObjects`. The editor ScriptHost boots the merge (`mergePluginEditorUtilityObjects`) — plugin EUOs register on the plugin, not the project list, so enabling the plugin is the single switch. See [plugins.md](plugins.md).
 
 ## Editor ScriptHost
 
-Not the Play worker. On project open it compiles registered EUO graphs and fires `onEditorStartup`. If a scene tab is already restored, it then fires `onSceneOpen`. Opening a scene later fires `onSceneOpen`; saving a scene fires `onSceneSaved`; closing the project fires `onEditorShutdown` once (the window event clears the started flag so host cleanup does not double-fire). Changing the Project Settings **EditorUtilityObject list** disposes the host (`onEditorShutdown`) and boots the new list — unrelated `project.json` edits and Content Browser refreshes do not. Play compile (`collectPlayScriptDocuments`) drops EUO class graphs and never merges EUI `logic` into the HUD library (UserInterface only). Packed game export (P14) reuses `isEditorOnlyAsset`; project zip backup (`exportZip`) keeps editor tools.
+Not the Play worker. On project open it compiles registered EUO graphs (project list **plus** enabled plugin lists) and fires `onEditorStartup`. If a scene tab is already restored, it then fires `onSceneOpen`. Opening a scene later fires `onSceneOpen`; saving a scene fires `onSceneSaved`; closing the project fires `onEditorShutdown` once (the window event clears the started flag so host cleanup does not double-fire). Changing the Project Settings **EditorUtilityObject list** or enabling/disabling a plugin that registers EUOs disposes the host (`onEditorShutdown`) and boots the new list — unrelated `project.json` edits and Content Browser refreshes do not. Play compile (`collectPlayScriptDocuments`) drops EUO class graphs and never merges EUI `logic` into the HUD library (UserInterface only). Packed game export (P14) reuses `isEditorOnlyAsset` (PluginSettings is editor-only); project zip backup (`exportZip`) keeps editor tools.
 
 ## Authoring
 

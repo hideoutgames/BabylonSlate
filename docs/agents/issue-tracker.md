@@ -442,7 +442,20 @@ Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live 
 
 **Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one Dockview designer host (`p12-ui-editors`): Design / Hierarchy / Details / Logic, editing-stage widgets paint on a healthy Engine, EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
 
-Do not start leftover chrome polish (pin flash, multi-select gizmo). Plugin EUOs are P13.
+Do not start leftover chrome polish (pin flash, multi-select gizmo).
+
+## P13 plugins
+
+Spec: [engineplan.md](../engineplan.md) §10, Appendix A `p13-*`. Design note: [plugins.md](../architecture/plugins.md).
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| PluginSettings + PluginHost | Done (`p13-plugin-model`) | `core`, `assets` | P12 done |
+| Settings UI + Show Plugin Content | Done (`p13-plugin-settings-ui`) | `apps/editor`, `editor-kit` | plugin model |
+| `.babplugin` export/import | Done (`p13-babplugin`) | `assets`, `apps/editor` | plugin model |
+| Starter Content + e2e | Done (`p13-engine-plugin`) | `engine-plugins/`, `apps/editor`, `e2e/p13-plugins.spec.ts` | `.babplugin` |
+
+**P13 is Done.** Native plugins, marketplace, packed itch export (`p14-*`), and Content Browser drag between roots are out of scope (cross-root move is a design note in `plugins.md`).
 
 
 
