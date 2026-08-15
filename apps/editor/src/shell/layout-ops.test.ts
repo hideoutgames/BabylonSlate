@@ -72,6 +72,8 @@ describe("resolveFocusKeepPanelIds", () => {
       "script-interface-preview",
     ]);
     expect(resolveFocusKeepPanelIds("sprite", [])).toEqual(["sprite-preview"]);
+    expect(resolveFocusKeepPanelIds("tileset", [])).toEqual(["tileset-preview"]);
+    expect(resolveFocusKeepPanelIds("tilemap", [])).toEqual(["tilemap-paint"]);
     expect(resolveFocusKeepPanelIds("ui", [])).toEqual(["ui-design"]);
   });
 

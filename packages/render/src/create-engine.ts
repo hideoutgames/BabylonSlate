@@ -120,6 +120,8 @@ export interface CreateEngineOptions {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   pixelsPerUnit?: number;
+  /** Project `twoD.pixelPerfect` — snap the Play camera, not the editor camera. */
+  pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Model source bytes keyed by Model asset guid. */
@@ -248,6 +250,7 @@ export function createEngine(
   binding.tilemaps = options.tilemapPayloads;
   binding.tilesets = options.tilesetPayloads;
   binding.pixelsPerUnit = options.pixelsPerUnit;
+  binding.pixelPerfect = options.pixelPerfect === true;
   binding.spritePayloads = options.spritePayloads;
   binding.textureBytes = options.textureBytes;
   binding.modelBytes = options.modelBytes;

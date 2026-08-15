@@ -82,6 +82,26 @@ export function tilesetAtlasColumns(tileset: TilesetPayload): number {
   return Math.max(1, Math.floor(usable / stride));
 }
 
+export function tilesetAtlasRows(tileset: TilesetPayload): number {
+  const stride = tileset.tileHeight + tileset.spacing;
+  if (stride <= 0) return 1;
+  const usable = tileset.atlasHeight - 2 * tileset.margin + tileset.spacing;
+  return Math.max(1, Math.floor(usable / stride));
+}
+
+/** Ensure every atlas cell has a tile record so collision/flags/animation can be authored. */
+export function ensureTilesetTiles(tileset: TilesetPayload): TilesetPayload {
+  const count = tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
+  const byId = new Map(tileset.tiles.map((tile) => [tile.id, tile]));
+  const tiles: TilesetTile[] = [];
+  for (let id = 1; id <= count; id++) {
+    tiles.push(
+      byId.get(id) ?? { id, collision: "none", flags: 0, animation: [] },
+    );
+  }
+  return { ...tileset, tiles };
+}
+
 /**
  * Normalized UVs for a 1-based atlas cell. Image-space row 0 is the top of the
  * texture; GL `v=0` is the bottom, so V is flipped.

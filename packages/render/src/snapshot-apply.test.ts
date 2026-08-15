@@ -1,4 +1,4 @@
-import { PointLight, VertexBuffer } from "@babylonjs/core";
+import { Material, PointLight, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
@@ -37,7 +37,10 @@ describe("createPlayMesh", () => {
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
 
     const spriteMesh = createPlayMesh(scene, 1, "sprite", "sprite-1", binding);
-    expect(spriteMesh.material).toBeTruthy();
+    expect(spriteMesh.material).toBeInstanceOf(StandardMaterial);
+    const material = spriteMesh.material as StandardMaterial;
+    expect(material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
+    expect(material.alphaCutOff).toBeCloseTo(0.4);
 
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
     const positions = model.getVerticesData(VertexBuffer.PositionKind);
@@ -162,5 +165,39 @@ describe("createPlayMesh", () => {
       ],
     });
     expect(scene.activeCamera).toBe(binding.cameras.get(1));
+  });
+
+  it("snaps the Play camera to the pixel grid when pixelPerfect is on", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.pixelPerfect = true;
+    binding.pixelsPerUnit = 100;
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: true, projectionMode: "orthographic" },
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 1,
+          position: { x: 0.014, y: 0.026, z: -8 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    const camera = binding.cameras.get(1) as { position: { x: number; y: number } };
+    expect(camera.position.x).toBeCloseTo(0.01, 6);
+    expect(camera.position.y).toBeCloseTo(0.03, 6);
   });
 });

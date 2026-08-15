@@ -21,9 +21,11 @@ export function editorMeshName(actorId: string): string {
 }
 
 export function actorIdFromMeshName(meshName: string): string | null {
-  return meshName.startsWith(EDITOR_ACTOR_MESH_PREFIX)
-    ? meshName.slice(EDITOR_ACTOR_MESH_PREFIX.length)
-    : null;
+  if (!meshName.startsWith(EDITOR_ACTOR_MESH_PREFIX)) return null;
+  const rest = meshName.slice(EDITOR_ACTOR_MESH_PREFIX.length);
+  // Chunk children are `editorActor:<id>:<layer>:<cx>:<cy>` plus optional `:anim`.
+  const chunk = /^(.*):([^:]+):(-?\d+):(-?\d+)(?::anim)?$/.exec(rest);
+  return chunk ? chunk[1]! : rest;
 }
 
 export function clearSceneMeshes(scene: Scene): void {

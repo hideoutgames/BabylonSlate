@@ -39,7 +39,7 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; Tilemap paint tools; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
 
-Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder). **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`) is used inside some asset workspaces (Font; nested modes). UserInterface / Sprite / Enum / Structure / ScriptInterface / Class document shells are DockView, not shadcn Tabs.
+Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder). **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`) is used inside some asset workspaces (Font; nested modes). UserInterface / Sprite / Tileset / Tilemap / Enum / Structure / ScriptInterface / Class document shells are DockView, not shadcn Tabs.
 
 ## Composites (`@babylonslate/editor-kit`)
 
@@ -47,11 +47,11 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results; AnimationGraph Parameters / States / Details columns; live Editor Utility tabs. |
+| **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results; AnimationGraph Parameters / States / Details columns; live Editor Utility tabs; Sprite / Tileset / Tilemap docks. |
 | **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
 | **PropertyGrid** | Typed Details rows: number, vector3 (2–4 axes), boolean, text, enum, color (`ColorField`), slider, flags (`FlagsField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print; action/axis / enumRef defaults), UserInterface widget details (alignment, left/top, width/height, layout padding), Sprite / Tileset / Tilemap / Structure settings, AnimationGraph state and transition Details. |
 | **ColorField** | Native color swatch plus a pasteable `#rrggbb` field. | Light color; Inspector color pin defaults; gallery. |
-| **FlagsField** | Compact 44px bitmask toggles (Layer 0–31 or named labels). | Collider `layer` / `mask`; gallery. |
+| **FlagsField** | Compact 44px bitmask toggles (Layer 0–31 or named labels). | Collider `layer` / `mask`; Tileset tile flags; gallery. |
 | **TreeView** | Flattened touch tree (`--chrome-row` 28px): select, expand, reparent, activate. `reparentArm: "immediate"` starts a parent drag after 8px; `"hold"` (default) waits 250ms so lists can scroll. Disclosure only when `hasChildren`. Trailing controls do not start a drag. | Outliner, Components, and UserInterface widget hierarchy (immediate drag-to-parent); Content Browser sidebar and Move dialog (hold); Class members (trailing **+** on each section). |
 | **NumericDragField** | Scrub-by-drag numeric (axis accent); tap to type. Coalesces undo via begin/end. | PropertyGrid number / vector3 / slider / color; InputMappingEditor axis extras; gallery. |
 | **NumberField** | Numeric text that keeps an empty draft; commits in-range values, restores on blur. | Engine Settings numeric fields (including User Interface custom preset size and safe-area insets); Project Settings autosave, pixels-per-unit, play frame cap; Trace playback frame. |
@@ -61,7 +61,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **AssetPicker** | Asset-guid picker on SearchDialog, optional None row and type filter. | Scene Details mesh / sprite / tilemap / widget / animation-graph rows; Project Settings default font and **Startup Scene**; Font fallbacks; Sprite and Tileset Texture; UserInterface nested UI, image, font, and visual override; AnimationGraph clip (Sprite or Animation). |
 | **ClassPicker** | Class-id picker on SearchDialog (engine + project Class assets). | Scene Game Instance (GameInstance lineage). |
 | **SceneComponentPicker** | SearchDialog picker of components in the open scene; `allowedClassIds` is a source-code filter (no user type dropdown); optional None; button shows actor name + component. | Scene **Default Camera** (`CameraComponent` only). Reuse for other scene-settings that name a component (light, listener). |
-| **NamedListEditor** | Reorderable named string rows (add / remove / up / down, 44px). Optional custom item control or Add-only. | Project Settings sorting layers; Font `fallbackGuids`; ParameterListEditor enum values; AnimationGraph parameters. |
+| **NamedListEditor** | Reorderable named string rows (add / remove / up / down, 44px). Optional custom item control or Add-only. | Project Settings sorting layers; Font `fallbackGuids`; ParameterListEditor enum values; AnimationGraph parameters; Tilemap layers. |
 | **InputMappingEditor** | Actions/axes with bindings, listen-to-bind, device toggles, touch control ids. | Project Settings Input. |
 | **BindingCaptureButton** | Listen-to-bind: next keydown / mouse button / gamepad. | InputMappingEditor bindings. |
 | **NamePromptDialog** | AlertDialog + 44px name field. Replaces `window.prompt`. | Class panel member add; UserInterface Logic members; UserInterface widget rename. |

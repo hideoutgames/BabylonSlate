@@ -7,6 +7,8 @@ export type DockviewDocumentKind =
   | "structure"
   | "script-interface"
   | "sprite"
+  | "tileset"
+  | "tilemap"
   | "ui";
 export type { DockWindowDirection };
 
@@ -17,6 +19,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "structure",
   "script-interface",
   "sprite",
+  "tileset",
+  "tilemap",
   "ui",
 ]);
 
@@ -242,6 +246,34 @@ const SPRITE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const TILESET_WINDOWS: DockWindowDefinition[] = [
+  { id: "tileset-preview", component: "tileset-preview", title: "Preview" },
+  {
+    id: "tileset-details",
+    component: "tileset-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "tileset-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const TILEMAP_WINDOWS: DockWindowDefinition[] = [
+  { id: "tilemap-paint", component: "tilemap-paint", title: "Paint" },
+  {
+    id: "tilemap-details",
+    component: "tilemap-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "tilemap-paint",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
 const UI_WINDOWS: DockWindowDefinition[] = [
   { id: "ui-design", component: "ui-design", title: "Design" },
   {
@@ -296,6 +328,8 @@ export function listDockWindows(
   if (kind === "structure") return STRUCTURE_WINDOWS;
   if (kind === "script-interface") return SCRIPT_INTERFACE_WINDOWS;
   if (kind === "sprite") return SPRITE_WINDOWS;
+  if (kind === "tileset") return TILESET_WINDOWS;
+  if (kind === "tilemap") return TILEMAP_WINDOWS;
   if (kind === "ui") {
     return options?.editorUtilityInterface
       ? [...UI_WINDOWS, UI_SETTINGS_WINDOW]

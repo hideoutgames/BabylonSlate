@@ -11,9 +11,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
 import {
   normalizeFontPayload,
-  normalizeTilesetPayload,
 } from "@babylonslate/assets";
-import { TilemapEditor } from "./tilemap-editor";
 import { AnimGraphEditor } from "./anim-graph-editor";
 import { ShaderGraphEditor } from "./shader-graph-editor";
 import { BehaviourTreeEditor } from "./behaviour-tree-editor";
@@ -51,12 +49,6 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
         onChange={commit}
       />
     );
-  }
-  if (doc.ref.kind === "tileset") {
-    return <TilesetEditor payload={payload} onChange={commit} />;
-  }
-  if (doc.ref.kind === "tilemap") {
-    return <TilemapEditor payload={payload} onChange={commit} />;
   }
   if (doc.ref.kind === "anim-graph") {
     return <AnimGraphEditor payload={payload} onChange={commit} />;
@@ -257,121 +249,6 @@ function FontEditor({
             setFallbackPick(null);
           }}
           data-testid="font-fallback-picker"
-        />
-      </div>
-    </PanelFrame>
-  );
-}
-
-function TilesetEditor({
-  payload,
-  onChange,
-}: {
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}) {
-  const tileset = normalizeTilesetPayload(payload);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const { assetRegistry } = useDocuments();
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
-  return (
-    <PanelFrame className="flex-1" title="Tileset">
-      <div data-testid="tileset-editor">
-        <PropertyGrid
-          rows={[
-            {
-              id: "texture",
-              kind: "asset",
-              label: "Texture",
-              value: tileset.textureGuid,
-              placeholder: "None",
-              onPick: () => setPickerOpen(true),
-              onChange: (value) => onChange({ ...tileset, textureGuid: value }),
-            },
-            {
-              id: "tileWidth",
-              kind: "number",
-              label: "Tile Width",
-              value: tileset.tileWidth,
-              onChange: (value) => onChange({ ...tileset, tileWidth: value }),
-            },
-            {
-              id: "tileHeight",
-              kind: "number",
-              label: "Tile Height",
-              value: tileset.tileHeight,
-              onChange: (value) => onChange({ ...tileset, tileHeight: value }),
-            },
-            {
-              id: "margin",
-              kind: "number",
-              label: "Margin",
-              value: tileset.margin,
-              onChange: (value) => onChange({ ...tileset, margin: value }),
-            },
-            {
-              id: "spacing",
-              kind: "number",
-              label: "Spacing",
-              value: tileset.spacing,
-              onChange: (value) => onChange({ ...tileset, spacing: value }),
-            },
-            {
-              id: "atlasWidth",
-              kind: "number",
-              label: "Atlas Width",
-              value: tileset.atlasWidth,
-              onChange: (value) => onChange({ ...tileset, atlasWidth: value }),
-            },
-            {
-              id: "atlasHeight",
-              kind: "number",
-              label: "Atlas Height",
-              value: tileset.atlasHeight,
-              onChange: (value) => onChange({ ...tileset, atlasHeight: value }),
-            },
-            {
-              id: "collision",
-              kind: "enum",
-              label: "Tile Collision",
-              value:
-                tileset.tiles[0]?.collision === "full"
-                  ? "full"
-                  : tileset.tiles[0]?.collision === "none" ||
-                      !tileset.tiles[0]
-                    ? "none"
-                    : "full",
-              options: [
-                { value: "none", label: "None" },
-                { value: "full", label: "Full" },
-              ],
-              onChange: (value) =>
-                onChange({
-                  ...tileset,
-                  tiles: tileset.tiles.map((tile, index) =>
-                    index === 0
-                      ? { ...tile, collision: value === "full" ? "full" : "none" }
-                      : tile,
-                  ),
-                }),
-            },
-          ]}
-        />
-        <AssetPicker
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          assets={assets}
-          allowedTypes={["Texture"]}
-          onPick={(guid) => {
-            onChange({ ...tileset, textureGuid: guid });
-            setPickerOpen(false);
-          }}
-          data-testid="tileset-texture-picker"
         />
       </div>
     </PanelFrame>

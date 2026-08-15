@@ -127,6 +127,23 @@ describe("applyTilemapPaint", () => {
     expect(getTile(next, "layer-1", 2, 0)).toBe(3);
   });
 
+  it("keeps a bucket fill inside the AABB of existing chunks", () => {
+    const next = applyTilemapPaint(
+      mapWithTiles([[0, 0, 0]], 4),
+      {
+        tool: "bucket",
+        layerId: "layer-1",
+        tileId: 9,
+        start: { x: 0, y: 0 },
+        end: { x: 0, y: 0 },
+      },
+    );
+    expect(getTile(next, "layer-1", 0, 0)).toBe(9);
+    expect(getTile(next, "layer-1", 3, 3)).toBe(9);
+    expect(getTile(next, "layer-1", 4, 0)).toBe(0);
+    expect(getTile(next, "layer-1", 0, 4)).toBe(0);
+  });
+
   it("stamps a bottom-left origin pattern", () => {
     const next = applyTilemapPaint(createDefaultTilemapPayload(), {
       tool: "stamp",

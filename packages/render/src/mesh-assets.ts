@@ -1,5 +1,6 @@
 import {
   Color3,
+  Material,
   StandardMaterial,
   Texture,
   type Mesh,
@@ -42,6 +43,9 @@ export function applyAlbedoTexture(
   material.diffuseTexture = texture;
   material.emissiveTexture = texture;
   material.emissiveColor = Color3.White();
+  texture.hasAlpha = true;
+  material.transparencyMode = Material.MATERIAL_ALPHATEST;
+  material.alphaCutOff = 0.4;
   mesh.material = material;
   for (const child of mesh.getChildMeshes()) {
     child.material = material;

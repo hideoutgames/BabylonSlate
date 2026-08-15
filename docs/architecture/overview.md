@@ -51,7 +51,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 ## Data flow today
 
 - **Lifecycle**: Homepage opens/creates a `.babproject`; editor shell only runs against an open project.
-- **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. The global **Windows** menu toggles dock panels for the active DockView document (Scene, Class, Enum, Structure, ScriptInterface, Sprite, UserInterface / EditorUtilityInterface, …) and stores last **addPanel-relative** placements in `layout.json`. New asset editors must be DockView documents — see [Asset document docks](#asset-document-docks).
+- **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. The global **Windows** menu toggles dock panels for the active DockView document (Scene, Class, Enum, Structure, ScriptInterface, Sprite, Tileset, Tilemap, UserInterface / EditorUtilityInterface, …) and stores last **addPanel-relative** placements in `layout.json`. New asset editors must be DockView documents — see [Asset document docks](#asset-document-docks).
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
 - **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only).
 - **Global search**: `ProjectSearchIndex` (same package) may load Scene/Graph document JSON for actors/nodes; it must not load binary payloads. Toolbar Search opens a centered dialog; see [global-search.md](global-search.md).

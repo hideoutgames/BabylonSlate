@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultTilesetPayload,
+  ensureTilesetTiles,
   normalizeTilesetPayload,
   tilesetAtlasColumns,
+  tilesetAtlasRows,
   tilesetTileUv,
 } from "./tileset-payload";
 
@@ -64,6 +66,31 @@ describe("tileset payload", () => {
       v0: 0,
       u1: 0.25,
       v1: 0.5,
+    });
+  });
+
+  it("fills missing atlas cells so every tile can be authored", () => {
+    const tileset = ensureTilesetTiles(
+      normalizeTilesetPayload({
+        atlasWidth: 32,
+        atlasHeight: 16,
+        tileWidth: 16,
+        tileHeight: 16,
+        tiles: [{ id: 1, collision: "full", flags: 2, animation: [1, 2] }],
+      }),
+    );
+    expect(tilesetAtlasRows(tileset)).toBe(1);
+    expect(tileset.tiles.map((tile) => tile.id)).toEqual([1, 2]);
+    expect(tileset.tiles[0]).toMatchObject({
+      collision: "full",
+      flags: 2,
+      animation: [1, 2],
+    });
+    expect(tileset.tiles[1]).toMatchObject({
+      id: 2,
+      collision: "none",
+      flags: 0,
+      animation: [],
     });
   });
 });

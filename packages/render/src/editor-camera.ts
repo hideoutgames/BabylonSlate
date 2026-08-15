@@ -3,7 +3,6 @@ import type { ViewportMode } from "@babylonslate/core";
 import type { RenderScheduler } from "./render-scheduler";
 import {
   pixelPerfectOrthoHalfHeight,
-  snapToPixelGrid,
   type PixelPerfectSettings,
 } from "./pixel-perfect";
 
@@ -135,10 +134,6 @@ export function createEditorCamera(
       pixelPerfect.pixelsPerUnit,
       pixelZoom,
     );
-    // A camera sitting between pixels smears every sprite, so the target is
-    // pinned to the pixel grid whenever pixel-perfect framing is on.
-    camera.target.x = snapToPixelGrid(camera.target.x, pixelPerfect.pixelsPerUnit);
-    camera.target.y = snapToPixelGrid(camera.target.y, pixelPerfect.pixelsPerUnit);
   };
 
   const applyOrthoBounds = () => {
@@ -224,16 +219,6 @@ export function createEditorCamera(
     if (mode === "2d") {
       camera.target.x += right;
       camera.target.y += forward;
-      if (pixelPerfect) {
-        camera.target.x = snapToPixelGrid(
-          camera.target.x,
-          pixelPerfect.pixelsPerUnit,
-        );
-        camera.target.y = snapToPixelGrid(
-          camera.target.y,
-          pixelPerfect.pixelsPerUnit,
-        );
-      }
       invalidate();
       return;
     }
@@ -295,16 +280,6 @@ export function createEditorCamera(
       const up = camera.getDirection(Vector3.Up());
       camera.target.addInPlace(right.scaleInPlace(deltaX));
       camera.target.addInPlace(up.scaleInPlace(deltaY));
-      if (pixelPerfect && mode === "2d") {
-        camera.target.x = snapToPixelGrid(
-          camera.target.x,
-          pixelPerfect.pixelsPerUnit,
-        );
-        camera.target.y = snapToPixelGrid(
-          camera.target.y,
-          pixelPerfect.pixelsPerUnit,
-        );
-      }
       invalidate();
     },
     zoom: (factor: number) => {

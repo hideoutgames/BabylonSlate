@@ -162,6 +162,66 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
+  it("Rapier closed chain colliders catch traces on every rectangle edge", async () => {
+    const backend = await createPhysicsBackend({
+      kind: "2d",
+      gravity: { x: 0, y: 0, z: 0 },
+    });
+    backend.createBody({
+      id: "ground",
+      actorId: "actor-ground",
+      motionType: "static",
+      mass: 0,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 0,
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    });
+    backend.createCollider({
+      id: "loop",
+      bodyId: "ground",
+      shape: {
+        kind: "chain",
+        loop: true,
+        points: [
+          { x: 0, y: 0 },
+          { x: 2, y: 0 },
+          { x: 2, y: 2 },
+          { x: 0, y: 2 },
+        ],
+      },
+      friction: 0.5,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+    });
+    const left = backend.lineTrace(
+      { x: -1, y: 1, z: 0 },
+      { x: 1, y: 1, z: 0 },
+    );
+    const right = backend.lineTrace(
+      { x: 3, y: 1, z: 0 },
+      { x: 1, y: 1, z: 0 },
+    );
+    const top = backend.lineTrace(
+      { x: 1, y: 3, z: 0 },
+      { x: 1, y: 1, z: 0 },
+    );
+    const bottom = backend.lineTrace(
+      { x: 1, y: -1, z: 0 },
+      { x: 1, y: 1, z: 0 },
+    );
+    expect(left?.hit).toBe(true);
+    expect(right?.hit).toBe(true);
+    expect(top?.hit).toBe(true);
+    expect(bottom?.hit).toBe(true);
+    backend.dispose();
+  });
+
   it("lazy factory loads only Rapier for 2d worlds", async () => {
     resetLoadedBackendModules();
     const backend = await createPhysicsBackend({

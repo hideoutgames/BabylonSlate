@@ -200,18 +200,18 @@ export function DocumentWorkspace() {
           );
         }
 
-        if (doc.ref.kind === "sprite") {
+        if (doc.ref.kind === "sprite" || doc.ref.kind === "tileset" || doc.ref.kind === "tilemap") {
           if (!shouldMount) return null;
           return (
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
                 <div
                   className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                  data-testid="document-workspace-sprite"
+                  data-testid={`document-workspace-${doc.ref.kind}`}
                 >
                   <RegisteredDockviewShell
                     id={id}
-                    documentKind="sprite"
+                    documentKind={doc.ref.kind}
                     initialLayout={doc.layout}
                   />
                 </div>

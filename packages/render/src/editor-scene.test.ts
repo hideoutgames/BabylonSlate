@@ -522,6 +522,27 @@ describe("EditorSceneSync", () => {
     expect(sync.actorForMesh("actor-2")).toBeNull();
   });
 
+  it("maps a tilemap chunk child name back to the actor", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("ground", "Ground", {
+          components: [
+            {
+              id: "tm",
+              classId: "TilemapComponent",
+              properties: { assetGuid: "map-1" },
+            },
+          ],
+        }),
+      ]),
+    );
+    expect(
+      sync.actorForMesh("editorActor:ground:layer-1:0:0"),
+    ).toBe("ground");
+  });
+
   it("marks the viewport dirty on every applied edit", () => {
     const { scene } = createHandle();
     const scheduler = new RenderScheduler();
