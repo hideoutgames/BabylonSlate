@@ -159,7 +159,12 @@ export interface RuntimeDriver {
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
-  invokeScriptEvent(classId: string, event: string): void;
+  invokeScriptEvent(
+    classId: string,
+    event: string,
+    self?: Actor | null,
+    args?: Record<string, unknown>,
+  ): void;
   registerUserCommand(def: UserCommandDef): void;
   bindUserCommand(
     def: Omit<UserCommandDef, "run"> & { classId: string },
@@ -717,8 +722,13 @@ class InProcessRuntime implements RuntimeDriver {
     return this.commands.execute(command, this.consoleHost());
   }
 
-  invokeScriptEvent(classId: string, event: string): void {
-    this.scriptHost.invokeEvent(classId, event);
+  invokeScriptEvent(
+    classId: string,
+    event: string,
+    self?: Actor | null,
+    args?: Record<string, unknown>,
+  ): void {
+    this.scriptHost.invokeEvent(classId, event, self ?? null, args ?? {});
   }
 
   registerUserCommand(def: UserCommandDef): void {

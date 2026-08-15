@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   AssetPicker,
   FUNCTION_PIN_PICKER_TYPES,
+  PIN_PICKER_TYPES,
   PanelFrame,
   ParameterListEditor,
   PinListEditor,
@@ -517,6 +518,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
 
   const isExecJs = selectedNode.type === "debug.executeJavaScript";
   const isCommandRun = selectedNode.type === "flow.event.commandRun";
+  const isCustomEvent = selectedNode.type === "flow.event.custom";
   const isLog = selectedNode.type === "debug.log";
   const inputs = Array.isArray(selectedNode.data.inputs)
     ? (selectedNode.data.inputs as Array<{ name: string; type?: unknown }>)
@@ -533,6 +535,30 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         enumValues?: unknown;
       }>)
     : [];
+  const eventMember = isCustomEvent
+    ? (graph.members ?? []).find(
+        (member) =>
+          member.kind === "event" &&
+          (member.id === selectedNode.id ||
+            member.name === selectedNode.data.name),
+      )
+    : undefined;
+  const eventOutputRows: PinListRow[] = (
+    eventMember?.pins ??
+    (Array.isArray(selectedNode.data.pins)
+      ? (selectedNode.data.pins as Array<{
+          name?: string;
+          typeId?: string;
+          direction?: string;
+        }>)
+      : [])
+  )
+    .filter((pin) => pin.direction !== "in" && pin.name)
+    .map((pin, index) => ({
+      id: `${selectedNode.id}-out-${index}`,
+      name: String(pin.name),
+      type: pin.typeId ?? "float",
+    }));
   const title =
     typeof selectedNode.data.title === "string" && selectedNode.data.title
       ? selectedNode.data.title
@@ -674,6 +700,30 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               }
             />
           </>
+        ) : null}
+        {isCustomEvent ? (
+          <PinListEditor
+            title="Outputs"
+            rows={eventOutputRows}
+            types={PIN_PICKER_TYPES}
+            testIdPrefix="event-out"
+            data-testid="inspector-event-outputs"
+            onChange={(rows) => {
+              const pins = rows.map((row) => ({
+                name: row.name,
+                typeId: String(row.type),
+                direction: "out" as const,
+              }));
+              if (eventMember) {
+                void applyGraphChange(
+                  documentId,
+                  patchClassMember(graph, eventMember.id, { pins }),
+                );
+                return;
+              }
+              updateNodeData({ pins });
+            }}
+          />
         ) : null}
       </div>
     </PanelFrame>

@@ -49,14 +49,18 @@ export function resolveInspectorNodeId(
 export function GraphEditingProvider({
   children,
   initialSelectedMemberId = null,
+  initialSelectedNodeIds = [],
   initialActiveFunctionId = null,
 }: {
   children: ReactNode;
   initialSelectedMemberId?: string | null;
+  initialSelectedNodeIds?: string[];
   initialActiveFunctionId?: string | null;
 }) {
   const setPrefabSelectedId = useOptionalPrefabEditing()?.setSelectedId;
-  const [selectedNodeIds, setSelectedNodeIdsState] = useState<string[]>([]);
+  const [selectedNodeIds, setSelectedNodeIdsState] = useState<string[]>(
+    initialSelectedNodeIds,
+  );
   const [selectedMemberId, setSelectedMemberIdState] = useState<string | null>(
     initialSelectedMemberId,
   );

@@ -2,32 +2,8 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  FLOAT,
-  BOOL,
-  INT,
-  STRING,
 } from "@babylonslate/scripting";
-
-function pinTypeForMember(typeId: string | undefined) {
-  switch (typeId) {
-    case "exec":
-      return EXEC;
-    case "bool":
-      return BOOL;
-    case "int":
-      return INT;
-    case "string":
-    case "enum":
-      return STRING;
-    default:
-      return FLOAT;
-  }
-}
-
-function jsIdent(name: string): string {
-  const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
-  return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
-}
+import { jsIdent, pinTypeForMember } from "./member-pins";
 
 export const functionCallNodes: NodeDefinition[] = [
   {

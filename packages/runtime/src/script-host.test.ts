@@ -463,6 +463,131 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("passes invokeEvent args through custom event output pins", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "hit", "flow.event.custom", {
+          name: "On Hit",
+          pins: [{ name: "amount", typeId: "float", direction: "out" }],
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "hit", "execOut", "log", "execIn"),
+        edge("e2", "hit", "amount", "log", "message"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 5,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([toScript(graph, registry, "Hero", "hero-asset")]);
+    runtime.invokeScriptEvent("Hero", "On_Hit", undefined, { amount: 9 });
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("9");
+    runtime.stop();
+  });
+
+  it("Call Custom Event on Begin Play fires the class event with pin defaults", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "flow.event.call", {
+          name: "On Hit",
+          classId: "Hero",
+          implicitSelf: true,
+          pins: [{ name: "amount", typeId: "float", direction: "out" }],
+          "default:amount": 4,
+        }),
+        node(registry, "hit", "flow.event.custom", {
+          name: "On Hit",
+          pins: [{ name: "amount", typeId: "float", direction: "out" }],
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "call", "execIn"),
+        edge("e2", "hit", "execOut", "log", "execIn"),
+        edge("e3", "hit", "amount", "log", "message"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 6,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([toScript(graph, registry, "Hero", "hero-asset")]);
+    runtime.spawnScriptedActor({ classId: "Hero" });
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("4");
+    runtime.stop();
+  });
+
+  it("Call Custom Event on a spawned Target instance passes args to that class", async () => {
+    const registry = createDefaultNodeRegistry();
+    const guardGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "alert", "flow.event.custom", {
+          name: "On Alert",
+          pins: [{ name: "amount", typeId: "float", direction: "out" }],
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "alert", "execOut", "log", "execIn"),
+        edge("e2", "alert", "amount", "log", "message"),
+      ],
+    };
+    const callerGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "call", "flow.event.call", {
+          name: "On Alert",
+          classId: "Guard",
+          implicitSelf: false,
+          pins: [{ name: "amount", typeId: "float", direction: "out" }],
+          "default:amount": 5,
+        }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "spawn", "execIn"),
+        edge("e2", "spawn", "execOut", "call", "execIn"),
+        edge("e3", "spawn", "out", "call", "target"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 7,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(guardGraph, registry, "Guard", "guard-asset"),
+      toScript(callerGraph, registry, "Caller", "caller-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Caller" });
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("5");
+    runtime.stop();
+  });
+
   it("GetAxis2D Move from the resolver moves the actor on Tick", async () => {
     const registry = createDefaultNodeRegistry();
     const jsProps = {
