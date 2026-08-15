@@ -23,4 +23,25 @@ describe("registerPackedFonts", () => {
     expect(typeof sources[0]).not.toBe("string");
     expect(added).toHaveLength(1);
   });
+
+  it("registers FontFace with the authored family name when provided", async () => {
+    const families: string[] = [];
+    class FakeFontFace {
+      constructor(family: string) {
+        families.push(family);
+      }
+      async load() {
+        return this;
+      }
+    }
+    await registerPackedFonts(
+      new Map([["font-1", new Uint8Array([1])]]),
+      {
+        FontFace: FakeFontFace as unknown as typeof FontFace,
+        fonts: { add: () => {} } as unknown as FontFaceSet,
+      },
+      new Map([["font-1", "Display"]]),
+    );
+    expect(families).toEqual(["Display"]);
+  });
 });

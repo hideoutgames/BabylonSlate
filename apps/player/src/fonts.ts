@@ -15,13 +15,16 @@ function defaultHost(): PackedFontHost | null {
 
 export async function registerPackedFonts(
   fontBytes: Map<string, Uint8Array>,
-  host: PackedFontHost | null = defaultHost(),
+  host?: PackedFontHost | null,
+  families?: ReadonlyMap<string, string>,
 ): Promise<void> {
-  if (!host) return;
+  const resolved = host === undefined ? defaultHost() : host;
+  if (!resolved) return;
   for (const [guid, bytes] of fontBytes) {
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
-    const face = new host.FontFace(guid, copy);
-    host.fonts.add(await face.load());
+    const family = families?.get(guid)?.trim() || guid;
+    const face = new resolved.FontFace(family, copy);
+    resolved.fonts.add(await face.load());
   }
 }

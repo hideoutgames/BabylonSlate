@@ -1,4 +1,10 @@
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import { snapshotFloatCount, type ScriptBundleEntry } from "@babylonslate/bridge";
+import { encodeInputEvents } from "@babylonslate/input";
+import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
+import {
+  parseBehaviourTreeDocument,
+  parseBlackboardDocument,
+} from "@babylonslate/behaviour-tree";
 import {
   createPlayBootCoordinator,
   createRuntimeFromLoad,
@@ -9,6 +15,8 @@ import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import type { LoadedGame } from "./artifact";
+import { packedContentFromGame, packedPlayControls } from "./hydrate";
+import { attachInputCapture } from "./input";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 
@@ -38,6 +46,13 @@ function havokWasmUrl(): string {
 
 function ktx2BasePath(): string {
   return new URL("./ktx2/", document.baseURI).href;
+}
+
+function playInputStampTick(
+  inProcessTickIndex: number | undefined,
+  lastWorkerTickIndex: number,
+): number {
+  return inProcessTickIndex ?? lastWorkerTickIndex;
 }
 
 export type PlayerDiagnostic = {
@@ -73,11 +88,17 @@ export function startPlayer(options: {
   if (!scene) {
     throw new Error("Set Startup Scene in Project Settings.");
   }
+  const content = packedContentFromGame(game);
 
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
     maxActors: 256,
     frameCap: manifest.playFrameCap,
+    spritePayloads: content.spritePayloads,
+    tilemapPayloads: content.tilemapPayloads,
+    tilesetPayloads: content.tilesetPayloads,
+    pixelsPerUnit: content.pixelsPerUnit,
+    pixelPerfect: content.pixelPerfect,
     textureBytes: game.textureBytes,
     modelBytes: game.modelBytes,
     environmentColor: scene.settings.environmentColor,
@@ -113,6 +134,7 @@ export function startPlayer(options: {
 
   const spawn = spawnListForScripts(game.scripts);
   let ticks = 0;
+  let lastWorkerTickIndex = 0;
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   const diagnostics: PlayerDiagnostic[] = [];
@@ -129,6 +151,7 @@ export function startPlayer(options: {
     }
     if (command.type === "stats") {
       ticks = Number(command.tickIndex ?? ticks + 1);
+      lastWorkerTickIndex = ticks;
       options.onStats?.({
         ticks,
         fps: Number(command.fps ?? 0),
@@ -162,6 +185,9 @@ export function startPlayer(options: {
         spawn,
       });
     }
+    for (const control of packedPlayControls(content)) {
+      worker.postControl(control);
+    }
     worker.postControl({ type: "play" });
   } catch {
     worker = null;
@@ -172,12 +198,66 @@ export function startPlayer(options: {
     if (game.scripts.length > 0) {
       boot.queueScripts(runtime, game.scripts, spawn);
     }
+    for (const entry of content.animGraphs) {
+      const document = parseAnimGraphDocument(entry.document);
+      if (document) runtime.registerAnimGraph(entry.guid, document);
+    }
+    for (const entry of content.behaviourTrees) {
+      const document = parseBehaviourTreeDocument(entry.document);
+      if (document) runtime.registerBehaviourTree(entry.guid, document);
+    }
+    for (const entry of content.blackboards) {
+      const document = parseBlackboardDocument(entry.document);
+      if (document) runtime.registerBlackboard(entry.guid, document);
+    }
+    if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
+      runtime.registerTileContent({
+        tilemaps: content.tilemapPayloads,
+        tilesets: content.tilesetPayloads,
+        pixelsPerUnit: content.pixelsPerUnit,
+      });
+    }
+    if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {
+      boot.queueNavMesh(runtime, content.navmeshBytes);
+    }
     void boot.play(runtime);
   }
+
+  const input = attachInputCapture(canvas);
+  const snapBuf = new Float32Array(snapshotFloatCount(256));
+  let last = performance.now();
+  let raf = 0;
+
+  const pump = () => {
+    const now = performance.now();
+    const elapsed = (now - last) / 1000;
+    last = now;
+    const tick = playInputStampTick(
+      runtime?.getWorld().clock.tickIndex,
+      lastWorkerTickIndex,
+    );
+    input.setTick(tick);
+    input.pollGamepads();
+    const drained = input.ring.drain();
+    if (drained.length > 0) {
+      if (worker) worker.pushInput(drained);
+      else if (runtime) runtime.pushInputBuffer(encodeInputEvents(drained));
+    }
+    if (runtime) {
+      runtime.advance(elapsed);
+      if (runtime.copySnapshot(snapBuf)) {
+        handle.pushSnapshot(snapBuf);
+      }
+    }
+    raf = requestAnimationFrame(pump);
+  };
+  raf = requestAnimationFrame(pump);
 
   return {
     ticks: () => ticks,
     stop: () => {
+      cancelAnimationFrame(raf);
+      input.dispose();
       worker?.terminate();
       runtime?.stop();
       handle.dispose();
