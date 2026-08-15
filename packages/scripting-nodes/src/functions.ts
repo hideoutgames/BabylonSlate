@@ -7,6 +7,7 @@ import {
 import {
   jsIdent,
   memberPinRows,
+  objectLiteralKey,
   pinTypeForMember,
 } from "./member-pins";
 
@@ -60,7 +61,48 @@ export const functionCallNodes: NodeDefinition[] = [
         typeof ctx.node.properties.functionName === "string"
           ? ctx.node.properties.functionName
           : "fn";
-      ctx.emit(`${jsIdent(raw)}(ctx);`);
+      const functionName = jsIdent(raw);
+      const targetPin = ctx.node.pins.find(
+        (entry) => entry.name === "target" && entry.direction === "in",
+      );
+      const targetConnected =
+        !!targetPin &&
+        ctx.graph.edges.some(
+          (edge) =>
+            edge.targetNodeId === ctx.node.id &&
+            edge.targetPinId === targetPin.id,
+        );
+      const targetExpr =
+        !targetPin ||
+        (!targetConnected && ctx.node.properties.implicitSelf === true)
+          ? "ctx.self"
+          : ctx.input("target");
+      const args: string[] = [];
+      for (const pinDef of ctx.node.pins) {
+        if (
+          pinDef.direction !== "in" ||
+          pinDef.kind === "exec" ||
+          pinDef.name === "target"
+        ) {
+          continue;
+        }
+        args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.name)}`);
+      }
+      const call = `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}, { ${args.join(", ")} })`;
+      const outPins = ctx.node.pins.filter(
+        (pinDef) => pinDef.direction === "out" && pinDef.kind === "data",
+      );
+      if (outPins.length === 0) {
+        ctx.emit(`${call};`);
+        return;
+      }
+      const assigns = outPins
+        .map(
+          (pinDef) =>
+            `${objectLiteralKey(pinDef.name)}: ${ctx.output(pinDef.name)}`,
+        )
+        .join(", ");
+      ctx.emit(`({ ${assigns} } = ${call} ?? {});`);
     },
   },
 ];

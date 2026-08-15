@@ -1,6 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { BOOL, EXEC, FLOAT, objectRef } from "@babylonslate/scripting";
+import {
+  BOOL,
+  EXEC,
+  FLOAT,
+  compileGraph,
+  objectRef,
+  type GraphNode,
+  type LogicGraph,
+  type NodeRegistry,
+} from "@babylonslate/scripting";
+import { createDefaultNodeRegistry } from "./index";
 import { flowNodes } from "./flow";
+
+function node(
+  registry: NodeRegistry,
+  id: string,
+  typeId: string,
+  properties: Record<string, unknown> = {},
+): GraphNode {
+  const def = registry.get(typeId);
+  if (!def) throw new Error(`missing node ${typeId}`);
+  return {
+    id,
+    typeId,
+    position: { x: 0, y: 0 },
+    pins: def.pins(properties),
+    properties,
+  };
+}
 
 describe("flow nodes", () => {
   it("exports at least one node definition", () => {
@@ -127,5 +154,47 @@ describe("flow nodes", () => {
     expect(otherPins?.find((pin) => pin.id === "target")?.type).toEqual(
       objectRef("Guard"),
     );
+  });
+
+  it("compiles function Output data pins as a return object", () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "height", typeId: "float", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+      { name: "result", typeId: "float", direction: "out" },
+    ];
+    const graph: LogicGraph = {
+      id: "Jump",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins }),
+        node(registry, "out", "flow.function.output", { pins }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "in",
+          sourcePinId: "exec",
+          targetNodeId: "out",
+          targetPinId: "then",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "in",
+          sourcePinId: "height",
+          targetNodeId: "out",
+          targetPinId: "result",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      exportName: "Jump",
+    });
+    expect(compiled.source).toMatch(/return\s*\{/);
+    expect(compiled.source).toContain("result");
+    expect(compiled.source).toContain("ctx.args");
   });
 });

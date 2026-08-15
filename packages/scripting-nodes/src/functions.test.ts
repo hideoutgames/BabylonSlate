@@ -110,7 +110,7 @@ describe("functions.call", () => {
     );
   });
 
-  it("compiles to a sanitized JS identifier call", () => {
+  it("compiles implicit-self Call Function to invokeFunction with ctx.self", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -119,10 +119,15 @@ describe("functions.call", () => {
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "call", "functions.call", {
           functionName: "2 Jump!",
+          classId: "Hero",
+          implicitSelf: true,
           pins: [
             { name: "exec", typeId: "exec", direction: "in" },
+            { name: "height", typeId: "float", direction: "in" },
             { name: "then", typeId: "exec", direction: "out" },
+            { name: "result", typeId: "float", direction: "out" },
           ],
+          "default:height": 4,
         }),
       ],
       edges: [
@@ -136,7 +141,62 @@ describe("functions.call", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("_2_Jump_(ctx);");
+    expect(compiled.source).toContain("ctx.invokeFunction");
+    expect(compiled.source).toContain("ctx.self");
+    expect(compiled.source).toContain('"_2_Jump_"');
+    expect(compiled.source).toContain("height");
+    expect(compiled.source).toContain("4");
+    expect(compiled.source).toMatch(/result:/);
+    expect(compiled.source).not.toContain("_2_Jump_(ctx);");
+  });
+
+  it("compiles a wired Call Function Target to invokeFunction input, not ctx.self", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "call", "functions.call", {
+          functionName: "Alert",
+          classId: "Guard",
+          implicitSelf: false,
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+          ],
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "spawn",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "spawn",
+          sourcePinId: "execOut",
+          targetNodeId: "call",
+          targetPinId: "exec",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "spawn",
+          sourcePinId: "out",
+          targetNodeId: "call",
+          targetPinId: "target",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toMatch(
+      /ctx\.invokeFunction\([^,]*spawn[^,]*,\s*"Alert"/,
+    );
+    expect(compiled.source).not.toMatch(/ctx\.invokeFunction\(\s*ctx\.self\s*,/);
   });
 
   it("falls back to fn when functionName is missing", () => {
@@ -146,7 +206,7 @@ describe("functions.call", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "call", "functions.call", {}),
+        node(registry, "call", "functions.call", { implicitSelf: true }),
       ],
       edges: [
         {
@@ -159,6 +219,6 @@ describe("functions.call", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("fn(ctx);");
+    expect(compiled.source).toContain('ctx.invokeFunction(ctx.self, "fn"');
   });
 });
