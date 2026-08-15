@@ -91,6 +91,31 @@ export function applyFocusLayout(
   }
 }
 
+export interface RestorableDockApi {
+  fromJSON: (layout: never) => void;
+}
+
+/**
+ * Restore a saved DockView snapshot, or build the catalog default.
+ * Older catalog JSON can throw from `fromJSON`; fall back rather than
+ * unmounting the editor.
+ */
+export function restoreDockviewLayout(
+  api: RestorableDockApi,
+  layout: Record<string, unknown> | null | undefined,
+  createDefault: () => void,
+): void {
+  if (layout) {
+    try {
+      api.fromJSON(layout as never);
+      return;
+    } catch {
+      // Stale layout.json from an older panel catalog.
+    }
+  }
+  createDefault();
+}
+
 /** Drop retired panels and restack Class under Components. */
 export function migrateRestoredLayout(api: FocusableDockApi): void {
   api.getPanel("mini-asset-browser")?.api.close();

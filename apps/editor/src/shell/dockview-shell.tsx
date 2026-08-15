@@ -8,7 +8,7 @@ import "dockview-react/dist/styles/dockview.css";
 import "./dockview-theme.css";
 import { useCallback, useRef } from "react";
 import { createDefaultLayoutForKind } from "./default-layout";
-import { migrateRestoredLayout } from "./layout-ops";
+import { migrateRestoredLayout, restoreDockviewLayout } from "./layout-ops";
 import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
 
@@ -38,15 +38,12 @@ export function DockviewShell({
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
 
-      const layout = initialLayoutRef.current;
-      if (layout) {
-        event.api.fromJSON(layout as never);
-      } else {
+      restoreDockviewLayout(event.api, initialLayoutRef.current, () => {
         createDefaultLayoutForKind(event.api, documentKind, {
           actorPrefab,
           editorUtilityInterface,
         });
-      }
+      });
       migrateRestoredLayout(event.api);
       if (!actorPrefab) {
         event.api.getPanel("prefab-viewport")?.api.close();
