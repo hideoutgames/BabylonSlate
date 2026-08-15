@@ -8,6 +8,7 @@ import {
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphComponentsCommand,
+  SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
 } from "./graph";
 import { diffGraphCommands } from "./graph-diff";
@@ -104,6 +105,67 @@ describe("diffGraphCommands", () => {
     expect(removeCommands.some((c) => c instanceof RemoveEdgeCommand)).toBe(
       true,
     );
+  });
+
+  it("emits SetGraphFunctionGraphsCommand when function graphs change", () => {
+    const before = createDefaultGraph();
+    const after = {
+      ...before,
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "fn-1-input",
+              type: "flow.function.input",
+              position: { x: 80, y: 120 },
+              data: { title: "Input", __protected: true },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    const commands = diffGraphCommands(before, after);
+    expect(
+      commands.some((c) => c instanceof SetGraphFunctionGraphsCommand),
+    ).toBe(true);
+    const set = commands.find(
+      (c) => c instanceof SetGraphFunctionGraphsCommand,
+    ) as SetGraphFunctionGraphsCommand;
+    expect(set.to).toEqual(after.functionGraphs);
+  });
+
+  it("keeps a seeded function graph after applying the add-function diff", () => {
+    const before = createDefaultGraph();
+    const after: typeof before = {
+      ...before,
+      members: [{ id: "fn-1", kind: "function", name: "Jump" }],
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "fn-1-input",
+              type: "flow.function.input",
+              position: { x: 80, y: 120 },
+              data: { title: "Input", __protected: true },
+            },
+            {
+              id: "fn-1-output",
+              type: "flow.function.output",
+              position: { x: 420, y: 120 },
+              data: { title: "Output", __protected: true },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    let current = before;
+    for (const command of diffGraphCommands(before, after)) {
+      current = command.apply(current);
+    }
+    expect(current.members).toEqual(after.members);
+    expect(current.functionGraphs).toEqual(after.functionGraphs);
   });
 
   it("emits SetNodeDataCommand when node data changes", () => {
