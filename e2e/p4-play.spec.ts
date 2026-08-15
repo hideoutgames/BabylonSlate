@@ -13,6 +13,10 @@ test.describe("P4 Play overlay and session report", () => {
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-canvas")).toBeVisible();
     await expect(page.getByTestId("play-frame-cap")).toHaveCount(0);
+    await expect(page.getByTestId("play-overlay-pause")).toContainText("Pause");
+    await expect(page.getByTestId("play-overlay-close")).toContainText("Stop");
+    await expect(page.getByTestId("play-console-open")).toContainText("Console");
+    await expect(page.getByTestId("stats-hud")).toBeHidden();
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("preview-session-report")).toBeVisible();
@@ -34,6 +38,7 @@ test.describe("P4 Play overlay and session report", () => {
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
     await expect(page.getByTestId("play-prepare-dialog")).toHaveCount(0);
+    await page.getByTestId("play-stats-toggle").click();
     await expect(page.getByTestId("stats-hud-draws")).toBeVisible();
     await expect
       .poll(async () => {
@@ -79,6 +84,41 @@ test.describe("P4 Play overlay and session report", () => {
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("save-all-project")).toBeDisabled();
+  });
+
+  test("Play chrome is labeled, stats stay collapsed, Pause is first-class", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
+    await expect(page.getByTestId("play-log-tail")).toHaveCount(0);
+    await expect(page.getByTestId("stats-hud")).toBeHidden();
+    await expect(page.getByTestId("play-overlay-pause")).toBeVisible();
+    await expect(page.getByTestId("play-overlay-pause")).toContainText("Pause");
+    await expect(page.getByTestId("play-overlay-close")).toContainText("Stop");
+    await expect(page.getByTestId("play-console-open")).toContainText("Console");
+    await expect(page.getByTestId("play-stats-toggle")).toContainText("Stats");
+
+    const pauseBox = await page.getByTestId("play-overlay-pause").boundingBox();
+    const closeBox = await page.getByTestId("play-overlay-close").boundingBox();
+    expect(pauseBox, "Pause should be sized").not.toBeNull();
+    expect(closeBox, "Stop should be sized").not.toBeNull();
+    expect(pauseBox!.height).toBeGreaterThanOrEqual(44);
+    expect(closeBox!.height).toBeGreaterThanOrEqual(44);
+
+    await page.getByTestId("play-stats-toggle").click();
+    await expect(page.getByTestId("stats-hud")).toBeVisible();
+    await expect(page.getByTestId("play-fps")).toBeVisible();
+
+    await page.getByTestId("play-overlay-pause").click();
+    await expect(page.getByTestId("play-overlay-pause")).toContainText("Resume");
+
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
   test("Play is disabled until a scene tab is open; creating a scene opens it exclusively", async ({

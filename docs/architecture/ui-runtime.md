@@ -64,4 +64,4 @@ Dockview document (`window-catalog` kind `"ui"`; **Windows** toggles Design / Hi
 
 ## Touch → P6 input
 
-TouchJoystick / TouchButton / TouchDPad emit `{ kind: "touchAxis", controlId, value }` into the Play ring buffer. Default `Move` bindings include `joystick-x` / `joystick-y` **alongside** gamepad. `GetAxis2D("Move")` is unchanged. Not the editor camera stick (`viewport-joystick.tsx`). TouchDPad is a `Rectangle` with composed `Ellipse`s; TouchButton is a `Rectangle`. Slider `props.min` / `props.max` copy onto the Babylon slider.
+TouchJoystick / TouchButton / TouchDPad emit `{ kind: "touchAxis", controlId, value }` into the Play ring buffer. Default `Move` bindings include `joystick-x` / `joystick-y` **alongside** gamepad. `GetAxis2D("Move")` is unchanged. Not the editor camera stick (`viewport-joystick.tsx`). TouchDPad is a `Rectangle` with composed `Ellipse`s; TouchButton is a `Rectangle`. Slider `props.min` / `props.max` copy onto the Babylon slider. Play does not show a stick until a HUD is applied; an unlabeled TouchJoystick reads as **Stick**.

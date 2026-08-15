@@ -163,6 +163,7 @@ test.describe("P10 tilemaps", () => {
 
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await page.getByTestId("play-stats-toggle").click();
     await expect
       .poll(async () => {
         const attr = await page
