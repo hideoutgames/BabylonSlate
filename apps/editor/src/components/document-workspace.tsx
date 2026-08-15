@@ -1,6 +1,6 @@
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { UiEditingProvider } from "../context/ui-editing-context";
@@ -104,6 +104,8 @@ function DocumentShell({
     </div>
   );
 }
+
+export function DocumentWorkspace() {
   const {
     tabOrder,
     activeDocumentId,

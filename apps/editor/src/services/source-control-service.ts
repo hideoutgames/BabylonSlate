@@ -76,7 +76,6 @@ export class SourceControlService {
   private banners = new Map<string, DocumentLockBanner>();
   private tokenSaved = false;
   private listeners = new Set<() => void>();
-  private testMode = false;
   private providerIdentity = "";
 
   subscribe(listener: () => void): () => void {
@@ -166,7 +165,6 @@ export class SourceControlService {
     this.settings = { ...input.settings };
     this.projectGuid = input.projectGuid;
     this.secretStore = input.secretStore;
-    this.testMode = input.testMode;
     if (identity === this.providerIdentity && this.provider) {
       this.emit();
       return;

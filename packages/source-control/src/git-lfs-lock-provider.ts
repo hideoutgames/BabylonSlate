@@ -1,4 +1,4 @@
-import { err, ok } from "@babylonslate/core";
+import { err, isOk, ok } from "@babylonslate/core";
 import {
   lfsEndpointFromRepoUrl,
   lfsLocksUrl,
@@ -45,7 +45,7 @@ export class GitLfsLockProvider implements LockProvider {
       url: this.locksUrl,
       body: { path, ref: this.ref },
     });
-    if (!response.ok) return response;
+    if (!isOk(response)) return response;
     const { status, json } = response.value;
     if (status === 409) {
       const lock = parseLock(json.lock, false);
@@ -72,7 +72,7 @@ export class GitLfsLockProvider implements LockProvider {
     for (;;) {
       const url = this.listUrl(cursor);
       const response = await this.request({ method: "GET", url });
-      if (!response.ok) return response;
+      if (!isOk(response)) return response;
       const { status, json } = response.value;
       if (status !== 200) return this.httpError(status, json);
       const page = Array.isArray(json.locks) ? json.locks : [];
@@ -102,7 +102,7 @@ export class GitLfsLockProvider implements LockProvider {
         url: `${this.locksUrl}/verify`,
         body,
       });
-      if (!response.ok) return response;
+      if (!isOk(response)) return response;
       const { status, json } = response.value;
       if (status !== 200) return this.httpError(status, json);
       appendLocks(ours, json.ours, true);
@@ -123,7 +123,7 @@ export class GitLfsLockProvider implements LockProvider {
       url: `${this.locksUrl}/${encodeURIComponent(id)}/unlock`,
       body: { force: options?.force === true, ref: this.ref },
     });
-    if (!response.ok) return response;
+    if (!isOk(response)) return response;
     const { status, json } = response.value;
     if (status === 200 || status === 201) return ok(undefined);
     return this.httpError(status, json);
@@ -194,11 +194,7 @@ export class GitLfsLockProvider implements LockProvider {
 }
 
 function basicAuth(token: string): string {
-  const encoded =
-    typeof btoa === "function"
-      ? btoa(`x-access-token:${token}`)
-      : Buffer.from(`x-access-token:${token}`, "utf8").toString("base64");
-  return `Basic ${encoded}`;
+  return `Basic ${btoa(`x-access-token:${token}`)}`;
 }
 
 function parseJson(text: string): Record<string, unknown> {
