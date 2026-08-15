@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, normalizeScene } from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -148,6 +148,13 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["nav"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.getByTestId("navmesh-bake-navmesh")).toBeTruthy();
+  });
+
+  it("renders scene settings for a sparse payload after normalizeScene", () => {
+    harness.scene = normalizeScene({ name: "Legacy", actors: [] });
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("scene-settings-grid")).toBeTruthy();
+    expect(screen.getByTestId("property-scene-environment-color")).toBeTruthy();
   });
 
   it("picks Game Instance from ClassPicker instead of a free text field", async () => {

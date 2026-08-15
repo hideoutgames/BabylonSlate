@@ -16,6 +16,7 @@ import { TypeAssetEditingProvider } from "../context/type-asset-editing-context"
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
+import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
 import { DockviewShell } from "../shell/dockview-shell";
 import {
   classDocumentShowsPrefab,
@@ -138,13 +139,14 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "content-browser") {
           if (!shouldMount) return null;
           return (
-            <div
-              key={id}
-              className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-              data-testid="document-workspace-content-browser"
-            >
-              <ContentBrowserWorkspace />
-            </div>
+            <WorkspaceErrorBoundary key={id}>
+              <div
+                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                data-testid="document-workspace-content-browser"
+              >
+                <ContentBrowserWorkspace />
+              </div>
+            </WorkspaceErrorBoundary>
           );
         }
 
@@ -154,13 +156,14 @@ export function DocumentWorkspace() {
         ) {
           if (!shouldMount) return null;
           return (
-            <div
-              key={id}
-              className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-              data-testid={`document-workspace-${doc.ref.kind}`}
-            >
-              <AssetDocumentWorkspace documentId={id} />
-            </div>
+            <WorkspaceErrorBoundary key={id}>
+              <div
+                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                data-testid={`document-workspace-${doc.ref.kind}`}
+              >
+                <AssetDocumentWorkspace documentId={id} />
+              </div>
+            </WorkspaceErrorBoundary>
           );
         }
 
@@ -175,61 +178,67 @@ export function DocumentWorkspace() {
             ?.list()
             .find((asset) => asset.path === doc.ref.path);
           return (
-            <DocumentWorkspaceProvider key={id} documentId={id}>
-              <UiEditingProvider>
-                <div
-                  className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                  data-testid="document-workspace-ui"
-                >
-                  <RegisteredDockviewShell
-                    id={id}
-                    documentKind="ui"
-                    initialLayout={doc.layout}
-                    editorUtilityInterface={
-                      indexed?.header.type === "EditorUtilityInterface"
-                    }
-                  />
-                </div>
-              </UiEditingProvider>
-            </DocumentWorkspaceProvider>
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <UiEditingProvider>
+                  <div
+                    className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                    data-testid="document-workspace-ui"
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="ui"
+                      initialLayout={doc.layout}
+                      editorUtilityInterface={
+                        indexed?.header.type === "EditorUtilityInterface"
+                      }
+                    />
+                  </div>
+                </UiEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
           );
         }
 
         if (doc.ref.kind === "sprite") {
           if (!shouldMount) return null;
           return (
-            <DocumentWorkspaceProvider key={id} documentId={id}>
-              <div
-                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                data-testid="document-workspace-sprite"
-              >
-                <RegisteredDockviewShell
-                  id={id}
-                  documentKind="sprite"
-                  initialLayout={doc.layout}
-                />
-              </div>
-            </DocumentWorkspaceProvider>
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <div
+                  className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                  data-testid="document-workspace-sprite"
+                >
+                  <RegisteredDockviewShell
+                    id={id}
+                    documentKind="sprite"
+                    initialLayout={doc.layout}
+                  />
+                </div>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
           );
         }
 
         if (isTypeAsset) {
           if (!shouldMount) return null;
           return (
-            <DocumentWorkspaceProvider key={id} documentId={id}>
-              <TypeAssetEditingProvider>
-                <div
-                  className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                  data-testid={`document-workspace-${doc.ref.kind}`}
-                >
-                  <RegisteredDockviewShell
-                    id={id}
-                    documentKind={doc.ref.kind}
-                    initialLayout={doc.layout}
-                  />
-                </div>
-              </TypeAssetEditingProvider>
-            </DocumentWorkspaceProvider>
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <TypeAssetEditingProvider>
+                  <div
+                    className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                    data-testid={`document-workspace-${doc.ref.kind}`}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind={doc.ref.kind}
+                      initialLayout={doc.layout}
+                    />
+                  </div>
+                </TypeAssetEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
           );
         }
 
@@ -249,16 +258,17 @@ export function DocumentWorkspace() {
           });
 
         return (
-          <DocumentWorkspaceProvider key={id} documentId={id}>
-            <SceneEditingProvider
-              initialViewportMode={sceneContent?.viewportMode ?? "3d"}
-              documentViewportMode={sceneContent?.viewportMode}
-              documentSnapEnabled={sceneContent?.settings.grid.snapEnabled}
-              documentJoystickEnabled={
-                sceneContent?.settings.editorJoystickEnabled
-              }
-              documentGridVisible={sceneContent?.settings.grid.showGrid}
-            >
+          <WorkspaceErrorBoundary key={id}>
+            <DocumentWorkspaceProvider documentId={id}>
+              <SceneEditingProvider
+                initialViewportMode={sceneContent?.viewportMode ?? "3d"}
+                documentViewportMode={sceneContent?.viewportMode}
+                documentSnapEnabled={sceneContent?.settings?.grid?.snapEnabled}
+                documentJoystickEnabled={
+                  sceneContent?.settings?.editorJoystickEnabled
+                }
+                documentGridVisible={sceneContent?.settings?.grid?.showGrid}
+              >
               <NavBakeProvider>
               <PrefabEditingProvider>
               <GraphEditingProvider>
@@ -284,7 +294,8 @@ export function DocumentWorkspace() {
               </PrefabEditingProvider>
               </NavBakeProvider>
             </SceneEditingProvider>
-          </DocumentWorkspaceProvider>
+            </DocumentWorkspaceProvider>
+          </WorkspaceErrorBoundary>
         );
       })}
     </div>

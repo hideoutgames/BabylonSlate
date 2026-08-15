@@ -4,6 +4,7 @@ import {
   focusKeepCandidates,
   migrateRestoredLayout,
   resolveFocusKeepPanelIds,
+  restoreDockviewLayout,
 } from "./layout-ops";
 import { listDockWindows } from "./window-catalog";
 
@@ -155,5 +156,33 @@ describe("migrateRestoredLayout", () => {
       position: "bottom",
       group,
     });
+  });
+});
+
+describe("restoreDockviewLayout", () => {
+  it("falls back to the default layout when fromJSON throws", () => {
+    const fromJSON = vi.fn(() => {
+      throw new Error("stale catalog");
+    });
+    const createDefault = vi.fn();
+    restoreDockviewLayout({ fromJSON }, { panels: [] }, createDefault);
+    expect(fromJSON).toHaveBeenCalledWith({ panels: [] });
+    expect(createDefault).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a restored snapshot when fromJSON succeeds", () => {
+    const fromJSON = vi.fn();
+    const createDefault = vi.fn();
+    restoreDockviewLayout({ fromJSON }, { panels: ["viewport"] }, createDefault);
+    expect(fromJSON).toHaveBeenCalledWith({ panels: ["viewport"] });
+    expect(createDefault).not.toHaveBeenCalled();
+  });
+
+  it("uses the default layout when no snapshot exists", () => {
+    const fromJSON = vi.fn();
+    const createDefault = vi.fn();
+    restoreDockviewLayout({ fromJSON }, null, createDefault);
+    expect(fromJSON).not.toHaveBeenCalled();
+    expect(createDefault).toHaveBeenCalledTimes(1);
   });
 });

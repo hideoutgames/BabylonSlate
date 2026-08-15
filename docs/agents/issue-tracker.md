@@ -19,6 +19,7 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-14 | cursor/scene-open-old-project-crash-82b9 | scene-open crash | Standards | Alert catalog “Used for” omitted `WorkspaceErrorBoundary` | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p11-behaviour-tree | Spec | Empty-stack restart ran in the same tick as root TimeLimit/abort; Parallel starved nested siblings and skipped abort/TimeLimit/services on yielded children; Loop ignored failure; self-abort skipped Cooldown | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p12-editor-extensions | Spec | Saving EditorUtilityInterface `dockKind` wrote the header but did not reindex `AssetRegistry`, so Windows → Editor Utilities kept the stale filter until remount | Resolved |
 | 2026-08-14 | cursor/p11-p12-quality-b945 | p11-acceptance / p12-editor-extensions | Spec | Tree restart kept Wait/MoveTo/custom `nodeMemory` (instant re-success); MoveTo abort did not `stopNavAgent`; EUO ScriptHost rebooted on any `projectDocument` identity change | Resolved |

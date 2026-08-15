@@ -12,6 +12,7 @@ import {
   createEmptyLayouts,
   createEmptyProject,
   normalizeProjectSettings,
+  normalizeScene,
   documentId,
   isAssetDocumentKind,
   LAYOUT_FILE,
@@ -643,7 +644,7 @@ export class ProjectService {
     > & { version?: number };
     void _v;
     if (kind === "scene") {
-      return content as unknown as SerializedScene;
+      return normalizeScene(content);
     }
     if (kind === "graph") {
       return hydrateClassDocumentPayload(

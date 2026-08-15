@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { MAIN_SCENE_FILE, PROJECT_FILE } from "@babylonslate/core";
+import {
+  MAIN_SCENE_FILE,
+  PROJECT_FILE,
+  SCENE_SCHEMA_VERSION,
+  type SerializedScene,
+} from "@babylonslate/core";
 import { encodeAssetDocument, readAssetDocumentHeader } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
@@ -24,6 +29,22 @@ async function projectWithOldScene(sceneVersion: number) {
 }
 
 describe("migrate-on-load and migrate-on-save approval", () => {
+  it("fills additive scene settings for a current-version payload that omitted them", async () => {
+    const { service } = await projectWithOldScene(SCENE_SCHEMA_VERSION);
+    const scene = (await service.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+
+    expect(service.pendingMigrations).toEqual([]);
+    expect(scene.name).toBe("Old");
+    expect(scene.actors).toEqual([]);
+    expect(scene.settings.environmentColor).toEqual([0.06, 0.07, 0.09]);
+    expect(scene.settings.grid.snapTranslate).toBe(1);
+    expect(scene.settings.grid.showGrid).toBe(true);
+    expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
+  });
+
   it("migrates on load without rewriting the file", async () => {
     const { storage, service } = await projectWithOldScene(0);
     const before = await storage.readBinary(MAIN_SCENE_FILE);
