@@ -19,7 +19,9 @@ if (
 }
 
 const applyGraphChange = vi.hoisted(() =>
-  vi.fn(async (_id: string, _next: SerializedGraph) => true),
+  vi.fn<(id: string, next: SerializedGraph) => Promise<boolean>>(
+    async () => true,
+  ),
 );
 
 vi.mock("../context/document-workspace-context", () => ({
