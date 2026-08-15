@@ -14,6 +14,7 @@ import {
   clearSceneMeshes,
   countSceneMeshes,
   createPrimitiveMesh,
+  editorComponentMeshName,
   editorMeshName,
 } from "./scene-loader";
 
@@ -252,6 +253,84 @@ describe("scene-loader", () => {
     expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0:anim")).toBe(
       "ground",
     );
+    expect(
+      actorIdFromMeshName(editorComponentMeshName("hero", "prefab-mesh")),
+    ).toBe("hero");
+  });
+
+  it("parents offset component meshes under the actor origin", () => {
+    const { scene } = createHandle();
+    const box = createMeshComponent("box", "box");
+    const sphere = {
+      ...createMeshComponent("sphere", "sphere"),
+      transform: {
+        position: [2, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("hero", "Hero", {
+          transform: {
+            position: [5, 1, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [box, sphere],
+        }),
+      ]),
+    );
+    const root = scene.getMeshByName(editorMeshName("hero"));
+    const boxMesh = scene.getMeshByName(editorComponentMeshName("hero", "box"));
+    const sphereMesh = scene.getMeshByName(
+      editorComponentMeshName("hero", "sphere"),
+    );
+    expect(root?.position.x).toBe(5);
+    expect(root?.position.y).toBe(1);
+    expect(boxMesh?.parent).toBe(root);
+    expect(sphereMesh?.parent).toBe(root);
+    expect(boxMesh?.position.x).toBe(0);
+    expect(sphereMesh?.position.x).toBe(2);
+  });
+
+  it("keeps a nested child actor origin at the child transform", () => {
+    const { scene } = createHandle();
+    const sphere = {
+      ...createMeshComponent("sphere", "sphere"),
+      transform: {
+        position: [2, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("parent", "Parent", {
+          components: [createMeshComponent("box", "box")],
+        }),
+        createActor("child", "Child", {
+          parentId: "parent",
+          transform: {
+            position: [4, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [sphere],
+        }),
+      ]),
+    );
+    const parent = scene.getMeshByName(editorMeshName("parent"));
+    const childRoot = scene.getMeshByName(editorMeshName("child"));
+    const childSphere = scene.getMeshByName(
+      editorComponentMeshName("child", "sphere"),
+    );
+    expect(childRoot?.parent).toBe(parent);
+    expect(childRoot?.position.x).toBe(4);
+    expect(childSphere?.parent).toBe(childRoot);
+    expect(childSphere?.position.x).toBe(2);
   });
 
   it("builds a pickable origin marker for meshKind pivot", () => {

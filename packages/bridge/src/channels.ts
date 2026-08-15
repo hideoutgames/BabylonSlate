@@ -117,6 +117,16 @@ export type CommandMessage =
         farClip?: number;
         isDefault?: boolean;
       };
+      /** Extra renderable components parented to the actor origin mesh. */
+      parts?: Array<{
+        componentId: string;
+        meshKind?: string | null;
+        meshAssetGuid?: string | null;
+        parentId?: string | null;
+        position: [number, number, number];
+        rotation: [number, number, number, number];
+        scale: [number, number, number];
+      }>;
     }
   | { type: "possessCamera"; slotId: number }
   | { type: "setShadowQuality"; level: string }

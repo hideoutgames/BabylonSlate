@@ -200,4 +200,61 @@ describe("createPlayMesh", () => {
     expect(camera.position.x).toBeCloseTo(0.01, 6);
     expect(camera.position.y).toBeCloseTo(0.03, 6);
   });
+
+  it("parents assignMesh parts under the snapshot-driven actor origin", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "box",
+      parts: [
+        {
+          componentId: "box",
+          meshKind: "box",
+          meshAssetGuid: null,
+          parentId: null,
+          position: [0, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+        },
+        {
+          componentId: "sphere",
+          meshKind: "sphere",
+          meshAssetGuid: null,
+          parentId: null,
+          position: [2, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+        },
+      ],
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: 5, y: 1, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    const root = binding.meshes.get(0);
+    expect(root?.name).toBe("actor-0");
+    expect(root?.position.x).toBeCloseTo(5);
+    const box = scene.getMeshByName("actor-0|box");
+    const sphere = scene.getMeshByName("actor-0|sphere");
+    expect(box?.parent).toBe(root);
+    expect(sphere?.parent).toBe(root);
+    expect(box?.position.x).toBeCloseTo(0);
+    expect(sphere?.position.x).toBeCloseTo(2);
+  });
 });

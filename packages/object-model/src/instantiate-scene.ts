@@ -5,6 +5,7 @@ import type {
   SerializedTransform,
   Transform,
 } from "@babylonslate/core";
+import { identitySerializedTransform } from "@babylonslate/core";
 import type { LifecycleHooks } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";
@@ -94,6 +95,10 @@ function createActorFromSerialized(
         classId: component.classId,
         variables: { ...component.properties },
         assetGuid: componentAssetGuid(component),
+        parentId: component.parentId ?? null,
+        transform: runtimeTransformFromSerialized(
+          component.transform ?? identitySerializedTransform(),
+        ),
       }),
     );
   }

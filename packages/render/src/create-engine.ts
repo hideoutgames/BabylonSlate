@@ -356,7 +356,10 @@ export function createEngine(
       },
       setSelectedActors: (actorIds: string[]) => {
         const meshes = actorIds.map((id) => editorSync.meshForActor(id));
-        selection.set(meshes);
+        const visuals = actorIds.flatMap((id) =>
+          editorSync.visualMeshesForActor(id),
+        );
+        selection.set(visuals.length > 0 ? visuals : meshes);
         // Locked actors are not pickable; keep the gizmo off them so lock is
         // more than a pick filter.
         const gizmoTarget =

@@ -470,7 +470,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     desc: ColliderDesc,
     record: BodyRecord,
   ): PhysicsShape | null {
-    const shape = this.createQueryShape(desc.shape, record);
+    const shape = this.createQueryShape(desc.shape, record, desc.translation);
     if (!shape) return null;
     shape.material = {
       friction: desc.friction,
@@ -485,11 +485,15 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private createQueryShape(
     shape: ColliderShape,
     record?: BodyRecord,
+    translation?: { x: number; y: number; z: number },
   ): PhysicsShape | null {
+    const origin = translation
+      ? new Vector3(translation.x, translation.y, translation.z)
+      : Vector3.Zero();
     switch (shape.kind) {
       case "box":
         return new PhysicsShapeBox(
-          Vector3.Zero(),
+          origin,
           Quaternion.Identity(),
           new Vector3(
             shape.halfExtents.x * 2,
@@ -499,11 +503,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
           this.scene,
         );
       case "sphere":
-        return new PhysicsShapeSphere(Vector3.Zero(), shape.radius, this.scene);
+        return new PhysicsShapeSphere(origin, shape.radius, this.scene);
       case "capsule":
         return new PhysicsShapeCapsule(
-          new Vector3(0, -shape.halfHeight, 0),
-          new Vector3(0, shape.halfHeight, 0),
+          new Vector3(origin.x, origin.y - shape.halfHeight, origin.z),
+          new Vector3(origin.x, origin.y + shape.halfHeight, origin.z),
           shape.radius,
           this.scene,
         );

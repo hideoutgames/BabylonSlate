@@ -244,6 +244,8 @@ export class World {
     variables?: Record<string, unknown>;
     hooks?: import("./objects").LifecycleHooks<ActorComponent>;
     assetGuid?: Guid | null;
+    transform?: ConstructorParameters<typeof ActorComponent>[0]["transform"];
+    parentId?: string | null;
   }): ActorComponent {
     return new ActorComponent({
       ...options,

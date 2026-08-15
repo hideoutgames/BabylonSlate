@@ -75,6 +75,7 @@ type RapierColliderDesc = {
   setFriction(v: number): RapierColliderDesc;
   setRestitution(v: number): RapierColliderDesc;
   setSensor(v: boolean): RapierColliderDesc;
+  setTranslation(x: number, y: number): RapierColliderDesc;
 };
 
 type RapierRigidBody = {
@@ -269,6 +270,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       .setFriction(desc.friction)
       .setRestitution(desc.restitution)
       .setSensor(desc.isTrigger);
+    if (desc.translation) {
+      colliderDesc.setTranslation(desc.translation.x, desc.translation.y);
+    }
     const collider = this.world.createCollider(colliderDesc, body.body);
     const extra = this.createLoopCloseSegment(desc, body.body);
     this.colliders.set(desc.id, { desc: { ...desc }, collider, extra });

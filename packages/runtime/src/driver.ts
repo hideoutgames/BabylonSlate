@@ -1244,45 +1244,26 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emitMeshAssignment(actor: Actor, slotId: number): void {
-    const mesh = actor.components.find(
-      (component) => component.classId === "MeshComponent" && !component.destroyed,
-    );
-    const sprite = actor.components.find(
+    const renderables = actor.components.filter(
       (component) =>
-        component.classId === "SpriteComponent" && !component.destroyed,
+        !component.destroyed &&
+        (component.classId === "MeshComponent" ||
+          component.classId === "SpriteComponent" ||
+          component.classId === "TilemapComponent"),
     );
-    if (mesh) {
-      const meshKind = mesh.getVariable("meshKind");
-      const assetGuid = mesh.assetGuid ?? mesh.getVariable("assetGuid");
+    if (renderables.length > 0) {
+      const primary = renderables[0]!;
+      const meshKind = playMeshKindOf(primary);
+      const assetGuid = primary.assetGuid ?? primary.getVariable("assetGuid");
+      const parts = playPartsNeeded(renderables)
+        ? renderables.map((component) => playMeshPartOf(component))
+        : undefined;
       this.emit({
         type: "assignMesh",
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
-        meshKind: typeof meshKind === "string" ? meshKind : null,
-      });
-      return;
-    }
-    if (sprite) {
-      const assetGuid = sprite.assetGuid ?? sprite.getVariable("assetGuid");
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
-        meshKind: "sprite",
-      });
-      return;
-    }
-    const tilemap = actor.components.find(
-      (component) =>
-        component.classId === "TilemapComponent" && !component.destroyed,
-    );
-    if (tilemap) {
-      const assetGuid = tilemap.assetGuid ?? tilemap.getVariable("assetGuid");
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
-        meshKind: "tilemap",
+        meshKind,
+        ...(parts ? { parts } : {}),
       });
       return;
     }
@@ -1720,6 +1701,52 @@ class InProcessRuntime implements RuntimeDriver {
   private emit(command: CommandMessage): void {
     this.onCommand?.(command);
   }
+}
+
+function playMeshKindOf(component: ActorComponent): string | null {
+  if (component.classId === "SpriteComponent") return "sprite";
+  if (component.classId === "TilemapComponent") return "tilemap";
+  const meshKind = component.getVariable("meshKind");
+  return typeof meshKind === "string" ? meshKind : null;
+}
+
+function isIdentityComponentTransform(component: ActorComponent): boolean {
+  const { position, rotation, scale } = component.transform;
+  return (
+    position.x === 0 &&
+    position.y === 0 &&
+    position.z === 0 &&
+    rotation.x === 0 &&
+    rotation.y === 0 &&
+    rotation.z === 0 &&
+    rotation.w === 1 &&
+    scale.x === 1 &&
+    scale.y === 1 &&
+    scale.z === 1
+  );
+}
+
+function playPartsNeeded(components: readonly ActorComponent[]): boolean {
+  return (
+    components.length > 1 ||
+    components.some((component) => !isIdentityComponentTransform(component))
+  );
+}
+
+function playMeshPartOf(
+  component: ActorComponent,
+): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["parts"]>[number] {
+  const assetGuid = component.assetGuid ?? component.getVariable("assetGuid");
+  const { position, rotation, scale } = component.transform;
+  return {
+    componentId: component.guid,
+    meshKind: playMeshKindOf(component),
+    meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
+    parentId: component.parentId,
+    position: [position.x, position.y, position.z],
+    rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+    scale: [scale.x, scale.y, scale.z],
+  };
 }
 
 function rgbTuple(value: unknown): [number, number, number] {

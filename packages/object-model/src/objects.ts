@@ -132,6 +132,8 @@ export class ActorComponent extends BObject {
   owner: Actor | null = null;
   /** Optional asset reference stub for engine components. */
   assetGuid: Guid | null = null;
+  transform: Transform;
+  parentId: string | null;
 
   constructor(
     options: {
@@ -142,6 +144,8 @@ export class ActorComponent extends BObject {
       hooks?: LifecycleHooks<ActorComponent>;
       implementedInterfaces?: string[];
       assetGuid?: Guid | null;
+      transform?: Transform;
+      parentId?: string | null;
     },
   ) {
     super({
@@ -149,6 +153,14 @@ export class ActorComponent extends BObject {
       hooks: options.hooks as LifecycleHooks | undefined,
     });
     this.assetGuid = options.assetGuid ?? null;
+    this.parentId = options.parentId ?? null;
+    this.transform = options.transform
+      ? {
+          position: { ...options.transform.position },
+          rotation: { ...options.transform.rotation },
+          scale: { ...options.transform.scale },
+        }
+      : identityTransform();
   }
 }
 

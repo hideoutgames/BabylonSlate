@@ -49,6 +49,8 @@ export type ColliderDesc = {
   isTrigger: boolean;
   layer: number;
   mask: number;
+  /** Local offset from the rigid body origin (component transform position). */
+  translation?: Vec3;
 };
 
 export type HitResult = {

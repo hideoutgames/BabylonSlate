@@ -200,6 +200,11 @@ export class PhysicsWorldSync {
         isTrigger: collider.isTrigger,
         layer: collider.layer,
         mask: collider.mask,
+        translation: {
+          x: component.transform.position.x,
+          y: component.transform.position.y,
+          z: component.transform.position.z,
+        },
       });
     }
 

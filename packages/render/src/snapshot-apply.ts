@@ -16,7 +16,7 @@ import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { createMeshFromModelBytes } from "./model-mesh";
-import { createPrimitiveMesh } from "./scene-loader";
+import { applySerializedTransform, createPrimitiveMesh } from "./scene-loader";
 import {
   AUTHORED_CAMERA_PREFIX,
   AUTHORED_LIGHT_PREFIX,
@@ -43,6 +43,9 @@ const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
 const scratchMatrix = Matrix.Identity();
 
+export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
+export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
+
 export interface SnapshotSceneBinding extends MeshAssetContext {
   meshes: Map<number, Mesh>;
   lights: Map<number, Light>;
@@ -57,6 +60,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   meshKinds: Map<number, string | null>;
   /** Sprite / mesh asset guid from assignMesh, keyed by slotId. */
   meshAssetGuids: Map<number, string | null>;
+  /** Extra component parts from assignMesh, keyed by slotId. */
+  meshParts: Map<number, NonNullable<AssignMeshCommand["parts"]>>;
   defaultCameraSlotId: number | null;
   possessedCameraSlotId: number | null;
   shadow: ShadowGenerator | null;
@@ -74,6 +79,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     liveSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
+    meshParts: new Map(),
     defaultCameraSlotId: null,
     possessedCameraSlotId: null,
     shadow: null,
@@ -82,7 +88,38 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   };
 }
 
-export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
+export function playComponentMeshName(
+  slotId: number,
+  componentId: string,
+): string {
+  return `actor-${slotId}|${componentId}`;
+}
+
+function partsNeedOrigin(parts: readonly AssignMeshPart[] | undefined): boolean {
+  if (!parts || parts.length === 0) return false;
+  if (parts.length > 1) return true;
+  const part = parts[0]!;
+  return (
+    part.position[0] !== 0 ||
+    part.position[1] !== 0 ||
+    part.position[2] !== 0 ||
+    part.rotation[0] !== 0 ||
+    part.rotation[1] !== 0 ||
+    part.rotation[2] !== 0 ||
+    part.rotation[3] !== 1 ||
+    part.scale[0] !== 1 ||
+    part.scale[1] !== 1 ||
+    part.scale[2] !== 1
+  );
+}
+
+function applyPartTransform(mesh: Mesh, part: AssignMeshPart): void {
+  applySerializedTransform(mesh, {
+    position: part.position,
+    rotation: part.rotation,
+    scale: part.scale,
+  });
+}
 
 function refreshPlayActiveCamera(
   scene: Scene,
@@ -136,6 +173,11 @@ export function applyAssignMesh(
   const meshKind = command.meshKind ?? null;
   binding.meshKinds.set(command.slotId, meshKind);
   binding.meshAssetGuids.set(command.slotId, command.meshAssetGuid);
+  if (command.parts && command.parts.length > 0) {
+    binding.meshParts.set(command.slotId, command.parts);
+  } else {
+    binding.meshParts.delete(command.slotId);
+  }
   if (command.light) binding.lightProps.set(command.slotId, command.light);
   if (command.camera) {
     binding.cameraProps.set(command.slotId, command.camera);
@@ -166,13 +208,7 @@ export function applyAssignMesh(
   disposeSlotVisuals(scene, binding, command.slotId);
   binding.meshes.set(
     command.slotId,
-    createPlayMesh(
-      scene,
-      command.slotId,
-      meshKind,
-      command.meshAssetGuid,
-      binding,
-    ),
+    createPlayVisual(scene, command.slotId, binding),
   );
   refreshPlayActiveCamera(scene, binding);
 }
@@ -216,14 +252,52 @@ function disposeSlotVisuals(
   void scene;
 }
 
+function createPlayVisual(
+  scene: Scene,
+  slotId: number,
+  binding: SnapshotSceneBinding,
+): Mesh {
+  const parts = binding.meshParts.get(slotId);
+  const meshKind = binding.meshKinds.get(slotId);
+  const assetGuid = binding.meshAssetGuids.get(slotId);
+  if (!partsNeedOrigin(parts)) {
+    return createPlayMesh(scene, slotId, meshKind, assetGuid, binding);
+  }
+  const root = createPrimitiveMesh(scene, `actor-${slotId}`, null);
+  root.isVisible = false;
+  root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
+  const meshes = new Map<string, Mesh>();
+  for (const part of parts ?? []) {
+    const child = createPlayMesh(
+      scene,
+      slotId,
+      part.meshKind,
+      part.meshAssetGuid,
+      binding,
+      playComponentMeshName(slotId, part.componentId),
+    );
+    applyPartTransform(child, part);
+    child.isVisible = true;
+    meshes.set(part.componentId, child);
+  }
+  for (const part of parts ?? []) {
+    const child = meshes.get(part.componentId);
+    if (!child) continue;
+    const parent = part.parentId ? meshes.get(part.parentId) : undefined;
+    child.parent = parent ?? root;
+  }
+  return root;
+}
+
 export function createPlayMesh(
   scene: Scene,
   slotId: number,
   meshKind: string | null | undefined,
   assetGuid?: string | null,
   binding?: SnapshotSceneBinding,
+  meshName?: string,
 ): Mesh {
-  const name = `actor-${slotId}`;
+  const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
     const tilemap = binding.tilemaps.get(assetGuid);
     const tileset = tilemap?.tilesetGuid
@@ -330,17 +404,22 @@ export function applySnapshotToScene(
       live.add(actor.slotId);
       let mesh = binding.meshes.get(actor.slotId);
       if (!mesh) {
-        mesh = createPlayMesh(
-          scene,
-          actor.slotId,
-          binding.meshKinds.get(actor.slotId),
-          binding.meshAssetGuids.get(actor.slotId),
-          binding,
-        );
+        mesh = createPlayVisual(scene, actor.slotId, binding);
         binding.meshes.set(actor.slotId, mesh);
       }
       writeActorTransform(mesh, actor);
-      mesh.isVisible = (actor.flags & 1) === 1;
+      const origin = Boolean(
+        (mesh.metadata as { playActorOrigin?: boolean } | null)?.playActorOrigin,
+      );
+      mesh.isVisible = origin ? false : (actor.flags & 1) === 1;
+      if (origin) {
+        for (const child of mesh.getChildMeshes()) {
+          if (!child.name.includes("|")) continue;
+          const afterPipe = child.name.slice(child.name.indexOf("|") + 1);
+          if (afterPipe.includes(":")) continue;
+          child.isVisible = (actor.flags & 1) === 1;
+        }
+      }
       const light = binding.lights.get(actor.slotId);
       if (light) {
         updateAuthoredLightTransform(light, actor.position, actor.rotation);
@@ -361,6 +440,7 @@ export function applySnapshotToScene(
         binding.meshes.delete(slotId);
         binding.meshKinds.delete(slotId);
         binding.meshAssetGuids.delete(slotId);
+        binding.meshParts.delete(slotId);
         binding.lightProps.delete(slotId);
         binding.cameraProps.delete(slotId);
         binding.lights.get(slotId)?.dispose();
@@ -414,6 +494,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.cameraProps.clear();
   binding.meshKinds.clear();
   binding.meshAssetGuids.clear();
+  binding.meshParts.clear();
   binding.shadow = null;
   binding.shadowOwnerSlot = null;
   binding.defaultCameraSlotId = null;

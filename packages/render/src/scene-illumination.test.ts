@@ -373,4 +373,40 @@ describe("syncAuthoredIllumination", () => {
       scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}lamp`)!.isEnabled(),
     ).toBe(false);
   });
+
+  it("places a light at actor transform composed with the component local", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        createActor("lamp", "Lamp", {
+          transform: {
+            position: [1, 2, 3],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [
+            {
+              id: "lamp-light",
+              classId: "LightComponent",
+              properties: { lightKind: "point", intensity: 1 },
+              transform: {
+                position: [2, 0, 0],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+              },
+            },
+          ],
+        }),
+      ]),
+      { stealActiveCamera: false },
+    );
+    const light = scene.getLightByName(
+      `${AUTHORED_LIGHT_PREFIX}lamp`,
+    ) as PointLight;
+    expect(light).toBeInstanceOf(PointLight);
+    expect(light.position.x).toBeCloseTo(3);
+    expect(light.position.y).toBeCloseTo(2);
+    expect(light.position.z).toBeCloseTo(3);
+  });
 });
