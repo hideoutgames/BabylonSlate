@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import { openContentBrowser, openMainScene, openTestProject } from "./open-test-project";
-import { saveAllIfEnabled } from "./save-all";
 
 const STARTER_CONTENT_PLUGIN_GUID = "c0ffee00-0000-4000-8000-000000000001";
 const STARTER_ACTOR_PATH =
@@ -152,7 +151,6 @@ test.describe("P13 plugins", () => {
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
     await page.getByTestId("place-actors-catalog-search").fill("Hero");
     await page.getByTestId(`place-actors-item-asset-${classGuid}`).click();
-    await saveAllIfEnabled(page);
 
     await openPluginsSettings(page);
     const downloadPromise = page.waitForEvent("download");
