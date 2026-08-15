@@ -10,12 +10,13 @@ No React, Babylon, or Capacitor. Callers compile graphs and load payloads; the p
 
 | Export | Role |
 | --- | --- |
-| `collectExportClosure` | BFS from `startupSceneGuid` plus GameInstance class; strips `isEditorOnlyAsset`; skips disabled plugin roots |
+| `collectExportClosure` | BFS from `startupSceneGuid` plus GameInstance class; walks scene/graph JSON and Sprite/UI/Tilemap payloads; strips `isEditorOnlyAsset`; skips disabled plugin roots |
 | `exportGame` | Default `mode: "packed"`; writes `game.json`, `scripts.js`, packs, player files |
+| `selectPlayerRuntimeFiles` | Havok **or** Rapier wasm/JS matching `physicsWorld`; drops `README.md` / `.keep` |
 | `zipExport` | `fflate` zip with `index.html` at the root (itch) |
 | `encodeBabpack` / `decodeBabpack` / `decodeBabpackIndex` | Concatenated asset bytes + JSON index `{ guid, offset, length, hash }` (`BPK1`) |
 | `createHttpPackSource` / `createMemoryPackSource` | Range-first HTTP loader with whole-body fallback; in-memory Preview Build source |
-| `concatenateScripts` / `serializeScriptRegistry` | One `scripts.js` (unminified); `CompileAnchor.line` rewrite is tested for a concatenated blob; the registry keeps per-class sources for ScriptHost |
+| `concatenateScripts` / `serializeScriptRegistry` | One `scripts.js` (unminified). Concatenation adds `//# sourceURL` prefixes; ScriptHost evals **per-class** `script.source`, so the registry keeps original `CompileAnchor.line`. |
 | Preview protocol | `previewPackFromFiles` / `filesFromPreviewPack` — transfer a `Map` of files into the iframe; never write a pack into the project tree |
 
 Missing or stale startup scene: `MISSING_STARTUP_SCENE_MESSAGE` (`Set Startup Scene in Project Settings.`).
@@ -27,7 +28,7 @@ Not `header.dependencies` alone — scene saves often leave those empty.
 1. Apply export-preset `pluginOverrides` (layer 3) **before** the walk so disabled plugin roots are absent.
 2. Seed with `startupSceneGuid` (must be a Scene asset).
 3. Walk `SerializedScene` actors/components (guids in properties, Mesh/Model `assetGuid`, textures, UserInterface, Font, Class ids) plus `gameInstanceClass`.
-4. Load Class/Graph/UI-logic documents; pull asset-typed pin values and `header.dependencies`.
+4. Load Class/Graph/UI/Sprite/Tilemap documents; pull asset-typed pin values, `header.dependencies`, and payload fields such as sprite `textureGuid`.
 5. Recurse to a fixed point. Drop EditorUtilityObject / EditorUtilityInterface / PluginSettings (`isEditorOnlyAsset`).
 6. Scene library keys in the pack are **asset guids** (overlay Play may keep path-based document ids).
 
@@ -39,13 +40,14 @@ Textures: pack only `selectTextureChunk`’s chosen variant (KTX2 when present).
 
 ```
 index.html          # CSS inlined; itch requires this at zip root
-player.js           # Vite `inlineDynamicImports`; workers stay separate files
+player.js           # Vite `codeSplitting: false`; workers stay separate files
 scripts.js          # class registry (`globalThis.__babylonslateScripts`)
 game.json           # GameManifest: startupSceneGuid, render, packs, assets[]
 boot.babpack        # startup scene + assets reached through that scene
 scene-<guid>.babpack
 coi-serviceworker.js
-havok/HavokPhysics.wasm
+havok/HavokPhysics.wasm   # 3d only
+# or assets/rapier.es-*.js  # 2d only
 ktx2/…              # transcoder files the player needs
 ```
 
@@ -68,16 +70,16 @@ Preview packs are in-memory only. Capacitor and Electron host the **editor**, no
 
 Vite canvas host: `@babylonslate/runtime` + `@babylonslate/render` + bridge/physics/debugger. No Dockview, editor chrome, or React shell. Dedicated Engine (do not `registerView` onto the editor Engine). Boot `startupSceneGuid`; apply `render.customResolution` (WxH framebuffer + stretch or black bars) via the shared `play-preview-aspect` math in `@babylonslate/core`.
 
-`includeDebugCommands: manifest.bundleDebugger`. Release player uses `createCommandRegistry({ includeDebug: false })`; core commands (`changescene`, …) stay. When the debugger is bundled, a small vanilla DOM HUD (not the editor `PlayOverlay`) shows fps / scriptMs / physicsMs / draws.
+`includeDebugCommands: manifest.bundleDebugger`. Release player uses `createCommandRegistry({ includeDebug: false })`; core commands (`changescene`, …) stay. When the debugger is bundled, a small vanilla DOM HUD (not the editor `PlayOverlay`) shows fps / scriptMs / physicsMs / draws. Packed fonts use `FontFace(family, bytes)` — not blob URLs.
 
 `?preview=1` waits for a same-origin `postMessage` pack. Destroying the iframe drops that WebGL context.
 
 ## Preview Build
 
-Debug-dropdown checkbox only (`debuggerDefaults.previewBuild`, default **off**). Always visible; disabled while Play or prepare is running. **Off:** overlay Play unchanged (`canPlay` still requires an open scene tab). **On:** Play does not require a scene tab; always `bundleDebugger: true`; Preparing Preview modal (Saving → Compiling → Collecting Assets → Writing Pack → Launching); same-origin iframe of `/player/`. Cancel only before the iframe exists. Close stops the player, destroys the iframe, drops the pack, and shows the session report if diagnostics were posted.
+Debug-dropdown checkbox only (`debuggerDefaults.previewBuild`, default **off**). Always visible; disabled while Play or prepare is running. **Off:** overlay Play unchanged (`canPlay` still requires an open scene tab). **On:** Play does not require a scene tab; always `bundleDebugger: true`; Preparing Preview modal (Saving → Collecting Assets → Compiling → Writing Pack → Launching); same-origin iframe of `/player/`. Cancel only before the iframe exists. Close stops the player, destroys the iframe, drops the pack, and shows the session report if diagnostics were posted.
 
 ## Tests
 
-- Closure BFS (GameInstance, EUO strip, plugin disable), zip `index.html` at root, packed boot + per-scene packs, file-count warn/fail, range + whole-fetch dual servers.
+- Closure BFS (GameInstance, EUO strip, plugin disable, sprite `textureGuid` payloads), zip `index.html` at root, packed boot + per-scene packs, Havok XOR Rapier, file-count warn/fail, range + whole-fetch dual servers.
 - `e2e/p14-export.spec.ts`: unzip, serve range-capable **and** range-blind, assert boot + ticks on `startupSceneGuid`, file count &lt; 800, no `main.scene.babasset`.
 - `e2e/p14-preview-build.spec.ts`: default overlay Play; toggle on/off; missing startup scene alert.

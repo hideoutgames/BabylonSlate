@@ -61,10 +61,10 @@ export default defineConfig({
   build: {
     target: "es2022",
     cssCodeSplit: false,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         format: "es",
-        inlineDynamicImports: true,
+        codeSplitting: false,
         entryFileNames: "player.js",
         chunkFileNames: "player-[name].js",
         assetFileNames: "player-[name][extname]",

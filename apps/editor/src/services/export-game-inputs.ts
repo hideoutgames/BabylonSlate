@@ -34,6 +34,7 @@ export type ExportDocumentLoaders = {
 export type LoadedExportDocuments = {
   sceneByGuid: (guid: string) => SerializedScene | null;
   graphByGuid: (guid: string) => SerializedGraph | null;
+  payloadByGuid: (guid: string) => unknown | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
 };
 
@@ -66,6 +67,7 @@ export async function loadExportDocuments(
 ): Promise<LoadedExportDocuments> {
   const scenes = new Map<string, SerializedScene>();
   const graphs = new Map<string, SerializedGraph>();
+  const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
   for (const asset of loaders.assets) {
     const kind = documentKindForAssetType(asset.header.type);
@@ -84,6 +86,9 @@ export async function loadExportDocuments(
         document = null;
       }
     }
+    if (document && typeof document === "object") {
+      payloads.set(asset.header.guid, document);
+    }
     if (asset.header.type === "Scene" && document) {
       scenes.set(asset.header.guid, document as SerializedScene);
     }
@@ -99,6 +104,7 @@ export async function loadExportDocuments(
   return {
     sceneByGuid: (guid) => scenes.get(guid) ?? null,
     graphByGuid: (guid) => graphs.get(guid) ?? null,
+    payloadByGuid: (guid) => payloads.get(guid) ?? null,
     bytesByGuid: (guid) => bytes.get(guid) ?? null,
   };
 }

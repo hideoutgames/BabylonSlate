@@ -107,6 +107,44 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("euo-1");
   });
 
+  it("follows sprite payload textureGuid when header.dependencies is empty", () => {
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [
+            {
+              id: "sprite-comp",
+              classId: "SpriteComponent",
+              properties: { assetGuid: "sprite-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "sprite-1", type: "Sprite", name: "Hero", dependencies: [] }),
+        asset({ guid: "tex-atlas", type: "Texture", name: "Atlas" }),
+        asset({ guid: "unused-tex", type: "Texture", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) =>
+        guid === "sprite-1" ? { textureGuid: "tex-atlas" } : null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining(["scene-1", "sprite-1", "tex-atlas"]),
+    );
+    expect(result.value).not.toContain("unused-tex");
+  });
+
   it("follows graph pin guids and header dependencies", () => {
     const graph: SerializedGraph = {
       nodes: [

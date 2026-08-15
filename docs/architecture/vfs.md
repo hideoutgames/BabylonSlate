@@ -53,6 +53,10 @@ Number fields (frame cap, hardware scaling, pointer scale, undo length, graph de
 
 `createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. With no bridge the Electron store keeps settings in memory, so desktop never silently loses them to a missing backend.
 
+## iOS public copy (P14)
+
+Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/App/public/` (gitignored) from that dist, including `coi-serviceworker.js`, `havok/`, `ktx2/`, and `/player/`. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Do not treat the gitignored iOS `public/` snapshot as source — the copy contract is asserted in `packages/vfs/src/capacitor-ios.test.ts`.
+
 ## Templates folder
 
 `createTemplateStorage(folder)` binds the Engine Settings templates folder in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends. Web has no folder picker for a templates location. Create Project still offers built-in **Empty** and **2D** cards; the Homepage copy does not advertise Engine Settings templates on web. Other hosts show a card per `*.babproject` entry that has a manifest. Entries without a manifest are skipped rather than failing the Homepage.

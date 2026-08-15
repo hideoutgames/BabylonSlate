@@ -15,8 +15,8 @@ import {
 
 export const PREVIEW_PREPARE_PHASES = [
   "Saving",
-  "Compiling",
   "Collecting Assets",
+  "Compiling",
   "Writing Pack",
   "Launching",
 ] as const;

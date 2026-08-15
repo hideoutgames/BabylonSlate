@@ -9,6 +9,7 @@ import {
   SCRIPTS_FILE,
 } from "./constants";
 import { concatenateScripts, serializeScriptRegistry } from "./scripts";
+import { selectPlayerRuntimeFiles } from "./player-files";
 import type {
   ExportArtifact,
   ExportAssetBytes,
@@ -180,8 +181,11 @@ export async function exportGame(
   const files = new Map<string, Uint8Array>();
 
   if (options.playerFiles) {
-    for (const [path, bytes] of options.playerFiles) {
-      files.set(path.replace(/^\/+/, ""), bytes);
+    const physicsWorld = options.physicsWorld ?? "3d";
+    for (const [path, bytes] of selectPlayerRuntimeFiles(options.playerFiles, {
+      physicsWorld,
+    })) {
+      files.set(path, bytes);
     }
   }
   if (!files.has("index.html")) {

@@ -391,14 +391,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         if (!saved) return;
       }
       if (previewCancelledRef.current) return;
-      setPreviewPhase("Compiling");
       setPreviewPhase("Collecting Assets");
       const playerFiles = await loadPlayerDistFiles();
       if (previewCancelledRef.current) return;
-      setPreviewPhase("Writing Pack");
       const packed = await exportGameArtifact({
         previewBuild: true,
         playerFiles,
+        onPhase: (phase) => {
+          if (!previewCancelledRef.current) setPreviewPhase(phase);
+        },
       });
       if (isErr(packed)) {
         if (packed.error === MISSING_STARTUP_SCENE_MESSAGE) {

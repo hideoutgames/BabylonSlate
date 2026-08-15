@@ -105,6 +105,71 @@ describe("collectAndExportGame", () => {
     );
   });
 
+  it("packs a sprite textureGuid reached through the sprite payload", async () => {
+    const scene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [
+            {
+              id: "sprite-comp",
+              classId: "SpriteComponent",
+              properties: { assetGuid: "sprite-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "sprite-1", type: "Sprite", name: "Hero" }),
+        asset({ guid: "tex-atlas", type: "Texture", name: "Atlas" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) =>
+        guid === "sprite-1" ? { textureGuid: "tex-atlas" } : null,
+      bytesByGuid: (guid) =>
+        guid === "scene-1"
+          ? new TextEncoder().encode(JSON.stringify(scene))
+          : new TextEncoder().encode(guid),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    const guids = result.value.manifest.assets.map((entry) => entry.guid);
+    expect(guids).toEqual(expect.arrayContaining(["scene-1", "sprite-1", "tex-atlas"]));
+  });
+
+  it("reports Compiling then Writing Pack", async () => {
+    const scene = createDefaultScene();
+    const phases: string[] = [];
+    await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+      onPhase: (phase) => phases.push(phase),
+    });
+    expect(phases).toEqual(["Compiling", "Writing Pack"]);
+  });
+
   it("Preview Build always bundles the debugger", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({

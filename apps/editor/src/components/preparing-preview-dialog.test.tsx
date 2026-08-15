@@ -14,7 +14,7 @@ describe("PreparingPreviewDialog", () => {
     );
     expect(screen.getByTestId("preparing-preview-dialog")).toBeTruthy();
     expect(screen.getByText("Collecting Assets")).toBeTruthy();
-    expect(screen.getByText("3 / 5")).toBeTruthy();
+    expect(screen.getByText("2 / 5")).toBeTruthy();
     expect(screen.queryByTestId("preparing-preview-cancel")).toBeNull();
   });
 });

@@ -54,6 +54,7 @@ export type CollectExportGameParams = {
   sceneByGuid: (guid: string) => SerializedScene | null;
   graphByGuid: (guid: string) => SerializedGraph | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
+  payloadByGuid?: (guid: string) => unknown | null;
   customResolution: RenderProjectSettings;
   playFrameCap: number;
   physicsWorld: "2d" | "3d";
@@ -61,6 +62,7 @@ export type CollectExportGameParams = {
   extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
+  onPhase?: (phase: "Compiling" | "Writing Pack") => void;
 };
 
 function enabledPluginGuids(
@@ -119,6 +121,7 @@ export async function collectAndExportGame(
     parentOf: params.parentOf,
     sceneByGuid: params.sceneByGuid,
     graphByGuid: params.graphByGuid,
+    payloadByGuid: params.payloadByGuid,
   });
   if (isErr(closure)) {
     return { ok: false, error: closure.error };
@@ -155,10 +158,12 @@ export async function collectAndExportGame(
     }
   }
 
+  params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = bundleDebugger
     ? compileGraphDocuments(graphDocs)
     : compileGraphDocumentsForExport(graphDocs);
 
+  params.onPhase?.("Writing Pack");
   return exportGame({
     mode,
     bundleDebugger,

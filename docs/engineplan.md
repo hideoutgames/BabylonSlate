@@ -1062,7 +1062,7 @@ P4's single app-lifetime Engine still applies to the **editor document**. The if
 
 The pack is in-memory (transferred into the iframe). It is not written into the project tree, not part of Export Project, and is discarded when Play closes, the overlay unmounts, or packaging fails. Every Play builds a fresh pack — no stale preview cache.
 
-While the pack is preparing, a non-dismissible **Preparing Preview** `Dialog` blocks editor input and freezes viewports (the same overlay gate as other modals). It shows determinate `Progress` (`n / m` plus a phase): Saving, Compiling, Collecting Assets, Writing Pack, Launching. Cancel is offered only before the iframe exists; after launch, the overlay X stops Play. Close stops the player, destroys the iframe, drops the pack, and shows the existing Preview session report if the iframe reported diagnostics.
+While the pack is preparing, a non-dismissible **Preparing Preview** `Dialog` blocks editor input and freezes viewports (the same overlay gate as other modals). It shows determinate `Progress` (`n / m` plus a phase): Saving, Collecting Assets, Compiling, Writing Pack, Launching. Cancel is offered only before the iframe exists; after launch, the overlay X stops Play. Close stops the player, destroys the iframe, drops the pack, and shows the existing Preview session report if the iframe reported diagnostics.
 
 Preview Build always bundles the debugger and keeps Development Only nodes (Print defaults on). Release zip still honours bundle-debugger / `compileGraphDocumentsForExport` from section 9.6.
 

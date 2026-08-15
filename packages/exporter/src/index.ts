@@ -7,6 +7,7 @@ export {
   BOOT_PACK_FILE,
 } from "./constants";
 export { collectExportClosure } from "./closure";
+export { selectPlayerRuntimeFiles } from "./player-files";
 export { encodeBabpack, decodeBabpack, decodeBabpackIndex } from "./babpack";
 export { createHttpPackSource, createMemoryPackSource } from "./pack-source";
 export type { PackSource } from "./pack-source";
