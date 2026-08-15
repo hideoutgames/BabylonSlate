@@ -17,3 +17,8 @@ export * from "./template-storage";
 export * from "./test-mode";
 export * from "./web-adapter";
 export * from "./web-app-settings";
+export * from "./secret-store";
+export * from "./create-secret-store";
+export * from "./electron-secret-store";
+export * from "./native-http-port";
+export * from "./native-http";

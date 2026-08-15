@@ -26,6 +26,7 @@ export default defineConfig({
             "packages/scripting/**/*.test.ts",
             "packages/scripting-nodes/**/*.test.ts",
             "packages/exporter/**/*.test.ts",
+            "packages/source-control/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
             "apps/docs/**/*.test.ts",
             "apps/player/**/*.test.ts",
@@ -63,6 +64,7 @@ export default defineConfig({
         // Capacitor-backed composites need a device; covered by P1 device spikes.
         "**/mobile-storage-adapter.ts",
         "**/preferences-app-settings.ts",
+        "**/capacitor-secret-store.ts",
         // Documents adapter production path uses Capacitor Filesystem; behaviour
         // is covered by documents-adapter.test.ts with an injected fake FS.
         "**/documents-adapter.ts",
@@ -224,6 +226,12 @@ export default defineConfig({
           statements: 60,
         },
         "packages/exporter/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/source-control/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,

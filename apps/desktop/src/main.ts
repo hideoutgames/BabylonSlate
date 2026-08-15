@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { Buffer } from "node:buffer";
+import { app, BrowserWindow, dialog, ipcMain, net, safeStorage } from "electron";
 import { NodeStorageAdapter } from "@babylonslate/vfs/node";
 import type { ProjectFolderHandle } from "@babylonslate/core";
 
@@ -40,6 +41,61 @@ function registerIpc(): void {
   ipcMain.handle("settings:write", async (_event, json) => {
     await mkdir(dirname(settingsPath), { recursive: true });
     await writeFile(settingsPath, String(json));
+  });
+
+  const secretsPath = userDataFile("source-control-secrets.json");
+
+  async function readSecretMap(): Promise<Record<string, string>> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(secretsPath, "utf8"));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, string>;
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  }
+
+  async function writeSecretMap(map: Record<string, string>): Promise<void> {
+    await mkdir(dirname(secretsPath), { recursive: true });
+    await writeFile(secretsPath, JSON.stringify(map));
+  }
+
+  ipcMain.handle("secrets:get", async (_event, key) => {
+    const map = await readSecretMap();
+    const packed = map[String(key)];
+    if (!packed) return null;
+    if (!safeStorage.isEncryptionAvailable()) return packed;
+    return safeStorage.decryptString(Buffer.from(packed, "base64"));
+  });
+  ipcMain.handle("secrets:set", async (_event, key, value) => {
+    const map = await readSecretMap();
+    map[String(key)] = safeStorage.isEncryptionAvailable()
+      ? Buffer.from(safeStorage.encryptString(String(value))).toString("base64")
+      : String(value);
+    await writeSecretMap(map);
+  });
+  ipcMain.handle("secrets:delete", async (_event, key) => {
+    const map = await readSecretMap();
+    delete map[String(key)];
+    await writeSecretMap(map);
+  });
+
+  ipcMain.handle("lfs:fetch", async (_event, request) => {
+    const req = request as {
+      method?: string;
+      url?: string;
+      headers?: Record<string, string>;
+      body?: string;
+    };
+    const url = String(req.url ?? "");
+    const response = await net.fetch(url, {
+      method: req.method ?? "GET",
+      headers: req.headers ?? {},
+      body: req.body,
+    });
+    return { status: response.status, bodyText: await response.text() };
   });
 
   ipcMain.handle("project:pickFolder", async () => {

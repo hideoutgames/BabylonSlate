@@ -11,6 +11,8 @@ describe("desktop Electron host", () => {
     expect(preload).toContain("userData");
     expect(preload).toContain("project");
     expect(preload).toContain("settings:read");
+    expect(preload).toContain("secrets:get");
+    expect(preload).toContain("lfs:fetch");
     expect(preload).toContain("project:readBinary");
   });
 
@@ -19,6 +21,9 @@ describe("desktop Electron host", () => {
     expect(main).toContain("NodeStorageAdapter");
     expect(main).toContain("openAbsoluteFolder");
     expect(main).toContain("settings:read");
+    expect(main).toContain("safeStorage");
+    expect(main).toContain("secrets:get");
+    expect(main).toContain("lfs:fetch");
     expect(main).toContain("project:readBinary");
   });
 });

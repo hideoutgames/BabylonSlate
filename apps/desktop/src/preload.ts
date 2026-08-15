@@ -5,6 +5,15 @@ contextBridge.exposeInMainWorld("babylonslate", {
     readSettings: () => ipcRenderer.invoke("settings:read"),
     writeSettings: (json: string) => ipcRenderer.invoke("settings:write", json),
   },
+  secrets: {
+    get: (key: string) => ipcRenderer.invoke("secrets:get", key),
+    set: (key: string, value: string) =>
+      ipcRenderer.invoke("secrets:set", key, value),
+    delete: (key: string) => ipcRenderer.invoke("secrets:delete", key),
+  },
+  http: {
+    fetch: (request: unknown) => ipcRenderer.invoke("lfs:fetch", request),
+  },
   project: {
     pickProjectFolder: () => ipcRenderer.invoke("project:pickFolder"),
     openDocumentsProject: (name: string) =>

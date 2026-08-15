@@ -140,6 +140,19 @@ export interface ProjectSettings {
   pluginOverrides: Record<string, PluginEnableOverride>;
   /** Named export presets; each may override plugin enablement (layer 3). */
   exportPresets: ExportPreset[];
+  /**
+   * Git LFS locking opt-in. Token is never stored here — it lives in the
+   * platform secret store (engineplan §12).
+   */
+  sourceControl: SourceControlProjectSettings;
+}
+
+export interface SourceControlProjectSettings {
+  enabled: boolean;
+  repositoryUrl: string;
+  branch: string;
+  autoLockOnEdit: boolean;
+  pollIntervalMs: number;
 }
 
 export interface PluginEnableOverride {
@@ -236,6 +249,18 @@ export interface SerializedGraph {
   >;
 }
 
+
+export const DEFAULT_SOURCE_CONTROL_POLL_INTERVAL_MS = 60_000;
+export const DEFAULT_SOURCE_CONTROL_BRANCH = "main";
+
+export const DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS: SourceControlProjectSettings =
+  {
+    enabled: false,
+    repositoryUrl: "",
+    branch: DEFAULT_SOURCE_CONTROL_BRANCH,
+    autoLockOnEdit: true,
+    pollIntervalMs: DEFAULT_SOURCE_CONTROL_POLL_INTERVAL_MS,
+  };
 
 export const DEFAULT_PLAY_FRAME_CAP = 60;
 export const DEFAULT_AUTO_SAVE_INTERVAL_MS = 120_000;
@@ -535,6 +560,30 @@ export function normalizeProjectSettings(
     ),
     pluginOverrides: normalizePluginOverrides(settings?.pluginOverrides),
     exportPresets: normalizeExportPresets(settings?.exportPresets),
+    sourceControl: normalizeSourceControl(settings?.sourceControl),
+  };
+}
+
+function normalizeSourceControl(
+  value: Partial<SourceControlProjectSettings> | undefined,
+): SourceControlProjectSettings {
+  const poll =
+    typeof value?.pollIntervalMs === "number" &&
+    Number.isFinite(value.pollIntervalMs) &&
+    value.pollIntervalMs >= 1_000
+      ? Math.round(value.pollIntervalMs)
+      : DEFAULT_SOURCE_CONTROL_POLL_INTERVAL_MS;
+  const branch =
+    typeof value?.branch === "string" && value.branch.trim() !== ""
+      ? value.branch.trim()
+      : DEFAULT_SOURCE_CONTROL_BRANCH;
+  return {
+    enabled: value?.enabled === true,
+    repositoryUrl:
+      typeof value?.repositoryUrl === "string" ? value.repositoryUrl.trim() : "",
+    branch,
+    autoLockOnEdit: value?.autoLockOnEdit !== false,
+    pollIntervalMs: poll,
   };
 }
 

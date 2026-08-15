@@ -20,6 +20,26 @@ declare module "electron" {
     ): void;
   };
 
+  export const safeStorage: {
+    isEncryptionAvailable(): boolean;
+    encryptString(plainText: string): Buffer;
+    decryptString(encrypted: Buffer): string;
+  };
+
+  export const net: {
+    fetch(
+      url: string,
+      init?: {
+        method?: string;
+        headers?: Record<string, string>;
+        body?: string;
+      },
+    ): Promise<{
+      status: number;
+      text(): Promise<string>;
+    }>;
+  };
+
   export const dialog: {
     showOpenDialog(
       options: Record<string, unknown>,

@@ -626,6 +626,16 @@ importers:
         specifier: ~5.8.2
         version: 5.8.3
 
+  packages/source-control:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   packages/test-kit:
     dependencies:
       '@babylonslate/bridge':
