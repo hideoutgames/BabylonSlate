@@ -50,7 +50,25 @@ import {
   type BlobStore,
   type EncodeFn,
   type MigrationPending,
+  type PluginDescriptor,
+  type PluginDiagnostic,
   type ProjectTreeFile,
+  createDefaultPluginSettings,
+  discoverEnginePlugins,
+  discoverProjectPlugins,
+  exportPluginZip,
+  indexUnresolvedPlaceholders,
+  inspectBabplugin,
+  applyPluginImport,
+  installEnginePluginDefaults,
+  mountEnabledPlugins,
+  planPluginImport,
+  resolvePluginEnabled,
+  resolvePluginGraph,
+  shadowEnginePlugins,
+  writeProjectPlugin,
+  type InspectedBabplugin,
+  type PluginImportPlan,
 } from "@babylonslate/assets";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
@@ -58,6 +76,7 @@ import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
+import { uniquePluginFolderName, pluginRootId } from "../lib/plugin-ui";
 import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
 
 export interface ProjectLoadResult {
@@ -65,6 +84,15 @@ export interface ProjectLoadResult {
   layouts: ProjectLayouts;
   migrationPending: MigrationPending[];
 }
+
+export type PluginImportResult =
+  | { status: "imported"; descriptor: PluginDescriptor }
+  | { status: "kept" }
+  | {
+      status: "conflict";
+      incoming: InspectedBabplugin;
+      plan: Extract<PluginImportPlan, { kind: "conflict" }>;
+    };
 
 function newGuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -97,6 +125,10 @@ export class ProjectService {
   private visibilityBound = false;
   private transcoderAvailable = true;
   private derivedStorage: ProjectStorage | null = null;
+  private enginePluginStorage: ProjectStorage | null = null;
+  private pluginDescriptors: PluginDescriptor[] = [];
+  private pluginDiagnostics: PluginDiagnostic[] = [];
+  private pluginOverrides: Record<string, { enabled: boolean }> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
   private readonly registryListeners = new Set<() => void>();
@@ -236,6 +268,29 @@ export class ProjectService {
     return this.assetRegistry;
   }
 
+  get plugins(): PluginDescriptor[] {
+    return this.pluginDescriptors;
+  }
+
+  get pluginGraphDiagnostics(): PluginDiagnostic[] {
+    return this.pluginDiagnostics;
+  }
+
+  setEnginePluginStorage(storage: ProjectStorage | null): void {
+    this.enginePluginStorage = storage;
+  }
+
+  private async installEnginePluginDefaultsIfNeeded(): Promise<void> {
+    if (!this.enginePluginStorage) return;
+    await installEnginePluginDefaults(this.storage, this.enginePluginStorage);
+  }
+
+  setPluginOverrides(
+    overrides: Record<string, { enabled: boolean }>,
+  ): void {
+    this.pluginOverrides = overrides;
+  }
+
   get searchIndex(): ProjectSearchIndex | null {
     return this.projectSearchIndex;
   }
@@ -330,6 +385,7 @@ export class ProjectService {
       name: projectName,
     });
     this.projectGuid = guid;
+    await this.installEnginePluginDefaultsIfNeeded();
     return this.loadCurrentProject();
   }
 
@@ -347,6 +403,9 @@ export class ProjectService {
     this.assetRegistry = null;
     this.projectSearchIndex?.clear();
     this.projectSearchIndex = null;
+    this.pluginDescriptors = [];
+    this.pluginDiagnostics = [];
+    this.pluginOverrides = {};
   }
 
   /** Display-name only: writes `metadata.name` when the folder can be opened. */
@@ -409,6 +468,7 @@ export class ProjectService {
     const document = normalizeProjectDocument(raw, folder.name);
     this.projectGuid = raw.guid ?? newGuid();
     this.loadedTextureSettings = document.settings.textures;
+    this.pluginOverrides = document.settings.pluginOverrides ?? {};
 
     // Project manifest schema migration (type Project).
     const projectVersion =
@@ -449,7 +509,7 @@ export class ProjectService {
     document: ProjectDocument,
   ): Promise<ProjectDocument> {
     await this.mountAssetRegistry();
-    const found = this.assetRegistry!.listDocumentPaths();
+    const found = this.assetRegistry!.listDocumentPaths({ rootId: "project" });
     const legacy = await this.discoverLegacyJsonDocuments();
     const scenes = uniquePaths([
       ...found.scenes,
@@ -506,6 +566,7 @@ export class ProjectService {
     });
     await registry.mountRoot(projectContentRoot());
     this.assetRegistry = registry;
+    await this.syncPlugins();
     this.projectSearchIndex = new ProjectSearchIndex(this.storage, {
       blobs: this.blobs,
       catalogClassIds: SEARCH_CATALOG_CLASS_IDS,
@@ -518,6 +579,197 @@ export class ProjectService {
       await registry.requeueUncompressedTextures();
     }
     return registry;
+  }
+
+  async syncPlugins(): Promise<void> {
+    const registry = this.assetRegistry;
+    if (!registry) return;
+    const projectPlugins = await discoverProjectPlugins(this.storage);
+    const enginePlugins = this.enginePluginStorage
+      ? await discoverEnginePlugins(this.enginePluginStorage)
+      : [];
+    this.pluginDescriptors = shadowEnginePlugins(
+      projectPlugins,
+      enginePlugins,
+    );
+    const enabledGuids = new Set(
+      this.pluginDescriptors
+        .filter((plugin) =>
+          resolvePluginEnabled(
+            plugin.settings.enabledByDefault,
+            this.pluginOverrides[plugin.pluginGuid]?.enabled,
+          ),
+        )
+        .map((plugin) => plugin.pluginGuid),
+    );
+    for (const plugin of this.pluginDescriptors) {
+      const rootId = pluginRootId(plugin.pluginGuid);
+      if (!enabledGuids.has(plugin.pluginGuid) && registry.getRoot(rootId)) {
+        registry.unmountRoot(rootId);
+      }
+    }
+    await mountEnabledPlugins(registry, this.pluginDescriptors, {
+      enabledGuids,
+      storageFor: (plugin) =>
+        plugin.source === "engine"
+          ? (this.enginePluginStorage ?? undefined)
+          : undefined,
+    });
+    const { diagnostics } = resolvePluginGraph(this.pluginDescriptors);
+    this.pluginDiagnostics = diagnostics;
+    const discoveredGuids = new Set(
+      this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
+    );
+    indexUnresolvedPlaceholders(registry, {
+      expectedGuids: Object.keys(this.pluginOverrides).filter(
+        (guid) => !discoveredGuids.has(guid),
+      ),
+    });
+  }
+
+  async applyPluginOverrides(
+    overrides: Record<string, { enabled: boolean }>,
+  ): Promise<void> {
+    this.pluginOverrides = overrides;
+    await this.syncPlugins();
+    if (this.projectSearchIndex && this.assetRegistry) {
+      await this.projectSearchIndex.rebuild(this.assetRegistry);
+    }
+    this.emitRegistryChange();
+  }
+
+  async createProjectPlugin(displayName: string): Promise<PluginDescriptor> {
+    const name = displayName.trim() || "Plugin";
+    const existing = await discoverProjectPlugins(this.storage);
+    const folderName = uniquePluginFolderName(
+      name,
+      existing.map((plugin) => plugin.folderName),
+    );
+    const settings = createDefaultPluginSettings({
+      pluginGuid: newGuid(),
+      displayName: name,
+    });
+    const descriptor = await writeProjectPlugin(
+      this.storage,
+      folderName,
+      settings,
+    );
+    await this.syncPlugins();
+    if (this.projectSearchIndex && this.assetRegistry) {
+      await this.projectSearchIndex.rebuild(this.assetRegistry);
+    }
+    this.emitRegistryChange();
+    return descriptor;
+  }
+
+  async deleteProjectPlugin(guid: string): Promise<void> {
+    const plugin = this.pluginDescriptors.find(
+      (entry) => entry.pluginGuid === guid,
+    );
+    if (!plugin) return;
+    if (plugin.source === "engine") {
+      throw new Error("Engine plugins cannot be deleted from the project");
+    }
+    this.assetRegistry?.unmountRoot(pluginRootId(guid));
+    await this.storage.remove(plugin.folderPath);
+    const next = { ...this.pluginOverrides };
+    delete next[guid];
+    this.pluginOverrides = next;
+    await this.syncPlugins();
+    if (this.projectSearchIndex && this.assetRegistry) {
+      await this.projectSearchIndex.rebuild(this.assetRegistry);
+    }
+    this.emitRegistryChange();
+  }
+
+  async exportPlugin(guid: string): Promise<Uint8Array> {
+    const plugin = this.pluginDescriptors.find(
+      (entry) => entry.pluginGuid === guid,
+    );
+    if (!plugin) {
+      throw new Error(`Unknown plugin ${guid}`);
+    }
+    const storage =
+      plugin.source === "engine"
+        ? this.enginePluginStorage
+        : this.storage;
+    if (!storage) {
+      throw new Error("Plugin storage is not available");
+    }
+    return exportPluginZip(storage, plugin);
+  }
+
+  async importPlugin(
+    bytes: Uint8Array,
+    decision?: "keep" | "replace",
+  ): Promise<PluginImportResult> {
+    const incoming = await inspectBabplugin(bytes);
+    const occupiedGuids = new Set<string>([
+      ...this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
+      ...(this.assetRegistry?.list().map((asset) => asset.header.guid) ?? []),
+    ]);
+    const plan = planPluginImport({
+      incoming,
+      existingPlugins: this.pluginDescriptors,
+      occupiedGuids,
+      existingFolderNames: this.pluginDescriptors.map(
+        (plugin) => plugin.folderName,
+      ),
+    });
+    if (plan.kind === "conflict") {
+      if (decision === "keep") return { status: "kept" };
+      if (decision !== "replace") {
+        return { status: "conflict", incoming, plan };
+      }
+      await applyPluginImport(this.storage, incoming, {
+        ...plan,
+        replace: true,
+      });
+    } else {
+      await applyPluginImport(this.storage, incoming, plan);
+    }
+    await this.syncPlugins();
+    if (this.projectSearchIndex && this.assetRegistry) {
+      await this.projectSearchIndex.rebuild(this.assetRegistry);
+    }
+    this.emitRegistryChange();
+    const guid =
+      plan.kind === "remap-plugin" ? plan.nextGuid : incoming.settings.pluginGuid;
+    const descriptor = this.pluginDescriptors.find(
+      (plugin) => plugin.pluginGuid === guid,
+    );
+    if (!descriptor) {
+      throw new Error("Plugin import did not produce a descriptor");
+    }
+    return { status: "imported", descriptor };
+  }
+
+  private storageForPath(path: string): ProjectStorage {
+    const indexed = this.assetRegistry
+      ?.list()
+      .find((asset) => asset.path === path);
+    if (indexed && this.assetRegistry) {
+      return this.assetRegistry.storageFor(indexed.rootId);
+    }
+    const plugin = this.pluginDescriptors.find(
+      (entry) =>
+        path === entry.settingsPath ||
+        path.startsWith(`${entry.folderPath}/`),
+    );
+    if (plugin?.source === "engine" && this.enginePluginStorage) {
+      return this.enginePluginStorage;
+    }
+    return this.storage;
+  }
+
+  private blobsForPath(path: string): BlobStore {
+    const indexed = this.assetRegistry
+      ?.list()
+      .find((asset) => asset.path === path);
+    if (indexed && this.assetRegistry) {
+      return this.assetRegistry.blobsFor(indexed.rootId);
+    }
+    return this.blobs;
   }
 
   private bindEncodeQueueVisibility(): void {
@@ -595,6 +847,7 @@ export class ProjectService {
     const document = createEmptyProject(name, { kind, render });
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
+    this.pluginOverrides = document.settings.pluginOverrides ?? {};
     const graph = createDefaultLogicGraphSerialized();
     const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");
     await this.storage.mkdir("assets/.blobs", true);
@@ -610,6 +863,7 @@ export class ProjectService {
     stored.kind = "project";
     stored.version = this.migrations.currentVersion("Project");
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
+    await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
     return {
       document,
@@ -660,8 +914,8 @@ export class ProjectService {
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
     try {
       const decoded = await decodeAssetDocument(
-        await this.storage.readBinary(path),
-        { blobs: this.blobs },
+        await this.storageForPath(path).readBinary(path),
+        { blobs: this.blobsForPath(path) },
       );
       this.assetGuids.set(path, decoded.guid);
       return {
@@ -710,9 +964,19 @@ export class ProjectService {
         "Asset schema migration requires user approval before save",
       );
     }
+    const storage = this.storageForPath(path);
+    const blobs = this.blobsForPath(path);
+    const plugin = this.pluginDescriptors.find(
+      (entry) =>
+        path === entry.settingsPath ||
+        path.startsWith(`${entry.folderPath}/`),
+    );
+    if (plugin?.readOnly) {
+      throw new Error("Engine plugin assets are read-only");
+    }
     const dir = parentDir(path);
     if (dir) {
-      await this.storage.mkdir(dir, true);
+      await storage.mkdir(dir, true);
     }
     const existing = isAssetDocumentPath(path)
       ? await this.readExistingAssetMeta(path)
@@ -736,13 +1000,19 @@ export class ProjectService {
       const bytes = await encodeAssetDocument(
         {
           type,
-          name: assetName(path),
+          name:
+            type === "PluginSettings" &&
+            typeof (content as { displayName?: unknown }).displayName ===
+              "string" &&
+            (content as { displayName: string }).displayName.trim() !== ""
+              ? (content as { displayName: string }).displayName.trim()
+              : assetName(path),
           guid: await this.guidForAsset(path),
           version,
           payload: content as unknown as Record<string, unknown>,
         },
         {
-          blobs: this.blobs,
+          blobs,
           extraChunks,
           parentClass,
           headerPayload: storeInHeader
@@ -760,10 +1030,10 @@ export class ProjectService {
               : undefined,
         },
       );
-      await this.storage.writeBinary(path, bytes);
+      await storage.writeBinary(path, bytes);
       await this.assetRegistry?.reindexPath(path);
     } else {
-      await this.storage.writeText(
+      await storage.writeText(
         path,
         JSON.stringify({ ...content, version }, null, 2),
       );
@@ -787,10 +1057,12 @@ export class ProjectService {
     path: string,
     chunkId: string,
   ): Promise<Uint8Array | null> {
-    if (!(await this.storage.exists(path))) return null;
+    const storage = this.storageForPath(path);
+    const blobs = this.blobsForPath(path);
+    if (!(await storage.exists(path))) return null;
     const decoded = await decodeBabasset(
-      await this.storage.readBinary(path),
-      (hash) => this.blobs.readBlob(hash),
+      await storage.readBinary(path),
+      (hash) => blobs.readBlob(hash),
     );
     return decoded.chunks.get(chunkId) ?? null;
   }
@@ -833,10 +1105,10 @@ export class ProjectService {
     parentClass: string | null;
     hasDocumentChunk: boolean;
   } | null> {
-    if (!(await this.storage.exists(path))) return null;
+    if (!(await this.storageForPath(path).exists(path))) return null;
     try {
       const header = readAssetDocumentHeader(
-        await this.storage.readBinary(path),
+        await this.storageForPath(path).readBinary(path),
       );
       return {
         type: header.type,
@@ -851,11 +1123,13 @@ export class ProjectService {
   }
 
   private async extraChunksFor(path: string) {
-    if (!(await this.storage.exists(path))) return [];
+    const storage = this.storageForPath(path);
+    const blobs = this.blobsForPath(path);
+    if (!(await storage.exists(path))) return [];
     try {
       const decoded = await decodeBabasset(
-        await this.storage.readBinary(path),
-        (hash) => this.blobs.readBlob(hash),
+        await storage.readBinary(path),
+        (hash) => blobs.readBlob(hash),
       );
       return extraChunksFromDecoded(decoded);
     } catch {
@@ -866,10 +1140,11 @@ export class ProjectService {
   private async guidForAsset(path: string): Promise<string> {
     const cached = this.assetGuids.get(path);
     if (cached) return cached;
-    if (await this.storage.exists(path)) {
+    const storage = this.storageForPath(path);
+    if (await storage.exists(path)) {
       try {
         const header = readAssetDocumentHeader(
-          await this.storage.readBinary(path),
+          await storage.readBinary(path),
         );
         this.assetGuids.set(path, header.guid);
         return header.guid;

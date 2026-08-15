@@ -9,7 +9,8 @@ export type DockviewDocumentKind =
   | "sprite"
   | "tileset"
   | "tilemap"
-  | "ui";
+  | "ui"
+  | "plugin-settings";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -22,6 +23,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "tileset",
   "tilemap",
   "ui",
+  "plugin-settings",
 ]);
 
 export function isDockviewDocumentKind(
@@ -308,6 +310,14 @@ const UI_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const PLUGIN_SETTINGS_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "plugin-settings-details",
+    component: "plugin-settings-details",
+    title: "Details",
+  },
+];
+
 const UI_SETTINGS_WINDOW: DockWindowDefinition = {
   id: "ui-settings",
   component: "ui-settings",
@@ -335,6 +345,7 @@ export function listDockWindows(
       ? [...UI_WINDOWS, UI_SETTINGS_WINDOW]
       : UI_WINDOWS;
   }
+  if (kind === "plugin-settings") return PLUGIN_SETTINGS_WINDOWS;
   if (options?.actorPrefab === false) return OBJECT_GRAPH_WINDOWS;
   return GRAPH_WINDOWS;
 }

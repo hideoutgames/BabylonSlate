@@ -90,7 +90,12 @@ function jsIdent(name: string): string {
 
 export function compileGraphDocument(
   content: SerializedGraph | LogicGraph,
-  options: { path: string; graphId?: string; parentClassId?: string | null },
+  options: {
+    path: string;
+    graphId?: string;
+    parentClassId?: string | null;
+    stripDevelopmentOnly?: boolean;
+  },
 ): ScriptBundleEntry | null {
   const graphId = options.graphId ?? "event-graph";
   const serialized = isLogicGraphPayload(content) ? null : content;
@@ -101,6 +106,7 @@ export function compileGraphDocument(
       compileGraph(logic, {
         assetGuid: options.path,
         registry: defaultNodeRegistry,
+        stripDevelopmentOnly: options.stripDevelopmentOnly,
       }),
     );
   }
@@ -119,6 +125,7 @@ export function compileGraphDocument(
           assetGuid: options.path,
           registry: defaultNodeRegistry,
           exportName,
+          stripDevelopmentOnly: options.stripDevelopmentOnly,
         }),
       );
     }
@@ -251,6 +258,7 @@ export function compileGraphDocuments(
     content: SerializedGraph | LogicGraph;
     parentClassId?: string | null;
   }>,
+  options: { stripDevelopmentOnly?: boolean } = {},
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
   for (const doc of documents) {
@@ -258,6 +266,7 @@ export function compileGraphDocuments(
       const script = compileGraphDocument(doc.content, {
         path: doc.path,
         parentClassId: doc.parentClassId,
+        stripDevelopmentOnly: options.stripDevelopmentOnly,
       });
       if (script) scripts.push(script);
     } catch (error) {
@@ -267,4 +276,15 @@ export function compileGraphDocuments(
     }
   }
   return scripts;
+}
+
+/** Release / packed export compile — always omits Development Only nodes. */
+export function compileGraphDocumentsForExport(
+  documents: ReadonlyArray<{
+    path: string;
+    content: SerializedGraph | LogicGraph;
+    parentClassId?: string | null;
+  }>,
+): ScriptBundleEntry[] {
+  return compileGraphDocuments(documents, { stripDevelopmentOnly: true });
 }

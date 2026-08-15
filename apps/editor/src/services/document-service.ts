@@ -38,6 +38,7 @@ export interface DocumentRegistryState {
   tabOrder: string[];
   activeDocumentId: string | null;
   panelPlacements: Record<string, Record<string, PanelPlacement>>;
+  showPluginContent: boolean;
 }
 
 export class DocumentService {
@@ -46,6 +47,7 @@ export class DocumentService {
     tabOrder: [],
     activeDocumentId: null,
     panelPlacements: {},
+    showPluginContent: false,
   };
 
   getState(): DocumentRegistryState {
@@ -111,6 +113,7 @@ export class DocumentService {
       tabOrder: [],
       activeDocumentId: null,
       panelPlacements: structuredClone(layouts.panelPlacements ?? {}),
+      showPluginContent: layouts.showPluginContent === true,
     };
 
     this.ensureContentBrowserTab();
@@ -376,8 +379,13 @@ export class DocumentService {
       documents,
       tabOrder: [...this.state.tabOrder],
       activeDocumentId: this.state.activeDocumentId,
+      showPluginContent: this.state.showPluginContent,
       ...(Object.keys(panelPlacements).length > 0 ? { panelPlacements } : {}),
     };
+  }
+
+  setShowPluginContent(show: boolean): void {
+    this.state.showPluginContent = show;
   }
 
   getDirtyDocuments(): OpenDocument[] {

@@ -32,9 +32,10 @@ packages/graph-ui/    React Flow graph editor with Blueprint node chrome (mutati
 packages/ui/          shadcn primitives; catalog in [components.md](components.md)
 packages/editor-kit/  Touch-shell hooks, property grid, tree view, panel frame, asset picker, SearchInput, parameter-list editor; see [components.md](components.md)
 packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport harness
+engine-plugins/       First-party plugins (Starter Content); packed to `public/engine-plugins/` at editor build
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [global-search.md](global-search.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md), [debugger.md](debugger.md), [ui-runtime.md](ui-runtime.md), [fonts.md](fonts.md), [sprites.md](sprites.md), [tilemaps.md](tilemaps.md), [anim-graph.md](anim-graph.md), [behaviour-tree.md](behaviour-tree.md), [navigation.md](navigation.md), [shader-graph.md](shader-graph.md), [theming.md](theming.md), [components.md](components.md), [editor-extensions.md](editor-extensions.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [plugins.md](plugins.md), [global-search.md](global-search.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md), [debugger.md](debugger.md), [ui-runtime.md](ui-runtime.md), [fonts.md](fonts.md), [sprites.md](sprites.md), [tilemaps.md](tilemaps.md), [anim-graph.md](anim-graph.md), [behaviour-tree.md](behaviour-tree.md), [navigation.md](navigation.md), [shader-graph.md](shader-graph.md), [theming.md](theming.md), [components.md](components.md), [editor-extensions.md](editor-extensions.md).
 
 ## Threading (P4)
 
@@ -51,10 +52,10 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 ## Data flow today
 
 - **Lifecycle**: Homepage opens/creates a `.babproject`; editor shell only runs against an open project.
-- **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. The global **Windows** menu toggles dock panels for the active DockView document (Scene, Class, Enum, Structure, ScriptInterface, Sprite, Tileset, Tilemap, UserInterface / EditorUtilityInterface, …) and stores last **addPanel-relative** placements in `layout.json`. New asset editors must be DockView documents — see [Asset document docks](#asset-document-docks).
+- **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. The global **Windows** menu toggles dock panels for the active DockView document (Scene, Class, Enum, Structure, ScriptInterface, Sprite, Tileset, Tilemap, UserInterface / EditorUtilityInterface, PluginSettings, …) and stores last **addPanel-relative** placements in `layout.json`. New asset editors must be DockView documents — see [Asset document docks](#asset-document-docks).
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
-- **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only).
-- **Global search**: `ProjectSearchIndex` (same package) may load Scene/Graph document JSON for actors/nodes; it must not load binary payloads. Toolbar Search opens a centered dialog; see [global-search.md](global-search.md).
+- **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only). Enabled plugins mount as extra roots ([plugins.md](plugins.md)); engine plugins unpack into a separate read-only Memory storage. New projects copy them into `plugins/` with the same guids (project copy shadows the engine original).
+- **Global search**: `ProjectSearchIndex` (same package) may load Scene/Graph document JSON for actors/nodes from the asset’s root storage; it must not load binary payloads. Toolbar Search opens a centered dialog; see [global-search.md](global-search.md).
 - **Edits**: `@babylonslate/edit` owns per-document undo; graph, scene, and P9 asset documents (UserInterface / Font / Sprite / AnimationGraph / Shader) route mutations through commands (`applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange`).
 - **Scene editing (P6)**: `SerializedScene` v2 actors/components; shared `SceneEditingProvider` selection; viewport gizmo + 2D mode via `@babylonslate/render` editor tools. See [scene-editing.md](scene-editing.md).
 - **Input mappings (P6)**: Project Settings → `InputResolver` → runtime `TickContext` and scripting input nodes. See [input.md](input.md).

@@ -8,6 +8,7 @@ import {
   selectEditorUtilityGraphs,
   shutdownEditorUtilityHost,
 } from "./editor-utility-scripts";
+import { mergePluginEditorUtilityObjects } from "./plugin-ui";
 
 const emptyGraph = { nodes: [], edges: [] };
 
@@ -83,6 +84,44 @@ describe("selectEditorUtilityGraphs", () => {
       },
     );
     expect(selected).toEqual([]);
+  });
+
+  it("keeps plugin-registered EUO graphs when merged with project ids", () => {
+    const registered = mergePluginEditorUtilityObjects(["Tools"], [
+      { editorUtilityObjects: ["PackTools"] },
+    ]);
+    const selected = selectEditorUtilityGraphs(
+      [
+        {
+          path: "assets/Tools.class.babasset",
+          content: emptyGraph,
+        },
+        {
+          path: "plugins/pack/assets/PackTools.class.babasset",
+          content: emptyGraph,
+        },
+      ],
+      {
+        headers: {
+          "assets/Tools.class.babasset": {
+            type: "Class",
+            parentClass: "EditorUtilityObject",
+            name: "Tools",
+          },
+          "plugins/pack/assets/PackTools.class.babasset": {
+            type: "Class",
+            parentClass: "EditorUtilityObject",
+            name: "PackTools",
+          },
+        },
+        parentOf,
+        registeredClassIds: registered,
+      },
+    );
+    expect(selected.map((graph) => graph.path)).toEqual([
+      "assets/Tools.class.babasset",
+      "plugins/pack/assets/PackTools.class.babasset",
+    ]);
   });
 });
 

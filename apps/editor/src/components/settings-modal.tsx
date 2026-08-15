@@ -43,6 +43,7 @@ import {
   type EngineSettingsCategoryId,
 } from "./engine-settings-form";
 import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
+import { ProjectPluginsSettings } from "./project-plugins-settings";
 
 export type SettingsScope = "project" | "engine";
 
@@ -88,6 +89,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords: "max dimension encoding retry compression",
   },
   {
+    id: "plugins",
+    label: "Plugins",
+    keywords: "plugins enable engine project starter content babplugin",
+  },
+  {
     id: "export",
     label: "Export",
     keywords: "export project zip download startup scene packaged player",
@@ -100,7 +106,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Project", ids: ["general", "input", "twoD", "fonts", "rendering", "textures", "export"] },
+  { label: "Project", ids: ["general", "input", "twoD", "fonts", "rendering", "textures", "plugins", "export"] },
   { label: "Session", ids: ["project"] },
 ];
 
@@ -718,6 +724,10 @@ export function SettingsModal({
             </Button>
           </FieldSet>
         </FieldGroup>
+      ) : null}
+
+      {showProjectBody && projectDocument && activeCategoryId === "plugins" ? (
+        <ProjectPluginsSettings />
       ) : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "export" ? (

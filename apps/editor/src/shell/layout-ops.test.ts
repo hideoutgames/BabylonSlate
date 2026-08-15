@@ -75,6 +75,9 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("tileset", [])).toEqual(["tileset-preview"]);
     expect(resolveFocusKeepPanelIds("tilemap", [])).toEqual(["tilemap-paint"]);
     expect(resolveFocusKeepPanelIds("ui", [])).toEqual(["ui-design"]);
+    expect(resolveFocusKeepPanelIds("plugin-settings", [])).toEqual([
+      "plugin-settings-details",
+    ]);
   });
 
   it("keeps an explicit list as-is", () => {

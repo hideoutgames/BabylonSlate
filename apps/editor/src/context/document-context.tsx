@@ -29,11 +29,14 @@ import {
   truncateJournal,
   type AssetRegistry,
   type MigrationPending,
+  type PluginDescriptor,
+  type PluginDiagnostic,
   type ProjectSearchIndex,
   type ProjectTemplate,
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
+  resolvePluginEnabled,
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
@@ -61,9 +64,10 @@ import {
   DocumentService,
   type OpenDocument,
 } from "../services/document-service";
-import { ProjectService } from "../services/project-service";
+import { ProjectService, type PluginImportResult } from "../services/project-service";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
+import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
 import type { CreateProjectOptions } from "../lib/create-project";
 import {
@@ -89,6 +93,10 @@ import {
   classDocumentShowsPrefab,
   classParentLookup,
 } from "../lib/content-browser-helpers";
+import {
+  classAssetPaths,
+  mergePluginEditorUtilityObjects,
+} from "../lib/plugin-ui";
 import {
   listedProjectsFromRecents,
   type ListedProject,
@@ -136,6 +144,20 @@ interface DocumentContextValue {
   /** Bumps when encode/import mutates registry payloads in place. */
   registryVersion: number;
   refreshAssetRegistry: () => Promise<void>;
+  pluginDescriptors: PluginDescriptor[];
+  pluginDiagnostics: PluginDiagnostic[];
+  showPluginContent: boolean;
+  setShowPluginContent: (show: boolean) => void;
+  applyPluginOverrides: (
+    overrides: Record<string, { enabled: boolean }>,
+  ) => Promise<void>;
+  createProjectPlugin: (displayName: string) => Promise<PluginDescriptor>;
+  deleteProjectPlugin: (guid: string) => Promise<void>;
+  exportPlugin: (guid: string) => Promise<Uint8Array>;
+  importPlugin: (
+    bytes: Uint8Array,
+    decision?: "keep" | "replace",
+  ) => Promise<PluginImportResult>;
   /** Retarget open tabs after a Scene/Graph file move or rename. */
   repathDocument: (
     kind: AssetDocumentKind,
@@ -500,7 +522,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const refreshAssetRegistry = useCallback(async () => {
     await projectService.remountRegistry();
-    const paths = projectService.registry?.listDocumentPaths();
+    const paths = projectService.registry?.listDocumentPaths({ rootId: "project" });
     if (projectDocument && paths) {
       setProjectDocument({
         ...projectDocument,
@@ -510,6 +532,45 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     bump();
   }, [bump, projectDocument, projectService]);
+
+  const applyPluginOverrides = useCallback(
+    async (overrides: Record<string, { enabled: boolean }>) => {
+      await projectService.applyPluginOverrides(overrides);
+      bump();
+    },
+    [bump, projectService],
+  );
+
+  const createProjectPlugin = useCallback(
+    async (displayName: string) => {
+      const created = await projectService.createProjectPlugin(displayName);
+      bump();
+      return created;
+    },
+    [bump, projectService],
+  );
+
+  const deleteProjectPlugin = useCallback(
+    async (guid: string) => {
+      await projectService.deleteProjectPlugin(guid);
+      bump();
+    },
+    [bump, projectService],
+  );
+
+  const exportPlugin = useCallback(
+    (guid: string) => projectService.exportPlugin(guid),
+    [projectService],
+  );
+
+  const importPlugin = useCallback(
+    async (bytes: Uint8Array, decision?: "keep" | "replace") => {
+      const result = await projectService.importPlugin(bytes, decision);
+      bump();
+      return result;
+    },
+    [bump, projectService],
+  );
 
   const repathDocument = useCallback(
     (kind: AssetDocumentKind, oldPath: string, newPath: string) => {
@@ -639,19 +700,30 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  const attachEnginePlugins = useCallback(async () => {
+    const storage = await ensureEnginePluginStorage();
+    projectService.setEnginePluginStorage(storage);
+  }, [projectService]);
+
+  useEffect(() => {
+    void attachEnginePlugins();
+  }, [attachEnginePlugins]);
+
   const openProject = useCallback(async () => {
+    await attachEnginePlugins();
     const { document, layouts, migrationPending: pending } =
       await projectService.openProject();
     await enterEditor(document, layouts, pending);
-  }, [enterEditor, projectService]);
+  }, [attachEnginePlugins, enterEditor, projectService]);
 
   const createEmptyProject = useCallback(
     async (name: string, options?: CreateProjectOptions) => {
+      await attachEnginePlugins();
       const { document, layouts, migrationPending: pending } =
         await projectService.createEmptyProject(name, options);
       await enterEditor(document, layouts, pending);
     },
-    [enterEditor, projectService],
+    [attachEnginePlugins, enterEditor, projectService],
   );
 
   const createFromTemplate = useCallback(
@@ -664,6 +736,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!template) {
         throw new Error(`Unknown template: ${templateId}`);
       }
+      await attachEnginePlugins();
       const { document, layouts, migrationPending: pending } =
         await projectService.createFromTemplate({
           templateFiles: template.files,
@@ -672,16 +745,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         });
       await enterEditor(document, layouts, pending);
     },
-    [enterEditor, projectService, templates],
+    [attachEnginePlugins, enterEditor, projectService, templates],
   );
 
   const openListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
+      await attachEnginePlugins();
       const { document, layouts, migrationPending: pending } =
         await projectService.openListedProject(handle);
       await enterEditor(document, layouts, pending);
     },
-    [enterEditor, projectService],
+    [attachEnginePlugins, enterEditor, projectService],
   );
 
   const renameListedProject = useCallback(
@@ -716,10 +790,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const reconnectProject = useCallback(async () => {
+    await attachEnginePlugins();
     const { document, layouts, migrationPending: pending } =
       await projectService.reconnect();
     await enterEditor(document, layouts, pending);
-  }, [enterEditor, projectService]);
+  }, [attachEnginePlugins, enterEditor, projectService]);
 
   const saveProject = useCallback(async (): Promise<boolean> => {
     const document = projectDocumentRef.current;
@@ -782,6 +857,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void saveProject();
     }, interval);
   }, [saveProject]);
+
+  const setShowPluginContent = useCallback(
+    (show: boolean) => {
+      documentService.setShowPluginContent(show);
+      scheduleDebouncedSave();
+      bump();
+    },
+    [bump, documentService, scheduleDebouncedSave],
+  );
 
   const approveMigrationsAndSave = useCallback(async () => {
     if (!projectDocument) return;
@@ -1183,7 +1267,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const loadClassGraphDocuments = useCallback(async (): Promise<
     Array<{ path: string; content: SerializedGraph }>
   > => {
-    const paths = projectDocument?.graphs ?? [];
+    const paths = classAssetPaths(projectService.registry?.list() ?? []);
     const open = documentService.getState().openDocuments;
     const documents: Array<{ path: string; content: SerializedGraph }> = [];
     for (const path of paths) {
@@ -1203,7 +1287,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
     return documents;
-  }, [documentService, projectDocument, projectService]);
+  }, [documentService, projectService]);
 
   const loadProjectGraphDocuments = useCallback(async (): Promise<
     Array<{ path: string; content: SerializedGraph }>
@@ -1260,8 +1344,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ]),
     );
     const parentOf = classParentLookup(assets);
-    const registered =
-      projectDocumentRef.current?.settings.editorUtilityObjects ?? [];
+    const registered = mergePluginEditorUtilityObjects(
+      projectDocumentRef.current?.settings.editorUtilityObjects ?? [],
+      projectService.plugins
+        .filter((plugin) =>
+          resolvePluginEnabled(
+            plugin.settings.enabledByDefault,
+            projectDocumentRef.current?.settings.pluginOverrides[plugin.pluginGuid]
+              ?.enabled,
+          ),
+        )
+        .map((plugin) => plugin.settings),
+    );
     const selected = selectEditorUtilityGraphs(documents, {
       headers,
       parentOf,
@@ -1655,6 +1749,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
         guidForPath: (path: string) => string | null;
+        pluginGuids: () => string[];
+        enginePluginLoad: () => {
+          entries: number;
+          unpacked: number;
+          errors: string[];
+        };
+        assetByGuid: (guid: string) => {
+          guid: string;
+          type: string;
+          path: string;
+          placeholder: boolean;
+        } | null;
+        seedMissingPluginOverride: (guid: string) => Promise<{
+          guid: string;
+          type: string;
+          path: string;
+          placeholder: boolean;
+        } | null>;
         activeTilemapTile: (gx: number, gy: number) => number | null;
       };
     };
@@ -1812,6 +1924,35 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      pluginGuids: () =>
+        projectService.plugins.map((plugin) => plugin.pluginGuid),
+      enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
+      assetByGuid: (guid: string) => {
+        const asset = projectService.registry?.getByGuid(guid);
+        if (!asset) return null;
+        return {
+          guid: asset.header.guid,
+          type: asset.header.type,
+          path: asset.path,
+          placeholder: asset.placeholder === true,
+        };
+      },
+      seedMissingPluginOverride: async (guid: string) => {
+        const current =
+          projectDocumentRef.current?.settings.pluginOverrides ?? {};
+        const next = { ...current, [guid]: { enabled: true } };
+        updateProjectSettings({ pluginOverrides: next });
+        await projectService.applyPluginOverrides(next);
+        bump();
+        const asset = projectService.registry?.getByGuid(guid);
+        if (!asset) return null;
+        return {
+          guid: asset.header.guid,
+          type: asset.header.type,
+          path: asset.path,
+          placeholder: asset.placeholder === true,
+        };
+      },
       activeTilemapTile: (gx: number, gy: number) => {
         const doc = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "tilemap" && entry.content,
@@ -1838,6 +1979,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService,
     ensureDerived,
     projectService,
+    updateProjectSettings,
   ]);
 
   const stepActiveDocumentHistory = useCallback(
@@ -2159,6 +2301,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       assetRegistry: projectService.registry,
       registryVersion,
       refreshAssetRegistry,
+      pluginDescriptors: projectService.plugins,
+      pluginDiagnostics: projectService.pluginGraphDiagnostics,
+      showPluginContent:
+        documentService.getState().showPluginContent === true,
+      setShowPluginContent,
+      applyPluginOverrides,
+      createProjectPlugin,
+      deleteProjectPlugin,
+      exportPlugin,
+      importPlugin,
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,
@@ -2196,6 +2348,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService,
       projectService,
       refreshAssetRegistry,
+      setShowPluginContent,
+      applyPluginOverrides,
+      createProjectPlugin,
+      deleteProjectPlugin,
+      exportPlugin,
+      importPlugin,
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,

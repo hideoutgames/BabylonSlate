@@ -4,6 +4,7 @@ import {
   classIdForGraphPath,
   compileGraphDocument,
   compileGraphDocuments,
+  compileGraphDocumentsForExport,
   graphCompileSignature,
   graphsNeedCompile,
   spawnListForScripts,
@@ -149,6 +150,61 @@ describe("script compiler service", () => {
       { path: "main.graph.babasset", content: tickToLog },
     ]);
     expect(scripts.map((s) => s.classId)).toContain("main");
+  });
+
+  it("strips Print from export compiles and keeps it for Play", () => {
+    const tickToPrint: SerializedGraph = {
+      nodes: [
+        {
+          id: "tick",
+          type: "flow.event.tick",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 200, y: 0 },
+          data: { value: "debug" },
+        },
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 400, y: 0 },
+          data: { message: "kept" },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "tick",
+          target: "print",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+        {
+          id: "e2",
+          source: "print",
+          target: "log",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    const play = compileGraphDocument(tickToPrint, {
+      path: "assets/main.class.babasset",
+    });
+    expect(play?.source).toContain("ctx.print");
+    expect(play?.source).toContain("ctx.log");
+    const preview = compileGraphDocuments([
+      { path: "assets/main.class.babasset", content: tickToPrint },
+    ]);
+    expect(preview[0]?.source).toContain("ctx.print");
+    const exported = compileGraphDocumentsForExport([
+      { path: "assets/main.class.babasset", content: tickToPrint },
+    ]);
+    expect(exported[0]?.source).not.toContain("ctx.print");
+    expect(exported[0]?.source).toContain("ctx.log");
   });
 
   it("only spawns actors for scripts bound to a lifecycle event", () => {

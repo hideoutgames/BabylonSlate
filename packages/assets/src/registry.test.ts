@@ -547,6 +547,52 @@ describe("AssetRegistry", () => {
     );
     expect(registry.getByGuid("spark-1")?.path).toBe("assets/fx/spark.babasset");
   });
+
+  it("uses a root's own storage and refuses writes on read-only roots", async () => {
+    const project = await createStorage();
+    await writeAsset(project, "assets/main.scene.babasset", {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Main",
+    });
+    const engine = new MemoryStorageAdapter("opfs");
+    await engine.openDocumentsProject("engine-plugins");
+    await writeAsset(engine, "starter/assets/hero.class.babasset", {
+      guid: "hero-1",
+      type: "Class",
+      name: "StarterActor",
+    });
+
+    const registry = new AssetRegistry(project);
+    await registry.mountRoot(projectContentRoot());
+    const pluginRoot: ContentRoot = {
+      id: "plugin:engine-1",
+      kind: "plugin",
+      pathPrefix: "starter/assets",
+      readOnly: true,
+      storage: engine,
+    };
+    await registry.mountRoot(pluginRoot);
+
+    expect(registry.storageFor("plugin:engine-1")).toBe(engine);
+    expect(registry.getByGuid("hero-1")?.rootId).toBe("plugin:engine-1");
+    expect(registry.listDocumentPaths({ rootId: "project" })).toEqual({
+      scenes: ["assets/main.scene.babasset"],
+      graphs: [],
+    });
+    await expect(
+      registry.createAsset("plugin:engine-1", "extra.class.babasset", {
+        guid: "extra-1",
+        type: "Class",
+        name: "Extra",
+        version: 1,
+        dependencies: [],
+        parentClass: "Actor",
+        payload: {},
+        chunks: [],
+      }),
+    ).rejects.toThrow(/read-only/i);
+  });
 });
 
 describe("ThumbnailDecodeLru", () => {

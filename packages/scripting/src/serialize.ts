@@ -27,6 +27,13 @@ export function fromSerializedGraph(
           message: String((n.data as { message?: string }).message ?? ""),
           severity: "log",
           category: "Script",
+          ...((n.data as { developmentOnly?: unknown }).developmentOnly !==
+          undefined
+            ? {
+                developmentOnly: (n.data as { developmentOnly: unknown })
+                  .developmentOnly,
+              }
+            : {}),
         },
       };
     }

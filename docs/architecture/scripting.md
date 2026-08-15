@@ -128,8 +128,8 @@ type Diagnostic = {
 | --- | --- |
 | Edit (≈300ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
-| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; Play loads the **open scene tab** and the scene `gameInstanceClass`. No scene tab → Play disabled. Plugin EUO sweep still later polish |
-| Export | Hard gate + export-only rules (Print strip, debug-tier commands) |
+| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; Play loads the **open scene tab** and the scene `gameInstanceClass`. No scene tab → Play disabled. Enabled plugin Class graphs participate via `registry.list()`; plugin EUOs stay on the editor ScriptHost ([plugins.md](plugins.md)) |
+| Export | Hard gate + export-only rules (debug-tier commands); Development Only nodes stripped by codegen |
 | CI | Golden fixture projects |
 
 Warnings never block. Errors block Preview via dialog (tap-to-navigate + **Play Anyway** + Engine Settings "don't ask again"), not a hard refuse. Tap-to-navigate focuses the node **and activates that graph tab** (so a background Class document is shown even when a scene tab was active for Play). Export-preset-only rules stay off the edit-time path.
@@ -147,6 +147,7 @@ IR → **plain JavaScript ES modules** (no TypeScript in the browser).
 | Determinism | Stable text; golden tests are the primary gate |
 | Anchors | Per-statement `{ line, column, assetGuid, graphId, nodeId, bodyLine? }` + `//# sourceURL=babylonslate:///<assetGuid>.js` |
 | Load | `runtime.loadCompiledModule` (blob URL, `new Function` fallback) |
+| Development Only | `properties.developmentOnly`; Print defaults on. Editor Play keeps the node. Export `compileGraphDocumentsForExport` (`stripDevelopmentOnly: true`) skips codegen and continues exec at `then`, or Sequence `then_*` pins in order (skip as no-op). Exclusive Branch `true`/`false` arms are not entered. Data pins from a stripped node compile as type defaults. A flagged event entry is omitted from the export module. |
 | Output location | Derived data outside the project folder (compiled scripts + anchor tables) |
 
 Validator and compiler share the **type context builder** so a graph that validates compiles.
@@ -161,7 +162,7 @@ Ship with the catalog but own dedicated designs (not one-line templates):
 | --- | --- |
 | **ExecuteJavaScript** | Editable in/out pin lists (JS identifier validation); fixed exec in/out; body → module-scope named function with defaulted outputs; async → latent; CodeMirror 6 body editor (lazy, accessory key bar, selection enabled); parse errors → Compiler Results with `bodyLine`/`bodyColumn`; runtime stacks on hoisted body lines carry `bodyLine` for session-report navigation |
 | **Log** | Severity + category → runtime log / Output Log / ring buffer; Error severity also enters the Preview session report (`runtime.log`) |
-| **Print** | Boxed wildcard via `formatValue`; colour + duration; keyed registry replaces in place; worker sends command, HUD draws; export may strip or degrade to log |
+| **Print** | Boxed wildcard via `formatValue`; colour + duration; keyed registry replaces in place; worker sends command, HUD draws; **Development Only** by default (Inspector checkbox; export compile skips the node) |
 | **ExecuteConsoleCommand** | Runs through `@babylonslate/debugger` command registry; returns success + output; compile-time warning when a literal names a debug-tier command |
 | **Event On Command Run** | `BDebugCommand` entry; output pins from the parameter list; compiles to `onCommandRun` |
 | **Report Command** | Sets the console success flag + output string for `OnCommandRun` |
@@ -184,7 +185,7 @@ AI / navigation categories: behaviour-tree event/finish/return/blackboard nodes 
 
 - **Graph** canvas (event + per-function graphs). **Double-tap empty pane** opens the unfiltered Add Node catalog (`Dialog` with categories + search; search is **not** autofocused). Drag-to-connect and tap-to-connect both persist. Pin-drag Add Node uses a 96px screen-space safe zone around the source pin and compatible pins; a live **Add Node** hint follows the wire when a drop would open the catalog. A cancelled pin drag (no snap, no Add Node, pointer left the source handle) breaks every wire on that pin.
 - **Class**: My Blueprint member tree (Functions, Variables, Events, Interfaces — empty sections stay visible; no Graphs section) stacked *under* Components, about 50% of the left stack. Each section row has a trailing **+** (`IconActionButton`); there is no toolbar Add dropdown or trash. Delete is the row context menu only. Rows use `TypeColorMark`. Writes `SerializedGraph.members` (variables: `typeId` + optional `defaultValue`; functions: `pins[]` plus `functionGraphs[id]`; interfaces: ScriptInterface `assetGuid`). Event names are Title Cased (`On Hit`; node title `Event On Hit`). Custom events insert `flow.event.custom`. **Native events** follow parent ancestry: Actor graphs list Begin Play and Tick (plus On Command Run when ancestry includes `BDebugCommand`); `EditorUtilityObject` lists On Editor Startup / On Scene Open / On Scene Saved / On Editor Shutdown; `BTTask` lists On Activate / On Tick / On Abort; `BTDecorator` lists On Evaluate; `BTService` lists On Tick; `BTComposite` lists none of those. Clicking a missing stub spawns the node on the event graph, then focuses it. Parent Class custom events are listed as inherited. Variables do **not** spawn Get nodes. Selecting a function switches the Graph dock to that function’s Input/Output graph (`activeFunctionId`). `flow.event.custom` compiles to a named export (`On_Hit` from "On Hit"); function graphs compile to a named export from the member name. Play dispatches custom events with `ScriptHost.invokeEvent`. Event graphs can invoke functions with the **Call** node (`functions.call`).
-- **Details** (dock title Inspector): canvas selection drives the target (first selected node; Compiler Results / Play focus as fallback). A selected Class member shows variable type/default (`PinTypePicker`), function **Inputs** and **Outputs** (`PinListEditor` with exec plus data types), or interface `AssetPicker`. Empty selection shows an empty state — no ExecuteJavaScript fallback. Unconnected applicable data pins get literal defaults; ExecuteJavaScript still has pin lists + body; Log has severity / category.
+- **Details** (dock title Inspector): canvas selection drives the target (first selected node; Compiler Results / Play focus as fallback). A selected Class member shows variable type/default (`PinTypePicker`), function **Inputs** and **Outputs** (`PinListEditor` with exec plus data types), or interface `AssetPicker`. Empty selection shows an empty state — no ExecuteJavaScript fallback. Unconnected applicable data pins get literal defaults; ExecuteJavaScript still has pin lists + body; Log has severity / category; every selected node has **Development Only**.
 - **Compiler Results**: diagnostics grouped by graph; tap → select node, pan canvas, flash pin (or scroll CodeMirror to `bodyLine`).
 - **Prefab** (Actor): full-size center tab; 3D preview + gizmos; per-component pick/gizmo; Prefab Root origin **is** the Scene actor origin. Component tree writes `SerializedGraph.components` including local `transform` (undo via `graph.setComponents`). Place Actors copies those components onto spawned Class actors when the class document is open.
 - **Components**: nested actor component tree (`parentId`) in the left dock; immediate drag-to-parent; Add Component uses the Place Actors catalog chrome.
@@ -296,7 +297,7 @@ An actor scripted in the editor compiles and runs in the worker; a type mismatch
 | Full physics / input node behaviour | Queries, impulse, and `physics.moveCharacter` done (P7) |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 (`p8-command-system` landed) |
 | BDebugCommand / OnCommandRun / Play console + trace | P8 (landed) |
-| Keyed Print HUD polish + strip-on-export preset UI | P8 / export |
+| Keyed Print HUD polish | P8 / export |
 | Behaviour-tree validation rules | P11 |
 | Shader / AnimationGraph validators | P9 |
 | Scene viewport Play badge on 3D viewport | P6 scene chrome (wire badge API in P5; host may be class-doc Play until then) |
@@ -320,7 +321,7 @@ Packages `@babylonslate/scripting` and `@babylonslate/scripting-nodes` are in-tr
 
 Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points to actor hooks, copies tick input into `ctx`, `Print` reaches the on-screen overlay, and `e2e/p5-scripting.spec.ts` covers Tick→Print plus Tick→GetAxis2D (injected gamepad). Play with no scene tab is disabled. **Possess Camera** (`camera.possess`) emits `{ type: "possessCamera"; slotId }` for the global Play `activeCamera`. Camera/light property nodes mutate component variables and re-emit `assignMesh`.
 
-**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals) (pin flash, project-wide validation sweep, async-generator latents, P8 console/Print export, P9/P11 node runtime categories). Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **Enum / Structure / ScriptInterface DockView editors** (member tables, interface method preview, Class My Blueprint + Inspector) are landed — do not reopen those as P5 gaps.
+**Follow-ups (non-blocking polish):** tracked as a table under [issue-tracker P5 follow-ups](../agents/issue-tracker.md#p5-follow-ups--open-deferrals). **Development Only** (Inspector flag, Print default, `compileGraphDocumentsForExport`) is landed — do not reopen Print-strip as a P5 gap. Pin hydration, palette pins, Begin Play/Tick defaults, AddNode undo persistence, **drag-to-connect**, **Format**, **hold-to-marquee**, **class-owned graphs**, and **Enum / Structure / ScriptInterface DockView editors** are landed.
 
 - Blob-URL dynamic import in WKWebView — spike early; fallback already in `loadCompiledModule`.
 - Re-parenting class invalidation — design Class panel UX against `ClassRegistry.reparent` from the start.

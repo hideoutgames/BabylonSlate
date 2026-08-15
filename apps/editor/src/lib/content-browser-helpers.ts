@@ -78,9 +78,10 @@ export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
 
 export function isFolderTreeRoot(
   path: string,
-  rootPath: string = ASSETS_ROOT,
+  rootPath: string | readonly string[] = ASSETS_ROOT,
 ): boolean {
-  return path === rootPath;
+  if (typeof rootPath === "string") return path === rootPath;
+  return rootPath.includes(path);
 }
 
 export function displayAssetTitle(name: string): string {
@@ -432,6 +433,48 @@ export function listChildFolders(
   }));
 }
 
+export function listChildFoldersFromTrees(
+  trees: readonly FolderTreeLike[],
+  folderPath: string,
+): Array<{ name: string; path: string }> {
+  for (const tree of trees) {
+    if (findFolderNode(tree, folderPath)) {
+      return listChildFolders(tree, folderPath);
+    }
+  }
+  return [];
+}
+
+export function collectFolderGuidsFromTrees(
+  folderPath: string,
+  trees: readonly FolderTreeLike[],
+  options: { recursive?: boolean } = {},
+): Set<string> {
+  for (const tree of trees) {
+    if (findFolderNode(tree, folderPath)) {
+      return collectFolderGuids(folderPath, tree, options);
+    }
+  }
+  return new Set();
+}
+
+export function flattenFolderForest(
+  trees: readonly FolderTreeLike[],
+  collapsed: ReadonlySet<string> = new Set(),
+): FlattenedFolderRow[] {
+  return trees.flatMap((tree) => flattenFolderTree(tree, collapsed));
+}
+
+export function flattenContentBrowserForest(
+  trees: readonly FolderTreeLike[],
+  assets: ReadonlyArray<IndexedAsset>,
+  collapsed: ReadonlySet<string> = new Set(),
+): ContentBrowserTreeRow[] {
+  return trees.flatMap((tree) =>
+    flattenContentBrowserTree(tree, assets, collapsed),
+  );
+}
+
 export function flattenContentBrowserTree(
   node: FolderTreeLike,
   assets: ReadonlyArray<IndexedAsset>,
@@ -481,19 +524,37 @@ export function contentBrowserMoveFromDrop(
   dragId: string,
   targetId: string | null,
   rows: ReadonlyArray<ContentBrowserTreeRow>,
+  rootPaths: readonly string[] = [ASSETS_ROOT],
 ): ContentBrowserDropMove | null {
   const source = rows.find((row) => row.id === dragId);
   if (!source) return null;
-  if (source.kind === "folder" && isFolderTreeRoot(source.path)) return null;
-  let destinationPath = ASSETS_ROOT;
+  if (source.kind === "folder" && isFolderTreeRoot(source.path, rootPaths)) {
+    return null;
+  }
+  const sourceRoot =
+    rootPaths.find(
+      (root) =>
+        source.path === root || source.path.startsWith(`${root}/`),
+    ) ?? ASSETS_ROOT;
+  let destinationPath = sourceRoot;
   if (targetId !== null) {
     const target = rows.find((row) => row.id === targetId);
     if (!target) return null;
     destinationPath =
-      target.kind === "folder" ? target.path : parentFolderPath(target.path);
+      target.kind === "folder"
+        ? target.path
+        : parentFolderPath(target.path, sourceRoot);
   }
   const sourcePath =
-    source.kind === "asset" ? parentFolderPath(source.path) : source.path;
+    source.kind === "asset"
+      ? parentFolderPath(source.path, sourceRoot)
+      : source.path;
+  const destRoot =
+    rootPaths.find(
+      (root) =>
+        destinationPath === root || destinationPath.startsWith(`${root}/`),
+    ) ?? ASSETS_ROOT;
+  if (destRoot !== sourceRoot) return null;
   if (
     !isValidMoveDestination({
       kind: source.kind,

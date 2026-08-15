@@ -15,7 +15,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { newAssetGuid } from "@babylonslate/assets";
+import { newAssetGuid, resolvePluginEnabled } from "@babylonslate/assets";
 import {
   ContextMenuOverlay,
   SearchInput,
@@ -84,22 +84,22 @@ import {
   addSelectedFolderPath,
   buildNewAssetResult,
   classParentLookup,
-  collectFolderGuids,
+  collectFolderGuidsFromTrees,
   contentBrowserContextActions,
   contentBrowserMoveFromDrop,
   contentBrowserMovePreviewName,
   defaultParentClassForType,
   displayAssetTitle,
   filterAssets,
-  flattenContentBrowserTree,
-  flattenFolderTree,
-  folderRelativePath,
+  flattenContentBrowserForest,
+  flattenFolderForest,
   guidsOutsideSelectedFolders,
   isFolderNameTaken,
+  isFolderTreeRoot,
   isNewAssetNameTaken,
   isRenameNameTaken,
   joinAssetFolderPath,
-  listChildFolders,
+  listChildFoldersFromTrees,
   newAssetFileName,
   parentFolderPath,
   remapPathAfterFolderMove,
@@ -109,13 +109,21 @@ import {
   type ContentBrowserContextAction,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
+import {
+  canMutateContentBrowserRoot,
+  contentBrowserFolderOps,
+  contentBrowserRoots,
+  filterBabpluginFiles,
+  pluginContentToggleLabel,
+  PROJECT_CONTENT_ROOT_ID,
+} from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 
-const PROJECT_ROOT_ID = "project";
+const PROJECT_ROOT_ID = PROJECT_CONTENT_ROOT_ID;
 
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
@@ -148,6 +156,9 @@ export function ContentBrowserWorkspace() {
     tabOrder,
     loadAssetThumbnail,
     thumbnailsEnabled,
+    pluginDescriptors,
+    showPluginContent,
+    setShowPluginContent,
   } = useDocuments();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
   const { diagnostics } = useValidation();
@@ -219,24 +230,73 @@ export function ContentBrowserWorkspace() {
     clearPendingTarget();
   }, [clearPendingTarget, pendingTarget]);
 
-  const folderTree = useMemo(
-    () => assetRegistry?.folderTree(PROJECT_ROOT_ID) ?? null,
-    [assetRegistry],
+  const browserRoots = useMemo(
+    () =>
+      contentBrowserRoots({
+        showPluginContent,
+        plugins: pluginDescriptors.map((plugin) => ({
+          pluginGuid: plugin.pluginGuid,
+          displayName: plugin.settings.displayName,
+          contentPath: plugin.contentPath,
+          source: plugin.source,
+          enabled: resolvePluginEnabled(
+            plugin.settings.enabledByDefault,
+            projectDocument?.settings.pluginOverrides[plugin.pluginGuid]
+              ?.enabled,
+          ),
+        })),
+      }),
+    [pluginDescriptors, projectDocument, showPluginContent],
+  );
+  const rootPrefixes = useMemo(
+    () => browserRoots.map((root) => root.pathPrefix),
+    [browserRoots],
+  );
+  const selectedRoot = useMemo(
+    () => contentBrowserFolderOps(selectedFolderPath, browserRoots),
+    [browserRoots, selectedFolderPath],
+  );
+  const selectedRootWritable = canMutateContentBrowserRoot(
+    browserRoots.find((root) => root.id === selectedRoot.rootId),
   );
 
-  const allAssets = useMemo(
-    () => assetRegistry?.list({ rootId: PROJECT_ROOT_ID }) ?? [],
-    [assetRegistry, registryVersion],
-  );
+  useEffect(() => {
+    if (!showPluginContent && selectedRoot.rootId !== PROJECT_ROOT_ID) {
+      setSelectedFolderPath(ASSETS_ROOT);
+    }
+  }, [selectedRoot.rootId, showPluginContent]);
+
+  const folderTrees = useMemo(() => {
+    if (!assetRegistry) return [];
+    return browserRoots.map((root) => {
+      const tree = assetRegistry.folderTree(root.id);
+      return {
+        ...tree,
+        name:
+          root.id === PROJECT_ROOT_ID
+            ? tree.name
+            : root.readOnly
+              ? `${root.label} (Read Only)`
+              : root.label,
+      };
+    });
+  }, [assetRegistry, browserRoots, registryVersion]);
+
+  const allAssets = useMemo(() => {
+    if (!assetRegistry) return [];
+    return browserRoots.flatMap((root) =>
+      assetRegistry.list({ rootId: root.id }),
+    );
+  }, [assetRegistry, browserRoots, registryVersion]);
   const classParentOf = useMemo(
     () => classParentLookup(allAssets),
     [allAssets],
   );
 
   const folderGuids = useMemo(() => {
-    if (!folderTree) return null;
-    return collectFolderGuids(selectedFolderPath, folderTree);
-  }, [folderTree, selectedFolderPath]);
+    if (folderTrees.length === 0) return null;
+    return collectFolderGuidsFromTrees(selectedFolderPath, folderTrees);
+  }, [folderTrees, selectedFolderPath]);
 
   const visibleAssets = useMemo(
     () =>
@@ -249,19 +309,19 @@ export function ContentBrowserWorkspace() {
   );
 
   const childFolders = useMemo(() => {
-    if (!folderTree) return [];
-    const folders = listChildFolders(folderTree, selectedFolderPath);
+    if (folderTrees.length === 0) return [];
+    const folders = listChildFoldersFromTrees(folderTrees, selectedFolderPath);
     const needle = search.trim().toLowerCase();
     if (!needle) return folders;
     return folders.filter((folder) =>
       folder.name.toLowerCase().includes(needle),
     );
-  }, [folderTree, search, selectedFolderPath]);
+  }, [folderTrees, search, selectedFolderPath]);
 
   const browserRows = useMemo(() => {
-    if (!folderTree) return [];
-    return flattenContentBrowserTree(folderTree, allAssets, collapsedFolders);
-  }, [allAssets, collapsedFolders, folderTree]);
+    if (folderTrees.length === 0) return [];
+    return flattenContentBrowserForest(folderTrees, allAssets, collapsedFolders);
+  }, [allAssets, collapsedFolders, folderTrees]);
 
   const treeSelectedId = useMemo(() => {
     if (selectedGuids.size === 1) {
@@ -305,8 +365,8 @@ export function ContentBrowserWorkspace() {
   );
   const existingFolderPaths = useMemo(
     () =>
-      folderTree ? flattenFolderTree(folderTree).map((row) => row.path) : [],
-    [folderTree],
+      flattenFolderForest(folderTrees).map((row) => row.path),
+    [folderTrees],
   );
   const newAssetNameTaken = isNewAssetNameTaken(
     existingAssetPaths,
@@ -400,17 +460,23 @@ export function ContentBrowserWorkspace() {
 
   const requestDeleteFolder = useCallback(
     (path: string) => {
-      if (!folderTree || path === ASSETS_ROOT) return;
-      const guids = [...collectFolderGuids(path, folderTree, { recursive: true })];
+      if (folderTrees.length === 0 || isFolderTreeRoot(path, rootPrefixes)) {
+        return;
+      }
+      const guids = [
+        ...collectFolderGuidsFromTrees(path, folderTrees, { recursive: true }),
+      ];
       setDeleteTarget({ kind: "folder", path, guids });
     },
-    [folderTree],
+    [folderTrees, rootPrefixes],
   );
 
   const requestDeleteSnapshot = useCallback(
     (guids: string[], folderPaths: string[]) => {
-      const folders = folderPaths.filter((path) => path !== ASSETS_ROOT);
-      if (!folderTree) {
+      const folders = folderPaths.filter(
+        (path) => !isFolderTreeRoot(path, rootPrefixes),
+      );
+      if (folderTrees.length === 0) {
         requestDelete(guids);
         return;
       }
@@ -420,7 +486,7 @@ export function ContentBrowserWorkspace() {
       }
       const folderGuidsSet = new Set<string>();
       for (const path of folders) {
-        for (const guid of collectFolderGuids(path, folderTree, {
+        for (const guid of collectFolderGuidsFromTrees(path, folderTrees, {
           recursive: true,
         })) {
           folderGuidsSet.add(guid);
@@ -437,7 +503,7 @@ export function ContentBrowserWorkspace() {
         guids: [...folderGuidsSet, ...extraGuids],
       });
     },
-    [folderTree, requestDelete, requestDeleteFolder],
+    [folderTrees, requestDelete, requestDeleteFolder, rootPrefixes],
   );
 
   const requestDeleteSelection = useCallback(() => {
@@ -458,7 +524,9 @@ export function ContentBrowserWorkspace() {
     (operation: "move" | "copy") => {
       if (!assetRegistry) return;
       const folders = rootSelectedFolderPaths(
-        menuTargetFoldersRef.current.filter((path) => path !== ASSETS_ROOT),
+        menuTargetFoldersRef.current.filter(
+          (path) => !isFolderTreeRoot(path, rootPrefixes),
+        ),
       );
       const guids = guidsOutsideSelectedFolders(
         menuTargetGuidsRef.current,
@@ -512,28 +580,29 @@ export function ContentBrowserWorkspace() {
           void (async () => {
             if (!assetRegistry) return;
             const folders = rootSelectedFolderPaths(
-              menuTargetFoldersRef.current.filter((path) => path !== ASSETS_ROOT),
+              menuTargetFoldersRef.current.filter(
+                (path) => !isFolderTreeRoot(path, rootPrefixes),
+              ),
             );
             const guids = guidsOutsideSelectedFolders(
               menuTargetGuidsRef.current,
               folders,
               (guid) => assetRegistry.getByGuid(guid)?.path,
             );
-            const browseFolder = folderRelativePath(
+            const browse = contentBrowserFolderOps(
               selectedFolderPath,
-              ASSETS_ROOT,
+              browserRoots,
             );
+            if (browse.readOnly) return;
             for (const path of folders) {
-              await assetRegistry.duplicateFolder(
-                PROJECT_ROOT_ID,
-                folderRelativePath(path, ASSETS_ROOT),
-              );
+              const from = contentBrowserFolderOps(path, browserRoots);
+              await assetRegistry.duplicateFolder(from.rootId, from.relative);
             }
             for (const guid of guids) {
               await assetRegistry.duplicateAsset(
                 guid,
-                PROJECT_ROOT_ID,
-                browseFolder,
+                browse.rootId,
+                browse.relative,
               );
             }
             await refreshAssetRegistry();
@@ -545,7 +614,7 @@ export function ContentBrowserWorkspace() {
         label: "Rename",
         onSelect: () => {
           const folders = menuTargetFoldersRef.current.filter(
-            (path) => path !== ASSETS_ROOT,
+            (path) => !isFolderTreeRoot(path, rootPrefixes),
           );
           const guids = menuTargetGuidsRef.current;
           if (folders.length === 1 && guids.length === 0) {
@@ -654,11 +723,12 @@ export function ContentBrowserWorkspace() {
             ? deleteTarget.folders
             : [];
       for (const path of folders) {
-        const relative = folderRelativePath(path, ASSETS_ROOT);
-        await assetRegistry.deleteFolder(PROJECT_ROOT_ID, relative);
+        const from = contentBrowserFolderOps(path, browserRoots);
+        if (from.readOnly) continue;
+        await assetRegistry.deleteFolder(from.rootId, from.relative);
         setSelectedFolderPath((current) =>
           current === path || current.startsWith(`${path}/`)
-            ? parentFolderPath(path)
+            ? parentFolderPath(path, from.pathPrefix)
             : current,
         );
       }
@@ -676,30 +746,32 @@ export function ContentBrowserWorkspace() {
     } finally {
       setBusy(false);
     }
-  }, [assetRegistry, deleteTarget, refreshAssetRegistry]);
+  }, [assetRegistry, browserRoots, deleteTarget, refreshAssetRegistry]);
 
   const importPickedFiles = useCallback(
     async (files: Array<{ name: string; bytes: Uint8Array }>) => {
-      if (!assetRegistry || !files.length) return;
+      if (!assetRegistry || !files.length || selectedRoot.readOnly) return;
       const errors: string[] = [];
+      const incoming = filterBabpluginFiles(files);
+      if (incoming.length === 0) return;
       setBusy(true);
       setImportProgress({
-        total: files.length,
+        total: incoming.length,
         done: 0,
-        currentName: files[0]!.name,
+        currentName: incoming[0]!.name,
       });
       try {
-        const folder = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
-        for (let index = 0; index < files.length; index += 1) {
-          const file = files[index]!;
+        const folder = selectedRoot.relative;
+        for (let index = 0; index < incoming.length; index += 1) {
+          const file = incoming[index]!;
           setImportProgress({
-            total: files.length,
+            total: incoming.length,
             done: index,
             currentName: file.name,
           });
           try {
             await assetRegistry.importFile(
-              PROJECT_ROOT_ID,
+              selectedRoot.rootId,
               folder,
               file.name,
               file.bytes,
@@ -710,7 +782,7 @@ export function ContentBrowserWorkspace() {
             );
           }
           setImportProgress({
-            total: files.length,
+            total: incoming.length,
             done: index + 1,
             currentName: file.name,
           });
@@ -722,7 +794,7 @@ export function ContentBrowserWorkspace() {
         if (errors.length) setImportErrors(errors);
       }
     },
-    [assetRegistry, refreshAssetRegistry, selectedFolderPath],
+    [assetRegistry, refreshAssetRegistry, selectedRoot],
   );
 
   const confirmNameDialog = useCallback(async () => {
@@ -730,17 +802,20 @@ export function ContentBrowserWorkspace() {
     setBusy(true);
     try {
       if (nameDialog.kind === "folder") {
-        const parent = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
-        const relative = parent
-          ? `${parent}/${nameDialog.value.trim()}`
+        if (selectedRoot.readOnly) return;
+        const relative = selectedRoot.relative
+          ? `${selectedRoot.relative}/${nameDialog.value.trim()}`
           : nameDialog.value.trim();
         if (!relative) return;
-        await assetRegistry.createFolder(PROJECT_ROOT_ID, relative);
+        await assetRegistry.createFolder(selectedRoot.rootId, relative);
         await refreshAssetRegistry();
-        setSelectedFolderPath(`${ASSETS_ROOT}/${relative}`);
+        setSelectedFolderPath(`${selectedRoot.pathPrefix}/${relative}`);
       } else if (nameDialog.kind === "rename-folder") {
         const fromPath = nameDialog.path;
-        const destPath = parentFolderPath(fromPath);
+        const from = contentBrowserFolderOps(fromPath, browserRoots);
+        if (from.readOnly) return;
+        const destPath = parentFolderPath(fromPath, from.pathPrefix);
+        const dest = contentBrowserFolderOps(destPath, browserRoots);
         const newName = nameDialog.value.trim();
         if (!newName) return;
         const nextFolder = `${destPath}/${newName}`;
@@ -749,9 +824,9 @@ export function ContentBrowserWorkspace() {
             asset.path === fromPath || asset.path.startsWith(`${fromPath}/`),
         );
         await assetRegistry.moveFolder(
-          PROJECT_ROOT_ID,
-          folderRelativePath(fromPath, ASSETS_ROOT),
-          folderRelativePath(destPath, ASSETS_ROOT),
+          from.rootId,
+          from.relative,
+          dest.relative,
           newName,
         );
         for (const asset of contained) {
@@ -786,19 +861,25 @@ export function ContentBrowserWorkspace() {
     refreshAssetRegistry,
     repairDocumentPath,
     selectedFolderPath,
+    selectedRoot,
+    browserRoots,
   ]);
 
   const confirmMove = useCallback(async () => {
     if (!assetRegistry || !moveTarget) return;
+    const dest = contentBrowserFolderOps(moveTarget.folderPath, browserRoots);
+    if (dest.readOnly) return;
     setBusy(true);
     try {
       const destPath = moveTarget.folderPath;
-      const destRelative = folderRelativePath(destPath, ASSETS_ROOT);
+      const destRelative = dest.relative;
       for (const fromPath of moveTarget.folderPaths) {
+        const from = contentBrowserFolderOps(fromPath, browserRoots);
+        if (from.rootId !== dest.rootId) continue;
         if (moveTarget.operation === "copy") {
           await assetRegistry.copyFolder(
-            PROJECT_ROOT_ID,
-            folderRelativePath(fromPath, ASSETS_ROOT),
+            from.rootId,
+            from.relative,
             destRelative,
           );
         } else {
@@ -809,8 +890,8 @@ export function ContentBrowserWorkspace() {
               asset.path === fromPath || asset.path.startsWith(`${fromPath}/`),
           );
           await assetRegistry.moveFolder(
-            PROJECT_ROOT_ID,
-            folderRelativePath(fromPath, ASSETS_ROOT),
+            from.rootId,
+            from.relative,
             destRelative,
           );
           for (const asset of contained) {
@@ -827,7 +908,7 @@ export function ContentBrowserWorkspace() {
         const before = assetRegistry.getByGuid(guid);
         if (!before) continue;
         if (moveTarget.operation === "copy") {
-          await assetRegistry.copyAsset(guid, PROJECT_ROOT_ID, destRelative);
+          await assetRegistry.copyAsset(guid, dest.rootId, destRelative);
         } else {
           const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
           const relative = destRelative
@@ -835,7 +916,7 @@ export function ContentBrowserWorkspace() {
             : fileName;
           const moved = await assetRegistry.moveAsset(
             guid,
-            PROJECT_ROOT_ID,
+            dest.rootId,
             relative,
           );
           repairDocumentPath(before.path, moved.path, moved.header.type);
@@ -853,6 +934,7 @@ export function ContentBrowserWorkspace() {
     moveTarget,
     refreshAssetRegistry,
     repairDocumentPath,
+    browserRoots,
   ]);
 
   const handleImport = useCallback(async () => {
@@ -913,11 +995,13 @@ export function ContentBrowserWorkspace() {
       clientY: number,
       extra: { guid?: string; folderPath?: string },
     ) => {
-      if (extra.folderPath === ASSETS_ROOT) return;
+      if (extra.folderPath && isFolderTreeRoot(extra.folderPath, rootPrefixes)) {
+        return;
+      }
       closeEmptyGridMenu();
       let guids = [...selectedGuids];
       let folders = [...selectedFolderPaths].filter(
-        (path) => path !== ASSETS_ROOT,
+        (path) => !isFolderTreeRoot(path, rootPrefixes),
       );
       if (extra.guid && !guids.includes(extra.guid)) {
         guids = [...guids, extra.guid];
@@ -993,7 +1077,12 @@ export function ContentBrowserWorkspace() {
 
   const handleTreeReparent = useCallback(
     (dragId: string, targetId: string | null) => {
-      const move = contentBrowserMoveFromDrop(dragId, targetId, browserRows);
+      const move = contentBrowserMoveFromDrop(
+        dragId,
+        targetId,
+        browserRows,
+        rootPrefixes,
+      );
       if (!move || !assetRegistry) return;
       void (async () => {
         setBusy(true);
@@ -1001,6 +1090,11 @@ export function ContentBrowserWorkspace() {
           if (move.kind === "folder") {
             const fromPath = move.sourcePath;
             const destPath = move.destinationPath;
+            const from = contentBrowserFolderOps(fromPath, browserRoots);
+            const dest = contentBrowserFolderOps(destPath, browserRoots);
+            if (from.readOnly || dest.readOnly || from.rootId !== dest.rootId) {
+              return;
+            }
             const folderName = fromPath.slice(fromPath.lastIndexOf("/") + 1);
             const nextFolder = `${destPath}/${folderName}`;
             const contained = allAssets.filter(
@@ -1009,9 +1103,9 @@ export function ContentBrowserWorkspace() {
                 asset.path.startsWith(`${fromPath}/`),
             );
             await assetRegistry.moveFolder(
-              PROJECT_ROOT_ID,
-              folderRelativePath(fromPath, ASSETS_ROOT),
-              folderRelativePath(destPath, ASSETS_ROOT),
+              from.rootId,
+              from.relative,
+              dest.relative,
             );
             for (const asset of contained) {
               repairDocumentPath(
@@ -1025,11 +1119,17 @@ export function ContentBrowserWorkspace() {
             const before = assetRegistry.getByGuid(move.guid);
             if (!before) return;
             const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
-            const folder = folderRelativePath(move.destinationPath, ASSETS_ROOT);
-            const relative = folder ? `${folder}/${fileName}` : fileName;
+            const dest = contentBrowserFolderOps(
+              move.destinationPath,
+              browserRoots,
+            );
+            if (dest.readOnly) return;
+            const relative = dest.relative
+              ? `${dest.relative}/${fileName}`
+              : fileName;
             const moved = await assetRegistry.moveAsset(
               move.guid,
-              PROJECT_ROOT_ID,
+              dest.rootId,
               relative,
             );
             repairDocumentPath(before.path, moved.path, moved.header.type);
@@ -1045,6 +1145,8 @@ export function ContentBrowserWorkspace() {
       allAssets,
       assetRegistry,
       browserRows,
+      browserRoots,
+      rootPrefixes,
       refreshAssetRegistry,
       repairDocumentPath,
     ],
@@ -1066,13 +1168,13 @@ export function ContentBrowserWorkspace() {
   );
 
   const handleCreateAsset = useCallback(async () => {
-    if (!assetRegistry || newAssetNameTaken) return;
+    if (!assetRegistry || newAssetNameTaken || selectedRoot.readOnly) return;
     const name = newAssetName.trim();
     if (!name) return;
     setBusy(true);
     try {
       const type = newAssetType;
-      const relative = folderRelativePath(selectedFolderPath, ASSETS_ROOT);
+      const relative = selectedRoot.relative;
       const fileName = newAssetFileName(type, name);
       if (!fileName) return;
       const result = buildNewAssetResult({
@@ -1085,7 +1187,7 @@ export function ContentBrowserWorkspace() {
             : defaultParentClassForType(type),
       });
       const created = await assetRegistry.createAsset(
-        PROJECT_ROOT_ID,
+        selectedRoot.rootId,
         relative ? `${relative}/${fileName}` : fileName,
         result,
       );
@@ -1105,7 +1207,7 @@ export function ContentBrowserWorkspace() {
     newAssetType,
     openOrFocusDocument,
     refreshAssetRegistry,
-    selectedFolderPath,
+    selectedRoot,
   ]);
 
   if (!projectDocument) {
@@ -1116,7 +1218,7 @@ export function ContentBrowserWorkspace() {
     );
   }
 
-  if (!assetRegistry || !folderTree) {
+  if (!assetRegistry || folderTrees.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
         Loading asset registry…
@@ -1135,7 +1237,7 @@ export function ContentBrowserWorkspace() {
           variant="outline"
           size="sm"
           data-testid="content-browser-import"
-          disabled={busy}
+          disabled={busy || !selectedRootWritable}
           onClick={() => void handleImport()}
         >
           <UploadIcon data-icon="inline-start" />
@@ -1145,7 +1247,7 @@ export function ContentBrowserWorkspace() {
           type="button"
           size="sm"
           data-testid="content-browser-new-asset"
-          disabled={busy}
+          disabled={busy || !selectedRootWritable}
           onClick={() => {
             setNewAssetName("");
             setNewAssetOpen(true);
@@ -1261,7 +1363,7 @@ export function ContentBrowserWorkspace() {
             size="sm"
             className="w-full justify-start"
             data-testid="content-browser-new-folder"
-            disabled={busy}
+            disabled={busy || !selectedRootWritable}
             onClick={() =>
               setNameDialog({ kind: "folder", value: "NewFolder" })
             }
@@ -1290,6 +1392,16 @@ export function ContentBrowserWorkspace() {
               data-testid="content-browser-folder-tree"
             />
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-1 w-full min-h-[var(--touch-target,44px)] justify-center"
+            data-testid="content-browser-show-plugin-content"
+            aria-label={pluginContentToggleLabel(showPluginContent)}
+            onClick={() => setShowPluginContent(!showPluginContent)}
+          >
+            {pluginContentToggleLabel(showPluginContent)}
+          </Button>
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1614,12 +1726,23 @@ export function ContentBrowserWorkspace() {
         currentFolderPath={
           moveTarget
             ? moveTarget.kind === "folder"
-              ? parentFolderPath(moveTarget.sourcePath)
+              ? parentFolderPath(
+                  moveTarget.sourcePath,
+                  contentBrowserFolderOps(moveTarget.sourcePath, browserRoots)
+                    .pathPrefix,
+                )
               : moveTarget.assetSourcePaths[0] ?? moveTarget.sourcePath
             : ASSETS_ROOT
         }
         sourcePath={moveTarget?.sourcePath ?? ASSETS_ROOT}
-        folderTree={folderTree}
+        folderTree={
+          folderTrees.find((tree) => {
+            const source = moveTarget?.sourcePath ?? ASSETS_ROOT;
+            const prefix = contentBrowserFolderOps(source, browserRoots)
+              .pathPrefix;
+            return tree.path === prefix;
+          }) ?? folderTrees[0]!
+        }
         destinationPath={moveTarget?.folderPath ?? ASSETS_ROOT}
         onDestinationChange={(path) =>
           setMoveTarget((current) =>

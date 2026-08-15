@@ -24,6 +24,7 @@ import {
   PanelTopIcon,
   PersonStandingIcon,
   PlugIcon,
+  PuzzleIcon,
   TypeIcon,
   Volume2Icon,
   WorkflowIcon,
@@ -156,6 +157,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Enum: ListIcon,
   Structure: BracesIcon,
   ScriptInterface: PlugIcon,
+  PluginSettings: PuzzleIcon,
 };
 
 const COMPONENT_CLASS_IDS = new Set([
@@ -197,6 +199,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   Enum: "scriptType",
   Structure: "scriptType",
   ScriptInterface: "scriptType",
+  PluginSettings: "scriptType",
 };
 
 export { ASSET_COLOR_TOKENS };
