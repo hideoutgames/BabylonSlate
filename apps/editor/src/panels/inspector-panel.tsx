@@ -10,6 +10,7 @@ import {
   TypeVisualIcon,
   resolveTypeVisual,
   type PinListRow,
+  type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
   Field,
@@ -21,9 +22,14 @@ import { Button } from "@babylonslate/ui/components/button";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   DEFAULT_SORTING_LAYERS,
+  eulerDegreesToQuaternion,
+  identitySerializedTransform,
+  quaternionToEulerDegrees,
   type GraphClassMember,
   type SerializedComponent,
   type SerializedGraph,
+  type SerializedTransform,
+  type ViewportMode,
 } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "../context/document-context";
@@ -35,6 +41,7 @@ import {
   useGraphEditing,
 } from "../context/graph-editing-context";
 import { usePrefabEditing } from "../context/prefab-editing-context";
+import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import {
   componentPropertyRows,
@@ -235,17 +242,74 @@ function ClassMemberDetails({
   return null;
 }
 
+function prefabComponentTransformRows(
+  component: SerializedComponent,
+  viewportMode: ViewportMode,
+  onUpdateTransform: (transform: SerializedTransform) => void,
+): PropertyRow[] {
+  const transform = component.transform ?? identitySerializedTransform();
+  const twoD = viewportMode === "2d";
+  return [
+    {
+      kind: "vector3",
+      id: `${component.id}-position`,
+      label: "Position",
+      value: transform.position,
+      defaultValue: [0, 0, 0],
+      axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
+      onChange: (position) =>
+        onUpdateTransform({
+          ...transform,
+          position: [position[0], position[1], position[2]],
+        }),
+    },
+    {
+      kind: "vector3",
+      id: `${component.id}-rotation`,
+      label: "Rotation",
+      value: twoD
+        ? [quaternionToEulerDegrees(transform.rotation)[2], 0, 0]
+        : quaternionToEulerDegrees(transform.rotation),
+      defaultValue: [0, 0, 0],
+      axes: twoD ? ["Z"] : ["X", "Y", "Z"],
+      onChange: (next) =>
+        onUpdateTransform({
+          ...transform,
+          rotation: eulerDegreesToQuaternion(
+            twoD ? [0, 0, next[0]] : [next[0], next[1], next[2]],
+          ),
+        }),
+    },
+    {
+      kind: "vector3",
+      id: `${component.id}-scale`,
+      label: "Scale",
+      value: transform.scale,
+      defaultValue: [1, 1, 1],
+      axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
+      onChange: (scale) =>
+        onUpdateTransform({
+          ...transform,
+          scale: [scale[0], scale[1], scale[2]],
+        }),
+    },
+  ];
+}
+
 function PrefabComponentDetails({
   component,
   sortingLayers,
   physicsWorld,
+  viewportMode,
   pickerAssets,
   assetLabel,
   onUpdate,
+  onUpdateTransform,
 }: {
   component: SerializedComponent;
   sortingLayers: readonly string[];
   physicsWorld: "3d" | "2d";
+  viewportMode: ViewportMode;
   pickerAssets: Array<{
     guid: string;
     name: string;
@@ -254,6 +318,7 @@ function PrefabComponentDetails({
   }>;
   assetLabel: (guid: string | null | undefined) => string | undefined;
   onUpdate: (property: string, value: unknown) => void;
+  onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   return (
@@ -261,6 +326,15 @@ function PrefabComponentDetails({
       className="flex flex-col gap-3 p-3"
       data-testid="inspector-prefab-component"
     >
+      <PropertyGrid
+        title="Transform"
+        rows={prefabComponentTransformRows(
+          component,
+          viewportMode,
+          onUpdateTransform,
+        )}
+        data-testid="prefab-component-transform-grid"
+      />
       <div className="rounded-lg border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border bg-secondary px-2 py-1">
           <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
@@ -313,7 +387,9 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedId: prefabSelectedId,
     components: prefabComponents,
     updateComponent,
+    updateComponentTransform,
   } = usePrefabEditing();
+  const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
@@ -384,10 +460,14 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           component={selectedPrefabComponent}
           sortingLayers={sortingLayers}
           physicsWorld="3d"
+          viewportMode={viewportMode}
           pickerAssets={pickerAssets}
           assetLabel={assetLabel}
           onUpdate={(property, value) =>
             updateComponent(selectedPrefabComponent.id, property, value)
+          }
+          onUpdateTransform={(transform) =>
+            updateComponentTransform(selectedPrefabComponent.id, transform)
           }
         />
       </PanelFrame>
@@ -405,6 +485,20 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             void applyGraphChange(documentId, next);
           }}
         />
+      </PanelFrame>
+    );
+  }
+
+  if (prefabSelectedId === PREFAB_ROOT_ID) {
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        <p
+          className="p-4 text-sm text-muted-foreground"
+          data-testid="inspector-prefab-origin"
+        >
+          Prefab Origin is the actor transform in the Scene. Drag the viewport
+          gizmo on Prefab Root to move that origin relative to the components.
+        </p>
       </PanelFrame>
     );
   }
