@@ -251,6 +251,7 @@ export function pinDefaultPropertyRows(
         break;
       }
       case "classRef": {
+        const classId = entry.type.classId;
         const current =
           pinDefaultAsString(entry.value) || pinDefaultAsString(typeDefault);
         const display =
@@ -263,9 +264,8 @@ export function pinDefaultPropertyRows(
           value: current || null,
           defaultValue: pinDefaultAsString(typeDefault) || null,
           displayLabel: display || undefined,
-          placeholder: entry.type.classId,
-          onPick: () =>
-            mappingNames?.onPickClass?.(entry.pinId, entry.type.classId),
+          placeholder: classId,
+          onPick: () => mappingNames?.onPickClass?.(entry.pinId, classId),
           onChange: (value) => onPatch({ [key]: value }),
         });
         break;

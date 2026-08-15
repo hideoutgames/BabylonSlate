@@ -314,7 +314,7 @@ function syncEventPins(
       const isCall =
         node.type === "flow.event.call" && node.data.name === member.name;
       if (!isEvent && !isCall) return node;
-      const nextData = { ...node.data, pins };
+      const nextData: Record<string, unknown> = { ...node.data, pins };
       delete nextData.__pins;
       return { ...node, data: nextData };
     }),

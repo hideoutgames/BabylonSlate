@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import type { SerializedGraph } from "@babylonslate/core";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
@@ -17,7 +18,9 @@ if (
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const applyGraphChange = vi.hoisted(() => vi.fn(async () => true));
+const applyGraphChange = vi.hoisted(() =>
+  vi.fn(async (_id: string, _next: SerializedGraph) => true),
+);
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
