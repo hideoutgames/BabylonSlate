@@ -127,6 +127,19 @@ describe("addClassMember", () => {
     graph = removeClassMember(graph, "var-1");
     expect(graph.members).toEqual([]);
   });
+
+  it("syncs function Input/Output node pin lists when the signature changes", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" as const },
+      { name: "height", typeId: "float", direction: "in" as const },
+      { name: "then", typeId: "exec", direction: "out" as const },
+    ];
+    graph = patchClassMember(graph, "fn-1", { pins });
+    expect(graph.members?.[0]?.pins).toEqual(pins);
+    const slice = graph.functionGraphs?.["fn-1"];
+    expect(slice?.nodes.map((node) => node.data.pins)).toEqual([pins, pins]);
+  });
 });
 
 describe("memberNamePromptCopy", () => {
