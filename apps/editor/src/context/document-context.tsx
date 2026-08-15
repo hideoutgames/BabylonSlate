@@ -2527,6 +2527,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DocumentContextValue>(
     () => {
+      void sourceControlTick;
       const currentGraphSignature = graphCompileSignature(
         openGraphCompileDocuments(documentService),
       );
