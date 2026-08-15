@@ -66,7 +66,7 @@ export function ProjectPluginsSettings() {
     null,
   );
   const [importConflict, setImportConflict] = useState<{
-    names: string;
+    displayName: string;
     bytes: Uint8Array;
   } | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -136,7 +136,7 @@ export function ProjectPluginsSettings() {
     const result = await importPlugin(bytes, decision);
     if (result.status === "conflict") {
       setImportConflict({
-        names: result.incoming.settings.displayName,
+        displayName: result.incoming.settings.displayName,
         bytes,
       });
       return;
@@ -212,6 +212,7 @@ export function ProjectPluginsSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
+                    className="min-h-[var(--touch-target,44px)]"
                     data-testid={`settings-plugin-open-${plugin.pluginGuid}`}
                     onClick={() => {
                       const kind = documentKindForAssetType("PluginSettings");
@@ -229,6 +230,7 @@ export function ProjectPluginsSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
+                    className="min-h-[var(--touch-target,44px)]"
                     data-testid={`settings-plugin-export-${plugin.pluginGuid}`}
                     onClick={() => void downloadPlugin(plugin)}
                   >
@@ -239,6 +241,7 @@ export function ProjectPluginsSettings() {
                       type="button"
                       variant="destructive"
                       size="sm"
+                      className="min-h-[var(--touch-target,44px)]"
                       data-testid={`settings-plugin-delete-${plugin.pluginGuid}`}
                       onClick={() => setConfirmDelete(plugin)}
                     >
@@ -395,7 +398,7 @@ export function ProjectPluginsSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>Plugin Already Installed</AlertDialogTitle>
             <AlertDialogDescription>
-              {importConflict?.names} is already in this project at the same
+              {importConflict?.displayName} is already in this project at the same
               version. Keep the existing plugin or replace it.
             </AlertDialogDescription>
           </AlertDialogHeader>

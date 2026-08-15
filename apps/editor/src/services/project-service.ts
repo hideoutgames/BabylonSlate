@@ -606,8 +606,13 @@ export class ProjectService {
     });
     const { diagnostics } = resolvePluginGraph(this.pluginDescriptors);
     this.pluginDiagnostics = diagnostics;
+    const discoveredGuids = new Set(
+      this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
+    );
     indexUnresolvedPlaceholders(registry, {
-      expectedGuids: Object.keys(this.pluginOverrides),
+      expectedGuids: Object.keys(this.pluginOverrides).filter(
+        (guid) => !discoveredGuids.has(guid),
+      ),
     });
   }
 

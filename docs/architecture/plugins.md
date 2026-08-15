@@ -41,6 +41,8 @@ Later wins:
 
 Disable **unmounts** the content root — assets leave the registry. **Show Plugin Content** is a Content Browser **visibility** filter (`layout.json`, default off). AssetPicker / Play / search still see **enabled** plugin assets when the toggle is off. Extra tree roots appear when the toggle is on; engine roots show a Read Only badge and skip New / Import / Delete.
 
+Override guids with **no discovered plugin** become Unresolved placeholders. Discovered PluginSettings guids are not indexed as placeholders (PluginSettings lives outside the mounted `assets/` root).
+
 `project.json` `scenes` / `graphs` stay **project-root only**. `listDocumentPaths({ rootId: "project" })` must not leak `plugins/...` paths. Play / compile / search iterate `registry.list()` (all mounted roots).
 
 ## PluginHost

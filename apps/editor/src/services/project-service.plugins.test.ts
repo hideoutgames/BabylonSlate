@@ -179,4 +179,27 @@ describe("ProjectService plugin roots", () => {
       true,
     );
   });
+
+  it("does not placeholder a discovered plugin guid when an override exists", async () => {
+    const { storage, service } = await scaffolded();
+    const settings = createDefaultPluginSettings({
+      pluginGuid: "pack-guid",
+      displayName: "Pack",
+    });
+    settings.enabledByDefault = false;
+    await writeProjectPlugin(storage, "pack", settings);
+    await service.applyPluginOverrides({
+      "pack-guid": { enabled: true },
+      "deadbeef-0000-4000-8000-000000000099": { enabled: true },
+    });
+    expect(service.registry?.getByGuid("pack-guid")?.placeholder).toBeFalsy();
+    expect(
+      service.registry?.getByGuid("deadbeef-0000-4000-8000-000000000099")
+        ?.placeholder,
+    ).toBe(true);
+    expect(
+      service.registry?.getByGuid("deadbeef-0000-4000-8000-000000000099")
+        ?.header.guid,
+    ).toBe("deadbeef-0000-4000-8000-000000000099");
+  });
 });
