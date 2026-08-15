@@ -26,15 +26,15 @@ export class MemorySecretStore implements SecretStore {
 export class UnavailableSecretStore implements SecretStore {
   readonly available = false;
 
-  async get(_key: string): Promise<string | null> {
+  async get(): Promise<string | null> {
     return null;
   }
 
-  async set(_key: string, _value: string): Promise<void> {
+  async set(): Promise<void> {
     throw new Error("Secret store is not available on this host");
   }
 
-  async delete(_key: string): Promise<void> {
+  async delete(): Promise<void> {
     /* no-op */
   }
 }

@@ -18,7 +18,7 @@ function remoteOriginUrl(configText: string): string {
 }
 
 function firstBranchMerge(configText: string): string {
-  const match = configText.match(/\[branch\s+"[^"]+"\][^\[]*?merge\s*=\s*refs\/heads\/(\S+)/);
+  const match = configText.match(/\[branch\s+"[^"]+"\][^[]*?merge\s*=\s*refs\/heads\/(\S+)/);
   return match?.[1]?.trim() ?? "";
 }
 
