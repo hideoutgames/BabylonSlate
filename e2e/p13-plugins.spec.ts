@@ -161,6 +161,13 @@ test.describe("P13 plugins", () => {
     expect(pluginFile).toBeTruthy();
     await closeSettings(page);
     await closeProjectViaSettings(page);
+    const discard = page.getByTestId("dirty-discard");
+    await expect(
+      page.getByTestId("homepage").or(discard),
+    ).toBeVisible();
+    if (await discard.isVisible()) {
+      await discard.click();
+    }
     await expect(page.getByTestId("homepage")).toBeVisible();
 
     await page.getByTestId("create-project").click();
