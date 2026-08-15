@@ -773,7 +773,7 @@ Exporting a plugin produces a self-contained `.babplugin`. This is the **same co
 
 Importing a `.babplugin` unpacks it into `plugins/` and dedupes by plugin guid and version, prompting on a version conflict. The `.babplugin` archive is a build artifact and never appears in the Content Browser as an asset.
 
-Plugin *content* is browsable, but under its own root behind a "Show Plugin Content" toggle that is off by default, the way Unreal handles it. Engine plugin content is read-only; project plugin content is editable in place.
+Plugin *content* is browsable, but under its own root behind a **Show Plugin Content** / **Hide Plugin Content** button at the bottom of the Content Browser folder pane that is off by default, the way Unreal handles it. Engine plugin content is read-only; project plugin content is editable in place. New projects copy bundled engine plugins into `plugins/` with the same guids so those copies can be edited without writing the engine originals.
 
 ### 10.6 Export interaction
 

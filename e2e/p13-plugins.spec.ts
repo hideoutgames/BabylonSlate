@@ -4,7 +4,7 @@ import { openContentBrowser, openMainScene, openTestProject } from "./open-test-
 
 const STARTER_CONTENT_PLUGIN_GUID = "c0ffee00-0000-4000-8000-000000000001";
 const STARTER_ACTOR_PATH =
-  "starter-content/assets/StarterActor.class.babasset";
+  "plugins/starter-content/assets/StarterActor.class.babasset";
 const MISSING_PLUGIN_GUID = "deadbeef-0000-4000-8000-000000000099";
 
 test.describe.configure({ mode: "serial" });
@@ -64,8 +64,14 @@ test.describe("P13 plugins", () => {
     expect(indexProbe.status, indexProbe.text).toBe(200);
     expect(pluginGuids.guids).toContain(STARTER_CONTENT_PLUGIN_GUID);
     await expect(
+      page.getByTestId("content-browser-new-plugin"),
+    ).toHaveCount(0);
+    await expect(
+      page.getByTestId("content-browser-show-plugin-content"),
+    ).toHaveText("Show Plugin Content");
+    await expect(
       page.getByTestId(`settings-plugin-source-${STARTER_CONTENT_PLUGIN_GUID}`),
-    ).toHaveText("Engine");
+    ).toHaveText("Project");
 
     await page
       .getByTestId(`settings-plugin-enable-${STARTER_CONTENT_PLUGIN_GUID}`)
@@ -78,11 +84,19 @@ test.describe("P13 plugins", () => {
     await page.getByTestId("content-browser-show-plugin-content").click();
     await expect(
       page.getByTestId("content-browser-show-plugin-content"),
-    ).toHaveAttribute("aria-pressed", "true");
-    await page.getByTestId("tree-row-starter-content/assets").click();
+    ).toHaveText("Hide Plugin Content");
+    await page.getByTestId("tree-row-plugins/starter-content/assets").click();
     await expect(
       page.locator(`[data-asset-path="${STARTER_ACTOR_PATH}"]`),
     ).toBeVisible();
+
+    await page.getByTestId("content-browser-show-plugin-content").click();
+    await expect(
+      page.getByTestId("content-browser-show-plugin-content"),
+    ).toHaveText("Show Plugin Content");
+    await expect(
+      page.getByTestId("tree-row-plugins/starter-content/assets"),
+    ).toHaveCount(0);
 
     await openPluginsSettings(page);
     await page
@@ -124,7 +138,7 @@ test.describe("P13 plugins", () => {
     await page.getByTestId("content-browser-show-plugin-content").click();
     await expect(
       page.getByTestId("content-browser-show-plugin-content"),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toHaveText("Hide Plugin Content");
     await page.getByTestId("tree-row-plugins/shared-pack/assets").click();
     await page.getByTestId("content-browser-new-asset").click();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
