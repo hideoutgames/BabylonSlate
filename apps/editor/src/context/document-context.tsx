@@ -500,7 +500,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const refreshAssetRegistry = useCallback(async () => {
     await projectService.remountRegistry();
-    const paths = projectService.registry?.listDocumentPaths();
+    const paths = projectService.registry?.listDocumentPaths({ rootId: "project" });
     if (projectDocument && paths) {
       setProjectDocument({
         ...projectDocument,

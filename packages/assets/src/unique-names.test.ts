@@ -44,6 +44,7 @@ describe("asset file suffix helpers", () => {
     expect(stripAssetFileSuffix("tools.eui.babasset")).toBe("tools");
     expect(stripAssetFileSuffix("ground.tileset.babasset")).toBe("ground");
     expect(stripAssetFileSuffix("overworld.tilemap.babasset")).toBe("overworld");
+    expect(stripAssetFileSuffix("pack.plugin.babasset")).toBe("pack");
     expect(stripAssetFileSuffix("tex.babasset")).toBe("tex");
     expect(stripAssetFileSuffix("Duplicate_1.babasset")).toBe("Duplicate_1");
   });
@@ -61,6 +62,7 @@ describe("asset file suffix helpers", () => {
     expect(assetFileSuffix("overworld.tilemap.babasset")).toBe(
       ".tilemap.babasset",
     );
+    expect(assetFileSuffix("pack.plugin.babasset")).toBe(".plugin.babasset");
     expect(assetFileSuffix("tex.babasset")).toBe(".babasset");
   });
 });

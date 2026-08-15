@@ -136,6 +136,20 @@ export interface ProjectSettings {
   render: RenderProjectSettings;
   /** Class ids (EditorUtilityObject lineage) that run in the editor ScriptHost. */
   editorUtilityObjects: string[];
+  /** Per-plugin enable overrides keyed by plugin guid (engineplan §10.4). */
+  pluginOverrides: Record<string, PluginEnableOverride>;
+  /** Named export presets; each may override plugin enablement (layer 3). */
+  exportPresets: ExportPreset[];
+}
+
+export interface PluginEnableOverride {
+  enabled: boolean;
+}
+
+export interface ExportPreset {
+  id: string;
+  name: string;
+  pluginOverrides: Record<string, PluginEnableOverride>;
 }
 
 export interface ProjectDocument {
@@ -356,6 +370,43 @@ function normalizeStartupSceneGuid(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
+function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOverride> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, PluginEnableOverride> = {};
+  for (const [rawKey, raw] of Object.entries(value as Record<string, unknown>)) {
+    const guid = rawKey.trim();
+    if (!guid) continue;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const enabled = (raw as { enabled?: unknown }).enabled;
+    if (typeof enabled !== "boolean") continue;
+    out[guid] = { enabled };
+  }
+  return out;
+}
+
+function normalizeExportPresets(value: unknown): ExportPreset[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const presets: ExportPreset[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const id = typeof record.id === "string" ? record.id.trim() : "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const name =
+      typeof record.name === "string" && record.name.trim() !== ""
+        ? record.name.trim()
+        : id;
+    presets.push({
+      id,
+      name,
+      pluginOverrides: normalizePluginOverrides(record.pluginOverrides),
+    });
+  }
+  return presets;
+}
+
 function normalizeEditorUtilityObjects(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -438,6 +489,8 @@ export function normalizeProjectSettings(
     editorUtilityObjects: normalizeEditorUtilityObjects(
       settings?.editorUtilityObjects,
     ),
+    pluginOverrides: normalizePluginOverrides(settings?.pluginOverrides),
+    exportPresets: normalizeExportPresets(settings?.exportPresets),
   };
 }
 

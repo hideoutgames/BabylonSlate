@@ -16,6 +16,7 @@ describe("editor-only assets", () => {
 
   it("treats EditorUtilityInterface as editor-only", () => {
     expect(isEditorOnlyAssetType("EditorUtilityInterface")).toBe(true);
+    expect(isEditorOnlyAssetType("PluginSettings")).toBe(true);
     expect(isEditorOnlyAssetType("UserInterface")).toBe(false);
     expect(
       isEditorOnlyAsset(

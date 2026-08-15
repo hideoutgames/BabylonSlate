@@ -449,7 +449,7 @@ export class ProjectService {
     document: ProjectDocument,
   ): Promise<ProjectDocument> {
     await this.mountAssetRegistry();
-    const found = this.assetRegistry!.listDocumentPaths();
+    const found = this.assetRegistry!.listDocumentPaths({ rootId: "project" });
     const legacy = await this.discoverLegacyJsonDocuments();
     const scenes = uniquePaths([
       ...found.scenes,

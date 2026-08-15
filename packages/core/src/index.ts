@@ -4,6 +4,7 @@ export * from "./scene";
 export * from "./project";
 export * from "./document";
 export * from "./editor-only";
+export * from "./engine-version";
 export * from "./guid-result";
 export * from "./math-rng";
 export * from "./euler";
