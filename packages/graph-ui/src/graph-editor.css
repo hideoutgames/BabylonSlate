@@ -28,3 +28,13 @@
 .graph-editor-canvas .react-flow__handle[data-error="true"] .graph-pin-visual {
   box-shadow: 0 0 0 2px var(--destructive);
 }
+
+.graph-node-dev-only-tape {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--node-dev-only-stripe),
+    var(--node-dev-only-stripe) 6px,
+    var(--node-dev-only-tape) 6px,
+    var(--node-dev-only-tape) 12px
+  );
+}

@@ -147,7 +147,7 @@ IR → **plain JavaScript ES modules** (no TypeScript in the browser).
 | Determinism | Stable text; golden tests are the primary gate |
 | Anchors | Per-statement `{ line, column, assetGuid, graphId, nodeId, bodyLine? }` + `//# sourceURL=babylonslate:///<assetGuid>.js` |
 | Load | `runtime.loadCompiledModule` (blob URL, `new Function` fallback) |
-| Development Only | `properties.developmentOnly`; Print defaults on. Editor Play keeps the node. Export `compileGraphDocumentsForExport` (`stripDevelopmentOnly: true`) skips codegen and continues exec at `then`, or Sequence `then_*` pins in order (skip as no-op). Exclusive Branch `true`/`false` arms are not entered. Data pins from a stripped node compile as type defaults. A flagged event entry is omitted from the export module. |
+| Development Only | `properties.developmentOnly`; Print defaults on. Canvas nodes draw a Unreal-style yellow/black hazard-tape footer. Editor Play keeps the node. Export `compileGraphDocumentsForExport` (`stripDevelopmentOnly: true`) skips codegen and continues exec at `then`, or Sequence `then_*` pins in order (skip as no-op). Exclusive Branch `true`/`false` arms are not entered. Data pins from a stripped node compile as type defaults. A flagged event entry is omitted from the export module. |
 | Output location | Derived data outside the project folder (compiled scripts + anchor tables) |
 
 Validator and compiler share the **type context builder** so a graph that validates compiles.
@@ -162,7 +162,7 @@ Ship with the catalog but own dedicated designs (not one-line templates):
 | --- | --- |
 | **ExecuteJavaScript** | Editable in/out pin lists (JS identifier validation); fixed exec in/out; body → module-scope named function with defaulted outputs; async → latent; CodeMirror 6 body editor (lazy, accessory key bar, selection enabled); parse errors → Compiler Results with `bodyLine`/`bodyColumn`; runtime stacks on hoisted body lines carry `bodyLine` for session-report navigation |
 | **Log** | Severity + category → runtime log / Output Log / ring buffer; Error severity also enters the Preview session report (`runtime.log`) |
-| **Print** | Boxed wildcard via `formatValue`; colour + duration; keyed registry replaces in place; worker sends command, HUD draws; **Development Only** by default (Inspector checkbox; export compile skips the node) |
+| **Print** | Boxed wildcard via `formatValue`; colour + duration; keyed registry replaces in place; worker sends command, HUD draws; **Development Only** by default (Inspector checkbox; canvas hazard-tape footer; export compile skips the node) |
 | **ExecuteConsoleCommand** | Runs through `@babylonslate/debugger` command registry; returns success + output; compile-time warning when a literal names a debug-tier command |
 | **Event On Command Run** | `BDebugCommand` entry; output pins from the parameter list; compiles to `onCommandRun` |
 | **Report Command** | Sets the console success flag + output string for `OnCommandRun` |

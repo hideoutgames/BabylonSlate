@@ -577,6 +577,133 @@ describe("GraphEditor", () => {
     expect(messageHandle).not.toBeNull();
   });
 
+  it("shows a Development Only tape on Print by default", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Print",
+            __category: "debug",
+            __pins: [],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { getByTestId } = render(<GraphEditor initialGraph={graph} />);
+    const banner = getByTestId("development-only-banner");
+    expect(banner.getAttribute("aria-label")).toBe("Development Only");
+    expect(banner.textContent?.trim()).toBe("");
+  });
+
+  it("hides the Development Only tape when Print opts out", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Print",
+            developmentOnly: false,
+            __category: "debug",
+            __pins: [],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { queryByTestId } = render(<GraphEditor initialGraph={graph} />);
+    expect(queryByTestId("development-only-banner")).toBeNull();
+  });
+
+  it("does not show a Development Only tape on Log unless flagged", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Log",
+            __category: "debug",
+            __pins: debugLogPins,
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { queryByTestId } = render(<GraphEditor initialGraph={graph} />);
+    expect(queryByTestId("development-only-banner")).toBeNull();
+  });
+
+  it("shows a Development Only tape on a flagged non-Print node", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "branch",
+          type: "flow.branch",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Branch",
+            developmentOnly: true,
+            __category: "flow",
+            __pins: [],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { getByTestId } = render(<GraphEditor initialGraph={graph} />);
+    expect(getByTestId("development-only-banner")).toBeTruthy();
+  });
+
+  it("clips the Development Only tape to the shell without clipping the error badge", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Print",
+            __category: "debug",
+            __pins: [],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { getByTestId, getByLabelText, container } = render(
+      <GraphEditor
+        initialGraph={graph}
+        diagnostics={[
+          {
+            nodeId: "print",
+            severity: "error",
+            message: "Type mismatch",
+          },
+        ]}
+      />,
+    );
+
+    const shell = container.querySelector("[data-node-role]");
+    const banner = getByTestId("development-only-banner");
+    const badge = getByLabelText("1 error");
+    expect(shell?.contains(banner)).toBe(true);
+    expect(shell?.contains(badge)).toBe(false);
+    expect(shell?.className).toMatch(/\boverflow-hidden\b/);
+    expect(shell?.className).toMatch(/\brounded-lg\b/);
+  });
+
   it("renders array pins with a list icon and scalar pins as circles", () => {
     const graph: GraphDocument = {
       nodes: [
