@@ -6,6 +6,7 @@ import {
   classRef,
   objectRef,
   BOOL,
+  STRING,
 } from "@babylonslate/scripting";
 
 export const actorNodes: NodeDefinition[] = [
