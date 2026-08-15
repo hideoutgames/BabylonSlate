@@ -6,6 +6,8 @@ import {
   parseScriptRegistry,
   GAME_MANIFEST_FILE,
   SCRIPTS_FILE,
+  NAVMESH_EXPORT_TYPE,
+  sceneGuidFromNavmeshExport,
   type GameManifest,
   type PackSource,
 } from "@babylonslate/exporter";
@@ -20,8 +22,10 @@ export type LoadedGame = {
   textureBytes: Map<string, Uint8Array>;
   modelBytes: Map<string, Uint8Array>;
   fontBytes: Map<string, Uint8Array>;
+  fontFamilies: Map<string, string>;
   audioBytes: Map<string, Uint8Array>;
   payloads: Map<string, Uint8Array>;
+  navmeshBytes: Map<string, Uint8Array>;
 };
 
 function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
@@ -72,8 +76,10 @@ export async function loadGameFromFiles(
   const textureBytes = new Map<string, Uint8Array>();
   const modelBytes = new Map<string, Uint8Array>();
   const fontBytes = new Map<string, Uint8Array>();
+  const fontFamilies = new Map<string, string>();
   const audioBytes = new Map<string, Uint8Array>();
   const payloads = new Map<string, Uint8Array>();
+  const navmeshBytes = new Map<string, Uint8Array>();
 
   const packSources = new Map<string, PackSource>();
   for (const packName of manifest.packs) {
@@ -101,10 +107,16 @@ export async function loadGameFromFiles(
     }
     if (entry.type === "Font") {
       fontBytes.set(entry.guid, bytes);
+      if (entry.name?.trim()) fontFamilies.set(entry.guid, entry.name.trim());
       continue;
     }
     if (entry.type === "Audio") {
       audioBytes.set(entry.guid, bytes);
+      continue;
+    }
+    if (entry.type === NAVMESH_EXPORT_TYPE) {
+      const sceneGuid = sceneGuidFromNavmeshExport(entry.guid) ?? entry.guid;
+      navmeshBytes.set(sceneGuid, bytes);
     }
   }
 
@@ -115,8 +127,10 @@ export async function loadGameFromFiles(
     textureBytes,
     modelBytes,
     fontBytes,
+    fontFamilies,
     audioBytes,
     payloads,
+    navmeshBytes,
   };
 }
 

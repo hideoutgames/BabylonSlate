@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
-import { exportGame, zipExport, unzipExport } from "./export-game";
+import { exportGame, zipExport, unzipExport, parseGameManifest } from "./export-game";
 import { parseScriptRegistry } from "./scripts";
 import { GAME_MANIFEST_FILE } from "./constants";
 
@@ -341,5 +341,82 @@ describe("exportGame", () => {
     expect(result.value.files.has("havok/HavokPhysics.wasm")).toBe(true);
     expect(result.value.files.has("coi-serviceworker.js")).toBe(true);
     expect(result.value.fileCount).toBeLessThan(800);
+  });
+
+  it("records pixelsPerUnit and Font names on the manifest", async () => {
+    const result = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      pixelsPerUnit: 64,
+      pixelPerfect: true,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+        {
+          guid: "font-1",
+          type: "Font",
+          sceneGuid: "scene-1",
+          name: "Display",
+          bytes: new Uint8Array([2, 3]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.pixelsPerUnit).toBe(64);
+    expect(result.value.manifest.pixelPerfect).toBe(true);
+    expect(
+      result.value.manifest.assets.find((entry) => entry.guid === "font-1")?.name,
+    ).toBe("Display");
+  });
+
+  it("defaults pixelsPerUnit when game.json omits 2D fields", () => {
+    const manifest = parseGameManifest(
+      JSON.stringify({
+        startupSceneGuid: "scene-1",
+        bundleDebugger: false,
+        mode: "packed",
+        render: DEFAULT_RENDER_PROJECT_SETTINGS,
+        playFrameCap: 60,
+        packs: [],
+        scriptsFile: "scripts.js",
+        physicsWorld: "3d",
+        assets: [],
+      }),
+    );
+    expect(manifest.pixelsPerUnit).toBe(100);
+    expect(manifest.pixelPerfect).toBe(false);
+  });
+
+  it("records Font names on loose-mode index entries", async () => {
+    const result = await exportGame({
+      mode: "loose",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "font-1",
+          type: "Font",
+          sceneGuid: "scene-1",
+          name: "Display",
+          bytes: new Uint8Array([2, 3]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.value.manifest.assets.find((entry) => entry.guid === "font-1")?.name,
+    ).toBe("Display");
   });
 });

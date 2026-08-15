@@ -987,10 +987,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         graphByGuid: loaded.graphByGuid,
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
+        navmeshByGuid: loaded.navmeshByGuid,
         customResolution:
           projectDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap:
           projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,
+        pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
+        pixelPerfect: projectDocument?.settings.twoD.pixelPerfect === true,
         physicsWorld:
           loaded.sceneByGuid(
             projectDocument?.settings.startupSceneGuid ?? "",

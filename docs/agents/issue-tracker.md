@@ -19,6 +19,10 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-export / p14-platforms | Spec | Packaged player booted an empty Engine: no sprite/tilemap/navmesh hydrate, no UI-logic compile, no in-process rAF `advance` or canvas input | Resolved |
+| 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-packed-mode | Spec | `game.json` omitted `pixelsPerUnit` / `pixelPerfect`; Font index entries had no authored family `name` | Resolved |
+| 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-platforms | Spec | Packaged player compiles UserInterface logic and packs UI JSON; Babylon GUI widget mount stays overlay Play (`PlayHudOverlay`) | Accepted |
+| 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-export | Spec | Export e2e still asserts boot + ticks on the cube fixture; packed sprite/tilemap/navmesh/UI-logic coverage is unit-tested | Accepted |
 | 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-plugin-model / Play | Spec | `collectPlaySceneLibrary` walked `project.json` `scenes` only, so enabled plugin Scenes never reached Play `changescene` | Resolved |
 | 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-engine-plugin | Spec | Engine Memory `ProjectStorage` stayed writable after unpack; now wrapped with `createReadOnlyProjectStorage` | Resolved |
 | 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-engine-plugin | Spec | New-project copies kept engine `enabledByDefault: true` when authored that way; copies now force `false` | Resolved |

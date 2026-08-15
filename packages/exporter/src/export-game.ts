@@ -51,6 +51,19 @@ function encodingFor(asset: ExportAssetBytes): "json" | "bytes" {
   return asset.encoding ?? (JSON_TYPES.has(asset.type) ? "json" : "bytes");
 }
 
+function indexEntry(
+  asset: ExportAssetBytes,
+  extra: { pack?: string; path?: string },
+): GameAssetIndexEntry {
+  return {
+    guid: asset.guid,
+    type: asset.type,
+    encoding: encodingFor(asset),
+    ...(asset.name ? { name: asset.name } : {}),
+    ...extra,
+  };
+}
+
 export function defaultPlayerIndexHtml(): string {
   return `<!doctype html>
 <html lang="en">
@@ -115,12 +128,7 @@ async function writePackedAssets(
   );
   packs.push(BOOT_PACK_FILE);
   for (const asset of boot) {
-    index.push({
-      guid: asset.guid,
-      type: asset.type,
-      encoding: encodingFor(asset),
-      pack: BOOT_PACK_FILE,
-    });
+    index.push(indexEntry(asset, { pack: BOOT_PACK_FILE }));
   }
   const otherScenes = [
     ...new Set(
@@ -143,12 +151,7 @@ async function writePackedAssets(
     );
     packs.push(name);
     for (const asset of group) {
-      index.push({
-        guid: asset.guid,
-        type: asset.type,
-        encoding: encodingFor(asset),
-        pack: name,
-      });
+      index.push(indexEntry(asset, { pack: name }));
     }
   }
   return { packs, index };
@@ -162,12 +165,7 @@ function writeLooseAssets(
   for (const asset of assets) {
     const path = `assets/${asset.guid}.bin`;
     files.set(path, asset.bytes);
-    index.push({
-      guid: asset.guid,
-      type: asset.type,
-      encoding: encodingFor(asset),
-      path,
-    });
+    index.push(indexEntry(asset, { path }));
   }
   return { packs: [], index };
 }
@@ -216,6 +214,11 @@ export async function exportGame(
     mode,
     render: options.customResolution,
     playFrameCap: options.playFrameCap ?? 60,
+    pixelsPerUnit:
+      typeof options.pixelsPerUnit === "number" && options.pixelsPerUnit > 0
+        ? options.pixelsPerUnit
+        : 100,
+    pixelPerfect: options.pixelPerfect === true,
     packs: packed.packs,
     scriptsFile: SCRIPTS_FILE,
     physicsWorld: options.physicsWorld ?? "3d",
@@ -250,5 +253,13 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 }
 
 export function parseGameManifest(source: string): GameManifest {
-  return JSON.parse(source) as GameManifest;
+  const parsed = JSON.parse(source) as GameManifest;
+  return {
+    ...parsed,
+    pixelsPerUnit:
+      typeof parsed.pixelsPerUnit === "number" && parsed.pixelsPerUnit > 0
+        ? parsed.pixelsPerUnit
+        : 100,
+    pixelPerfect: parsed.pixelPerfect === true,
+  };
 }

@@ -13,3 +13,15 @@ export const BABPACK_MAGIC = "BPK1";
 export const GAME_MANIFEST_FILE = "game.json";
 export const SCRIPTS_FILE = "scripts.js";
 export const BOOT_PACK_FILE = "boot.babpack";
+export const NAVMESH_EXPORT_TYPE = "NavMesh";
+export const NAVMESH_EXPORT_GUID_PREFIX = "navmesh:";
+
+export function navmeshExportGuid(sceneGuid: string): string {
+  return `${NAVMESH_EXPORT_GUID_PREFIX}${sceneGuid}`;
+}
+
+export function sceneGuidFromNavmeshExport(guid: string): string | null {
+  return guid.startsWith(NAVMESH_EXPORT_GUID_PREFIX)
+    ? guid.slice(NAVMESH_EXPORT_GUID_PREFIX.length)
+    : null;
+}

@@ -55,7 +55,7 @@ async function launchFromHttp(): Promise<void> {
 async function launchLoaded(
   game: Awaited<ReturnType<typeof loadGameFromFiles>>,
 ): Promise<void> {
-  await registerPackedFonts(game.fontBytes);
+  await registerPackedFonts(game.fontBytes, undefined, game.fontFamilies);
   const canvas = canvasEl();
   layoutFromManifest(game.manifest);
   const hud = mountPlayerHud(
