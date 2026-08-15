@@ -616,10 +616,7 @@ export function startPlaySession(options: {
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),
     liveObjectCounts: () => handle.liveObjectCounts(),
-    drawCalls: () => {
-      const engine = handle.engine as { drawCalls?: number };
-      return engine.drawCalls ?? 0;
-    },
+    drawCalls: () => handle.drawCalls(),
     bridgeMessagesPerSec: () => {
       const now = performance.now();
       const elapsed = (now - commandWindowStart) / 1000;
