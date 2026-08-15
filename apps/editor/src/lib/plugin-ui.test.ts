@@ -12,6 +12,7 @@ import {
   pluginDependencyStatus,
   pluginEnableNeedsConfirm,
   pluginFolderSlug,
+  pluginDownloadFileName,
   pluginRootId,
   rootIdForFolderPath,
   uniquePluginFolderName,
@@ -28,6 +29,9 @@ describe("plugin identity helpers", () => {
     expect(uniquePluginFolderName("Pack", [])).toBe("pack");
     expect(uniquePluginFolderName("Pack", ["pack"])).toBe("pack-1");
     expect(uniquePluginFolderName("Pack", ["pack", "pack-1"])).toBe("pack-2");
+    expect(pluginDownloadFileName("Starter Content")).toBe(
+      "starter-content.babplugin",
+    );
   });
 });
 

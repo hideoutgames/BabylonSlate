@@ -1,28 +1,15 @@
+import { pluginFolderSlug, uniquePluginFolderName } from "@babylonslate/assets";
+
+export { pluginFolderSlug, uniquePluginFolderName };
+
+export function pluginDownloadFileName(displayName: string): string {
+  return `${pluginFolderSlug(displayName)}.babplugin`;
+}
+
 export const PROJECT_CONTENT_ROOT_ID = "project";
 
 export function pluginRootId(pluginGuid: string): string {
   return `plugin:${pluginGuid}`;
-}
-
-export function pluginFolderSlug(displayName: string): string {
-  const slug = displayName
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "plugin";
-}
-
-export function uniquePluginFolderName(
-  displayName: string,
-  existingFolderNames: readonly string[],
-): string {
-  const base = pluginFolderSlug(displayName);
-  const used = new Set(existingFolderNames.map((name) => name.toLowerCase()));
-  if (!used.has(base)) return base;
-  let index = 1;
-  while (used.has(`${base}-${index}`)) index += 1;
-  return `${base}-${index}`;
 }
 
 export function isBabpluginFile(name: string): boolean {

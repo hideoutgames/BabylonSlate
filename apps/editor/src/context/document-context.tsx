@@ -64,7 +64,7 @@ import {
   DocumentService,
   type OpenDocument,
 } from "../services/document-service";
-import { ProjectService } from "../services/project-service";
+import { ProjectService, type PluginImportResult } from "../services/project-service";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { loadTemplateCards } from "../services/template-service";
@@ -152,6 +152,11 @@ interface DocumentContextValue {
   ) => Promise<void>;
   createProjectPlugin: (displayName: string) => Promise<PluginDescriptor>;
   deleteProjectPlugin: (guid: string) => Promise<void>;
+  exportPlugin: (guid: string) => Promise<Uint8Array>;
+  importPlugin: (
+    bytes: Uint8Array,
+    decision?: "keep" | "replace",
+  ) => Promise<PluginImportResult>;
   /** Retarget open tabs after a Scene/Graph file move or rename. */
   repathDocument: (
     kind: AssetDocumentKind,
@@ -548,6 +553,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (guid: string) => {
       await projectService.deleteProjectPlugin(guid);
       bump();
+    },
+    [bump, projectService],
+  );
+
+  const exportPlugin = useCallback(
+    (guid: string) => projectService.exportPlugin(guid),
+    [projectService],
+  );
+
+  const importPlugin = useCallback(
+    async (bytes: Uint8Array, decision?: "keep" | "replace") => {
+      const result = await projectService.importPlugin(bytes, decision);
+      bump();
+      return result;
     },
     [bump, projectService],
   );
@@ -2227,6 +2246,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyPluginOverrides,
       createProjectPlugin,
       deleteProjectPlugin,
+      exportPlugin,
+      importPlugin,
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,
@@ -2268,6 +2289,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyPluginOverrides,
       createProjectPlugin,
       deleteProjectPlugin,
+      exportPlugin,
+      importPlugin,
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,

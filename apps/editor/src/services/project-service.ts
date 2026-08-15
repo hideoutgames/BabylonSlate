@@ -56,11 +56,17 @@ import {
   createDefaultPluginSettings,
   discoverEnginePlugins,
   discoverProjectPlugins,
+  exportPluginZip,
   indexUnresolvedPlaceholders,
+  inspectBabplugin,
+  applyPluginImport,
   mountEnabledPlugins,
+  planPluginImport,
   resolvePluginEnabled,
   resolvePluginGraph,
   writeProjectPlugin,
+  type InspectedBabplugin,
+  type PluginImportPlan,
 } from "@babylonslate/assets";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
@@ -76,6 +82,15 @@ export interface ProjectLoadResult {
   layouts: ProjectLayouts;
   migrationPending: MigrationPending[];
 }
+
+export type PluginImportResult =
+  | { status: "imported"; descriptor: PluginDescriptor }
+  | { status: "kept" }
+  | {
+      status: "conflict";
+      incoming: InspectedBabplugin;
+      plan: Extract<PluginImportPlan, { kind: "conflict" }>;
+    };
 
 function newGuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -650,6 +665,68 @@ export class ProjectService {
       await this.projectSearchIndex.rebuild(this.assetRegistry);
     }
     this.emitRegistryChange();
+  }
+
+  async exportPlugin(guid: string): Promise<Uint8Array> {
+    const plugin = this.pluginDescriptors.find(
+      (entry) => entry.pluginGuid === guid,
+    );
+    if (!plugin) {
+      throw new Error(`Unknown plugin ${guid}`);
+    }
+    const storage =
+      plugin.source === "engine"
+        ? this.enginePluginStorage
+        : this.storage;
+    if (!storage) {
+      throw new Error("Plugin storage is not available");
+    }
+    return exportPluginZip(storage, plugin);
+  }
+
+  async importPlugin(
+    bytes: Uint8Array,
+    decision?: "keep" | "replace",
+  ): Promise<PluginImportResult> {
+    const incoming = await inspectBabplugin(bytes);
+    const occupiedGuids = new Set<string>([
+      ...this.pluginDescriptors.map((plugin) => plugin.pluginGuid),
+      ...(this.assetRegistry?.list().map((asset) => asset.header.guid) ?? []),
+    ]);
+    const plan = planPluginImport({
+      incoming,
+      existingPlugins: this.pluginDescriptors,
+      occupiedGuids,
+      existingFolderNames: this.pluginDescriptors.map(
+        (plugin) => plugin.folderName,
+      ),
+    });
+    if (plan.kind === "conflict") {
+      if (decision === "keep") return { status: "kept" };
+      if (decision !== "replace") {
+        return { status: "conflict", incoming, plan };
+      }
+      await applyPluginImport(this.storage, incoming, {
+        ...plan,
+        replace: true,
+      });
+    } else {
+      await applyPluginImport(this.storage, incoming, plan);
+    }
+    await this.syncPlugins();
+    if (this.projectSearchIndex && this.assetRegistry) {
+      await this.projectSearchIndex.rebuild(this.assetRegistry);
+    }
+    this.emitRegistryChange();
+    const guid =
+      plan.kind === "remap-plugin" ? plan.nextGuid : incoming.settings.pluginGuid;
+    const descriptor = this.pluginDescriptors.find(
+      (plugin) => plugin.pluginGuid === guid,
+    );
+    if (!descriptor) {
+      throw new Error("Plugin import did not produce a descriptor");
+    }
+    return { status: "imported", descriptor };
   }
 
   private storageForPath(path: string): ProjectStorage {

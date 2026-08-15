@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { NamePromptDialog } from "@babylonslate/editor-kit";
 import type { PluginDescriptor } from "@babylonslate/assets";
+import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -25,7 +26,9 @@ import { documentKindForAssetType } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import {
   inboundRefsFromOtherRoots,
+  isBabpluginFile,
   pluginDependencyStatus,
+  pluginDownloadFileName,
   pluginEnableNeedsConfirm,
   pluginRootId,
 } from "../lib/plugin-ui";
@@ -47,6 +50,8 @@ export function ProjectPluginsSettings() {
     applyPluginOverrides,
     createProjectPlugin,
     deleteProjectPlugin,
+    exportPlugin,
+    importPlugin,
     openDocument,
   } = useDocuments();
   const [newOpen, setNewOpen] = useState(false);
@@ -60,6 +65,11 @@ export function ProjectPluginsSettings() {
   const [confirmDelete, setConfirmDelete] = useState<PluginDescriptor | null>(
     null,
   );
+  const [importConflict, setImportConflict] = useState<{
+    names: string;
+    bytes: Uint8Array;
+  } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const overrides = projectDocument?.settings.pluginOverrides ?? {};
 
@@ -104,6 +114,48 @@ export function ProjectPluginsSettings() {
       }
     }
     void setEnabled(plugin, enabled);
+  };
+
+  const downloadPlugin = async (plugin: PluginDescriptor) => {
+    const bytes = await exportPlugin(plugin.pluginGuid);
+    const blob = new Blob([bytes.buffer as ArrayBuffer], {
+      type: "application/zip",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = pluginDownloadFileName(plugin.settings.displayName);
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const runImport = async (
+    bytes: Uint8Array,
+    decision?: "keep" | "replace",
+  ) => {
+    const result = await importPlugin(bytes, decision);
+    if (result.status === "conflict") {
+      setImportConflict({
+        names: result.incoming.settings.displayName,
+        bytes,
+      });
+      return;
+    }
+    setImportConflict(null);
+  };
+
+  const handleImportClick = async () => {
+    if (isMobilePlatform()) {
+      const files = await pickImportFiles({
+        multiple: false,
+        accept: ".babplugin",
+      });
+      const file =
+        files.find((entry) => isBabpluginFile(entry.name)) ?? files[0];
+      if (file) await runImport(file.bytes);
+      return;
+    }
+    importInputRef.current?.click();
   };
 
   return (
@@ -173,6 +225,15 @@ export function ProjectPluginsSettings() {
                   >
                     Open
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid={`settings-plugin-export-${plugin.pluginGuid}`}
+                    onClick={() => void downloadPlugin(plugin)}
+                  >
+                    Export
+                  </Button>
                   {plugin.source === "project" ? (
                     <Button
                       type="button"
@@ -189,15 +250,41 @@ export function ProjectPluginsSettings() {
             </Field>
           );
         })}
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-[var(--touch-target,44px)] w-fit"
-          data-testid="settings-plugin-new"
-          onClick={() => setNewOpen(true)}
-        >
-          New Plugin
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-[var(--touch-target,44px)] w-fit"
+            data-testid="settings-plugin-new"
+            onClick={() => setNewOpen(true)}
+          >
+            New Plugin
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-[var(--touch-target,44px)] w-fit"
+            data-testid="settings-plugin-import"
+            onClick={() => void handleImportClick()}
+          >
+            Import Plugin
+          </Button>
+        </div>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".babplugin,application/zip"
+          className="hidden"
+          data-testid="import-plugin-input"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            void file.arrayBuffer().then((buffer) =>
+              runImport(new Uint8Array(buffer)),
+            );
+          }}
+        />
       </FieldSet>
       <NamePromptDialog
         open={newOpen}
@@ -294,6 +381,36 @@ export function ProjectPluginsSettings() {
               }}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={Boolean(importConflict)}
+        onOpenChange={(open) => {
+          if (!open) setImportConflict(null);
+        }}
+      >
+        <AlertDialogContent data-testid="settings-plugin-import-conflict">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Plugin Already Installed</AlertDialogTitle>
+            <AlertDialogDescription>
+              {importConflict?.names} is already in this project at the same
+              version. Keep the existing plugin or replace it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="settings-plugin-import-keep">
+              Keep
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="settings-plugin-import-replace"
+              onClick={() => {
+                if (!importConflict) return;
+                void runImport(importConflict.bytes, "replace");
+              }}
+            >
+              Replace
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

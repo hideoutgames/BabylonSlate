@@ -8,6 +8,7 @@ import {
   encodePluginSettingsDocument,
 } from "./plugin-settings";
 import {
+  collectEnabledPluginAssets,
   discoverEnginePlugins,
   discoverProjectPlugins,
   indexUnresolvedPlaceholders,
@@ -314,5 +315,45 @@ describe("indexUnresolvedPlaceholders", () => {
 
     expect(registry.getByGuid("plugin-tex")?.placeholder).toBeFalsy();
     expect(registry.getByGuid("plugin-tex")?.header.type).toBe("Texture");
+  });
+});
+
+describe("collectEnabledPluginAssets", () => {
+  it("returns assets from enabled plugin roots and omits disabled ones", async () => {
+    const storage = await projectStorage();
+    const on = createDefaultPluginSettings({
+      pluginGuid: "on",
+      displayName: "On",
+    });
+    const off = createDefaultPluginSettings({
+      pluginGuid: "off",
+      displayName: "Off",
+    });
+    await writePluginFolder(storage, "On", on, [
+      {
+        relativePath: "Hero.class.babasset",
+        guid: "hero-1",
+        type: "Class",
+        name: "Hero",
+      },
+    ]);
+    await writePluginFolder(storage, "Off", off, [
+      {
+        relativePath: "Villain.class.babasset",
+        guid: "villain-1",
+        type: "Class",
+        name: "Villain",
+      },
+    ]);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await mountEnabledPlugins(registry, await discoverProjectPlugins(storage), {
+      enabledGuids: new Set(["on", "off"]),
+    });
+    const collected = collectEnabledPluginAssets(registry, new Set(["on"]));
+    expect(collected.map((asset) => asset.header.guid)).toEqual(["hero-1"]);
+    expect(collected.some((asset) => asset.header.guid === "villain-1")).toBe(
+      false,
+    );
   });
 });

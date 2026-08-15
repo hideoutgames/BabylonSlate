@@ -3,6 +3,7 @@ import { PROJECT_FILE } from "@babylonslate/core";
 import {
   createDefaultPluginSettings,
   encodeBabasset,
+  inspectBabplugin,
   writeProjectPlugin,
 } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
@@ -100,5 +101,54 @@ describe("ProjectService plugin roots", () => {
     );
     expect(await storage.exists("plugins/my-pack/assets")).toBe(true);
     expect(await storage.exists(PROJECT_FILE)).toBe(true);
+  });
+
+  it("exports a project plugin as a self-contained .babplugin zip", async () => {
+    const { service } = await scaffolded();
+    const created = await service.createProjectPlugin("My Pack");
+    const zip = await service.exportPlugin(created.pluginGuid);
+    const inspected = await inspectBabplugin(zip);
+    expect(inspected.manifest.kind).toBe("plugin");
+    expect(inspected.settings.displayName).toBe("My Pack");
+    expect(inspected.settings.pluginGuid).toBe(created.pluginGuid);
+  });
+
+  it("imports a .babplugin into plugins/<safeName>/ and keeps guids", async () => {
+    const source = await scaffolded();
+    const created = await source.service.createProjectPlugin("Shared Pack");
+    await writeClassAsset(
+      source.storage,
+      "plugins/shared-pack/assets/Hero.class.babasset",
+      { guid: "hero-1", name: "Hero" },
+    );
+    const zip = await source.service.exportPlugin(created.pluginGuid);
+
+    const dest = await scaffolded();
+    const result = await dest.service.importPlugin(zip);
+    expect(result.status).toBe("imported");
+    if (result.status !== "imported") return;
+    expect(result.descriptor.pluginGuid).toBe(created.pluginGuid);
+    expect(
+      await dest.storage.exists(
+        "plugins/shared-pack/assets/Hero.class.babasset",
+      ),
+    ).toBe(true);
+  });
+
+  it("returns a Keep/Replace conflict for the same guid and version", async () => {
+    const { storage, service } = await scaffolded();
+    const settings = createDefaultPluginSettings({
+      pluginGuid: "dup-guid",
+      displayName: "Dup",
+    });
+    await writeProjectPlugin(storage, "dup", settings);
+    await service.remountRegistry();
+    const zip = await service.exportPlugin("dup-guid");
+    const conflict = await service.importPlugin(zip);
+    expect(conflict.status).toBe("conflict");
+    const kept = await service.importPlugin(zip, "keep");
+    expect(kept.status).toBe("kept");
+    const replaced = await service.importPlugin(zip, "replace");
+    expect(replaced.status).toBe("imported");
   });
 });

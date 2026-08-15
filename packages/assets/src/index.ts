@@ -21,6 +21,7 @@ export * from "./migrate-on-load";
 export * from "./migration";
 export * from "./payload-loader";
 export * from "./plugin-host";
+export * from "./plugin-package";
 export * from "./plugin-settings";
 export * from "./registry";
 export * from "./semver-range";
