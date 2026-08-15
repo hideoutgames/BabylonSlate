@@ -25,6 +25,7 @@ export function runtimeOptionsFromLoadControl(
   | "seedDemoActors"
   | "gameInstanceClass"
   | "sceneLibrary"
+  | "includeDebugCommands"
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
   for (const entry of msg.scenes ?? []) {
@@ -41,6 +42,7 @@ export function runtimeOptionsFromLoadControl(
     seedDemoActors: msg.scene ? false : true,
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
+    includeDebugCommands: msg.includeDebugCommands,
   };
 }
 

@@ -1,0 +1,22 @@
+{
+  "name": "@babylonslate/exporter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node packages/exporter"
+  },
+  "dependencies": {
+    "@babylonslate/assets": "workspace:*",
+    "@babylonslate/bridge": "workspace:*",
+    "@babylonslate/core": "workspace:*",
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2"
+  }
+}

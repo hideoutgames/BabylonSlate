@@ -78,7 +78,11 @@ MyGame.babproject/          (directory)  or  MyGame.babproject (zip)
 - **Directory backend** — incremental writes (iPad Documents / external folder / desktop).
 - **Zip backend** — single-file zip (`fflate`); used for web Export Project and interchange.
 
-Web persists the directory layout into OPFS and offers Export Project as a zip download.
+Web persists the directory layout into OPFS and offers Export Project as a zip download. **Export Game** (itch zip) is a different artifact — see [exporter.md](exporter.md).
+
+## `.babpack` (packaged games)
+
+Packed export concatenates reached asset bytes into `boot.babpack` plus one `scene-<guid>.babpack` per additional scene. Magic `BPK1`, then a JSON index of `{ guid, offset, length, hash }` with **absolute file offsets** so HTTP `Range` maps 1:1. The player prefers range requests and falls back to a whole-pack fetch on range-blind hosts. Fonts stay inside packs (`FontFace` from bytes). This format is **export-only** — the editor project on disk stays one `.babasset` per asset (see Write performance in [vfs.md](vfs.md)).
 
 ### Derived data (outside the project)
 

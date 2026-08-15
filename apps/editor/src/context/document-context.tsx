@@ -14,10 +14,11 @@ import type {
   DocumentRef,
   ProjectDocument,
   ProjectFolderHandle,
+  Result,
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -69,12 +70,20 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
-import type { CreateProjectOptions } from "../lib/create-project";
 import {
   compileGraphDocuments,
   graphCompileSignature,
   graphsNeedCompile as compileSignatureIsStale,
 } from "../services/script-compiler";
+import type { CreateProjectOptions } from "../lib/create-project";
+import type { ExportArtifact } from "@babylonslate/exporter";
+import {
+  assetsFromIndexed,
+  collectAndExportGame,
+  zipGameArtifact,
+} from "../services/export-game";
+import { loadExportDocuments } from "../services/export-game-inputs";
+import { loadPlayerDistFiles } from "../services/load-player-files";
 import { validateSerializedGraph } from "../services/graph-validation";
 import { applyFocusLayout } from "../shell/layout-ops";
 import {
@@ -205,6 +214,11 @@ interface DocumentContextValue {
   forceCloseProject: () => Promise<void>;
   refreshProjectList: () => Promise<void>;
   exportProject: () => Promise<Uint8Array>;
+  exportGameArtifact: (options?: {
+    previewBuild?: boolean;
+    playerFiles?: Map<string, Uint8Array>;
+  }) => Promise<Result<ExportArtifact, string>>;
+  zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
   dismissRecovery: () => Promise<void>;
   keepRecovery: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
@@ -939,6 +953,57 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const exportProject = useCallback(async () => {
     return projectService.exportZip();
   }, [projectService]);
+
+  const exportGameArtifact = useCallback(
+    async (options?: {
+      previewBuild?: boolean;
+      playerFiles?: Map<string, Uint8Array>;
+    }) => {
+      const list = projectService.registry?.list() ?? [];
+      const loaded = await loadExportDocuments({
+        assets: list,
+        loadDocument: (kind, path) =>
+          projectService.loadDocument(
+            kind as Parameters<ProjectService["loadDocument"]>[0],
+            path,
+          ),
+        readAssetChunk: (path, chunkId) =>
+          projectService.readAssetChunk(path, chunkId),
+      });
+      const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
+      return collectAndExportGame({
+        startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
+        assets: assetsFromIndexed(list),
+        plugins: projectService.plugins.map((plugin) => ({
+          pluginGuid: plugin.pluginGuid,
+          enabledByDefault: plugin.settings.enabledByDefault,
+        })),
+        projectPluginOverrides: projectDocument?.settings.pluginOverrides ?? {},
+        preset: projectDocument?.settings.exportPresets[0],
+        parentOf: classParentLookup(list),
+        sceneByGuid: loaded.sceneByGuid,
+        graphByGuid: loaded.graphByGuid,
+        bytesByGuid: loaded.bytesByGuid,
+        customResolution:
+          projectDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
+        playFrameCap:
+          projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,
+        physicsWorld:
+          loaded.sceneByGuid(
+            projectDocument?.settings.startupSceneGuid ?? "",
+          )?.settings.physicsWorld === "2d"
+            ? "2d"
+            : "3d",
+        playerFiles,
+        previewBuild: options?.previewBuild,
+      });
+    },
+    [projectDocument, projectService],
+  );
+
+  const zipExportedGame = useCallback((artifact: ExportArtifact) => {
+    return zipGameArtifact(artifact);
+  }, []);
 
   const dismissRecovery = useCallback(async () => {
     const guid = projectService.guid;
@@ -2268,6 +2333,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       forceCloseProject,
       refreshProjectList,
       exportProject,
+      exportGameArtifact,
+      zipExportedGame,
       dismissRecovery,
       keepRecovery,
       openDocument,
@@ -2409,6 +2476,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       forceCloseProject,
       refreshProjectList,
       exportProject,
+      exportGameArtifact,
+      zipExportedGame,
       dismissRecovery,
       keepRecovery,
       openDocument,

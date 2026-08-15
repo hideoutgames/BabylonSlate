@@ -33,12 +33,13 @@ export const engineSettingsSchema = z.object({
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(1.5, Math.max(0.1, value));
   }, z.number().min(0.1).max(1.5).default(0.5)),
-  debuggerDefaults: z
-    .object({
-      showFps: z.boolean().default(false),
-      logLevel: z.enum(["error", "warn", "info", "debug"]).default("warn"),
-    })
-    .default({ showFps: false, logLevel: "warn" }),
+    debuggerDefaults: z
+      .object({
+        showFps: z.boolean().default(false),
+        logLevel: z.enum(["error", "warn", "info", "debug"]).default("warn"),
+        previewBuild: z.boolean().default(false),
+      })
+      .default({ showFps: false, logLevel: "warn", previewBuild: false }),
   focusKeepPanels: z
     .object({
       scene: z.array(z.string()).default(["viewport"]),

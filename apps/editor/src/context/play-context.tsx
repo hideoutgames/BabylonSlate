@@ -12,6 +12,7 @@ import type { Engine } from "@babylonjs/core";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+  isErr,
 } from "@babylonslate/core";
 import { createAppEngine, type FontAssetEntry } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
@@ -20,6 +21,25 @@ import type { Diagnostic } from "@babylonslate/scripting";
 import { PlayOverlay } from "../components/play-overlay";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
+import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
+import { PreviewBuildOverlay } from "../components/preview-build-overlay";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
+import {
+  MISSING_STARTUP_SCENE_MESSAGE,
+  isPreviewDiagnosticsMessage,
+  previewPackFromFiles,
+  PREVIEW_STOP_MESSAGE,
+} from "@babylonslate/exporter";
+import { createAppSettingsStore } from "@babylonslate/vfs";
+import { loadPlayerDistFiles } from "../services/load-player-files";
 import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
@@ -69,6 +89,8 @@ interface PlayContextValue {
   playAwaitingMigration: boolean;
   requestPlay: (options?: PlayOptions) => Promise<void>;
   canPlay: boolean;
+  previewBuild: boolean;
+  setPreviewBuild: (value: boolean) => void;
   launchPlay: (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => void;
   resumePlayAfterMigration: () => Promise<void>;
   cancelPlayMigration: () => void;
@@ -123,6 +145,18 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     "worker" | "in-process" | null
   >(null);
   const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
+  const [previewBuild, setPreviewBuildState] = useState(false);
+  const [startupAlertOpen, setStartupAlertOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState("/player/index.html?preview=1");
+  const [previewPhase, setPreviewPhase] = useState<PreviewPreparePhase | null>(
+    null,
+  );
+  const [previewCanCancel, setPreviewCanCancel] = useState(true);
+  const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
+  const previewCancelledRef = useRef(false);
+  const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
   const [playUiLibrary, setPlayUiLibrary] = useState<
     Record<string, UserInterfaceDocument>
   >({});
@@ -168,6 +202,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTextureBytes,
     collectPlayModelBytes,
     collectPlaySceneLibrary,
+    exportGameArtifact,
     openDocuments,
     activeDocumentId,
     setActiveDocument,
@@ -185,10 +220,35 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     documents: openDocuments,
     activeDocumentId,
   });
-  const canPlay = playIsEnabled(openDocuments, activeDocumentId);
+  const canPlay = playIsEnabled(openDocuments, activeDocumentId, {
+    previewBuild,
+  });
   const playPhysics = playScene
     ? playPhysicsFromSceneSettings(playScene.scene.settings)
     : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId);
+
+  useEffect(() => {
+    void createAppSettingsStore()
+      .load()
+      .then((settings) => {
+        setPreviewBuildState(settings.debuggerDefaults.previewBuild === true);
+      });
+  }, []);
+
+  const setPreviewBuild = useCallback((value: boolean) => {
+    setPreviewBuildState(value);
+    void (async () => {
+      const store = createAppSettingsStore();
+      const settings = await store.load();
+      await store.save({
+        ...settings,
+        debuggerDefaults: {
+          ...settings.debuggerDefaults,
+          previewBuild: value,
+        },
+      });
+    })();
+  }, []);
 
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
@@ -269,8 +329,122 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     [appendLog, ensureEngine],
   );
 
+  const closePreview = useCallback(() => {
+    const frame = previewIframeRef.current;
+    if (frame?.contentWindow) {
+      frame.contentWindow.postMessage({ type: PREVIEW_STOP_MESSAGE }, "*");
+    }
+    window.setTimeout(() => {
+      previewFilesRef.current = null;
+      setPreviewOpen(false);
+      setPreviewPhase(null);
+      setPreviewCanCancel(true);
+      setPlaying(false);
+      setEncodeQueuePauseReason("play", false);
+      const diagnostics = previewDiagnosticsRef.current;
+      previewDiagnosticsRef.current = [];
+      if (diagnostics.length > 0) {
+        setDropped(0);
+        setReportEntries(diagnostics);
+        setReportOpen(true);
+      }
+    }, 100);
+  }, []);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (!isPreviewDiagnosticsMessage(event.data)) return;
+      previewDiagnosticsRef.current = event.data.diagnostics.map((entry) => ({
+        severity: entry.severity === "warning" ? "warning" : "error",
+        code: "preview",
+        message: entry.message,
+        assetGuid: entry.assetGuid,
+        graphId: entry.graphId,
+        nodeId: entry.nodeId,
+        btNodeId: entry.btNodeId,
+        frameId: 0,
+        count: 1,
+        firstFrameId: 0,
+        lastFrameId: 0,
+      }));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  const requestPreviewBuild = useCallback(async () => {
+    if (playing || preparingRef.current) return;
+    const startup = projectDocument?.settings.startupSceneGuid?.trim() ?? "";
+    const asset = startup ? assetRegistry?.getByGuid(startup) : undefined;
+    if (!startup || asset?.header.type !== "Scene") {
+      setStartupAlertOpen(true);
+      return;
+    }
+    previewCancelledRef.current = false;
+    preparingRef.current = true;
+    setPreparing(true);
+    setPreviewCanCancel(true);
+    setPreviewPhase("Saving");
+    try {
+      if (dirtyDocuments.length > 0) {
+        const saved = await saveAll();
+        if (!saved) return;
+      }
+      if (previewCancelledRef.current) return;
+      setPreviewPhase("Compiling");
+      setPreviewPhase("Collecting Assets");
+      const playerFiles = await loadPlayerDistFiles();
+      if (previewCancelledRef.current) return;
+      setPreviewPhase("Writing Pack");
+      const packed = await exportGameArtifact({
+        previewBuild: true,
+        playerFiles,
+      });
+      if (isErr(packed)) {
+        if (packed.error === MISSING_STARTUP_SCENE_MESSAGE) {
+          setStartupAlertOpen(true);
+        } else {
+          appendLog(`Preview Build failed: ${packed.error}`);
+        }
+        return;
+      }
+      if (previewCancelledRef.current) {
+        previewFilesRef.current = null;
+        return;
+      }
+      previewFilesRef.current = packed.value.files;
+      setPreviewCanCancel(false);
+      setPreviewPhase("Launching");
+      setEncodeQueuePauseReason("play", true);
+      setPlaying(true);
+      setPreviewSrc(`/player/index.html?preview=1&t=${Date.now()}`);
+      setPreviewOpen(true);
+    } catch (error) {
+      previewFilesRef.current = null;
+      appendLog(
+        `Preview Build failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      preparingRef.current = false;
+      setPreparing(false);
+      setPreviewPhase(null);
+    }
+  }, [
+    appendLog,
+    assetRegistry,
+    dirtyDocuments.length,
+    exportGameArtifact,
+    playing,
+    projectDocument,
+    saveAll,
+  ]);
+
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
+      if (previewBuild) {
+        await requestPreviewBuild();
+        return;
+      }
       if (playing || preparingRef.current) return;
       if (!playIsEnabled(openDocuments, activeDocumentId)) return;
       pendingPlayOptionsRef.current = options;
@@ -478,6 +652,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       migrationPending.length,
       playing,
       playScene,
+      previewBuild,
+      requestPreviewBuild,
       openDocuments,
       activeDocumentId,
       assetRegistry,
@@ -530,10 +706,18 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       playAwaitingMigration,
       requestPlay,
       canPlay,
+      previewBuild,
+      setPreviewBuild,
       launchPlay,
       resumePlayAfterMigration,
       cancelPlayMigration,
-      stopPlay: () => setPlaying(false),
+      stopPlay: () => {
+        if (previewOpen) {
+          closePreview();
+          return;
+        }
+        setPlaying(false);
+      },
       registerSharedEngine,
       ensureSharedEngine: ensureEngine,
       registerScheduler,
@@ -553,6 +737,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       playAwaitingMigration,
       requestPlay,
       canPlay,
+      previewBuild,
+      setPreviewBuild,
       launchPlay,
       resumePlayAfterMigration,
       cancelPlayMigration,
@@ -566,6 +752,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setAlwaysRender,
       renderStats,
       liveBtState,
+      closePreview,
+      previewOpen,
     ],
   );
 
@@ -573,6 +761,37 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     <PlayContext.Provider value={value}>
       <OutputLogContext.Provider value={{ lines: logLines }}>
         {children}
+        {previewPhase ? (
+          <PreparingPreviewDialog
+            open
+            phase={previewPhase}
+            canCancel={previewCanCancel}
+            onCancel={() => {
+              previewCancelledRef.current = true;
+              setPreviewPhase(null);
+              preparingRef.current = false;
+              setPreparing(false);
+            }}
+          />
+        ) : null}
+        <AlertDialog open={startupAlertOpen} onOpenChange={setStartupAlertOpen}>
+          <AlertDialogContent data-testid="startup-scene-alert">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Startup Scene Required</AlertDialogTitle>
+              <AlertDialogDescription>
+                {MISSING_STARTUP_SCENE_MESSAGE}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction
+                data-testid="startup-scene-alert-ok"
+                onClick={() => setStartupAlertOpen(false)}
+              >
+                OK
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         {prepareState ? (
           <PlayPrepareDialog
             open
@@ -601,7 +820,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             });
           }}
         />
-        {playing && engineRef.current ? (
+        {playing && !previewOpen && engineRef.current ? (
           <PlayOverlay
             sharedEngine={engineRef.current}
             injectFixtureThrow={injectThrow}
@@ -635,6 +854,19 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             }
             render={projectDocument?.settings.render}
             onClose={handleClose}
+          />
+        ) : null}
+        {previewOpen ? (
+          <PreviewBuildOverlay
+            src={previewSrc}
+            iframeRef={previewIframeRef}
+            onClose={closePreview}
+            onLoad={() => {
+              const files = previewFilesRef.current;
+              const frame = previewIframeRef.current?.contentWindow;
+              if (!files || !frame) return;
+              frame.postMessage(previewPackFromFiles(files), "*");
+            }}
           />
         ) : null}
         <PreviewSessionReport

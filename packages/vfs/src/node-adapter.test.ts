@@ -20,4 +20,15 @@ describe("node storage adapter", () => {
     expect(await storage.readBinary("assets/.blobs/abc")).toEqual(bytes);
     expect((await storage.listProjects())[0]?.name).toBe("Game.babproject");
   });
+
+  it("opens an absolute folder outside the documents base", async () => {
+    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    const storage = new NodeStorageAdapter(dir);
+    const external = await mkdtemp(join(tmpdir(), "babylonslate-ext-"));
+    const handle = await storage.openAbsoluteFolder(external, "Picked");
+    expect(handle.tier).toBe("external");
+    await storage.writeText("project.json", "{}");
+    expect(await storage.readText("project.json")).toBe("{}");
+    await rm(external, { recursive: true, force: true });
+  });
 });

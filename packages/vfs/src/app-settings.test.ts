@@ -18,6 +18,7 @@ describe("app settings", () => {
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
+    expect(settings.debuggerDefaults.previewBuild).toBe(false);
   });
 
   it("fills UserInterface designer presets when saved JSON omits the field", () => {
@@ -55,6 +56,13 @@ describe("app settings", () => {
       undoHistoryLength: 50,
     });
     expect(parsed.graphDefaultZoom).toBe(0.5);
+  });
+
+  it("defaults Preview Build off when debuggerDefaults omits the field", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.debuggerDefaults.previewBuild).toBe(false);
   });
 
   it("clamps graph default zoom to 0.1–1.5", () => {

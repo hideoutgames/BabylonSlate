@@ -22,7 +22,8 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 | Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; `openKnownFolder` reopens without picker; Reconnect on staleness |
 | Memory | Tests | In-memory tree |
 | Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` throw |
-| Node | CI / tools | Real filesystem under a root path |
+| Node | CI / tools | Real filesystem under a root path; `openAbsoluteFolder` for Electron pickers |
+| Electron | Desktop editor | Renderer `ElectronStorageAdapter` over preload IPC; main process `NodeStorageAdapter` |
 
 `openKnownFolder(handle)` rebinds a previously known project (Documents / OPFS / external bookmark) without showing a picker. The picker is only for first bind and Reconnect.
 
@@ -44,7 +45,7 @@ Global Engine Settings stored **outside** any project:
 | --- | --- |
 | Capacitor Preferences | iPad / Android |
 | localStorage | Web |
-| Electron userData bridge | Desktop — settings only until the P14 host lands |
+| Electron userData + project IPC | Desktop — `globalThis.babylonslate.userData` for Engine Settings; `babylonslate.project` for the Node VFS |
 
 Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap (visible scene + Prefab Preview; freeze when hidden or a modal is open), hardware scaling, thumbnail toggle, debugger defaults, Focus keep-lists (`focusKeepPanels.scene` default `["viewport"]`, `focusKeepPanels.graph` default `["graph"]` — already-open dock tabs that stay when Focus is on), graph default zoom (`graphDefaultZoom` default 0.5, range 0.1–1.5 — opening fit-view cap for node graphs), UserInterface designer presets (`uiDesignerPresets` default `[]` — `{ id, label, width, height, safeArea }`; width/height clamped `>= 1`, insets `>= 0`). `vfs` does not import `@babylonslate/ui-runtime`; the editor merges this list with built-in device presets.
 

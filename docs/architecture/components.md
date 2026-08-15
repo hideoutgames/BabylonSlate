@@ -27,7 +27,7 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Field** (`FieldGroup`, `FieldLabel`, `FieldSet`, `FieldLegend`, `FieldDescription`, `FieldError`, `FieldContent`, `FieldTitle`) | Form row layout. Uses **Label** internally — do not invent a parallel label. | Engine / Project Settings (including User Interface custom canvas presets), Homepage create, Content Browser forms, PropertyGrid. |
 | **Input** | Single-line text. | Names, search fields, settings strings. |
 | **Label** | Accessible control caption. | Not imported by app code; Field wraps it. |
-| **Progress** (`ProgressTrack`, `ProgressIndicator`, `ProgressLabel`, `ProgressValue`) | Determinate progress. | Content Browser encode / import. |
+| **Progress** (`ProgressTrack`, `ProgressIndicator`, `ProgressLabel`, `ProgressValue`) | Determinate progress. | Content Browser encode / import; Preparing Preview modal. |
 | **ScrollArea** (`ScrollBar`) | Overlay scrollbar region. | Gallery, Output Log, Compiler Results, SearchDialog body. |
 | **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. Popup is at least the trigger width (`min-w-(--anchor-width)`), not stretched across the panel. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset; Project Settings global font fallback. |
 | **Separator** | Horizontal or vertical rule. | Toolbar strips, search dialog, catalog layout. |

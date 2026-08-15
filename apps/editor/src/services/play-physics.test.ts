@@ -142,13 +142,14 @@ describe("playSceneFromOpenDocuments", () => {
     expect(playSceneFromOpenDocuments([], null)).toBeNull();
   });
 
-  it("playIsEnabled is false when no scene tab is open", () => {
+  it("playIsEnabled is true without a scene tab when Preview Build is on", () => {
     expect(
       playIsEnabled(
         [{ id: "graph:main", ref: { kind: "graph" }, content: {} }],
         "graph:main",
+        { previewBuild: true },
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("playIsEnabled is true when a scene tab is open even if it is not active", () => {

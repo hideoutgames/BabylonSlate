@@ -8,11 +8,14 @@ Authoritative detail lives in [engineplan.md](../engineplan.md). This page orien
 
 ```
 apps/editor/          Editor shell + Homepage + Content Browser + Play overlay + main-thread renderer
+apps/player/          Packaged game host (itch zip + Preview Build iframe); no React shell
+apps/desktop/         Electron main + preload; Node VFS + userData for the editor
 apps/docs/            VitePress site; content is the markdown in `docs/`
 engine-logos/         Slate wordmark and icon (dark/light ink); copied into editor and docs `public/branding/`
 packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue (P5)
-packages/vfs/         Storage adapters, platform detection, app settings
+packages/vfs/         Storage adapters (OPFS, Capacitor, Electron IPC, Node), platform detection, app settings
 packages/assets/      Containers, asset registry, search index, importers, encode queue
+packages/exporter/    Headless game packer: export closure, `.babpack`, zip (P14)
 packages/edit/        Per-document undo stacks and reversible commands
 packages/object-model/ Headless BObject / Actor / World / tick / class registry
 packages/physics/     Body/shape protocol; Havok 3D + Rapier 2D backends (P7)
@@ -35,7 +38,7 @@ packages/test-kit/    Golden-file, fixtures, deterministic + multi-transport har
 engine-plugins/       First-party plugins (Starter Content); packed to `public/engine-plugins/` at editor build
 ```
 
-Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [plugins.md](plugins.md), [global-search.md](global-search.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md), [debugger.md](debugger.md), [ui-runtime.md](ui-runtime.md), [fonts.md](fonts.md), [sprites.md](sprites.md), [tilemaps.md](tilemaps.md), [anim-graph.md](anim-graph.md), [behaviour-tree.md](behaviour-tree.md), [navigation.md](navigation.md), [shader-graph.md](shader-graph.md), [theming.md](theming.md), [components.md](components.md), [editor-extensions.md](editor-extensions.md).
+Shared-surface design notes: [containers.md](containers.md), [vfs.md](vfs.md), [command-layer.md](command-layer.md), [asset-registry.md](asset-registry.md), [plugins.md](plugins.md), [global-search.md](global-search.md), [object-model.md](object-model.md), [physics.md](physics.md), [bridge.md](bridge.md), [render.md](render.md), [scripting.md](scripting.md), [scene-editing.md](scene-editing.md), [input.md](input.md), [debugger.md](debugger.md), [ui-runtime.md](ui-runtime.md), [fonts.md](fonts.md), [sprites.md](sprites.md), [tilemaps.md](tilemaps.md), [anim-graph.md](anim-graph.md), [behaviour-tree.md](behaviour-tree.md), [navigation.md](navigation.md), [shader-graph.md](shader-graph.md), [theming.md](theming.md), [components.md](components.md), [editor-extensions.md](editor-extensions.md), [exporter.md](exporter.md).
 
 ## Threading (P4)
 
@@ -64,7 +67,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 
 - **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
 - **Visual scripting (P5)**: `@babylonslate/scripting` compiles logic graphs to JS modules with anchor tables; `@babylonslate/scripting-nodes` supplies the catalog; `runtime.ScriptHost` loads those modules and binds Begin Play / Tick entry points to actor lifecycle hooks, and Preview ships compiled project graphs to the worker (see [scripting.md](scripting.md)). `ExecuteConsoleCommand` runs through `@babylonslate/debugger` (see [debugger.md](debugger.md)).
-- **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); visible editor canvases render at `viewportFrameCap` and freeze when hidden or a modal is open; Play holds a continuous lease and renders at project `playFrameCap` (default 60). Play hosts viewport-layer HUD as a Babylon GUI Layer on the Play scene (`BabylonUiApplyHost`); TouchJoystick / TouchDPad / TouchButton write `touchAxis` into the P6 input ring (default Move + Jump).
+- **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); visible editor canvases render at `viewportFrameCap` and freeze when hidden or a modal is open; Play holds a continuous lease and renders at project `playFrameCap` (default 60). Play hosts viewport-layer HUD as a Babylon GUI Layer on the Play scene (`BabylonUiApplyHost`); TouchJoystick / TouchDPad / TouchButton write `touchAxis` into the P6 input ring (default Move + Jump). **Preview Build** (Debug checkbox, off by default) packages via `@babylonslate/exporter` and hosts `apps/player` in a same-origin iframe with its own Engine — see [exporter.md](exporter.md).
 
 ## Asset document docks
 
@@ -80,13 +83,14 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `behaviour-tree`, `navigation`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes` | React, Babylon, Capacitor |
+| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `behaviour-tree`, `navigation`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes`, `exporter` | React, Babylon, Capacitor |
 | `physics` | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok` on a worker-local NullEngine Scene. |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |
 | `render` | React, Capacitor |
 | `ui`, `editor-kit`, `graph-ui` | Babylon, Capacitor |
 | `apps/editor/src` | Capacitor |
+| `apps/player` | React, Capacitor (Babylon is allowed; no Dockview / editor chrome) |
 
 Patterns rather than exact module names, so deep imports such as `@babylonjs/core/Engines/engine` are caught too.
 

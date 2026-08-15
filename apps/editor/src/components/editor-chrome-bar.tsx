@@ -219,6 +219,8 @@ export function EditorChromeBar({
     alwaysRender,
     setAlwaysRender,
     renderStats,
+    previewBuild,
+    setPreviewBuild,
   } = usePlay();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
@@ -428,8 +430,20 @@ export function EditorChromeBar({
               variant="ghost"
               data-testid="play-preview"
               className="chrome-action-button chrome-play-button relative"
-              aria-label={canPlay ? "Play" : "Play (Open a Scene)"}
-              title={canPlay ? undefined : "Open a scene to play"}
+              aria-label={
+                canPlay
+                  ? "Play"
+                  : previewBuild
+                    ? "Play (Set Startup Scene)"
+                    : "Play (Open a Scene)"
+              }
+              title={
+                canPlay
+                  ? undefined
+                  : previewBuild
+                    ? "Set Startup Scene in Project Settings."
+                    : "Open a scene to play"
+              }
               disabled={!projectName || playing || preparing || !canPlay}
               onClick={() => {
                 const inject =
@@ -472,6 +486,16 @@ export function EditorChromeBar({
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>Preview debug</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem
+                    data-testid="preview-build-toggle"
+                    checked={previewBuild}
+                    disabled={playing || preparing}
+                    onCheckedChange={(checked) =>
+                      setPreviewBuild(checked === true)
+                    }
+                  >
+                    Preview Build
+                  </DropdownMenuCheckboxItem>
                   {isTestModeEnabled() || import.meta.env.DEV ? (
                     <DropdownMenuCheckboxItem
                       data-testid="always-render-toggle"
@@ -485,11 +509,7 @@ export function EditorChromeBar({
                         ? ` (${renderStats.renderedFps}/${renderStats.invalidationsPerSecond})`
                         : ""}
                     </DropdownMenuCheckboxItem>
-                  ) : (
-                    <DropdownMenuItem disabled>
-                      No debug options in this build
-                    </DropdownMenuItem>
-                  )}
+                  ) : null}
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>

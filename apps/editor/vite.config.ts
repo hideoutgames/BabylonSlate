@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { enginePluginsVitePlugin } from "./vite-engine-plugins.ts";
+import { playerHostVitePlugin } from "./vite-player-host.ts";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
@@ -17,6 +18,10 @@ export default defineConfig({
       sourceDir: path.join(repoRoot, "engine-plugins"),
       publicDir: path.join(rootDir, "public/engine-plugins"),
     }),
+    playerHostVitePlugin(
+      path.join(rootDir, "../player/dist"),
+      path.join(rootDir, "dist"),
+    ),
   ],
   resolve: {
     alias: {

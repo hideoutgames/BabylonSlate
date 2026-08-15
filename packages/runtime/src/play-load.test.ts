@@ -31,6 +31,7 @@ describe("runtimeOptionsFromLoadControl", () => {
       seedDemoActors: true,
       gameInstanceClass: undefined,
       sceneLibrary: undefined,
+      includeDebugCommands: undefined,
     });
   });
 
@@ -65,6 +66,7 @@ describe("runtimeOptionsFromLoadControl", () => {
       seedDemoActors: true,
       gameInstanceClass: undefined,
       sceneLibrary: undefined,
+      includeDebugCommands: undefined,
     });
   });
 });

@@ -146,10 +146,34 @@ export interface PluginEnableOverride {
   enabled: boolean;
 }
 
+export const DEFAULT_EXPORT_FILE_COUNT_WARN = 800;
+export const DEFAULT_EXPORT_FILE_COUNT_FAIL = 1000;
+
 export interface ExportPreset {
   id: string;
   name: string;
   pluginOverrides: Record<string, PluginEnableOverride>;
+  /** Packed `.babpack` export; default on. */
+  packed: boolean;
+  /** Release zip default off; Preview Build always on. */
+  bundleDebugger: boolean;
+  fileCountWarn: number;
+  fileCountFail: number;
+}
+
+export function defaultExportPreset(
+  id = "web",
+  name = "Web",
+): ExportPreset {
+  return {
+    id,
+    name,
+    pluginOverrides: {},
+    packed: true,
+    bundleDebugger: false,
+    fileCountWarn: DEFAULT_EXPORT_FILE_COUNT_WARN,
+    fileCountFail: DEFAULT_EXPORT_FILE_COUNT_FAIL,
+  };
 }
 
 export interface ProjectDocument {
@@ -384,6 +408,16 @@ function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOv
   return out;
 }
 
+function normalizeCountThreshold(
+  value: unknown,
+  fallback: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
+    return fallback;
+  }
+  return Math.floor(value);
+}
+
 function normalizeExportPresets(value: unknown): ExportPreset[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -402,6 +436,16 @@ function normalizeExportPresets(value: unknown): ExportPreset[] {
       id,
       name,
       pluginOverrides: normalizePluginOverrides(record.pluginOverrides),
+      packed: record.packed !== false,
+      bundleDebugger: record.bundleDebugger === true,
+      fileCountWarn: normalizeCountThreshold(
+        record.fileCountWarn,
+        DEFAULT_EXPORT_FILE_COUNT_WARN,
+      ),
+      fileCountFail: normalizeCountThreshold(
+        record.fileCountFail,
+        DEFAULT_EXPORT_FILE_COUNT_FAIL,
+      ),
     });
   }
   return presets;

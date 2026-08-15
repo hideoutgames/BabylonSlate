@@ -1,0 +1,32 @@
+{
+  "name": "player",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config ../../vitest.workspace.ts --project node apps/player"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^9.20.0",
+    "@babylonslate/anim-graph": "workspace:*",
+    "@babylonslate/assets": "workspace:*",
+    "@babylonslate/behaviour-tree": "workspace:*",
+    "@babylonslate/bridge": "workspace:*",
+    "@babylonslate/core": "workspace:*",
+    "@babylonslate/debugger": "workspace:*",
+    "@babylonslate/exporter": "workspace:*",
+    "@babylonslate/input": "workspace:*",
+    "@babylonslate/object-model": "workspace:*",
+    "@babylonslate/physics": "workspace:*",
+    "@babylonslate/render": "workspace:*",
+    "@babylonslate/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "~5.8.2",
+    "vite": "^8.2.0"
+  }
+}

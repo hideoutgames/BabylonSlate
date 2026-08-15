@@ -8,7 +8,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/ui-runtime`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `apps/docs` (sidebar coverage + repo-link rewriter) — no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/ui-runtime`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `packages/exporter`, `apps/docs` (sidebar coverage + repo-link rewriter), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed) — no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` (`.test.ts` and `.test.tsx`) |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
@@ -18,7 +18,7 @@ The `jsdom` project sets `css: true` so `?raw` stylesheet imports resolve; Vites
 
 ## Coverage gates
 
-Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements). `apps/editor` is outside the gate (Playwright). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
+Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter`. `apps/editor` is outside the gate (Playwright). `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
 
 Excluded, each for a stated reason:
 
@@ -29,6 +29,7 @@ Excluded, each for a stated reason:
 | `documents-adapter.ts` | Capacitor Filesystem production path; unit-tested via injected fake FS |
 | `derived-storage.ts` | Thin OPFS/Documents factory; Playwright cold-reopen |
 | `node-adapter.ts` | CI/tooling adapter; own unit tests, excluded from browser package gate |
+| Electron main / preload | `apps/desktop`; source-read unit tests, not a live Electron run |
 | `create-engine.ts` | Needs a real WebGL context; covered by Playwright |
 | `ui-surface.ts` | Standalone `CreateFullscreenUI` + Canvas2D blit need a real Engine canvas; covered by Playwright HUD / designer |
 | `worker-entry.ts` | Game worker host; covered by Play e2e |
@@ -63,6 +64,8 @@ iPad projects grep `@ipad` so they only rerun tests that depend on touch, coarse
 
 `e2e/p9-content.spec.ts` covers UserInterface designer presets (built-ins, **Desired** content-sized with no Width/Height fields, and a custom Engine Settings canvas), adaptive layout fields after selecting a widget, Play HUD empty until a class graph **Apply User Interface**, nested-UI picker excluding self, and Font / Sprite / AnimationGraph (Parameters / Add State) / Shader workspaces. `e2e/engine-settings.spec.ts` covers adding a custom preset in the User Interface category. `e2e/p10-tilemap.spec.ts` starts from the 2D Create Project card, opens Tileset/Tilemap DockView tabs, paints tiles, binds Tilemap / Sprite / AnimationGraph through Details `AssetPicker` (not typed guid fields), opens Play Stats, and asserts `play-physics-ms` `data-ms` plus `play-fps` `data-fps` while a dynamic actor starting at Y=3 settles on the painted tiles. It does not claim A16 fill-rate or shimmer-free scrolling. `e2e/p11-ai.spec.ts` holds the P11 editor proofs: New Asset BehaviourTree, 2D/3D NavMesh bake, tree authoring (add Wait, set duration, add/remove a decorator), New Class parent `BTDecorator` (Events list On Evaluate, Add Decorator catalogs the class), and a test-mode `previewThrow` session report that focuses `btNodeId` when a tree is attached. Headless §18 (2D+3D patrol, abort that **stops the crowd**, Wait/custom task restart after an empty stack, a dynamic obstacle that closes an open route after MoveTo is running, compiled task throw, compiled decorator On Evaluate / task On Abort / service Set Blackboard, `.babtrace` replay) lives in `packages/runtime/src/p11-acceptance.test.ts`. `e2e/p12-ui-editors.spec.ts` and `e2e/windows-menu.spec.ts` cover UserInterface / EditorUtilityInterface authoring plus live Editor Utility tabs (`ui-gui-preview-error` is the hard-failure Empty on both hosts). `e2e/component-gallery.spec.ts` covers PropertyGrid slider / flags rows and the primitive Slider (44px track). `e2e/p13-plugins.spec.ts` enables bundled Starter Content and asserts `StarterActor` appears then vanishes on disable, exports a project plugin to `.babplugin` and re-imports with class guids intact, and seeds a missing plugin override to prove Unresolved placeholders keep the guid.
 
+`e2e/p14-export.spec.ts` builds a tiny fixture, exports, unzips, and static-serves on range-capable **and** range-blind hosts; asserts `data-startup-scene` is the asset guid, ticks advance, file count stays under 800, and `main.scene.babasset` is absent. `e2e/p14-preview-build.spec.ts` keeps overlay Play as the default, toggles Preview Build, boots without a scene tab, and alerts on a missing startup scene.
+
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
 
 ## Golden files
@@ -73,7 +76,11 @@ Static style rules that a running browser cannot prove (a hardcoded radius on an
 
 `runDeterministicScenario` in `@babylonslate/test-kit` drives an in-process `@babylonslate/object-model` World with a seeded RNG and fixed dt. Acceptance: a 120-tick scenario matches a committed golden and is identical across two runs. Fake VFS fixtures use `MemoryStorageAdapter` via `installHarnessProjectFixtures`.
 
-P4 adds multi-transport comparison: the same scenario must agree **in-process**, over **transferable** ping-pong, and over **SAB** when `SharedArrayBuffer` / `crossOriginIsolated` is available. SAB is never required for CI green — transferables are mandatory. Today `transport-parity.test.ts` runs one in-process scenario and republishes that buffer through SAB and transferable (payload fidelity). It does not spin three independent hosts. Live Play always uses transferable ping-pong (`worker-entry.ts`); true zero-copy SAB is a [P4 follow-up](../agents/issue-tracker.md#p4-follow-ups--open-deferrals). `e2e/p4-play.spec.ts` covers overlay + session-report navigation plus labeled Pause / Stop / Console chrome with stats collapsed on open, then opens Stats and asserts Play HUD `stats-hud-draws` `data-draws` is greater than 0 on the default cube scene; it does not claim A16 60fps (that is `p14-perf-smoke` / device).
+P4 adds multi-transport comparison: the same scenario must agree **in-process**, over **transferable** ping-pong, and over **SAB** when `SharedArrayBuffer` / `crossOriginIsolated` is available. SAB is never required for CI green — transferables are mandatory. Today `transport-parity.test.ts` runs one in-process scenario and republishes that buffer through SAB and transferable (payload fidelity). It does not spin three independent hosts. Live Play always uses transferable ping-pong (`worker-entry.ts`); true zero-copy SAB is a [P4 follow-up](../agents/issue-tracker.md#p4-follow-ups--open-deferrals). `e2e/p4-play.spec.ts` covers overlay + session-report navigation plus labeled Pause / Stop / Console chrome with stats collapsed on open, then opens Stats and asserts Play HUD `stats-hud-draws` `data-draws` is greater than 0 on the default cube scene; it does not claim A16 60fps (CI tick budget is `p14-perf-smoke`; on-device 60fps stays `p1-device-spikes`).
+
+## P14 perf smoke
+
+`packages/runtime/src/p14-perf-smoke.test.ts` ticks a tiny in-process scene and asserts `lastScriptMs`, `lastPhysicsMs`, and their sum stay under `TICK_BUDGET_MS` (8). `packages/render/src/perf-ceilings.test.ts` asserts accounted texture + geometry bytes for that fixture stay under committed ceilings (512 MB textures / 128 MB geometry) so byte-accounting drift fails CI. `RenderScheduler.setObstructed(true)` / hidden already asserts `shouldRender() === false`. Draw-call ceilings surface as HUD warnings (`DRAW_CALL_WARN_CEILING`). The fixture stays small so GitHub runners remain under 8 ms.
 
 ## Property tests
 
