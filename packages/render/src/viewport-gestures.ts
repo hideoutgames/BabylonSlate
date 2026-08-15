@@ -87,6 +87,8 @@ export function attachViewportGestures(
   let downPoint: PointerSample | null = null;
   let moved = false;
   let skipLook = false;
+  /** Gizmo hit at pointer-down; not set when Drag Select is armed (gizmo does not win). */
+  let skipTap = false;
   let marqueeArmed = false;
   let dragSelectGesture = false;
   let marqueeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -143,8 +145,9 @@ export function attachViewportGestures(
       lastPoint = point;
       moved = false;
       dragSelectGesture = options.dragSelectActive?.() === true;
-      skipLook =
-        dragSelectGesture || options.blockLook?.(point.x, point.y) === true;
+      skipTap =
+        !dragSelectGesture && options.blockLook?.(point.x, point.y) === true;
+      skipLook = dragSelectGesture || skipTap;
       marqueeArmed = dragSelectGesture;
       clearMarqueeTimer();
       if (!dragSelectGesture && controller.mode === "2d" && !skipLook) {
@@ -255,6 +258,7 @@ export function attachViewportGestures(
       if (pointers.size === 0) {
         downPoint = null;
         skipLook = false;
+        skipTap = false;
         marqueeArmed = false;
         dragSelectGesture = false;
         clearMarqueeTimer();
@@ -264,7 +268,7 @@ export function attachViewportGestures(
     }
     clearMarqueeTimer();
     const wasDragSelect = dragSelectGesture;
-    if (!moved) {
+    if (!moved && !skipTap) {
       options.onTap?.(point.x, point.y);
     } else if (
       options.onMarquee &&
@@ -282,6 +286,7 @@ export function attachViewportGestures(
     downPoint = null;
     moved = false;
     skipLook = false;
+    skipTap = false;
     marqueeArmed = false;
     dragSelectGesture = false;
   };

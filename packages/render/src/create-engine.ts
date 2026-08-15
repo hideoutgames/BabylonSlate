@@ -271,6 +271,7 @@ export function createEngine(
   };
 
   let editor: EditorTools | null = null;
+  let lastSelectedActorIds: string[] = [];
   let debugOverlay: EditorDebugOverlay | null = null;
   let disposeGestures: (() => void) | null = null;
   if (options.editor && editorSync) {
@@ -358,6 +359,7 @@ export function createEngine(
         scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {
+        lastSelectedActorIds = [...actorIds];
         const meshes = actorIds.map((id) => editorSync.meshForActor(id));
         const visuals = actorIds.flatMap((id) =>
           editorSync.visualMeshesForActor(id),
@@ -572,7 +574,10 @@ export function createEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      editorSync?.setMeshAssets(assets);
+      const rebuilt = editorSync?.setMeshAssets(assets) === true;
+      if (rebuilt && lastSelectedActorIds.length > 0) {
+        editor?.setSelectedActors(lastSelectedActorIds);
+      }
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
       applySerializedSceneEnvironment(scene, sceneData, {
