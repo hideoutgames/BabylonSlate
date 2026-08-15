@@ -21,7 +21,10 @@ import { Textarea } from "@babylonslate/ui/components/textarea";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
-import { isPluginSettingsReadOnly } from "../lib/plugin-ui";
+import {
+  isPluginSettingsReadOnly,
+  pluginSettingsIdentityFields,
+} from "../lib/plugin-ui";
 
 export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -53,48 +56,23 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
     void applyAssetDocumentChange(documentId, { ...settings, ...patch });
   };
 
-  const identityRows: PropertyRow[] = [
-    {
-      id: "displayName",
+  const identityRows: PropertyRow[] = pluginSettingsIdentityFields(settings).map(
+    (field) => ({
+      id: field.id,
       kind: "text",
-      label: "Display Name",
-      value: settings.displayName,
-      disabled: readOnly,
-      onChange: (value) => commit({ displayName: value }),
-    },
-    {
-      id: "version",
-      kind: "text",
-      label: "Version",
-      value: settings.version,
-      disabled: readOnly,
-      onChange: (value) => commit({ version: value }),
-    },
-    {
-      id: "author",
-      kind: "text",
-      label: "Author",
-      value: settings.author,
-      disabled: readOnly,
-      onChange: (value) => commit({ author: value }),
-    },
-    {
-      id: "category",
-      kind: "text",
-      label: "Category",
-      value: settings.category,
-      disabled: readOnly,
-      onChange: (value) => commit({ category: value }),
-    },
-    {
-      id: "iconKey",
-      kind: "text",
-      label: "Icon Key",
-      value: settings.iconKey ?? "",
-      disabled: readOnly,
-      onChange: (value) => commit({ iconKey: value.trim() || null }),
-    },
-  ];
+      label: field.label,
+      value: field.value,
+      disabled: readOnly || field.readOnly,
+      onChange: (value) => {
+        if (field.id === "pluginGuid" || field.readOnly) return;
+        if (field.id === "iconKey") {
+          commit({ iconKey: value.trim() || null });
+          return;
+        }
+        commit({ [field.id]: value } as Partial<PluginSettingsPayload>);
+      },
+    }),
+  );
 
   const maturityRows: PropertyRow[] = [
     {
@@ -184,7 +162,7 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
               className="rounded-md border border-border p-2"
             >
               <Field>
-                <FieldLabel>Guid</FieldLabel>
+                <FieldLabel>GUID</FieldLabel>
                 <Input
                   value={dep.guid}
                   disabled={readOnly}

@@ -260,7 +260,6 @@ export function resolvePluginGraph(
       plugins: cycle,
       message: `Plugin dependency cycle: ${cycle.join(" -> ")}`,
     });
-    return { order: [], diagnostics };
   }
 
   const byId = new Map(remaining.map((plugin) => [plugin.pluginGuid, plugin]));
@@ -279,11 +278,22 @@ export async function mountEnabledPlugins(
   },
 ): Promise<void> {
   const { order } = resolvePluginGraph(plugins);
+  const mountIds = new Set(
+    order
+      .filter((plugin) => options.enabledGuids.has(plugin.pluginGuid))
+      .map((plugin) => plugin.pluginGuid),
+  );
+  for (const plugin of plugins) {
+    const rootId = `plugin:${plugin.pluginGuid}`;
+    if (!mountIds.has(plugin.pluginGuid) && registry.getRoot(rootId)) {
+      registry.unmountRoot(rootId);
+    }
+  }
   for (const plugin of order) {
     const descriptor = plugins.find(
       (entry) => entry.pluginGuid === plugin.pluginGuid,
     );
-    if (!descriptor || !options.enabledGuids.has(descriptor.pluginGuid)) {
+    if (!descriptor || !mountIds.has(descriptor.pluginGuid)) {
       continue;
     }
     const rootId = `plugin:${descriptor.pluginGuid}`;

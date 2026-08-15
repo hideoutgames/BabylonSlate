@@ -186,6 +186,13 @@ export function isPluginSettingsReadOnly(source: "project" | "engine"): boolean 
   return source === "engine";
 }
 
+export type PluginDependencyStatusLabel =
+  | "ok"
+  | "Missing Dependency"
+  | "Dependency Cycle"
+  | "Engine Range"
+  | "Unsatisfiable Range";
+
 export function pluginDependencyStatus(
   pluginGuid: string,
   diagnostics: ReadonlyArray<{
@@ -193,29 +200,84 @@ export function pluginDependencyStatus(
     pluginGuid?: string;
     plugins?: string[];
   }>,
-): "ok" | "missing" | "unsatisfiable" | "cycle" | "engine" {
+): PluginDependencyStatusLabel {
   const forPlugin = diagnostics.filter(
     (diagnostic) =>
       diagnostic.pluginGuid === pluginGuid ||
       diagnostic.plugins?.includes(pluginGuid),
   );
   if (forPlugin.some((diagnostic) => diagnostic.code === "plugin.cycle")) {
-    return "cycle";
+    return "Dependency Cycle";
   }
   if (forPlugin.some((diagnostic) => diagnostic.code === "plugin.missing")) {
-    return "missing";
+    return "Missing Dependency";
   }
   if (
     forPlugin.some((diagnostic) => diagnostic.code === "plugin.unsatisfiable")
   ) {
-    return "unsatisfiable";
+    return "Unsatisfiable Range";
   }
   if (
     forPlugin.some(
       (diagnostic) => diagnostic.code === "plugin.engine_unsatisfiable",
     )
   ) {
-    return "engine";
+    return "Engine Range";
   }
   return "ok";
+}
+
+export interface PluginSettingsIdentityField {
+  id: string;
+  label: string;
+  value: string;
+  readOnly: boolean;
+}
+
+export function pluginSettingsIdentityFields(settings: {
+  pluginGuid: string;
+  displayName: string;
+  version: string;
+  author: string;
+  category: string;
+  iconKey?: string | null;
+}): PluginSettingsIdentityField[] {
+  return [
+    {
+      id: "pluginGuid",
+      label: "GUID",
+      value: settings.pluginGuid,
+      readOnly: true,
+    },
+    {
+      id: "displayName",
+      label: "Display Name",
+      value: settings.displayName,
+      readOnly: false,
+    },
+    {
+      id: "version",
+      label: "Version",
+      value: settings.version,
+      readOnly: false,
+    },
+    {
+      id: "author",
+      label: "Author",
+      value: settings.author,
+      readOnly: false,
+    },
+    {
+      id: "category",
+      label: "Category",
+      value: settings.category,
+      readOnly: false,
+    },
+    {
+      id: "iconKey",
+      label: "Icon Key",
+      value: settings.iconKey ?? "",
+      readOnly: false,
+    },
+  ];
 }

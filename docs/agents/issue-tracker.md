@@ -19,6 +19,11 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | PluginSettings Details used `Guid` (not Title Case `GUID`); identity omitted the plugin guid | Resolved |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | Project Settings dependency status was lowercase (`missing` / `cycle` / `engine`) | Resolved |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-model | Spec | Any dependency cycle returned `order: []`, unmounting independent plugins | Resolved |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-engine-plugin | Spec | Missing-plugin e2e seeds an override on an open project rather than cold-loading a project whose plugin folder is absent; unit tests cover remount replacing placeholders | Accepted |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin | Spec | Import e2e asserts the class guid in Place Actors after discard, not a scene actor edge (the scene lives in the project, not the `.babplugin`) | Accepted |
 | 2026-08-15 | cursor/p4-followups-55e8 | p4-preview-report | Spec | Log Error never entered the session report; ExecuteJavaScript `bodyLine` was not compiled, not on the worker diagnostic command, and navigate did not set CodeMirror focus | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Spec | ClassRegistry unused at spawn; Play `callInterface` skipped `dispatchInterface` so scene actors never received class-declared interface guids | Resolved |
 | 2026-08-15 | cursor/p3-spawn-wiring-14d8 | p3-object-model | Standards | Engine components and BT builtins were reparentable (`MeshComponent` → `Actor`) | Resolved |

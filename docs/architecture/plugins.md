@@ -29,7 +29,7 @@ Header `type: "PluginSettings"`, document chunk, `isEditorOnlyAssetType` (stripp
 | `enabledByDefault` | Layer 1 of enablement |
 | `engineVersionRange`, `pluginDependencies[]` | `^` `~` `>=` `<` `x` exact via `semver-range.ts`; `ENGINE_VERSION` is still `"0.0.0"` |
 
-Opened as DockView kind `plugin-settings` (Details panel). Engine plugin documents are **read-only**.
+Opened as DockView kind `plugin-settings` (Details panel). Identity includes a **read-only GUID** row (the PluginSettings asset guid — not editable, so `pluginOverrides` stay keyed). Engine plugin documents are **read-only**. Dependency status in Project Settings is Title Case (`Missing Dependency`, `Dependency Cycle`, `Engine Range`, `Unsatisfiable Range`).
 
 ## Enablement
 
@@ -45,7 +45,7 @@ Disable **unmounts** the content root — assets leave the registry. **Show Plug
 
 ## PluginHost
 
-`discoverProjectPlugins` / `discoverEnginePlugins` → `resolvePluginGraph` (Kahn topo) → `mountEnabledPlugins`. Diagnostics: `plugin.cycle`, `plugin.unsatisfiable`, `plugin.missing`, `plugin.engine_unsatisfiable`. After mount, missing `header.dependencies` guids and override guids with no discovered plugin become `Unresolved` placeholders that **keep the guid** (`placeholder: true`). Remounting the plugin replaces the placeholder.
+`discoverProjectPlugins` / `discoverEnginePlugins` → `resolvePluginGraph` (Kahn topo) → `mountEnabledPlugins`. Diagnostics: `plugin.cycle`, `plugin.unsatisfiable`, `plugin.missing`, `plugin.engine_unsatisfiable`. A cycle or unsatisfiable range **does not** zero the whole graph: independent plugins still mount; cycle members stay unmounted even if enabled. After mount, missing `header.dependencies` guids and override guids with no discovered plugin become `Unresolved` placeholders that **keep the guid** (`placeholder: true`). Remounting the plugin replaces the placeholder.
 
 ## Content roots
 

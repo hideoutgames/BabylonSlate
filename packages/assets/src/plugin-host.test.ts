@@ -177,6 +177,33 @@ describe("resolvePluginGraph", () => {
     expect(diagnostics.some((row) => row.code === "plugin.cycle")).toBe(true);
   });
 
+  it("still orders plugins that are not in a dependency cycle", () => {
+    const a = createDefaultPluginSettings({
+      pluginGuid: "a",
+      displayName: "A",
+    });
+    const b = createDefaultPluginSettings({
+      pluginGuid: "b",
+      displayName: "B",
+    });
+    const solo = createDefaultPluginSettings({
+      pluginGuid: "solo",
+      displayName: "Solo",
+    });
+    a.pluginDependencies = [{ guid: "b", versionRange: "^1.0.0" }];
+    b.pluginDependencies = [{ guid: "a", versionRange: "^1.0.0" }];
+    const { order, diagnostics } = resolvePluginGraph(
+      [
+        { pluginGuid: a.pluginGuid, settings: a },
+        { pluginGuid: b.pluginGuid, settings: b },
+        { pluginGuid: solo.pluginGuid, settings: solo },
+      ],
+      "0.0.0",
+    );
+    expect(order.map((entry) => entry.pluginGuid)).toEqual(["solo"]);
+    expect(diagnostics.some((row) => row.code === "plugin.cycle")).toBe(true);
+  });
+
   it("reports unsatisfiable plugin and engine ranges and missing deps", () => {
     const extra = createDefaultPluginSettings({
       pluginGuid: "extra",
@@ -249,6 +276,57 @@ describe("mountEnabledPlugins", () => {
     expect(registry.listDocumentPaths().graphs).toContain(
       "plugins/On/assets/Hero.class.babasset",
     );
+  });
+
+  it("unmounts cycle members and keeps independent enabled plugins mounted", async () => {
+    const storage = await projectStorage();
+    const a = createDefaultPluginSettings({
+      pluginGuid: "a",
+      displayName: "A",
+    });
+    const b = createDefaultPluginSettings({
+      pluginGuid: "b",
+      displayName: "B",
+    });
+    const solo = createDefaultPluginSettings({
+      pluginGuid: "solo",
+      displayName: "Solo",
+    });
+    a.pluginDependencies = [{ guid: "b", versionRange: "^1.0.0" }];
+    b.pluginDependencies = [{ guid: "a", versionRange: "^1.0.0" }];
+    await writePluginFolder(storage, "A", a, [
+      {
+        relativePath: "A.class.babasset",
+        guid: "class-a",
+        type: "Class",
+        name: "A",
+      },
+    ]);
+    await writePluginFolder(storage, "B", b, [
+      {
+        relativePath: "B.class.babasset",
+        guid: "class-b",
+        type: "Class",
+        name: "B",
+      },
+    ]);
+    await writePluginFolder(storage, "Solo", solo, [
+      {
+        relativePath: "Solo.class.babasset",
+        guid: "class-solo",
+        type: "Class",
+        name: "Solo",
+      },
+    ]);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const discovered = await discoverProjectPlugins(storage);
+    await mountEnabledPlugins(registry, discovered, {
+      enabledGuids: new Set(["a", "b", "solo"]),
+    });
+    expect(registry.getByGuid("class-solo")?.rootId).toBe("plugin:solo");
+    expect(registry.getByGuid("class-a")).toBeUndefined();
+    expect(registry.getByGuid("class-b")).toBeUndefined();
   });
 });
 

@@ -14,6 +14,7 @@ import {
   pluginFolderSlug,
   pluginDownloadFileName,
   pluginRootId,
+  pluginSettingsIdentityFields,
   rootIdForFolderPath,
   uniquePluginFolderName,
 } from "./plugin-ui";
@@ -155,10 +156,45 @@ describe("plugin enablement UI", () => {
       pluginDependencyStatus("a", [
         { code: "plugin.missing", pluginGuid: "a" },
       ]),
-    ).toBe("missing");
+    ).toBe("Missing Dependency");
     expect(
       pluginDependencyStatus("a", [{ code: "plugin.cycle", plugins: ["a", "b"] }]),
-    ).toBe("cycle");
+    ).toBe("Dependency Cycle");
+    expect(
+      pluginDependencyStatus("a", [
+        { code: "plugin.engine_unsatisfiable", pluginGuid: "a" },
+      ]),
+    ).toBe("Engine Range");
+    expect(
+      pluginDependencyStatus("a", [
+        { code: "plugin.unsatisfiable", pluginGuid: "a" },
+      ]),
+    ).toBe("Unsatisfiable Range");
+  });
+
+  it("lists the plugin GUID as a read-only identity field", () => {
+    const fields = pluginSettingsIdentityFields({
+      pluginGuid: "pack-guid",
+      displayName: "Pack",
+      version: "1.2.3",
+      author: "Hideout",
+      category: "Gameplay",
+      iconKey: "Puzzle",
+    });
+    expect(fields[0]).toEqual({
+      id: "pluginGuid",
+      label: "GUID",
+      value: "pack-guid",
+      readOnly: true,
+    });
+    expect(fields.map((field) => field.label)).toEqual([
+      "GUID",
+      "Display Name",
+      "Version",
+      "Author",
+      "Category",
+      "Icon Key",
+    ]);
   });
 });
 
