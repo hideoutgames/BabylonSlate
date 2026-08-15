@@ -50,6 +50,7 @@ describe("PinTypePicker", () => {
 
   it("narrows known pin picker types", () => {
     expect(isPinPickerType("bool")).toBe(true);
+    expect(isPinPickerType("class")).toBe(true);
     expect(isPinPickerType("widget")).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compileGraph,
+  classRef,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -35,6 +36,13 @@ function loadModule(source: string): Record<string, unknown> {
 describe("actor nodes", () => {
   it("registers Spawn Actor", () => {
     expect(actorNodes.map((n) => n.id)).toContain("actor.spawn");
+  });
+
+  it("uses a classRef pin for Spawn Actor classId", () => {
+    const spawn = actorNodes.find((node) => node.id === "actor.spawn");
+    expect(spawn?.pins({}).find((entry) => entry.id === "classId")?.type).toEqual(
+      classRef("Actor"),
+    );
   });
 
   it("compiled Spawn Actor calls ctx.spawnActor", () => {

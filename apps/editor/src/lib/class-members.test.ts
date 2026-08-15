@@ -54,12 +54,38 @@ describe("addClassMember", () => {
   it("adds a named custom event node for Events +", () => {
     const graph = addClassMember(emptyGraph(), "event", "On Hit", () => "id");
     expect(graph.members).toEqual([
-      { id: "id", kind: "event", name: "On Hit" },
+      { id: "id", kind: "event", name: "On Hit", pins: [] },
     ]);
     expect(graph.nodes).toHaveLength(1);
     expect(graph.nodes[0]?.type).toBe("flow.event.custom");
     expect(graph.nodes[0]?.data.title).toBe("Event On Hit");
     expect(graph.nodes[0]?.data.name).toBe("On Hit");
+    expect(graph.nodes[0]?.data.pins).toEqual([]);
+  });
+
+  it("syncs custom event output pins onto the event node and matching Call nodes", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    graph = {
+      ...graph,
+      nodes: [
+        ...graph.nodes,
+        {
+          id: "call-1",
+          type: "flow.event.call",
+          position: { x: 200, y: 80 },
+          data: {
+            title: "Call On Hit",
+            name: "On Hit",
+            __nodeType: "flow.event.call",
+          },
+        },
+      ],
+    };
+    const pins = [{ name: "amount", typeId: "float", direction: "out" as const }];
+    graph = patchClassMember(graph, "evt-1", { pins });
+    expect(graph.members?.[0]?.pins).toEqual(pins);
+    expect(graph.nodes[0]?.data.pins).toEqual(pins);
+    expect(graph.nodes[1]?.data.pins).toEqual(pins);
   });
 
   it("uses one id for the event member and node so Class tree remove matches", () => {
@@ -126,6 +152,19 @@ describe("addClassMember", () => {
     });
     graph = removeClassMember(graph, "var-1");
     expect(graph.members).toEqual([]);
+  });
+
+  it("syncs function Input/Output node pin lists when the signature changes", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" as const },
+      { name: "height", typeId: "float", direction: "in" as const },
+      { name: "then", typeId: "exec", direction: "out" as const },
+    ];
+    graph = patchClassMember(graph, "fn-1", { pins });
+    expect(graph.members?.[0]?.pins).toEqual(pins);
+    const slice = graph.functionGraphs?.["fn-1"];
+    expect(slice?.nodes.map((node) => node.data.pins)).toEqual([pins, pins]);
   });
 });
 

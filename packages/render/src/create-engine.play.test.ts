@@ -139,6 +139,30 @@ describe("Play createEngine view", () => {
     expect(handle.scheduler.shouldRender(34)).toBe(true);
   });
 
+  it("re-attaches the gizmo to the live mesh after setMeshAssets rebuilds", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+    });
+    handles.push(handle);
+    const editor = handle.editor;
+    expect(editor).not.toBeNull();
+    editor!.gizmos.setTool("translate");
+    editor!.setSelectedActors(["actor-1"]);
+    const selected = editor!.sync.meshForActor("actor-1");
+    expect(editor!.gizmos.attachedMesh()).toBe(selected);
+
+    handle.setMeshAssets({
+      textureBytes: new Map([["tex-1", new Uint8Array([1, 2, 3, 4])]]),
+    });
+    const live = editor!.sync.meshForActor("actor-1");
+    expect(live).not.toBeNull();
+    expect(live!.isDisposed()).toBe(false);
+    expect(editor!.gizmos.attachedMesh()).toBe(live);
+    expect(selected!.isDisposed()).toBe(true);
+  });
+
   it("syncEditorPlayState unpauses, resizes, and invalidates when Play ends", () => {
     const engine = sharedEngine();
     const resize = vi.spyOn(engine, "resize");

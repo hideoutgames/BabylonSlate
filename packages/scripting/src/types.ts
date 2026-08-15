@@ -19,6 +19,7 @@ export type PinType =
   | PrimitivePinType
   | { kind: "objectRef"; classId: string }
   | { kind: "actorRef"; classId: string }
+  | { kind: "classRef"; classId: string }
   | { kind: "structRef"; guid: string }
   | { kind: "enumRef"; guid: string }
   | { kind: "array"; element: PinType }
@@ -51,6 +52,11 @@ export function actorRef(classId: string): PinType {
   return { kind: "actorRef", classId };
 }
 
+/** Class value constrained to subclasses of `classId` — not a live instance. */
+export function classRef(classId: string): PinType {
+  return { kind: "classRef", classId };
+}
+
 export function structRef(guid: string): PinType {
   return { kind: "structRef", guid };
 }
@@ -72,6 +78,7 @@ export function pinTypeEquals(a: PinType, b: PinType): boolean {
   switch (a.kind) {
     case "objectRef":
     case "actorRef":
+    case "classRef":
       return a.classId === (b as typeof a).classId;
     case "structRef":
     case "enumRef":
@@ -129,7 +136,9 @@ export function isAssignable(
   if (pinTypeEquals(from, to)) return true;
 
   if (
-    (from.kind === "objectRef" || from.kind === "actorRef") &&
+    (from.kind === "objectRef" ||
+      from.kind === "actorRef" ||
+      from.kind === "classRef") &&
     from.kind === to.kind
   ) {
     if (from.classId === to.classId) return true;
@@ -198,6 +207,8 @@ export function defaultValueLiteral(type: PinType): string {
     case "exec":
     case "resolvingWildcard":
       return "null";
+    case "classRef":
+      return JSON.stringify(type.classId);
   }
 }
 
@@ -207,6 +218,8 @@ export function pinTypeTag(type: PinType): string {
       return `objectRef:${type.classId}`;
     case "actorRef":
       return `actorRef:${type.classId}`;
+    case "classRef":
+      return `classRef:${type.classId}`;
     case "structRef":
       return `structRef:${type.guid}`;
     case "enumRef":

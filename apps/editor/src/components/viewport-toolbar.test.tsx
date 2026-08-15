@@ -14,7 +14,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const harness = vi.hoisted(() => ({
-  gizmoTool: "translate" as const,
+  gizmoTool: "translate" as "translate" | "rotate" | "scale",
   setGizmoTool: vi.fn(),
   snapEnabled: false,
   setSnapEnabled: vi.fn(),
@@ -107,7 +107,41 @@ function renderToolbar(props: { showDragSelect?: boolean } = {}) {
   );
 }
 
+const GIZMO_LABELS = [
+  { id: "translate", label: "Move" },
+  { id: "rotate", label: "Rotate" },
+  { id: "scale", label: "Scale" },
+] as const;
+
 describe("ViewportToolbar", () => {
+  it.each(GIZMO_LABELS)(
+    "shows $label only on the enabled $id gizmo",
+    ({ id }) => {
+      harness.gizmoTool = id;
+      renderToolbar();
+      for (const tool of GIZMO_LABELS) {
+        const button = screen.getByTestId(`gizmo-tool-${tool.id}`);
+        if (tool.id === id) {
+          expect(button.textContent).toContain(tool.label);
+        } else {
+          expect(button.textContent).not.toContain(tool.label);
+        }
+      }
+    },
+  );
+
+  it("keeps Drag Select and Viewport Settings icon-only", () => {
+    renderToolbar();
+    expect(screen.getByTestId("viewport-drag-select").textContent).not.toContain(
+      "Drag Select",
+    );
+    expect(screen.getByTestId("viewport-settings").textContent).not.toContain(
+      "Viewport Settings",
+    );
+    expect(screen.getByTestId("viewport-mode-3d").textContent).toContain("3D");
+    expect(screen.getByTestId("viewport-mode-2d").textContent).toContain("2D");
+  });
+
   it("exposes Drag Select beside gizmo tools and hides snap on the island", () => {
     renderToolbar();
     expect(screen.getByTestId("viewport-drag-select")).toBeTruthy();

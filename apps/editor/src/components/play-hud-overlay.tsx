@@ -57,6 +57,25 @@ function stringProp(
   return typeof value === "string" && value !== "" ? value : fallback;
 }
 
+const KIND_LABELS: Record<string, string> = {
+  TouchJoystick: "Stick",
+  TouchDPad: "D-Pad",
+  TouchButton: "Button",
+};
+
+/** Visible HUD caption: authored text, else a player-facing kind label. */
+export function playHudControlLabel(control: {
+  kind: string;
+  name?: string;
+  text?: string;
+}): string {
+  const text = control.text?.trim();
+  if (text) return text;
+  const name = control.name?.trim();
+  if (name && name !== control.kind) return name;
+  return KIND_LABELS[control.kind] ?? name ?? "";
+}
+
 export function PlayHudOverlay({
   instances = [],
   uiLibrary = {},
@@ -217,6 +236,7 @@ export function PlayHudOverlay({
         const action = stringProp(control.props, "action", "Jump");
         const sliderId = stringProp(control.props, "controlId", "slider");
         const testId = isStick ? "play-hud-stick" : `play-hud-widget-${control.id}`;
+        const caption = playHudControlLabel(control);
         const boxStyle = {
           left: control.guiRect.x,
           top: control.guiRect.y,
@@ -231,9 +251,16 @@ export function PlayHudOverlay({
               data-kind={control.kind}
               data-gui-x={String(Math.round(control.guiRect.x))}
               data-gui-y={String(Math.round(control.guiRect.y))}
-              className="absolute"
+              aria-label={isStick ? caption : undefined}
+              className="pointer-events-none absolute flex items-end justify-center pb-2"
               style={boxStyle}
-            />
+            >
+              {isStick && caption ? (
+                <span className="rounded-md bg-background/80 px-2 py-0.5 text-xs text-foreground">
+                  {caption}
+                </span>
+              ) : null}
+            </div>
           );
         }
         return (
@@ -245,6 +272,7 @@ export function PlayHudOverlay({
             data-kind={control.kind}
             data-gui-x={String(Math.round(control.guiRect.x))}
             data-gui-y={String(Math.round(control.guiRect.y))}
+            aria-label={isStick ? caption : undefined}
             className="pointer-events-auto absolute h-auto min-h-0 border-white/40 bg-black/35 px-0 py-0 text-[11px] text-white hover:bg-black/50"
             style={{
               ...boxStyle,
@@ -335,7 +363,7 @@ export function PlayHudOverlay({
                   : undefined
             }
           >
-            {control.text ?? control.name}
+            {caption}
           </Button>
         );
       })}

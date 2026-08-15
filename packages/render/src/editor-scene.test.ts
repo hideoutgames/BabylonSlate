@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Effect, Mesh, StandardMaterial, Vector3 } from "@babylonjs/core";
+import {
+  Effect,
+  Mesh,
+  ShaderMaterial,
+  StandardMaterial,
+  Vector3,
+} from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
@@ -17,6 +23,9 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import {
   createEditorGrid,
   gridCoverageWorld,
+  gridEdgeFadeAlpha,
+  gridEdgeFadeRange,
+  gridViewFade,
   snapGridOrigin,
 } from "./editor-grid";
 import {
@@ -641,6 +650,43 @@ describe("EditorSceneSync", () => {
     expect(sync.actorCount()).toBe(0);
     expect(scene.getMeshByName(editorMeshName("a"))).toBeNull();
   });
+
+  it("keeps mesh identity when setMeshAssets is called with equivalent payloads", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    sync.setMeshAssets({
+      textureBytes: new Map([["tex-1", bytes]]),
+      spritePayloads: new Map(),
+    });
+    const afterFirst = sync.meshForActor("a");
+    expect(afterFirst).not.toBeNull();
+
+    sync.setMeshAssets({
+      textureBytes: new Map([["tex-1", bytes]]),
+      spritePayloads: new Map(),
+    });
+    expect(sync.meshForActor("a")).toBe(afterFirst);
+    expect(afterFirst!.isDisposed()).toBe(false);
+  });
+
+  it("rebuilds meshes when setMeshAssets payloads actually change", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    sync.setMeshAssets({
+      textureBytes: new Map([["tex-1", new Uint8Array([1, 2, 3, 4])]]),
+    });
+    const before = sync.meshForActor("a");
+    sync.setMeshAssets({
+      textureBytes: new Map([["tex-1", new Uint8Array([9, 9, 9, 9, 9])]]),
+    });
+    const after = sync.meshForActor("a");
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
+    expect(before!.isDisposed()).toBe(true);
+  });
 });
 
 describe("editor grid", () => {
@@ -651,6 +697,9 @@ describe("editor grid", () => {
     expect(fragment).toBeDefined();
     expect(fragment).not.toMatch(/GL_OES_standard_derivatives/);
     expect(fragment).toContain("fwidth");
+    expect(fragment).toContain("viewFade");
+    expect(fragment).toContain("fadeOrigin");
+    expect(fragment).not.toMatch(/length\(cameraPos - vWorldPos\)/);
     grid.dispose();
   });
 
@@ -674,6 +723,81 @@ describe("editor grid", () => {
     expect(
       gridCoverageWorld("3d", { radius: 10, orthoTop: null, orthoRight: null }),
     ).toBe(80);
+  });
+
+  it("keeps the grid center opaque when 2D zoom shrinks coverage below camera Z", () => {
+    const coverage = gridCoverageWorld("2d", {
+      radius: 8,
+      orthoTop: 0.5,
+      orthoRight: 0.8,
+    });
+    const { fadeStart, fadeEnd } = gridEdgeFadeRange(coverage);
+    expect(fadeEnd).toBeLessThan(8);
+    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, 0)).toBe(1);
+    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, fadeStart)).toBe(1);
+    expect(gridEdgeFadeAlpha(fadeStart, fadeEnd, fadeEnd)).toBe(0);
+  });
+
+  it("fades the grid out when the view shows too many major cells", () => {
+    const default2d = { radius: 8, orthoTop: 4, orthoRight: 7 };
+    const default3d = { radius: 8, orthoTop: null, orthoRight: null };
+    expect(gridViewFade("2d", default2d, 1)).toBe(1);
+    expect(gridViewFade("3d", default3d, 1)).toBe(1);
+    expect(
+      gridViewFade("2d", { radius: 8, orthoTop: 0.25, orthoRight: 0.4 }, 1),
+    ).toBe(1);
+    expect(
+      gridViewFade("2d", { radius: 8, orthoTop: 200, orthoRight: 350 }, 1),
+    ).toBe(0);
+    expect(
+      gridViewFade("3d", { radius: 400, orthoTop: null, orthoRight: null }, 1),
+    ).toBe(0);
+    expect(
+      gridViewFade("3d", { radius: 64, orthoTop: null, orthoRight: null }, 2),
+    ).toBe(1);
+    expect(
+      gridViewFade("3d", { radius: 64, orthoTop: null, orthoRight: null }, 1),
+    ).toBeCloseTo(2 / 3);
+  });
+
+  it("writes planar edge fade and view fade uniforms on sync", () => {
+    const { scene } = createHandle();
+    const twoD = createEditorCamera(scene, { mode: "2d" });
+    twoD.camera.getViewMatrix();
+    twoD.setOrthoHalfHeight(0.25);
+    const closeGrid = createEditorGrid(scene, {
+      mode: "2d",
+      camera: twoD.camera,
+      spacing: 1,
+    });
+    closeGrid.sync();
+    const closeCoverage = gridCoverageWorld("2d", {
+      radius: twoD.camera.radius,
+      orthoTop: twoD.camera.orthoTop,
+      orthoRight: twoD.camera.orthoRight,
+    });
+    const closeRange = gridEdgeFadeRange(closeCoverage);
+    const closeUniforms = (
+      closeGrid.mesh.material as ShaderMaterial
+    ).serialize();
+    expect(closeRange.fadeEnd).toBeLessThan(Math.abs(twoD.camera.position.z));
+    expect(closeUniforms.floats.fadeStart).toBeCloseTo(closeRange.fadeStart);
+    expect(closeUniforms.floats.fadeEnd).toBeCloseTo(closeRange.fadeEnd);
+    expect(closeUniforms.floats.viewFade).toBe(1);
+    expect(closeUniforms.vectors3.fadeOrigin).toEqual([0, 0, 0]);
+    closeGrid.dispose();
+
+    const threeD = createEditorCamera(scene, { mode: "3d" });
+    threeD.camera.radius = MAX_CAMERA_RADIUS;
+    const farGrid = createEditorGrid(scene, {
+      mode: "3d",
+      camera: threeD.camera,
+      spacing: 1,
+    });
+    farGrid.sync();
+    const farUniforms = (farGrid.mesh.material as ShaderMaterial).serialize();
+    expect(farUniforms.floats.viewFade).toBe(0);
+    farGrid.dispose();
   });
 
   it("lays the grid on XZ in 3D and XY in 2D without a finite line mesh", () => {

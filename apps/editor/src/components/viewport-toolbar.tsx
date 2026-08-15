@@ -163,6 +163,7 @@ export function ViewportToolbar({
       >
         {TOOLS.map((tool) => {
           const Icon = tool.icon;
+          const active = gizmoTool === tool.id;
           return (
             <ToggleGroupItem
               key={tool.id}
@@ -171,6 +172,7 @@ export function ViewportToolbar({
               data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
             >
               <Icon />
+              {active ? tool.label : null}
             </ToggleGroupItem>
           );
         })}

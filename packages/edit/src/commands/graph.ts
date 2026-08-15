@@ -220,6 +220,33 @@ export class SetGraphComponentsCommand implements EditCommand<SerializedGraph> {
   }
 }
 
+export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGraph> {
+  readonly type = "graph.setFunctionGraphs";
+  readonly from: SerializedGraph["functionGraphs"];
+  readonly to: SerializedGraph["functionGraphs"];
+
+  constructor(
+    from: SerializedGraph["functionGraphs"],
+    to: SerializedGraph["functionGraphs"],
+  ) {
+    this.from = from;
+    this.to = to;
+  }
+
+  apply(doc: SerializedGraph): SerializedGraph {
+    if (this.to === undefined) {
+      const next = { ...doc };
+      delete next.functionGraphs;
+      return next;
+    }
+    return { ...doc, functionGraphs: this.to };
+  }
+
+  invert(): SetGraphFunctionGraphsCommand {
+    return new SetGraphFunctionGraphsCommand(this.to, this.from);
+  }
+}
+
 export type GraphEditCommand =
   | MoveNodeCommand
   | AddEdgeCommand
@@ -228,7 +255,8 @@ export type GraphEditCommand =
   | AddNodeCommand
   | RemoveNodeCommand
   | SetGraphMembersCommand
-  | SetGraphComponentsCommand;
+  | SetGraphComponentsCommand
+  | SetGraphFunctionGraphsCommand;
 
 export const GRAPH_COMMAND_TYPES = [
   "graph.moveNode",
@@ -239,6 +267,7 @@ export const GRAPH_COMMAND_TYPES = [
   "graph.removeNode",
   "graph.setMembers",
   "graph.setComponents",
+  "graph.setFunctionGraphs",
 ] as const;
 
 export function createMoveNodeCommandFromJson(
@@ -301,5 +330,14 @@ export function createSetGraphComponentsCommandFromJson(
   return new SetGraphComponentsCommand(
     payload.from as SerializedGraph["components"],
     payload.to as SerializedGraph["components"],
+  );
+}
+
+export function createSetGraphFunctionGraphsCommandFromJson(
+  payload: Record<string, unknown>,
+): SetGraphFunctionGraphsCommand {
+  return new SetGraphFunctionGraphsCommand(
+    payload.from as SerializedGraph["functionGraphs"],
+    payload.to as SerializedGraph["functionGraphs"],
   );
 }

@@ -12,10 +12,16 @@ const LITERAL_DEFAULT_KINDS = new Set<PinType["kind"]>([
   "rotator",
   "color",
   "enumRef",
+  "classRef",
 ]);
 
 export function pinAcceptsLiteralDefault(type: PinType): boolean {
   return LITERAL_DEFAULT_KINDS.has(type.kind);
+}
+
+/** Live instance pins must not compile a stored name/guid as a JS literal. */
+export function pinRejectsStoredDefault(type: PinType): boolean {
+  return type.kind === "objectRef" || type.kind === "actorRef";
 }
 
 export function pinDefaultPropertyKey(pinName: string): string {
@@ -53,6 +59,8 @@ export function defaultJsValue(type: PinType): unknown {
       return { x: 0, y: 0, z: 0, w: 0 };
     case "enumRef":
       return "";
+    case "classRef":
+      return type.classId;
     default:
       return null;
   }

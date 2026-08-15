@@ -18,12 +18,17 @@ const GRID_SHADER_NAME = "editorGrid";
 const GRID_PLANE_OFFSET = 0.002;
 const GRID_LINE_WIDTH = 1.25;
 
+/** Start dimming when this many major cells fit in the view half-extent. */
+export const GRID_VIEW_FADE_START_CELLS = 48;
+/** Hide the grid once this many major cells fit in the view half-extent. */
+export const GRID_VIEW_FADE_END_CELLS = 96;
+
 export interface EditorGridOptions {
   mode?: ViewportMode;
   /** Editor camera the plane follows; omit only in unit tests without a camera. */
   camera?: Pick<
     ArcRotateCamera,
-    "target" | "position" | "radius" | "orthoTop" | "orthoRight"
+    "target" | "radius" | "orthoTop" | "orthoRight"
   >;
   /** World units between major grid lines; the 2D tile size. */
   spacing?: number;
@@ -71,6 +76,65 @@ export function gridCoverageWorld(
   return Math.max(camera.radius, 1) * 8;
 }
 
+export function gridEdgeFadeRange(coverage: number): {
+  fadeStart: number;
+  fadeEnd: number;
+} {
+  return { fadeStart: coverage * 0.35, fadeEnd: coverage * 0.5 };
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/** GLSL-style smoothstep so unit tests match the fragment edge fade. */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
+/** Edge-fade alpha at a planar distance from the follow origin. */
+export function gridEdgeFadeAlpha(
+  fadeStart: number,
+  fadeEnd: number,
+  planarDist: number,
+): number {
+  return 1 - smoothstep(fadeStart, fadeEnd, planarDist);
+}
+
+function gridViewHalfExtent(
+  mode: ViewportMode,
+  camera: GridCoverageCamera,
+): number {
+  if (mode === "2d") {
+    return Math.max(
+      Math.abs(camera.orthoTop ?? 10),
+      Math.abs(camera.orthoRight ?? 10),
+    );
+  }
+  return Math.max(camera.radius, 0);
+}
+
+/**
+ * 1 when the view still shows a useful grid; 0 when too many major cells
+ * fit on screen (far zoom) and the lines would shimmer.
+ */
+export function gridViewFade(
+  mode: ViewportMode,
+  camera: GridCoverageCamera,
+  spacing: number,
+): number {
+  const cell = Math.max(spacing, 0.0001);
+  const cells = gridViewHalfExtent(mode, camera) / cell;
+  if (cells <= GRID_VIEW_FADE_START_CELLS) return 1;
+  if (cells >= GRID_VIEW_FADE_END_CELLS) return 0;
+  return (
+    1 -
+    (cells - GRID_VIEW_FADE_START_CELLS) /
+      (GRID_VIEW_FADE_END_CELLS - GRID_VIEW_FADE_START_CELLS)
+  );
+}
+
 function ensureGridShaders(): void {
   const vertexKey = `${GRID_SHADER_NAME}VertexShader`;
   const fragmentKey = `${GRID_SHADER_NAME}FragmentShader`;
@@ -97,7 +161,8 @@ uniform float spacing;
 uniform float subdivisions;
 uniform float fadeStart;
 uniform float fadeEnd;
-uniform vec3 cameraPos;
+uniform vec3 fadeOrigin;
+uniform float viewFade;
 uniform float mode2d;
 uniform float lineWidth;
 
@@ -111,15 +176,16 @@ float gridLine(vec2 coord, float cell) {
 
 void main() {
   vec2 coord = mode2d > 0.5 ? vWorldPos.xy : vWorldPos.xz;
+  vec2 origin = mode2d > 0.5 ? fadeOrigin.xy : fadeOrigin.xz;
   float cell = max(spacing, 0.0001);
   float major = gridLine(coord, cell);
   float minor = subdivisions > 1.5
     ? gridLine(coord, cell / max(subdivisions, 1.0))
     : 0.0;
-  float dist = length(cameraPos - vWorldPos);
+  float dist = length(coord - origin);
   float fade = 1.0 - smoothstep(fadeStart, fadeEnd, dist);
   vec3 color = mix(minorColor, majorColor, clamp(major, 0.0, 1.0));
-  float alpha = max(major, minor * 0.45) * fade;
+  float alpha = max(major, minor * 0.45) * fade * viewFade;
   if (alpha < 0.02) discard;
   gl_FragColor = vec4(color, alpha);
 }
@@ -152,6 +218,7 @@ export function createEditorGrid(
   const color = options.color ?? new Color3(0.32, 0.34, 0.38);
   const minorColor = options.minorColor ?? new Color3(0.2, 0.21, 0.24);
   const camera = options.camera ?? null;
+  const fadeOrigin = new Vector3();
 
   let boundsMesh: LinesMesh | null = null;
   let requestedBounds: { width: number; height: number } | null = null;
@@ -182,7 +249,8 @@ export function createEditorGrid(
         "minorColor",
         "fadeStart",
         "fadeEnd",
-        "cameraPos",
+        "fadeOrigin",
+        "viewFade",
         "mode2d",
         "lineWidth",
       ],
@@ -241,10 +309,13 @@ export function createEditorGrid(
       mesh.position.set(origin.x, GRID_PLANE_OFFSET, origin.z);
     }
     const coverage = gridCoverageWorld(mode, camera);
+    const { fadeStart, fadeEnd } = gridEdgeFadeRange(coverage);
     mesh.scaling.setAll(coverage);
-    material.setVector3("cameraPos", camera.position);
-    material.setFloat("fadeStart", coverage * 0.35);
-    material.setFloat("fadeEnd", coverage * 0.5);
+    fadeOrigin.set(origin.x, origin.y, origin.z);
+    material.setVector3("fadeOrigin", fadeOrigin);
+    material.setFloat("fadeStart", fadeStart);
+    material.setFloat("fadeEnd", fadeEnd);
+    material.setFloat("viewFade", gridViewFade(mode, camera, spacing));
   };
 
   applyPlane();

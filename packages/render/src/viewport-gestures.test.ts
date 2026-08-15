@@ -216,6 +216,33 @@ describe("attachViewportGestures", () => {
     expect(controller.camera.alpha).toBeCloseTo(alphaBefore, 6);
   });
 
+  it("does not pick on a stationary tap that started on a gizmo", () => {
+    const taps: Array<[number, number]> = [];
+    attach("3d", {
+      blockLook: () => true,
+      onTap: (x, y) => taps.push([x, y]),
+    });
+
+    canvas.emit("pointerdown", pointer(1, 120, 90));
+    canvas.emit("pointerup", pointer(1, 120, 90));
+
+    expect(taps).toHaveLength(0);
+  });
+
+  it("does not pick after a gizmo drag even when the pointer moved", () => {
+    const taps: Array<[number, number]> = [];
+    attach("3d", {
+      blockLook: () => true,
+      onTap: (x, y) => taps.push([x, y]),
+    });
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 100));
+    canvas.emit("pointerup", pointer(1, 160, 100));
+
+    expect(taps).toHaveLength(0);
+  });
+
   it("does not orbit or pan on a two-finger drag without a pinch", () => {
     const { controller } = attach("3d");
     const alphaBefore = controller.camera.alpha;

@@ -7,6 +7,7 @@ import {
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphComponentsCommand,
+  SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
 } from "./graph";
 
@@ -47,6 +48,13 @@ function componentsEqual(
   return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 }
 
+function functionGraphsEqual(
+  a: SerializedGraph["functionGraphs"],
+  b: SerializedGraph["functionGraphs"],
+): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+}
+
 export function diffGraphCommands(
   before: SerializedGraph,
   after: SerializedGraph,
@@ -59,6 +67,7 @@ export function diffGraphCommands(
   | RemoveNodeCommand
   | SetGraphMembersCommand
   | SetGraphComponentsCommand
+  | SetGraphFunctionGraphsCommand
 > {
   const commands: Array<
     | MoveNodeCommand
@@ -69,6 +78,7 @@ export function diffGraphCommands(
     | RemoveNodeCommand
     | SetGraphMembersCommand
     | SetGraphComponentsCommand
+    | SetGraphFunctionGraphsCommand
   > = [];
 
   const beforeNodes = new Map(before.nodes.map((node) => [node.id, node]));
@@ -120,6 +130,15 @@ export function diffGraphCommands(
   if (!componentsEqual(before.components, after.components)) {
     commands.push(
       new SetGraphComponentsCommand(before.components, after.components),
+    );
+  }
+
+  if (!functionGraphsEqual(before.functionGraphs, after.functionGraphs)) {
+    commands.push(
+      new SetGraphFunctionGraphsCommand(
+        before.functionGraphs,
+        after.functionGraphs,
+      ),
     );
   }
 

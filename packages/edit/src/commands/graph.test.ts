@@ -9,6 +9,7 @@ import {
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphComponentsCommand,
+  SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
 } from "../commands/graph";
 
@@ -135,6 +136,27 @@ describe("graph commands", () => {
     const command = new SetGraphComponentsCommand(undefined, components);
     const afterApply = command.apply(doc);
     expect(afterApply.components).toEqual(components);
+    expect(command.invert().apply(afterApply)).toEqual(doc);
+  });
+
+  it("SetGraphFunctionGraphsCommand apply-then-invert restores the document", () => {
+    const doc: SerializedGraph = { nodes: [], edges: [] };
+    const functionGraphs = {
+      "fn-1": {
+        nodes: [
+          {
+            id: "fn-1-input",
+            type: "flow.function.input",
+            position: { x: 80, y: 120 },
+            data: { title: "Input", __protected: true },
+          },
+        ],
+        edges: [],
+      },
+    };
+    const command = new SetGraphFunctionGraphsCommand(undefined, functionGraphs);
+    const afterApply = command.apply(doc);
+    expect(afterApply.functionGraphs).toEqual(functionGraphs);
     expect(command.invert().apply(afterApply)).toEqual(doc);
   });
 });

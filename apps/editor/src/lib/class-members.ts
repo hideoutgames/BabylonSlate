@@ -121,6 +121,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "flow.function.input" || nodeId === "flow.function.output") {
     return false;
   }
+  if (nodeId === "flow.event.call") {
+    return false;
+  }
   const chain = ancestryChain(options);
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
   const isBtLeafEvent = (BT_LEAF_EVENT_TYPE_IDS as readonly string[]).includes(
@@ -220,6 +223,9 @@ function memberDefaults(
   if (kind === "interface") {
     return { assetGuid: extras?.assetGuid ?? "" };
   }
+  if (kind === "event") {
+    return { pins: extras?.pins ?? [] };
+  }
   return {};
 }
 
@@ -294,6 +300,27 @@ export function ensureEventNodeOnGraph(
   };
 }
 
+function syncEventPins(
+  graph: SerializedGraph,
+  member: GraphClassMember,
+  pins: GraphClassMemberPin[],
+): SerializedGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const isEvent =
+        node.type === "flow.event.custom" &&
+        (node.id === member.id || node.data.name === member.name);
+      const isCall =
+        node.type === "flow.event.call" && node.data.name === member.name;
+      if (!isEvent && !isCall) return node;
+      const nextData: Record<string, unknown> = { ...node.data, pins };
+      delete nextData.__pins;
+      return { ...node, data: nextData };
+    }),
+  };
+}
+
 function syncFunctionGraphPins(
   graph: SerializedGraph,
   memberId: string,
@@ -360,6 +387,7 @@ export function addClassMember(
           data: {
             title: formatEventTitle(trimmed),
             name: displayName,
+            pins: member.pins ?? [],
             __nodeType: "flow.event.custom",
           },
         },
@@ -389,6 +417,10 @@ export function patchClassMember(
   );
   const next = { ...graph, members };
   if (!patch.pins) return next;
+  const declared = next.members?.find((member) => member.id === memberId);
+  if (declared?.kind === "event") {
+    return syncEventPins(next, declared, patch.pins);
+  }
   return syncFunctionGraphPins(next, memberId, patch.pins);
 }
 
@@ -407,6 +439,7 @@ export function removeClassMember(
     const dropIds = new Set(
       graph.nodes
         .filter((node) => {
+          if (node.type === "flow.event.call") return false;
           if (!node.type.startsWith("flow.event.")) return false;
           const named = node.data.name;
           return named === declared.name || node.id === memberId;

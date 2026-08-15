@@ -17,6 +17,7 @@ describe("data-types", () => {
     expect(pinColorVar("string")).toBe("var(--pin-string)");
     expect(pinColorVar("vec3")).toBe("var(--pin-vector)");
     expect(pinColorVar("objectRef")).toBe("var(--pin-object)");
+    expect(pinColorVar("classRef")).toBe("var(--pin-object)");
     expect(pinColorVar("unknown-kind")).toBe("var(--pin-wildcard)");
   });
 

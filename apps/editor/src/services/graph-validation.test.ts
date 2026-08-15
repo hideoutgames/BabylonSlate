@@ -224,6 +224,7 @@ describe("scriptPaletteNodes", () => {
     expect(begin?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.function.input")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.function.output")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.call")).toBe(false);
     expect(nodes.some((node) => node.id === "functions.call")).toBe(true);
     expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
     const print = nodes.find((node) => node.id === "debug.print");
@@ -280,5 +281,86 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.event.editorShutdown")).toBe(
       false,
     );
+  });
+
+  it("injects Call nodes for the class custom events and other open classes", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [
+          {
+            id: "evt-1",
+            type: "flow.event.custom",
+            position: { x: 0, y: 0 },
+            data: {
+              name: "On Hit",
+              pins: [{ name: "amount", typeId: "float", direction: "out" }],
+            },
+          },
+        ],
+        edges: [],
+        members: [
+          {
+            id: "evt-1",
+            kind: "event",
+            name: "On Hit",
+            pins: [{ name: "amount", typeId: "float", direction: "out" }],
+          },
+        ],
+      },
+      otherClassGraphs: {
+        Guard: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "g-1", kind: "event", name: "On Alert" }],
+        },
+      },
+    });
+    const local = nodes.find((node) => node.id === "flow.event.call:Hero:On Hit");
+    expect(local?.title).toBe("Call On Hit");
+    expect(local?.nodeType).toBe("flow.event.call");
+    expect(local?.defaultData).toMatchObject({
+      name: "On Hit",
+      classId: "Hero",
+      implicitSelf: true,
+    });
+    expect(local?.pins?.some((pin) => pin.id === "amount" && pin.direction === "in")).toBe(
+      true,
+    );
+    expect(local?.pins?.some((pin) => pin.id === "target")).toBe(true);
+    const other = nodes.find(
+      (node) => node.id === "flow.event.call:Guard:On Alert",
+    );
+    expect(other?.title).toBe("Call On Alert");
+    expect(other?.defaultData).toMatchObject({
+      name: "On Alert",
+      classId: "Guard",
+      implicitSelf: false,
+    });
+  });
+
+  it("marks inherited parent-class custom events as implicit-self Calls", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      parentOf: (id) => (id === "Hero" ? "Actor" : null),
+      classId: "Hero",
+      graph: { nodes: [], edges: [], members: [] },
+      otherClassGraphs: {
+        Actor: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "a-1", kind: "event", name: "On Damage" }],
+        },
+      },
+    });
+    const inherited = nodes.find(
+      (node) => node.id === "flow.event.call:Actor:On Damage",
+    );
+    expect(inherited?.defaultData).toMatchObject({
+      name: "On Damage",
+      classId: "Actor",
+      implicitSelf: true,
+    });
   });
 });

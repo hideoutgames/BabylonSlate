@@ -8,6 +8,10 @@ import {
   parseColliderProperties,
   type ColliderShape,
 } from "@babylonslate/physics";
+import {
+  ENGINE_BASE_CLASS_IDS,
+  ENGINE_COMPONENT_CLASS_IDS,
+} from "@babylonslate/object-model";
 import { classParentLookup } from "./content-browser-helpers";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
@@ -951,6 +955,32 @@ export function gameInstanceClassEntries(
     if (id === "GameInstance") continue;
     if (!walkAncestry(id, parentOf).includes("GameInstance")) continue;
     entries.push({ id, name: id, group: "Project" });
+  }
+  return entries;
+}
+
+/** Engine plus project Class assets assignable to a classRef constraint. */
+export function subclassClassEntries(
+  baseClassId: string,
+  assets: ReadonlyArray<{
+    header: { type: string; name: string; parentClass?: string | null };
+  }>,
+): ClassPickerEntry[] {
+  const parentOf = classParentLookup(assets);
+  const entries: ClassPickerEntry[] = [];
+  const seen = new Set<string>();
+  const add = (id: string, name: string, group: string) => {
+    if (seen.has(id)) return;
+    if (!walkAncestry(id, parentOf).includes(baseClassId)) return;
+    seen.add(id);
+    entries.push({ id, name, group });
+  };
+  add(baseClassId, baseClassId, "Engine");
+  for (const id of ENGINE_BASE_CLASS_IDS) add(id, id, "Engine");
+  for (const id of ENGINE_COMPONENT_CLASS_IDS) add(id, id, "Engine");
+  for (const asset of assets) {
+    if (asset.header.type !== "Class") continue;
+    add(asset.header.name, asset.header.name, "Project");
   }
   return entries;
 }

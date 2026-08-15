@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { COLOR, FLOAT, STRING, VEC2, VEC4, enumRef, pin } from "@babylonslate/scripting";
+import { COLOR, FLOAT, STRING, VEC2, VEC4, classRef, enumRef, objectRef, pin } from "@babylonslate/scripting";
 import {
   collectEnumMemberNames,
   connectedInputPinIds,
@@ -54,6 +54,25 @@ describe("inspectorLiteralPinDefaults", () => {
     );
     expect(listed).toEqual([
       { pinId: "b", name: "b", type: FLOAT, value: 9 },
+    ]);
+  });
+
+  it("lists classRef defaults and hides objectRef instance pins", () => {
+    const listed = inspectorLiteralPinDefaults(
+      {
+        id: "spawn",
+        data: {
+          __pins: [
+            pin("classId", "classId", "in", classRef("Actor")),
+            pin("target", "target", "in", objectRef("Actor")),
+          ],
+          "default:classId": "Pawn",
+        },
+      },
+      [],
+    );
+    expect(listed).toEqual([
+      { pinId: "classId", name: "classId", type: classRef("Actor"), value: "Pawn" },
     ]);
   });
 });
@@ -192,6 +211,47 @@ describe("pinDefaultPropertyRows", () => {
         "Custom",
       ]);
     }
+  });
+
+  it("maps classRef defaults to class picker rows and skips object refs", () => {
+    const onPatch = vi.fn();
+    const onPickClass = vi.fn();
+    const rows = pinDefaultPropertyRows(
+      [
+        {
+          pinId: "classId",
+          name: "classId",
+          type: classRef("Actor"),
+          value: "Pawn",
+        },
+        {
+          pinId: "target",
+          name: "target",
+          type: objectRef("Actor"),
+          value: "Hero",
+        },
+      ],
+      onPatch,
+      {
+        classEntries: [
+          { id: "Actor", name: "Actor" },
+          { id: "Pawn", name: "Pawn" },
+        ],
+        onPickClass,
+      },
+    );
+    expect(rows).toMatchObject([
+      {
+        kind: "asset",
+        id: "classId",
+        label: "classId",
+        value: "Pawn",
+        displayLabel: "Pawn",
+      },
+    ]);
+    const row = rows[0];
+    if (row?.kind === "asset") row.onPick();
+    expect(onPickClass).toHaveBeenCalledWith("classId", "Actor");
   });
 });
 

@@ -8,9 +8,12 @@ import {
   VEC3,
   BOXED_WILDCARD,
   actorRef,
+  classRef,
   objectRef,
+  defaultValueLiteral,
   isAssignable,
   pinTypeEquals,
+  pinTypeTag,
 } from "./types";
 
 describe("pin assignability", () => {
@@ -37,6 +40,25 @@ describe("pin assignability", () => {
     expect(
       isAssignable(actorRef("Actor"), actorRef("Player"), { hierarchy }),
     ).toBe(false);
+  });
+
+  it("treats classRef as a class value assignable along the same hierarchy", () => {
+    const hierarchy = {
+      isSubclassOf(child: string, parent: string) {
+        return child === "Player" && parent === "Actor";
+      },
+    };
+    expect(classRef("Actor")).toEqual({ kind: "classRef", classId: "Actor" });
+    expect(pinTypeEquals(classRef("Actor"), classRef("Actor"))).toBe(true);
+    expect(
+      isAssignable(classRef("Player"), classRef("Actor"), { hierarchy }),
+    ).toBe(true);
+    expect(
+      isAssignable(classRef("Actor"), classRef("Player"), { hierarchy }),
+    ).toBe(false);
+    expect(isAssignable(classRef("Actor"), objectRef("Actor"))).toBe(false);
+    expect(defaultValueLiteral(classRef("Actor"))).toBe('"Actor"');
+    expect(pinTypeTag(classRef("Actor"))).toBe("classRef:Actor");
   });
 
   it("property: equal types are assignable", () => {

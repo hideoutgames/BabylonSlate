@@ -88,6 +88,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
       title={title}
       role={kind === "task" ? "function" : "flow"}
       selected={selected}
+      data={data}
     >
       <Handle
         id="parent"

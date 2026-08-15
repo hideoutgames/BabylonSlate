@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BOOL, EXEC, FLOAT, objectRef } from "@babylonslate/scripting";
 import { flowNodes } from "./flow";
 
 describe("flow nodes", () => {
@@ -68,5 +69,56 @@ describe("flow nodes", () => {
         { id: "result", direction: "in" },
       ],
     );
+  });
+
+  it("maps custom event data pins as outputs beside Then", () => {
+    const custom = flowNodes.find((node) => node.id === "flow.event.custom");
+    const pins = custom?.pins({
+      name: "On Hit",
+      pins: [
+        { name: "amount", typeId: "float", direction: "out" },
+        { name: "stunned", typeId: "bool", direction: "out" },
+        { name: "then", typeId: "exec", direction: "out" },
+      ],
+    });
+    expect(
+      pins?.map((pin) => ({
+        id: pin.id,
+        direction: pin.direction,
+        type: pin.type,
+      })),
+    ).toEqual([
+      { id: "execOut", direction: "out", type: EXEC },
+      { id: "amount", direction: "out", type: FLOAT },
+      { id: "stunned", direction: "out", type: BOOL },
+    ]);
+  });
+
+  it("maps Call Custom Event pins as Target plus data inputs and Then only", () => {
+    const call = flowNodes.find((node) => node.id === "flow.event.call");
+    expect(call?.title).toBe("Call Custom Event");
+    const pins = call?.pins({
+      name: "On Hit",
+      classId: "Hero",
+      pins: [
+        { name: "amount", typeId: "float", direction: "out" },
+        { name: "then", typeId: "exec", direction: "out" },
+      ],
+    });
+    expect(
+      pins?.map((pin) => ({
+        id: pin.id,
+        direction: pin.direction,
+        type: pin.type,
+      })),
+    ).toEqual([
+      { id: "execIn", direction: "in", type: EXEC },
+      { id: "execOut", direction: "out", type: EXEC },
+      { id: "target", direction: "in", type: objectRef("Hero") },
+      { id: "amount", direction: "in", type: FLOAT },
+    ]);
+    expect(pins?.filter((pin) => pin.direction === "out")).toEqual([
+      expect.objectContaining({ id: "execOut", type: EXEC }),
+    ]);
   });
 });

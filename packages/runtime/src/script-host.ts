@@ -108,6 +108,8 @@ export interface ScriptContext {
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
   commandArgs: Record<string, unknown>;
+  /** Alias of `commandArgs` so function Input nodes can read `ctx.args`. */
+  args: Record<string, unknown>;
   reportCommand(success: boolean, output: string): void;
   callInterface(
     target: Actor | null | undefined,
@@ -117,6 +119,11 @@ export interface ScriptContext {
   getComponent(actor: Actor | null | undefined, classId: string): unknown;
   addComponent(actor: Actor | null | undefined, classId: string): unknown;
   spawnActor(classId: string): Actor | null;
+  invokeCustomEvent(
+    target: Actor | null | undefined,
+    eventName: string,
+    args?: Record<string, unknown>,
+  ): void;
   isActionHeld(action: string): boolean;
   wasActionPressed?(action: string): boolean;
   wasActionReleased?(action: string): boolean;
@@ -263,10 +270,15 @@ export class ScriptHost {
   }
 
   /** Fire a compiled entry point (Begin Play, Tick, or a custom event name). */
-  invokeEvent(classId: string, event: string, self: Actor | null = null): void {
+  invokeEvent(
+    classId: string,
+    event: string,
+    self: Actor | null = null,
+    args: Record<string, unknown> = {},
+  ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
-    this.dispatchEvent(loaded, event, self, 0, 0);
+    this.dispatchEvent(loaded, event, self, 0, 0, args);
   }
 
   hasClass(classId: string): boolean {
@@ -378,6 +390,7 @@ export class ScriptHost {
       deltaSeconds,
       tickIndex,
       commandArgs,
+      args: commandArgs,
       reportCommand: (success, output) => {
         this.commandResult = { success: Boolean(success), output: String(output) };
         services.reportCommand?.(Boolean(success), String(output));
@@ -417,6 +430,20 @@ export class ScriptHost {
       addComponent: (actor, classId) =>
         services.addComponent?.(actor ?? self, classId) ?? null,
       spawnActor: (classId) => services.spawnActor?.(String(classId)) ?? null,
+      invokeCustomEvent: (target, eventName, eventArgs) => {
+        const actor = (target ?? self) as Actor | null;
+        if (!actor || typeof eventName !== "string" || !eventName) return;
+        const loaded = this.byClassId.get(actor.classId);
+        if (!loaded || loaded.length === 0) return;
+        this.dispatchEvent(
+          loaded,
+          eventName,
+          actor,
+          0,
+          0,
+          eventArgs ?? {},
+        );
+      },
       isActionHeld: (action) => tick?.isActionHeld?.(action) ?? false,
       wasActionPressed: (action) => tick?.wasActionPressed?.(action) ?? false,
       wasActionReleased: (action) =>

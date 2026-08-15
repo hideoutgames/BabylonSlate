@@ -32,6 +32,7 @@ export const PIN_KIND_COLOR_VAR: Record<string, string> = {
   color: PIN_COLOR_VAR.color,
   objectRef: PIN_COLOR_VAR.object,
   actorRef: PIN_COLOR_VAR.actor,
+  classRef: PIN_COLOR_VAR.object,
   structRef: PIN_COLOR_VAR.struct,
   enumRef: PIN_COLOR_VAR.enum,
   resolvingWildcard: PIN_COLOR_VAR.wildcard,
