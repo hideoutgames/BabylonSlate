@@ -17,23 +17,29 @@ export function documentIdToRevealForDiagnostic(
 }
 
 export function sessionReportNavigation(
-  entry: { btNodeId?: string; nodeId?: string; assetGuid?: string },
+  entry: {
+    btNodeId?: string;
+    nodeId?: string;
+    assetGuid?: string;
+    bodyLine?: number;
+  },
   lookup: {
     getByGuid?: (guid: string) =>
       | { header: { type: string; name: string }; path: string }
       | undefined;
   },
-): { focusedNodeId: string; document?: DocumentRef } {
+): { focusedNodeId: string; document?: DocumentRef; bodyLine?: number } {
   const focusedNodeId = entry.btNodeId ?? entry.nodeId ?? "";
   if (!entry.btNodeId || !entry.assetGuid) {
-    return { focusedNodeId };
+    return { focusedNodeId, bodyLine: entry.bodyLine };
   }
   const asset = lookup.getByGuid?.(entry.assetGuid);
-  if (!asset) return { focusedNodeId };
+  if (!asset) return { focusedNodeId, bodyLine: entry.bodyLine };
   const kind = documentKindForAssetType(asset.header.type);
-  if (!kind) return { focusedNodeId };
+  if (!kind) return { focusedNodeId, bodyLine: entry.bodyLine };
   return {
     focusedNodeId,
+    bodyLine: entry.bodyLine,
     document: {
       kind,
       path: asset.path,

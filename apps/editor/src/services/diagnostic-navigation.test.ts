@@ -45,4 +45,13 @@ describe("sessionReportNavigation", () => {
       label: "Patrol",
     });
   });
+
+  it("passes ExecuteJavaScript bodyLine through for CodeMirror focus", () => {
+    const nav = sessionReportNavigation(
+      { nodeId: "js", bodyLine: 3, assetGuid: "class-1" },
+      {},
+    );
+    expect(nav.focusedNodeId).toBe("js");
+    expect(nav.bodyLine).toBe(3);
+  });
 });

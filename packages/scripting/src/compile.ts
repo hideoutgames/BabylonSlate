@@ -145,7 +145,12 @@ export function compileGraph(
 ): CompileResult {
   const exportName = options.exportName ?? "run";
   const preamble = [`//# sourceURL=babylonslate:///${options.assetGuid}.js`];
-  const hoisted: string[] = [];
+  type HoistChunk = {
+    source: string;
+    nodeId: string;
+    bodyAnchors?: readonly { relativeLine: number; bodyLine: number }[];
+  };
+  const hoisted: HoistChunk[] = [];
   type BodyLine = { text: string; anchor?: Omit<CompileAnchor, "line"> };
   const body: BodyLine[] = [];
   const exprCache = new Map<string, string>();
@@ -215,8 +220,9 @@ export function compileGraph(
           nodeId: anchorNodeId ?? node.id,
         });
       },
-      hoist(source) {
-        if (!hoisted.includes(source)) hoisted.push(source);
+      hoist(source, bodyAnchors) {
+        if (hoisted.some((chunk) => chunk.source === source)) return;
+        hoisted.push({ source, nodeId: node.id, bodyAnchors });
       },
       requestAsync() {
         isAsync = true;
@@ -411,9 +417,28 @@ export function compileGraph(
     });
   }
 
-  const hoistLines = hoisted.flatMap((h) => h.split("\n"));
-  const finalLines = [...preamble, ...hoistLines];
+  const finalLines = [...preamble];
   const anchors: CompileAnchor[] = [];
+
+  for (const chunk of hoisted) {
+    const lines = chunk.source.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      finalLines.push(lines[i]!);
+      const bodyAnchor = chunk.bodyAnchors?.find(
+        (entry) => entry.relativeLine === i + 1,
+      );
+      if (bodyAnchor) {
+        anchors.push({
+          line: finalLines.length,
+          column: 1,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId: chunk.nodeId,
+          bodyLine: bodyAnchor.bodyLine,
+        });
+      }
+    }
+  }
 
   for (const compiled of compiledEntries) {
     finalLines.push(

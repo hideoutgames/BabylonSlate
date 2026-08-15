@@ -647,6 +647,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               getByGuid: (guid) => assetRegistry?.getByGuid(guid),
             });
             setFocusedNodeId(nav.focusedNodeId || PREVIEW_FIXTURE_NODE_ID);
+            setFocusDiagnostic({
+              severity: entry.severity,
+              code: entry.code,
+              message: entry.message,
+              assetGuid: entry.assetGuid ?? "",
+              graphId: entry.graphId ?? "",
+              nodeId: nav.focusedNodeId || undefined,
+              bodyLine: nav.bodyLine ?? entry.bodyLine,
+            });
             if (nav.document) {
               void openDocument(nav.document);
             }

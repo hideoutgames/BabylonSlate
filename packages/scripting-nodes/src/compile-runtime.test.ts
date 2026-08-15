@@ -273,4 +273,33 @@ describe("compiler emits runnable JavaScript", () => {
     expect(custom?.event).toBe("On_Hit");
     expect(compiled.source).toContain("function On_Hit(ctx)");
   });
+
+  it("anchors ExecuteJavaScript user-body lines with bodyLine", () => {
+    const registry = createDefaultNodeRegistry();
+    const body = "const a = 1;\nthrow new Error('from body');";
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(
+          registry,
+          "js",
+          "debug.executeJavaScript",
+          jsProps(body, "out"),
+        ),
+      ],
+      edges: [edge("e1", "entry", "execOut", "js", "execIn")],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const throwAnchor = compiled.anchors.find((anchor) => anchor.bodyLine === 2);
+    expect(throwAnchor).toMatchObject({
+      nodeId: "js",
+      graphId: "g",
+      assetGuid: "a",
+      bodyLine: 2,
+    });
+    const lines = compiled.source.split("\n");
+    expect(lines[throwAnchor!.line - 1]).toContain("throw new Error");
+  });
 });
