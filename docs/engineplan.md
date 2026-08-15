@@ -777,7 +777,7 @@ Plugin *content* is browsable, but under its own root behind a **Show Plugin Con
 
 ### 10.6 Export interaction
 
-Disabled plugins contribute nothing to a build. Enabled plugins' content joins the same tree-shaking pass as project content, with editor-only asset types stripped as usual, and in packed mode plugin assets go into the same packs rather than getting their own, so plugins do not inflate the file count.
+Disabled plugins contribute nothing to a **packed** build. That tree-shake and pack join is **P14** (`collectEnabledPluginAssets`). Enabled plugins' content uses the same pass as project content, with editor-only asset types stripped as usual, and in packed mode plugin assets go into the same packs rather than getting their own, so plugins do not inflate the file count. Export Project in P13 remains a full backup (includes disabled project plugins on disk).
 
 ## 11. Input and user interface
 
@@ -1303,7 +1303,7 @@ Named slice, not a P-number. Spec: section 2.5. **Done.**
 
 - [x] **p13-plugin-model** — P13: PluginSettings asset type (guid identity, semver, description, author, icon, experimental and beta flags, editor-startup EditorUtilityObjects, export-default enabled state, engine and plugin dependency ranges) with its own document tab; plugin discovery and mounting from project plugins/ and repo engine-plugins/ as content roots; topological load order with cycle and unsatisfiable-range diagnostics; unresolved-reference placeholders when a plugin is absent
 - [x] **p13-plugin-settings-ui** — P13: Project Settings plugin list showing source, version, maturity badge, dependency status and enable toggle, with three-layer precedence (plugin default, project override keyed by guid in project.json, per-export-preset override) and a warning listing dependent references before disabling; Show Plugin Content toggle in the Content Browser, default off, engine plugin content read-only
-- [x] **p13-babplugin** — P13: .babplugin export and import reusing the .babproject codec with a different manifest kind (shared zip and directory backends and shared round-trip goldens); import unpacks into plugins/ and dedupes by plugin guid and version with a conflict prompt; archives never listed as assets; disabled plugins excluded from export and enabled plugin content tree-shaken and packed alongside project content
+- [x] **p13-babplugin** — P13: .babplugin export and import reusing the .babproject codec with a different manifest kind (shared zip and directory backends and shared round-trip goldens); import unpacks into plugins/ and dedupes by plugin guid and version with a conflict prompt; archives never listed as assets. Packed-export tree-shake of enabled plugin content is P14 (`collectEnabledPluginAssets`).
 - [x] **p13-engine-plugin** — P13: first plugin under engine-plugins/ as the dogfood case, mounted read-only and shipped with the editor build, with an e2e that enables it from Project Settings and sees its content appear
 
 ### P14

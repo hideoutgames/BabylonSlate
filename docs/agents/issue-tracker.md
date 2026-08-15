@@ -19,6 +19,11 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-plugin-model / Play | Spec | `collectPlaySceneLibrary` walked `project.json` `scenes` only, so enabled plugin Scenes never reached Play `changescene` | Resolved |
+| 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-engine-plugin | Spec | Engine Memory `ProjectStorage` stayed writable after unpack; now wrapped with `createReadOnlyProjectStorage` | Resolved |
+| 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-engine-plugin | Spec | New-project copies kept engine `enabledByDefault: true` when authored that way; copies now force `false` | Resolved |
+| 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-plugin-settings-ui | Spec | Engine Class/Scene `apply*Change` and `writeSceneNavmeshChunk` did not honor read-only (only PluginSettings UI + `saveDocument`) | Resolved |
+| 2026-08-15 | cursor/p13-implementation-review-4e26 | p13-babplugin | Spec | engineplan §10.6 / appendix claimed packed tree-shake in P13; wording now matches the accepted P14 deferral | Resolved |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | PluginSettings Details used `Guid` (not Title Case `GUID`); identity omitted the plugin guid | Resolved |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | Project Settings dependency status was lowercase (`missing` / `cycle` / `engine`) | Resolved |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-model | Spec | Any dependency cycle returned `order: []`, unmounting independent plugins | Resolved |

@@ -4,11 +4,13 @@ import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
+import { decodeAssetDocument } from "./asset-document";
 import { encodeBabasset, readBabassetHeader } from "./babasset";
 import { decodeProjectZip, encodeProjectZip } from "./babproject";
 import { bytesEqual } from "./bytes";
 import {
   createDefaultPluginSettings,
+  encodePluginSettingsDocument,
 } from "./plugin-settings";
 import {
   applyPluginImport,
@@ -16,6 +18,8 @@ import {
   inspectBabplugin,
   packEnginePluginFiles,
   planPluginImport,
+  pluginFolderSlug,
+  uniquePluginFolderName,
   unpackEnginePluginZip,
   installEnginePluginDefaults,
 } from "./plugin-package";
@@ -498,5 +502,40 @@ describe("installEnginePluginDefaults", () => {
     const second = await installEnginePluginDefaults(project, engine);
     expect(second).toEqual([]);
     expect(await discoverProjectPlugins(project)).toHaveLength(1);
+  });
+
+  it("forces enabledByDefault false on the project copy", async () => {
+    const engine = new MemoryStorageAdapter("opfs");
+    await engine.openDocumentsProject("engine-plugins");
+    const settings = createDefaultPluginSettings({
+      pluginGuid: "aaaa0000-0000-4000-8000-000000000001",
+      displayName: "On By Default",
+    });
+    settings.enabledByDefault = true;
+    await engine.mkdir("on-by-default/assets", true);
+    await engine.writeBinary(
+      "on-by-default/on-by-default.plugin.babasset",
+      await encodePluginSettingsDocument(settings),
+    );
+    const project = await projectStorage();
+    const installed = await installEnginePluginDefaults(project, engine);
+    expect(installed).toHaveLength(1);
+    expect(installed[0]!.settings.enabledByDefault).toBe(false);
+    const copied = await decodeAssetDocument(
+      await project.readBinary(
+        "plugins/on-by-default/on-by-default.plugin.babasset",
+      ),
+    );
+    expect(copied.payload.enabledByDefault).toBe(false);
+  });
+});
+
+describe("plugin folder names", () => {
+  it("slugs display names and allocates unique folders", () => {
+    expect(pluginFolderSlug("Starter Content")).toBe("starter-content");
+    expect(pluginFolderSlug("  ")).toBe("plugin");
+    expect(uniquePluginFolderName("Pack", [])).toBe("pack");
+    expect(uniquePluginFolderName("Pack", ["pack"])).toBe("pack-1");
+    expect(uniquePluginFolderName("Pack", ["pack", "pack-1"])).toBe("pack-2");
   });
 });
