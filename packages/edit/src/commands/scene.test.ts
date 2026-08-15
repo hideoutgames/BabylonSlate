@@ -300,6 +300,37 @@ describe("diffSceneCommands", () => {
     ]);
   });
 
+  it("derives add, remove, and reparent component commands", () => {
+    const before = baseScene();
+    before.actors[0]!.components.push(createMeshComponent("c2", "sphere"));
+    const after = structuredClone(before);
+    after.actors[0]!.components = [
+      {
+        ...after.actors[0]!.components[0]!,
+        parentId: "c2",
+      },
+      createMeshComponent("c3", "cylinder"),
+    ];
+    const types = diffSceneCommands(before, after).map(
+      (command) => command.type,
+    );
+    expect(types).toContain("scene.addComponent");
+    expect(types).toContain("scene.removeComponent");
+    expect(types).toContain("scene.reparentComponent");
+  });
+
+  it("derives ReorderActorCommand when actor order changes", () => {
+    const before = baseScene();
+    const after = {
+      ...before,
+      actors: [before.actors[1]!, before.actors[0]!],
+    };
+    const commands = diffSceneCommands(before, after);
+    expect(commands.map((command) => command.type)).toContain(
+      "scene.reorderActor",
+    );
+  });
+
   it("replaying derived commands reproduces the after document", () => {
     const before = baseScene();
     const after = structuredClone(before);

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  recastMeshesFromCollider2d,
   recastWalkableQuadFromXy,
   recastWallsFromXyChains,
   solidBlockerMesh,
+  staticBlockerBakeParts,
+  xyBoundsFromActors,
 } from "./blockers";
 
 describe("solidBlockerMesh", () => {
@@ -42,5 +45,128 @@ describe("2D bake remap", () => {
     );
     expect(walls.positions.length).toBeGreaterThan(9);
     expect(walls.indices.length).toBeGreaterThanOrEqual(6);
+  });
+});
+
+describe("staticBlockerBakeParts", () => {
+  const blocker = (
+    properties: Record<string, unknown>,
+    position: [number, number, number] = [1, 2, 3],
+    scale?: [number, number, number],
+  ) => ({
+    transform: { position, ...(scale ? { scale } : {}) },
+    components: [{ classId: "NavMeshBlockerComponent", properties }],
+  });
+
+  it("skips dynamic and cost-area blockers", () => {
+    expect(
+      staticBlockerBakeParts(
+        [
+          blocker({ dynamic: true, kind: "box" }),
+          blocker({ area: "cost", kind: "box" }),
+        ],
+        "3d",
+      ),
+    ).toEqual([]);
+  });
+
+  it("remaps 2D blocker pose onto Recast XZ with fixed height", () => {
+    const parts = staticBlockerBakeParts(
+      [blocker({ kind: "cylinder" }, [4, 6, 9], [2, 3, 5])],
+      "2d",
+    );
+    expect(parts).toHaveLength(1);
+    // worldToRecast maps XY → XZ; Y becomes wall mid-height (1).
+    expect(parts[0]!.positions.length).toBeGreaterThan(9);
+  });
+
+  it("keeps 3D blocker pose and scale axes", () => {
+    const parts = staticBlockerBakeParts(
+      [blocker({ kind: "box" }, [1, 2, 3], [4, 5, 6])],
+      "3d",
+    );
+    expect(parts).toHaveLength(1);
+    expect(parts[0]!.positions.length).toBeGreaterThanOrEqual(8 * 3);
+  });
+});
+
+describe("xyBoundsFromActors", () => {
+  it("pads empty actor lists to a centered default bounds", () => {
+    expect(xyBoundsFromActors([], 5)).toEqual({
+      minX: -5,
+      minY: -5,
+      maxX: 5,
+      maxY: 5,
+    });
+  });
+
+  it("pads actor positions", () => {
+    expect(
+      xyBoundsFromActors(
+        [
+          {
+            transform: { position: [0, 0, 0] },
+            components: [],
+          },
+          {
+            transform: { position: [10, 4, 0] },
+            components: [],
+          },
+        ],
+        2,
+      ),
+    ).toEqual({ minX: -2, minY: -2, maxX: 12, maxY: 6 });
+  });
+});
+
+describe("recastMeshesFromCollider2d", () => {
+  it("returns empty for missing shape or undersized polylines", () => {
+    expect(recastMeshesFromCollider2d({ x: 0, y: 0 }, undefined)).toEqual([]);
+    expect(
+      recastMeshesFromCollider2d(
+        { x: 0, y: 0 },
+        { kind: "chain", points: [{ x: 1, y: 1 }] },
+      ),
+    ).toEqual([]);
+  });
+
+  it("builds walls for chain/polygon and solids for circle/box2d", () => {
+    const chain = recastMeshesFromCollider2d(
+      { x: 1, y: 2 },
+      {
+        kind: "chain",
+        points: [
+          { x: 0, y: 0 },
+          { x: 2, y: 0 },
+        ],
+      },
+    );
+    expect(chain).toHaveLength(1);
+    expect(chain[0]!.positions.length).toBeGreaterThan(9);
+
+    const polygon = recastMeshesFromCollider2d(
+      { x: 0, y: 0 },
+      {
+        kind: "polygon",
+        points: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 0, y: 1 },
+        ],
+      },
+    );
+    expect(polygon).toHaveLength(1);
+
+    const circle = recastMeshesFromCollider2d(
+      { x: 3, y: 4 },
+      { kind: "circle", radius: 1.5 },
+    );
+    expect(circle).toHaveLength(1);
+
+    const box = recastMeshesFromCollider2d(
+      { x: 0, y: 0 },
+      { kind: "box2d", halfExtents: { x: 2, y: 1 } },
+    );
+    expect(box).toHaveLength(1);
   });
 });

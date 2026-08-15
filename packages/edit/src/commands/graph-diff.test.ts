@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
 import {
+  AddEdgeCommand,
   AddNodeCommand,
   MoveNodeCommand,
+  RemoveEdgeCommand,
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphComponentsCommand,
+  SetNodeDataCommand,
 } from "./graph";
 import { diffGraphCommands } from "./graph-diff";
 
@@ -78,6 +81,47 @@ describe("diffGraphCommands", () => {
     expect(commands.some((c) => c instanceof SetGraphComponentsCommand)).toBe(
       true,
     );
+  });
+
+  it("emits AddEdgeCommand and RemoveEdgeCommand for edge deltas", () => {
+    const before = createDefaultGraph();
+    const edge = {
+      id: "e1",
+      source: "log-1",
+      target: "log-1",
+      sourceHandle: "out",
+      targetHandle: "in",
+    };
+    const withEdge = { ...before, edges: [edge] };
+    const addCommands = diffGraphCommands(before, withEdge);
+    expect(addCommands.some((c) => c instanceof AddEdgeCommand)).toBe(true);
+    expect(
+      (addCommands.find((c) => c instanceof AddEdgeCommand) as AddEdgeCommand)
+        .edge,
+    ).toEqual(edge);
+
+    const removeCommands = diffGraphCommands(withEdge, before);
+    expect(removeCommands.some((c) => c instanceof RemoveEdgeCommand)).toBe(
+      true,
+    );
+  });
+
+  it("emits SetNodeDataCommand when node data changes", () => {
+    const before = createDefaultGraph();
+    const after = {
+      ...before,
+      nodes: before.nodes.map((node) =>
+        node.id === "log-1"
+          ? { ...node, data: { ...node.data, message: "Updated" } }
+          : node,
+      ),
+    };
+    const commands = diffGraphCommands(before, after);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toBeInstanceOf(SetNodeDataCommand);
+    const setData = commands[0] as SetNodeDataCommand;
+    expect(setData.nodeId).toBe("log-1");
+    expect(setData.to).toMatchObject({ message: "Updated" });
   });
 });
 

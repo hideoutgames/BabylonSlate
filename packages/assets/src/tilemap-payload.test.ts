@@ -75,6 +75,43 @@ describe("tilemap payload", () => {
     expect(payload.layers[0]?.chunks[0]?.tiles[0]).toBe(1);
   });
 
+  it("preserves explicit false visibility/collision and coerces layer fields", () => {
+    const payload = normalizeTilemapPayload({
+      layers: [
+        {
+          id: "bg",
+          name: "Background",
+          visible: false,
+          collision: false,
+          sortingLayer: "   ",
+          orderInLayer: "nope",
+          parallax: { x: "bad", y: 0.5 },
+        },
+        {
+          name: "FG",
+          parallax: null,
+          orderInLayer: 3,
+        },
+      ],
+    });
+    expect(payload.layers[0]).toMatchObject({
+      id: "bg",
+      visible: false,
+      collision: false,
+      sortingLayer: "Default",
+      orderInLayer: 0,
+      parallax: { x: 1, y: 0.5 },
+    });
+    expect(payload.layers[1]).toMatchObject({
+      id: "layer-2",
+      name: "FG",
+      visible: true,
+      collision: true,
+      orderInLayer: 3,
+      parallax: { x: 1, y: 1 },
+    });
+  });
+
   it("adds and reorders named layers without dropping chunks", () => {
     let map = createDefaultTilemapPayload();
     map = setTile(map, "layer-1", 0, 0, 3);

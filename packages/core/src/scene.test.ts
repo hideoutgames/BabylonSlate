@@ -55,6 +55,59 @@ describe("scene schema", () => {
     expect(scene.settings.editorJoystickEnabled).toBe(false);
   });
 
+  it("coerces malformed actors and components so Details can open old projects", () => {
+    const scene = normalizeScene({
+      actors: [
+        {
+          name: 12,
+          visible: "no",
+          locked: 1,
+          components: "not-an-array",
+        },
+        {
+          id: "keep",
+          classId: "Pawn",
+          visible: false,
+          locked: true,
+          components: [
+            { properties: null },
+            {
+              id: "mesh",
+              classId: "MeshComponent",
+              properties: { meshKind: "box" },
+              parentId: "missing",
+            },
+          ],
+        },
+      ],
+    });
+    expect(scene.actors[0]).toMatchObject({
+      id: "actor-0",
+      name: "Actor 1",
+      classId: "Actor",
+      visible: true,
+      locked: false,
+      components: [],
+    });
+    expect(scene.actors[1]).toMatchObject({
+      id: "keep",
+      classId: "Pawn",
+      visible: false,
+      locked: true,
+    });
+    expect(scene.actors[1]?.components[0]).toMatchObject({
+      id: "component-0",
+      classId: "MeshComponent",
+      properties: {},
+      parentId: null,
+    });
+    expect(scene.actors[1]?.components[1]).toMatchObject({
+      id: "mesh",
+      properties: { meshKind: "box" },
+      parentId: "missing",
+    });
+  });
+
   it("keeps the grid visible unless showGrid is explicitly false", () => {
     expect(normalizeScene({}).settings.grid.showGrid).toBe(true);
     expect(
