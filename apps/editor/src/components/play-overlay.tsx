@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TerminalIcon, XIcon } from "lucide-react";
 import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
@@ -8,7 +7,6 @@ import {
   type RenderProjectSettings,
   type SerializedScene,
 } from "@babylonslate/core";
-import { Button } from "@babylonslate/ui/components/button";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
 import type { TracePayload } from "@babylonslate/debugger";
@@ -21,6 +19,7 @@ import {
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
 import { DebugConsole } from "./debug-console";
+import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
 import { playConsoleCommands } from "../lib/play-console";
@@ -125,6 +124,9 @@ export function PlayOverlay({
   const [actorGuids, setActorGuids] = useState<string[]>([]);
   const [actorYs, setActorYs] = useState<number[]>([]);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const userPausedRef = useRef(false);
   const [trace, setTrace] = useState<TracePayload | null>(null);
   const [overlaySize, setOverlaySize] = useState({ width: 1280, height: 720 });
   const [hiddenWidgetIds, setHiddenWidgetIds] = useState<Set<string>>(
@@ -207,6 +209,8 @@ export function PlayOverlay({
       }
     };
     layoutPlay();
+    userPausedRef.current = false;
+    setPaused(false);
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -279,8 +283,8 @@ export function PlayOverlay({
       }
     });
     resizeObserver.observe(overlay);
-    const detachLifecycle = attachLifecyclePause((paused) => {
-      sessionRef.current?.setPaused(paused);
+    const detachLifecycle = attachLifecyclePause((hidden) => {
+      sessionRef.current?.setPaused(hidden || userPausedRef.current);
     });
     const movePoll = window.setInterval(() => {
       const current = sessionRef.current;
@@ -322,60 +326,59 @@ export function PlayOverlay({
       )}
       data-testid="play-overlay"
     >
-      <div className="pointer-events-none absolute left-3 top-3 z-10">
-        <StatsHud
-          fps={fps}
-          scriptMs={scriptMs}
-          physicsMs={physicsMs}
-          memoryBytes={memoryBytes}
-          meshCount={meshCount}
-          textureCount={textureCount}
-          draws={draws}
-          bridgeMessagesPerSec={bridgeRate}
-        />
-        <span
-          data-testid="play-move-x"
-          data-move-x={moveX === null ? "" : String(moveX)}
-          className="sr-only"
-        >
-          <SelectableText>
-            move.x={moveX === null ? "—" : moveX.toFixed(2)}
-          </SelectableText>
-        </span>
-        <span
-          data-testid="play-actor-guids"
-          data-guids={actorGuids.join(",")}
-        />
-        <span
-          data-testid="play-actor-y"
-          data-ys={actorYs.join(",")}
-        />
-      </div>
-      <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
-        <Button
-          size="touch-icon"
-          variant="secondary"
-          data-testid="play-console-open"
-          aria-label="Open Console"
-          onClick={() => setConsoleOpen(true)}
-        >
-          <TerminalIcon />
-        </Button>
-        <Button
-          size="touch-icon"
-          variant="secondary"
-          data-testid="play-overlay-close"
-          aria-label="Stop Play"
-          onClick={() => {
-            const result = sessionRef.current?.stop() ?? emptyPlayResult();
-            sessionRef.current = null;
-            setHudScene(null);
-            onClose(result);
-          }}
-        >
-          <XIcon />
-        </Button>
-      </div>
+      <PlayOverlayChrome
+        paused={paused}
+        statsOpen={statsOpen}
+        onPauseToggle={() => {
+          setPaused((prev) => {
+            const next = !prev;
+            userPausedRef.current = next;
+            sessionRef.current?.setPaused(next);
+            return next;
+          });
+        }}
+        onStatsToggle={() => setStatsOpen((open) => !open)}
+        onConsoleOpen={() => setConsoleOpen(true)}
+        onClose={() => {
+          const result = sessionRef.current?.stop() ?? emptyPlayResult();
+          sessionRef.current = null;
+          setHudScene(null);
+          onClose(result);
+        }}
+        stats={
+          <StatsHud
+            fps={fps}
+            scriptMs={scriptMs}
+            physicsMs={physicsMs}
+            memoryBytes={memoryBytes}
+            meshCount={meshCount}
+            textureCount={textureCount}
+            draws={draws}
+            bridgeMessagesPerSec={bridgeRate}
+          />
+        }
+        extras={
+          <>
+            <span
+              data-testid="play-move-x"
+              data-move-x={moveX === null ? "" : String(moveX)}
+              className="sr-only"
+            >
+              <SelectableText>
+                move.x={moveX === null ? "—" : moveX.toFixed(2)}
+              </SelectableText>
+            </span>
+            <span
+              data-testid="play-actor-guids"
+              data-guids={actorGuids.join(",")}
+            />
+            <span
+              data-testid="play-actor-y"
+              data-ys={actorYs.join(",")}
+            />
+          </>
+        }
+      />
       <canvas
         ref={canvasRef}
         className={cn(
@@ -397,16 +400,18 @@ export function PlayOverlay({
         }
       />
       <PrintOverlay entries={printEntries} />
-      <div
-        className="pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden rounded-md bg-background/80 p-2 text-xs"
-        data-testid="play-log-tail"
-      >
-        {logs.slice(-5).map((line, i) => (
-          <div key={`${i}-${line}`}>
-            <SelectableText>{line}</SelectableText>
-          </div>
-        ))}
-      </div>
+      {logs.length > 0 ? (
+        <div
+          className="pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden rounded-md bg-background/80 p-2 text-xs"
+          data-testid="play-log-tail"
+        >
+          {logs.slice(-5).map((line, i) => (
+            <div key={`${i}-${line}`}>
+              <SelectableText>{line}</SelectableText>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <DebugConsole
         open={consoleOpen}
         onOpenChange={setConsoleOpen}

@@ -12,9 +12,9 @@ afterEach(() => {
   localStorage.clear();
 });
 
-function hudWith(kind: "TouchButton" | "TouchDPad") {
+function hudWith(kind: "TouchButton" | "TouchDPad" | "TouchJoystick", name?: string) {
   const doc = createDefaultUserInterface("HUD");
-  const widget = createWidget("ctrl", kind, kind);
+  const widget = createWidget("ctrl", kind, name ?? kind);
   doc.widgets.canvas!.children = ["ctrl"];
   doc.widgets.ctrl = widget;
   return doc;
@@ -82,5 +82,48 @@ describe("PlayHudOverlay input", () => {
     expect(onTouchAxis).toHaveBeenCalled();
     const codes = onTouchAxis.mock.calls.map((call) => call[0]);
     expect(codes).toEqual(expect.arrayContaining(["dpad-x", "dpad-y"]));
+  });
+});
+
+describe("PlayHudOverlay stick chrome", () => {
+  it("hides the virtual stick until a TouchJoystick HUD is applied", () => {
+    const { queryByTestId } = render(
+      <PlayHudOverlay width={400} height={300} onTouchAxis={() => {}} />,
+    );
+    expect(queryByTestId("play-hud-stick")).toBeNull();
+  });
+
+  it("labels an unlabeled TouchJoystick as Stick", () => {
+    const { getByTestId } = render(
+      <PlayHudOverlay
+        width={400}
+        height={300}
+        instances={[
+          { instanceId: "hud", document: hudWith("TouchJoystick") },
+        ]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    expect(getByTestId("play-hud-stick").textContent).toContain("Stick");
+    expect(getByTestId("play-hud-stick").getAttribute("aria-label")).toBe(
+      "Stick",
+    );
+  });
+
+  it("keeps an authored stick name", () => {
+    const { getByTestId } = render(
+      <PlayHudOverlay
+        width={400}
+        height={300}
+        instances={[
+          {
+            instanceId: "hud",
+            document: hudWith("TouchJoystick", "Move Stick"),
+          },
+        ]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    expect(getByTestId("play-hud-stick").textContent).toContain("Move Stick");
   });
 });
