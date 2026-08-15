@@ -11,6 +11,7 @@ import {
   normalizeGraphMembers,
   normalizeGraphComponents,
   normalizeProjectSettings,
+  type ProjectSettings,
 } from "./project";
 
 describe("project schema", () => {
@@ -305,7 +306,7 @@ describe("project schema", () => {
           "": { enabled: true },
           "plug-3": {},
         },
-      }).pluginOverrides,
+      } as unknown as Partial<ProjectSettings>).pluginOverrides,
     ).toEqual({
       "plug-1": { enabled: true },
       "plug-2": { enabled: false },
@@ -328,7 +329,7 @@ describe("project schema", () => {
             pluginOverrides: { "plug-1": { enabled: true } },
           },
         ],
-      }).exportPresets,
+      } as unknown as Partial<ProjectSettings>).exportPresets,
     ).toEqual([
       {
         id: "web",
