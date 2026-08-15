@@ -166,6 +166,35 @@ describe("addClassMember", () => {
     const slice = graph.functionGraphs?.["fn-1"];
     expect(slice?.nodes.map((node) => node.data.pins)).toEqual([pins, pins]);
   });
+
+  it("syncs function signature pins onto matching Call nodes", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = {
+      ...graph,
+      nodes: [
+        {
+          id: "call-1",
+          type: "functions.call",
+          position: { x: 200, y: 80 },
+          data: {
+            title: "Call Jump",
+            functionName: "Jump",
+            classId: "Hero",
+            implicitSelf: true,
+            __nodeType: "functions.call",
+          },
+        },
+      ],
+    };
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" as const },
+      { name: "height", typeId: "float", direction: "in" as const },
+      { name: "then", typeId: "exec", direction: "out" as const },
+    ];
+    graph = patchClassMember(graph, "fn-1", { pins });
+    expect(graph.nodes[0]?.data.pins).toEqual(pins);
+    expect(graph.nodes[0]?.data.__pins).toBeUndefined();
+  });
 });
 
 describe("memberNamePromptCopy", () => {

@@ -25,6 +25,10 @@ export function jsIdent(name: string): string {
   return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
 }
 
+export function objectLiteralKey(name: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
+}
+
 export function pinTypeForMember(typeId: string | undefined): PinType {
   switch (typeId) {
     case "exec":

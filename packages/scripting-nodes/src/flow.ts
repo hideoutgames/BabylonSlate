@@ -9,7 +9,12 @@ import {
   STRING,
   objectRef,
 } from "@babylonslate/scripting";
-import { dataMemberPins, jsIdent, pinTypeForMember } from "./member-pins";
+import {
+  dataMemberPins,
+  jsIdent,
+  objectLiteralKey,
+  pinTypeForMember,
+} from "./member-pins";
 
 export const flowNodes: NodeDefinition[] = [
   {
@@ -89,10 +94,14 @@ export const flowNodes: NodeDefinition[] = [
         typeof properties.classId === "string" && properties.classId.trim()
           ? properties.classId.trim()
           : "BObject";
+      const targetPin =
+        properties.implicitSelf === true
+          ? []
+          : [pin("target", "target", "in", objectRef(classId))];
       return [
         pin("execIn", "exec", "in", EXEC),
         pin("execOut", "then", "out", EXEC),
-        pin("target", "target", "in", objectRef(classId)),
+        ...targetPin,
         ...dataMemberPins(properties, "in"),
       ];
     },
@@ -113,9 +122,9 @@ export const flowNodes: NodeDefinition[] = [
             edge.targetPinId === targetPin.id,
         );
       const targetExpr =
-        targetConnected || ctx.node.properties.implicitSelf !== true
-          ? ctx.input("target")
-          : "ctx.self";
+        !targetPin || (!targetConnected && ctx.node.properties.implicitSelf === true)
+          ? "ctx.self"
+          : ctx.input("target");
       const args: string[] = [];
       for (const pinDef of ctx.node.pins) {
         if (
@@ -234,8 +243,15 @@ export const flowNodes: NodeDefinition[] = [
     category: "flow",
     pins: (properties) =>
       functionEndpointPins(properties, "output"),
-    codegen: () => {
-      /* return marker; exec chain ends here */
+    codegen: (ctx) => {
+      const fields: string[] = [];
+      for (const pinDef of ctx.node.pins) {
+        if (pinDef.direction !== "in" || pinDef.kind === "exec") continue;
+        fields.push(
+          `${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.name)}`,
+        );
+      }
+      ctx.emit(`return { ${fields.join(", ")} };`);
     },
   },
 ];

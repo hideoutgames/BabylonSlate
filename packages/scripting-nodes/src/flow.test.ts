@@ -1,6 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { BOOL, EXEC, FLOAT, objectRef } from "@babylonslate/scripting";
+import {
+  BOOL,
+  EXEC,
+  FLOAT,
+  compileGraph,
+  objectRef,
+  type GraphNode,
+  type LogicGraph,
+  type NodeRegistry,
+} from "@babylonslate/scripting";
+import { createDefaultNodeRegistry } from "./index";
 import { flowNodes } from "./flow";
+
+function node(
+  registry: NodeRegistry,
+  id: string,
+  typeId: string,
+  properties: Record<string, unknown> = {},
+): GraphNode {
+  const def = registry.get(typeId);
+  if (!def) throw new Error(`missing node ${typeId}`);
+  return {
+    id,
+    typeId,
+    position: { x: 0, y: 0 },
+    pins: def.pins(properties),
+    properties,
+  };
+}
 
 describe("flow nodes", () => {
   it("exports at least one node definition", () => {
@@ -94,19 +121,20 @@ describe("flow nodes", () => {
     ]);
   });
 
-  it("maps Call Custom Event pins as Target plus data inputs and Then only", () => {
+  it("omits Target on same-class Call Custom Event and keeps it for other classes", () => {
     const call = flowNodes.find((node) => node.id === "flow.event.call");
     expect(call?.title).toBe("Call Custom Event");
-    const pins = call?.pins({
+    const selfPins = call?.pins({
       name: "On Hit",
       classId: "Hero",
+      implicitSelf: true,
       pins: [
         { name: "amount", typeId: "float", direction: "out" },
         { name: "then", typeId: "exec", direction: "out" },
       ],
     });
     expect(
-      pins?.map((pin) => ({
+      selfPins?.map((pin) => ({
         id: pin.id,
         direction: pin.direction,
         type: pin.type,
@@ -114,11 +142,59 @@ describe("flow nodes", () => {
     ).toEqual([
       { id: "execIn", direction: "in", type: EXEC },
       { id: "execOut", direction: "out", type: EXEC },
-      { id: "target", direction: "in", type: objectRef("Hero") },
       { id: "amount", direction: "in", type: FLOAT },
     ]);
-    expect(pins?.filter((pin) => pin.direction === "out")).toEqual([
-      expect.objectContaining({ id: "execOut", type: EXEC }),
-    ]);
+    const otherPins = call?.pins({
+      name: "On Alert",
+      classId: "Guard",
+      implicitSelf: false,
+      pins: [{ name: "amount", typeId: "float", direction: "out" }],
+    });
+    expect(otherPins?.some((pin) => pin.id === "target")).toBe(true);
+    expect(otherPins?.find((pin) => pin.id === "target")?.type).toEqual(
+      objectRef("Guard"),
+    );
+  });
+
+  it("compiles function Output data pins as a return object", () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "height", typeId: "float", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+      { name: "result", typeId: "float", direction: "out" },
+    ];
+    const graph: LogicGraph = {
+      id: "Jump",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins }),
+        node(registry, "out", "flow.function.output", { pins }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "in",
+          sourcePinId: "exec",
+          targetNodeId: "out",
+          targetPinId: "then",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "in",
+          sourcePinId: "height",
+          targetNodeId: "out",
+          targetPinId: "result",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      exportName: "Jump",
+    });
+    expect(compiled.source).toMatch(/return\s*\{/);
+    expect(compiled.source).toContain("result");
+    expect(compiled.source).toContain("ctx.args");
   });
 });

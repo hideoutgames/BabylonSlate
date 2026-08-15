@@ -104,6 +104,36 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(hydrated.nodes[0]?.data.__pins).toEqual(customPins);
   });
 
+  it("regenerates Call Custom Event pins so same-class Calls drop Target", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "call",
+          type: "flow.event.call",
+          position: { x: 0, y: 0 },
+          data: {
+            name: "On Hit",
+            classId: "Hero",
+            implicitSelf: true,
+            __pins: [
+              {
+                id: "target",
+                name: "target",
+                kind: "data",
+                direction: "in",
+                type: { kind: "objectRef", classId: "Hero" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins?.some((pin) => pin.id === "target")).toBe(false);
+  });
+
   it("injects node visual metadata from the registry", () => {
     const graph: SerializedGraph = {
       nodes: [
@@ -225,7 +255,7 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.function.input")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.function.output")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.call")).toBe(false);
-    expect(nodes.some((node) => node.id === "functions.call")).toBe(true);
+    expect(nodes.some((node) => node.id === "functions.call")).toBe(false);
     expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
     const print = nodes.find((node) => node.id === "debug.print");
     expect(print?.defaultData).toMatchObject({ developmentOnly: true });
@@ -328,7 +358,7 @@ describe("scriptPaletteNodes", () => {
     expect(local?.pins?.some((pin) => pin.id === "amount" && pin.direction === "in")).toBe(
       true,
     );
-    expect(local?.pins?.some((pin) => pin.id === "target")).toBe(true);
+    expect(local?.pins?.some((pin) => pin.id === "target")).toBe(false);
     const other = nodes.find(
       (node) => node.id === "flow.event.call:Guard:On Alert",
     );
@@ -338,6 +368,7 @@ describe("scriptPaletteNodes", () => {
       classId: "Guard",
       implicitSelf: false,
     });
+    expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
   });
 
   it("marks inherited parent-class custom events as implicit-self Calls", () => {
@@ -362,5 +393,83 @@ describe("scriptPaletteNodes", () => {
       classId: "Actor",
       implicitSelf: true,
     });
+    expect(inherited?.pins?.some((pin) => pin.id === "target")).toBe(false);
+  });
+
+  it("injects Call nodes for class functions and other open classes", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [
+          {
+            id: "fn-1",
+            kind: "function",
+            name: "Jump",
+            pins: [
+              { name: "exec", typeId: "exec", direction: "in" },
+              { name: "height", typeId: "float", direction: "in" },
+              { name: "then", typeId: "exec", direction: "out" },
+            ],
+          },
+        ],
+      },
+      otherClassGraphs: {
+        Guard: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "g-1", kind: "function", name: "Alert" }],
+        },
+      },
+    });
+    const local = nodes.find((node) => node.id === "functions.call:Hero:Jump");
+    expect(local?.title).toBe("Call Jump");
+    expect(local?.nodeType).toBe("functions.call");
+    expect(local?.defaultData).toMatchObject({
+      functionName: "Jump",
+      classId: "Hero",
+      implicitSelf: true,
+    });
+    expect(
+      local?.pins?.some((pin) => pin.id === "height" && pin.direction === "in"),
+    ).toBe(true);
+    expect(local?.pins?.some((pin) => pin.id === "target")).toBe(false);
+    const other = nodes.find(
+      (node) => node.id === "functions.call:Guard:Alert",
+    );
+    expect(other?.title).toBe("Call Alert");
+    expect(other?.defaultData).toMatchObject({
+      functionName: "Alert",
+      classId: "Guard",
+      implicitSelf: false,
+    });
+    expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
+  });
+
+  it("marks inherited parent-class functions as implicit-self Calls", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      parentOf: (id) => (id === "Hero" ? "Actor" : null),
+      classId: "Hero",
+      graph: { nodes: [], edges: [], members: [] },
+      otherClassGraphs: {
+        Actor: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "a-1", kind: "function", name: "TakeDamage" }],
+        },
+      },
+    });
+    const inherited = nodes.find(
+      (node) => node.id === "functions.call:Actor:TakeDamage",
+    );
+    expect(inherited?.defaultData).toMatchObject({
+      functionName: "TakeDamage",
+      classId: "Actor",
+      implicitSelf: true,
+    });
+    expect(inherited?.pins?.some((pin) => pin.id === "target")).toBe(false);
   });
 });

@@ -94,6 +94,29 @@ function toScript(
   };
 }
 
+function withFunctionExport(
+  script: CompiledScript,
+  fnGraph: LogicGraph,
+  registry: NodeRegistry,
+  exportName: string,
+): CompiledScript {
+  const compiled = compileGraph(fnGraph, {
+    assetGuid: script.assetGuid,
+    registry,
+    exportName,
+  });
+  const extraBody = compiled.source
+    .split("\n")
+    .filter((line) => !line.startsWith("//# sourceURL"))
+    .join("\n");
+  return {
+    ...script,
+    source: `${script.source.replace(/\n$/, "")}\n${extraBody}`,
+    anchors: [...script.anchors, ...compiled.anchors],
+    entryPoints: [...script.entryPoints, ...compiled.entryPoints],
+  };
+}
+
 describe("script host runs compiled graphs", () => {
   it("ticks an actor scripted from the node catalog", async () => {
     const registry = createDefaultNodeRegistry();
@@ -585,6 +608,133 @@ describe("script host runs compiled graphs", () => {
     const logs = commands.filter((c) => c.type === "log");
     expect(logs).toHaveLength(1);
     expect(String((logs[0] as { message: string }).message)).toContain("5");
+    runtime.stop();
+  });
+
+  it("Call Function on self has no Target pin and returns Output data", async () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "height", typeId: "float", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+      { name: "result", typeId: "float", direction: "out" },
+    ];
+    const jumpGraph: LogicGraph = {
+      id: "Jump",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins }),
+        node(registry, "out", "flow.function.output", { pins }),
+      ],
+      edges: [
+        edge("e1", "in", "exec", "out", "then"),
+        edge("e2", "in", "height", "out", "result"),
+      ],
+    };
+    const eventGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "functions.call", {
+          functionName: "Jump",
+          classId: "Hero",
+          implicitSelf: true,
+          pins,
+          "default:height": 9,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "call", "exec"),
+        edge("e2", "call", "then", "log", "execIn"),
+        edge("e3", "call", "result", "log", "message"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 8,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      withFunctionExport(
+        toScript(eventGraph, registry, "Hero", "hero-asset"),
+        jumpGraph,
+        registry,
+        "Jump",
+      ),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Hero" });
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("9");
+    runtime.stop();
+  });
+
+  it("Call Function on a spawned Target instance runs that class export", async () => {
+    const registry = createDefaultNodeRegistry();
+    const alertPins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+    ];
+    const alertGraph: LogicGraph = {
+      id: "Alert",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins: alertPins }),
+        node(registry, "log", "debug.log", { message: "alert" }),
+        node(registry, "out", "flow.function.output", { pins: alertPins }),
+      ],
+      edges: [
+        edge("e1", "in", "exec", "log", "execIn"),
+        edge("e2", "log", "execOut", "out", "then"),
+      ],
+    };
+    const callerGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "call", "functions.call", {
+          functionName: "Alert",
+          classId: "Guard",
+          implicitSelf: false,
+          pins: alertPins,
+        }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "spawn", "execIn"),
+        edge("e2", "spawn", "execOut", "call", "exec"),
+        edge("e3", "spawn", "out", "call", "target"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 9,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      withFunctionExport(
+        {
+          assetGuid: "guard-asset",
+          classId: "Guard",
+          source: "//# sourceURL=babylonslate:///guard-asset.js\n",
+          anchors: [],
+          entryPoints: [],
+        },
+        alertGraph,
+        registry,
+        "Alert",
+      ),
+      toScript(callerGraph, registry, "Caller", "caller-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Caller" });
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("alert");
     runtime.stop();
   });
 

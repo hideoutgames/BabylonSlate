@@ -26,6 +26,18 @@ function hasNonEmptyPins(data: Record<string, unknown>): boolean {
   return Array.isArray(data.__pins) && data.__pins.length > 0;
 }
 
+function catalogTypeId(node: {
+  type: string;
+  data: Record<string, unknown>;
+}): string {
+  const hinted = node.data.__nodeType;
+  return typeof hinted === "string" ? hinted : node.type;
+}
+
+function shouldRegeneratePins(typeId: string): boolean {
+  return typeId === "flow.event.call" || typeId === "functions.call";
+}
+
 function withVisualMeta(
   data: Record<string, unknown>,
   def: { category: string; pure?: boolean; latent?: boolean } | undefined,
@@ -54,9 +66,8 @@ export function hydrateSerializedGraphForEditor(
     ...graph,
     nodes: graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
-      const typeIdHint =
-        typeof rawData.__nodeType === "string" ? rawData.__nodeType : node.type;
-      if (hasNonEmptyPins(rawData)) {
+      const typeIdHint = catalogTypeId({ type: node.type, data: rawData });
+      if (hasNonEmptyPins(rawData) && !shouldRegeneratePins(typeIdHint)) {
         return {
           ...node,
           data: withVisualMeta(
@@ -247,6 +258,69 @@ function callCustomEventPaletteNodes(
   });
 }
 
+type FunctionRow = {
+  name: string;
+  pins: GraphClassMemberPin[];
+};
+
+function functionRows(graph?: SerializedGraph): FunctionRow[] {
+  const byName = new Map<string, FunctionRow>();
+  for (const member of graph?.members ?? []) {
+    if (member.kind !== "function" || !member.name) continue;
+    byName.set(member.name, {
+      name: member.name,
+      pins: member.pins ?? [],
+    });
+  }
+  return [...byName.values()];
+}
+
+function callFunctionPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get("functions.call");
+  if (!def) return [];
+  const localClassId = options?.classId ?? "BObject";
+  const localFunctions = functionRows(options?.graph);
+  const localNames = new Set(localFunctions.map((entry) => entry.name));
+  const rows: Array<{
+    classId: string;
+    fn: FunctionRow;
+    implicitSelf: boolean;
+  }> = localFunctions.map((fn) => ({
+    classId: localClassId,
+    fn,
+    implicitSelf: true,
+  }));
+  for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
+    if (classId === localClassId) continue;
+    const implicitSelf = callImplicitSelf(classId, options);
+    for (const fn of functionRows(graph)) {
+      if (implicitSelf && localNames.has(fn.name)) continue;
+      rows.push({ classId, fn, implicitSelf });
+    }
+  }
+  return rows.map(({ classId, fn, implicitSelf }) => {
+    const defaultData: Record<string, unknown> = {
+      functionName: fn.name,
+      classId,
+      implicitSelf,
+      pins: fn.pins,
+    };
+    return {
+      id: `functions.call:${classId}:${fn.name}`,
+      nodeType: "functions.call",
+      title: `Call ${fn.name}`,
+      category: def.category,
+      pins: def.pins(defaultData),
+      pure: def.pure,
+      latent: def.latent,
+      defaultData,
+    };
+  });
+}
+
 /** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
 export function scriptPaletteNodes(
   nodeRegistry: NodeRegistry = registry,
@@ -276,7 +350,11 @@ export function scriptPaletteNodes(
         Object.keys(defaultData).length > 0 ? defaultData : undefined,
     };
   });
-  return [...catalog, ...callCustomEventPaletteNodes(nodeRegistry, options)];
+  return [
+    ...catalog,
+    ...callCustomEventPaletteNodes(nodeRegistry, options),
+    ...callFunctionPaletteNodes(nodeRegistry, options),
+  ];
 }
 
 export function hydrateClassDocumentPayload(

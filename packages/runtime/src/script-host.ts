@@ -124,6 +124,11 @@ export interface ScriptContext {
     eventName: string,
     args?: Record<string, unknown>,
   ): void;
+  invokeFunction(
+    target: Actor | null | undefined,
+    functionName: string,
+    args?: Record<string, unknown>,
+  ): Record<string, unknown>;
   isActionHeld(action: string): boolean;
   wasActionPressed?(action: string): boolean;
   wasActionReleased?(action: string): boolean;
@@ -443,6 +448,42 @@ export class ScriptHost {
           0,
           eventArgs ?? {},
         );
+      },
+      invokeFunction: (target, functionName, fnArgs) => {
+        const actor = (target ?? self) as Actor | null;
+        if (!actor || typeof functionName !== "string" || !functionName) {
+          return {};
+        }
+        const loaded = this.byClassId.get(actor.classId);
+        if (!loaded || loaded.length === 0) return {};
+        let result: unknown = {};
+        for (const entry of loaded) {
+          const fn = entry.exports[functionName];
+          if (typeof fn !== "function") continue;
+          const nested = this.createContext(
+            actor,
+            deltaSeconds,
+            tickIndex,
+            fnArgs ?? {},
+            tick,
+            extras,
+          );
+          try {
+            const value = (fn as (ctx: ScriptContext) => unknown)(nested);
+            if (value instanceof Promise) {
+              void value.catch((error) => this.services.reportError(error));
+              continue;
+            }
+            result = value ?? {};
+          } catch (error) {
+            this.services.reportError(error);
+          }
+        }
+        return (
+          result && typeof result === "object" && !Array.isArray(result)
+            ? result
+            : {}
+        ) as Record<string, unknown>;
       },
       isActionHeld: (action) => tick?.isActionHeld?.(action) ?? false,
       wasActionPressed: (action) => tick?.wasActionPressed?.(action) ?? false,
