@@ -4,7 +4,7 @@ import {
   createDefaultScene,
   createMeshComponent,
 } from "@babylonslate/core";
-import { MoveNodeCommand } from "./commands/graph";
+import { MoveNodeCommand, SetGraphFunctionGraphsCommand } from "./commands/graph";
 import {
   AddActorCommand,
   AddComponentCommand,
@@ -73,6 +73,32 @@ describe("journal", () => {
     };
     const next = revived!.apply(graph) as typeof graph;
     expect(next.nodes[0]?.position).toEqual({ x: 5, y: 5 });
+  });
+
+  it("round-trips SetGraphFunctionGraphsCommand through the journal", () => {
+    const functionGraphs = {
+      "fn-1": {
+        nodes: [
+          {
+            id: "fn-1-input",
+            type: "flow.function.input",
+            position: { x: 80, y: 120 },
+            data: { title: "Input" },
+          },
+        ],
+        edges: [],
+      },
+    };
+    const payload = commandToJournalPayload(
+      new SetGraphFunctionGraphsCommand(undefined, functionGraphs),
+    );
+    expect(payload.type).toBe("graph.setFunctionGraphs");
+    const revived = reviveCommand(payload);
+    expect(revived).toBeInstanceOf(SetGraphFunctionGraphsCommand);
+    const next = revived!.apply({ nodes: [], edges: [] }) as {
+      functionGraphs?: typeof functionGraphs;
+    };
+    expect(next.functionGraphs).toEqual(functionGraphs);
   });
 
   it("round-trips every scene command type through the journal", () => {

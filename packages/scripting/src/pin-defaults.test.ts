@@ -15,6 +15,8 @@ import {
   VEC4,
   arrayOf,
   mapOf,
+  actorRef,
+  classRef,
   objectRef,
   enumRef,
 } from "./types";
@@ -22,6 +24,7 @@ import {
   defaultJsValue,
   listUnconnectedLiteralPinDefaults,
   pinAcceptsLiteralDefault,
+  pinRejectsStoredDefault,
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
   pinDefaultAsString,
@@ -47,6 +50,7 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(COLOR)).toBe(true);
     expect(pinAcceptsLiteralDefault(VEC4)).toBe(true);
     expect(pinAcceptsLiteralDefault(enumRef("e1"))).toBe(true);
+    expect(pinAcceptsLiteralDefault(classRef("Actor"))).toBe(true);
   });
 
   it("rejects exec, object refs, containers, transform, and wildcards", () => {
@@ -55,7 +59,18 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(arrayOf(FLOAT))).toBe(false);
     expect(pinAcceptsLiteralDefault(mapOf(STRING, FLOAT))).toBe(false);
     expect(pinAcceptsLiteralDefault(objectRef("Actor"))).toBe(false);
+    expect(pinAcceptsLiteralDefault(actorRef("Actor"))).toBe(false);
     expect(pinAcceptsLiteralDefault(BOXED_WILDCARD)).toBe(false);
+  });
+});
+
+describe("pinRejectsStoredDefault", () => {
+  it("rejects only live object and actor instance pins", () => {
+    expect(pinRejectsStoredDefault(objectRef("Actor"))).toBe(true);
+    expect(pinRejectsStoredDefault(actorRef("Actor"))).toBe(true);
+    expect(pinRejectsStoredDefault(classRef("Actor"))).toBe(false);
+    expect(pinRejectsStoredDefault(BOXED_WILDCARD)).toBe(false);
+    expect(pinRejectsStoredDefault(STRING)).toBe(false);
   });
 });
 
@@ -71,6 +86,7 @@ describe("defaultJsValue", () => {
     expect(defaultJsValue(COLOR)).toEqual({ x: 0, y: 0, z: 0, w: 0 });
     expect(defaultJsValue(VEC4)).toEqual({ x: 0, y: 0, z: 0, w: 0 });
     expect(defaultJsValue(enumRef("e1"))).toBe("");
+    expect(defaultJsValue(classRef("Actor"))).toBe("Actor");
   });
 });
 

@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import {
   AssetPicker,
+  ClassPicker,
   FUNCTION_PIN_PICKER_TYPES,
+  PIN_PICKER_TYPES,
   PanelFrame,
   ParameterListEditor,
   PinListEditor,
@@ -45,6 +47,7 @@ import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import {
   componentPropertyRows,
+  subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
@@ -59,7 +62,9 @@ import {
   parameterRowsFromPinList,
   pinDefaultPropertyRows,
   pinListFromParameterRows,
+  pinsFromNodeData,
 } from "../lib/graph-inspector";
+import { pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { patchClassMember } from "../lib/class-members";
 
 function ClassMemberDetails({
@@ -391,6 +396,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     updateComponentTransform,
   } = usePrefabEditing();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
+  const [classPinPick, setClassPinPick] = useState<{
+    pinId: string;
+    name: string;
+    constraintClassId: string;
+  } | null>(null);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
@@ -517,6 +527,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
 
   const isExecJs = selectedNode.type === "debug.executeJavaScript";
   const isCommandRun = selectedNode.type === "flow.event.commandRun";
+  const isCustomEvent = selectedNode.type === "flow.event.custom";
   const isLog = selectedNode.type === "debug.log";
   const inputs = Array.isArray(selectedNode.data.inputs)
     ? (selectedNode.data.inputs as Array<{ name: string; type?: unknown }>)
@@ -533,6 +544,30 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         enumValues?: unknown;
       }>)
     : [];
+  const eventMember = isCustomEvent
+    ? (graph.members ?? []).find(
+        (member) =>
+          member.kind === "event" &&
+          (member.id === selectedNode.id ||
+            member.name === selectedNode.data.name),
+      )
+    : undefined;
+  const eventOutputRows: PinListRow[] = (
+    eventMember?.pins ??
+    (Array.isArray(selectedNode.data.pins)
+      ? (selectedNode.data.pins as Array<{
+          name?: string;
+          typeId?: string;
+          direction?: string;
+        }>)
+      : [])
+  )
+    .filter((pin) => pin.direction !== "in" && pin.name)
+    .map((pin, index) => ({
+      id: `${selectedNode.id}-out-${index}`,
+      name: String(pin.name),
+      type: pin.typeId ?? "float",
+    }));
   const title =
     typeof selectedNode.data.title === "string" && selectedNode.data.title
       ? selectedNode.data.title
@@ -560,6 +595,16 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       actionNames: inputMappings.actions.map((action) => action.name),
       axisNames: inputMappings.axes.map((axis) => axis.name),
       enumMembers,
+      classEntries: subclassClassEntries(
+        "BObject",
+        assetRegistry?.list() ?? [],
+      ),
+      onPickClass: (pinId, constraintClassId) => {
+        const name =
+          pinsFromNodeData(selectedNode.data).find((pin) => pin.id === pinId)
+            ?.name ?? pinId;
+        setClassPinPick({ pinId, name, constraintClassId });
+      },
     },
   );
   const logRows = isLog
@@ -675,7 +720,55 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             />
           </>
         ) : null}
+        {isCustomEvent ? (
+          <PinListEditor
+            title="Outputs"
+            rows={eventOutputRows}
+            types={PIN_PICKER_TYPES}
+            testIdPrefix="event-out"
+            data-testid="inspector-event-outputs"
+            onChange={(rows) => {
+              const pins = rows.map((row) => ({
+                name: row.name,
+                typeId: String(row.type),
+                direction: "out" as const,
+              }));
+              if (eventMember) {
+                void applyGraphChange(
+                  documentId,
+                  patchClassMember(graph, eventMember.id, { pins }),
+                );
+                return;
+              }
+              updateNodeData({ pins });
+            }}
+          />
+        ) : null}
       </div>
+      <ClassPicker
+        open={classPinPick !== null}
+        onOpenChange={(open) => {
+          if (!open) setClassPinPick(null);
+        }}
+        classes={
+          classPinPick
+            ? subclassClassEntries(
+                classPinPick.constraintClassId,
+                assetRegistry?.list() ?? [],
+              )
+            : []
+        }
+        allowNone={false}
+        onPick={(classId) => {
+          if (classPinPick && classId) {
+            updateNodeData({
+              [pinDefaultPropertyKey(classPinPick.name)]: classId,
+            });
+          }
+          setClassPinPick(null);
+        }}
+        data-testid="inspector-class-picker"
+      />
     </PanelFrame>
   );
 }

@@ -7,6 +7,7 @@ import {
   RemoveNodeCommand,
   SetGraphMembersCommand,
   SetGraphComponentsCommand,
+  SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
   createAddEdgeCommandFromJson,
   createAddNodeCommandFromJson,
@@ -15,6 +16,7 @@ import {
   createRemoveNodeCommandFromJson,
   createSetGraphMembersCommandFromJson,
   createSetGraphComponentsCommandFromJson,
+  createSetGraphFunctionGraphsCommandFromJson,
   createSetNodeDataCommandFromJson,
 } from "./commands/graph";
 import {
@@ -162,6 +164,14 @@ export function commandToJournalPayload(
         to: components.to,
       };
     }
+    case "graph.setFunctionGraphs": {
+      const functionGraphs = command as SetGraphFunctionGraphsCommand;
+      return {
+        type: functionGraphs.type,
+        from: functionGraphs.from,
+        to: functionGraphs.to,
+      };
+    }
     default: {
       if (
         command.type.startsWith("scene.") ||
@@ -201,6 +211,10 @@ export function registerGraphCommandRevivers(): void {
   registerCommandReviver(
     "graph.setComponents",
     createSetGraphComponentsCommandFromJson,
+  );
+  registerCommandReviver(
+    "graph.setFunctionGraphs",
+    createSetGraphFunctionGraphsCommandFromJson,
   );
 }
 

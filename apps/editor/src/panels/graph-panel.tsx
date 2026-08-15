@@ -22,6 +22,7 @@ import {
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
+import { classIdForGraphPath } from "../services/script-compiler";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
@@ -64,11 +65,21 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   );
   const parentClass = indexed?.header.parentClass ?? null;
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-  const classEventOptions = { parentClass, parentOf };
+  const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent =
     doc?.ref.kind === "graph" && doc.content
       ? (doc.content as SerializedGraph)
       : null;
+  const otherClassGraphs = useMemo(() => {
+    const graphs: Record<string, SerializedGraph> = {};
+    for (const entry of openDocuments) {
+      if (entry.ref.kind !== "graph" || !entry.content) continue;
+      const id = classIdForGraphPath(entry.ref.path);
+      if (!id || id === classId) continue;
+      graphs[id] = entry.content as SerializedGraph;
+    }
+    return graphs;
+  }, [classId, openDocuments]);
   const graph = useMemo(() => {
     const slice =
       activeFunctionId && graphContent?.functionGraphs?.[activeFunctionId]
@@ -83,7 +94,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         }
       : graphContent;
     return hydrateSerializedGraphForEditor(
-      visible ?? createDefaultLogicGraphSerialized(registry, classEventOptions),
+      visible ??
+        createDefaultLogicGraphSerialized(registry, { parentClass, parentOf }),
       registry,
     );
   }, [activeFunctionId, graphContent, parentClass, parentOf]);
@@ -108,8 +120,15 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   }, [graph, assetGuid, documentId, setDiagnostics]);
 
   const paletteNodes = useMemo(
-    (): PaletteNode[] => scriptPaletteNodes(registry, { parentClass, parentOf }),
-    [parentClass, parentOf],
+    (): PaletteNode[] =>
+      scriptPaletteNodes(registry, {
+        parentClass,
+        parentOf,
+        classId,
+        graph: graphContent ?? undefined,
+        otherClassGraphs,
+      }),
+    [classId, graphContent, otherClassGraphs, parentClass, parentOf],
   );
 
   const focusId = focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined;

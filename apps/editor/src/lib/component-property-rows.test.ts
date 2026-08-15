@@ -3,6 +3,7 @@ import type { SerializedComponent } from "@babylonslate/core";
 import {
   componentPropertyRows,
   gameInstanceClassEntries,
+  subclassClassEntries,
   type ComponentPropertyContext,
 } from "./component-property-rows";
 
@@ -430,5 +431,23 @@ describe("gameInstanceClassEntries", () => {
       { header: { type: "Mesh", name: "Rock" } },
     ]);
     expect(entries.map((entry) => entry.id)).toEqual(["GameInstance", "MyGame"]);
+  });
+});
+
+describe("subclassClassEntries", () => {
+  it("lists the constraint class and subclasses for a classRef pin", () => {
+    const actorEntries = subclassClassEntries("Actor", [
+      { header: { type: "Class", name: "Hero", parentClass: "Actor" } },
+      {
+        header: { type: "Class", name: "MyGame", parentClass: "GameInstance" },
+      },
+    ]);
+    expect(actorEntries.map((entry) => entry.id)).toContain("Actor");
+    expect(actorEntries.map((entry) => entry.id)).toContain("Hero");
+    expect(actorEntries.map((entry) => entry.id)).not.toContain("MyGame");
+    const componentEntries = subclassClassEntries("ActorComponent", []);
+    expect(componentEntries.map((entry) => entry.id)).toContain("ActorComponent");
+    expect(componentEntries.map((entry) => entry.id)).toContain("MeshComponent");
+    expect(componentEntries.map((entry) => entry.id)).not.toContain("Actor");
   });
 });

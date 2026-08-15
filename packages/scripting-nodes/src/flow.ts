@@ -7,7 +7,9 @@ import {
   FLOAT,
   INT,
   STRING,
+  objectRef,
 } from "@babylonslate/scripting";
+import { dataMemberPins, jsIdent, pinTypeForMember } from "./member-pins";
 
 export const flowNodes: NodeDefinition[] = [
   {
@@ -64,9 +66,70 @@ export const flowNodes: NodeDefinition[] = [
     title: "Event Custom",
     category: "flow",
     pure: true,
-    pins: () => [pin("execOut", "then", "out", EXEC)],
-    codegen: () => {
-      /* entry point emitted by the compiler */
+    pins: (properties) => [
+      pin("execOut", "then", "out", EXEC),
+      ...dataMemberPins(properties, "out"),
+    ],
+    codegen: (ctx) => {
+      const out: Record<string, string> = {};
+      for (const pinDef of ctx.node.pins) {
+        if (pinDef.kind === "exec" || pinDef.direction !== "out") continue;
+        out[pinDef.name] = `(ctx.commandArgs[${JSON.stringify(pinDef.name)}])`;
+      }
+      if (Object.keys(out).length === 0) return;
+      return out;
+    },
+  },
+  {
+    id: "flow.event.call",
+    title: "Call Custom Event",
+    category: "flow",
+    pins: (properties) => {
+      const classId =
+        typeof properties.classId === "string" && properties.classId.trim()
+          ? properties.classId.trim()
+          : "BObject";
+      return [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        pin("target", "target", "in", objectRef(classId)),
+        ...dataMemberPins(properties, "in"),
+      ];
+    },
+    codegen: (ctx) => {
+      const raw =
+        typeof ctx.node.properties.name === "string"
+          ? ctx.node.properties.name
+          : "Custom";
+      const eventName = jsIdent(raw);
+      const targetPin = ctx.node.pins.find(
+        (entry) => entry.name === "target" && entry.direction === "in",
+      );
+      const targetConnected =
+        !!targetPin &&
+        ctx.graph.edges.some(
+          (edge) =>
+            edge.targetNodeId === ctx.node.id &&
+            edge.targetPinId === targetPin.id,
+        );
+      const targetExpr =
+        targetConnected || ctx.node.properties.implicitSelf !== true
+          ? ctx.input("target")
+          : "ctx.self";
+      const args: string[] = [];
+      for (const pinDef of ctx.node.pins) {
+        if (
+          pinDef.direction !== "in" ||
+          pinDef.kind === "exec" ||
+          pinDef.name === "target"
+        ) {
+          continue;
+        }
+        args.push(`${JSON.stringify(pinDef.name)}: ${ctx.input(pinDef.name)}`);
+      }
+      ctx.emit(
+        `ctx.invokeCustomEvent(${targetExpr}, ${JSON.stringify(eventName)}, { ${args.join(", ")} });`,
+      );
     },
   },
   {
@@ -176,22 +239,6 @@ export const flowNodes: NodeDefinition[] = [
     },
   },
 ];
-
-function pinTypeForMember(typeId: string | undefined): PinType {
-  switch (typeId) {
-    case "exec":
-      return EXEC;
-    case "bool":
-      return BOOL;
-    case "int":
-      return INT;
-    case "string":
-    case "enum":
-      return STRING;
-    default:
-      return FLOAT;
-  }
-}
 
 function functionEndpointPins(
   properties: Record<string, unknown>,

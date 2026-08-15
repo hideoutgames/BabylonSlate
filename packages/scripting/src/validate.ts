@@ -8,6 +8,11 @@ import {
 } from "./type-context";
 import { isAssignable } from "./types";
 import {
+  pinAcceptsLiteralDefault,
+  pinRejectsStoredDefault,
+  readPinDefault,
+} from "./pin-defaults";
+import {
   pinTypeKey,
   resolveWildcardPinTypes,
 } from "./wildcard-resolve";
@@ -253,12 +258,30 @@ function validatePinTyping(
       const connected = graph.edges.some(
         (e) => e.targetNodeId === node.id && e.targetPinId === pin.id,
       );
+      const stored = readPinDefault(node.properties, pin.name);
+      const hasStored = stored !== undefined;
+      if (hasStored && pinRejectsStoredDefault(pin.type)) {
+        out.push(
+          diagnostic({
+            code: "pin.invalid_default",
+            message: `Pin "${pin.name}" cannot store a literal default`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+            pinId: pin.id,
+          }),
+        );
+      }
       if (!connected && pin.type.kind !== "exec") {
-        // Required data inputs without a default property key.
-        const hasDefault =
-          node.properties[`default:${pin.name}`] !== undefined ||
-          node.properties[pin.name] !== undefined;
-        if (!hasDefault) {
+        const implicitSelfTarget =
+          pin.name === "target" &&
+          node.properties.implicitSelf === true &&
+          (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
+        const defaultClearsMissing =
+          hasStored &&
+          (pinAcceptsLiteralDefault(pin.type) ||
+            pin.type.kind === "boxedWildcard");
+        if (!defaultClearsMissing && !implicitSelfTarget) {
           out.push(
             diagnostic({
               severity: "warning",

@@ -1,4 +1,5 @@
-import type { SerializedGraph } from "@babylonslate/core";
+import type { GraphClassMemberPin, SerializedGraph } from "@babylonslate/core";
+import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
   fromSerializedGraph,
   validateGraphs,
@@ -156,12 +157,102 @@ export function createDefaultLogicGraphSerialized(
   return logicToSerializedGraph(logic);
 }
 
+export type ScriptPaletteOptions = ClassEventOptions & {
+  classId?: string;
+  graph?: SerializedGraph;
+  otherClassGraphs?: Record<string, SerializedGraph>;
+};
+
+type CustomEventRow = {
+  name: string;
+  pins: GraphClassMemberPin[];
+};
+
+function customEventRows(graph?: SerializedGraph): CustomEventRow[] {
+  const byName = new Map<string, CustomEventRow>();
+  for (const member of graph?.members ?? []) {
+    if (member.kind !== "event" || !member.name) continue;
+    byName.set(member.name, {
+      name: member.name,
+      pins: member.pins ?? [],
+    });
+  }
+  for (const node of graph?.nodes ?? []) {
+    if (node.type !== "flow.event.custom") continue;
+    const name = typeof node.data.name === "string" ? node.data.name : "";
+    if (!name || byName.has(name)) continue;
+    const pins = Array.isArray(node.data.pins)
+      ? (node.data.pins as GraphClassMemberPin[])
+      : [];
+    byName.set(name, { name, pins });
+  }
+  return [...byName.values()];
+}
+
+function callImplicitSelf(
+  eventClassId: string,
+  options?: ScriptPaletteOptions,
+): boolean {
+  const localId = options?.classId;
+  if (!localId) return false;
+  if (localId === eventClassId) return true;
+  const parentOf =
+    options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  return walkAncestry(localId, parentOf).includes(eventClassId);
+}
+
+function callCustomEventPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get("flow.event.call");
+  if (!def) return [];
+  const localClassId = options?.classId ?? "BObject";
+  const localEvents = customEventRows(options?.graph);
+  const localNames = new Set(localEvents.map((event) => event.name));
+  const rows: Array<{
+    classId: string;
+    event: CustomEventRow;
+    implicitSelf: boolean;
+  }> = localEvents.map((event) => ({
+    classId: localClassId,
+    event,
+    implicitSelf: true,
+  }));
+  for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
+    if (classId === localClassId) continue;
+    const implicitSelf = callImplicitSelf(classId, options);
+    for (const event of customEventRows(graph)) {
+      if (implicitSelf && localNames.has(event.name)) continue;
+      rows.push({ classId, event, implicitSelf });
+    }
+  }
+  return rows.map(({ classId, event, implicitSelf }) => {
+    const defaultData: Record<string, unknown> = {
+      name: event.name,
+      classId,
+      implicitSelf,
+      pins: event.pins,
+    };
+    return {
+      id: `flow.event.call:${classId}:${event.name}`,
+      nodeType: "flow.event.call",
+      title: `Call ${event.name}`,
+      category: def.category,
+      pins: def.pins(defaultData),
+      pure: def.pure,
+      latent: def.latent,
+      defaultData,
+    };
+  });
+}
+
 /** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
 export function scriptPaletteNodes(
   nodeRegistry: NodeRegistry = registry,
-  options?: ClassEventOptions,
+  options?: ScriptPaletteOptions,
 ): PaletteNode[] {
-  return nodeRegistry
+  const catalog = nodeRegistry
     .list()
     .filter((def) => isScriptCatalogNodeAllowed(def.id, options))
     .map((def) => {
@@ -185,6 +276,7 @@ export function scriptPaletteNodes(
         Object.keys(defaultData).length > 0 ? defaultData : undefined,
     };
   });
+  return [...catalog, ...callCustomEventPaletteNodes(nodeRegistry, options)];
 }
 
 export function hydrateClassDocumentPayload(

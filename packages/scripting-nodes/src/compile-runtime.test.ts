@@ -274,6 +274,61 @@ describe("compiler emits runnable JavaScript", () => {
     expect(compiled.source).toContain("function On_Hit(ctx)");
   });
 
+  it("compiles Call Custom Event to invokeCustomEvent with pin defaults", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "flow.event.call", {
+          name: "On Hit",
+          classId: "Hero",
+          implicitSelf: true,
+          pins: [{ name: "amount", typeId: "float", direction: "out" }],
+          "default:amount": 7,
+        }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "call", "execIn")],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "hero", registry });
+    expect(compiled.source).toContain("ctx.invokeCustomEvent");
+    expect(compiled.source).toContain("ctx.self");
+    expect(compiled.source).toContain("On_Hit");
+    expect(compiled.source).toContain("7");
+  });
+
+  it("compiles a wired Call Target to invokeCustomEvent input, not ctx.self", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "call", "flow.event.call", {
+          name: "On Alert",
+          classId: "Guard",
+          implicitSelf: false,
+          pins: [{ name: "amount", typeId: "float", direction: "out" }],
+          "default:amount": 3,
+        }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "spawn", "execIn"),
+        edge("e2", "spawn", "execOut", "call", "execIn"),
+        edge("e3", "spawn", "out", "call", "target"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "hero", registry });
+    expect(compiled.source).toMatch(
+      /ctx\.invokeCustomEvent\([^,]*spawn[^,]*,\s*"On_Alert"/,
+    );
+    expect(compiled.source).not.toMatch(
+      /ctx\.invokeCustomEvent\(\s*ctx\.self\s*,/,
+    );
+  });
+
   it("anchors ExecuteJavaScript user-body lines with bodyLine", () => {
     const registry = createDefaultNodeRegistry();
     const body = "const a = 1;\nthrow new Error('from body');";

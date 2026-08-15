@@ -43,6 +43,7 @@ export * from "./debug";
 export * from "./interface";
 export * from "./variables";
 export * from "./functions";
+export * from "./member-pins";
 export * from "./casting";
 export * from "./timers";
 export * from "./behaviour-tree";

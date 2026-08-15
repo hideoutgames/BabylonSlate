@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compileGraph,
+  classRef,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -35,6 +36,15 @@ function loadModule(source: string): Record<string, unknown> {
 describe("component nodes", () => {
   it("registers Add Component", () => {
     expect(componentNodes.map((n) => n.id)).toContain("component.add");
+  });
+
+  it("uses a classRef pin for component classId", () => {
+    for (const id of ["component.get", "component.has", "component.add"] as const) {
+      const def = componentNodes.find((node) => node.id === id);
+      expect(def?.pins({}).find((entry) => entry.id === "classId")?.type).toEqual(
+        classRef("ActorComponent"),
+      );
+    }
   });
 
   it("compiled Add Component calls ctx.addComponent", () => {
