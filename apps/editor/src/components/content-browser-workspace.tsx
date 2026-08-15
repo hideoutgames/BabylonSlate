@@ -1618,6 +1618,7 @@ export function ContentBrowserWorkspace() {
             <AlertDialogCancel
               disabled={busy}
               size="touch"
+              className="h-[var(--touch-target,44px)]"
               data-testid="content-browser-delete-cancel"
             >
               Cancel
@@ -1625,6 +1626,7 @@ export function ContentBrowserWorkspace() {
             <AlertDialogAction
               variant="destructive"
               size="touch"
+              className="h-[var(--touch-target,44px)]"
               disabled={busy}
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {

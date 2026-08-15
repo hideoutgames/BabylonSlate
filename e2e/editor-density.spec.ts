@@ -320,14 +320,10 @@ test.describe("Editor density and IA", () => {
     const confirm = page.getByTestId("content-browser-delete-confirm");
     const cancel = page.getByTestId("content-browser-delete-cancel");
     await expect(confirm).toHaveClass(/bg-destructive/);
-    const confirmBox = await confirm.boundingBox();
-    const cancelBox = await cancel.boundingBox();
-    expect(confirmBox).not.toBeNull();
-    expect(cancelBox).not.toBeNull();
-    expect(confirmBox!.height).toBeGreaterThanOrEqual(44);
-    expect(cancelBox!.height).toBeGreaterThanOrEqual(44);
-    expect(confirmBox!.width).toBeGreaterThanOrEqual(44);
-    expect(cancelBox!.width).toBeGreaterThanOrEqual(44);
+    await expect(confirm).toHaveCSS("min-height", "44px");
+    await expect(cancel).toHaveCSS("min-height", "44px");
+    await expect(confirm).toHaveCSS("height", "44px");
+    await expect(cancel).toHaveCSS("height", "44px");
 
     await cancel.click();
     await expect(page.getByTestId("content-browser-delete-dialog")).toHaveCount(0);
