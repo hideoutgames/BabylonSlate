@@ -144,6 +144,8 @@ Toolbar `DropdownMenu`s (Debug, Settings, Add) and picker `SearchDropdown`s defa
 
 `DropdownMenuLabel` is a Base UI `Menu.GroupLabel` and must sit inside `DropdownMenuGroup`. Opening Debug without that group throws (production error #31) and unmounts the editor to a black screen.
 
+Opening an **old Scene** used to do the same: Details read missing additive `settings.grid` / `environmentColor` and React emptied `#root`. Editor load now runs `normalizeScene` (see [scene-editing.md](scene-editing.md)). Each document tab is wrapped in `WorkspaceErrorBoundary` so a later panel throw shows an inline Alert instead of a black page.
+
 `#root` uses `isolation: isolate` so Base UI portals stack above the app instead of fighting chrome `z-index`. `body` is `position: relative` so iOS 26+ visual-viewport backdrops still cover the shell.
 
 ## UI composition
