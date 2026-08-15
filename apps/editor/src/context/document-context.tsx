@@ -67,6 +67,7 @@ import {
 import { ProjectService, type PluginImportResult } from "../services/project-service";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
+import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
 import type { CreateProjectOptions } from "../lib/create-project";
 import {
@@ -699,19 +700,30 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  const attachEnginePlugins = useCallback(async () => {
+    const storage = await ensureEnginePluginStorage();
+    projectService.setEnginePluginStorage(storage);
+  }, [projectService]);
+
+  useEffect(() => {
+    void attachEnginePlugins();
+  }, [attachEnginePlugins]);
+
   const openProject = useCallback(async () => {
+    await attachEnginePlugins();
     const { document, layouts, migrationPending: pending } =
       await projectService.openProject();
     await enterEditor(document, layouts, pending);
-  }, [enterEditor, projectService]);
+  }, [attachEnginePlugins, enterEditor, projectService]);
 
   const createEmptyProject = useCallback(
     async (name: string, options?: CreateProjectOptions) => {
+      await attachEnginePlugins();
       const { document, layouts, migrationPending: pending } =
         await projectService.createEmptyProject(name, options);
       await enterEditor(document, layouts, pending);
     },
-    [enterEditor, projectService],
+    [attachEnginePlugins, enterEditor, projectService],
   );
 
   const createFromTemplate = useCallback(
@@ -724,6 +736,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!template) {
         throw new Error(`Unknown template: ${templateId}`);
       }
+      await attachEnginePlugins();
       const { document, layouts, migrationPending: pending } =
         await projectService.createFromTemplate({
           templateFiles: template.files,
@@ -732,16 +745,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         });
       await enterEditor(document, layouts, pending);
     },
-    [enterEditor, projectService, templates],
+    [attachEnginePlugins, enterEditor, projectService, templates],
   );
 
   const openListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
+      await attachEnginePlugins();
       const { document, layouts, migrationPending: pending } =
         await projectService.openListedProject(handle);
       await enterEditor(document, layouts, pending);
     },
-    [enterEditor, projectService],
+    [attachEnginePlugins, enterEditor, projectService],
   );
 
   const renameListedProject = useCallback(
@@ -776,10 +790,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const reconnectProject = useCallback(async () => {
+    await attachEnginePlugins();
     const { document, layouts, migrationPending: pending } =
       await projectService.reconnect();
     await enterEditor(document, layouts, pending);
-  }, [enterEditor, projectService]);
+  }, [attachEnginePlugins, enterEditor, projectService]);
 
   const saveProject = useCallback(async (): Promise<boolean> => {
     const document = projectDocumentRef.current;
@@ -1734,6 +1749,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
         guidForPath: (path: string) => string | null;
+        pluginGuids: () => string[];
+        enginePluginLoad: () => {
+          entries: number;
+          unpacked: number;
+          errors: string[];
+        };
+        assetByGuid: (guid: string) => {
+          guid: string;
+          type: string;
+          path: string;
+          placeholder: boolean;
+        } | null;
+        seedMissingPluginOverride: (guid: string) => Promise<{
+          guid: string;
+          type: string;
+          path: string;
+          placeholder: boolean;
+        } | null>;
         activeTilemapTile: (gx: number, gy: number) => number | null;
       };
     };
@@ -1891,6 +1924,35 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      pluginGuids: () =>
+        projectService.plugins.map((plugin) => plugin.pluginGuid),
+      enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
+      assetByGuid: (guid: string) => {
+        const asset = projectService.registry?.getByGuid(guid);
+        if (!asset) return null;
+        return {
+          guid: asset.header.guid,
+          type: asset.header.type,
+          path: asset.path,
+          placeholder: asset.placeholder === true,
+        };
+      },
+      seedMissingPluginOverride: async (guid: string) => {
+        const current =
+          projectDocumentRef.current?.settings.pluginOverrides ?? {};
+        const next = { ...current, [guid]: { enabled: true } };
+        updateProjectSettings({ pluginOverrides: next });
+        await projectService.applyPluginOverrides(next);
+        bump();
+        const asset = projectService.registry?.getByGuid(guid);
+        if (!asset) return null;
+        return {
+          guid: asset.header.guid,
+          type: asset.header.type,
+          path: asset.path,
+          placeholder: asset.placeholder === true,
+        };
+      },
       activeTilemapTile: (gx: number, gy: number) => {
         const doc = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "tilemap" && entry.content,
@@ -1917,6 +1979,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService,
     ensureDerived,
     projectService,
+    updateProjectSettings,
   ]);
 
   const stepActiveDocumentHistory = useCallback(

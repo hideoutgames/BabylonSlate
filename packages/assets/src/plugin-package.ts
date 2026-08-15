@@ -15,6 +15,7 @@ import {
 import { stableStringify } from "./bytes";
 import { newAssetGuid } from "./guid";
 import {
+  discoverEnginePlugins,
   discoverProjectPlugins,
   type PluginDescriptor,
 } from "./plugin-host";
@@ -280,6 +281,64 @@ export async function applyPluginImport(
   const imported = discovered.find((plugin) => plugin.folderName === folderName);
   if (!imported) {
     throw new Error(`Failed to import plugin into ${folderPath}`);
+  }
+  return imported;
+}
+
+export interface EnginePluginIndexEntry {
+  id: string;
+  file: string;
+}
+
+export async function packEnginePluginFiles(
+  files: ProjectTreeFile[],
+  options: { id: string },
+): Promise<{ zip: Uint8Array; indexEntry: EnginePluginIndexEntry }> {
+  const settingsFile = await findPluginSettingsFile(files);
+  if (!settingsFile) {
+    throw new Error(`Engine plugin ${options.id} is missing PluginSettings`);
+  }
+  const document = await decodeAssetDocument(settingsFile.data);
+  const settings = normalizePluginSettings(document.payload, {
+    pluginGuid: document.guid,
+    displayName: document.name,
+  });
+  const packed: ProjectTreeFile[] = files.filter(
+    (file) => !isPluginManifestPath(file.path),
+  );
+  const manifest: BabprojectManifest = {
+    kind: "plugin",
+    guid: settings.pluginGuid,
+    name: settings.displayName,
+    engineVersion: ENGINE_VERSION,
+    version: 1,
+  };
+  packed.push({
+    path: PLUGIN_MANIFEST_FILE,
+    data: new TextEncoder().encode(stableStringify(manifest)),
+  });
+  return {
+    zip: encodeProjectZip(packed),
+    indexEntry: { id: options.id, file: `${options.id}.babplugin` },
+  };
+}
+
+export async function unpackEnginePluginZip(
+  storage: ProjectStorage,
+  zip: Uint8Array,
+  folderName: string,
+): Promise<PluginDescriptor> {
+  const incoming = await inspectBabplugin(zip);
+  const out: ProjectTreeFile[] = incoming.files.map((file) => ({
+    path: `${folderName}/${file.path}`,
+    data: file.data,
+  }));
+  await storage.mkdir(`${folderName}/${ASSETS_DIR}`, true);
+  await writeProjectTree(storage, out);
+  const discovered = await discoverEnginePlugins(storage);
+  const imported = discovered.find((plugin) => plugin.folderName === folderName);
+  if (!imported) {
+    throw new Error(`Failed to unpack engine plugin into ${folderName}`);
   }
   return imported;
 }

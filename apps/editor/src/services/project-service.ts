@@ -398,7 +398,6 @@ export class ProjectService {
     this.pluginDescriptors = [];
     this.pluginDiagnostics = [];
     this.pluginOverrides = {};
-    this.enginePluginStorage = null;
   }
 
   /** Display-name only: writes `metadata.name` when the folder can be opened. */

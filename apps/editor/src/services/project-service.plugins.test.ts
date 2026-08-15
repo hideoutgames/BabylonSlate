@@ -5,6 +5,12 @@ import {
   encodeBabasset,
   inspectBabplugin,
   writeProjectPlugin,
+  buildStarterContentFiles,
+  packEnginePluginFiles,
+  unpackEnginePluginZip,
+  STARTER_ACTOR_GUID,
+  STARTER_CONTENT_FOLDER,
+  STARTER_CONTENT_PLUGIN_GUID,
 } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
@@ -150,5 +156,27 @@ describe("ProjectService plugin roots", () => {
     expect(kept.status).toBe("kept");
     const replaced = await service.importPlugin(zip, "replace");
     expect(replaced.status).toBe("imported");
+  });
+
+  it("mounts enabled engine plugins from a separate storage", async () => {
+    const { service } = await scaffolded();
+    const engine = new MemoryStorageAdapter("opfs");
+    await engine.openDocumentsProject("engine-plugins");
+    const files = await buildStarterContentFiles();
+    const packed = await packEnginePluginFiles(files, {
+      id: STARTER_CONTENT_FOLDER,
+    });
+    await unpackEnginePluginZip(engine, packed.zip, STARTER_CONTENT_FOLDER);
+    service.setEnginePluginStorage(engine);
+    await service.applyPluginOverrides({
+      [STARTER_CONTENT_PLUGIN_GUID]: { enabled: true },
+    });
+    expect(service.registry?.getRoot(`plugin:${STARTER_CONTENT_PLUGIN_GUID}`)).toBeTruthy();
+    expect(service.registry?.getByGuid(STARTER_ACTOR_GUID)?.header.name).toBe(
+      "StarterActor",
+    );
+    expect(service.plugins.find((plugin) => plugin.source === "engine")?.readOnly).toBe(
+      true,
+    );
   });
 });

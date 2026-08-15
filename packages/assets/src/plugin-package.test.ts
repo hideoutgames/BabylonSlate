@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { zipSync } from "fflate";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
 import { encodeBabasset, readBabassetHeader } from "./babasset";
@@ -13,9 +14,21 @@ import {
   applyPluginImport,
   exportPluginZip,
   inspectBabplugin,
+  packEnginePluginFiles,
   planPluginImport,
+  unpackEnginePluginZip,
 } from "./plugin-package";
-import { discoverProjectPlugins, writeProjectPlugin } from "./plugin-host";
+import {
+  discoverEnginePlugins,
+  discoverProjectPlugins,
+  writeProjectPlugin,
+} from "./plugin-host";
+import {
+  STARTER_ACTOR_GUID,
+  STARTER_CONTENT_FOLDER,
+  STARTER_CONTENT_PLUGIN_GUID,
+  buildStarterContentFiles,
+} from "./starter-content";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";
@@ -333,5 +346,90 @@ describe("replace conflict", () => {
     expect(await storage.exists("plugins/pack/assets/Old.class.babasset")).toBe(
       false,
     );
+  });
+});
+
+describe("engine plugin pack and unpack", () => {
+  it("packs directory files into a kind:plugin zip with plugin.json", async () => {
+    const files = await buildStarterContentFiles();
+    const packed = await packEnginePluginFiles(files, {
+      id: STARTER_CONTENT_FOLDER,
+    });
+    expect(packed.indexEntry).toEqual({
+      id: "starter-content",
+      file: "starter-content.babplugin",
+    });
+    const inspected = await inspectBabplugin(packed.zip);
+    expect(inspected.manifest.kind).toBe("plugin");
+    expect(inspected.settings.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
+    expect(inspected.settings.displayName).toBe("Starter Content");
+    expect(
+      inspected.files.some(
+        (file) => file.path === "assets/StarterActor.class.babasset",
+      ),
+    ).toBe(true);
+  });
+
+  it("unpacks a .babplugin at the engine storage root, not under plugins/", async () => {
+    const files = await buildStarterContentFiles();
+    const packed = await packEnginePluginFiles(files, {
+      id: STARTER_CONTENT_FOLDER,
+    });
+    const storage = new MemoryStorageAdapter("opfs");
+    await storage.openDocumentsProject("engine-plugins");
+    const descriptor = await unpackEnginePluginZip(
+      storage,
+      packed.zip,
+      STARTER_CONTENT_FOLDER,
+    );
+    expect(descriptor.folderPath).toBe("starter-content");
+    expect(descriptor.source).toBe("engine");
+    expect(descriptor.readOnly).toBe(true);
+    expect(
+      await storage.exists(
+        "starter-content/assets/StarterActor.class.babasset",
+      ),
+    ).toBe(true);
+    expect(await storage.exists("plugins/starter-content")).toBe(false);
+    expect(
+      readBabassetHeader(
+        await storage.readBinary(
+          "starter-content/assets/StarterActor.class.babasset",
+        ),
+      ).guid,
+    ).toBe(STARTER_ACTOR_GUID);
+    const discovered = await discoverEnginePlugins(storage);
+    expect(discovered.map((plugin) => plugin.pluginGuid)).toEqual([
+      STARTER_CONTENT_PLUGIN_GUID,
+    ]);
+  });
+
+  it("inspects a fflate zip packed the same way as the Vite plugin", async () => {
+    const files = await buildStarterContentFiles();
+    const record: Record<string, Uint8Array> = {};
+    for (const file of files) record[file.path] = file.data;
+    record["plugin.json"] = new TextEncoder().encode(
+      `${JSON.stringify({
+        kind: "plugin",
+        guid: STARTER_CONTENT_PLUGIN_GUID,
+        name: "Starter Content",
+        engineVersion: "0.0.0",
+        version: 1,
+      })}\n`,
+    );
+    const zip = zipSync(record, {
+      level: 6,
+      mtime: new Date(Date.UTC(1980, 0, 1)),
+    });
+    const inspected = await inspectBabplugin(zip);
+    expect(inspected.settings.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
+    const storage = new MemoryStorageAdapter("opfs");
+    await storage.openDocumentsProject("engine-plugins");
+    const descriptor = await unpackEnginePluginZip(
+      storage,
+      zip,
+      STARTER_CONTENT_FOLDER,
+    );
+    expect(descriptor.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
   });
 });

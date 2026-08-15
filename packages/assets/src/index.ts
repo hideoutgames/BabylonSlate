@@ -23,6 +23,7 @@ export * from "./payload-loader";
 export * from "./plugin-host";
 export * from "./plugin-package";
 export * from "./plugin-settings";
+export * from "./starter-content";
 export * from "./registry";
 export * from "./semver-range";
 export * from "./search-index";
