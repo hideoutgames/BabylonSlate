@@ -6,7 +6,7 @@ Target device: **11-inch A16 iPad**, 6 GB RAM, WebGL2, WKWebView. Desktop builds
 
 | Metric | Budget | Notes |
 | --- | --- | --- |
-| Play / interaction | project `playFrameCap` (default 60) | Caps Play/Preview from Project Settings; overlay has no live cap field |
+| Play / interaction | project `playFrameCap` (default 60) | Caps Play/Preview from Project Settings; overlay has no live cap field. P4 e2e does not prove A16 60fps — that is `p14-perf-smoke` / device |
 | Visible editor viewport | Engine Settings frame cap (default 60) | Scene + Prefab Preview while on screen |
 | Hidden / modal / Play / background | **0 rendered frames** | Freeze the editor loop (§2.4) |
 | Game tick (combined) | &lt; 8 ms | ~5 ms scripts + ~3 ms physics in one worker |
