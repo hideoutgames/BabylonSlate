@@ -186,6 +186,54 @@ export function classAssetPaths(
     .sort();
 }
 
+export function sceneAssetPaths(
+  assets: ReadonlyArray<{
+    path: string;
+    placeholder?: boolean;
+    header: { type: string };
+  }>,
+): string[] {
+  return assets
+    .filter(
+      (asset) => !asset.placeholder && asset.header.type === "Scene",
+    )
+    .map((asset) => asset.path)
+    .sort();
+}
+
+/** Play `changescene` library: every mounted Scene, plus project.json extras. */
+export function playSceneLibraryPaths(
+  projectScenes: readonly string[],
+  assets: ReadonlyArray<{
+    path: string;
+    placeholder?: boolean;
+    header: { type: string };
+  }>,
+): string[] {
+  const fromRegistry = sceneAssetPaths(assets);
+  const seen = new Set(fromRegistry);
+  return [
+    ...fromRegistry,
+    ...projectScenes.filter((path) => !seen.has(path)),
+  ];
+}
+
+export function isPluginDocumentReadOnly(
+  plugins: ReadonlyArray<{
+    folderPath: string;
+    settingsPath: string;
+    readOnly: boolean;
+  }>,
+  path: string,
+): boolean {
+  return plugins.some(
+    (plugin) =>
+      plugin.readOnly &&
+      (path === plugin.settingsPath ||
+        path.startsWith(`${plugin.folderPath}/`)),
+  );
+}
+
 export function isPluginSettingsReadOnly(source: "project" | "engine"): boolean {
   return source === "engine";
 }

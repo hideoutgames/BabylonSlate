@@ -76,7 +76,7 @@ import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
-import { uniquePluginFolderName, pluginRootId } from "../lib/plugin-ui";
+import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
 import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
 
 export interface ProjectLoadResult {
@@ -966,12 +966,7 @@ export class ProjectService {
     }
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
-    const plugin = this.pluginDescriptors.find(
-      (entry) =>
-        path === entry.settingsPath ||
-        path.startsWith(`${entry.folderPath}/`),
-    );
-    if (plugin?.readOnly) {
+    if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
     const dir = parentDir(path);
@@ -1073,6 +1068,10 @@ export class ProjectService {
     bytes: Uint8Array,
     payload: Record<string, unknown>,
   ): Promise<void> {
+    if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
+      throw new Error("Engine plugin assets are read-only");
+    }
+    const storage = this.storageForPath(path);
     const extra = extraChunksWithNavmesh(await this.extraChunksFor(path), bytes);
     const existing = await this.readExistingAssetMeta(path);
     const type = existing?.type ?? "Scene";
@@ -1085,12 +1084,12 @@ export class ProjectService {
         payload,
       },
       {
-        blobs: this.blobs,
+        blobs: this.blobsForPath(path),
         extraChunks: extra,
         parentClass: existing?.parentClass ?? null,
       },
     );
-    await this.storage.writeBinary(path, encoded);
+    await storage.writeBinary(path, encoded);
   }
 
   guidForPath(path: string): string | null {

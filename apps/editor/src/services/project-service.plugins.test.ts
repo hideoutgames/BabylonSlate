@@ -245,6 +245,36 @@ describe("ProjectService plugin roots", () => {
     );
     expect(root?.readOnly).toBeFalsy();
     expect(root?.pathPrefix).toBe("plugins/starter-content/assets");
+    const created = await service.registry?.createAsset(
+      `plugin:${STARTER_CONTENT_PLUGIN_GUID}`,
+      "Extra.class.babasset",
+      {
+        guid: "bbbb0000-0000-4000-8000-000000000001",
+        type: "Class",
+        name: "Extra",
+        version: 1,
+        dependencies: [],
+        parentClass: "Actor",
+        payload: {},
+        chunks: [],
+      },
+    );
+    expect(created?.path).toBe(
+      "plugins/starter-content/assets/Extra.class.babasset",
+    );
+  });
+
+  it("refuses navmesh writes on an unmasked engine plugin scene", async () => {
+    const { service } = await scaffolded();
+    service.setEnginePluginStorage(await engineStarterStorage());
+    await service.loadCurrentProject();
+    await expect(
+      service.writeSceneNavmeshChunk(
+        "starter-content/assets/Main.scene.babasset",
+        new Uint8Array([1, 2, 3]),
+        {},
+      ),
+    ).rejects.toThrow(/read-only/i);
   });
 
   it("does not copy engine defaults onto an existing project open", async () => {

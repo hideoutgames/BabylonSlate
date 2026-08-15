@@ -10,9 +10,7 @@ import {
   FolderPlusIcon,
   ListFilterIcon,
   PlusIcon,
-  Trash2Icon,
   UploadIcon,
-  XIcon,
 } from "lucide-react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { newAssetGuid, resolvePluginEnabled } from "@babylonslate/assets";
@@ -122,6 +120,7 @@ import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
+import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 
 const PROJECT_ROOT_ID = PROJECT_CONTENT_ROOT_ID;
 
@@ -1311,35 +1310,15 @@ export function ContentBrowserWorkspace() {
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        {selectionCount > 0 ? (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="content-browser-deselect-all"
-              disabled={busy}
-              onClick={() => {
-                setSelectedGuids(new Set());
-                setSelectedFolderPaths(new Set());
-              }}
-            >
-              <XIcon data-icon="inline-start" />
-              Deselect All
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              data-testid="content-browser-delete-selected"
-              disabled={busy}
-              onClick={() => requestDeleteSelection()}
-            >
-              <Trash2Icon data-icon="inline-start" />
-              Delete ({selectionCount})
-            </Button>
-          </>
-        ) : null}
+        <ContentBrowserSelectionActions
+          selectionCount={selectionCount}
+          busy={busy}
+          onDeselectAll={() => {
+            setSelectedGuids(new Set());
+            setSelectedFolderPaths(new Set());
+          }}
+          onRequestDelete={() => requestDeleteSelection()}
+        />
         <input
           ref={importInputRef}
           type="file"
@@ -1636,9 +1615,18 @@ export function ContentBrowserWorkspace() {
             )}
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel
+              disabled={busy}
+              size="touch"
+              className="h-[var(--touch-target,44px)]"
+              data-testid="content-browser-delete-cancel"
+            >
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
+              size="touch"
+              className="h-[var(--touch-target,44px)]"
               disabled={busy}
               data-testid="content-browser-delete-confirm"
               onClick={(event) => {

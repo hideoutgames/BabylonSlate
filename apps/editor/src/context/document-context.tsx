@@ -95,7 +95,9 @@ import {
 } from "../lib/content-browser-helpers";
 import {
   classAssetPaths,
+  isPluginDocumentReadOnly,
   mergePluginEditorUtilityObjects,
+  playSceneLibraryPaths,
 } from "../lib/plugin-ui";
 import {
   listedProjectsFromRecents,
@@ -297,7 +299,7 @@ interface DocumentContextValue {
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, Uint8Array>>;
-  /** All project scenes so Play `changescene` can instantiate them. */
+  /** Mounted Scene assets (all roots) so Play `changescene` can instantiate them. */
   collectPlaySceneLibrary: () => Promise<
     Array<{ guid: string; scene: SerializedScene }>
   >;
@@ -1127,6 +1129,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!doc || doc.ref.kind !== "graph" || !doc.content) {
         return false;
       }
+      if (isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
+        return false;
+      }
       const previous = doc.content as SerializedGraph;
       const commands = diffGraphCommands(previous, next);
       if (commands.length === 0) {
@@ -1168,6 +1173,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (id: string, next: SerializedScene): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
       if (!doc || doc.ref.kind !== "scene" || !doc.content) {
+        return false;
+      }
+      if (isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
         return false;
       }
       const previous = doc.content as SerializedScene;
@@ -1221,6 +1229,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         doc.ref.kind === "graph" ||
         !doc.content
       ) {
+        return false;
+      }
+      if (isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
         return false;
       }
       const previous = doc.content as Record<string, unknown>;
@@ -1697,7 +1708,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlaySceneLibrary = useCallback(async (): Promise<
     Array<{ guid: string; scene: SerializedScene }>
   > => {
-    const paths = projectDocument?.scenes ?? [];
+    const paths = playSceneLibraryPaths(
+      projectDocument?.scenes ?? [],
+      projectService.registry?.list() ?? [],
+    );
     const open = documentService.getState().openDocuments;
     const scenes: Array<{ guid: string; scene: SerializedScene }> = [];
     for (const path of paths) {

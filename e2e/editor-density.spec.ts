@@ -280,6 +280,10 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("content-browser-delete-selected")).toHaveText(
       /Delete \(2\)/,
     );
+    await expect(page.getByTestId("content-browser-deselect-all")).toBeVisible();
+    await expect(page.getByTestId("content-browser-delete-selected")).not.toHaveClass(
+      /bg-destructive/,
+    );
 
     await page.getByTestId("content-browser-deselect-all").click();
     await expect(sceneTile).toHaveAttribute("data-selected", "false");
@@ -288,6 +292,43 @@ test.describe("Editor density and IA", () => {
       0,
     );
     await expect(page.getByTestId("content-browser-deselect-all")).toHaveCount(0);
+  });
+
+  test("Content Browser toolbar Delete stays outline until the confirm dialog", {
+    tag: IPAD_TEST_TAG,
+  }, async ({ page }) => {
+    await openTestProject(page);
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    const classTile = page.locator(
+      '[data-asset-path="assets/main.class.babasset"]',
+    );
+    await sceneTile.click();
+    await classTile.click();
+
+    const deleteSelected = page.getByTestId("content-browser-delete-selected");
+    await expect(deleteSelected).toHaveText(/Delete \(2\)/);
+    await expect(page.getByTestId("content-browser-deselect-all")).toBeVisible();
+    await expect(deleteSelected).not.toHaveClass(/bg-destructive/);
+
+    await deleteSelected.click();
+    await expect(page.getByTestId("content-browser-delete-dialog")).toBeVisible();
+    await expect(sceneTile).toBeVisible();
+    await expect(classTile).toBeVisible();
+
+    const confirm = page.getByTestId("content-browser-delete-confirm");
+    const cancel = page.getByTestId("content-browser-delete-cancel");
+    await expect(confirm).toHaveClass(/bg-destructive/);
+    await expect(confirm).toHaveCSS("min-height", "44px");
+    await expect(cancel).toHaveCSS("min-height", "44px");
+    await expect(confirm).toHaveCSS("height", "44px");
+    await expect(cancel).toHaveCSS("height", "44px");
+
+    await cancel.click();
+    await expect(page.getByTestId("content-browser-delete-dialog")).toHaveCount(0);
+    await expect(sceneTile).toHaveAttribute("data-selected", "true");
+    await expect(classTile).toHaveAttribute("data-selected", "true");
   });
 
   test("Content Browser folder tree and asset grid scroll vertically", async ({
