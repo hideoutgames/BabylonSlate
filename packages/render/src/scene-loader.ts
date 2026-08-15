@@ -1,5 +1,4 @@
-import { Color3, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
-import type { Mesh } from "@babylonjs/core";
+import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { identitySerializedTransform } from "@babylonslate/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
@@ -417,6 +416,10 @@ export function createActorMesh(
   return createPrimitiveMesh(scene, name, meshKind);
 }
 
+function childMeshesOf(mesh: Mesh): Mesh[] {
+  return mesh.getChildMeshes().filter((child): child is Mesh => child instanceof Mesh);
+}
+
 export function applySerializedTransform(
   mesh: Mesh,
   transform: SerializedTransform,
@@ -445,7 +448,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   mesh.isVisible = origin ? false : actor.visible;
   mesh.isPickable = !actor.locked;
   if (!origin) return;
-  for (const child of mesh.getChildMeshes()) {
+  for (const child of childMeshesOf(mesh)) {
     if (!child.name.includes(EDITOR_COMPONENT_MESH_SEP)) continue;
     const afterPipe = child.name.slice(
       child.name.indexOf(EDITOR_COMPONENT_MESH_SEP) + 1,
@@ -463,9 +466,7 @@ export function applyComponentChildTransforms(
   if (!isEditorActorOrigin(mesh)) return;
   for (const component of visualComponentsOf(actor)) {
     const childName = editorComponentMeshName(actor.id, component.id);
-    const child = mesh
-      .getChildMeshes()
-      .find((entry) => entry.name === childName);
+    const child = childMeshesOf(mesh).find((entry) => entry.name === childName);
     if (!child) continue;
     applySerializedTransform(
       child,
@@ -476,7 +477,7 @@ export function applyComponentChildTransforms(
 
 export function visualMeshesOfActorRoot(mesh: Mesh): Mesh[] {
   if (!isEditorActorOrigin(mesh)) return [mesh];
-  const parts = mesh.getChildMeshes().filter((child) => {
+  const parts = childMeshesOf(mesh).filter((child) => {
     if (!child.name.includes(EDITOR_COMPONENT_MESH_SEP)) return false;
     const afterPipe = child.name.slice(
       child.name.indexOf(EDITOR_COMPONENT_MESH_SEP) + 1,
