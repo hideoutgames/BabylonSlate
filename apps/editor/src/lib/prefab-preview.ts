@@ -6,6 +6,7 @@ import {
   wouldCreateComponentCycle,
   type SerializedComponent,
   type SerializedScene,
+  type SerializedTransform,
 } from "@babylonslate/core";
 
 export const PREFAB_ROOT_ID = "prefab-root";
@@ -141,29 +142,113 @@ export function prefabSelectedActorIds(selectedId: string | null): string[] {
 export function applyPrefabComponentTransform(
   components: readonly SerializedComponent[],
   componentId: string,
-  transform: {
-    position: [number, number, number];
-    rotation: [number, number, number, number];
-    scale: [number, number, number];
-  },
+  transform: SerializedTransform,
 ): SerializedComponent[] {
   return components.map((component) =>
     component.id === componentId
       ? {
           ...component,
-          transform: {
-            position: [...transform.position] as [number, number, number],
-            rotation: [...transform.rotation] as [
-              number,
-              number,
-              number,
-              number,
-            ],
-            scale: [...transform.scale] as [number, number, number],
-          },
+          transform: cloneTransform(transform),
         }
       : component,
   );
+}
+
+const TRANSFORM_EPS = 1e-8;
+
+function cloneTransform(transform: SerializedTransform): SerializedTransform {
+  return {
+    position: [...transform.position] as [number, number, number],
+    rotation: [...transform.rotation] as [number, number, number, number],
+    scale: [...transform.scale] as [number, number, number],
+  };
+}
+
+function near(a: number, b: number): boolean {
+  return Math.abs(a - b) <= TRANSFORM_EPS;
+}
+
+function isIdentityTransform(transform: SerializedTransform): boolean {
+  const identity = identitySerializedTransform();
+  return (
+    near(transform.position[0], identity.position[0]) &&
+    near(transform.position[1], identity.position[1]) &&
+    near(transform.position[2], identity.position[2]) &&
+    near(transform.rotation[0], identity.rotation[0]) &&
+    near(transform.rotation[1], identity.rotation[1]) &&
+    near(transform.rotation[2], identity.rotation[2]) &&
+    near(transform.rotation[3], identity.rotation[3]) &&
+    near(transform.scale[0], identity.scale[0]) &&
+    near(transform.scale[1], identity.scale[1]) &&
+    near(transform.scale[2], identity.scale[2])
+  );
+}
+
+function quatConjugate(
+  q: [number, number, number, number],
+): [number, number, number, number] {
+  return [-q[0], -q[1], -q[2], q[3]];
+}
+
+function quatMul(
+  a: [number, number, number, number],
+  b: [number, number, number, number],
+): [number, number, number, number] {
+  return [
+    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+  ];
+}
+
+function rotateVec(
+  q: [number, number, number, number],
+  v: [number, number, number],
+): [number, number, number] {
+  const p: [number, number, number, number] = [v[0], v[1], v[2], 0];
+  const rotated = quatMul(quatMul(q, p), quatConjugate(q));
+  return [rotated[0], rotated[1], rotated[2]];
+}
+
+function invertHelperOnLocal(
+  helper: SerializedTransform,
+  local: SerializedTransform,
+): SerializedTransform {
+  const invR = quatConjugate(helper.rotation);
+  const shifted: [number, number, number] = [
+    local.position[0] - helper.position[0],
+    local.position[1] - helper.position[1],
+    local.position[2] - helper.position[2],
+  ];
+  const rotated = rotateVec(invR, shifted);
+  const sx = helper.scale[0] === 0 ? 1 : helper.scale[0];
+  const sy = helper.scale[1] === 0 ? 1 : helper.scale[1];
+  const sz = helper.scale[2] === 0 ? 1 : helper.scale[2];
+  return {
+    position: [rotated[0] / sx, rotated[1] / sy, rotated[2] / sz],
+    rotation: quatMul(invR, local.rotation),
+    scale: [local.scale[0] / sx, local.scale[1] / sy, local.scale[2] / sz],
+  };
+}
+
+/**
+ * Bake Prefab Root gizmo motion into root-level component locals so the
+ * origin stays at (0,0,0) and nested locals are unchanged.
+ */
+export function applyPrefabPivotDelta(
+  components: readonly SerializedComponent[],
+  helper: SerializedTransform,
+): SerializedComponent[] {
+  if (isIdentityTransform(helper)) return [...components];
+  return components.map((component) => {
+    if (component.parentId) return component;
+    const local = component.transform ?? identitySerializedTransform();
+    return {
+      ...component,
+      transform: invertHelperOnLocal(helper, local),
+    };
+  });
 }
 
 function previewVisualComponent(

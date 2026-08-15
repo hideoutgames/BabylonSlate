@@ -11,6 +11,7 @@ import {
   reparentPrefabComponents,
   componentSubtreeIds,
   applyPrefabComponentTransform,
+  applyPrefabPivotDelta,
 } from "./prefab-preview";
 
 describe("prefabComponentsFromGraph", () => {
@@ -126,6 +127,7 @@ describe("previewSceneFor", () => {
     ]);
     expect(scene.actors[0]?.transform.position).toEqual([0, 0, 0]);
     expect(scene.actors[0]?.parentId).toBeNull();
+    expect(scene.actors[0]?.components[0]?.properties.meshKind).toBe("pivot");
     expect(scene.actors[1]?.transform).toEqual(mesh.transform);
     expect(scene.actors[1]?.parentId).toBeNull();
     expect(scene.actors[1]?.components).toHaveLength(1);
@@ -179,5 +181,45 @@ describe("applyPrefabComponentTransform", () => {
       rotation: [0, 0, 0, 1],
       scale: [2, 2, 2],
     });
+  });
+});
+
+describe("applyPrefabPivotDelta", () => {
+  it("offsets root-level locals by the inverse helper translation and leaves nested locals", () => {
+    const root = {
+      ...createMeshComponent("root", "box"),
+      transform: {
+        position: [2, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    const nested = {
+      ...createMeshComponent("child", "sphere"),
+      parentId: "root",
+      transform: {
+        position: [4, 1, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+        scale: [1, 1, 1] as [number, number, number],
+      },
+    };
+    const next = applyPrefabPivotDelta([root, nested], {
+      position: [1, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    });
+    expect(next[0]?.transform?.position).toEqual([1, 0, 0]);
+    expect(next[1]?.transform?.position).toEqual([4, 1, 0]);
+  });
+
+  it("returns the same list when the helper is identity", () => {
+    const mesh = createMeshComponent("prefab-mesh", "box");
+    expect(
+      applyPrefabPivotDelta([mesh], {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+      }),
+    ).toEqual([mesh]);
   });
 });

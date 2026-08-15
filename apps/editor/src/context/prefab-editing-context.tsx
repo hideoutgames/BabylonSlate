@@ -16,6 +16,7 @@ import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import {
   applyPrefabComponentTransform,
+  applyPrefabPivotDelta,
   componentSubtreeIds,
   nextPrefabComponentId,
   prefabComponentsFromGraph,
@@ -40,6 +41,7 @@ interface PrefabEditingContextValue {
     componentId: string,
     transform: SerializedTransform,
   ) => void;
+  applyPivotTransform: (transform: SerializedTransform) => void;
 }
 
 const PrefabEditingContext = createContext<PrefabEditingContextValue | null>(
@@ -128,6 +130,13 @@ export function PrefabEditingProvider({
     [components, persist],
   );
 
+  const applyPivotTransform = useCallback(
+    (transform: SerializedTransform) => {
+      persist(applyPrefabPivotDelta(components, transform));
+    },
+    [components, persist],
+  );
+
   const value = useMemo(
     () => ({
       components,
@@ -138,9 +147,11 @@ export function PrefabEditingProvider({
       reparentComponent,
       updateComponent,
       updateComponentTransform,
+      applyPivotTransform,
     }),
     [
       addComponent,
+      applyPivotTransform,
       components,
       removeSelected,
       reparentComponent,

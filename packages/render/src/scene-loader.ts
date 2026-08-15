@@ -1,4 +1,4 @@
-import { MeshBuilder, Quaternion, Scene, Vector3 } from "@babylonjs/core";
+import { Color3, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import type { Mesh } from "@babylonjs/core";
 import type { SerializedActor, SerializedScene } from "@babylonslate/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
@@ -12,6 +12,7 @@ import {
 } from "./editor-billboard";
 import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
+import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 
 /** Editor meshes are named so picking can map a hit back to an actor id. */
 export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
@@ -68,11 +69,44 @@ export function createPrimitiveMesh(
       });
     case "tilemap":
       return MeshBuilder.CreatePlane(name, { size: 1 }, scene);
+    case "pivot":
+      return createPivotMarkerMesh(scene, name);
     default:
       // Actors without a renderable component still need a pickable proxy so
       // they can be selected and transformed in the viewport.
       return MeshBuilder.CreateBox(name, { size: 0.25 }, scene);
   }
+}
+
+function createPivotMarkerMesh(scene: Scene, name: string): Mesh {
+  const root = MeshBuilder.CreateSphere(name, { diameter: 0.14 }, scene);
+  root.isPickable = true;
+  const material = new StandardMaterial(`${name}-pivot`, scene);
+  material.disableLighting = true;
+  material.emissiveColor = new Color3(0.92, 0.93, 0.96);
+  material.diffuseColor = Color3.Black();
+  material.specularColor = Color3.Black();
+  root.material = material;
+  const axes: Array<{
+    suffix: string;
+    end: Vector3;
+    color: Color3;
+  }> = [
+    { suffix: "axis-x", end: new Vector3(0.55, 0, 0), color: GIZMO_AXIS_COLORS.x },
+    { suffix: "axis-y", end: new Vector3(0, 0.55, 0), color: GIZMO_AXIS_COLORS.y },
+    { suffix: "axis-z", end: new Vector3(0, 0, 0.55), color: GIZMO_AXIS_COLORS.z },
+  ];
+  for (const axis of axes) {
+    const line = MeshBuilder.CreateLines(
+      `${name}:${axis.suffix}`,
+      { points: [Vector3.Zero(), axis.end] },
+      scene,
+    );
+    line.color = axis.color;
+    line.parent = root;
+    line.isPickable = false;
+  }
+  return root;
 }
 
 function stringProp(value: unknown): string | null {

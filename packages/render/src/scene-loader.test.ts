@@ -13,6 +13,7 @@ import {
   applySceneToBabylonScene,
   clearSceneMeshes,
   countSceneMeshes,
+  createPrimitiveMesh,
   editorMeshName,
 } from "./scene-loader";
 
@@ -251,6 +252,16 @@ describe("scene-loader", () => {
     expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0:anim")).toBe(
       "ground",
     );
+  });
+
+  it("builds a pickable origin marker for meshKind pivot", () => {
+    const { scene } = createHandle();
+    const mesh = createPrimitiveMesh(scene, "origin", "pivot");
+    expect(mesh.isPickable).toBe(true);
+    expect(mesh.getChildMeshes().length).toBeGreaterThan(0);
+    expect(scene.getMeshByName("origin:axis-x")).not.toBeNull();
+    expect(scene.getMeshByName("origin:axis-y")).not.toBeNull();
+    expect(scene.getMeshByName("origin:axis-z")).not.toBeNull();
   });
 
   it("clearSceneMeshes is safe on an already empty scene", () => {

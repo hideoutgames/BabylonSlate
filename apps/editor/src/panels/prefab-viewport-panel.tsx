@@ -39,8 +39,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
   const joystickLeaseRef = useRef<(() => void) | null>(null);
-  const { components, selectedId, setSelectedId, updateComponentTransform } =
-    usePrefabEditing();
+  const {
+    components,
+    selectedId,
+    setSelectedId,
+    updateComponentTransform,
+    applyPivotTransform,
+  } = usePrefabEditing();
   const {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
@@ -66,6 +71,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   selectedIdRef.current = selectedId;
   const updateComponentTransformRef = useRef(updateComponentTransform);
   updateComponentTransformRef.current = updateComponentTransform;
+  const applyPivotTransformRef = useRef(applyPivotTransform);
+  applyPivotTransformRef.current = applyPivotTransform;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -81,12 +88,17 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       onGizmoDragEnd: () => {
         const live = engineRef.current?.editor?.attachedActorTransform();
         const selected = selectedIdRef.current;
-        if (!live || !selected || selected === PREFAB_ROOT_ID) return;
-        updateComponentTransformRef.current(selected, {
+        if (!live || !selected) return;
+        const transform = {
           position: live.position,
           rotation: live.rotation,
           scale: live.scale,
-        });
+        };
+        if (selected === PREFAB_ROOT_ID) {
+          applyPivotTransformRef.current(transform);
+          return;
+        }
+        updateComponentTransformRef.current(selected, transform);
       },
     });
     engineRef.current = handle;
