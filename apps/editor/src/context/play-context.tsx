@@ -783,7 +783,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogAction data-testid="startup-scene-alert-ok">
+              <AlertDialogAction
+                data-testid="startup-scene-alert-ok"
+                onClick={() => setStartupAlertOpen(false)}
+              >
                 OK
               </AlertDialogAction>
             </AlertDialogFooter>

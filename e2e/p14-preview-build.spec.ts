@@ -62,6 +62,7 @@ test.describe("P14 Preview Build", () => {
       "Set Startup Scene in Project Settings.",
     );
     await page.getByTestId("startup-scene-alert-ok").click();
+    await expect(page.getByTestId("startup-scene-alert")).toHaveCount(0);
     await page.getByTestId("debug-menu").click();
     await page.getByTestId("preview-build-toggle").click();
     await expect(page.getByTestId("play-preview")).toBeDisabled();
