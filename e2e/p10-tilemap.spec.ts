@@ -86,6 +86,8 @@ test.describe("P10 tilemaps", () => {
 
     await createAsset(page, "Tileset", "Ground");
     await page.locator('[data-asset-path="assets/Ground.tileset.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-tileset")).toBeVisible();
+    await expect(page.getByTestId("tileset-preview")).toBeVisible();
     await expect(page.getByTestId("tileset-editor")).toBeVisible();
     await page.getByTestId("property-collision").click();
     await page.getByRole("option", { name: "Full" }).click();
@@ -94,6 +96,8 @@ test.describe("P10 tilemaps", () => {
     await page
       .locator('[data-asset-path="assets/Overworld.tilemap.babasset"]')
       .dblclick();
+    await expect(page.getByTestId("document-workspace-tilemap")).toBeVisible();
+    await expect(page.getByTestId("tilemap-details")).toBeVisible();
     await expect(page.getByTestId("tilemap-editor")).toBeVisible();
     await page.getByTestId("property-tileset").click();
     const tilesetGuid = await guidForPath(page, "assets/Ground.tileset.babasset");
@@ -111,6 +115,9 @@ test.describe("P10 tilemaps", () => {
     await expect.poll(async () => tileAt(page, 7, 0)).toBe(1);
 
     await createAsset(page, "Sprite", "Hero");
+    await page.locator('[data-asset-path="assets/Hero.sprite.babasset"]').dblclick();
+    await expect(page.getByTestId("sprite-editor")).toBeVisible();
+    await expect(page.getByTestId("property-clip-name")).toHaveValue("Idle");
     await createAsset(page, "AnimationGraph", "Loco");
 
     await showContentBrowser(page);
@@ -162,6 +169,12 @@ test.describe("P10 tilemaps", () => {
           .getByTestId("play-physics-ms")
           .getAttribute("data-ms");
         return Number(attr ?? "0");
+      }, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    await expect
+      .poll(async () => {
+        const fps = await page.getByTestId("play-fps").getAttribute("data-fps");
+        return Number(fps ?? "0");
       }, { timeout: 15_000 })
       .toBeGreaterThan(0);
     await expect

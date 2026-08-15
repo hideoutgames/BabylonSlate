@@ -37,31 +37,40 @@ Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local ind
 
 `tilemapChunkVertexData` is a **pure**, Babylon-free function: tile ids + tileset → `{ positions, uvs, indices }`. One draw per chunk per atlas; tile 0 is skipped. Quad order matches sprite `CreatePlane`: BL, BR, TR, TL. Callers pass `worldTileWidth` / `worldTileHeight` (`px / pixelsPerUnit`, default PPU 100) so `@babylonslate/assets` does not read project settings.
 
-Only **affected chunks** should be rebuilt on paint. Goldens live next to the packer fixtures (`UPDATE_GOLDENS=1`).
+Only **affected chunks** are copied in `setTile`. Editor and Play mesh builders still walk every **visible** chunk when the document or scene applies.
 
 Animated tiles (tileset `animation` frame lists) draw as a small separate set; they do not make every static tile dynamic.
 
-Play builds a parent `actor-N` mesh plus one child draw per non-empty chunk (`createTilemapMeshes`). The editor viewport keeps a plane proxy so picking still uses `editorActor:` names; Play picking walks the parent chain from a chunk child to `actor-N`.
+Play builds a parent `actor-N` mesh plus one child draw per non-empty static chunk, plus an `:anim` sibling when the chunk has animated tiles (`createTilemapMeshes`). Chunk children are named `editorActor:<id>:<layer>:<cx>:<cy>` (optional `:anim`). Editor picking maps those names back to the actor id; Play picking still walks parents to `actor-N`.
+
+`tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw: animated tileset ids (`animation.length > 0`) use the first frame’s UVs on the `:anim` mesh. Per-layer `sortingLayer` / `orderInLayer` write `renderingGroupId` / `alphaIndex`. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`).
 
 ## Collision
 
 `tilemapChunkChains` (also Babylon-free) merges `full` tiles in a chunk: shared edges cancel, collinear outer edges collapse, so a solid rectangle is **one four-point loop** rather than a box per tile. Custom `chain` collision on a tile is emitted as an open polyline in world space.
 
-`PhysicsWorldSync` gives every `TilemapComponent` actor a **static** body (even without `RigidBodyComponent`) and attaches those chains for layers with `collision: true`. Software 2D treats a chain as its AABB (wasm-failure path); Rapier uses real chain colliders.
+`PhysicsWorldSync` gives every `TilemapComponent` actor a **static** body (even without `RigidBodyComponent`) and attaches those chains for layers with `collision: true`. Software 2D treats a chain as its AABB (wasm-failure path); Rapier uses real chain colliders. Closed Rapier loops get a closing **segment** collider (repeating the first polyline point makes Rapier miss raycasts).
 
-Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` values (not only open tabs) and posts worker `loadTilemaps` before `play`. Project `twoD.pixelsPerUnit` sizes both meshes and chains. Chunk meshes bind the tileset `textureGuid` through `ResourceCache` when texture bytes were collected. Play e2e (`e2e/p10-tilemap.spec.ts`) asserts `physicsMs > 0` **and** that a dynamic actor starting at Y=3 settles on the painted tiles (`play-actor-y`).
+Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` values (not only open tabs) and posts worker `loadTilemaps` before `play`. Project `twoD.pixelsPerUnit` sizes both meshes and chains. Chunk meshes bind the tileset `textureGuid` through `ResourceCache` when texture bytes were collected, with the same **alpha-test** unlit material as sprites (`alphaCutOff` 0.4). When `twoD.pixelPerfect` is on, Play snaps the **game** camera to the pixel grid; the editor pan/zoom camera stays continuous (§13.5). Play e2e (`e2e/p10-tilemap.spec.ts`) starts from the 2D Create Project card, paints tiles, binds a Sprite with its default Idle clip, and asserts `physicsMs > 0`, `play-fps > 0`, and a dynamic actor starting at Y=3 settling on the painted tiles (`play-actor-y`). It does **not** claim A16 fill-rate or shimmer-free scrolling.
 
 ## Placement
 
 `TilemapComponent` is in Add Component (Rendering) and Search. Properties: `assetGuid`, sorting layer / order.
 
-## Painting
+## Authoring
 
-Brush, eraser, rect, bucket, stamp, and picker live on the Tilemap document tab (`ToggleGroup` tools, `SearchDropdown` palette anchored to the Palette button). One finger paints; two fingers pan (`touch-none` on the canvas). **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
+Tileset and Tilemap documents are DockView shells (**Windows** enabled):
+
+| Kind | Primary | Details |
+| --- | --- | --- |
+| Tileset | Preview (atlas) | Texture, grid, **selected tile** collision (`none` / `full` / `chain` points), flags, animation frame ids |
+| Tilemap | Paint | Tileset, size, **layer list** (add/reorder/remove) with visibility, collision, sorting, parallax |
+
+Paint: brush, eraser, rect, bucket, stamp, picker (`ToggleGroup` + `SearchDropdown` palette). One finger paints; two fingers pan (`touch-none`). **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk. The paint canvas draws the tileset atlas when a Texture is assigned, otherwise HSL placeholders.
 
 Stamp places a 2×2 of the selected tile. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
 
-The Create Project dialog has a built-in **2D** card (`create-project-2d`) next to Empty: `viewportMode` / `physicsWorld` 2d, no default cube, `pixelPerfect` + `integerZoomSteps` on.
+The Create Project dialog has a built-in **2D** card (`create-project-2d`) next to Empty: `viewportMode` / `physicsWorld` 2d, no default cube, `pixelPerfect` + `integerZoomSteps` on. Do not expand that card into a demo scene.
 
 ## Alpha test vs blend
 

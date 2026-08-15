@@ -323,10 +323,16 @@ Design note: [tilemaps.md](../architecture/tilemaps.md). Codecs first, then Rapi
 
 | Item | Status |
 | --- | --- |
-| Tileset / Tilemap payloads, UV math, golden chunk VertexData, document tabs | Done (`cursor/play-path-harden-8678`) |
+| Tileset / Tilemap payloads, UV math, golden chunk VertexData | Done (`cursor/play-path-harden-8678`) |
 | Merged chain colliders + `TilemapComponent` Play load | Done (`cursor/play-path-harden-8678`) |
-| Touch painting, one undo per stroke, 2D Create Project card, acceptance e2e | Done (`cursor/play-path-harden-8678`) |
+| Touch painting, one undo per stroke, 2D Create Project card | Done (`cursor/play-path-harden-8678`) |
 | Play asserts a falling actor settles on painted tiles | Done (foundation wave; keep in-process `tilemap-physics.test.ts`) |
+| Editor pick of chunk children + `TilemapComponent` sorting | Done (P10 hardening) |
+| Rapier closed loops + Rapier (not software) falling-actor test | Done (P10 hardening) |
+| Per-tile collision / animation / flags authoring | Done (P10 hardening) |
+| Multi-layer list + runtime sorting / parallax / `:anim` draw set | Done (P10 hardening) |
+| Play camera pixel snap; editor pan/zoom stays continuous | Done (P10 hardening) |
+| DockView tileset (Preview + Details) and tilemap (Paint + Details) | Done (P10 hardening) |
 | Autotile / terrain | Deferred |
 | A16 alpha-test vs blend profile | Record in tilemaps.md; do not lock a new default without numbers |
 
