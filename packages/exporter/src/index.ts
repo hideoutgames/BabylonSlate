@@ -5,6 +5,10 @@ export {
   GAME_MANIFEST_FILE,
   SCRIPTS_FILE,
   BOOT_PACK_FILE,
+  NAVMESH_EXPORT_TYPE,
+  NAVMESH_EXPORT_GUID_PREFIX,
+  navmeshExportGuid,
+  sceneGuidFromNavmeshExport,
 } from "./constants";
 export { collectExportClosure } from "./closure";
 export { selectPlayerRuntimeFiles } from "./player-files";

@@ -29,6 +29,8 @@ export type ExportAssetBytes = {
   sceneGuid: string;
   bytes: Uint8Array;
   encoding?: "json" | "bytes";
+  /** Asset display name; FontFace family falls back to this. */
+  name?: string;
 };
 
 export type GameAssetIndexEntry = {
@@ -37,6 +39,7 @@ export type GameAssetIndexEntry = {
   encoding: "json" | "bytes";
   pack?: string;
   path?: string;
+  name?: string;
 };
 
 export type GameManifest = {
@@ -45,6 +48,8 @@ export type GameManifest = {
   mode: ExportMode;
   render: RenderProjectSettings;
   playFrameCap: number;
+  pixelsPerUnit: number;
+  pixelPerfect: boolean;
   packs: string[];
   scriptsFile: string;
   physicsWorld: "2d" | "3d";
@@ -57,6 +62,8 @@ export type ExportGameOptions = {
   startupSceneGuid: string;
   customResolution: RenderProjectSettings;
   playFrameCap?: number;
+  pixelsPerUnit?: number;
+  pixelPerfect?: boolean;
   physicsWorld?: "2d" | "3d";
   scripts: readonly ScriptBundleEntry[];
   assets: readonly ExportAssetBytes[];
