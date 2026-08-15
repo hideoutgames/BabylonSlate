@@ -21,6 +21,8 @@ vi.mock("../context/document-context", async () => {
     useDocuments: () => ({
       projectDocument: emptyProject("Demo"),
       exportProject: vi.fn(),
+      exportGameArtifact: vi.fn(),
+      zipExportedGame: vi.fn(),
       retryFailedTextureEncoding: vi.fn(),
       updateProjectSettings,
       assetRegistry: {
@@ -138,6 +140,25 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("search-item-scene-2"));
     expect(updateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({ startupSceneGuid: "scene-2" }),
+    );
+  });
+
+  it("authors Export Game preset fields separately from Export Project", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    expect(screen.getByTestId("export-game")).toBeTruthy();
+    expect(screen.getByTestId("export-project")).toBeTruthy();
+    expect(screen.getByTestId("setting-export-packed")).toBeTruthy();
+    expect(screen.getByTestId("setting-export-debugger")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("setting-export-debugger"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exportPresets: [
+          expect.objectContaining({ bundleDebugger: true, packed: true }),
+        ],
+      }),
     );
   });
 

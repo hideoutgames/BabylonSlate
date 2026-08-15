@@ -38,4 +38,9 @@ describe("StatsHud", () => {
     );
     expect(screen.getByTestId("play-fps").getAttribute("data-fps")).toBe("60");
   });
+
+  it("warns when draw calls exceed the ceiling", () => {
+    render(<StatsHud fps={60} scriptMs={1} physicsMs={1} draws={401} />);
+    expect(screen.getByTestId("stats-hud-draw-warn")).toBeTruthy();
+  });
 });

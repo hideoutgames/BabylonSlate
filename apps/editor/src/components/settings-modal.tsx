@@ -10,6 +10,7 @@ import {
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
 import type { ProjectInputSettings } from "@babylonslate/core";
+import { defaultExportPreset } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
@@ -96,7 +97,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "export",
     label: "Export",
-    keywords: "export project zip download startup scene packaged player",
+    keywords: "export project zip download startup scene packaged player export game packed debugger file count",
   },
   {
     id: "project",
@@ -213,6 +214,8 @@ export function SettingsModal({
   const {
     projectDocument,
     exportProject,
+    exportGameArtifact,
+    zipExportedGame,
     retryFailedTextureEncoding,
     updateProjectSettings,
     assetRegistry,
@@ -221,6 +224,8 @@ export function SettingsModal({
   const [search, setSearch] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
+  const [exportGameError, setExportGameError] = useState<string | null>(null);
+  const [exportGameBusy, setExportGameBusy] = useState(false);
   const [utilityPick, setUtilityPick] = useState<"new" | number | null>(null);
   const [activeCategoryId, setActiveCategoryId] = useState(
     scope === "engine" ? "appearance" : "general",
@@ -284,6 +289,34 @@ export function SettingsModal({
     anchor.click();
     URL.revokeObjectURL(url);
   };
+
+  const handleExportGame = async () => {
+    if (!projectDocument) return;
+    setExportGameBusy(true);
+    setExportGameError(null);
+    try {
+      const result = await exportGameArtifact();
+      if (!result.ok) {
+        setExportGameError(result.error);
+        return;
+      }
+      const bytes = zipExportedGame(result.value);
+      const blob = new Blob([bytes.buffer as ArrayBuffer], {
+        type: "application/zip",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${projectDocument.metadata.name.replace(/\s+/g, "_")}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportGameBusy(false);
+    }
+  };
+
+  const exportPreset =
+    projectDocument?.settings.exportPresets[0] ?? defaultExportPreset();
 
   const twoD = projectDocument?.settings.twoD;
   const showProjectBody = scope === "project" && Boolean(projectDocument);
@@ -757,6 +790,111 @@ export function SettingsModal({
               </FieldDescription>
             </Field>
             <Field>
+              <FieldLabel htmlFor="setting-export-packed">Packed</FieldLabel>
+              <Switch
+                id="setting-export-packed"
+                checked={exportPreset.packed}
+                onCheckedChange={(checked) => {
+                  if (!projectDocument) return;
+                  const current =
+                    projectDocument.settings.exportPresets[0] ??
+                    defaultExportPreset();
+                  updateProjectSettings({
+                    exportPresets: [{ ...current, packed: checked === true }],
+                  });
+                }}
+                data-testid="setting-export-packed"
+              />
+              <FieldDescription>
+                Default packed `.babpack`. Off writes loose tree-shaken files.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="setting-export-debugger">
+                Bundle Debugger
+              </FieldLabel>
+              <Switch
+                id="setting-export-debugger"
+                checked={exportPreset.bundleDebugger}
+                onCheckedChange={(checked) => {
+                  if (!projectDocument) return;
+                  const current =
+                    projectDocument.settings.exportPresets[0] ??
+                    defaultExportPreset();
+                  updateProjectSettings({
+                    exportPresets: [
+                      { ...current, bundleDebugger: checked === true },
+                    ],
+                  });
+                }}
+                data-testid="setting-export-debugger"
+              />
+              <FieldDescription>
+                Off for release zips (strips Development Only). Preview Build
+                always bundles the debugger.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="setting-export-file-warn">
+                File Count Warn
+              </FieldLabel>
+              <NumberField
+                id="setting-export-file-warn"
+                min={1}
+                value={exportPreset.fileCountWarn}
+                onChange={(value) => {
+                  if (!projectDocument) return;
+                  const current =
+                    projectDocument.settings.exportPresets[0] ??
+                    defaultExportPreset();
+                  updateProjectSettings({
+                    exportPresets: [{ ...current, fileCountWarn: value }],
+                  });
+                }}
+                data-testid="setting-export-file-warn"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="setting-export-file-fail">
+                File Count Fail
+              </FieldLabel>
+              <NumberField
+                id="setting-export-file-fail"
+                min={1}
+                value={exportPreset.fileCountFail}
+                onChange={(value) => {
+                  if (!projectDocument) return;
+                  const current =
+                    projectDocument.settings.exportPresets[0] ??
+                    defaultExportPreset();
+                  updateProjectSettings({
+                    exportPresets: [{ ...current, fileCountFail: value }],
+                  });
+                }}
+                data-testid="setting-export-file-fail"
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Export Game</FieldLabel>
+              <FieldDescription>
+                Download an itch.io zip that boots the startup scene. Distinct
+                from Export Project backup.
+              </FieldDescription>
+            </Field>
+            {exportGameError ? (
+              <p className="text-sm text-destructive" data-testid="export-game-error">
+                {exportGameError}
+              </p>
+            ) : null}
+            <Button
+              className="min-h-[var(--touch-target,44px)] w-fit"
+              data-testid="export-game"
+              disabled={exportGameBusy}
+              onClick={() => void handleExportGame()}
+            >
+              Export Game
+            </Button>
+            <Field>
               <FieldLabel>Export Project</FieldLabel>
               <FieldDescription>
                 Download a zip of the project directory layout.
@@ -844,9 +982,9 @@ export function SettingsModal({
             }))}
           allowedTypes={["Scene"]}
           title="Pick Scene"
-          allowNone={false}
+          allowNone
           onPick={(guid) => {
-            if (!projectDocument || !guid) return;
+            if (!projectDocument) return;
             updateProjectSettings({ startupSceneGuid: guid });
             setScenePickerOpen(false);
           }}

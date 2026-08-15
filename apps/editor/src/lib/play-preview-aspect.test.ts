@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  applyPlayPreviewCanvasLayout,
-  fitContainedRect,
-  playFramebufferSize,
-} from "./play-preview-aspect";
+import { fitContainedRect, playFramebufferSize } from "@babylonslate/core";
+import { applyPlayPreviewCanvasLayout } from "./play-preview-aspect";
 
 afterEach(() => {
   document.body.replaceChildren();

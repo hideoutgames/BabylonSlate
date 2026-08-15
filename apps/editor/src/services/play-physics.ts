@@ -103,7 +103,9 @@ export function playSceneFromOpenDocuments(
 export function playIsEnabled(
   documents: readonly PlaySceneDocument[],
   activeDocumentId: string | null,
+  options?: { previewBuild?: boolean },
 ): boolean {
+  if (options?.previewBuild) return true;
   return playSceneFromOpenDocuments(documents, activeDocumentId) !== null;
 }
 

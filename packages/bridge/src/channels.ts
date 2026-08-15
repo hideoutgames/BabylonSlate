@@ -62,6 +62,8 @@ export type ControlMessage =
       gameInstanceClass?: string;
       /** Extra authored scenes `changescene` can instantiate by guid or name. */
       scenes?: Array<{ guid: string; scene: SerializedScene }>;
+      /** When false, debug-tier console commands are stripped in the player. */
+      includeDebugCommands?: boolean;
     }
   | {
       type: "loadScripts";

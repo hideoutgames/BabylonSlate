@@ -30,7 +30,7 @@ Every registered command has a tier. A non-debug registry **does not register de
 | **core** | Every build | `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, plus user `BDebugCommand` classes |
 | **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `wireframe`, `pause`, `step`, `slomo`, `dumplog`, `snapshot start`, `snapshot stop` |
 
-Real export tree-shaking of the debug module is **P14**. P8 proves the split with `createCommandRegistry({ includeDebug: false })`.
+Real export tree-shaking of the debug module is landed: the release player calls `createCommandRegistry({ includeDebug: false })` via `includeDebugCommands: manifest.bundleDebugger`. Preview Build and a **Bundle Debugger** export preset keep the debug tier. See [exporter.md](exporter.md).
 
 `ExecuteConsoleCommand` targeting a stripped command returns `{ success: false, output }` with a message that names the command. Unknown names return `unknown command: …`. Neither path throws.
 
@@ -84,4 +84,4 @@ Output Log, keyed Print, and the Preview session report are unchanged.
 
 ## Export settings (P14)
 
-Project Settings: bundle debugger (off for release). Release export compiles with `compileGraphDocumentsForExport` (Print and any Inspector **Development Only** node are omitted from generated JS). A non-debug player still links `@babylonslate/debugger` **core** commands. Debug-tier modules are the tree-shaken part.
+Project Settings **Export Game** preset: **Bundle Debugger** (off for release). Release export compiles with `compileGraphDocumentsForExport` (Print defaults on; Inspector **Development Only** nodes are omitted). A non-debug player still links `@babylonslate/debugger` **core** commands; debug-tier implementations are not registered (`includeDebug: false`). **Preview Build** always bundles the debugger and keeps Development Only nodes. Draw-call ceilings (`DRAW_CALL_WARN_CEILING`) surface as HUD warnings. See [exporter.md](exporter.md).

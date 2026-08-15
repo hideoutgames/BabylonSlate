@@ -37,7 +37,7 @@ Later wins:
 
 1. PluginSettings `enabledByDefault`
 2. `project.json` `pluginOverrides[guid].enabled` (editor uses 1–2)
-3. Export-preset `pluginOverrides` (export only; P14)
+3. Export-preset `pluginOverrides` (export / Preview Build only; consumed by `collectExportClosure` in `@babylonslate/exporter`)
 
 Disable **unmounts** the content root — assets leave the registry. **Show Plugin Content** / **Hide Plugin Content** is a Content Browser **visibility** button at the bottom of the left folder pane (`layout.json`, default off). AssetPicker / Play / search still see **enabled** plugin assets when the tree is hidden. Extra tree roots appear when shown; engine roots show a Read Only badge and skip New / Import / Delete.
 
@@ -60,7 +60,7 @@ Override guids with **no discovered plugin** become Unresolved placeholders. Dis
 - **Export Plugin** — `encodeProjectZip` with `kind: "plugin"`, PluginSettings, `assets/`, per-plugin blobs. Download path matches Export Project.
 - **Import Plugin** — unpack under `plugins/<safeName>/`. Dedupe by **plugin guid + version**; same guid+version → Keep / Replace; same guid newer/older version → update in place; guid remap only if the incoming PluginSettings guid collides with a **different** plugin (or another occupied guid). `.babplugin` files are never listed as assets.
 - **Export Project** remains a full backup (includes disabled project plugins on disk).
-- `collectEnabledPluginAssets(registry, enabledGuids)` is the P14 tree-shake helper; disabled roots are absent. Packed itch export still lands in P14.
+- `collectEnabledPluginAssets(registry, enabledGuids)` plus export-preset layer-3 overrides feed the P14 tree-shake. Disabled roots are absent from the itch zip / Preview pack. See [exporter.md](exporter.md).
 
 ## Editor ScriptHost
 

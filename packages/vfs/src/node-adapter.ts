@@ -30,6 +30,22 @@ export class NodeStorageAdapter implements ProjectStorage {
     return this.folder;
   }
 
+  async openAbsoluteFolder(
+    absPath: string,
+    name?: string,
+    tier: ProjectFolderHandle["tier"] = "external",
+  ): Promise<ProjectFolderHandle> {
+    const root = resolve(absPath);
+    await mkdir(root, { recursive: true });
+    this.rootPath = root;
+    this.folder = {
+      id: `node:${root}`,
+      name: name ?? root.split(/[\\/]/).pop() ?? "Project",
+      tier,
+    };
+    return this.folder;
+  }
+
   async openKnownFolder(
     handle: ProjectFolderHandle,
   ): Promise<ProjectFolderHandle> {

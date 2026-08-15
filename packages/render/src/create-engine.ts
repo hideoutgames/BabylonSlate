@@ -129,6 +129,8 @@ export interface CreateEngineOptions {
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  /** Self-hosted KTX2 transcoder directory. Editor uses `/ktx2/`; the player uses a relative folder. */
+  ktx2BasePath?: string;
 }
 
 export interface EditorTools {
@@ -204,7 +206,7 @@ export function createEngine(
   canvas: HTMLCanvasElement,
   options: CreateEngineOptions = {},
 ): EngineHandle {
-  configureKtx2Transcoder(KhronosTextureContainer2);
+  configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
 
   const ownsEngine = !options.sharedEngine;
   const engine =

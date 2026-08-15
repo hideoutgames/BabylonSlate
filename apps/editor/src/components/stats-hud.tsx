@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isTickOverBudget } from "@babylonslate/debugger";
+import { drawCallCeilingWarning } from "@babylonslate/render";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -52,6 +53,8 @@ export function StatsHud({
   }, []);
 
   const overBudget = isTickOverBudget(scriptMs, physicsMs);
+  const drawsHigh =
+    draws != null ? drawCallCeilingWarning(draws) !== null : false;
 
   return (
     <div
@@ -97,6 +100,14 @@ export function StatsHud({
           <span data-testid="stats-hud-draws" data-draws={String(draws)}>
             <SelectableText>draws {draws}</SelectableText>
           </span>
+        ) : null}
+        {drawsHigh ? (
+          <Badge
+            variant="destructive"
+            data-testid="stats-hud-draw-warn"
+          >
+            Draws High
+          </Badge>
         ) : null}
         {bridgeMessagesPerSec != null ? (
           <span data-testid="stats-hud-bridge">

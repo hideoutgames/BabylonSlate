@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "pnpm --filter player build && vite",
+    "build": "pnpm --filter player build && tsc -b && vite build",
     "test": "vitest run --config ../../vitest.workspace.ts --project jsdom apps/editor",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview"
@@ -20,6 +20,7 @@
     "@babylonslate/debugger": "workspace:*",
     "@babylonslate/edit": "workspace:*",
     "@babylonslate/editor-kit": "workspace:*",
+    "@babylonslate/exporter": "workspace:*",
     "@babylonslate/graph-ui": "workspace:*",
     "@babylonslate/input": "workspace:*",
     "@babylonslate/navigation": "workspace:*",

@@ -43,18 +43,19 @@ const pureNoReactNoBabylon = boundary(
     "packages/input/**/*.{ts,tsx}",
     "packages/scripting/**/*.{ts,tsx}",
     "packages/scripting-nodes/**/*.{ts,tsx}",
+    "packages/exporter/**/*.{ts,tsx}",
     "packages/test-kit/**/*.{ts,tsx}",
   ],
   [
     {
       group: REACT_PATTERNS,
       message:
-        "core, assets, edit, object-model, bridge, runtime, debugger, ui-runtime, anim-graph, behaviour-tree, shader-graph, input, scripting, scripting-nodes, and test-kit must not import React (engineplan section 2.2).",
+        "core, assets, edit, object-model, bridge, runtime, debugger, ui-runtime, anim-graph, behaviour-tree, shader-graph, input, scripting, scripting-nodes, exporter, and test-kit must not import React (engineplan section 2.2).",
     },
     {
       group: BABYLON_PATTERNS,
       message:
-        "core, assets, edit, object-model, bridge, runtime, debugger, ui-runtime, anim-graph, behaviour-tree, shader-graph, input, scripting, scripting-nodes, and test-kit must not import Babylon (engineplan section 2.2).",
+        "core, assets, edit, object-model, bridge, runtime, debugger, ui-runtime, anim-graph, behaviour-tree, shader-graph, input, scripting, scripting-nodes, exporter, and test-kit must not import Babylon (engineplan section 2.2).",
     },
     {
       group: CAPACITOR_PATTERNS,
@@ -200,6 +201,21 @@ const uiNoBabylonNoCapacitor = boundary(
   ],
 );
 
+const playerNoReactNoCapacitor = boundary(
+  "boundary/player",
+  ["apps/player/**/*.{ts,tsx}"],
+  [
+    {
+      group: REACT_PATTERNS,
+      message: "apps/player must not import React (engineplan section 15).",
+    },
+    {
+      group: CAPACITOR_PATTERNS,
+      message: "apps/player must not import Capacitor (engineplan section 15).",
+    },
+  ],
+);
+
 const appNoCapacitor = boundary(
   "boundary/app",
   ["apps/editor/src/**/*.{ts,tsx}"],
@@ -224,6 +240,8 @@ export default tseslint.config(
       "test-results",
       "apps/docs/.vitepress/cache",
       "apps/docs/.vitepress/dist",
+      "apps/player/dist",
+      "apps/editor/dist",
     ],
   },
   {
@@ -253,4 +271,9 @@ export default tseslint.config(
   renderTextureCacheOnly,
   uiNoBabylonNoCapacitor,
   appNoCapacitor,
+  playerNoReactNoCapacitor,
+  {
+    files: ["apps/desktop/**/*.ts", "apps/player/vite.config.ts", "apps/editor/vite-player-host.ts"],
+    languageOptions: { globals: globals.node },
+  },
 );

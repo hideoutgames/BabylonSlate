@@ -4,6 +4,7 @@ export * from "./create-storage";
 export * from "./derived-storage";
 export * from "./documents-adapter";
 export * from "./electron-app-settings";
+export * from "./electron-storage-adapter";
 export * from "./import-picker";
 export * from "./memory-adapter";
 export * from "./read-only-storage";

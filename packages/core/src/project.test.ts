@@ -335,8 +335,52 @@ describe("project schema", () => {
         id: "web",
         name: "Web",
         pluginOverrides: { "plug-1": { enabled: false } },
+        packed: true,
+        bundleDebugger: false,
+        fileCountWarn: 800,
+        fileCountFail: 1000,
       },
     ]);
+  });
+
+  it("defaults export preset packed on, bundleDebugger off, and file-count gates", () => {
+    expect(
+      normalizeProjectSettings({
+        exportPresets: [{ id: "itch", name: "Itch" }],
+      } as unknown as Partial<ProjectSettings>).exportPresets,
+    ).toEqual([
+      {
+        id: "itch",
+        name: "Itch",
+        pluginOverrides: {},
+        packed: true,
+        bundleDebugger: false,
+        fileCountWarn: 800,
+        fileCountFail: 1000,
+      },
+    ]);
+    expect(
+      normalizeProjectSettings({
+        exportPresets: [
+          {
+            id: "dev",
+            name: "Dev",
+            packed: false,
+            bundleDebugger: true,
+            fileCountWarn: 10,
+            fileCountFail: 20,
+          },
+        ],
+      } as unknown as Partial<ProjectSettings>).exportPresets[0],
+    ).toEqual({
+      id: "dev",
+      name: "Dev",
+      pluginOverrides: {},
+      packed: false,
+      bundleDebugger: true,
+      fileCountWarn: 10,
+      fileCountFail: 20,
+    });
   });
 
   it("keeps fill Play layout when custom resolution is missing or off", () => {

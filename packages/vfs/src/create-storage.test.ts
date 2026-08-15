@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const isMobile = vi.fn(() => false);
+const isElectron = vi.fn(() => false);
 const init = vi.fn(async () => {});
 
 vi.mock("./platform", () => ({
   isMobilePlatform: () => isMobile(),
-  getHostPlatform: () => (isMobile() ? "ios" : "web"),
+  isElectronHost: () => isElectron(),
+  getElectronProjectBridge: () => null,
+  getHostPlatform: () => (isMobile() ? "ios" : isElectron() ? "electron" : "web"),
 }));
 
 vi.mock("./mobile-storage-adapter", () => ({
@@ -17,10 +20,12 @@ vi.mock("./mobile-storage-adapter", () => ({
 const { createStorage } = await import("./create-storage");
 const { OpfsStorageAdapter } = await import("./web-adapter");
 const { MobileStorageAdapter } = await import("./mobile-storage-adapter");
+const { ElectronStorageAdapter } = await import("./electron-storage-adapter");
 
 describe("createStorage", () => {
   beforeEach(() => {
     isMobile.mockReturnValue(false);
+    isElectron.mockReturnValue(false);
     init.mockClear();
   });
 
@@ -33,5 +38,10 @@ describe("createStorage", () => {
     isMobile.mockReturnValue(true);
     expect(createStorage()).toBeInstanceOf(MobileStorageAdapter);
     expect(init).toHaveBeenCalledOnce();
+  });
+
+  it("uses the Electron adapter on desktop hosts", () => {
+    isElectron.mockReturnValue(true);
+    expect(createStorage()).toBeInstanceOf(ElectronStorageAdapter);
   });
 });

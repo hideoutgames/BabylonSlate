@@ -60,6 +60,22 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
 
+  apps/desktop:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@babylonslate/vfs':
+        specifier: workspace:*
+        version: link:../../packages/vfs
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.10
+        version: 22.20.1
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
   apps/docs:
     devDependencies:
       '@fontsource-variable/geist':
@@ -113,6 +129,9 @@ importers:
       '@babylonslate/editor-kit':
         specifier: workspace:*
         version: link:../../packages/editor-kit
+      '@babylonslate/exporter':
+        specifier: workspace:*
+        version: link:../../packages/exporter
       '@babylonslate/graph-ui':
         specifier: workspace:*
         version: link:../../packages/graph-ui
@@ -229,6 +248,58 @@ importers:
         specifier: ^8.2.0
         version: 8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)
 
+  apps/player:
+    dependencies:
+      '@babylonjs/core':
+        specifier: ^9.20.0
+        version: 9.20.0
+      '@babylonslate/anim-graph':
+        specifier: workspace:*
+        version: link:../../packages/anim-graph
+      '@babylonslate/assets':
+        specifier: workspace:*
+        version: link:../../packages/assets
+      '@babylonslate/behaviour-tree':
+        specifier: workspace:*
+        version: link:../../packages/behaviour-tree
+      '@babylonslate/bridge':
+        specifier: workspace:*
+        version: link:../../packages/bridge
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@babylonslate/debugger':
+        specifier: workspace:*
+        version: link:../../packages/debugger
+      '@babylonslate/exporter':
+        specifier: workspace:*
+        version: link:../../packages/exporter
+      '@babylonslate/input':
+        specifier: workspace:*
+        version: link:../../packages/input
+      '@babylonslate/object-model':
+        specifier: workspace:*
+        version: link:../../packages/object-model
+      '@babylonslate/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
+      '@babylonslate/render':
+        specifier: workspace:*
+        version: link:../../packages/render
+      '@babylonslate/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+    devDependencies:
+      '@types/node':
+        specifier: ^22.13.10
+        version: 22.20.1
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+      vite:
+        specifier: ^8.2.0
+        version: 8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)
+
   packages/anim-graph:
     dependencies:
       '@babylonslate/core':
@@ -336,6 +407,25 @@ importers:
       '@types/react':
         specifier: ^19.2.17
         version: 19.2.18
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
+  packages/exporter:
+    dependencies:
+      '@babylonslate/assets':
+        specifier: workspace:*
+        version: link:../assets
+      '@babylonslate/bridge':
+        specifier: workspace:*
+        version: link:../bridge
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+    devDependencies:
       typescript:
         specifier: ~5.8.2
         version: 5.8.3

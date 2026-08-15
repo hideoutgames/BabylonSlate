@@ -25,8 +25,11 @@ export default defineConfig({
             "packages/ui/**/*.test.ts",
             "packages/scripting/**/*.test.ts",
             "packages/scripting-nodes/**/*.test.ts",
+            "packages/exporter/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
             "apps/docs/**/*.test.ts",
+            "apps/player/**/*.test.ts",
+            "apps/desktop/**/*.test.ts",
             "playwright.config.test.ts",
           ],
         },
@@ -68,6 +71,8 @@ export default defineConfig({
         // Node adapter is CI/tooling-only; covered by its own unit tests without
         // dragging the browser package coverage gate.
         "**/node-adapter.ts",
+        // Electron main/preload live in apps/desktop (outside this gate). The
+        // renderer adapter is unit-tested with a fake IPC bridge.
         // Needs a real WebGL context; covered by the Playwright viewport specs.
         "**/create-engine.ts",
         // Standalone CreateFullscreenUI + Canvas2D blit; covered by Playwright HUD / designer.
@@ -213,6 +218,12 @@ export default defineConfig({
           statements: 60,
         },
         "packages/vfs/src/**": {
+          lines: 60,
+          functions: 60,
+          branches: 60,
+          statements: 60,
+        },
+        "packages/exporter/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,
