@@ -32,5 +32,6 @@ describe("StatsHud", () => {
     expect(screen.getByTestId("play-physics-ms").getAttribute("data-ms")).toBe(
       "2",
     );
+    expect(screen.getByTestId("play-fps").getAttribute("data-fps")).toBe("60");
   });
 });

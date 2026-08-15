@@ -59,7 +59,7 @@ export function StatsHud({
       data-testid="stats-hud"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span data-testid="play-fps">
+        <span data-testid="play-fps" data-fps={String(fps)}>
           <SelectableText>{fps} fps</SelectableText>
         </span>
         <span data-testid="play-script-ms" data-ms={String(scriptMs)}>

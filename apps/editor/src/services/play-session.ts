@@ -217,6 +217,7 @@ export function startPlaySession(options: {
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   pixelsPerUnit?: number;
+  pixelPerfect?: boolean;
   /** Baked Scene navmesh bytes; Play imports and never generates. */
   navmeshBytes?: Uint8Array | null;
   onSetRenderResolution?: (width: number, height: number) => void;
@@ -247,6 +248,7 @@ export function startPlaySession(options: {
     textureBytes: options.textureBytes,
     modelBytes: options.modelBytes,
     pixelsPerUnit: options.pixelsPerUnit,
+    pixelPerfect: options.pixelPerfect,
     environmentColor: options.scene?.settings.environmentColor,
   });
   if (options.scene) {

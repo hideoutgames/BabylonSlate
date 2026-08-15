@@ -108,6 +108,14 @@ describe("listDockWindows", () => {
       "sprite-preview",
       "sprite-details",
     ]);
+    expect(listDockWindows("tileset").map((entry) => entry.id)).toEqual([
+      "tileset-preview",
+      "tileset-details",
+    ]);
+    expect(listDockWindows("tilemap").map((entry) => entry.id)).toEqual([
+      "tilemap-paint",
+      "tilemap-details",
+    ]);
     expect(listDockWindows("ui").map((entry) => entry.id)).toEqual([
       "ui-design",
       "ui-hierarchy",

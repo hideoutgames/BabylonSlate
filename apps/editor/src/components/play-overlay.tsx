@@ -65,6 +65,7 @@ export interface PlayOverlayProps {
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   pixelsPerUnit?: number;
+  pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
   onClose: (result: PlaySessionResult) => void;
 }
@@ -103,6 +104,7 @@ export function PlayOverlay({
   textureBytes,
   modelBytes,
   pixelsPerUnit,
+  pixelPerfect,
   navmeshBytes,
   onClose,
 }: PlayOverlayProps) {
@@ -157,6 +159,8 @@ export function PlayOverlay({
   navmeshBytesRef.current = navmeshBytes;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
+  const pixelPerfectRef = useRef(pixelPerfect);
+  pixelPerfectRef.current = pixelPerfect;
   const physicsRef = useRef(physics);
   physicsRef.current = physics;
   const sceneRef = useRef({
@@ -223,6 +227,7 @@ export function PlayOverlay({
       textureBytes: textureBytesRef.current,
       modelBytes: modelBytesRef.current,
       pixelsPerUnit: pixelsPerUnitRef.current,
+      pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
       onUiSetVisible: (widgetId, visible) => {
         setHiddenWidgetIds((prev) => {

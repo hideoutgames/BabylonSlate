@@ -625,6 +625,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }
+            pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
             }
