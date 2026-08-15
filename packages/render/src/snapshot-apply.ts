@@ -30,7 +30,12 @@ import {
   type AuthoredLightProperties,
 } from "./scene-illumination";
 import { createSpriteQuad } from "./sprite-quad";
-import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
+import {
+  applyTilemapParallaxToMesh,
+  createTilemapMeshes,
+  worldTileSize,
+} from "./tilemap-mesh";
+import { snapToPixelGrid } from "./pixel-perfect";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -44,6 +49,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   cameras: Map<number, Camera>;
   lightProps: Map<number, AuthoredLightProperties>;
   cameraProps: Map<number, AuthoredCameraProperties>;
+  /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
+  pixelPerfect?: boolean;
   /** Reused each apply — no per-frame Set allocation. */
   liveSlots: Set<number>;
   /** meshKind from assignMesh, keyed by slotId. */
@@ -342,7 +349,12 @@ export function applySnapshotToScene(
       if (camera) {
         updateAuthoredCameraTransform(camera, actor.position, actor.rotation);
       }
+      applyTilemapParallaxToMesh(
+        mesh,
+        scene.activeCamera ?? { position: actor.position },
+      );
     }
+    snapPlayCameraToPixelGrid(scene, binding);
     for (const [slotId, mesh] of binding.meshes) {
       if (!live.has(slotId)) {
         mesh.dispose();
@@ -372,6 +384,20 @@ export function applySnapshotToScene(
     scene.blockMaterialDirtyMechanism = false;
     scene.blockfreeActiveMeshesAndRenderingGroups = prevBlock;
   }
+}
+
+function snapPlayCameraToPixelGrid(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+): void {
+  if (!binding.pixelPerfect) return;
+  const camera = scene.activeCamera;
+  if (!camera) return;
+  const ppu = binding.pixelsPerUnit && binding.pixelsPerUnit > 0
+    ? binding.pixelsPerUnit
+    : 100;
+  camera.position.x = snapToPixelGrid(camera.position.x, ppu);
+  camera.position.y = snapToPixelGrid(camera.position.y, ppu);
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {

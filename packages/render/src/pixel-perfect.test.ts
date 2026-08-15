@@ -46,7 +46,7 @@ describe("snapToPixelGrid", () => {
 });
 
 describe("editor camera pixel-perfect framing", () => {
-  it("derives ortho bounds from the canvas and snaps the target", () => {
+  it("derives ortho bounds from the canvas without snapping the editor target", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const camera = createEditorCamera(scene, { mode: "2d" });
@@ -56,8 +56,8 @@ describe("editor camera pixel-perfect framing", () => {
     camera.pan(0, 0);
 
     expect(camera.orthoHalfHeight()).toBe(3);
-    expect(camera.camera.target.x).toBeCloseTo(0.01, 6);
-    expect(camera.camera.target.y).toBeCloseTo(0.03, 6);
+    expect(camera.camera.target.x).toBeCloseTo(0.014, 6);
+    expect(camera.camera.target.y).toBeCloseTo(0.026, 6);
 
     camera.zoom(2);
     expect(camera.pixelZoom()).toBe(2);

@@ -18,7 +18,9 @@ function spriteSortingOf(
   actor: SerializedActor,
 ): { layer: string; orderInLayer: number } | null {
   const component = actor.components.find(
-    (entry) => entry.classId === "SpriteComponent",
+    (entry) =>
+      entry.classId === "SpriteComponent" ||
+      entry.classId === "TilemapComponent",
   );
   if (!component) return null;
   const layer = component.properties.sortingLayer;

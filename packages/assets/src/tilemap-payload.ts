@@ -38,8 +38,59 @@ export function createDefaultTilemapPayload(): TilemapPayload {
     tileWidth: 16,
     tileHeight: 16,
     chunkSize: DEFAULT_TILEMAP_CHUNK_SIZE,
-    layers: [createDefaultLayer("layer-1", "Ground")],
+    layers: [createTilemapLayer("layer-1", "Ground")],
   };
+}
+
+export function createTilemapLayer(id: string, name: string): TilemapLayer {
+  return {
+    id,
+    name,
+    visible: true,
+    collision: true,
+    sortingLayer: "Default",
+    orderInLayer: 0,
+    parallax: { x: 1, y: 1 },
+    chunks: [],
+  };
+}
+
+export function addTilemapLayer(
+  map: TilemapPayload,
+  name = "Layer",
+): TilemapPayload {
+  const used = new Set(map.layers.map((layer) => layer.id));
+  let index = map.layers.length + 1;
+  let id = `layer-${index}`;
+  while (used.has(id)) {
+    index += 1;
+    id = `layer-${index}`;
+  }
+  const usedNames = map.layers.map((layer) => layer.name);
+  const uniqueName = usedNames.includes(name)
+    ? `${name} ${index}`
+    : name;
+  return {
+    ...map,
+    layers: [...map.layers, createTilemapLayer(id, uniqueName)],
+  };
+}
+
+export function reorderTilemapLayers(
+  map: TilemapPayload,
+  layerIds: readonly string[],
+): TilemapPayload {
+  const byId = new Map(map.layers.map((layer) => [layer.id, layer]));
+  const layers: TilemapLayer[] = [];
+  const seen = new Set<string>();
+  for (const id of layerIds) {
+    const layer = byId.get(id);
+    if (!layer || seen.has(id)) continue;
+    seen.add(id);
+    layers.push(layer);
+  }
+  if (layers.length === 0) return map;
+  return { ...map, layers };
 }
 
 export function normalizeTilemapPayload(value: unknown): TilemapPayload {
@@ -116,19 +167,6 @@ export function setTile(
         : [...layer.chunks, { cx, cy, tiles }];
       return { ...layer, chunks };
     }),
-  };
-}
-
-function createDefaultLayer(id: string, name: string): TilemapLayer {
-  return {
-    id,
-    name,
-    visible: true,
-    collision: true,
-    sortingLayer: "Default",
-    orderInLayer: 0,
-    parallax: { x: 1, y: 1 },
-    chunks: [],
   };
 }
 

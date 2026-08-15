@@ -54,7 +54,7 @@ type RapierApi = {
     ball(radius: number): RapierColliderDesc;
     capsule(halfHeight: number, radius: number): RapierColliderDesc;
     convexHull(points: Float32Array): RapierColliderDesc | null;
-    polyline(points: Float32Array): RapierColliderDesc;
+    polyline(points: Float32Array, indices?: Uint32Array): RapierColliderDesc;
   };
   Ray: new (
     origin: { x: number; y: number },
@@ -106,6 +106,7 @@ type BodyRecord = {
 type ColliderRecord = {
   desc: ColliderDesc;
   collider: RapierCollider;
+  extra?: RapierCollider;
 };
 
 type CharacterRecord = {
@@ -269,13 +270,21 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       .setRestitution(desc.restitution)
       .setSensor(desc.isTrigger);
     const collider = this.world.createCollider(colliderDesc, body.body);
-    this.colliders.set(desc.id, { desc: { ...desc }, collider });
+    const extra = this.createLoopCloseSegment(desc, body.body);
+    this.colliders.set(desc.id, { desc: { ...desc }, collider, extra });
+    if (extra) {
+      const prev = this.world.timestep;
+      this.world.timestep = 0;
+      this.world.step();
+      this.world.timestep = prev;
+    }
   }
 
   destroyCollider(colliderId: string): void {
     const record = this.colliders.get(colliderId);
     if (!record) return;
     this.world.removeCollider(record.collider, true);
+    if (record.extra) this.world.removeCollider(record.extra, true);
     this.colliders.delete(colliderId);
   }
 
@@ -441,12 +450,33 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
           flat[i * 2] = p.x;
           flat[i * 2 + 1] = p.y;
         });
-        return shape.loop
-          ? R.ColliderDesc.polyline(flat)
-          : R.ColliderDesc.polyline(flat);
+        return R.ColliderDesc.polyline(flat);
       }
       default:
         return null;
     }
+  }
+
+  /**
+   * Rapier line-strips do not include the closing edge, and repeating the first
+   * point makes the whole polyline miss raycasts. Close loops with a segment.
+   */
+  private createLoopCloseSegment(
+    desc: ColliderDesc,
+    body: RapierRigidBody,
+  ): RapierCollider | undefined {
+    const shape = desc.shape;
+    if (shape.kind !== "chain" || shape.loop !== true || shape.points.length < 2) {
+      return undefined;
+    }
+    const first = shape.points[0]!;
+    const last = shape.points[shape.points.length - 1]!;
+    if (first.x === last.x && first.y === last.y) return undefined;
+    const flat = new Float32Array([last.x, last.y, first.x, first.y]);
+    const segment = this.RAPIER.ColliderDesc.polyline(flat)
+      .setFriction(desc.friction)
+      .setRestitution(desc.restitution)
+      .setSensor(desc.isTrigger);
+    return this.world.createCollider(segment, body);
   }
 }

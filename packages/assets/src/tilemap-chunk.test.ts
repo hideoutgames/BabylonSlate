@@ -6,7 +6,7 @@ import {
   readGolden,
   writeGolden,
 } from "@babylonslate/test-kit";
-import { tilemapChunkVertexData } from "./tilemap-chunk";
+import { tilemapChunkVertexData, tilemapParallaxOffset } from "./tilemap-chunk";
 import { emptyChunkTiles } from "./tilemap-payload";
 import { normalizeTilesetPayload } from "./tileset-payload";
 
@@ -66,5 +66,58 @@ describe("tilemapChunkVertexData", () => {
     expect(normalizeGoldenText(serialized)).toBe(
       normalizeGoldenText(readGolden(FIXTURE_DIR, relative)),
     );
+  });
+
+  it("keeps animated tiles out of the static chunk and in the animated set", () => {
+    const tileset = normalizeTilesetPayload({
+      atlasWidth: 32,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+      tiles: [
+        { id: 1, collision: "none", animation: [] },
+        { id: 2, collision: "none", animation: [2, 3] },
+      ],
+    });
+    const tiles = emptyChunkTiles(2);
+    tiles[0] = 1;
+    tiles[1] = 2;
+    const staticData = tilemapChunkVertexData({
+      tiles,
+      chunkSize: 2,
+      chunkX: 0,
+      chunkY: 0,
+      tileset,
+      worldTileWidth: 1,
+      worldTileHeight: 1,
+      kind: "static",
+    });
+    const animatedData = tilemapChunkVertexData({
+      tiles,
+      chunkSize: 2,
+      chunkX: 0,
+      chunkY: 0,
+      tileset,
+      worldTileWidth: 1,
+      worldTileHeight: 1,
+      kind: "animated",
+    });
+    expect(staticData.positions).toHaveLength(12);
+    expect(animatedData.positions).toHaveLength(12);
+    expect(staticData.positions[0]).toBe(0);
+    expect(animatedData.positions[0]).toBe(1);
+  });
+});
+
+describe("tilemapParallaxOffset", () => {
+  it("keeps world lock at 1 and tracks the camera at 0", () => {
+    expect(tilemapParallaxOffset({ x: 1, y: 1 }, { x: 10, y: 4 })).toEqual({
+      x: 0,
+      y: 0,
+    });
+    expect(tilemapParallaxOffset({ x: 0, y: 0.5 }, { x: 10, y: 4 })).toEqual({
+      x: 10,
+      y: 2,
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { tilesetTileUv, type TilesetPayload } from "./tileset-payload";
+import { tilesetTileById, tilesetTileUv, type TilesetPayload } from "./tileset-payload";
 
 /** Babylon-free chunk geometry: one draw per chunk per atlas. */
 export interface TilemapChunkVertexData {
@@ -6,6 +6,8 @@ export interface TilemapChunkVertexData {
   uvs: number[];
   indices: number[];
 }
+
+export type TilemapChunkDrawKind = "static" | "animated";
 
 export function tilemapChunkVertexData(options: {
   tiles: readonly number[];
@@ -15,6 +17,8 @@ export function tilemapChunkVertexData(options: {
   tileset: TilesetPayload;
   worldTileWidth: number;
   worldTileHeight: number;
+  /** Omit to include every non-empty tile (golden / debug dumps). */
+  kind?: TilemapChunkDrawKind;
 }): TilemapChunkVertexData {
   const {
     tiles,
@@ -24,6 +28,7 @@ export function tilemapChunkVertexData(options: {
     tileset,
     worldTileWidth,
     worldTileHeight,
+    kind,
   } = options;
   const positions: number[] = [];
   const uvs: number[] = [];
@@ -35,7 +40,12 @@ export function tilemapChunkVertexData(options: {
     for (let lx = 0; lx < chunkSize; lx++) {
       const tileId = tiles[ly * chunkSize + lx] ?? 0;
       if (tileId <= 0) continue;
-      const uv = tilesetTileUv(tileset, tileId);
+      const meta = tilesetTileById(tileset, tileId);
+      const animated = (meta?.animation.length ?? 0) > 0;
+      if (kind === "static" && animated) continue;
+      if (kind === "animated" && !animated) continue;
+      const uvId = animated ? (meta?.animation[0] ?? tileId) : tileId;
+      const uv = tilesetTileUv(tileset, uvId);
       if (!uv) continue;
       const x0 = originX + lx * worldTileWidth;
       const y0 = originY + ly * worldTileHeight;
@@ -50,4 +60,15 @@ export function tilemapChunkVertexData(options: {
     }
   }
   return { positions, uvs, indices };
+}
+
+/** Local offset so a parallax of 1 stays in world space and 0 tracks the camera. */
+export function tilemapParallaxOffset(
+  parallax: { x: number; y: number },
+  camera: { x: number; y: number },
+): { x: number; y: number } {
+  return {
+    x: camera.x * (1 - parallax.x),
+    y: camera.y * (1 - parallax.y),
+  };
 }

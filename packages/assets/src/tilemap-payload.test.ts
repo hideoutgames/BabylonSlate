@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  addTilemapLayer,
   chunkCoordForTile,
   createDefaultTilemapPayload,
   emptyChunkTiles,
   getTile,
   localIndex,
   normalizeTilemapPayload,
+  reorderTilemapLayers,
   setTile,
 } from "./tilemap-payload";
 
@@ -71,5 +73,20 @@ describe("tilemap payload", () => {
     expect(payload.layers[0]?.id).toBeTruthy();
     expect(payload.layers[0]?.chunks[0]?.tiles).toHaveLength(32 * 32);
     expect(payload.layers[0]?.chunks[0]?.tiles[0]).toBe(1);
+  });
+
+  it("adds and reorders named layers without dropping chunks", () => {
+    let map = createDefaultTilemapPayload();
+    map = setTile(map, "layer-1", 0, 0, 3);
+    map = addTilemapLayer(map, "Foreground");
+    expect(map.layers).toHaveLength(2);
+    expect(map.layers[1]?.name).toBe("Foreground");
+    expect(map.layers[1]?.id).not.toBe("layer-1");
+    expect(map.layers[1]?.visible).toBe(true);
+    expect(map.layers[1]?.collision).toBe(true);
+    const ids = map.layers.map((layer) => layer.id);
+    map = reorderTilemapLayers(map, [ids[1]!, ids[0]!]);
+    expect(map.layers.map((layer) => layer.name)).toEqual(["Foreground", "Ground"]);
+    expect(getTile(map, "layer-1", 0, 0)).toBe(3);
   });
 });

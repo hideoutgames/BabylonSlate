@@ -247,6 +247,10 @@ describe("scene-loader", () => {
   it("maps mesh names back to actor ids", () => {
     expect(actorIdFromMeshName(editorMeshName("abc"))).toBe("abc");
     expect(actorIdFromMeshName("actor-3")).toBeNull();
+    expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0")).toBe("ground");
+    expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0:anim")).toBe(
+      "ground",
+    );
   });
 
   it("clearSceneMeshes is safe on an already empty scene", () => {
