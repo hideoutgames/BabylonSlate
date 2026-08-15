@@ -69,7 +69,7 @@ After pushes to `main`, the app deploys to:
 
 **https://hideoutgames.github.io/BabylonSlate/**
 
-Open that URL in **Safari on your iPad**. The Pages build has test mode baked in — no folder prompts, fixed test project, and the **Test mode** badge in the toolbar.
+Open that URL in **Safari on your iPad**. The Pages build has test mode on (`VITE_TEST_MODE`) — no folder prompts, and Create Project prefills TestProject.
 
 Documentation is on the same Pages site at **[/docs/](https://hideoutgames.github.io/BabylonSlate/docs/)**. Do not switch Pages source to “Deploy from a `/docs` folder” — that would replace the editor with Jekyll-rendered markdown.
 
@@ -93,7 +93,7 @@ That builds the editor and the VitePress docs site, then copies docs into `apps/
 
 ### Manual checklist (~5 min)
 
-1. Homepage, then an open project with **Test mode** badge
+1. Homepage with test mode on; Create Project prefills TestProject
 2. Toolbar: Save All, Undo/Redo, Play, Windows, Focus, Search, Settings
 3. Scene Viewport (2D/3D toggle) and Graph document tabs
 4. Content Browser lists project assets
