@@ -6,6 +6,10 @@ export function pluginDownloadFileName(displayName: string): string {
   return `${pluginFolderSlug(displayName)}.babplugin`;
 }
 
+export function pluginContentToggleLabel(showPluginContent: boolean): string {
+  return showPluginContent ? "Hide Plugin Content" : "Show Plugin Content";
+}
+
 export const PROJECT_CONTENT_ROOT_ID = "project";
 
 export function pluginRootId(pluginGuid: string): string {

@@ -17,6 +17,7 @@ import {
   packEnginePluginFiles,
   planPluginImport,
   unpackEnginePluginZip,
+  installEnginePluginDefaults,
 } from "./plugin-package";
 import {
   discoverEnginePlugins,
@@ -431,5 +432,71 @@ describe("engine plugin pack and unpack", () => {
       STARTER_CONTENT_FOLDER,
     );
     expect(descriptor.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
+  });
+});
+
+describe("installEnginePluginDefaults", () => {
+  async function engineWithStarter() {
+    const engine = new MemoryStorageAdapter("opfs");
+    await engine.openDocumentsProject("engine-plugins");
+    const files = await buildStarterContentFiles();
+    const packed = await packEnginePluginFiles(files, {
+      id: STARTER_CONTENT_FOLDER,
+    });
+    await unpackEnginePluginZip(engine, packed.zip, STARTER_CONTENT_FOLDER);
+    return engine;
+  }
+
+  it("copies engine plugins into plugins/ with the same guids", async () => {
+    const engine = await engineWithStarter();
+    const project = await projectStorage();
+    const installed = await installEnginePluginDefaults(project, engine);
+    expect(installed.map((plugin) => plugin.pluginGuid)).toEqual([
+      STARTER_CONTENT_PLUGIN_GUID,
+    ]);
+    expect(installed[0]!.source).toBe("project");
+    expect(installed[0]!.readOnly).toBe(false);
+    expect(installed[0]!.folderPath).toBe("plugins/starter-content");
+    expect(
+      await project.exists(
+        "plugins/starter-content/assets/StarterActor.class.babasset",
+      ),
+    ).toBe(true);
+    expect(
+      readBabassetHeader(
+        await project.readBinary(
+          "plugins/starter-content/assets/StarterActor.class.babasset",
+        ),
+      ).guid,
+    ).toBe(STARTER_ACTOR_GUID);
+  });
+
+  it("skips a guid the project already has", async () => {
+    const engine = await engineWithStarter();
+    const project = await projectStorage();
+    const settings = createDefaultPluginSettings({
+      pluginGuid: STARTER_CONTENT_PLUGIN_GUID,
+      displayName: "Mine",
+    });
+    await writeProjectPlugin(project, "mine", settings);
+    await installEnginePluginDefaults(project, engine);
+    const discovered = await discoverProjectPlugins(project);
+    expect(discovered).toHaveLength(1);
+    expect(discovered[0]!.folderName).toBe("mine");
+    expect(discovered[0]!.settings.displayName).toBe("Mine");
+    expect(
+      await project.exists(
+        "plugins/starter-content/assets/StarterActor.class.babasset",
+      ),
+    ).toBe(false);
+  });
+
+  it("is a no-op when the copy is already installed", async () => {
+    const engine = await engineWithStarter();
+    const project = await projectStorage();
+    await installEnginePluginDefaults(project, engine);
+    const second = await installEnginePluginDefaults(project, engine);
+    expect(second).toEqual([]);
+    expect(await discoverProjectPlugins(project)).toHaveLength(1);
   });
 });

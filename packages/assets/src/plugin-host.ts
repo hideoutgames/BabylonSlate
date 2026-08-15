@@ -176,6 +176,20 @@ export async function writeProjectPlugin(
   };
 }
 
+/** Project plugins with the same guid hide the bundled engine original. */
+export function shadowEnginePlugins(
+  projectPlugins: readonly PluginDescriptor[],
+  enginePlugins: readonly PluginDescriptor[],
+): PluginDescriptor[] {
+  const projectGuids = new Set(
+    projectPlugins.map((plugin) => plugin.pluginGuid),
+  );
+  return [
+    ...enginePlugins.filter((plugin) => !projectGuids.has(plugin.pluginGuid)),
+    ...projectPlugins,
+  ];
+}
+
 export function resolvePluginGraph(
   plugins: readonly PluginGraphInput[],
   engineVersion: string = ENGINE_VERSION,

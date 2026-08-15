@@ -18,7 +18,6 @@ import type { IndexedAsset } from "@babylonslate/assets";
 import { newAssetGuid, resolvePluginEnabled } from "@babylonslate/assets";
 import {
   ContextMenuOverlay,
-  NamePromptDialog,
   SearchInput,
   SelectableText,
   TreeView,
@@ -30,7 +29,6 @@ import {
 import { documentId, documentKindForAssetType, labelFromPath } from "@babylonslate/core";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
-import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -116,6 +114,7 @@ import {
   contentBrowserFolderOps,
   contentBrowserRoots,
   filterBabpluginFiles,
+  pluginContentToggleLabel,
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
@@ -160,7 +159,6 @@ export function ContentBrowserWorkspace() {
     pluginDescriptors,
     showPluginContent,
     setShowPluginContent,
-    createProjectPlugin,
   } = useDocuments();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
   const { diagnostics } = useValidation();
@@ -184,7 +182,6 @@ export function ContentBrowserWorkspace() {
   );
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [newAssetOpen, setNewAssetOpen] = useState(false);
-  const [newPluginOpen, setNewPluginOpen] = useState(false);
   const [newAssetType, setNewAssetType] =
     useState<CreatableAssetType>("Scene");
   const [newAssetName, setNewAssetName] = useState("");
@@ -1259,28 +1256,6 @@ export function ContentBrowserWorkspace() {
           <PlusIcon data-icon="inline-start" />
           New Asset
         </Button>
-        {selectedRoot.rootId === PROJECT_ROOT_ID &&
-        selectedFolderPath === ASSETS_ROOT ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid="content-browser-new-plugin"
-            disabled={busy}
-            onClick={() => setNewPluginOpen(true)}
-          >
-            <PlusIcon data-icon="inline-start" />
-            New Plugin
-          </Button>
-        ) : null}
-        <Toggle
-          pressed={showPluginContent}
-          onPressedChange={(pressed) => setShowPluginContent(pressed === true)}
-          data-testid="content-browser-show-plugin-content"
-          aria-label="Show Plugin Content"
-        >
-          Show Plugin Content
-        </Toggle>
         <SearchInput
           value={search}
           onChange={setSearch}
@@ -1417,6 +1392,16 @@ export function ContentBrowserWorkspace() {
               data-testid="content-browser-folder-tree"
             />
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-1 w-full min-h-[var(--touch-target,44px)] justify-center"
+            data-testid="content-browser-show-plugin-content"
+            aria-label={pluginContentToggleLabel(showPluginContent)}
+            onClick={() => setShowPluginContent(!showPluginContent)}
+          >
+            {pluginContentToggleLabel(showPluginContent)}
+          </Button>
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1770,18 +1755,6 @@ export function ContentBrowserWorkspace() {
         itemCount={moveTarget?.itemCount}
         assetSourcePaths={moveTarget?.assetSourcePaths}
         folderSourcePaths={moveTarget?.folderSourcePaths}
-      />
-
-      <NamePromptDialog
-        open={newPluginOpen}
-        onOpenChange={setNewPluginOpen}
-        title="New Plugin"
-        label="Display Name"
-        confirmLabel="Create"
-        data-testid="content-browser-new-plugin-dialog"
-        onSubmit={(name) => {
-          void createProjectPlugin(name);
-        }}
       />
 
       <AlertDialog

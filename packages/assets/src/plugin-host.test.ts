@@ -15,6 +15,7 @@ import {
   mountEnabledPlugins,
   resolvePluginEnabled,
   resolvePluginGraph,
+  shadowEnginePlugins,
   writeProjectPlugin,
 } from "./plugin-host";
 import { AssetRegistry } from "./registry";
@@ -128,6 +129,54 @@ describe("discoverEnginePlugins", () => {
     expect(discovered[0]!.source).toBe("engine");
     expect(discovered[0]!.readOnly).toBe(true);
     expect(discovered[0]!.folderPath).toBe("starter-content");
+  });
+});
+
+describe("shadowEnginePlugins", () => {
+  it("hides an engine plugin when a project plugin has the same guid", () => {
+    const settings = createDefaultPluginSettings({
+      pluginGuid: "shared",
+      displayName: "Starter Content",
+    });
+    const engine = {
+      pluginGuid: "shared",
+      folderName: "starter-content",
+      folderPath: "starter-content",
+      settingsPath: "starter-content/starter-content.plugin.babasset",
+      contentPath: "starter-content/assets",
+      source: "engine" as const,
+      readOnly: true,
+      settings,
+    };
+    const project = {
+      ...engine,
+      folderName: "starter-content",
+      folderPath: "plugins/starter-content",
+      settingsPath: "plugins/starter-content/starter-content.plugin.babasset",
+      contentPath: "plugins/starter-content/assets",
+      source: "project" as const,
+      readOnly: false,
+    };
+    const otherEngine = {
+      ...engine,
+      pluginGuid: "other-engine",
+      folderName: "other",
+      folderPath: "other",
+      settingsPath: "other/other.plugin.babasset",
+      contentPath: "other/assets",
+      settings: createDefaultPluginSettings({
+        pluginGuid: "other-engine",
+        displayName: "Other",
+      }),
+    };
+    const visible = shadowEnginePlugins([project], [engine, otherEngine]);
+    expect(visible.map((plugin) => plugin.pluginGuid)).toEqual([
+      "other-engine",
+      "shared",
+    ]);
+    expect(visible.find((plugin) => plugin.pluginGuid === "shared")?.source).toBe(
+      "project",
+    );
   });
 });
 

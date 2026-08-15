@@ -13,13 +13,13 @@ plugins/<folder>/assets/                  # content root (own .blobs)
 
 **`.babplugin` zip** uses the same codec as `.babproject` with `kind: "plugin"` ([containers.md](containers.md)). `plugin.json` is that **container manifest only**, derived from PluginSettings at export. In-project discovery scans for `type: "PluginSettings"`; it does **not** require `plugin.json` on disk.
 
-**Engine plugins** live in repo `engine-plugins/` (directory form in git). Vite packs each folder to `public/engine-plugins/<id>.babplugin` plus `index.json` (static hosts cannot list directories). The editor fetches the index, unpacks into a **separate** Memory `ProjectStorage`, and mounts **read-only**. Engine plugins are never copied into the open project (that would dirty Export Project).
+**Engine plugins** live in repo `engine-plugins/` (directory form in git). Vite packs each folder to `public/engine-plugins/<id>.babplugin` plus `index.json`. The editor fetches the index and unpacks into a **separate** Memory `ProjectStorage` that stays **read-only**. **New projects** (empty / 2D scaffold and `createFromTemplate`) copy each engine plugin into `plugins/<folder>/` with the **same guids** so the copy is editable. A project plugin with guid X **shadows** the engine plugin with guid X (one Project Settings row). Opening an existing project does not copy. Deleting the project copy unmasks the engine original again.
 
 First engine plugin: `engine-plugins/starter-content/` — display name **Starter Content**, `enabledByDefault: false`, Actor class **StarterActor**, Lucide `Puzzle`, no artwork. Stable guids: plugin `c0ffee00-0000-4000-8000-000000000001`, class `c0ffee00-0000-4000-8000-000000000002`. `UPDATE_GOLDENS=1` rewrites the committed directory from `buildStarterContentFiles()`.
 
 ## PluginSettings
 
-Header `type: "PluginSettings"`, document chunk, `isEditorOnlyAssetType` (stripped from Play / P14). Not a Content Browser **New Asset** type. **New Plugin** (Project Settings, or Content Browser when the project root is selected) creates the folder + PluginSettings.
+Header `type: "PluginSettings"`, document chunk, `isEditorOnlyAssetType` (stripped from Play / P14). Not a Content Browser **New Asset** type. **New Plugin** (Project Settings only) creates the folder + PluginSettings.
 
 | Field | Role |
 | --- | --- |
@@ -39,7 +39,7 @@ Later wins:
 2. `project.json` `pluginOverrides[guid].enabled` (editor uses 1–2)
 3. Export-preset `pluginOverrides` (export only; P14)
 
-Disable **unmounts** the content root — assets leave the registry. **Show Plugin Content** is a Content Browser **visibility** filter (`layout.json`, default off). AssetPicker / Play / search still see **enabled** plugin assets when the toggle is off. Extra tree roots appear when the toggle is on; engine roots show a Read Only badge and skip New / Import / Delete.
+Disable **unmounts** the content root — assets leave the registry. **Show Plugin Content** / **Hide Plugin Content** is a Content Browser **visibility** button at the bottom of the left folder pane (`layout.json`, default off). AssetPicker / Play / search still see **enabled** plugin assets when the tree is hidden. Extra tree roots appear when shown; engine roots show a Read Only badge and skip New / Import / Delete.
 
 Override guids with **no discovered plugin** become Unresolved placeholders. Discovered PluginSettings guids are not indexed as placeholders (PluginSettings lives outside the mounted `assets/` root).
 
@@ -47,7 +47,7 @@ Override guids with **no discovered plugin** become Unresolved placeholders. Dis
 
 ## PluginHost
 
-`discoverProjectPlugins` / `discoverEnginePlugins` → `resolvePluginGraph` (Kahn topo) → `mountEnabledPlugins`. Diagnostics: `plugin.cycle`, `plugin.unsatisfiable`, `plugin.missing`, `plugin.engine_unsatisfiable`. A cycle or unsatisfiable range **does not** zero the whole graph: independent plugins still mount; cycle members stay unmounted even if enabled. After mount, missing `header.dependencies` guids and override guids with no discovered plugin become `Unresolved` placeholders that **keep the guid** (`placeholder: true`). Remounting the plugin replaces the placeholder.
+`discoverProjectPlugins` / `discoverEnginePlugins` → `shadowEnginePlugins` (project guid hides the engine original) → `resolvePluginGraph` (Kahn topo) → `mountEnabledPlugins`. Diagnostics: `plugin.cycle`, `plugin.unsatisfiable`, `plugin.missing`, `plugin.engine_unsatisfiable`. A cycle or unsatisfiable range **does not** zero the whole graph: independent plugins still mount; cycle members stay unmounted even if enabled. After mount, missing `header.dependencies` guids and override guids with no discovered plugin become `Unresolved` placeholders that **keep the guid** (`placeholder: true`). Remounting the plugin replaces the placeholder.
 
 ## Content roots
 

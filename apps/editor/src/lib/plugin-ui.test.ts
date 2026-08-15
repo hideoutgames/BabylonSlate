@@ -15,6 +15,7 @@ import {
   pluginDownloadFileName,
   pluginRootId,
   pluginSettingsIdentityFields,
+  pluginContentToggleLabel,
   rootIdForFolderPath,
   uniquePluginFolderName,
 } from "./plugin-ui";
@@ -33,6 +34,13 @@ describe("plugin identity helpers", () => {
     expect(pluginDownloadFileName("Starter Content")).toBe(
       "starter-content.babplugin",
     );
+  });
+});
+
+describe("plugin content visibility label", () => {
+  it("switches between Show and Hide Plugin Content", () => {
+    expect(pluginContentToggleLabel(false)).toBe("Show Plugin Content");
+    expect(pluginContentToggleLabel(true)).toBe("Hide Plugin Content");
   });
 });
 
