@@ -7,7 +7,11 @@ import {
   type ValidateOptions,
 } from "./type-context";
 import { isAssignable } from "./types";
-import { pinAcceptsLiteralDefault, pinRejectsStoredDefault, readPinDefault } from "./pin-defaults";
+import {
+  pinAcceptsLiteralDefault,
+  pinRejectsStoredDefault,
+  readPinDefault,
+} from "./pin-defaults";
 import {
   pinTypeKey,
   resolveWildcardPinTypes,
