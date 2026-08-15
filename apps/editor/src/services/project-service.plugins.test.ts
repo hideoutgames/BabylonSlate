@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { PROJECT_FILE } from "@babylonslate/core";
 import {
   createDefaultPluginSettings,
+  createEmptyProjectFiles,
   encodeBabasset,
+  encodePluginSettingsDocument,
   inspectBabplugin,
   writeProjectPlugin,
   buildStarterContentFiles,
@@ -201,5 +203,95 @@ describe("ProjectService plugin roots", () => {
       service.registry?.getByGuid("deadbeef-0000-4000-8000-000000000099")
         ?.header.guid,
     ).toBe("deadbeef-0000-4000-8000-000000000099");
+  });
+
+  async function engineStarterStorage() {
+    const engine = new MemoryStorageAdapter("opfs");
+    await engine.openDocumentsProject("engine-plugins");
+    const files = await buildStarterContentFiles();
+    const packed = await packEnginePluginFiles(files, {
+      id: STARTER_CONTENT_FOLDER,
+    });
+    await unpackEnginePluginZip(engine, packed.zip, STARTER_CONTENT_FOLDER);
+    return engine;
+  }
+
+  it("copies engine plugin defaults into a new empty project", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    service.setEnginePluginStorage(await engineStarterStorage());
+    await service.createEmptyProject("Copy.babproject");
+    expect(
+      await storage.exists(
+        "plugins/starter-content/assets/StarterActor.class.babasset",
+      ),
+    ).toBe(true);
+    const row = service.plugins.find(
+      (plugin) => plugin.pluginGuid === STARTER_CONTENT_PLUGIN_GUID,
+    );
+    expect(row?.source).toBe("project");
+    expect(row?.readOnly).toBe(false);
+    expect(
+      service.plugins.filter(
+        (plugin) => plugin.pluginGuid === STARTER_CONTENT_PLUGIN_GUID,
+      ),
+    ).toHaveLength(1);
+
+    await service.applyPluginOverrides({
+      [STARTER_CONTENT_PLUGIN_GUID]: { enabled: true },
+    });
+    const root = service.registry?.getRoot(
+      `plugin:${STARTER_CONTENT_PLUGIN_GUID}`,
+    );
+    expect(root?.readOnly).toBeFalsy();
+    expect(root?.pathPrefix).toBe("plugins/starter-content/assets");
+  });
+
+  it("does not copy engine defaults onto an existing project open", async () => {
+    const { storage, service } = await scaffolded();
+    service.setEnginePluginStorage(await engineStarterStorage());
+    await service.loadCurrentProject();
+    expect(
+      await storage.exists(
+        "plugins/starter-content/assets/StarterActor.class.babasset",
+      ),
+    ).toBe(false);
+    expect(
+      service.plugins.find(
+        (plugin) => plugin.pluginGuid === STARTER_CONTENT_PLUGIN_GUID,
+      )?.source,
+    ).toBe("engine");
+  });
+
+  it("does not overwrite a template plugin that already has the engine guid", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    service.setEnginePluginStorage(await engineStarterStorage());
+    const settings = createDefaultPluginSettings({
+      pluginGuid: STARTER_CONTENT_PLUGIN_GUID,
+      displayName: "Mine",
+    });
+    const templateFiles = [
+      ...createEmptyProjectFiles({ guid: "tpl", name: "HasPlugin" }),
+      {
+        path: "plugins/mine/mine.plugin.babasset",
+        data: await encodePluginSettingsDocument(settings),
+      },
+    ];
+    await service.createFromTemplate({
+      templateFiles,
+      name: "FromTemplate",
+    });
+    const row = service.plugins.find(
+      (plugin) => plugin.pluginGuid === STARTER_CONTENT_PLUGIN_GUID,
+    );
+    expect(row?.folderName).toBe("mine");
+    expect(row?.settings.displayName).toBe("Mine");
+    expect(row?.source).toBe("project");
+    expect(
+      await storage.exists(
+        "plugins/starter-content/assets/StarterActor.class.babasset",
+      ),
+    ).toBe(false);
   });
 });

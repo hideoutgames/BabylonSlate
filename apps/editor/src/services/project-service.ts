@@ -60,10 +60,12 @@ import {
   indexUnresolvedPlaceholders,
   inspectBabplugin,
   applyPluginImport,
+  installEnginePluginDefaults,
   mountEnabledPlugins,
   planPluginImport,
   resolvePluginEnabled,
   resolvePluginGraph,
+  shadowEnginePlugins,
   writeProjectPlugin,
   type InspectedBabplugin,
   type PluginImportPlan,
@@ -278,6 +280,11 @@ export class ProjectService {
     this.enginePluginStorage = storage;
   }
 
+  private async installEnginePluginDefaultsIfNeeded(): Promise<void> {
+    if (!this.enginePluginStorage) return;
+    await installEnginePluginDefaults(this.storage, this.enginePluginStorage);
+  }
+
   setPluginOverrides(
     overrides: Record<string, { enabled: boolean }>,
   ): void {
@@ -378,6 +385,7 @@ export class ProjectService {
       name: projectName,
     });
     this.projectGuid = guid;
+    await this.installEnginePluginDefaultsIfNeeded();
     return this.loadCurrentProject();
   }
 
@@ -580,7 +588,10 @@ export class ProjectService {
     const enginePlugins = this.enginePluginStorage
       ? await discoverEnginePlugins(this.enginePluginStorage)
       : [];
-    this.pluginDescriptors = [...enginePlugins, ...projectPlugins];
+    this.pluginDescriptors = shadowEnginePlugins(
+      projectPlugins,
+      enginePlugins,
+    );
     const enabledGuids = new Set(
       this.pluginDescriptors
         .filter((plugin) =>
@@ -852,6 +863,7 @@ export class ProjectService {
     stored.kind = "project";
     stored.version = this.migrations.currentVersion("Project");
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
+    await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
     return {
       document,

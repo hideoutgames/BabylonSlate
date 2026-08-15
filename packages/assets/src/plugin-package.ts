@@ -342,3 +342,41 @@ export async function unpackEnginePluginZip(
   }
   return imported;
 }
+
+export async function installEnginePluginDefaults(
+  projectStorage: ProjectStorage,
+  engineStorage: ProjectStorage,
+): Promise<PluginDescriptor[]> {
+  const existing = await discoverProjectPlugins(projectStorage);
+  const existingGuids = new Set(existing.map((plugin) => plugin.pluginGuid));
+  const folderNames = existing.map((plugin) => plugin.folderName);
+  const installed: PluginDescriptor[] = [];
+  for (const plugin of await discoverEnginePlugins(engineStorage)) {
+    if (existingGuids.has(plugin.pluginGuid)) continue;
+    const folderName = uniquePluginFolderName(plugin.folderName, folderNames);
+    folderNames.push(folderName);
+    const files = await readProjectTree(engineStorage, plugin.folderPath);
+    const prefix = plugin.folderPath;
+    const remapped: ProjectTreeFile[] = files.map((file) => {
+      const relative =
+        file.path === prefix
+          ? ""
+          : file.path.startsWith(`${prefix}/`)
+            ? file.path.slice(prefix.length + 1)
+            : file.path;
+      return {
+        path: relative
+          ? `${PLUGINS_DIR}/${folderName}/${relative}`
+          : `${PLUGINS_DIR}/${folderName}`,
+        data: file.data,
+      };
+    });
+    await writeProjectTree(projectStorage, remapped);
+    existingGuids.add(plugin.pluginGuid);
+    const described = (await discoverProjectPlugins(projectStorage)).find(
+      (entry) => entry.pluginGuid === plugin.pluginGuid,
+    );
+    if (described) installed.push(described);
+  }
+  return installed;
+}
