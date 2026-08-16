@@ -536,14 +536,17 @@ function GraphEditorCanvas({
     ) => {
       const id = createEdgeId(source, sourceHandle, target, targetHandle);
       setEdges((current) => {
-        if (current.some((edge) => edge.id === id)) {
-          return current;
-        }
         const next = edgesAfterConnect(
           current,
-          { source, target, sourceHandle, targetHandle },
+          { id, source, target, sourceHandle, targetHandle },
+          (nodeId, pinId) =>
+            pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
           { replaceIncoming: replaceIncomingOnConnect },
         );
+        const unchanged =
+          next.length === current.length &&
+          next.every((edge, index) => edge.id === current[index]?.id);
+        if (unchanged) return current;
         emitChange(graphStateRef.current.nodes, next);
         return next;
       });
@@ -754,19 +757,19 @@ function GraphEditorCanvas({
             const target = sourceIsDragged ? id : connect.nodeId;
             const targetHandle = sourceIsDragged ? match.id : connect.pin.id;
             const edgeId = createEdgeId(source, sourceHandle, target, targetHandle);
-            if (!nextEdges.some((edge) => edge.id === edgeId)) {
-              nextEdges = [
-                ...nextEdges,
-                {
-                  id: edgeId,
-                  source,
-                  target,
-                  sourceHandle,
-                  targetHandle,
-                },
-              ];
-              setEdges(nextEdges);
-            }
+            nextEdges = edgesAfterConnect(
+              nextEdges,
+              {
+                id: edgeId,
+                source,
+                target,
+                sourceHandle,
+                targetHandle,
+              },
+              (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
+              { replaceIncoming: replaceIncomingOnConnect },
+            );
+            setEdges(nextEdges);
           }
         }
         emitChange(next, nextEdges);
@@ -780,6 +783,7 @@ function GraphEditorCanvas({
       nodeDragHandle,
       pendingConnect,
       pinCompatibility,
+      replaceIncomingOnConnect,
       screenToFlowPosition,
     ],
   );

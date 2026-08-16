@@ -29,11 +29,52 @@ export type ConnectEndBreakDecision = ConnectEndDecision & {
 };
 
 type PinEdgeRef = {
+  id?: string;
   source: string;
   target: string;
   sourceHandle?: string | null;
   targetHandle?: string | null;
 };
+
+export type ConnectPinLookup = (
+  nodeId: string,
+  pinId: string,
+) => SerializedPin | undefined;
+
+/** Exec pins fan-in and fan-out. Data inputs are exclusive. Missing pins do not strip. */
+export function pinAllowsMultipleIncoming(
+  pin: SerializedPin | undefined,
+): boolean {
+  if (!pin) return true;
+  return pin.kind === "exec";
+}
+
+export function edgesAfterConnect<T extends PinEdgeRef>(
+  edges: readonly T[],
+  next: T,
+  pinFor: ConnectPinLookup,
+  options?: { replaceIncoming?: boolean },
+): T[] {
+  if (next.id && edges.some((edge) => edge.id === next.id)) {
+    return [...edges];
+  }
+  const targetPin = pinFor(next.target, next.targetHandle ?? "");
+  const exclusive =
+    options?.replaceIncoming === true || !pinAllowsMultipleIncoming(targetPin);
+  const kept = exclusive
+    ? edges.filter(
+        (edge) =>
+          !(
+            edge.target === next.target &&
+            edge.targetHandle === next.targetHandle
+          ),
+      )
+    : [...edges];
+  const id =
+    next.id ??
+    `e:${next.source}:${next.sourceHandle ?? ""}:${next.target}:${next.targetHandle ?? ""}`;
+  return [...kept, { ...next, id }];
+}
 
 export function displayNodeTitle(nodeType: string, title?: string): string {
   if (nodeType.startsWith("flow.event.")) {
@@ -154,47 +195,6 @@ export function shouldBreakPinConnectionsOnConnectEnd(
   }
   if (shouldOpenAddNodeOnConnectEnd(decision)) return false;
   return true;
-}
-
-type ConnectableEdge = {
-  id: string;
-  source: string;
-  target: string;
-  sourceHandle?: string | null;
-  targetHandle?: string | null;
-};
-
-export function edgesAfterConnect<T extends ConnectableEdge>(
-  edges: readonly T[],
-  connection: {
-    source: string;
-    target: string;
-    sourceHandle: string;
-    targetHandle: string;
-  },
-  options?: { replaceIncoming?: boolean },
-): T[] {
-  const id = `e:${connection.source}:${connection.sourceHandle}:${connection.target}:${connection.targetHandle}`;
-  if (edges.some((edge) => edge.id === id)) return [...edges];
-  const next = options?.replaceIncoming
-    ? edges.filter(
-        (edge) =>
-          !(
-            edge.target === connection.target &&
-            (edge.targetHandle ?? "") === connection.targetHandle
-          ),
-      )
-    : [...edges];
-  return [
-    ...next,
-    {
-      id,
-      source: connection.source,
-      target: connection.target,
-      sourceHandle: connection.sourceHandle,
-      targetHandle: connection.targetHandle,
-    } as T,
-  ];
 }
 
 export function edgeTouchesPin(

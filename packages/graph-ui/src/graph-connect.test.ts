@@ -5,6 +5,7 @@ import {
   collectSafeConnectPins,
   containerPointerToClient,
   displayNodeTitle,
+  edgesAfterConnect,
   edgesTouchingNodes,
   edgesTouchingPin,
   edgeTouchesNode,
@@ -14,10 +15,10 @@ import {
   isClientPointOverHandle,
   isNearSourcePin,
   nodePinLists,
+  pinAllowsMultipleIncoming,
   pinsAreCompatible,
   screenCentersForSafePins,
   connectEndAction,
-  edgesAfterConnect,
   shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
@@ -617,6 +618,21 @@ describe("connectEndAction", () => {
   });
 });
 
+describe("pinAllowsMultipleIncoming", () => {
+  it("allows multiple wires into exec pins", () => {
+    expect(pinAllowsMultipleIncoming(execIn)).toBe(true);
+    expect(pinAllowsMultipleIncoming(execOut)).toBe(true);
+  });
+
+  it("rejects multiple wires into data inputs", () => {
+    expect(pinAllowsMultipleIncoming(stringIn)).toBe(false);
+  });
+
+  it("does not strip when pin metadata is missing", () => {
+    expect(pinAllowsMultipleIncoming(undefined)).toBe(true);
+  });
+});
+
 describe("edgesAfterConnect", () => {
   const existing = {
     id: "e:root:children:old:parent",
@@ -626,28 +642,181 @@ describe("edgesAfterConnect", () => {
     targetHandle: "parent",
   };
   const next = {
+    id: "e:sequence:children:old:parent",
     source: "sequence",
     target: "old",
     sourceHandle: "children",
     targetHandle: "parent",
   };
+  const unknownPin = () => undefined;
 
   it("appends a second incoming edge by default", () => {
-    const edges = edgesAfterConnect([existing], next);
+    const edges = edgesAfterConnect([existing], next, unknownPin);
     expect(edges).toHaveLength(2);
     expect(edges[1]?.source).toBe("sequence");
   });
 
   it("replaces the existing incoming edge on the same target handle", () => {
-    const edges = edgesAfterConnect([existing], next, { replaceIncoming: true });
-    expect(edges).toEqual([
+    const edges = edgesAfterConnect([existing], next, unknownPin, {
+      replaceIncoming: true,
+    });
+    expect(edges).toEqual([next]);
+  });
+
+  const pins = new Map<string, SerializedPin>([
+    ["src-a:value", stringOut],
+    ["src-b:value", { ...stringOut, id: "value" }],
+    ["log:message", stringIn],
+    ["log-b:message", { ...stringIn, id: "message" }],
+    ["a:execOut", execOut],
+    ["b:execOut", { ...execOut, id: "execOut" }],
+    ["b:execIn", execIn],
+    ["c:execIn", { ...execIn, id: "execIn" }],
+  ]);
+
+  function pinFor(nodeId: string, pinId: string): SerializedPin | undefined {
+    return pins.get(`${nodeId}:${pinId}`);
+  }
+
+  it("keeps exec fan-out from one output to two inputs", () => {
+    const existingExec = [
       {
-        id: "e:sequence:children:old:parent",
-        source: "sequence",
-        target: "old",
-        sourceHandle: "children",
-        targetHandle: "parent",
+        id: "e:a:execOut:b:execIn",
+        source: "a",
+        target: "b",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingExec,
+      {
+        id: "e:a:execOut:c:execIn",
+        source: "a",
+        target: "c",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+      pinFor,
+    );
+    expect(connected).toHaveLength(2);
+  });
+
+  it("keeps exec fan-in from two outputs onto one input", () => {
+    const existingExec = [
+      {
+        id: "e:a:execOut:c:execIn",
+        source: "a",
+        target: "c",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingExec,
+      {
+        id: "e:b:execOut:c:execIn",
+        source: "b",
+        target: "c",
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      },
+      pinFor,
+    );
+    expect(connected).toHaveLength(2);
+  });
+
+  it("replaces an existing data wire on the same input", () => {
+    const existingData = [
+      {
+        id: "e:src-a:value:log:message",
+        source: "src-a",
+        target: "log",
+        sourceHandle: "value",
+        targetHandle: "message",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingData,
+      {
+        id: "e:src-b:value:log:message",
+        source: "src-b",
+        target: "log",
+        sourceHandle: "value",
+        targetHandle: "message",
+      },
+      pinFor,
+    );
+    expect(connected).toEqual([
+      {
+        id: "e:src-b:value:log:message",
+        source: "src-b",
+        target: "log",
+        sourceHandle: "value",
+        targetHandle: "message",
       },
     ]);
+  });
+
+  it("keeps data fan-out from one output to two inputs", () => {
+    const existingData = [
+      {
+        id: "e:src-a:value:log:message",
+        source: "src-a",
+        target: "log",
+        sourceHandle: "value",
+        targetHandle: "message",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingData,
+      {
+        id: "e:src-a:value:log-b:message",
+        source: "src-a",
+        target: "log-b",
+        sourceHandle: "value",
+        targetHandle: "message",
+      },
+      pinFor,
+    );
+    expect(connected).toHaveLength(2);
+  });
+
+  it("does not strip existing wires when the target pin is unknown", () => {
+    const existingUnknown = [
+      {
+        id: "e:mystery:out:unknown:in",
+        source: "mystery",
+        target: "unknown",
+        sourceHandle: "out",
+        targetHandle: "in",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingUnknown,
+      {
+        id: "e:other:out:unknown:in",
+        source: "other",
+        target: "unknown",
+        sourceHandle: "out",
+        targetHandle: "in",
+      },
+      pinFor,
+    );
+    expect(connected).toHaveLength(2);
+  });
+
+  it("is a no-op when the same edge id already exists", () => {
+    const existingData = [
+      {
+        id: "e:src-a:value:log:message",
+        source: "src-a",
+        target: "log",
+        sourceHandle: "value",
+        targetHandle: "message",
+      },
+    ];
+    const connected = edgesAfterConnect(existingData, existingData[0]!, pinFor);
+    expect(connected).toEqual(existingData);
   });
 });

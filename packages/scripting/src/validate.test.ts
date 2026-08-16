@@ -503,4 +503,109 @@ describe("validateGraphs", () => {
     });
     expect(diags.some((d) => d.code === "member.unknown_class")).toBe(true);
   });
+
+  it("errors pin.duplicate_connection when two data wires share an input", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "a",
+          typeId: "flow.entry",
+          position: { x: 0, y: 0 },
+          pins: [pin("out", "value", "out", STRING)],
+          properties: {},
+        },
+        {
+          id: "b",
+          typeId: "flow.entry",
+          position: { x: 0, y: 80 },
+          pins: [pin("out", "value", "out", STRING)],
+          properties: {},
+        },
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [pin("message", "message", "in", STRING)],
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "a",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "b",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    const duplicate = diags.filter((d) => d.code === "pin.duplicate_connection");
+    expect(duplicate).toHaveLength(1);
+    expect(duplicate[0]).toMatchObject({
+      severity: "error",
+      nodeId: "log",
+      pinId: "message",
+    });
+  });
+
+  it("does not flag multiple exec wires into the same exec input", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "a",
+          typeId: "flow.entry",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "b",
+          typeId: "flow.entry",
+          position: { x: 0, y: 80 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "a",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "b",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pin.duplicate_connection")).toBe(false);
+  });
 });
