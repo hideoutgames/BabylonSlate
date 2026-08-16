@@ -654,7 +654,7 @@ export function evaluateAnimGraph(
   const blendDurationMs = Math.max(0, blendSeconds) * 1000;
   let fromWeight = 0;
   let toWeight = 1;
-  if (blendState && blendDurationMs > 0 && blendFromStateId !== nextId) {
+  if (blendState && blendFromStateId && blendDurationMs > 0 && blendFromStateId !== nextId) {
     const t = Math.min(1, blendElapsedMs / blendDurationMs);
     fromWeight = 1 - t;
     toWeight = t;
