@@ -13,13 +13,10 @@ export function UiEditorModeBar({
   onModeChange: (mode: UiEditorMode) => void;
 }) {
   return (
-    <ToolbarStrip
-      className="min-h-[var(--touch-target,44px)]"
-      data-testid="ui-editor-mode-bar"
-    >
+    <ToolbarStrip data-testid="ui-editor-mode-bar">
       <ToggleGroup
         variant="outline"
-        size="touch"
+        size="sm"
         spacing={1}
         value={[mode]}
         onValueChange={(value) => {
