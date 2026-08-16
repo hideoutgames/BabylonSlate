@@ -1,37 +1,8 @@
 import { useEffect } from "react";
 import {
   isCoarsePointerEnvironment,
-  isScrollableAxis,
   shouldPreventDocumentOverscroll,
 } from "./prevent-document-overscroll";
-
-// #region agent log
-let agentOverscrollN = 0;
-function agentDbg(
-  hypothesisId: string,
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-): void {
-  const payload = {
-    id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    timestamp: Date.now(),
-    hypothesisId,
-    location,
-    message,
-    data,
-  };
-  console.debug("[agent-dbg]", payload);
-  if (typeof fetch === "function") {
-    void fetch("/__agent_debug_log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: `${JSON.stringify(payload)}\n`,
-      keepalive: true,
-    }).catch(() => {});
-  }
-}
-// #endregion
 
 /**
  * Blocks iOS Safari document rubber-band overscroll on coarse pointers while
@@ -56,33 +27,9 @@ export function usePreventDocumentOverscroll(enabled = true): void {
       if (event.touches.length !== 1) return;
       const deltaX = event.touches[0].clientX - startX;
       const deltaY = event.touches[0].clientY - startY;
-      const prevent = shouldPreventDocumentOverscroll(
-        event.target,
-        deltaX,
-        deltaY,
-      );
-      // #region agent log
-      const target = event.target;
-      const inTree =
-        target instanceof Element &&
-        Boolean(target.closest('[data-testid="content-browser-folder-tree"]'));
-      if (inTree && agentOverscrollN <= 12) {
-        agentOverscrollN += 1;
-        const tree = target.closest(
-          '[data-testid="content-browser-folder-tree"]',
-        );
-        agentDbg("E", "use-prevent-document-overscroll.ts:touchmove", "overscroll gate", {
-          n: agentOverscrollN,
-          prevent,
-          deltaY,
-          treeScrollableY: tree ? isScrollableAxis(tree, "y") : null,
-          treeScrollHeight: tree instanceof HTMLElement ? tree.scrollHeight : null,
-          treeClientHeight: tree instanceof HTMLElement ? tree.clientHeight : null,
-          defaultPreventedBefore: event.defaultPrevented,
-        });
-      }
-      // #endregion
-      if (prevent) {
+      if (
+        shouldPreventDocumentOverscroll(event.target, deltaX, deltaY)
+      ) {
         event.preventDefault();
       }
     };

@@ -1,7 +1,5 @@
 import {
   useCallback,
-  useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -13,55 +11,6 @@ import {
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
 } from "./use-context-menu";
-
-// #region agent log
-let agentWheelN = 0;
-let agentTouchN = 0;
-let agentMoveN = 0;
-function agentDbg(
-  hypothesisId: string,
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-): void {
-  const payload = {
-    id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    timestamp: Date.now(),
-    hypothesisId,
-    location,
-    message,
-    data,
-  };
-  console.debug("[agent-dbg]", payload);
-  if (typeof fetch === "function") {
-    void fetch("/__agent_debug_log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: `${JSON.stringify(payload)}\n`,
-      keepalive: true,
-    }).catch(() => {});
-  }
-}
-function agentBox(el: Element | null): Record<string, unknown> | null {
-  if (!el || !(el instanceof HTMLElement)) return null;
-  const s = getComputedStyle(el);
-  const r = el.getBoundingClientRect();
-  return {
-    clientHeight: el.clientHeight,
-    scrollHeight: el.scrollHeight,
-    offsetHeight: el.offsetHeight,
-    scrollTop: el.scrollTop,
-    overflowY: s.overflowY,
-    height: s.height,
-    minHeight: s.minHeight,
-    flexGrow: s.flexGrow,
-    flexBasis: s.flexBasis,
-    rectTop: Math.round(r.top),
-    rectBottom: Math.round(r.bottom),
-    rectHeight: Math.round(r.height),
-  };
-}
-// #endregion
 
 /** Row height matches `--chrome-row` (28px). */
 export const TREE_ROW_HEIGHT = 28;
@@ -149,114 +98,11 @@ export function TreeView({
     : nodes.length;
   const visible = nodes.slice(firstIndex, lastIndex);
 
-  const viewportHeightRef = useRef(0);
-  viewportHeightRef.current = viewportHeight;
-
   const measure = useCallback((element: HTMLDivElement | null) => {
     containerRef.current = element;
     if (element) {
       setViewportHeight(element.clientHeight);
-      // #region agent log
-      agentDbg("B", "tree-view.tsx:measure", "ref measure", {
-        clientHeight: element.clientHeight,
-        scrollHeight: element.scrollHeight,
-        offsetHeight: element.offsetHeight,
-        box: agentBox(element),
-        nodeCountHint: "pending",
-      });
-      // #endregion
     }
-  }, []);
-
-  useLayoutEffect(() => {
-    const el = containerRef.current;
-    const content = el?.firstElementChild;
-    const contentH =
-      content instanceof HTMLElement ? content.offsetHeight : null;
-    // #region agent log
-    agentDbg("A", "tree-view.tsx:layout", "after layout", {
-      viewportHeight,
-      windowed,
-      nodeCount: nodes.length,
-      visibleCount: visible.length,
-      contentHeightCss: nodes.length * rowHeight,
-      contentOffsetHeight: contentH,
-      tree: agentBox(el),
-      heightMismatch:
-        el != null && el.scrollHeight > el.clientHeight + 1,
-      viewportVsClient: {
-        state: viewportHeight,
-        client: el?.clientHeight ?? null,
-        zeroViewport: viewportHeight === 0,
-      },
-    });
-    // #endregion
-  }, [nodes.length, rowHeight, viewportHeight, visible.length, windowed]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => {
-        // #region agent log
-        agentDbg("C", "tree-view.tsx:resize", "container resize", {
-          clientHeight: el.clientHeight,
-          scrollHeight: el.scrollHeight,
-          viewportHeightState: viewportHeightRef.current,
-          observerUpdatesState: false,
-        });
-        // #endregion
-      });
-      ro.observe(el);
-    }
-    const onWheel = (event: WheelEvent) => {
-      if (agentWheelN > 12) return;
-      agentWheelN += 1;
-      const before = el.scrollTop;
-      requestAnimationFrame(() => {
-        // #region agent log
-        agentDbg("D", "tree-view.tsx:wheel", "wheel", {
-          n: agentWheelN,
-          deltaY: event.deltaY,
-          defaultPrevented: event.defaultPrevented,
-          cancelable: event.cancelable,
-          scrollTopBefore: before,
-          scrollTopAfter: el.scrollTop,
-          captured: dragRef.current
-            ? el.hasPointerCapture?.(dragRef.current.pointerId)
-            : false,
-          tree: agentBox(el),
-        });
-        // #endregion
-      });
-    };
-    const onTouchMove = (event: TouchEvent) => {
-      if (agentTouchN > 12) return;
-      agentTouchN += 1;
-      const before = el.scrollTop;
-      requestAnimationFrame(() => {
-        // #region agent log
-        agentDbg("D", "tree-view.tsx:touchmove", "touchmove", {
-          n: agentTouchN,
-          defaultPrevented: event.defaultPrevented,
-          cancelable: event.cancelable,
-          scrollTopBefore: before,
-          scrollTopAfter: el.scrollTop,
-          captured: dragRef.current
-            ? el.hasPointerCapture?.(dragRef.current.pointerId)
-            : false,
-        });
-        // #endregion
-      });
-    };
-    el.addEventListener("wheel", onWheel, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: true });
-    return () => {
-      ro?.disconnect();
-      el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("touchmove", onTouchMove);
-    };
   }, []);
 
   const nodeIdAtClientY = useCallback(
@@ -320,16 +166,6 @@ export function TreeView({
               } catch {
                 /* jsdom and detached nodes */
               }
-              // #region agent log
-              agentDbg("D", "tree-view.tsx:hold-arm", "hold armed capture", {
-                pointerId: drag.pointerId,
-                captured:
-                  containerRef.current?.hasPointerCapture?.(drag.pointerId) ??
-                  false,
-                canDrag: true,
-                moved: drag.moved,
-              });
-              // #endregion
             }, DRAG_ARM_MS)
           : null;
       dragRef.current = {
@@ -350,21 +186,6 @@ export function TreeView({
           /* jsdom and detached nodes */
         }
       }
-      // #region agent log
-      const row = event.currentTarget;
-      agentDbg("D", "tree-view.tsx:pointerdown", "pointerdown", {
-        pointerId: event.pointerId,
-        pointerType: event.pointerType,
-        captured: containerRef.current?.hasPointerCapture?.(event.pointerId) ?? false,
-        rowTouchAction: getComputedStyle(row).touchAction,
-        treeTouchAction: containerRef.current
-          ? getComputedStyle(containerRef.current).touchAction
-          : null,
-        scrollTop: containerRef.current?.scrollTop ?? null,
-        reparentArm,
-        canDrag: Boolean(onReparent) && reparentArm === "immediate",
-      });
-      // #endregion
     },
     [onContextMenu, onReparent, reparentArm],
   );
@@ -384,21 +205,6 @@ export function TreeView({
         drag.longPressTimer = null;
         if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
         drag.dragArmTimer = null;
-        // #region agent log
-        if (agentMoveN <= 12) {
-          agentMoveN += 1;
-          agentDbg("D", "tree-view.tsx:pointermove", "move before drag arm", {
-            n: agentMoveN,
-            moved,
-            canDrag: false,
-            defaultPrevented: event.nativeEvent.defaultPrevented,
-            captured:
-              containerRef.current?.hasPointerCapture?.(event.pointerId) ??
-              false,
-            scrollTop: containerRef.current?.scrollTop ?? null,
-          });
-        }
-        // #endregion
         return;
       }
       if (!drag.armed) {
