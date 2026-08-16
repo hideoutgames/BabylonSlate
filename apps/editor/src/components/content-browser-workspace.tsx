@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -125,6 +126,96 @@ import { ContentBrowserSelectionActions } from "./content-browser-selection-acti
 
 const PROJECT_ROOT_ID = PROJECT_CONTENT_ROOT_ID;
 
+// #region agent log
+function agentDbg(
+  hypothesisId: string,
+  location: string,
+  message: string,
+  data: Record<string, unknown>,
+): void {
+  const payload = {
+    id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: Date.now(),
+    hypothesisId,
+    location,
+    message,
+    data,
+  };
+  console.debug("[agent-dbg]", payload);
+  if (typeof fetch === "function") {
+    void fetch("/__agent_debug_log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: `${JSON.stringify(payload)}\n`,
+      keepalive: true,
+    }).catch(() => {});
+  }
+}
+function agentBox(el: Element | null): Record<string, unknown> | null {
+  if (!el || !(el instanceof HTMLElement)) return null;
+  const s = getComputedStyle(el);
+  const r = el.getBoundingClientRect();
+  return {
+    clientHeight: el.clientHeight,
+    scrollHeight: el.scrollHeight,
+    offsetHeight: el.offsetHeight,
+    scrollTop: el.scrollTop,
+    overflowY: s.overflowY,
+    height: s.height,
+    minHeight: s.minHeight,
+    flexGrow: s.flexGrow,
+    flexBasis: s.flexBasis,
+    display: s.display,
+    rectTop: Math.round(r.top),
+    rectBottom: Math.round(r.bottom),
+    rectHeight: Math.round(r.height),
+  };
+}
+function logFolderTreeLayout(
+  treeNodeCount: number,
+  asideRef?: HTMLElement | null,
+  wrapRef?: HTMLElement | null,
+): void {
+  const aside =
+    asideRef ??
+    document.querySelector('[data-testid="content-browser-folder-tree-aside"]');
+  const wrap =
+    wrapRef ??
+    document.querySelector('[data-testid="content-browser-folder-tree-wrap"]');
+  const tree = document.querySelector(
+    '[data-testid="content-browser-folder-tree"]',
+  );
+  const content = tree?.firstElementChild ?? null;
+  const asideEl = aside instanceof HTMLElement ? aside : null;
+  const treeEl = tree instanceof HTMLElement ? tree : null;
+  const contentEl = content instanceof HTMLElement ? content : null;
+  const asideBottom = asideEl?.getBoundingClientRect().bottom ?? null;
+  const treeBottom = treeEl?.getBoundingClientRect().bottom ?? null;
+  const contentBottom = contentEl?.getBoundingClientRect().bottom ?? null;
+  agentDbg("A", "content-browser-workspace.tsx:layout", "folder tree chrome", {
+    treeNodeCount,
+    aside: agentBox(aside),
+    wrap: agentBox(wrap),
+    tree: agentBox(tree),
+    content: agentBox(content),
+    clippedByAside:
+      asideBottom != null &&
+      contentBottom != null &&
+      contentBottom > asideBottom + 1,
+    treeExtendsPastAside:
+      asideBottom != null && treeBottom != null && treeBottom > asideBottom + 1,
+    wrapZeroHeight: wrap instanceof HTMLElement && wrap.clientHeight <= 1,
+    treeIsScrollport:
+      treeEl != null && treeEl.scrollHeight > treeEl.clientHeight + 1,
+    asideIsScrollport:
+      asideEl != null && asideEl.scrollHeight > asideEl.clientHeight + 1,
+    coarsePointer:
+      typeof window !== "undefined" &&
+      Boolean(window.matchMedia?.("(pointer: coarse)")?.matches),
+  });
+}
+// #endregion
+
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
   | { kind: "folder"; path: string; guids: string[] }
@@ -218,6 +309,8 @@ export function ContentBrowserWorkspace() {
   const [importErrors, setImportErrors] = useState<string[] | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const folderTreeAsideRef = useRef<HTMLElement>(null);
+  const folderTreeWrapRef = useRef<HTMLDivElement>(null);
   const thumbnailUrlsRef = useRef(thumbnailUrls);
   thumbnailUrlsRef.current = thumbnailUrls;
   const menuTargetGuidsRef = useRef<string[]>([]);
@@ -364,6 +457,22 @@ export function ContentBrowserWorkspace() {
       }),
     [allAssets, browserRows, classParentOf],
   );
+
+  useLayoutEffect(() => {
+    const run = () =>
+      logFolderTreeLayout(
+        treeNodes.length,
+        folderTreeAsideRef.current,
+        folderTreeWrapRef.current,
+      );
+    run();
+    const t0 = window.setTimeout(run, 0);
+    const t1 = window.setTimeout(run, 250);
+    return () => {
+      window.clearTimeout(t0);
+      window.clearTimeout(t1);
+    };
+  }, [treeNodes.length]);
 
   const selectionCount = selectedGuids.size + selectedFolderPaths.size;
 
@@ -1371,7 +1480,9 @@ export function ContentBrowserWorkspace() {
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside
+          ref={folderTreeAsideRef}
           className="flex w-56 min-h-0 shrink-0 flex-col gap-1 overflow-hidden border-r border-border p-2"
+          data-testid="content-browser-folder-tree-aside"
         >
           <Button
             type="button"
@@ -1387,7 +1498,11 @@ export function ContentBrowserWorkspace() {
             <FolderPlusIcon data-icon="inline-start" />
             New Folder
           </Button>
-          <div className="min-h-0 flex-1">
+          <div
+            ref={folderTreeWrapRef}
+            className="min-h-0 flex-1"
+            data-testid="content-browser-folder-tree-wrap"
+          >
             <TreeView
               nodes={treeNodes}
               selectedId={treeSelectedId}
