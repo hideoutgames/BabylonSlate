@@ -231,4 +231,25 @@ describe("GitLfsLockProvider", () => {
     const result = await provider.list();
     expect(isErr(result) && result.error.kind).toBe("unauthorized");
   });
+
+  it("treats 409 as conflict when verify cannot confirm the path is ours", async () => {
+    const provider = new GitLfsLockProvider({
+      repositoryUrl: "https://github.com/org/repo.git",
+      branch: "main",
+      getToken: async () => "token",
+      fetch: async (request) => {
+        if (request.url.endsWith("/locks/verify")) {
+          throw new Error("verify offline");
+        }
+        return jsonResponse(409, {
+          lock: sampleLock,
+          message: "already created lock",
+        });
+      },
+    });
+    const result = await provider.create("assets/hero.scene.babasset");
+    expect(isErr(result) && result.error.kind).toBe("conflict");
+    if (!isErr(result)) return;
+    expect(result.error.lock?.ours).toBe(false);
+  });
 });
