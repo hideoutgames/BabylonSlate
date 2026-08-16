@@ -24,6 +24,8 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | `BabylonSlateSecretsPlugin.swift` existed but was not in the iOS App Sources phase or Capacitor `packageClassList`, so Keychain never registered | Resolved |
 | 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-ux | Standards | Token status and Locks empty copy were sentence case; external-change path lists were not `SelectableText` | Resolved |
 | 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | Electron `secrets:set` stores the PAT unencrypted when `safeStorage.isEncryptionAvailable()` is false (Linux without a keyring) | Accepted |
+| 2026-08-16 | cursor/p15-source-control-gaps-44b6 | p15-lock-ux | Spec | Auto-lock still called create after a restart verify already listed the path as ours; skip create when held locally | Resolved |
+| 2026-08-16 | cursor/p15-source-control-gaps-44b6 | p15-lock-ux | Spec | Deleting an asset we held did not unlock the old LFS path | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-export / p14-platforms | Spec | Packaged player booted an empty Engine: no sprite/tilemap/navmesh hydrate, no UI-logic compile, no in-process rAF `advance` or canvas input | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-packed-mode | Spec | `game.json` omitted `pixelsPerUnit` / `pixelPerfect`; Font index entries had no authored family `name` | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-platforms | Spec | Packaged player compiles UserInterface logic and packs UI JSON; Babylon GUI widget mount stays overlay Play (`PlayHudOverlay`) | Accepted |
@@ -500,6 +502,8 @@ Spec: [engineplan.md](../engineplan.md) §12, Appendix A `p15-*`. Design note: [
 | Foreground mtime rescan + reload prompts | Done (`p15-external-change`) | `assets` (`IndexedAsset.mtime`), `apps/editor` | lock UX |
 
 **P15 is Done** in CI (FakeLockProvider + Playwright). Two-device GitHub lock visibility and Working Copy branch-switch on a real iPad remain **manual** native acceptance. Out of scope: git clone/commit/pull/push UI, `lockable` in `.gitattributes`, git status badges, CORS proxy, web production source control. Review follow-up (`cursor/p15-review-fixes-419b`): 409 already-ours via verify, rename/folder lock ops, iOS Keychain plugin compile wiring.
+
+Hardening on `cursor/p15-source-control-gaps-44b6`: Git LFS create 409 now consults verify so a lock we already hold is not treated as theirs after restart; auto-lock skips create when verify already lists the path as ours; deleting an asset we hold unlocks that path; the iOS Keychain plugin is in the App target and `packageClassList` (it was an uncompiled Swift file).
 
 
 

@@ -279,6 +279,14 @@ export class SourceControlService {
     if (!this.settings.enabled || !this.settings.autoLockOnEdit || !this.provider) {
       return;
     }
+    const held = this.locksByPath.get(path);
+    if (held?.ours) {
+      this.autoLockAttempted.add(path);
+      this.banners.delete(path);
+      this.editMode.set(path, "editable");
+      this.emit();
+      return;
+    }
     if (this.autoLockAttempted.has(path)) return;
     this.autoLockAttempted.add(path);
     const result = await this.provider.create(path);
@@ -333,6 +341,12 @@ export class SourceControlService {
     this.autoLockAttempted.delete(oldPath);
     this.autoLockAttempted.add(newPath);
     this.emit();
+  }
+
+  async releasePath(path: string): Promise<void> {
+    const lock = this.locksByPath.get(path);
+    if (!lock?.ours) return;
+    await this.release(lock.id);
   }
 
   async release(id: string): Promise<void> {
