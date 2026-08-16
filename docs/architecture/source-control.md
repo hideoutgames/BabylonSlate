@@ -27,7 +27,7 @@ interface LockProvider {
 }
 ```
 
-`LockError.kind` is `conflict` (HTTP 409 with the existing lock), `offline`, `unauthorized`, or `http`. Create **is** the race-free check: 201 holds the lock. HTTP 409 does not include ours/theirs, so `GitLfsLockProvider.create` then `POST /locks/verify`: if the path is in `ours`, create returns that lock as held (already-ours); otherwise the 409 payload is a theirs conflict.
+`LockError.kind` is `conflict` (HTTP 409 with the existing lock), `offline`, `unauthorized`, or `http`. Create **is** the race-free check: 201 holds the lock. HTTP 409 does not include ours/theirs, so `GitLfsLockProvider.create` then `POST /locks/verify`: if the path is in `ours`, create returns that lock as held (already-ours); otherwise the 409 payload is a theirs conflict. If verify itself fails (offline / unauthorized), the 409 stays a conflict rather than being treated as held. List and verify skip malformed lock objects; verify paginates with `next_cursor`.
 
 Implementations: `GitLfsLockProvider` (injected `lfsFetch` + `getToken` — the package never imports Capacitor or Electron) and `FakeLockProvider` (in-memory map, 409 on double-create, force-unlock flag).
 

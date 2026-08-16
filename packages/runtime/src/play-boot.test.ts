@@ -98,4 +98,51 @@ describe("createPlayBootCoordinator", () => {
     await boot.play(runtime);
     expect(runtime.spawned).toEqual(["Extra"]);
   });
+
+  it("reports a loadScripts failure and still starts Play", async () => {
+    const reported: unknown[] = [];
+    const runtime = fakeRuntime({
+      loadScripts: async () => {
+        throw new Error("compile failed");
+      },
+      reportError(error) {
+        reported.push(error);
+      },
+    });
+    const boot = createPlayBootCoordinator();
+    boot.queueScripts(runtime, [], [{ classId: "Extra" }]);
+    await boot.play(runtime);
+    expect(reported).toHaveLength(1);
+    expect(String(reported[0])).toContain("compile failed");
+    expect(runtime.realized).toBe(true);
+    expect(runtime.started).toBe(true);
+  });
+
+  it("starts Play even when loadPhysics rejects", async () => {
+    const runtime = fakeRuntime({
+      loadPhysics: async () => {
+        throw new Error("havok missing");
+      },
+    });
+    const boot = createPlayBootCoordinator();
+    await expect(boot.play(runtime)).rejects.toThrow("havok missing");
+    expect(runtime.started).toBe(true);
+  });
+
+  it("does not queue navmesh when the runtime has no loader", async () => {
+    const runtime = fakeRuntime();
+    const boot = createPlayBootCoordinator();
+    boot.queueNavMesh(runtime, new Uint8Array([1]));
+    await boot.play(runtime);
+    expect(runtime.started).toBe(true);
+  });
+
+  it("reset drops queued graph spawns from a previous session", async () => {
+    const runtime = fakeRuntime();
+    const boot = createPlayBootCoordinator();
+    boot.queueScripts(runtime, [], [{ classId: "Extra" }]);
+    boot.reset();
+    await boot.play(runtime);
+    expect(runtime.spawned).toEqual([]);
+  });
 });

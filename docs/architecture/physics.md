@@ -52,7 +52,7 @@ Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, the
 
 The Play `load` control message carries `sceneAssetGuid`, optional authored `scene` (`SerializedScene`), `physicsWorld`, `gravity`, and `havokWasmUrl`. The editor vendors `HavokPhysics.wasm` at `/havok/HavokPhysics.wasm` (same self-host pattern as the KTX2 transcoder) so browser Play does not silently keep the AABB backend. Details / Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent`.
 
-Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld()` (after scripts load so Begin Play binds on spawn). Demo actors are not seeded when a scene payload is present. `PhysicsWorldSync` then creates bodies for authored `RigidBodyComponent` / `ColliderComponent`, and a static body plus merged chain colliders for `TilemapComponent` (see [tilemaps.md](tilemaps.md)). Graph-only spawns skip class ids that already exist as scene actors.
+Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld()` (after scripts load so Begin Play binds on spawn). Demo actors are not seeded when a scene payload is present. `PhysicsWorldSync` then creates bodies for authored `RigidBodyComponent` / `ColliderComponent`, and a static body plus merged chain colliders for `TilemapComponent` (see [tilemaps.md](tilemaps.md)). Graph-only spawns skip class ids that already exist as scene actors. `createPlayBootCoordinator` still `start`/`resume`s if `loadPhysics` rejects, and reports `loadScripts` failures without blocking Play.
 
 ## Components
 
@@ -61,7 +61,7 @@ Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld(
 | `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale` |
 | `ColliderComponent` | `shape` (3D or 2D variant), `friction`, `restitution`, `isTrigger`, `layer`, `mask`. Local `component.transform` position is passed as `ColliderDesc.translation` (Rapier `setTranslation`, software AABB offset, Havok shape center). Collider rotation stays actor-aligned in this pass. |
 
-Spawn/attach creates bodies; destroy removes them. Transforms after `step` overwrite Actor world transforms before `postPhysics`.
+Spawn/attach creates bodies; destroy removes them (`PhysicsWorldSync` drops backend bodies when the actor leaves the live set). Transforms after `step` overwrite Actor world transforms before `postPhysics`. Static and kinematic bodies copy the actor transform on resync; dynamic bodies keep the simulation transform. `addImpulse` is a no-op when the actor has no body. Tilemap chain colliders skip `collision: false` layers and missing guid/tileset payloads. Unit coverage lives in `packages/runtime/src/physics-sync.test.ts`.
 
 ### Shapes
 

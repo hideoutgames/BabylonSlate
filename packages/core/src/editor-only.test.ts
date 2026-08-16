@@ -29,6 +29,7 @@ describe("editor-only assets", () => {
   it("walks the EditorUtilityObject parent chain on Class assets", () => {
     expect(isEditorUtilityObjectClass("LevelTools", parentOf)).toBe(true);
     expect(isEditorUtilityObjectClass("Hero", parentOf)).toBe(false);
+    expect(isEditorUtilityObjectClass(null, parentOf)).toBe(false);
     expect(
       isEditorOnlyAsset(
         { type: "Class", parentClass: "LevelTools" },
@@ -38,6 +39,24 @@ describe("editor-only assets", () => {
     expect(
       isEditorOnlyAsset({ type: "Class", parentClass: "Actor" }, parentOf),
     ).toBe(false);
+    expect(
+      isEditorOnlyAsset(
+        { type: "Graph", parentClass: "LevelTools" },
+        parentOf,
+      ),
+    ).toBe(true);
+    expect(
+      isEditorOnlyAsset({ type: "Scene", parentClass: "LevelTools" }, parentOf),
+    ).toBe(false);
+  });
+
+  it("stops walking a cyclic parent chain without hanging", () => {
+    const cyclic = (id: string) => {
+      if (id === "A") return "B";
+      if (id === "B") return "A";
+      return null;
+    };
+    expect(isEditorUtilityObjectClass("A", cyclic)).toBe(false);
   });
 
   it("normalizes EditorUtilityInterface dockKind to scene or class", () => {

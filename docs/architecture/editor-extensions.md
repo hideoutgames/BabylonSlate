@@ -9,7 +9,7 @@ Editor-only types that never ship in Play or export. Spec: [engineplan.md](../en
 | **EditorUtilityObject** | Class parent (`BObject`) | `*.class.babasset` | Stripped. Native events are On Editor Startup / On Scene Open / On Scene Saved / On Editor Shutdown — not Begin Play / Tick. |
 | **EditorUtilityInterface** | Creatable asset | `*.eui.babasset` | Stripped. Payload is a UserInterface document plus `dockKind: "scene" \| "class"`. |
 
-`isEditorOnlyAsset` / `isEditorUtilityObjectClass` in `@babylonslate/core` walk the parent chain. P14 export reuses the same helpers.
+`isEditorOnlyAsset` / `isEditorUtilityObjectClass` in `@babylonslate/core` walk the parent chain (Class **and** Graph headers). A cyclic parent list is treated as not editor-only rather than looping. P14 export reuses the same helpers.
 
 ## Live tabs
 
