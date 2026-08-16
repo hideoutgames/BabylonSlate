@@ -1109,7 +1109,7 @@ export function SettingsModal({
               </FieldDescription>
             </Field>
             <Button
-              variant="destructive"
+              variant="outline"
               data-testid="close-project"
               className="min-h-[var(--touch-target,44px)] w-fit"
               onClick={() => {

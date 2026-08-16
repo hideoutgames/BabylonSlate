@@ -317,9 +317,14 @@ test.describe("Editor density and IA", () => {
     await expect(sceneTile).toBeVisible();
     await expect(classTile).toBeVisible();
 
+    const dialog = page.getByTestId("content-browser-delete-dialog");
     const confirm = page.getByTestId("content-browser-delete-confirm");
     const cancel = page.getByTestId("content-browser-delete-cancel");
+    await expect(dialog).toHaveAttribute("data-variant", "destructive");
+    await expect(page.getByTestId("content-browser-delete-media")).toBeVisible();
     await expect(confirm).toHaveClass(/bg-destructive/);
+    await expect(confirm).not.toHaveClass(/bg-destructive\/10/);
+    await expect(confirm).toHaveClass(/text-destructive-foreground/);
     await expect(confirm).toHaveCSS("min-height", "44px");
     await expect(cancel).toHaveCSS("min-height", "44px");
     await expect(confirm).toHaveCSS("height", "44px");
