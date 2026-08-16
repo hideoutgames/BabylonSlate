@@ -8,7 +8,10 @@ import {
   PropertyGrid,
   SceneComponentPicker,
   TypeVisualIcon,
+  assetRowIdentity,
+  classRowIdentity,
   resolveTypeVisual,
+  selectedPickerIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -84,6 +87,13 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       pickerAssets.find((asset) => asset.guid === guid)?.name
     );
   };
+  const assetType = (guid: string | null | undefined) => {
+    if (!guid) return undefined;
+    return (
+      assetRegistry?.getByGuid?.(guid)?.header.type ??
+      pickerAssets.find((asset) => asset.guid === guid)?.type
+    );
+  };
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const scene =
@@ -134,12 +144,6 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         id: "scene-game-instance-class",
         label: "Game Instance",
         value: scene.settings.gameInstanceClass,
-        displayLabel:
-          classEntries.find(
-            (entry) => entry.id === scene.settings.gameInstanceClass,
-          )?.name ??
-          scene.settings.gameInstanceClass ??
-          undefined,
         placeholder: "None",
         onPick: () => setClassPickerOpen(true),
         onChange: (gameInstanceClass) =>
@@ -150,6 +154,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               gameInstanceClass,
             },
           }),
+        ...classRowIdentity(
+          classEntries.find(
+            (entry) => entry.id === scene.settings.gameInstanceClass,
+          ),
+          scene.settings.gameInstanceClass,
+        ),
       },
       {
         kind: "enum",
@@ -243,9 +253,6 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         id: "scene-environment-texture",
         label: "Environment Texture",
         value: scene.settings.environmentTextureGuid,
-        displayLabel: scene.settings.environmentTextureGuid
-          ? assetLabel(scene.settings.environmentTextureGuid)
-          : undefined,
         placeholder: "None",
         onPick: () => setEnvTexturePickOpen(true),
         onChange: (environmentTextureGuid) =>
@@ -253,6 +260,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             ...scene,
             settings: { ...scene.settings, environmentTextureGuid },
           }),
+        ...assetRowIdentity(
+          pickerAssets.find(
+            (asset) => asset.guid === scene.settings.environmentTextureGuid,
+          ),
+        ),
       },
       {
         kind: "asset",
@@ -264,6 +276,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           scene.settings.mainCameraActorId,
           scene.settings.mainCameraComponentId,
         ),
+        displayType: scene.settings.mainCameraComponentId
+          ? "CameraComponent"
+          : undefined,
+        visual: scene.settings.mainCameraComponentId
+          ? { classId: "CameraComponent", family: "class" }
+          : undefined,
         placeholder: "None",
         onPick: () => setCameraPickerOpen(true),
         onChange: () =>
@@ -433,11 +451,16 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                     type="button"
                     id={`scene-post-process-${index}-material`}
                     variant="outline"
-                    className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                    className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
                     data-testid={`scene-post-process-${index}-material`}
                     onClick={() => setPostProcessPick(index)}
                   >
-                    {assetLabel(value) ?? "Pick Material"}
+                    {selectedPickerIdentity(
+                      assetRowIdentity(
+                        pickerAssets.find((asset) => asset.guid === value),
+                      ),
+                      "Pick Material",
+                    )}
                   </Button>
                 </Field>
                 <Field orientation="horizontal" className="w-auto">
@@ -733,6 +756,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 {
                   sortingLayers,
                   assetLabel,
+                  assetType,
                   physicsWorld: scene.settings.physicsWorld,
                   onPickAsset: setAssetPick,
                 },
