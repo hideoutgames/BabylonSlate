@@ -25,6 +25,7 @@ const PIN_TOKENS = [
   "--pin-color",
   "--pin-object",
   "--pin-actor",
+  "--pin-class",
   "--pin-struct",
   "--pin-enum",
   "--pin-wildcard",

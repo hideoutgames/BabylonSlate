@@ -268,6 +268,7 @@ function functionEndpointPins(
     ? (properties.pins as Array<{
         name?: string;
         typeId?: string;
+        typeClassId?: string;
         direction?: string;
       }>)
     : [];
@@ -279,7 +280,12 @@ function functionEndpointPins(
     }
     if (row.direction !== want) return [];
     return [
-      pin(row.name, row.name, asDirection, pinTypeForMember(row.typeId)),
+      pin(
+        row.name,
+        row.name,
+        asDirection,
+        pinTypeForMember(row.typeId, row.typeClassId),
+      ),
     ];
   });
   if (mapped.length > 0) return mapped;

@@ -401,4 +401,8 @@ describe("variableDefaultPropertyRows", () => {
       },
     ]);
   });
+
+  it("omits a Default row for object variables", () => {
+    expect(variableDefaultPropertyRows("object", null, vi.fn())).toEqual([]);
+  });
 });

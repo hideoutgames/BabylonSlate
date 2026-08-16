@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
 import {
+  addCallEventNode,
+  addCallFunctionNode,
   addClassMember,
   addVariableAccessNode,
   blueprintSectionsForClass,
@@ -9,6 +11,7 @@ import {
   memberNamePromptCopy,
   patchClassMember,
   removeClassMember,
+  resolveClassMemberDrop,
 } from "./class-members";
 
 function emptyGraph(): SerializedGraph {
@@ -211,6 +214,212 @@ describe("addClassMember", () => {
       title: "Set Health",
       variableName: "Health",
       scope: "member",
+    });
+  });
+
+  it("places Get nodes at an explicit graph position", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Health", () => "var-1");
+    graph = addVariableAccessNode(graph, graph.members![0]!, "get", {
+      position: { x: 240, y: 160 },
+      idFactory: () => "n-get",
+    });
+    expect(graph.nodes[0]?.position).toEqual({ x: 240, y: 160 });
+  });
+
+  it("spawns a Call Custom Event node at an explicit position", () => {
+    let graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1", {
+      pins: [{ name: "damage", typeId: "float", direction: "out" }],
+    });
+    const member = graph.members!.find((entry) => entry.kind === "event")!;
+    graph = addCallEventNode(graph, member, {
+      position: { x: 120, y: 240 },
+      classId: "Hero",
+      idFactory: () => "call-evt",
+    });
+    const node = graph.nodes.find((entry) => entry.id === "call-evt");
+    expect(node).toMatchObject({
+      type: "flow.event.call",
+      position: { x: 120, y: 240 },
+      data: {
+        title: "Call On Hit",
+        name: "On Hit",
+        classId: "Hero",
+        implicitSelf: true,
+        pins: [{ name: "damage", typeId: "float", direction: "out" }],
+      },
+    });
+  });
+
+  it("spawns a Call Function node onto the event graph and a function slice", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    const member = graph.members![0]!;
+    graph = addCallFunctionNode(graph, member, {
+      position: { x: 40, y: 60 },
+      classId: "Hero",
+      idFactory: () => "call-fn",
+    });
+    expect(graph.nodes.find((entry) => entry.id === "call-fn")).toMatchObject({
+      type: "functions.call",
+      position: { x: 40, y: 60 },
+      data: {
+        title: "Call Jump",
+        functionName: "Jump",
+        classId: "Hero",
+        implicitSelf: true,
+        pins: member.pins,
+      },
+    });
+    graph = addCallFunctionNode(graph, member, {
+      functionId: "fn-1",
+      position: { x: 8, y: 16 },
+      classId: "Hero",
+      idFactory: () => "call-local",
+    });
+    expect(
+      graph.functionGraphs?.["fn-1"]?.nodes.find(
+        (entry) => entry.id === "call-local",
+      ),
+    ).toMatchObject({
+      type: "functions.call",
+      position: { x: 8, y: 16 },
+      data: { functionName: "Jump", implicitSelf: true },
+    });
+  });
+
+  it("asks Get/Set when a variable is dropped on the graph canvas", () => {
+    const graph = addClassMember(emptyGraph(), "variable", "Health", () => "var-1");
+    const result = resolveClassMemberDrop({
+      graph,
+      memberId: "var-1",
+      members: [{ id: "var-1", kind: "variable", name: "Health" }],
+      clientX: 180,
+      clientY: 90,
+      canvas: {
+        containsClientPoint: () => true,
+        clientToFlow: (x, y) => ({ x: x - 10, y: y - 20 }),
+      },
+    });
+    expect(result).toEqual({
+      kind: "choose-access",
+      memberId: "var-1",
+      position: { x: 170, y: 70 },
+    });
+  });
+
+  it("spawns Call nodes when a function or custom event is dropped on the canvas", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "event", "On Hit", () => "evt-1", {
+      pins: [{ name: "damage", typeId: "float", direction: "out" }],
+    });
+    const canvas = {
+      containsClientPoint: () => true,
+      clientToFlow: () => ({ x: 64, y: 32 }),
+    };
+    const callFn = resolveClassMemberDrop({
+      graph,
+      memberId: "fn-1",
+      members: [{ id: "fn-1", kind: "function", name: "Jump", pins: graph.members![0]!.pins }],
+      clientX: 1,
+      clientY: 1,
+      canvas,
+      classId: "Hero",
+      idFactory: () => "dropped-fn",
+    });
+    expect(callFn.kind).toBe("spawn");
+    if (callFn.kind !== "spawn") return;
+    expect(callFn.graph.nodes.find((node) => node.id === "dropped-fn")).toMatchObject({
+      type: "functions.call",
+      position: { x: 64, y: 32 },
+      data: { functionName: "Jump", classId: "Hero" },
+    });
+
+    const callEvt = resolveClassMemberDrop({
+      graph,
+      memberId: "evt-1",
+      members: [
+        {
+          id: "evt-1",
+          kind: "event",
+          name: "On Hit",
+          eventType: "flow.event.custom",
+        },
+      ],
+      clientX: 1,
+      clientY: 1,
+      canvas,
+      classId: "Hero",
+      idFactory: () => "dropped-evt",
+    });
+    expect(callEvt.kind).toBe("spawn");
+    if (callEvt.kind !== "spawn") return;
+    expect(callEvt.graph.nodes.find((node) => node.id === "dropped-evt")).toMatchObject({
+      type: "flow.event.call",
+      position: { x: 64, y: 32 },
+      data: { name: "On Hit", classId: "Hero" },
+    });
+  });
+
+  it("ignores section rows, native events, and drops outside the canvas", () => {
+    const graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    const members = [
+      { id: "section-events", kind: "event" as const, name: "Events" },
+      {
+        id: "native:flow.event.beginPlay",
+        kind: "event" as const,
+        name: "Event Begin Play",
+        eventType: "flow.event.beginPlay",
+      },
+    ];
+    expect(
+      resolveClassMemberDrop({
+        graph,
+        memberId: "section-events",
+        members,
+        clientX: 0,
+        clientY: 0,
+        canvas: { containsClientPoint: () => true, clientToFlow: () => ({ x: 0, y: 0 }) },
+      }).kind,
+    ).toBe("ignore");
+    expect(
+      resolveClassMemberDrop({
+        graph,
+        memberId: "native:flow.event.beginPlay",
+        members,
+        clientX: 0,
+        clientY: 0,
+        canvas: { containsClientPoint: () => true, clientToFlow: () => ({ x: 0, y: 0 }) },
+      }).kind,
+    ).toBe("ignore");
+    expect(
+      resolveClassMemberDrop({
+        graph,
+        memberId: "evt-1",
+        members: [
+          { id: "evt-1", kind: "event", name: "On Hit", eventType: "flow.event.custom" },
+        ],
+        clientX: 0,
+        clientY: 0,
+        canvas: { containsClientPoint: () => false, clientToFlow: () => ({ x: 0, y: 0 }) },
+      }).kind,
+    ).toBe("ignore");
+  });
+
+  it("copies typeClassId onto spawned Get nodes and synced access nodes", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Target", () => "var-1", {
+      typeId: "object",
+      typeClassId: "Hero",
+    });
+    graph = addVariableAccessNode(graph, graph.members![0]!, "get", {
+      idFactory: () => "n-get",
+    });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      typeId: "object",
+      typeClassId: "Hero",
+    });
+    graph = patchClassMember(graph, "var-1", { typeClassId: "Actor" });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      typeId: "object",
+      typeClassId: "Actor",
     });
   });
 

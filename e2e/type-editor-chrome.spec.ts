@@ -54,6 +54,32 @@ async function dragTreeRow(
   await page.mouse.up();
 }
 
+async function dragClassMemberOntoGraph(
+  page: Page,
+  memberLabel: string,
+): Promise<void> {
+  const row = page
+    .getByTestId("my-blueprint-tree")
+    .locator('[data-testid^="tree-row-"]')
+    .filter({ hasText: memberLabel })
+    .first();
+  const pane = page.getByTestId("graph-panel").locator(".react-flow__pane");
+  await expect(row).toBeVisible();
+  await expect(pane).toBeVisible();
+  const fromBox = await row.boundingBox();
+  const toBox = await pane.boundingBox();
+  expect(fromBox).not.toBeNull();
+  expect(toBox).not.toBeNull();
+  const fromX = fromBox!.x + Math.min(40, fromBox!.width / 2);
+  const fromY = fromBox!.y + fromBox!.height / 2;
+  const toX = toBox!.x + toBox!.width / 2;
+  const toY = toBox!.y + toBox!.height / 2;
+  await page.mouse.move(fromX, fromY);
+  await page.mouse.down();
+  await page.mouse.move(toX, toY, { steps: 16 });
+  await page.mouse.up();
+}
+
 test.describe("Type-asset editors and hierarchy chrome", () => {
   test("ScriptInterface Add Method shows a preview and enables Windows", async ({
     page,
@@ -112,6 +138,63 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       .getByText("Event Begin Play", { exact: true })
       .click();
     await expect(page.getByTestId("class-add-local-variables")).toHaveCount(0);
+  });
+
+  test("Object Reference variables show Class Type and drag opens Get/Set", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("my-class-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("class-add-variables").click();
+    await page.getByTestId("name-prompt-input").fill("Target");
+    await page.getByTestId("name-prompt-confirm").click();
+    await expect(page.getByTestId("inspector-member-type")).toBeVisible();
+    await page.getByTestId("inspector-member-type").click();
+    await page.getByTestId("search-item-object").click();
+    await expect(page.getByTestId("inspector-member-class-type")).toBeVisible();
+    await expect(page.getByTestId("inspector-member-class-default")).toHaveCount(
+      0,
+    );
+
+    const graph = page.getByTestId("graph-panel");
+    const nodes = graph.locator(".react-flow__node");
+    await expect(nodes).toHaveCount(2);
+    await dragClassMemberOntoGraph(page, "Target");
+    await expect(page.getByTestId("member-access-chooser")).toBeVisible();
+    await page.getByTestId("member-access-get").click();
+    await expect(page.getByTestId("member-access-chooser")).toHaveCount(0);
+    await expect(nodes).toHaveCount(3);
+    await expect(graph.getByText("Get Target")).toBeVisible();
+  });
+
+  test("dragging a Class function onto the graph spawns Call Function", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("my-class-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("class-add-functions").click();
+    await page.getByTestId("name-prompt-input").fill("Jump");
+    await page.getByTestId("name-prompt-confirm").click();
+    await page
+      .getByTestId("my-class-panel")
+      .getByText("Event Begin Play", { exact: true })
+      .click();
+    const graph = page.getByTestId("graph-panel");
+    const nodes = graph.locator(".react-flow__node");
+    await expect(nodes).toHaveCount(2);
+    await dragClassMemberOntoGraph(page, "Jump");
+    await expect(nodes).toHaveCount(3);
+    await expect(graph.getByText("Call Jump")).toBeVisible();
   });
 
   test("Outliner immediate drag parents an actor; row menu deletes", async ({

@@ -23,15 +23,20 @@ import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
 import {
+  classHierarchyFromParentOf,
+  classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
+  knownClassIdSet,
   scriptPaletteNodes,
+  scriptPinCompatibility,
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
+  collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
   commitLogicGraph,
   serializedGraphFromDocument,
@@ -52,7 +57,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     uiEditorMode,
   } = useDocuments();
   const { focusedNodeId } = usePlay();
-  const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId } =
+  const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId, setCanvasDropApi } =
     useGraphEditing();
   const {
     diagnostics,
@@ -92,16 +97,15 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     doc?.ref.kind ?? "",
     doc?.content,
   );
-  const otherClassGraphs = useMemo(() => {
-    const graphs: Record<string, SerializedGraph> = {};
-    for (const entry of openDocuments) {
-      if (entry.ref.kind !== "graph" || !entry.content) continue;
-      const id = classIdForGraphPath(entry.ref.path);
-      if (!id || id === classId) continue;
-      graphs[id] = entry.content as SerializedGraph;
-    }
-    return graphs;
-  }, [classId, openDocuments]);
+  const otherClassGraphs = useMemo(
+    () =>
+      collectClassGraphsForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+        classIdForPath: classIdForGraphPath,
+      }),
+    [assetRegistry, openDocuments],
+  );
   const functionLibraries = useMemo(
     () =>
       collectFunctionLibrariesForPalette({
@@ -111,6 +115,23 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         classIdForPath: classIdForGraphPath,
       }),
     [assetRegistry, openDocuments, parentOf],
+  );
+  const hierarchy = useMemo(
+    () => classHierarchyFromParentOf(parentOf),
+    [parentOf],
+  );
+  const memberSymbols = useMemo(() => {
+    const graphs = { ...otherClassGraphs };
+    if (classId && graphContent) graphs[classId] = graphContent;
+    return classMemberSymbolsFromGraphs(graphs);
+  }, [classId, graphContent, otherClassGraphs]);
+  const knownClassIds = useMemo(
+    () => knownClassIdSet(parentOf, Object.keys(otherClassGraphs)),
+    [otherClassGraphs, parentOf],
+  );
+  const pinCompatibility = useMemo(
+    () => scriptPinCompatibility(hierarchy),
+    [hierarchy],
   );
   const graph = useMemo(() => {
     const slice =
@@ -129,6 +150,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       visible ??
         createDefaultLogicGraphSerialized(registry, { parentClass, parentOf }),
       registry,
+      { parentOf },
     );
   }, [activeFunctionId, graphContent, parentClass, parentOf]);
 
@@ -155,16 +177,29 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     }
     const handle = window.setTimeout(() => {
       setDiagnostics(
-        validateSerializedGraph(graph, { assetGuid, graphId: documentId }),
+        validateSerializedGraph(graph, {
+          assetGuid,
+          graphId: documentId,
+          hierarchy,
+          classId,
+          activeFunctionId,
+          members: memberSymbols,
+          knownClassIds,
+        }),
       );
     }, VALIDATION_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [
     activeDocumentId,
+    activeFunctionId,
     assetGuid,
+    classId,
     doc?.ref.kind,
     documentId,
     graph,
+    hierarchy,
+    knownClassIds,
+    memberSymbols,
     setDiagnostics,
     uiEditorMode,
   ]);
@@ -231,6 +266,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           focusedNodeId={focusId}
           diagnostics={graphDiagnostics}
           paletteNodes={paletteNodes}
+          pinCompatibility={pinCompatibility}
+          onCanvasApi={setCanvasDropApi}
           onNavigateRequest={() => setFocusDiagnostic(null)}
           onSelectionChange={setSelectedNodeIds}
           onChange={(next) => {

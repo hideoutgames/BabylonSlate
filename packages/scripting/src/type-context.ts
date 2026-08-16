@@ -2,6 +2,16 @@ import type { LogicGraph } from "./ir";
 import type { Diagnostic } from "./diagnostics";
 import type { ClassHierarchy, PinType } from "./types";
 
+export type ClassMemberSymbol = {
+  id: string;
+  name: string;
+  kind: "variable" | "function" | "event";
+  classId: string;
+  functionId?: string;
+  typeId?: string;
+  typeClassId?: string;
+};
+
 export type TypeContext = {
   assetGuid: string;
   hierarchy?: ClassHierarchy;
@@ -11,6 +21,9 @@ export type TypeContext = {
   knownClassIds?: ReadonlySet<string>;
   /** Optional BehaviourTree document payload for `bt.structural` rules. */
   behaviourTree?: unknown;
+  classId?: string;
+  activeFunctionId?: string | null;
+  members?: readonly ClassMemberSymbol[];
 };
 
 export type ValidationRule = {

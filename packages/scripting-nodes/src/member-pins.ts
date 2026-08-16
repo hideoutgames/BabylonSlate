@@ -18,8 +18,14 @@ import {
 export type MemberPinRow = {
   name?: string;
   typeId?: string;
+  typeClassId?: string;
   direction?: string;
 };
+
+function constraintClassId(typeClassId?: string): string {
+  const trimmed = typeClassId?.trim();
+  return trimmed ? trimmed : "BObject";
+}
 
 export function jsIdent(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
@@ -35,7 +41,10 @@ export function objectLiteralKey(name: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
 }
 
-export function pinTypeForMember(typeId: string | undefined): PinType {
+export function pinTypeForMember(
+  typeId: string | undefined,
+  typeClassId?: string,
+): PinType {
   switch (typeId) {
     case "exec":
       return EXEC;
@@ -50,9 +59,9 @@ export function pinTypeForMember(typeId: string | undefined): PinType {
     case "vec3":
       return VEC3;
     case "object":
-      return objectRef("BObject");
+      return objectRef(constraintClassId(typeClassId));
     case "class":
-      return classRef("BObject");
+      return classRef(constraintClassId(typeClassId));
     case "struct":
       return structRef("");
     case "enum":
@@ -77,7 +86,14 @@ export function dataMemberPins(
       return [];
     }
     if (row.typeId === "exec") return [];
-    return [pin(row.name, row.name, direction, pinTypeForMember(row.typeId))];
+    return [
+      pin(
+        row.name,
+        row.name,
+        direction,
+        pinTypeForMember(row.typeId, row.typeClassId),
+      ),
+    ];
   });
 }
 
@@ -85,6 +101,7 @@ export function localVariablePreamble(
   locals: ReadonlyArray<{
     name: string;
     typeId?: string;
+    typeClassId?: string;
     defaultValue?: unknown;
   }>,
 ): string[] {
@@ -93,7 +110,7 @@ export function localVariablePreamble(
     const value =
       local.defaultValue !== undefined
         ? JSON.stringify(local.defaultValue)
-        : defaultValueLiteral(pinTypeForMember(local.typeId));
+        : defaultValueLiteral(pinTypeForMember(local.typeId, local.typeClassId));
     return `  let ${ident} = ${value};`;
   });
 }

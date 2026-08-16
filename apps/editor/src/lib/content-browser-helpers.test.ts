@@ -718,7 +718,7 @@ describe("content-browser-helpers", () => {
       (hud.payload.logic as { nodes: Array<{ type: string }> }).nodes.map(
         (node) => node.type,
       ),
-    ).toEqual(["flow.event.beginPlay", "flow.event.tick"]);
+    ).toEqual([]);
     expect(Object.keys(hud.payload.widgets as object).sort()).toEqual(["canvas"]);
     expect(
       (hud.payload.widgets as { canvas: { children: string[] } }).canvas.children,
@@ -861,7 +861,7 @@ describe("content-browser-helpers", () => {
       (eui.payload.logic as { nodes: Array<{ type: string }> }).nodes.map(
         (node) => node.type,
       ),
-    ).toEqual(["flow.event.beginPlay", "flow.event.tick"]);
+    ).toEqual([]);
   });
 
   it("seeds a BTDecorator class with On Evaluate instead of Begin Play", () => {

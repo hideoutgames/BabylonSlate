@@ -207,6 +207,8 @@ export interface GraphClassMemberPin {
   name: string;
   typeId: string;
   direction: "in" | "out";
+  /** Object/class pin constraint. Missing means unconstrained BObject at pin conversion. */
+  typeClassId?: string;
 }
 
 export interface GraphClassMember {
@@ -215,8 +217,10 @@ export interface GraphClassMember {
   name: string;
   /** Variable pin type (bool, float, …). */
   typeId?: string;
+  /** Object/class variable constraint. Missing means unconstrained BObject at pin conversion. */
+  typeClassId?: string;
   defaultValue?: unknown;
-  /** Function signature pins. */
+  /** Function and custom-event signature pins. */
   pins?: GraphClassMemberPin[];
   /** ScriptInterface asset guid. */
   assetGuid?: string;
@@ -651,6 +655,12 @@ const MEMBER_KINDS = new Set<GraphClassMemberKind>([
   "interface",
 ]);
 
+function optionalTypeClassId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function normalizeMemberPins(value: unknown): GraphClassMemberPin[] {
   if (!Array.isArray(value)) return [];
   const pins: GraphClassMemberPin[] = [];
@@ -659,13 +669,16 @@ function normalizeMemberPins(value: unknown): GraphClassMemberPin[] {
     const row = entry as Record<string, unknown>;
     const name = typeof row.name === "string" ? row.name.trim() : "";
     if (!name) continue;
-    pins.push({
+    const pin: GraphClassMemberPin = {
       name,
       typeId: typeof row.typeId === "string" && row.typeId.trim()
         ? row.typeId.trim()
         : "float",
       direction: row.direction === "out" ? "out" : "in",
-    });
+    };
+    const typeClassId = optionalTypeClassId(row.typeClassId);
+    if (typeClassId) pin.typeClassId = typeClassId;
+    pins.push(pin);
   }
   return pins;
 }
@@ -695,11 +708,13 @@ export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
         typeof row.typeId === "string" && row.typeId.trim()
           ? row.typeId.trim()
           : "float";
+      const typeClassId = optionalTypeClassId(row.typeClassId);
+      if (typeClassId) member.typeClassId = typeClassId;
       if ("defaultValue" in row) member.defaultValue = row.defaultValue;
       if (typeof row.functionId === "string" && row.functionId.trim()) {
         member.functionId = row.functionId.trim();
       }
-    } else if (kind === "function") {
+    } else if (kind === "function" || kind === "event") {
       member.pins = normalizeMemberPins(row.pins);
     } else if (kind === "interface") {
       member.assetGuid =
