@@ -148,6 +148,11 @@ export {
   type NamedListItemRenderArgs,
 } from "./named-list-editor";
 export {
+  AddFunctionDialog,
+  type AddFunctionDialogItem,
+  type AddFunctionDialogProps,
+} from "./add-function-dialog";
+export {
   NamePromptDialog,
   type NamePromptDialogProps,
 } from "./name-prompt-dialog";

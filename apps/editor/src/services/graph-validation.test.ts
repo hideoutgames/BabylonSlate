@@ -439,11 +439,46 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.function.output")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.call")).toBe(false);
     expect(nodes.some((node) => node.id === "functions.call")).toBe(false);
+    expect(nodes.some((node) => node.id === "interface.call")).toBe(false);
+    expect(nodes.some((node) => node.title === "Call Interface")).toBe(false);
     expect(nodes.some((node) => node.id === "variables.get")).toBe(false);
     expect(nodes.some((node) => node.id === "variables.set")).toBe(false);
     expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
     const print = nodes.find((node) => node.id === "debug.print");
     expect(print?.defaultData).toMatchObject({ developmentOnly: true });
+  });
+
+  it("injects Call I rows per ScriptInterface method", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      scriptInterfaces: [
+        {
+          guid: "iface-damageable",
+          name: "Damageable",
+          methods: [
+            {
+              name: "Apply Damage",
+              pins: [
+                { name: "amount", typeId: "float", direction: "in" },
+                { name: "remaining", typeId: "float", direction: "out" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const call = nodes.find(
+      (node) => node.id === "interface.call:iface-damageable:Apply Damage",
+    );
+    expect(call?.title).toBe("Call I Apply Damage");
+    expect(call?.nodeType).toBe("interface.call");
+    expect(call?.pins?.some((pin) => pin.name === "amount")).toBe(true);
+    expect(call?.pins?.some((pin) => pin.name === "remaining")).toBe(true);
+    expect(call?.pins?.some((pin) => pin.name === "target")).toBe(true);
+    expect(call?.defaultData).toMatchObject({
+      interfaceGuid: "iface-damageable",
+      method: "Apply Damage",
+      implicitSelf: true,
+    });
   });
 
   it("hides behaviour-tree events on Actor class graphs", () => {

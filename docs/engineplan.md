@@ -537,8 +537,8 @@ Mistakes in visual scripting should be caught **before Preview**, not discovered
 
 - **Structural** (no full compile needed): disconnected exec entry, unreachable node, exec cycle, pure-data cycle, latent node inside a synchronous-only context.
 - **Pin typing** (no full compile needed): type mismatch, missing required input, extra data wire on a single-input pin (`pin.duplicate_connection`; exec pins may fan in), incompatible wildcard resolution group, delegate signature mismatch.
-- **References** (needs registry index): broken asset, enum, struct or interface guid; class reference outside inheritance chain; interface function not implemented.
-- **Signatures** (needs class graph): override pin list does not match parent; ScriptInterface implementation arity or types differ.
+- **References** (needs registry index): broken asset, enum, struct or interface guid; class reference outside inheritance chain; interface function not implemented (`interface.unimplemented`).
+- **Signatures** (needs class graph): override pin list does not match parent (`member.override_signature`); ScriptInterface implementation arity or types differ (`interface.signature_mismatch`). Interface implementation Output pins without a wire or default are errors.
 - **Semantic** (mixed): `ExecuteConsoleCommand` references a debug-tier command that the selected export preset would strip; async node in a BT task that must finish synchronously.
 - **ExecuteJavaScript** (on body edit): parse error with line and column mapped back to the body editor, not to a graph node pin.
 - **Behaviour tree** (via the BT rule set): composite with no children; decorator or service parented under a task; parallel composite with fewer than two children; blackboard key reference to a missing key.

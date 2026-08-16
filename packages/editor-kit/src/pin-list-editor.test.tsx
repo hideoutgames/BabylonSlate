@@ -135,4 +135,11 @@ describe("PinListEditor", () => {
       ]),
     );
   });
+
+  it("hides add and move controls when readOnly", () => {
+    render(<PinListEditor rows={rows} onChange={() => {}} readOnly />);
+    expect(screen.queryByTestId("pin-add")).toBeNull();
+    expect(screen.queryByTestId("pin-a-move-up")).toBeNull();
+    expect(screen.getByTestId("pin-a-name")).toHaveProperty("disabled", true);
+  });
 });

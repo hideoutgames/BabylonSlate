@@ -42,6 +42,7 @@ export type PinListEditorProps = {
   types?: readonly string[];
   classEntries?: readonly ClassPickerEntry[];
   testIdPrefix?: string;
+  readOnly?: boolean;
   "data-testid"?: string;
 };
 
@@ -105,6 +106,7 @@ export function PinListEditor({
   types,
   classEntries = [],
   testIdPrefix = "pin",
+  readOnly = false,
   "data-testid": testId = "pin-list-editor",
 }: PinListEditorProps) {
   const [draftName, setDraftName] = useState("");
@@ -146,6 +148,7 @@ export function PinListEditor({
                 value={row.name}
                 aria-label={`Pin ${index + 1} name`}
                 data-testid={`${testIdPrefix}-${row.id}-name`}
+                disabled={readOnly}
                 onChange={(event) =>
                   onChange(patchRow(rows, row.id, { name: event.target.value }))
                 }
@@ -153,9 +156,13 @@ export function PinListEditor({
               <PinTypePicker
                 value={row.type}
                 types={types}
-                onChange={(type) => onChange(patchRow(rows, row.id, { type }))}
+                onChange={(type) => {
+                  if (readOnly) return;
+                  onChange(patchRow(rows, row.id, { type }));
+                }}
                 data-testid={`${testIdPrefix}-${row.id}-type`}
               />
+              {readOnly ? null : (
               <div className="flex shrink-0 items-center gap-0">
                 <Button
                   type="button"
@@ -194,8 +201,9 @@ export function PinListEditor({
                   <Trash2Icon />
                 </Button>
               </div>
+              )}
             </div>
-            {selected ? (
+            {selected && !readOnly ? (
               <div className="flex flex-wrap items-center gap-2 px-1 pb-1">
                 <Field orientation="horizontal">
                   <Checkbox
@@ -270,6 +278,7 @@ export function PinListEditor({
           </div>
         );
       })}
+      {readOnly ? null : (
       <Field>
         <FieldLabel htmlFor="pin-add-name">Add Pin</FieldLabel>
         <div className="flex flex-wrap gap-2">
@@ -314,6 +323,7 @@ export function PinListEditor({
           )}
         </div>
       </Field>
+      )}
       <ClassPicker
         open={classPickRowId !== null}
         onOpenChange={(open) => {

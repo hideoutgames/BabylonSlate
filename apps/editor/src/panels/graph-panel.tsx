@@ -38,9 +38,14 @@ import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
+  collectScriptInterfacesForPalette,
   commitLogicGraph,
   serializedGraphFromDocument,
 } from "../lib/logic-graph-document";
+import {
+  collectImplementedInterfaceContexts,
+  collectParentFunctionSignatures,
+} from "../lib/overridable-functions";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
@@ -117,6 +122,14 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       }),
     [assetRegistry, openDocuments, parentOf],
   );
+  const scriptInterfaces = useMemo(
+    () =>
+      collectScriptInterfacesForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+      }),
+    [assetRegistry, openDocuments],
+  );
   const hierarchy = useMemo(
     () => classHierarchyFromParentOf(parentOf),
     [parentOf],
@@ -180,7 +193,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     }
     const handle = window.setTimeout(() => {
       setDiagnostics(
-        validateSerializedGraph(graph, {
+        validateSerializedGraph(graphContent ?? graph, {
           assetGuid,
           graphId: documentId,
           hierarchy,
@@ -188,6 +201,18 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           activeFunctionId,
           members: memberSymbols,
           knownClassIds,
+          implementedInterfaces: collectImplementedInterfaceContexts({
+            graph: graphContent ?? undefined,
+            classId,
+            parentOf,
+            parentGraphs: otherClassGraphs,
+            scriptInterfaces,
+          }),
+          parentFunctionSignatures: collectParentFunctionSignatures({
+            classId,
+            parentOf,
+            parentGraphs: otherClassGraphs,
+          }),
         }),
       );
     }, VALIDATION_DEBOUNCE_MS);
@@ -199,10 +224,14 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     classId,
     doc?.ref.kind,
     documentId,
+    graphContent,
     graph,
     hierarchy,
     knownClassIds,
     memberSymbols,
+    otherClassGraphs,
+    parentOf,
+    scriptInterfaces,
     setDiagnostics,
     uiEditorMode,
     animEditorMode,
@@ -219,6 +248,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         activeFunctionId,
         assetType: indexed?.header.type,
         functionLibraries,
+        scriptInterfaces,
         animationGraphHost:
           doc?.ref.kind === "anim-graph" ? "object" : undefined,
       }),
@@ -226,6 +256,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       activeFunctionId,
       classId,
       functionLibraries,
+      scriptInterfaces,
       graphContent,
       indexed?.header.type,
       otherClassGraphs,

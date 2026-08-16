@@ -81,10 +81,10 @@ describe("MyClassPanel UserInterface logic", () => {
       </GraphEditingProvider>,
     );
     fireEvent.click(screen.getByTestId("class-add-functions"));
-    fireEvent.change(screen.getByTestId("name-prompt-input"), {
+    fireEvent.change(screen.getByTestId("add-function-name"), {
       target: { value: "Dash" },
     });
-    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    fireEvent.click(screen.getByTestId("add-function-confirm"));
     expect(applyGraphChange).not.toHaveBeenCalled();
     expect(applyAssetDocumentChange).toHaveBeenCalledWith(
       "ui:assets/HUD.ui.babasset",
