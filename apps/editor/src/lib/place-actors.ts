@@ -125,7 +125,10 @@ export function projectPlaceActors(
         assetType: asset.header.type,
         classId:
           asset.header.type === "Class"
-            ? classIdFromClassAsset(asset)
+            ? classIdFromClassAsset({
+                path: asset.path,
+                header: { type: "Class", name: asset.header.name },
+              })
             : undefined,
         components: prefabForGuid?.(asset.header.guid),
       },
