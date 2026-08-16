@@ -275,6 +275,9 @@ export function startPlaySession(options: {
     pixelsPerUnit: options.pixelsPerUnit,
     pixelPerfect: options.pixelPerfect,
     environmentColor: options.scene?.settings.environmentColor,
+    onPostProcessDiagnostic: (diagnostic) => {
+      options.onLog?.(diagnostic.message, "warning");
+    },
   });
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);

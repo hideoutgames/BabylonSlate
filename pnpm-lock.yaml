@@ -292,6 +292,9 @@ importers:
       '@babylonslate/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@babylonslate/shader-graph':
+        specifier: workspace:*
+        version: link:../../packages/shader-graph
     devDependencies:
       '@types/node':
         specifier: ^22.13.10

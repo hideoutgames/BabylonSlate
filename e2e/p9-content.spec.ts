@@ -348,6 +348,27 @@ test.describe("P9 content systems", () => {
     );
     await page.mouse.up();
     await page.mouse.wheel(0, 240);
+    const session = await page.context().newCDPSession(page);
+    const cx = box!.x + box!.width / 2;
+    const cy = box!.y + box!.height / 2;
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [
+        { x: cx - 36, y: cy },
+        { x: cx + 36, y: cy },
+      ],
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [
+        { x: cx - 72, y: cy },
+        { x: cx + 72, y: cy },
+      ],
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
     await expect(canvas).toHaveAttribute("data-status", "ready", {
       timeout: 15000,
     });
