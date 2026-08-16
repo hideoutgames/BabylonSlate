@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createDefaultAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
+import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { ValidationProvider } from "../context/validation-context";
@@ -149,6 +149,8 @@ function locoGraph(): AnimGraphDocument {
     blendSeconds: 0.25,
     hasExitTime: false,
     exitTime: 0,
+    priority: 0,
+    ruleGraph: createDefaultTransitionRuleGraph(),
   });
   return doc;
 }

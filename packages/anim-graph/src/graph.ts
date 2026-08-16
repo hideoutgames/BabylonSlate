@@ -523,7 +523,6 @@ function factsFor(
 
 function layerFor(
   doc: AnimGraphDocument,
-  clips: Map<string, AnimClipRef>,
   stateId: string,
   normalisedTime: number,
   weight: number,
@@ -676,7 +675,7 @@ export function evaluateAnimGraph(
     } else {
       blendFromTimeMs = fromClock.timeMs;
       layers.push(
-        layerFor(doc, clips, blendFromStateId, fromClock.normalised, fromWeight),
+        layerFor(doc, blendFromStateId, fromClock.normalised, fromWeight),
       );
       blendWeights[blendFromStateId] = fromWeight;
     }
@@ -686,7 +685,7 @@ export function evaluateAnimGraph(
     blendElapsedMs = 0;
   }
 
-  layers.push(layerFor(doc, clips, nextId, nextNormalised, toWeight));
+  layers.push(layerFor(doc, nextId, nextNormalised, toWeight));
   blendWeights[nextId] = (blendWeights[nextId] ?? 0) + toWeight;
 
   return {
