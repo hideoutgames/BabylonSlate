@@ -1,5 +1,7 @@
 import type { DockWindowDirection } from "@babylonslate/core";
+import type { UiEditorMode } from "./ui-document-layout";
 
+export type { UiEditorMode };
 export type DockviewDocumentKind =
   | "scene"
   | "graph"
@@ -43,6 +45,8 @@ export type DockWindowOptions = {
   editorUtilityInterface?: boolean;
   /** Opt-in Git LFS locking; hides the Locks window entirely when off. */
   sourceControl?: boolean;
+  /** UserInterface / EditorUtilityInterface Designer vs Logic surface. */
+  uiEditorMode?: UiEditorMode;
 };
 
 export const LOCKS_WINDOW_ID = "locks";
@@ -60,13 +64,24 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "plugin-settings": "plugin-settings-details",
 };
 
-function locksWindow(kind: DockviewDocumentKind): DockWindowDefinition {
+export function primaryDockPanel(
+  kind: DockviewDocumentKind,
+  options?: DockWindowOptions,
+): string {
+  if (kind === "ui" && options?.uiEditorMode === "logic") return "graph";
+  return DOCK_PRIMARY_PANEL[kind];
+}
+
+function locksWindow(
+  kind: DockviewDocumentKind,
+  options?: DockWindowOptions,
+): DockWindowDefinition {
   return {
     id: LOCKS_WINDOW_ID,
     component: "locks",
     title: "Locks",
     defaultPosition: {
-      referencePanelId: DOCK_PRIMARY_PANEL[kind],
+      referencePanelId: primaryDockPanel(kind, options),
       direction: "below",
       initialHeight: 180,
     },
@@ -79,7 +94,7 @@ function withOptionalLocks(
   options?: DockWindowOptions,
 ): DockWindowDefinition[] {
   if (!options?.sourceControl) return windows;
-  return [...windows, locksWindow(kind)];
+  return [...windows, locksWindow(kind, options)];
 }
 
 export interface DockWindowDefaultPosition {
@@ -315,7 +330,7 @@ const TILEMAP_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-const UI_WINDOWS: DockWindowDefinition[] = [
+const UI_DESIGNER_WINDOWS: DockWindowDefinition[] = [
   { id: "ui-design", component: "ui-design", title: "Design" },
   {
     id: "ui-hierarchy",
@@ -335,16 +350,6 @@ const UI_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "ui-design",
       direction: "right",
       initialWidth: 280,
-    },
-  },
-  {
-    id: "ui-logic",
-    component: "ui-logic",
-    title: "Logic",
-    defaultPosition: {
-      referencePanelId: "ui-design",
-      direction: "below",
-      initialHeight: 220,
     },
   },
 ];
@@ -388,9 +393,12 @@ export function listDockWindows(
     return withOptionalLocks(kind, TILEMAP_WINDOWS, options);
   }
   if (kind === "ui") {
+    if (options?.uiEditorMode === "logic") {
+      return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);
+    }
     const windows = options?.editorUtilityInterface
-      ? [...UI_WINDOWS, UI_SETTINGS_WINDOW]
-      : UI_WINDOWS;
+      ? [...UI_DESIGNER_WINDOWS, UI_SETTINGS_WINDOW]
+      : UI_DESIGNER_WINDOWS;
     return withOptionalLocks(kind, windows, options);
   }
   if (kind === "plugin-settings") {

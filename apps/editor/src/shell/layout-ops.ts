@@ -1,4 +1,9 @@
-import { listDockWindows, type DockviewDocumentKind, type DockWindowOptions } from "./window-catalog";
+import {
+  listDockWindows,
+  primaryDockPanel,
+  type DockviewDocumentKind,
+  type DockWindowOptions,
+} from "./window-catalog";
 
 export type FocusDocumentKind = DockviewDocumentKind;
 
@@ -59,9 +64,10 @@ export function focusKeepCandidates(
 export function resolveFocusKeepPanelIds(
   kind: FocusDocumentKind,
   keepPanelIds: readonly string[] | undefined,
+  options?: DockWindowOptions,
 ): string[] {
   if (!keepPanelIds || keepPanelIds.length === 0) {
-    return [FOCUS_PRIMARY_PANEL[kind]];
+    return [primaryDockPanel(kind, options)];
   }
   return [...keepPanelIds];
 }
@@ -122,6 +128,7 @@ export function restoreDockviewLayout(
 /** Drop retired panels and restack Class under Components. */
 export function migrateRestoredLayout(api: FocusableDockApi): void {
   api.getPanel("mini-asset-browser")?.api.close();
+  api.getPanel("ui-logic")?.api.close();
   const myClass = api.getPanel("my-class");
   const components = api.getPanel("actor-prefab");
   if (
