@@ -83,6 +83,7 @@ export function startPlayer(options: {
     throw new Error("Set Startup Scene in Project Settings.");
   }
   const content = packedContentFromGame(game);
+  const diagnostics: PlayerDiagnostic[] = [];
 
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
@@ -100,6 +101,15 @@ export function startPlayer(options: {
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     ktx2BasePath: ktx2BasePath(),
+    onPostProcessDiagnostic: (diagnostic) => {
+      diagnostics.push({
+        message: diagnostic.message,
+        severity: "warning",
+        assetGuid: diagnostic.materialGuid,
+        nodeId: diagnostic.nodeId,
+      });
+      options.onDiagnostic?.(diagnostics);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
@@ -146,7 +156,6 @@ export function startPlayer(options: {
   let lastWorkerTickIndex = 0;
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
-  const diagnostics: PlayerDiagnostic[] = [];
 
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     applyPlayerEngineCommand(handle, command);
