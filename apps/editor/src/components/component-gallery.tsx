@@ -669,7 +669,7 @@ function GalleryDangerDialog() {
 export function ComponentGallery() {
   return (
     <div
-      className="flex min-h-svh h-dvh flex-col bg-background text-foreground"
+      className="flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground"
       data-testid="component-gallery"
     >
       <header className="border-b border-border px-6 py-4">
@@ -683,7 +683,7 @@ export function ComponentGallery() {
           .
         </p>
       </header>
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex max-w-4xl flex-col gap-8 p-6">
           <section className="flex flex-col gap-4">
             <h2 className="text-lg font-medium">Actions</h2>
