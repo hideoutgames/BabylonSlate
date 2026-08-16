@@ -11,12 +11,14 @@ import type {
 } from "./types";
 import { createDefaultBehaviourTree } from "./tree";
 import { kindForCatalogClassId, titleForBtClassId } from "./catalog";
+import type { BtEditorPosition } from "./types";
 
 export const BT_NODE_TYPE = "bt.node";
 export const BT_PARENT_HANDLE = "parent";
 export const BT_CHILDREN_HANDLE = "children";
 export const BT_LAYOUT_NODE_WIDTH = 220;
 export const BT_LAYOUT_NODE_HEIGHT = 180;
+export const BT_DUPLICATE_OFFSET: BtEditorPosition = { x: 40, y: 40 };
 
 export type BtPin = {
   id: string;
@@ -52,9 +54,9 @@ type HierarchyRow = {
   children: HierarchyRow[];
 };
 
-export function layoutBehaviourTree(
+function computeBehaviourTreeLayout(
   doc: BehaviourTreeDocument,
-): Map<string, { x: number; y: number }> {
+): Map<string, BtEditorPosition> {
   const byId = new Map(doc.nodes.map((entry) => [entry.id, entry]));
   const seen = new Set<string>();
   const toRow = (id: string): HierarchyRow => {
@@ -90,6 +92,84 @@ export function layoutBehaviourTree(
   return positions;
 }
 
+export function layoutBehaviourTree(
+  doc: BehaviourTreeDocument,
+): Map<string, BtEditorPosition> {
+  const positions = computeBehaviourTreeLayout(doc);
+  if (!doc.editorPositions) return positions;
+  for (const [id, pos] of Object.entries(doc.editorPositions)) {
+    if (!positions.has(id)) continue;
+    positions.set(id, { x: pos.x, y: pos.y });
+  }
+  return positions;
+}
+
+function cloneEditorPositions(
+  positions: Readonly<Record<string, BtEditorPosition>> | undefined,
+): Record<string, BtEditorPosition> | undefined {
+  if (!positions) return undefined;
+  const out: Record<string, BtEditorPosition> = {};
+  for (const [id, pos] of Object.entries(positions)) {
+    out[id] = { x: pos.x, y: pos.y };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function withEditorPositions(
+  doc: BehaviourTreeDocument,
+  positions: Record<string, BtEditorPosition> | undefined,
+): BehaviourTreeDocument {
+  if (!positions || Object.keys(positions).length === 0) {
+    if (!doc.editorPositions) return doc;
+    const { editorPositions: _dropped, ...rest } = doc;
+    return rest;
+  }
+  return { ...doc, editorPositions: positions };
+}
+
+export function keepEditorPositionsFor(
+  doc: BehaviourTreeDocument,
+  ids: ReadonlySet<string>,
+): Record<string, BtEditorPosition> | undefined {
+  if (!doc.editorPositions) return undefined;
+  const next: Record<string, BtEditorPosition> = {};
+  for (const [id, pos] of Object.entries(doc.editorPositions)) {
+    if (!ids.has(id)) continue;
+    next[id] = { x: pos.x, y: pos.y };
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+export function arrangeBehaviourTree(
+  doc: BehaviourTreeDocument,
+): BehaviourTreeDocument {
+  const computed = computeBehaviourTreeLayout(doc);
+  const editorPositions: Record<string, BtEditorPosition> = {};
+  for (const [id, pos] of computed) {
+    editorPositions[id] = { x: pos.x, y: pos.y };
+  }
+  return withEditorPositions(doc, editorPositions);
+}
+
+export function applyNodePositions(
+  doc: BehaviourTreeDocument,
+  positions: Readonly<Record<string, { x: number; y?: number }>>,
+): BehaviourTreeDocument {
+  const known = new Set(doc.nodes.map((node) => node.id));
+  const editorPositions = cloneEditorPositions(doc.editorPositions) ?? {};
+  for (const [id, pos] of Object.entries(positions)) {
+    if (!known.has(id)) continue;
+    if (typeof pos.x !== "number" || !Number.isFinite(pos.x)) continue;
+    const y =
+      typeof pos.y === "number" && Number.isFinite(pos.y)
+        ? pos.y
+        : (editorPositions[id]?.y ?? 0);
+    editorPositions[id] = { x: pos.x, y };
+  }
+  const next = withEditorPositions(doc, editorPositions);
+  return reorderSiblingsByPosition(next, editorPositions);
+}
+
 export function reorderSiblingsByPosition(
   doc: BehaviourTreeDocument,
   positions: Readonly<Record<string, { x: number; y?: number }>>,
@@ -98,9 +178,11 @@ export function reorderSiblingsByPosition(
     ...doc,
     nodes: doc.nodes.map((node) => {
       if (node.children.length < 2) return node;
-      const children = [...node.children].sort(
-        (left, right) => (positions[left]?.x ?? 0) - (positions[right]?.x ?? 0),
-      );
+      const children = [...node.children].sort((left, right) => {
+        const dx = (positions[left]?.x ?? 0) - (positions[right]?.x ?? 0);
+        if (dx !== 0) return dx;
+        return node.children.indexOf(left) - node.children.indexOf(right);
+      });
       return { ...node, children };
     }),
   };
@@ -269,11 +351,19 @@ export function serializedToBehaviourTree(
     nodes.find((node) => !targeted.has(node.id))?.id ??
     nodes[0]?.id ??
     previous.rootId;
+  const editorPositions: Record<string, BtEditorPosition> = {};
+  for (const entry of graph.nodes) {
+    editorPositions[entry.id] = {
+      x: entry.position.x,
+      y: entry.position.y,
+    };
+  }
   return {
     name: previous.name,
     rootId,
     blackboardGuid: previous.blackboardGuid,
     nodes,
+    ...(Object.keys(editorPositions).length > 0 ? { editorPositions } : {}),
   };
 }
 
