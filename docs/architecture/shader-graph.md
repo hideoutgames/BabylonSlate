@@ -127,9 +127,12 @@ on the shared Engine's hidden canvas.
 Details panel edits a persisted `body` (Textarea) with a generated typed
 signature `result = fn(a, b)`. The validator rejects empty bodies, oversized
 source, declarations, preprocessor directives and forbidden globals, and
-reports `material.capability` on WebGPU (`customGlsl: false`). Render realises
-the node through Babylon `CustomBlock`; the expression participates in the plan
-hash so a body edit invalidates the cache.
+reports `material.capability` on WebGPU (`customGlsl: false`). Compiler
+Results show `material.customGlsl`. Playwright wires the validated node
+into Metallic with tap-to-connect (force-click so the dock sash cannot
+steal the pin) and asserts the preview compiles to `data-status="ready"`.
+Render realises the node through Babylon `CustomBlock`; the expression
+participates in the plan hash so a body edit invalidates the cache.
 
 ## Inline Texture Sample
 

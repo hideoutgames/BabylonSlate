@@ -128,7 +128,12 @@ async function addMaterialPaletteNode(
 ): Promise<void> {
   const graph = page.getByTestId("material-graph-editor");
   await expect(graph).toBeVisible();
-  await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+  const pane = graph.locator(".react-flow__pane");
+  const box = await pane.boundingBox();
+  expect(box).not.toBeNull();
+  await pane.dblclick({
+    position: { x: Math.round(box!.width / 2), y: Math.round(box!.height / 2) },
+  });
   await expect(page.getByTestId("node-palette")).toBeVisible();
   await page.getByTestId("node-palette-search").fill(search);
   await page.getByTestId(`node-palette-item-${itemId}`).click();
@@ -575,8 +580,8 @@ test.describe("P9 content systems", () => {
     const target = graph.locator(
       '.react-flow__node[data-id="output"] [data-handleid="metallic"][data-handlepos="left"]',
     );
-    await source.click();
-    await target.click();
+    await source.click({ force: true });
+    await target.click({ force: true });
     await expect(page.getByTestId("material-render")).toBeEnabled();
     await page.getByTestId("material-render").click();
     await expect(page.getByTestId("material-preview-canvas")).toHaveAttribute(
