@@ -1,4 +1,5 @@
 import { ScriptHost, type ScriptHostServices } from "@babylonslate/runtime";
+import { ClassRegistry } from "@babylonslate/object-model";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { UiWidgetEvent } from "@babylonslate/render";
 import { logicGraphFromUiPayload } from "./play-content";
@@ -28,6 +29,7 @@ export function createEditorUtilityInterfaceHost(
   host: ScriptHost;
 } {
   const host = new ScriptHost({
+    classRegistry: new ClassRegistry(),
     log:
       options.log ??
       ((_severity, _category, message) => {

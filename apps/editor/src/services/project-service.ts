@@ -13,14 +13,13 @@ import {
   createEmptyProject,
   normalizeProjectSettings,
   normalizeScene,
+  classHeaderMeta,
   documentId,
   isAssetDocumentKind,
   LAYOUT_FILE,
   MAIN_CLASS_FILE,
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
-  functionLibraryHeaderMeta,
-  isFunctionLibraryClass,
   migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
@@ -75,7 +74,6 @@ import {
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
-  classParentLookup,
   materialAssetDependencies,
   materialHeaderMeta,
 } from "../lib/content-browser-helpers";
@@ -88,9 +86,7 @@ import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "
 
 function headerMetaForSave(
   type: string,
-  parentClass: string | null,
   content: SerializedScene | SerializedGraph | Record<string, unknown>,
-  parentOf: () => (id: string) => string | null,
 ): Record<string, unknown> | undefined {
   const materialMeta = materialHeaderMeta(
     type,
@@ -105,19 +101,21 @@ function headerMetaForSave(
           : "scene",
     };
   }
-  if (
-    (type === "Class" || type === "Graph") &&
-    isFunctionLibraryClass(parentClass, parentOf())
-  ) {
-    return functionLibraryHeaderMeta(
+  if (type === "Class" || type === "Graph") {
+    return classHeaderMeta(
       content as {
         members?: Array<{
+          id?: string;
           kind: string;
           name: string;
+          typeId?: string;
+          typeClassId?: string;
+          functionId?: string;
           pins?: Array<{
             name: string;
             typeId?: string;
             direction?: "in" | "out";
+            typeClassId?: string;
           }>;
         }>;
       },
@@ -1060,9 +1058,7 @@ export class ProjectService {
           headerPayload: storeInHeader
             ? (content as unknown as Record<string, unknown>)
             : undefined,
-          headerMeta: headerMetaForSave(type, parentClass, content, () =>
-            classParentLookup(this.assetRegistry?.list() ?? []),
-          ),
+          headerMeta: headerMetaForSave(type, content),
           dependencies: materialAssetDependencies(
             type,
             content as unknown as Record<string, unknown>,

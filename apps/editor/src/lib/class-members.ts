@@ -184,7 +184,10 @@ export function nativeEventStubs(
   ) {
     return [];
   }
-  const types: string[] = [...NATIVE_CLASS_EVENT_TYPES];
+  const types: string[] = [];
+  if (chain.includes("Actor")) {
+    types.push(...NATIVE_CLASS_EVENT_TYPES);
+  }
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
   }
@@ -203,6 +206,9 @@ export function isScriptCatalogNodeAllowed(
     return false;
   }
   if (nodeId === "variables.get" || nodeId === "variables.set") {
+    return false;
+  }
+  if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
   }
   const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
@@ -286,6 +292,12 @@ export function isScriptCatalogNodeAllowed(
       !isBlackboard
     );
   }
+  if (nodeId === "flow.event.beginPlay" || nodeId === "flow.event.tick") {
+    return chain.includes("Actor");
+  }
+  if (nodeId === "flow.event.commandRun") {
+    return chain.includes("Actor") || chain.includes("BDebugCommand");
+  }
   return !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
 }
 
@@ -325,6 +337,7 @@ function memberDefaults(
   if (kind === "variable") {
     return {
       typeId: extras?.typeId ?? "float",
+      ...(extras?.typeClassId ? { typeClassId: extras.typeClassId } : {}),
       ...(extras?.defaultValue !== undefined
         ? { defaultValue: extras.defaultValue }
         : {}),
@@ -510,10 +523,12 @@ function patchVariableAccessNode(
     ...node.data,
     variableId: member.id,
     variableName: member.name,
-    typeId: member.typeId ?? node.data.typeId ?? "float",
+        typeId: member.typeId ?? node.data.typeId ?? "float",
     title: `${access} ${member.name}`,
     scope: member.functionId ? "local" : (node.data.scope ?? "member"),
   };
+  if (member.typeClassId) nextData.typeClassId = member.typeClassId;
+  else delete nextData.typeClassId;
   if (member.functionId) nextData.functionId = member.functionId;
   delete nextData.__pins;
   return { ...node, data: nextData };
@@ -552,16 +567,60 @@ function syncVariableAccessNodes(
   );
 }
 
+export type GraphSpawnOptions = {
+  position?: { x: number; y: number };
+  functionId?: string | null;
+  classId?: string;
+  implicitSelf?: boolean;
+  idFactory?: () => string;
+};
+
+function sliceNodeCount(
+  graph: SerializedGraph,
+  functionId?: string | null,
+): number {
+  if (functionId) return graph.functionGraphs?.[functionId]?.nodes.length ?? 0;
+  return graph.nodes.length;
+}
+
+function spawnPosition(
+  graph: SerializedGraph,
+  options?: GraphSpawnOptions,
+): { x: number; y: number } {
+  if (options?.position) return options.position;
+  return { x: 80, y: 80 + sliceNodeCount(graph, options?.functionId) * 80 };
+}
+
+function appendGraphNode(
+  graph: SerializedGraph,
+  node: {
+    id: string;
+    type: string;
+    position: { x: number; y: number };
+    data: Record<string, unknown>;
+  },
+  functionId?: string | null,
+): SerializedGraph {
+  if (functionId) {
+    const slice = graph.functionGraphs?.[functionId];
+    if (!slice) return graph;
+    return {
+      ...graph,
+      functionGraphs: {
+        ...graph.functionGraphs,
+        [functionId]: { ...slice, nodes: [...slice.nodes, node] },
+      },
+    };
+  }
+  return { ...graph, nodes: [...graph.nodes, node] };
+}
+
 /** Spawn a bound Get/Set node onto the event graph or a function slice. */
 export function addVariableAccessNode(
   graph: SerializedGraph,
   member: GraphClassMember,
   access: "get" | "set",
-  options?: {
-    functionId?: string | null;
-    classId?: string;
-    idFactory?: () => string;
-  },
+  options?: GraphSpawnOptions,
 ): SerializedGraph {
   const type = access === "set" ? "variables.set" : "variables.get";
   const title = `${access === "set" ? "Set" : "Get"} ${member.name}`;
@@ -571,45 +630,154 @@ export function addVariableAccessNode(
     variableId: member.id,
     typeId: member.typeId ?? "float",
     scope: member.functionId ? "local" : "member",
-    implicitSelf: true,
+    implicitSelf: options?.implicitSelf ?? true,
+    __nodeType: type,
+  };
+  if (member.typeClassId) data.typeClassId = member.typeClassId;
+  if (options?.classId) data.classId = options.classId;
+  if (member.functionId) data.functionId = member.functionId;
+  return appendGraphNode(
+    graph,
+    {
+      id: nextId(options?.idFactory),
+      type,
+      position: spawnPosition(graph, options),
+      data,
+    },
+    options?.functionId,
+  );
+}
+
+/** Spawn a Call Custom Event node bound to a class event. */
+export function addCallEventNode(
+  graph: SerializedGraph,
+  member: Pick<GraphClassMember, "name" | "pins">,
+  options?: GraphSpawnOptions,
+): SerializedGraph {
+  const type = "flow.event.call";
+  const data: Record<string, unknown> = {
+    title: `Call ${member.name}`,
+    name: member.name,
+    implicitSelf: options?.implicitSelf ?? true,
+    pins: member.pins ?? [],
     __nodeType: type,
   };
   if (options?.classId) data.classId = options.classId;
-  if (member.functionId) data.functionId = member.functionId;
-  const node = {
-    id: nextId(options?.idFactory),
-    type,
-    position: { x: 80, y: 80 },
-    data,
+  return appendGraphNode(
+    graph,
+    {
+      id: nextId(options?.idFactory),
+      type,
+      position: spawnPosition(graph, options),
+      data,
+    },
+    options?.functionId,
+  );
+}
+
+/** Spawn a Call Function node bound to a class function. */
+export function addCallFunctionNode(
+  graph: SerializedGraph,
+  member: Pick<GraphClassMember, "name" | "pins">,
+  options?: GraphSpawnOptions,
+): SerializedGraph {
+  const type = "functions.call";
+  const data: Record<string, unknown> = {
+    title: `Call ${member.name}`,
+    functionName: member.name,
+    implicitSelf: options?.implicitSelf ?? true,
+    pins: member.pins ?? [],
+    __nodeType: type,
   };
-  const sliceId = options?.functionId;
-  if (sliceId) {
-    const slice = graph.functionGraphs?.[sliceId];
-    if (!slice) return graph;
+  if (options?.classId) data.classId = options.classId;
+  return appendGraphNode(
+    graph,
+    {
+      id: nextId(options?.idFactory),
+      type,
+      position: spawnPosition(graph, options),
+      data,
+    },
+    options?.functionId,
+  );
+}
+
+export type ClassMemberDropKind = "variable" | "function" | "event" | "interface";
+
+export type ClassMemberDropRow = {
+  id: string;
+  kind: ClassMemberDropKind;
+  name: string;
+  eventType?: string;
+  inherited?: boolean;
+  pins?: GraphClassMemberPin[];
+};
+
+export type GraphDropPoint = {
+  containsClientPoint(clientX: number, clientY: number): boolean;
+  clientToFlow(clientX: number, clientY: number): { x: number; y: number };
+};
+
+export type ClassMemberDropResult =
+  | { kind: "ignore" }
+  | {
+      kind: "choose-access";
+      memberId: string;
+      position: { x: number; y: number };
+    }
+  | { kind: "spawn"; graph: SerializedGraph };
+
+/** Decide Get/Set vs Call spawn when a Class tree row is dropped on the graph. */
+export function resolveClassMemberDrop(options: {
+  graph: SerializedGraph;
+  memberId: string;
+  members: readonly ClassMemberDropRow[];
+  clientX: number;
+  clientY: number;
+  canvas: GraphDropPoint | null;
+  functionId?: string | null;
+  classId?: string;
+  idFactory?: () => string;
+}): ClassMemberDropResult {
+  if (options.memberId.startsWith("section-")) return { kind: "ignore" };
+  if (
+    !options.canvas?.containsClientPoint(options.clientX, options.clientY)
+  ) {
+    return { kind: "ignore" };
+  }
+  const row = options.members.find((entry) => entry.id === options.memberId);
+  if (!row) return { kind: "ignore" };
+  const declared =
+    options.graph.members?.find((entry) => entry.id === options.memberId) ??
+    options.graph.members?.find(
+      (entry) => entry.kind === row.kind && entry.name === row.name,
+    );
+  const position = options.canvas.clientToFlow(
+    options.clientX,
+    options.clientY,
+  );
+  const spawn: GraphSpawnOptions = {
+    position,
+    functionId: options.functionId,
+    classId: options.classId,
+    idFactory: options.idFactory,
+  };
+  if (row.kind === "variable") {
+    return { kind: "choose-access", memberId: options.memberId, position };
+  }
+  if (row.kind === "function") {
     return {
-      ...graph,
-      functionGraphs: {
-        ...graph.functionGraphs,
-        [sliceId]: {
-          ...slice,
-          nodes: [
-            ...slice.nodes,
-            {
-              ...node,
-              position: { x: 80, y: 80 + slice.nodes.length * 80 },
-            },
-          ],
-        },
-      },
+      kind: "spawn",
+      graph: addCallFunctionNode(options.graph, declared ?? row, spawn),
     };
   }
-  return {
-    ...graph,
-    nodes: [
-      ...graph.nodes,
-      { ...node, position: { x: 80, y: 80 + graph.nodes.length * 80 } },
-    ],
-  };
+  if (row.kind === "event" && row.eventType === "flow.event.custom") {
+    return {
+      kind: "spawn",
+      graph: addCallEventNode(options.graph, declared ?? row, spawn),
+    };
+  }
+  return { kind: "ignore" };
 }
 
 /** Append a named class member. Events insert a custom event node; functions seed a graph. */

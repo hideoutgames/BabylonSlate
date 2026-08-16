@@ -42,6 +42,30 @@ describe("pin assignability", () => {
     ).toBe(false);
   });
 
+  it("allows actorRef into objectRef when hierarchy says the actor is a subclass", () => {
+    const hierarchy = {
+      isSubclassOf(child: string, parent: string) {
+        return (
+          child === parent ||
+          (child === "Player" && (parent === "Actor" || parent === "BObject")) ||
+          (child === "Actor" && parent === "BObject")
+        );
+      },
+    };
+    expect(
+      isAssignable(actorRef("Player"), objectRef("BObject"), { hierarchy }),
+    ).toBe(true);
+    expect(
+      isAssignable(actorRef("Player"), objectRef("Actor"), { hierarchy }),
+    ).toBe(true);
+    expect(
+      isAssignable(objectRef("Player"), actorRef("Actor"), { hierarchy }),
+    ).toBe(false);
+    expect(
+      isAssignable(actorRef("Player"), objectRef("Pawn"), { hierarchy }),
+    ).toBe(false);
+  });
+
   it("treats classRef as a class value assignable along the same hierarchy", () => {
     const hierarchy = {
       isSubclassOf(child: string, parent: string) {

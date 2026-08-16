@@ -52,6 +52,7 @@
     --color-pin-color: var(--pin-color);
     --color-pin-object: var(--pin-object);
     --color-pin-actor: var(--pin-actor);
+    --color-pin-class: var(--pin-class);
     --color-pin-struct: var(--pin-struct);
     --color-pin-enum: var(--pin-enum);
     --color-pin-wildcard: var(--pin-wildcard);
@@ -168,6 +169,7 @@
     --pin-color: oklch(0.72 0.10 20);
     --pin-object: oklch(0.52 0.18 250);
     --pin-actor: oklch(0.50 0.16 235);
+    --pin-class: oklch(0.54 0.16 275);
     --pin-struct: oklch(0.62 0.14 175);
     --pin-enum: oklch(0.55 0.14 145);
     --pin-wildcard: oklch(0.62 0.02 250);
@@ -261,6 +263,7 @@
     --pin-color: oklch(0.80 0.10 20);
     --pin-object: oklch(0.68 0.16 250);
     --pin-actor: oklch(0.66 0.14 235);
+    --pin-class: oklch(0.68 0.16 275);
     --pin-struct: oklch(0.72 0.12 175);
     --pin-enum: oklch(0.68 0.14 145);
     --pin-wildcard: oklch(0.72 0.02 250);

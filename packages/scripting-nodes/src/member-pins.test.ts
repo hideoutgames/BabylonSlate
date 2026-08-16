@@ -12,6 +12,13 @@ describe("pinTypeForMember", () => {
     expect(pinTypeForMember("enum")).toEqual(enumRef(""));
     expect(pinTypeForMember("float")).toEqual(FLOAT);
   });
+
+  it("uses typeClassId as the object and class pin constraint", () => {
+    expect(pinTypeForMember("object", "Hero")).toEqual(objectRef("Hero"));
+    expect(pinTypeForMember("class", "Actor")).toEqual(classRef("Actor"));
+    expect(pinTypeForMember("object", "  ")).toEqual(objectRef("BObject"));
+    expect(pinTypeForMember("class")).toEqual(classRef("BObject"));
+  });
 });
 
 describe("jsIdent", () => {

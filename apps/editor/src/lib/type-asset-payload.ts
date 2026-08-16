@@ -66,6 +66,9 @@ export function asScriptInterfaceAsset(
             name: typeof pinRow.name === "string" ? pinRow.name : "Pin",
             typeId: typeof pinRow.typeId === "string" ? pinRow.typeId : "float",
             direction: pinRow.direction === "out" ? "out" : "in",
+            ...(typeof pinRow.typeClassId === "string" && pinRow.typeClassId.trim()
+              ? { typeClassId: pinRow.typeClassId.trim() }
+              : {}),
           };
         }),
       };

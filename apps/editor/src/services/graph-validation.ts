@@ -12,15 +12,24 @@ import {
   validateGraphs,
   hasBlockingErrors,
   toSerializedGraph as logicToSerializedGraph,
+  isAssignable,
+  type ClassHierarchy,
+  type ClassMemberSymbol,
   type Diagnostic,
   isLogicGraphPayload,
   type LogicGraph,
   type NodeRegistry,
   type GraphPin,
+  type PinType,
 } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import {
+  ENGINE_BASE_CLASS_IDS,
+  ENGINE_BT_BUILTIN_CLASSES,
+  ENGINE_COMPONENT_CLASS_IDS,
+} from "@babylonslate/object-model";
+import { createDefaultNodeRegistry, castDefaultClassId } from "@babylonslate/scripting-nodes";
 import { warnDebugTierConsoleCommands } from "@babylonslate/debugger";
-import type { PaletteNode } from "@babylonslate/graph-ui";
+import type { PaletteNode, PinCompatibilityRule } from "@babylonslate/graph-ui";
 import {
   isScriptCatalogNodeAllowed,
   nativeEventStubs,
@@ -48,31 +57,60 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "flow.function.input" ||
     typeId === "flow.function.output" ||
     typeId === "variables.get" ||
-    typeId === "variables.set"
+    typeId === "variables.set" ||
+    typeId === "casting.cast"
   );
 }
 
-function withVisualMeta(
-  data: Record<string, unknown>,
-  def:
-    | { category: string; pure?: boolean; latent?: boolean; editorOnly?: boolean }
-    | undefined,
-  typeId: string,
-): Record<string, unknown> {
-  const next: Record<string, unknown> = {
-    ...data,
-    __nodeType:
-      typeof data.__nodeType === "string" ? data.__nodeType : typeId,
-    __category:
-      typeof data.__category === "string" ? data.__category : def?.category,
-    __pure: data.__pure ?? def?.pure ?? false,
-    __latent: data.__latent ?? def?.latent ?? false,
-  };
-  if (def?.editorOnly === true) {
-    next.__editorOnly = true;
-  }
-  return next;
+function parentLookup(
+  parentOf?: (id: string) => string | null | undefined,
+): (id: string) => string | null | undefined {
+  return (id) => parentOf?.(id) ?? engineParentOf(id);
 }
+
+function resultKindForClass(
+  classId: string,
+  parentOf: (id: string) => string | null | undefined,
+): "actorRef" | "objectRef" {
+  return walkAncestry(classId, parentOf).includes("Actor")
+    ? "actorRef"
+    : "objectRef";
+}
+
+function pinClassId(type: unknown): string | undefined {
+  if (!type || typeof type !== "object") return undefined;
+  const classId = (type as { classId?: unknown }).classId;
+  return typeof classId === "string" && classId.trim() ? classId.trim() : undefined;
+}
+
+function connectedCastClassId(
+  graph: SerializedGraph,
+  nodeId: string,
+  nodeRegistry: NodeRegistry,
+): string | undefined {
+  const edge = graph.edges.find(
+    (entry) => entry.target === nodeId && entry.targetHandle === "class",
+  );
+  if (!edge) return undefined;
+  const source = graph.nodes.find((node) => node.id === edge.source);
+  if (!source) return "BObject";
+  const rawData = { ...(source.data as Record<string, unknown>) };
+  const typeId = catalogTypeId({ type: source.type, data: rawData });
+  const def = nodeRegistry.get(typeId);
+  const properties = { ...rawData };
+  delete properties.__pins;
+  delete properties.__nodeType;
+  delete properties.title;
+  const pins = def ? def.pins(properties) : [];
+  const sourcePin = pins.find(
+    (pin) => pin.id === edge.sourceHandle || pin.name === edge.sourceHandle,
+  );
+  return pinClassId(sourcePin?.type) ?? "BObject";
+}
+
+export type HydrateGraphOptions = {
+  parentOf?: (id: string) => string | null | undefined;
+};
 
 /**
  * Injects `data.__pins` from the node registry for canvas rendering.
@@ -81,7 +119,9 @@ function withVisualMeta(
 export function hydrateSerializedGraphForEditor(
   graph: SerializedGraph,
   nodeRegistry: NodeRegistry = registry,
+  options?: HydrateGraphOptions,
 ): SerializedGraph {
+  const parentOf = parentLookup(options?.parentOf);
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
@@ -120,12 +160,40 @@ export function hydrateSerializedGraphForEditor(
         }
       }
 
-      const def = nodeRegistry.get(typeId);
-      const pins: GraphPin[] = def ? def.pins(properties) : [];
       const authoredTitle =
         typeof rawData.title === "string" && rawData.title.trim()
           ? rawData.title
           : undefined;
+
+      if (typeId === "casting.cast") {
+        const defaultClassId = castDefaultClassId(properties);
+        properties.defaultClassId = defaultClassId;
+        const wiredClassId = connectedCastClassId(graph, node.id, nodeRegistry);
+        const resultClassId = wiredClassId ?? defaultClassId;
+        properties.resultKind = resultKindForClass(resultClassId, parentOf);
+        const pinProperties = {
+          ...properties,
+          defaultClassId: resultClassId,
+        };
+        const def = nodeRegistry.get(typeId);
+        const pins: GraphPin[] = def ? def.pins(pinProperties) : [];
+        return {
+          ...node,
+          type: typeId,
+          data: withVisualMeta(
+            {
+              ...properties,
+              title: wiredClassId ? "Cast to Class" : `Cast to ${defaultClassId}`,
+              __pins: pins,
+            },
+            def,
+            typeId,
+          ),
+        };
+      }
+
+      const def = nodeRegistry.get(typeId);
+      const pins: GraphPin[] = def ? def.pins(properties) : [];
 
       return {
         ...node,
@@ -146,6 +214,28 @@ export function hydrateSerializedGraphForEditor(
       };
     }),
   };
+}
+
+function withVisualMeta(
+  data: Record<string, unknown>,
+  def:
+    | { category: string; pure?: boolean; latent?: boolean; editorOnly?: boolean }
+    | undefined,
+  typeId: string,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {
+    ...data,
+    __nodeType:
+      typeof data.__nodeType === "string" ? data.__nodeType : typeId,
+    __category:
+      typeof data.__category === "string" ? data.__category : def?.category,
+    __pure: data.__pure ?? def?.pure ?? false,
+    __latent: data.__latent ?? def?.latent ?? false,
+  };
+  if (def?.editorOnly === true) {
+    next.__editorOnly = true;
+  }
+  return next;
 }
 
 const DEFAULT_EVENT_NODE_IDS: Record<string, string> = {
@@ -548,6 +638,42 @@ function variableAccessPaletteNodes(
   return injected;
 }
 
+function castPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get("casting.cast");
+  if (!def) return [];
+  const parentOf = parentLookup(options?.parentOf);
+  const classIds = [
+    ...knownClassIdSet(
+      parentOf,
+      [
+        options?.classId,
+        ...Object.keys(options?.otherClassGraphs ?? {}),
+      ].filter((id): id is string => Boolean(id)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  return classIds.map((classId) => {
+    const resultKind = resultKindForClass(classId, parentOf);
+    const defaultData: Record<string, unknown> = {
+      defaultClassId: classId,
+      "default:class": classId,
+      resultKind,
+    };
+    return {
+      id: `casting.cast:${classId}`,
+      nodeType: "casting.cast",
+      title: `Cast to ${classId}`,
+      category: def.category,
+      pins: def.pins(defaultData),
+      pure: def.pure,
+      latent: def.latent,
+      defaultData,
+    };
+  });
+}
+
 /** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
 export function scriptPaletteNodes(
   nodeRegistry: NodeRegistry = registry,
@@ -593,6 +719,7 @@ export function scriptPaletteNodes(
     ...callCustomEventPaletteNodes(nodeRegistry, options),
     ...callFunctionPaletteNodes(nodeRegistry, options),
     ...variableAccessPaletteNodes(nodeRegistry, options),
+    ...castPaletteNodes(nodeRegistry, options),
   ];
 }
 
@@ -651,13 +778,88 @@ export function materializeLogicGraph(
   return logic;
 }
 
+export function classHierarchyFromParentOf(
+  parentOf: (id: string) => string | null | undefined,
+): ClassHierarchy {
+  return {
+    isSubclassOf(childClassId, parentClassId) {
+      if (childClassId === parentClassId) return true;
+      return walkAncestry(childClassId, parentOf).includes(parentClassId);
+    },
+  };
+}
+
+export function classMemberSymbolsFromGraphs(
+  graphs: Record<string, SerializedGraph>,
+): ClassMemberSymbol[] {
+  const symbols: ClassMemberSymbol[] = [];
+  for (const [classId, graph] of Object.entries(graphs)) {
+    for (const member of graph.members ?? []) {
+      if (member.kind === "interface") continue;
+      const symbol: ClassMemberSymbol = {
+        id: member.id,
+        name: member.name,
+        kind: member.kind,
+        classId,
+      };
+      if (member.functionId) symbol.functionId = member.functionId;
+      if (member.typeId) symbol.typeId = member.typeId;
+      if (member.typeClassId) symbol.typeClassId = member.typeClassId;
+      symbols.push(symbol);
+    }
+  }
+  return symbols;
+}
+
+export function knownClassIdSet(
+  parentOf: (id: string) => string | null | undefined,
+  classIds: readonly string[],
+): Set<string> {
+  const ids = new Set<string>([
+    ...ENGINE_BASE_CLASS_IDS,
+    ...ENGINE_COMPONENT_CLASS_IDS,
+    ...ENGINE_BT_BUILTIN_CLASSES.map((entry) => entry.id),
+  ]);
+  for (const id of classIds) {
+    ids.add(id);
+    for (const ancestor of walkAncestry(id, parentOf)) ids.add(ancestor);
+  }
+  return ids;
+}
+
+export function scriptPinCompatibility(
+  hierarchy?: ClassHierarchy,
+): PinCompatibilityRule {
+  return (outgoing, incoming) =>
+    isAssignable(outgoing.type as PinType, incoming.type as PinType, {
+      hierarchy,
+    });
+}
+
+export type ValidateSerializedGraphOptions = {
+  assetGuid: string;
+  graphId: string;
+  hierarchy?: ClassHierarchy;
+  classId?: string;
+  activeFunctionId?: string | null;
+  members?: readonly ClassMemberSymbol[];
+  knownClassIds?: ReadonlySet<string>;
+};
+
 export function validateSerializedGraph(
   content: SerializedGraph | LogicGraph,
-  options: { assetGuid: string; graphId: string },
+  options: ValidateSerializedGraphOptions,
 ): Diagnostic[] {
   const graph = materializeLogicGraph(content, options.graphId);
   return [
-    ...validateGraphs([graph], { assetGuid: options.assetGuid }),
+    ...validateGraphs([graph], {
+      assetGuid: options.assetGuid,
+      hierarchy: options.hierarchy,
+      classId: options.classId,
+      activeFunctionId: options.activeFunctionId,
+      members: options.members,
+      knownClassIds: options.knownClassIds,
+    }),
     ...warnDebugTierConsoleCommands([graph], { assetGuid: options.assetGuid }),
   ];
 }

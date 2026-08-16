@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import {
+  classHierarchyFromParentOf,
   createDefaultLogicGraphSerialized,
   hydrateClassDocumentPayload,
   hydrateSerializedGraphForEditor,
   scriptPaletteNodes,
+  scriptPinCompatibility,
   validateSerializedGraph,
 } from "./graph-validation";
 
@@ -76,6 +78,93 @@ describe("hydrateSerializedGraphForEditor", () => {
         expect.objectContaining({ id: "message" }),
       ]),
     );
+  });
+
+  it("titles an unconnected Cast node from the default class", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "cast-1",
+          type: "casting.cast",
+          position: { x: 0, y: 0 },
+          data: {
+            defaultClassId: "Hero",
+            "default:class": "Hero",
+            title: "Cast to BObject",
+            __pins: [
+              {
+                id: "result",
+                name: "result",
+                kind: "data",
+                direction: "out",
+                type: { kind: "objectRef", classId: "BObject" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+    });
+    expect(hydrated.nodes[0]?.data.title).toBe("Cast to Hero");
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      type: { kind: string; classId?: string };
+    }>;
+    expect(pins.find((pin) => pin.id === "result")?.type).toEqual({
+      kind: "actorRef",
+      classId: "Hero",
+    });
+  });
+
+  it("titles a wired Cast node Cast to Class and types Result from the connected constraint", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "class-lit",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: {
+            variableName: "Kind",
+            typeId: "class",
+            typeClassId: "Actor",
+            implicitSelf: true,
+          },
+        },
+        {
+          id: "cast-1",
+          type: "casting.cast",
+          position: { x: 200, y: 0 },
+          data: {
+            defaultClassId: "Hero",
+            "default:class": "Hero",
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "class-lit",
+          target: "cast-1",
+          sourceHandle: "value",
+          targetHandle: "class",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+    });
+    expect(hydrated.nodes[1]?.data.title).toBe("Cast to Class");
+    const pins = hydrated.nodes[1]?.data.__pins as Array<{
+      id: string;
+      type: { kind: string; classId?: string };
+    }>;
+    expect(pins.find((pin) => pin.id === "result")?.type).toEqual({
+      kind: "actorRef",
+      classId: "Actor",
+    });
   });
 
   it("preserves existing __pins", () => {
@@ -251,6 +340,13 @@ describe("createDefaultLogicGraphSerialized", () => {
     });
     expect(graph.nodes).toEqual([]);
   });
+
+  it("seeds no event nodes for a BObject class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "BObject",
+    });
+    expect(graph.nodes).toEqual([]);
+  });
 });
 
 describe("validateSerializedGraph", () => {
@@ -273,6 +369,63 @@ describe("validateSerializedGraph", () => {
       { assetGuid: "g1", graphId: "event-graph" },
     );
     expect(diags.some((d) => d.code === "console.debug_tier")).toBe(true);
+  });
+
+  it("flags a stale Call Function when the class symbol table is supplied", () => {
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          {
+            id: "call",
+            type: "functions.call",
+            position: { x: 0, y: 0 },
+            data: { functionName: "Jump", classId: "Hero", implicitSelf: true },
+          },
+        ],
+        edges: [],
+      },
+      {
+        assetGuid: "g1",
+        graphId: "event-graph",
+        classId: "Hero",
+        members: [
+          { id: "fn-1", name: "Dash", kind: "function", classId: "Hero" },
+        ],
+      },
+    );
+    expect(diags.some((d) => d.code === "member.missing_function")).toBe(true);
+  });
+});
+
+describe("classHierarchyFromParentOf", () => {
+  it("treats Hero as a subclass of Actor and BObject", () => {
+    const hierarchy = classHierarchyFromParentOf((id) =>
+      id === "Hero" ? "Actor" : id === "Actor" ? "BObject" : null,
+    );
+    expect(hierarchy.isSubclassOf("Hero", "BObject")).toBe(true);
+    expect(hierarchy.isSubclassOf("BObject", "Hero")).toBe(false);
+  });
+});
+
+describe("scriptPinCompatibility", () => {
+  it("allows an actor reference into a live object pin of a superclass", () => {
+    const rule = scriptPinCompatibility(
+      classHierarchyFromParentOf((id) =>
+        id === "Hero" ? "Actor" : id === "Actor" ? "BObject" : null,
+      ),
+    );
+    const pin = (
+      kind: string,
+      classId: string,
+    ): { id: string; name: string; kind: "data"; direction: "out"; type: { kind: string; classId: string } } => ({
+      id: "p",
+      name: "p",
+      kind: "data",
+      direction: "out",
+      type: { kind, classId },
+    });
+    expect(rule(pin("actorRef", "Hero"), pin("objectRef", "BObject"))).toBe(true);
+    expect(rule(pin("objectRef", "Hero"), pin("actorRef", "Actor"))).toBe(false);
   });
 });
 
@@ -300,6 +453,12 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(false);
     expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+  });
+
+  it("hides Begin Play and Tick on BObject class graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "BObject" });
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
   });
 
   it("shows On Evaluate and hides Begin Play on BTDecorator class graphs", () => {
@@ -968,6 +1127,46 @@ describe("scriptPaletteNodes", () => {
     expect(
       nodes.filter((node) => node.id === "functions.call:MathLib:Add"),
     ).toHaveLength(1);
+  });
+
+  it("hides generic Cast catalog ids and injects Cast to <Class> rows", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+      otherClassGraphs: {
+        Hero: { nodes: [], edges: [] },
+      },
+    });
+    expect(nodes.some((node) => node.id === "casting.cast")).toBe(false);
+    expect(nodes.some((node) => node.id === "casting.castActor")).toBe(false);
+    const actorCast = nodes.find((node) => node.id === "casting.cast:Actor");
+    expect(actorCast?.title).toBe("Cast to Actor");
+    expect(actorCast?.nodeType).toBe("casting.cast");
+    expect(actorCast?.defaultData).toMatchObject({
+      defaultClassId: "Actor",
+      "default:class": "Actor",
+      resultKind: "actorRef",
+    });
+    expect(
+      actorCast?.pins?.some(
+        (pin) =>
+          pin.id === "result" &&
+          (pin.type as { kind?: string; classId?: string }).kind === "actorRef" &&
+          (pin.type as { classId?: string }).classId === "Actor",
+      ),
+    ).toBe(true);
+    const heroCast = nodes.find((node) => node.id === "casting.cast:Hero");
+    expect(heroCast?.title).toBe("Cast to Hero");
+    expect(heroCast?.defaultData).toMatchObject({
+      defaultClassId: "Hero",
+      resultKind: "actorRef",
+    });
+    const giCast = nodes.find((node) => node.id === "casting.cast:GameInstance");
+    expect(giCast?.title).toBe("Cast to GameInstance");
+    expect(giCast?.defaultData).toMatchObject({
+      resultKind: "objectRef",
+    });
   });
 
   it("hides native and editor lifecycle events on FunctionLibrary palettes", () => {

@@ -72,6 +72,9 @@ export const variableNodes: NodeDefinition[] = [
           "out",
           pinTypeForMember(
             typeof properties.typeId === "string" ? properties.typeId : "float",
+            typeof properties.typeClassId === "string"
+              ? properties.typeClassId
+              : undefined,
           ),
         ),
       ];
@@ -93,6 +96,9 @@ export const variableNodes: NodeDefinition[] = [
       const name = variableNameOf(properties);
       const type = pinTypeForMember(
         typeof properties.typeId === "string" ? properties.typeId : "float",
+        typeof properties.typeClassId === "string"
+          ? properties.typeClassId
+          : undefined,
       );
       return [
         pin("execIn", "exec", "in", EXEC),

@@ -84,6 +84,7 @@ import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-p
 import { loadTemplateCards } from "../services/template-service";
 import {
   compileGraphDocuments,
+  classIdForGraphPath,
   graphCompileSignature,
   graphsNeedCompile as compileSignatureIsStale,
 } from "../services/script-compiler";
@@ -96,7 +97,13 @@ import {
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
-import { validateSerializedGraph } from "../services/graph-validation";
+import {
+  classHierarchyFromParentOf,
+  classMemberSymbolsFromGraphs,
+  knownClassIdSet,
+  validateSerializedGraph,
+} from "../services/graph-validation";
+import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { applyFocusLayout, focusKeepPanelIds } from "../shell/layout-ops";
 import {
   capturePanelPlacement,
@@ -1797,16 +1804,29 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     diagnostics: Diagnostic[];
   }> => {
     const documents = await loadProjectGraphDocuments();
+    const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+    const classGraphs = collectClassGraphsForPalette({
+      assets: projectService.registry?.list() ?? [],
+      openDocuments: [...documentService.getState().openDocuments.values()],
+      classIdForPath: classIdForGraphPath,
+    });
+    for (const doc of documents) {
+      classGraphs[classIdForGraphPath(doc.path)] = doc.content;
+    }
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
         graphId: documentId({ kind: "graph", path: doc.path }),
+        classId: classIdForGraphPath(doc.path),
+        hierarchy: classHierarchyFromParentOf(parentOf),
+        members: classMemberSymbolsFromGraphs(classGraphs),
+        knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
       }),
     );
     const bundles = compileGraphDocuments(documents);
     markScriptsCurrent();
     return { bundles, diagnostics };
-  }, [loadProjectGraphDocuments, markScriptsCurrent]);
+  }, [documentService, loadProjectGraphDocuments, markScriptsCurrent, projectService]);
 
   const collectPlayUiLibrary = useCallback(async (): Promise<
     Record<string, UserInterfaceDocument>

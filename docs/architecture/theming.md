@@ -61,6 +61,7 @@ Unreal-like mapping. **oklch values** live in `:root` / `.dark` in `globals.css`
 | `--pin-transform` | transform (orange) |
 | `--pin-color` | color |
 | `--pin-object` | objectRef (blue) |
+| `--pin-class` | classRef (purple) — a class value, not a live instance |
 | `--pin-actor` | actorRef (slightly cooler blue) |
 | `--pin-struct` | structRef (teal) |
 | `--pin-enum` | enumRef (olive) |

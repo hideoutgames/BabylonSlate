@@ -282,4 +282,23 @@ test.describe("P5 visual scripting acceptance", () => {
     await page.getByTestId("redo-document").click();
     await expect(nodes).toHaveCount(3);
   });
+
+  test("Add Node search finds Cast to Actor", async ({ page }) => {
+    await openTestProject(page);
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    const graph = page.getByTestId("graph-panel");
+    await expect(graph).toBeVisible();
+    const nodes = graph.locator(".react-flow__node");
+    await expect(nodes).toHaveCount(2);
+
+    await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+    await expect(page.getByTestId("node-palette")).toBeVisible();
+    await page.getByTestId("node-palette-search").fill("Cast to Actor");
+    await expect(page.getByTestId("node-palette-item-casting.castActor")).toHaveCount(
+      0,
+    );
+    await page.getByTestId("node-palette-item-casting.cast:Actor").click();
+    await expect(nodes).toHaveCount(3);
+    await expect(graph.getByText("Cast to Actor")).toBeVisible();
+  });
 });

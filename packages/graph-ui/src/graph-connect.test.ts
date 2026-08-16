@@ -89,6 +89,34 @@ describe("pinsAreCompatible", () => {
   it("connects matching data types", () => {
     expect(pinsAreCompatible(stringOut, stringIn)).toBe(true);
   });
+
+  it("uses a host rule so unrelated object class ids do not connect", () => {
+    const heroOut: SerializedPin = {
+      id: "value",
+      name: "value",
+      kind: "data",
+      direction: "out",
+      type: { kind: "objectRef", classId: "Hero" },
+    };
+    const pawnIn: SerializedPin = {
+      id: "target",
+      name: "target",
+      kind: "data",
+      direction: "in",
+      type: { kind: "objectRef", classId: "Pawn" },
+    };
+    expect(pinsAreCompatible(heroOut, pawnIn)).toBe(true);
+    expect(
+      pinsAreCompatible(heroOut, pawnIn, (outgoing, incoming) => {
+        return (
+          outgoing.type.kind === incoming.type.kind &&
+          "classId" in outgoing.type &&
+          "classId" in incoming.type &&
+          outgoing.type.classId === incoming.type.classId
+        );
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("filterPaletteForPin", () => {

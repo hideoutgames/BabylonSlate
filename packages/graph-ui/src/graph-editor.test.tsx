@@ -1680,5 +1680,40 @@ describe("GraphEditor", () => {
     };
     expect(graph.nodes[0]?.type).toBe("bt.node");
   });
+
+  it("exposes a canvas drop api for client-to-flow conversion", async () => {
+    const onCanvasApi = vi.fn();
+    const { getByTestId } = render(
+      <GraphEditor initialGraph={createDefaultGraph()} onCanvasApi={onCanvasApi} />,
+    );
+    await waitFor(() => {
+      expect(onCanvasApi).toHaveBeenCalled();
+    });
+    const api = onCanvasApi.mock.calls.at(-1)?.[0] as {
+      containsClientPoint: (x: number, y: number) => boolean;
+      clientToFlow: (x: number, y: number) => { x: number; y: number };
+    } | null;
+    expect(api).toBeTruthy();
+    const editor = getByTestId("graph-editor");
+    editor.getBoundingClientRect = () =>
+      ({
+        left: 10,
+        top: 20,
+        right: 210,
+        bottom: 220,
+        width: 200,
+        height: 200,
+        x: 10,
+        y: 20,
+        toJSON() {
+          return {};
+        },
+      }) as DOMRect;
+    expect(api?.containsClientPoint(15, 25)).toBe(true);
+    expect(api?.containsClientPoint(0, 0)).toBe(false);
+    expect(api?.clientToFlow(15, 25)).toEqual(
+      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+    );
+  });
 });
 

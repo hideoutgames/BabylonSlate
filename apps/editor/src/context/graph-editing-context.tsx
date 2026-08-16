@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { GraphCanvasDropApi } from "@babylonslate/graph-ui";
 import { useOptionalPrefabEditing } from "./prefab-editing-context";
 
 export interface GraphEditingContextValue {
@@ -16,6 +17,8 @@ export interface GraphEditingContextValue {
   /** Null means the Class event graph. */
   activeFunctionId: string | null;
   setActiveFunctionId: (id: string | null) => void;
+  canvasDropApi: GraphCanvasDropApi | null;
+  setCanvasDropApi: (api: GraphCanvasDropApi | null) => void;
 }
 
 const GraphEditingContext = createContext<GraphEditingContextValue | null>(
@@ -67,6 +70,9 @@ export function GraphEditingProvider({
   const [activeFunctionId, setActiveFunctionIdState] = useState<string | null>(
     initialActiveFunctionId,
   );
+  const [canvasDropApi, setCanvasDropApi] = useState<GraphCanvasDropApi | null>(
+    null,
+  );
 
   const setSelectedNodeIds = useCallback(
     (nodeIds: string[]) => {
@@ -104,9 +110,12 @@ export function GraphEditingProvider({
       setSelectedMemberId,
       activeFunctionId,
       setActiveFunctionId,
+      canvasDropApi,
+      setCanvasDropApi,
     }),
     [
       activeFunctionId,
+      canvasDropApi,
       selectedMemberId,
       selectedNodeIds,
       setActiveFunctionId,

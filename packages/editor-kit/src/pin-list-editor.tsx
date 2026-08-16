@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import {
@@ -10,6 +14,7 @@ import { Input } from "@babylonslate/ui/components/input";
 import { NamedListEditor } from "./named-list-editor";
 import { TypeColorMark } from "./type-color-mark";
 import { PinTypePicker } from "./pin-type-picker";
+import { ClassPicker, type ClassPickerEntry } from "./class-picker";
 import {
   pinPickerColorVar,
   type PinPickerType,
@@ -23,6 +28,7 @@ export type PinListRow = {
   optional?: boolean;
   defaultValue?: string;
   enumValues?: readonly string[];
+  typeClassId?: string;
 };
 
 export type PinListEditorProps = {
@@ -33,16 +39,28 @@ export type PinListEditorProps = {
   onSelect?: (id: string) => void;
   showDirection?: boolean;
   types?: readonly string[];
+  classEntries?: readonly ClassPickerEntry[];
   testIdPrefix?: string;
   "data-testid"?: string;
 };
+
+function isReferencePinType(type: string): boolean {
+  return type === "object" || type === "class";
+}
 
 function patchRow(
   rows: PinListRow[],
   id: string,
   patch: Partial<PinListRow>,
 ): PinListRow[] {
-  return rows.map((row) => (row.id === id ? { ...row, ...patch } : row));
+  return rows.map((row) => {
+    if (row.id !== id) return row;
+    const next = { ...row, ...patch };
+    if ("type" in patch && !isReferencePinType(String(patch.type))) {
+      delete next.typeClassId;
+    }
+    return next;
+  });
 }
 
 function moveRow(
@@ -84,10 +102,12 @@ export function PinListEditor({
   onSelect,
   showDirection = false,
   types,
+  classEntries = [],
   testIdPrefix = "pin",
   "data-testid": testId = "pin-list-editor",
 }: PinListEditorProps) {
   const [draftName, setDraftName] = useState("");
+  const [classPickRowId, setClassPickRowId] = useState<string | null>(null);
 
   const commitAdd = (direction?: "in" | "out") => {
     const name = draftName.trim();
@@ -95,6 +115,10 @@ export function PinListEditor({
     onChange(addPin(rows, name, direction));
     setDraftName("");
   };
+
+  const classPickRow = classPickRowId
+    ? rows.find((row) => row.id === classPickRowId)
+    : undefined;
 
   return (
     <div className="flex flex-col gap-1.5" data-testid={testId}>
@@ -126,39 +150,44 @@ export function PinListEditor({
                 onChange={(type) => onChange(patchRow(rows, row.id, { type }))}
                 data-testid={`${testIdPrefix}-${row.id}-type`}
               />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Move ${row.name} up`}
-                data-testid={`${testIdPrefix}-${row.id}-move-up`}
-                disabled={index === 0}
-                onClick={() => onChange(moveRow(rows, index, -1))}
-              >
-                <ChevronUpIcon />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Move ${row.name} down`}
-                data-testid={`${testIdPrefix}-${row.id}-move-down`}
-                disabled={index === rows.length - 1}
-                onClick={() => onChange(moveRow(rows, index, 1))}
-              >
-                <ChevronDownIcon />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-label={`Remove ${row.name}`}
-                onClick={() =>
-                  onChange(rows.filter((entry) => entry.id !== row.id))
-                }
-              >
-                Remove
-              </Button>
+              <div className="flex shrink-0 items-center gap-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7"
+                  aria-label={`Move ${row.name} up`}
+                  data-testid={`${testIdPrefix}-${row.id}-move-up`}
+                  disabled={index === 0}
+                  onClick={() => onChange(moveRow(rows, index, -1))}
+                >
+                  <ChevronUpIcon />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7"
+                  aria-label={`Move ${row.name} down`}
+                  data-testid={`${testIdPrefix}-${row.id}-move-down`}
+                  disabled={index === rows.length - 1}
+                  onClick={() => onChange(moveRow(rows, index, 1))}
+                >
+                  <ChevronDownIcon />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7"
+                  aria-label={`Remove ${row.name}`}
+                  onClick={() =>
+                    onChange(rows.filter((entry) => entry.id !== row.id))
+                  }
+                >
+                  <Trash2Icon />
+                </Button>
+              </div>
             </div>
             {selected ? (
               <div className="flex flex-wrap items-center gap-2 px-1 pb-1">
@@ -177,24 +206,43 @@ export function PinListEditor({
                     Optional
                   </FieldLabel>
                 </Field>
-                <Field className="min-w-32 flex-1">
-                  <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-default`}>
-                    Default
-                  </FieldLabel>
-                  <Input
-                    id={`${testIdPrefix}-${row.id}-default`}
-                    className="h-7 min-h-7"
-                    value={row.defaultValue ?? ""}
-                    data-testid={`${testIdPrefix}-${row.id}-default`}
-                    onChange={(event) =>
-                      onChange(
-                        patchRow(rows, row.id, {
-                          defaultValue: event.target.value,
-                        }),
-                      )
-                    }
-                  />
-                </Field>
+                {isReferencePinType(row.type) ? (
+                  <Field className="min-w-32 flex-1">
+                    <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-class-type`}>
+                      Class Type
+                    </FieldLabel>
+                    <Button
+                      id={`${testIdPrefix}-${row.id}-class-type`}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 min-h-7"
+                      data-testid={`${testIdPrefix}-${row.id}-class-type`}
+                      onClick={() => setClassPickRowId(row.id)}
+                    >
+                      {row.typeClassId?.trim() || "BObject"}
+                    </Button>
+                  </Field>
+                ) : (
+                  <Field className="min-w-32 flex-1">
+                    <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-default`}>
+                      Default
+                    </FieldLabel>
+                    <Input
+                      id={`${testIdPrefix}-${row.id}-default`}
+                      className="h-7 min-h-7"
+                      value={row.defaultValue ?? ""}
+                      data-testid={`${testIdPrefix}-${row.id}-default`}
+                      onChange={(event) =>
+                        onChange(
+                          patchRow(rows, row.id, {
+                            defaultValue: event.target.value,
+                          }),
+                        )
+                      }
+                    />
+                  </Field>
+                )}
                 {row.type === "enum" ? (
                   <NamedListEditor
                     values={[...(row.enumValues ?? [])]}
@@ -256,6 +304,22 @@ export function PinListEditor({
           )}
         </div>
       </Field>
+      <ClassPicker
+        open={classPickRowId !== null}
+        onOpenChange={(open) => {
+          if (!open) setClassPickRowId(null);
+        }}
+        classes={[...classEntries]}
+        allowNone={false}
+        title="Pick Class Type"
+        onPick={(classId) => {
+          if (classPickRow && classId) {
+            onChange(patchRow(rows, classPickRow.id, { typeClassId: classId }));
+          }
+          setClassPickRowId(null);
+        }}
+        data-testid={`${testId}-class-picker`}
+      />
     </div>
   );
 }

@@ -137,6 +137,12 @@ describe("My Class members", () => {
     );
   });
 
+  it("lists no native Actor events for a BObject class", () => {
+    expect(
+      membersForGraph({ nodes: [], edges: [] }, { parentClass: "BObject" }),
+    ).toEqual([]);
+  });
+
   it("lists On Evaluate instead of Begin Play for a BTDecorator class", () => {
     expect(
       membersForGraph({ nodes: [], edges: [] }, { parentClass: "BTDecorator" }),

@@ -62,7 +62,15 @@ import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
-import { validateSerializedGraph } from "../services/graph-validation";
+import { classParentLookup } from "../lib/content-browser-helpers";
+import { classIdForGraphPath } from "../services/script-compiler";
+import {
+  classHierarchyFromParentOf,
+  classMemberSymbolsFromGraphs,
+  knownClassIdSet,
+  validateSerializedGraph,
+} from "../services/graph-validation";
+import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
@@ -209,6 +217,7 @@ export function EditorChromeBar({
     collectScriptBundles,
     graphsNeedCompile,
     activateDockPanel,
+    assetRegistry,
   } = useDocuments();
 
   const {
@@ -398,12 +407,30 @@ export function EditorChromeBar({
                     (doc) => doc.ref.kind === "graph" && doc.content,
                   );
                   setDiagnostics(
-                    graphs.flatMap((doc) =>
-                      validateSerializedGraph(doc.content as SerializedGraph, {
-                        assetGuid: doc.ref.path,
-                        graphId: doc.id,
-                      }),
-                    ),
+                    graphs.flatMap((doc) => {
+                      const parentOf = classParentLookup(
+                        assetRegistry?.list() ?? [],
+                      );
+                      const classGraphs = collectClassGraphsForPalette({
+                        assets: assetRegistry?.list() ?? [],
+                        openDocuments,
+                        classIdForPath: classIdForGraphPath,
+                      });
+                      return validateSerializedGraph(
+                        doc.content as SerializedGraph,
+                        {
+                          assetGuid: doc.ref.path,
+                          graphId: doc.id,
+                          classId: classIdForGraphPath(doc.ref.path),
+                          hierarchy: classHierarchyFromParentOf(parentOf),
+                          members: classMemberSymbolsFromGraphs(classGraphs),
+                          knownClassIds: knownClassIdSet(
+                            parentOf,
+                            Object.keys(classGraphs),
+                          ),
+                        },
+                      );
+                    }),
                   );
                   void collectScriptBundles();
                   activateDockPanel("compiler-results");

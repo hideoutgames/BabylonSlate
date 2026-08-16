@@ -1,5 +1,6 @@
 import {
   isFunctionLibraryClass,
+  type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
@@ -82,7 +83,8 @@ function normalizeHeaderPins(value: unknown): GraphClassMemberPin[] {
     if (!row || typeof row !== "object") continue;
     const name = (row as { name?: unknown }).name;
     if (typeof name !== "string" || !name) continue;
-    pins.push({
+    const typeClassId = (row as { typeClassId?: unknown }).typeClassId;
+    const pin: GraphClassMemberPin = {
       name,
       typeId:
         typeof (row as { typeId?: unknown }).typeId === "string"
@@ -90,7 +92,11 @@ function normalizeHeaderPins(value: unknown): GraphClassMemberPin[] {
           : "float",
       direction:
         (row as { direction?: unknown }).direction === "out" ? "out" : "in",
-    });
+    };
+    if (typeof typeClassId === "string" && typeClassId.trim()) {
+      pin.typeClassId = typeClassId.trim();
+    }
+    pins.push(pin);
   }
   return pins;
 }
@@ -164,6 +170,102 @@ export function collectFunctionLibrariesForPalette(options: {
   }
 
   return libraries;
+}
+
+function headerMemberId(entry: { id?: unknown; name: string }): string {
+  return typeof entry.id === "string" && entry.id.trim()
+    ? entry.id.trim()
+    : entry.name;
+}
+
+/** Rebuild a lightweight SerializedGraph from closed Class header metadata. */
+export function classGraphFromHeaderPayload(
+  payload?: Record<string, unknown>,
+): SerializedGraph {
+  const members: GraphClassMember[] = [];
+  const functions = payload?.functions;
+  if (Array.isArray(functions)) {
+    for (const entry of functions) {
+      if (!entry || typeof entry !== "object") continue;
+      const name = (entry as { name?: unknown }).name;
+      if (typeof name !== "string" || !name) continue;
+      members.push({
+        id: headerMemberId({ ...(entry as { id?: unknown }), name }),
+        kind: "function",
+        name,
+        pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
+      });
+    }
+  }
+  const variables = payload?.variables;
+  if (Array.isArray(variables)) {
+    for (const entry of variables) {
+      if (!entry || typeof entry !== "object") continue;
+      const name = (entry as { name?: unknown }).name;
+      if (typeof name !== "string" || !name) continue;
+      const typeId = (entry as { typeId?: unknown }).typeId;
+      const typeClassId = (entry as { typeClassId?: unknown }).typeClassId;
+      const member: GraphClassMember = {
+        id: headerMemberId({ ...(entry as { id?: unknown }), name }),
+        kind: "variable",
+        name,
+        typeId: typeof typeId === "string" && typeId ? typeId : "float",
+      };
+      if (typeof typeClassId === "string" && typeClassId.trim()) {
+        member.typeClassId = typeClassId.trim();
+      }
+      members.push(member);
+    }
+  }
+  const events = payload?.events;
+  if (Array.isArray(events)) {
+    for (const entry of events) {
+      if (!entry || typeof entry !== "object") continue;
+      const name = (entry as { name?: unknown }).name;
+      if (typeof name !== "string" || !name) continue;
+      members.push({
+        id: headerMemberId({ ...(entry as { id?: unknown }), name }),
+        kind: "event",
+        name,
+        pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
+      });
+    }
+  }
+  return { nodes: [], edges: [], members };
+}
+
+/** Closed Class headers plus open documents, keyed by class id. */
+export function collectClassGraphsForPalette(options: {
+  assets: ReadonlyArray<{
+    path: string;
+    header: {
+      type: string;
+      name: string;
+      parentClass?: string | null;
+      payload?: Record<string, unknown>;
+    };
+  }>;
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>;
+  classIdForPath: (path: string) => string;
+}): Record<string, SerializedGraph> {
+  const graphs: Record<string, SerializedGraph> = {};
+  for (const asset of options.assets) {
+    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
+      continue;
+    }
+    graphs[options.classIdForPath(asset.path)] = classGraphFromHeaderPayload(
+      asset.header.payload,
+    );
+  }
+  for (const doc of options.openDocuments) {
+    const graph = serializedGraphFromDocument(doc.ref.kind, doc.content);
+    if (!graph) continue;
+    graphs[options.classIdForPath(doc.ref.path)] = graph;
+  }
+  return graphs;
 }
 
 export type LogicGraphCommit =

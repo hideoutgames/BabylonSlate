@@ -282,9 +282,11 @@ function validatePinTyping(
           (pinAcceptsLiteralDefault(pin.type) ||
             pin.type.kind === "boxedWildcard");
         if (!defaultClearsMissing && !implicitSelfTarget) {
+          const liveRef =
+            pin.type.kind === "objectRef" || pin.type.kind === "actorRef";
           out.push(
             diagnostic({
-              severity: "warning",
+              severity: liveRef ? "error" : "warning",
               code: "pin.missing_input",
               message: `Required input "${pin.name}" is not connected`,
               assetGuid: ctx.assetGuid,
@@ -331,6 +333,196 @@ function validateExecuteJavaScript(
   return out;
 }
 
+function stringProp(
+  properties: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = properties[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function validateMemberBindings(
+  graph: LogicGraph,
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const members = ctx.members ?? [];
+  if (members.length === 0 && !ctx.knownClassIds) {
+    // Still check local-name conflicts if members exist; skip stale lookups
+    // when the editor did not supply a symbol table.
+  }
+
+  const classVars = members.filter(
+    (member) => member.kind === "variable" && !member.functionId,
+  );
+  const locals = members.filter(
+    (member) => member.kind === "variable" && member.functionId,
+  );
+  const seenLocal = new Set<string>();
+  for (const local of locals) {
+    const key = `${local.functionId}:${local.name}`;
+    const classHit = classVars.some((entry) => entry.name === local.name);
+    const duplicate = seenLocal.has(key);
+    seenLocal.add(key);
+    if (!classHit && !duplicate) continue;
+    out.push(
+      diagnostic({
+        code: "member.local_name_conflict",
+        message: classHit
+          ? `Local variable "${local.name}" collides with a class variable`
+          : `Local variable "${local.name}" is declared more than once`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+      }),
+    );
+  }
+
+  if (ctx.knownClassIds) {
+    for (const member of members) {
+      if (
+        member.typeClassId &&
+        !ctx.knownClassIds.has(member.typeClassId)
+      ) {
+        out.push(
+          diagnostic({
+            code: "member.unknown_class",
+            message: `Unknown class "${member.typeClassId}"`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+          }),
+        );
+      }
+    }
+    for (const node of graph.nodes) {
+      const typeClassId = stringProp(node.properties, "typeClassId");
+      if (typeClassId && !ctx.knownClassIds.has(typeClassId)) {
+        out.push(
+          diagnostic({
+            code: "member.unknown_class",
+            message: `Unknown class "${typeClassId}"`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
+      for (const pin of node.pins) {
+        if (
+          (pin.type.kind === "objectRef" ||
+            pin.type.kind === "actorRef" ||
+            pin.type.kind === "classRef") &&
+          pin.type.classId &&
+          !ctx.knownClassIds.has(pin.type.classId)
+        ) {
+          out.push(
+            diagnostic({
+              code: "member.unknown_class",
+              message: `Unknown class "${pin.type.classId}"`,
+              assetGuid: ctx.assetGuid,
+              graphId: graph.id,
+              nodeId: node.id,
+              pinId: pin.id,
+            }),
+          );
+        }
+      }
+    }
+  }
+
+  if (members.length === 0) return out;
+
+  for (const node of graph.nodes) {
+    if (node.typeId === "variables.get" || node.typeId === "variables.set") {
+      const variableId = stringProp(node.properties, "variableId");
+      const variableName = stringProp(node.properties, "variableName");
+      const classId =
+        stringProp(node.properties, "classId") ?? ctx.classId;
+      const functionId =
+        stringProp(node.properties, "functionId") ??
+        ctx.activeFunctionId ??
+        undefined;
+      const local = node.properties.scope === "local";
+      const found = members.find((member) => {
+        if (member.kind !== "variable") return false;
+        if (variableId && member.id === variableId) return true;
+        if (!variableId && variableName && member.name === variableName) {
+          if (local) return member.functionId === functionId;
+          if (classId && member.classId !== classId) return false;
+          return !member.functionId;
+        }
+        return false;
+      });
+      if (!found) {
+        out.push(
+          diagnostic({
+            code: "member.missing_variable",
+            message: `Variable "${variableName ?? variableId ?? "unknown"}" is not declared`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      } else if (local && found.functionId && found.functionId !== functionId) {
+        out.push(
+          diagnostic({
+            code: "member.missing_variable",
+            message: `Local variable "${found.name}" belongs to another function`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
+      continue;
+    }
+    if (node.typeId === "functions.call") {
+      const functionName = stringProp(node.properties, "functionName");
+      const classId = stringProp(node.properties, "classId") ?? ctx.classId;
+      const found = members.find((member) => {
+        if (member.kind !== "function") return false;
+        if (member.name !== functionName) return false;
+        if (classId && member.classId !== classId) return false;
+        return true;
+      });
+      if (!found) {
+        out.push(
+          diagnostic({
+            code: "member.missing_function",
+            message: `Function "${functionName ?? "unknown"}" is not declared`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
+      continue;
+    }
+    if (node.typeId === "flow.event.call") {
+      const eventName = stringProp(node.properties, "name");
+      const classId = stringProp(node.properties, "classId") ?? ctx.classId;
+      const found = members.find((member) => {
+        if (member.kind !== "event") return false;
+        if (member.name !== eventName) return false;
+        if (classId && member.classId !== classId) return false;
+        return true;
+      });
+      if (!found) {
+        out.push(
+          diagnostic({
+            code: "member.missing_event",
+            message: `Event "${eventName ?? "unknown"}" is not declared`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
+    }
+  }
+
+  return out;
+}
+
 export function validateGraphs(
   graphs: readonly LogicGraph[],
   ctx: TypeContext,
@@ -341,6 +533,7 @@ export function validateGraphs(
     diagnostics.push(...validateStructural(graph, ctx));
     diagnostics.push(...validatePinTyping(graph, ctx));
     diagnostics.push(...validateExecuteJavaScript(graph, ctx));
+    diagnostics.push(...validateMemberBindings(graph, ctx));
   }
   for (const rule of listValidationRules()) {
     diagnostics.push(...rule.run(graphs, ctx));

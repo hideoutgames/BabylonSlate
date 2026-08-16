@@ -11,6 +11,7 @@ import {
   PropertyGrid,
   TypeVisualIcon,
   resolveTypeVisual,
+  type ClassPickerEntry,
   type PinListRow,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
@@ -75,24 +76,65 @@ import {
   serializedGraphFromDocument,
 } from "../lib/logic-graph-document";
 
+function memberPinRows(
+  pins: GraphClassMember["pins"],
+  memberId: string,
+  direction: "in" | "out",
+): PinListRow[] {
+  return (pins ?? [])
+    .filter((pin) => pin.direction === direction)
+    .map((pin, index) => ({
+      id: `${memberId}-${direction}-${index}`,
+      name: pin.name,
+      type: pin.typeId,
+      ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+    }));
+}
+
+function memberPinsFromRows(
+  inputs: PinListRow[],
+  outputs: PinListRow[],
+): NonNullable<GraphClassMember["pins"]> {
+  const toPin = (row: PinListRow, direction: "in" | "out") => {
+    const pin: NonNullable<GraphClassMember["pins"]>[number] = {
+      name: row.name,
+      typeId: String(row.type),
+      direction,
+    };
+    if (row.typeClassId?.trim()) pin.typeClassId = row.typeClassId.trim();
+    return pin;
+  };
+  return [
+    ...inputs.map((row) => toPin(row, "in")),
+    ...outputs.map((row) => toPin(row, "out")),
+  ];
+}
+
 function ClassMemberDetails({
   graph,
   member,
   interfaceAssets,
+  classEntries,
   onChange,
 }: {
   graph: SerializedGraph;
   member: GraphClassMember;
   interfaceAssets: Array<{ guid: string; name: string; type: string }>;
+  classEntries: ClassPickerEntry[];
   onChange: (next: SerializedGraph) => void;
 }) {
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
+  const [classPickKind, setClassPickKind] = useState<"type" | "default" | null>(
+    null,
+  );
   const commit = (patch: Partial<GraphClassMember>) => {
     onChange(patchClassMember(graph, member.id, patch));
   };
 
   if (member.kind === "variable") {
     const typeId = member.typeId ?? "float";
+    const isObject = typeId === "object";
+    const isClass = typeId === "class";
     return (
       <div
         className="flex flex-col gap-3 p-3"
@@ -117,53 +159,87 @@ function ClassMemberDetails({
           <div className="text-sm font-medium">Type</div>
           <PinTypePicker
             value={typeId}
-            onChange={(nextType) =>
-              commit({
+            onChange={(nextType) => {
+              const next: Partial<GraphClassMember> = {
                 typeId: nextType,
-                defaultValue: defaultJsValue(pinTypeForMember(nextType)),
-              })
-            }
+                defaultValue:
+                  nextType === "object"
+                    ? undefined
+                    : nextType === "class"
+                      ? (member.typeClassId ?? "BObject")
+                      : defaultJsValue(pinTypeForMember(nextType)),
+              };
+              if (nextType !== "object" && nextType !== "class") {
+                next.typeClassId = undefined;
+              } else if (member.typeClassId) {
+                next.typeClassId = member.typeClassId;
+              }
+              commit(next);
+            }}
             data-testid="inspector-member-type"
           />
         </div>
+        {isObject || isClass ? (
+          <div className="flex flex-col gap-1">
+            <div className="text-sm font-medium">Class Type</div>
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="inspector-member-class-type"
+              onClick={() => setClassPickKind("type")}
+            >
+              {member.typeClassId?.trim() || "BObject"}
+            </Button>
+          </div>
+        ) : null}
+        {isClass ? (
+          <div className="flex flex-col gap-1">
+            <div className="text-sm font-medium">Default</div>
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="inspector-member-class-default"
+              onClick={() => setClassPickKind("default")}
+            >
+              {typeof member.defaultValue === "string" && member.defaultValue.trim()
+                ? member.defaultValue.trim()
+                : member.typeClassId?.trim() || "BObject"}
+            </Button>
+          </div>
+        ) : null}
+        <ClassPicker
+          open={classPickKind !== null}
+          onOpenChange={(open) => {
+            if (!open) setClassPickKind(null);
+          }}
+          classes={classEntries}
+          allowNone={false}
+          title={classPickKind === "default" ? "Pick Default Class" : "Pick Class Type"}
+          onPick={(classId) => {
+            if (!classId) return;
+            if (classPickKind === "type") {
+              const patch: Partial<GraphClassMember> = { typeClassId: classId };
+              if (isClass) patch.defaultValue = classId;
+              commit(patch);
+            } else if (classPickKind === "default") {
+              commit({ defaultValue: classId });
+            }
+            setClassPickKind(null);
+          }}
+          data-testid="inspector-member-class-picker"
+        />
       </div>
     );
   }
 
   if (member.kind === "function") {
-    const pins = member.pins ?? [];
-    const inputRows: PinListRow[] = pins
-      .filter((pin) => pin.direction === "in")
-      .map((pin, index) => ({
-        id: `${member.id}-in-${index}`,
-        name: pin.name,
-        type: pin.typeId,
-      }));
-    const outputRows: PinListRow[] = pins
-      .filter((pin) => pin.direction === "out")
-      .map((pin, index) => ({
-        id: `${member.id}-out-${index}`,
-        name: pin.name,
-        type: pin.typeId,
-      }));
+    const inputRows = memberPinRows(member.pins, member.id, "in");
+    const outputRows = memberPinRows(member.pins, member.id, "out");
     const commitPins = (
       nextInputs: PinListRow[],
       nextOutputs: PinListRow[],
     ) => {
-      commit({
-        pins: [
-          ...nextInputs.map((row) => ({
-            name: row.name,
-            typeId: String(row.type),
-            direction: "in" as const,
-          })),
-          ...nextOutputs.map((row) => ({
-            name: row.name,
-            typeId: String(row.type),
-            direction: "out" as const,
-          })),
-        ],
-      });
+      commit({ pins: memberPinsFromRows(nextInputs, nextOutputs) });
     };
     return (
       <div
@@ -186,6 +262,7 @@ function ClassMemberDetails({
           title="Inputs"
           rows={inputRows}
           types={FUNCTION_PIN_PICKER_TYPES}
+          classEntries={classEntries}
           testIdPrefix="class-fn-in"
           data-testid="inspector-member-inputs"
           onChange={(nextRows) => commitPins(nextRows, outputRows)}
@@ -194,6 +271,7 @@ function ClassMemberDetails({
           title="Outputs"
           rows={outputRows}
           types={FUNCTION_PIN_PICKER_TYPES}
+          classEntries={classEntries}
           testIdPrefix="class-fn-out"
           data-testid="inspector-member-outputs"
           onChange={(nextRows) => commitPins(inputRows, nextRows)}
@@ -524,6 +602,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           graph={graph}
           member={selectedMember}
           interfaceAssets={interfaceAssets}
+          classEntries={subclassClassEntries(
+            "BObject",
+            assetRegistry?.list() ?? [],
+            { editorGraph },
+          )}
           onChange={persistGraph}
         />
       </PanelFrame>
@@ -588,6 +671,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       ? (selectedNode.data.pins as Array<{
           name?: string;
           typeId?: string;
+          typeClassId?: string;
           direction?: string;
         }>)
       : [])
@@ -597,6 +681,9 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       id: `${selectedNode.id}-out-${index}`,
       name: String(pin.name),
       type: pin.typeId ?? "float",
+      ...("typeClassId" in pin && pin.typeClassId
+        ? { typeClassId: pin.typeClassId }
+        : {}),
     }));
   const title =
     typeof selectedNode.data.title === "string" && selectedNode.data.title
@@ -756,14 +843,15 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             title="Outputs"
             rows={eventOutputRows}
             types={PIN_PICKER_TYPES}
+            classEntries={subclassClassEntries(
+              "BObject",
+              assetRegistry?.list() ?? [],
+              { editorGraph },
+            )}
             testIdPrefix="event-out"
             data-testid="inspector-event-outputs"
             onChange={(rows) => {
-              const pins = rows.map((row) => ({
-                name: row.name,
-                typeId: String(row.type),
-                direction: "out" as const,
-              }));
+              const pins = memberPinsFromRows([], rows);
               if (eventMember) {
                 persistGraph(patchClassMember(graph, eventMember.id, { pins }));
                 return;

@@ -29,6 +29,9 @@ describe("pinCssVar", () => {
     expect(pinCssVar({ kind: "objectRef", classId: "Actor" })).toBe(
       "var(--pin-object)",
     );
+    expect(pinCssVar({ kind: "classRef", classId: "Actor" })).toBe(
+      "var(--pin-class)",
+    );
     expect(pinCssVar({ kind: "actorRef", classId: "Actor" })).toBe(
       "var(--pin-actor)",
     );

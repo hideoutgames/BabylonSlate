@@ -36,6 +36,8 @@ export interface TreeViewProps {
   onToggleExpanded?: (id: string) => void;
   /** Drop `dragId` onto `targetId`; null means the scene root. */
   onReparent?: (dragId: string, targetId: string | null) => void;
+  /** Drop a row onto a client point outside the tree (graph canvas spawn). */
+  onExternalDrop?: (id: string, clientX: number, clientY: number) => void;
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
@@ -68,6 +70,7 @@ export function TreeView({
   onSelect,
   onToggleExpanded,
   onReparent,
+  onExternalDrop,
   onActivate,
   onContextMenu,
   reparentArm = "hold",
@@ -155,31 +158,34 @@ export function TreeView({
             onContextMenu(nodeId, event.clientX, event.clientY);
           }, CONTEXT_MENU_LONG_PRESS_MS)
         : null;
-      const dragArmTimer =
-        onReparent && reparentArm === "hold"
-          ? setTimeout(() => {
-              const drag = dragRef.current;
-              if (!drag || drag.moved) return;
-              drag.canDrag = true;
-              try {
-                containerRef.current?.setPointerCapture?.(drag.pointerId);
-              } catch {
-                /* jsdom and detached nodes */
-              }
-            }, DRAG_ARM_MS)
-          : null;
+      const canDragNow =
+        (Boolean(onReparent) && reparentArm === "immediate") ||
+        (Boolean(onExternalDrop) && event.pointerType === "mouse");
+      const holdDrag = Boolean(onReparent || onExternalDrop) && !canDragNow;
+      const dragArmTimer = holdDrag
+        ? setTimeout(() => {
+            const drag = dragRef.current;
+            if (!drag || drag.moved) return;
+            drag.canDrag = true;
+            try {
+              containerRef.current?.setPointerCapture?.(drag.pointerId);
+            } catch {
+              /* jsdom and detached nodes */
+            }
+          }, DRAG_ARM_MS)
+        : null;
       dragRef.current = {
         pointerId: event.pointerId,
         nodeId,
         startX: event.clientX,
         startY: event.clientY,
         armed: false,
-        canDrag: Boolean(onReparent) && reparentArm === "immediate",
+        canDrag: canDragNow,
         moved: false,
         dragArmTimer,
         longPressTimer,
       };
-      if (reparentArm !== "hold") {
+      if (canDragNow) {
         try {
           containerRef.current?.setPointerCapture?.(event.pointerId);
         } catch {
@@ -187,7 +193,7 @@ export function TreeView({
         }
       }
     },
-    [onContextMenu, onReparent, reparentArm],
+    [onContextMenu, onExternalDrop, onReparent, reparentArm],
   );
 
   const onPointerMove = useCallback(
@@ -231,6 +237,17 @@ export function TreeView({
         if (target !== drag.nodeId) {
           onReparent(drag.nodeId, target);
         }
+      } else if (drag.armed && onExternalDrop) {
+        const rect = containerRef.current?.getBoundingClientRect();
+        const inside =
+          rect &&
+          event.clientX >= rect.left &&
+          event.clientX <= rect.right &&
+          event.clientY >= rect.top &&
+          event.clientY <= rect.bottom;
+        if (!inside) {
+          onExternalDrop(drag.nodeId, event.clientX, event.clientY);
+        }
       } else if (!drag.armed && !drag.moved) {
         onSelect?.(drag.nodeId);
         const now = Date.now();
@@ -244,7 +261,7 @@ export function TreeView({
       }
       clearDrag();
     },
-    [clearDrag, nodeIdAtClientY, onActivate, onReparent, onSelect],
+    [clearDrag, nodeIdAtClientY, onActivate, onExternalDrop, onReparent, onSelect],
   );
 
   return (

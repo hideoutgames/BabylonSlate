@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classHeaderMeta,
   functionLibraryHeaderMeta,
   isEditorFunctionLibraryClass,
   isEditorGraphClass,
@@ -116,6 +117,93 @@ describe("editor-only assets", () => {
           pins: [{ name: "a", typeId: "float", direction: "in" }],
         },
         { name: "Scale", pins: [] },
+      ],
+    });
+  });
+
+  it("indexes class variables, functions, and events with typeClassId for closed assets", () => {
+    expect(
+      classHeaderMeta({
+        members: [
+          {
+            id: "var-1",
+            kind: "variable",
+            name: "Target",
+            typeId: "object",
+            typeClassId: "Hero",
+          },
+          {
+            id: "var-local",
+            kind: "variable",
+            name: "Temp",
+            typeId: "float",
+            functionId: "fn-1",
+          },
+          {
+            id: "fn-1",
+            kind: "function",
+            name: "Possess",
+            pins: [
+              {
+                name: "pawn",
+                typeId: "object",
+                direction: "in",
+                typeClassId: "Pawn",
+              },
+            ],
+          },
+          {
+            id: "ev-1",
+            kind: "event",
+            name: "On Hit",
+            pins: [
+              {
+                name: "other",
+                typeId: "object",
+                direction: "out",
+                typeClassId: "Actor",
+              },
+            ],
+          },
+          { id: "if-1", kind: "interface", name: "Damageable", assetGuid: "g1" },
+        ],
+      }),
+    ).toEqual({
+      functions: [
+        {
+          id: "fn-1",
+          name: "Possess",
+          pins: [
+            {
+              name: "pawn",
+              typeId: "object",
+              direction: "in",
+              typeClassId: "Pawn",
+            },
+          ],
+        },
+      ],
+      variables: [
+        {
+          id: "var-1",
+          name: "Target",
+          typeId: "object",
+          typeClassId: "Hero",
+        },
+      ],
+      events: [
+        {
+          id: "ev-1",
+          name: "On Hit",
+          pins: [
+            {
+              name: "other",
+              typeId: "object",
+              direction: "out",
+              typeClassId: "Actor",
+            },
+          ],
+        },
       ],
     });
   });

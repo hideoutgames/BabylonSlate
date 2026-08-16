@@ -284,6 +284,7 @@ export function variableDefaultPropertyRows(
   value: unknown,
   onChange: (value: unknown) => void,
 ): PropertyRow[] {
+  if (typeId === "object" || typeId === "class") return [];
   const type = pinTypeForMember(typeId);
   const resolved = value === undefined ? defaultJsValue(type) : value;
   return pinDefaultPropertyRows(

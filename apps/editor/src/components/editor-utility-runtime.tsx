@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ScriptHost, type ScriptHostServices } from "@babylonslate/runtime";
+import { ClassRegistry } from "@babylonslate/object-model";
 import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { resolvePluginEnabled } from "@babylonslate/assets";
@@ -14,6 +15,7 @@ import { mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
 
 function editorHostServices(appendLog: (line: string) => void): ScriptHostServices {
   return {
+    classRegistry: new ClassRegistry(),
     log: (_severity, category, message) => {
       appendLog(`[${category}] ${message}`);
     },
