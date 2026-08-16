@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   BOOL,
   EXEC,
-  FLOAT,
   INT,
   compileGraph,
   objectRef,
