@@ -7,16 +7,20 @@ import {
   resolveTypeVisual,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
-import type { SerializedComponent } from "@babylonslate/core";
+import { Badge } from "@babylonslate/ui/components/badge";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useGraphEditing } from "../context/graph-editing-context";
-import { PREFAB_ROOT_ID, childrenOfPrefabParent } from "../lib/prefab-preview";
+import {
+  PREFAB_ROOT_ID,
+  childrenOfPrefabParent,
+  type PrefabComponentView,
+} from "../lib/prefab-preview";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
 
 export function flattenPrefabComponents(
-  components: readonly SerializedComponent[],
+  components: readonly PrefabComponentView[],
   collapsed: ReadonlySet<string>,
 ): TreeViewNode[] {
   const rows: TreeViewNode[] = [];
@@ -34,6 +38,7 @@ export function flattenPrefabComponents(
     for (const component of childrenOfPrefabParent(components, parentId)) {
       const kids = childrenOfPrefabParent(components, component.id);
       const expanded = !collapsed.has(component.id);
+      const inherited = Boolean(component.inheritedFrom);
       rows.push({
         id: component.id,
         label: component.classId,
@@ -45,6 +50,15 @@ export function flattenPrefabComponents(
             visual={resolveTypeVisual({ classId: component.classId })}
           />
         ),
+        trailing: inherited ? (
+          <Badge
+            variant="secondary"
+            className="px-1 py-0 text-[9px] leading-4"
+            data-testid={`prefab-inherited-${component.id}`}
+          >
+            Inherited
+          </Badge>
+        ) : undefined,
       });
       if (expanded && kids.length > 0) walk(component.id, depth + 1);
     }
@@ -76,6 +90,10 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     [collapsed, components],
   );
 
+  const selectedInherited = Boolean(
+    components.find((component) => component.id === selectedId)?.inheritedFrom,
+  );
+
   return (
     <PanelFrame
       data-testid="actor-prefab-panel"
@@ -90,7 +108,11 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           </IconActionButton>
           <IconActionButton
             label="Remove component"
-            disabled={!selectedId || selectedId === PREFAB_ROOT_ID}
+            disabled={
+              !selectedId ||
+              selectedId === PREFAB_ROOT_ID ||
+              selectedInherited
+            }
             onClick={removeSelected}
             data-testid="prefab-remove-component"
           >

@@ -158,4 +158,57 @@ describe("ClassRegistry", () => {
       "iface-boss",
     ]);
   });
+
+  it("rejects register and reparent past the inheritance depth limit", () => {
+    const registry = new ClassRegistry();
+    let parent = "Actor";
+    // Actor ancestry length 2; Deep0..Deep12 → Deep12 ancestry length 15.
+    for (let i = 0; i < 13; i++) {
+      const id = `Deep${i}`;
+      expect(
+        registry.register({
+          id,
+          parentClassId: parent,
+          kind: "actor",
+          variables: [],
+          implementedInterfaces: [],
+        }).ok,
+      ).toBe(true);
+      parent = id;
+    }
+    expect(registry.ancestry("Deep12").length).toBe(15);
+    expect(
+      registry.register({
+        id: "Deep13",
+        parentClassId: "Deep12",
+        kind: "actor",
+        variables: [],
+        implementedInterfaces: [],
+      }).ok,
+    ).toBe(true);
+    expect(registry.ancestry("Deep13").length).toBe(16);
+    const blocked = registry.register({
+      id: "Deep14",
+      parentClassId: "Deep13",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) {
+      expect(blocked.error).toMatch(/inheritance depth limit/);
+    }
+    registry.register({
+      id: "Shallow",
+      parentClassId: "Actor",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    const reparent = registry.reparent("Shallow", "Deep13");
+    expect(reparent.ok).toBe(false);
+    if (!reparent.ok) {
+      expect(reparent.error).toMatch(/inheritance depth limit/);
+    }
+  });
 });

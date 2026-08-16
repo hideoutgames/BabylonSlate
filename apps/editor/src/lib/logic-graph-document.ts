@@ -295,7 +295,38 @@ export function classGraphFromHeaderPayload(
       });
     }
   }
-  return { nodes: [], edges: [], members };
+  const components: SerializedGraph["components"] = [];
+  const rawComponents = payload?.components;
+  if (Array.isArray(rawComponents)) {
+    for (const entry of rawComponents) {
+      if (!entry || typeof entry !== "object") continue;
+      const id = (entry as { id?: unknown }).id;
+      const classId = (entry as { classId?: unknown }).classId;
+      if (typeof id !== "string" || !id.trim()) continue;
+      if (typeof classId !== "string" || !classId.trim()) continue;
+      const parentId = (entry as { parentId?: unknown }).parentId;
+      const properties = (entry as { properties?: unknown }).properties;
+      const transform = (entry as { transform?: unknown }).transform;
+      components.push({
+        id: id.trim(),
+        classId: classId.trim(),
+        properties:
+          properties && typeof properties === "object"
+            ? { ...(properties as Record<string, unknown>) }
+            : {},
+        parentId: typeof parentId === "string" ? parentId : null,
+        ...(transform && typeof transform === "object"
+          ? { transform: transform as NonNullable<SerializedGraph["components"]>[number]["transform"] }
+          : {}),
+      });
+    }
+  }
+  return {
+    nodes: [],
+    edges: [],
+    members,
+    ...(components.length > 0 ? { components } : {}),
+  };
 }
 
 export type ScriptInterfacePaletteEntry = {

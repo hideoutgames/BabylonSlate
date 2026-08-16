@@ -373,6 +373,12 @@ function stringProp(
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/** Strip a leading "Event " so Call bindings match member body names. */
+function eventBindingName(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return raw.replace(/^(Event\s+)+/i, "").trim() || undefined;
+}
+
 function validateMemberBindings(
   graph: LogicGraph,
   ctx: TypeContext,
@@ -530,11 +536,11 @@ function validateMemberBindings(
       continue;
     }
     if (node.typeId === "flow.event.call") {
-      const eventName = stringProp(node.properties, "name");
+      const eventName = eventBindingName(stringProp(node.properties, "name"));
       const classId = stringProp(node.properties, "classId") ?? ctx.classId;
       const found = members.find((member) => {
         if (member.kind !== "event") return false;
-        if (member.name !== eventName) return false;
+        if (eventBindingName(member.name) !== eventName) return false;
         if (classId && member.classId !== classId) return false;
         return true;
       });

@@ -8,12 +8,15 @@ import {
   PanelFrame,
   TreeView,
   TypeColorMark,
+  formatEventMemberName,
   formatEventTitle,
   pinPickerColorVar,
   useContextMenu,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
+import { isLockedEngineClassId } from "@babylonslate/object-model";
+import { Badge } from "@babylonslate/ui/components/badge";
 import {
   addClassMember,
   addVariableAccessNode,
@@ -30,6 +33,7 @@ import {
 } from "../lib/class-members";
 import { MemberAccessChooser } from "../components/member-access-chooser";
 import { PlusIcon } from "lucide-react";
+import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
@@ -51,10 +55,15 @@ export type MyClassMember = {
   name: string;
   detail?: string;
   inherited?: boolean;
-  hasError?: boolean;
-  typeId?: string;
+  /** Declaring parent class id when `inherited` is set. */
+  inheritedFrom?: string;
   eventType?: string;
+  typeId?: string;
+  typeClassId?: string;
   functionId?: string;
+  assetGuid?: string;
+  pins?: import("@babylonslate/core").GraphClassMemberPin[];
+  hasError?: boolean;
 };
 
 export type MyClassPanelProps = IDockviewPanelProps;
@@ -84,7 +93,29 @@ export type MembersForGraphOptions = {
   }>;
 };
 
+/** Body name for a custom/native event node (no leading "Event "). */
+function eventMemberBodyName(node: SerializedGraph["nodes"][number]): string {
+  const named = node.data.name;
+  if (typeof named === "string" && named.trim()) {
+    return formatEventMemberName(named);
+  }
+  const title = node.data.title;
+  if (typeof title === "string" && title.trim()) {
+    return formatEventMemberName(title);
+  }
+  const catalog = defaultNodeRegistry.get(node.type)?.title;
+  if (catalog) return formatEventMemberName(catalog);
+  const typeName = node.type.startsWith("flow.event.")
+    ? node.type.slice("flow.event.".length)
+    : node.type;
+  return formatEventMemberName(typeName);
+}
+
+/** Display label for Class Events tree (native stubs keep Event … titles). */
 function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
+  if (node.type === "flow.event.custom") {
+    return eventMemberBodyName(node);
+  }
   const title = node.data.title;
   if (typeof title === "string" && title.trim()) {
     return formatEventTitle(title);
@@ -119,7 +150,7 @@ function memberIcon(member: MyClassMember) {
   return <TypeColorMark colorVar="var(--asset-script-type)" />;
 }
 
-function inheritedCustomEvents(
+function inheritedMembers(
   options: MembersForGraphOptions | undefined,
 ): MyClassMember[] {
   if (!options?.parentGraphs) return [];
@@ -133,34 +164,65 @@ function inheritedCustomEvents(
     current = parentOf?.(current) ?? null;
   }
   const rows: MyClassMember[] = [];
-  const seenNames = new Set<string>();
+  const seenKeys = new Set<string>();
+  const push = (row: MyClassMember) => {
+    const key = `${row.kind}:${row.name}`;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+    rows.push(row);
+  };
   for (const className of chain) {
     const parentGraph = options.parentGraphs[className];
     if (!parentGraph) continue;
+    for (const member of parentGraph.members ?? []) {
+      if (member.kind === "variable" && member.functionId) continue;
+      if (member.kind === "event") {
+        const name = formatEventMemberName(member.name);
+        if (!name) continue;
+        push({
+          kind: "event",
+          name,
+          detail: nativeStubId(`custom:${className}:${name}`),
+          eventType: "flow.event.custom",
+          inherited: true,
+          inheritedFrom: className,
+          pins: member.pins,
+        });
+        continue;
+      }
+      if (
+        member.kind === "variable" ||
+        member.kind === "function" ||
+        member.kind === "interface"
+      ) {
+        push({
+          kind: member.kind,
+          name: member.name,
+          detail: nativeStubId(`${member.kind}:${className}:${member.name}`),
+          inherited: true,
+          inheritedFrom: className,
+          ...(member.typeId ? { typeId: member.typeId } : {}),
+          ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
+          ...(member.assetGuid ? { assetGuid: member.assetGuid } : {}),
+          ...(member.pins ? { pins: member.pins } : {}),
+        });
+      }
+    }
     for (const node of parentGraph.nodes) {
       if (node.type !== "flow.event.custom") continue;
-      const name = eventDisplayName(node);
-      if (seenNames.has(name)) continue;
-      seenNames.add(name);
-      rows.push({
+      const name = eventMemberBodyName(node);
+      if (!name) continue;
+      const pins = Array.isArray(node.data.pins)
+        ? (node.data.pins as NonNullable<MyClassMember["pins"]>)
+        : undefined;
+      push({
         kind: "event",
         name,
-        detail: nativeStubId(`custom:${name}`),
+        detail: nativeStubId(`custom:${className}:${name}`),
         eventType: "flow.event.custom",
         inherited: true,
-      });
-    }
-    for (const member of parentGraph.members ?? []) {
-      if (member.kind !== "event") continue;
-      const name = formatEventTitle(member.name);
-      if (seenNames.has(name)) continue;
-      seenNames.add(name);
-      rows.push({
-        kind: "event",
-        name,
-        detail: nativeStubId(`custom:${name}`),
-        eventType: "flow.event.custom",
-        inherited: true,
+        inheritedFrom: className,
+        ...(pins ? { pins } : {}),
       });
     }
   }
@@ -183,8 +245,14 @@ export function membersForGraph(
       name: member.name,
       detail: member.id,
       ...(member.typeId ? { typeId: member.typeId } : {}),
+      ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
       ...(member.functionId ? { functionId: member.functionId } : {}),
+      ...(member.assetGuid ? { assetGuid: member.assetGuid } : {}),
+      ...(member.pins ? { pins: member.pins } : {}),
     }));
+  const declaredKeys = new Set(
+    declared.map((member) => `${member.kind}:${member.name}`),
+  );
   const stubs = nativeEventStubs({
     parentClass: options?.parentClass,
     parentOf: options?.parentOf,
@@ -210,13 +278,38 @@ export function membersForGraph(
       name: eventDisplayName(node),
       detail: node.id,
       eventType: node.type,
+      ...(Array.isArray(node.data.pins)
+        ? { pins: node.data.pins as NonNullable<MyClassMember["pins"]> }
+        : {}),
     });
   }
-  const inherited = inheritedCustomEvents(options).filter((row) => {
-    return !events.some(
-      (event) =>
-        event.eventType === "flow.event.custom" && event.name === row.name,
-    );
+  for (const member of graph.members ?? []) {
+    if (member.kind !== "event") continue;
+    const name = formatEventMemberName(member.name);
+    if (
+      events.some(
+        (event) =>
+          event.eventType === "flow.event.custom" && event.name === name,
+      )
+    ) {
+      continue;
+    }
+    events.push({
+      kind: "event",
+      name,
+      detail: member.id,
+      eventType: "flow.event.custom",
+      pins: member.pins,
+    });
+  }
+  const inherited = inheritedMembers(options).filter((row) => {
+    if (row.kind === "event") {
+      return !events.some(
+        (event) =>
+          event.eventType === "flow.event.custom" && event.name === row.name,
+      );
+    }
+    return !declaredKeys.has(`${row.kind}:${row.name}`);
   });
   return [...declared, ...events, ...inherited];
 }
@@ -260,12 +353,21 @@ export function blueprintTreeNodes(
     for (const member of kids) {
       rows.push({
         id: member.detail ?? `${section.id}-${member.name}`,
-        label: member.inherited ? `(inherited) ${member.name}` : member.name,
+        label: member.name,
         depth: 1,
         hasChildren: false,
         expanded: false,
         muted: member.hasError,
         icon: memberIcon(member),
+        trailing: member.inherited ? (
+          <Badge
+            variant="secondary"
+            className="px-1 py-0 text-[9px] leading-4"
+            data-testid={`inherited-badge-${member.detail ?? member.name}`}
+          >
+            Inherited
+          </Badge>
+        ) : undefined,
       });
     }
   }
@@ -282,6 +384,7 @@ export function ClassMembersView({
   activeFunctionId,
   classId,
   canvasDropApi,
+  onOpenInherited,
 }: {
   graph: SerializedGraph | null;
   onGraphChange: (next: SerializedGraph) => void;
@@ -292,6 +395,7 @@ export function ClassMembersView({
   activeFunctionId?: string | null;
   classId?: string;
   canvasDropApi?: GraphDropPoint | null;
+  onOpenInherited?: (member: MyClassMember) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [memberPromptKind, setMemberPromptKind] =
@@ -304,6 +408,7 @@ export function ClassMembersView({
     memberId: string;
     position: { x: number; y: number };
   } | null>(null);
+  const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   const members = useMemo(
     () => membersForGraph(graph, membersOptions),
     [graph, membersOptions],
@@ -350,20 +455,37 @@ export function ClassMembersView({
     position?: { x: number; y: number },
   ) => {
     if (!graph || !memberId) return;
+    const row = members.find(
+      (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === memberId,
+    );
     const declared = (graph.members ?? []).find(
       (entry) => entry.id === memberId && entry.kind === "variable",
     );
-    if (!declared) return;
+    const binding =
+      declared ??
+      (row?.kind === "variable"
+        ? {
+            id: memberId,
+            kind: "variable" as const,
+            name: row.name,
+            typeId: row.typeId ?? "float",
+            ...(row.typeClassId ? { typeClassId: row.typeClassId } : {}),
+          }
+        : null);
+    if (!binding) return;
     onGraphChange(
-      addVariableAccessNode(graph, declared, access, {
+      addVariableAccessNode(graph, binding, access, {
         functionId: activeFunctionId,
-        classId,
+        classId: row?.inheritedFrom ?? classId,
         ...(position ? { position } : {}),
       }),
     );
   };
   const dropMember = (id: string, clientX: number, clientY: number) => {
     if (!graph) return;
+    const row = members.find(
+      (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === id,
+    );
     const result = resolveClassMemberDrop({
       graph,
       memberId: id,
@@ -373,12 +495,14 @@ export function ClassMembersView({
         name: member.name,
         eventType: member.eventType,
         inherited: member.inherited,
+        inheritedFrom: member.inheritedFrom,
+        pins: member.pins,
       })),
       clientX,
       clientY,
       canvas: canvasDropApi ?? null,
       functionId: activeFunctionId,
-      classId,
+      classId: row?.inheritedFrom ?? classId,
     });
     if (result.kind === "spawn") {
       onGraphChange(result.graph);
@@ -480,7 +604,7 @@ export function ClassMembersView({
           );
           onSelectMember?.(id, member);
           const items = [
-            ...(member?.kind === "variable" && !member.inherited
+            ...(member?.kind === "variable"
               ? [
                   {
                     id: "get",
@@ -494,29 +618,62 @@ export function ClassMembersView({
                   },
                 ]
               : []),
-            {
-              id: "rename",
-              label: "Rename",
-              onSelect: () => {
-                if (!member || member.kind === "event" || member.inherited) return;
-                setRenameMemberId(id);
-              },
-            },
-            {
-              id: "delete",
-              label: "Delete",
-              onSelect: () => {
-                if (!graph) return;
-                onGraphChange(removeClassMember(graph, id));
-              },
-            },
+            ...(member && !member.inherited && member.kind !== "event"
+              ? [
+                  {
+                    id: "rename",
+                    label: "Rename",
+                    onSelect: () => setRenameMemberId(id),
+                  },
+                ]
+              : []),
+            ...(member && !member.inherited
+              ? [
+                  {
+                    id: "delete",
+                    label: "Delete",
+                    onSelect: () => {
+                      if (!graph) return;
+                      onGraphChange(removeClassMember(graph, id));
+                    },
+                  },
+                ]
+              : []),
+            ...(member?.inherited && member.inheritedFrom
+              ? [
+                  {
+                    id: "open-parent",
+                    label: "Open Parent Class",
+                    onSelect: () => onOpenInherited?.(member),
+                  },
+                ]
+              : []),
           ];
           openMenuAt(x, y, items);
         }}
         onExternalDrop={dropMember}
+        onExternalDragMove={(_id, clientX, clientY) => {
+          const allowed = Boolean(
+            canvasDropApi?.containsClientPoint(clientX, clientY),
+          );
+          setDropHint({ clientX, clientY, allowed });
+        }}
+        onExternalDragEnd={() => setDropHint(null)}
+        onActivate={(id) => {
+          if (id.startsWith("section-")) return;
+          const member = members.find(
+            (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === id,
+          );
+          if (member?.inherited) {
+            onOpenInherited?.(member);
+            return;
+          }
+          onSelectMember?.(id, member);
+        }}
         emptyLabel="No class members"
         data-testid="my-blueprint-tree"
       />
+      <GraphDropHint hint={dropHint} />
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <MemberAccessChooser
         open={accessDrop !== null}
@@ -661,7 +818,7 @@ export function ClassMembersView({
 export function MyClassPanel(_props: MyClassPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry } =
+  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry, openDocument } =
     useDocuments();
   const { setFocusDiagnostic } = useValidation();
   const {
@@ -746,9 +903,28 @@ export function MyClassPanel(_props: MyClassPanelProps) {
         interfaceAssets={interfaceAssets}
         membersOptions={membersOptions}
         onGraphChange={persistGraph}
+        onOpenInherited={(member) => {
+          const from = member.inheritedFrom;
+          if (!from || isLockedEngineClassId(from)) return;
+          const asset = (assetRegistry?.list() ?? []).find((entry) => {
+            if (entry.header.type !== "Class") return false;
+            return classIdForGraphPath(entry.path) === from;
+          });
+          if (!asset) return;
+          void openDocument({
+            kind: "graph",
+            path: asset.path,
+            label: asset.header.name,
+          });
+        }}
         onSelectMember={(id, member) => {
           if (!id) {
             setSelectedMemberId(null);
+            return;
+          }
+          if (member?.inherited) {
+            setSelectedMemberId(id);
+            setSelectedNodeIds([]);
             return;
           }
           if (member?.kind === "function") {
@@ -763,7 +939,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
               graph?.nodes.find((node) => {
                 if (node.type !== eventType) return false;
                 if (eventType !== "flow.event.custom") return true;
-                return eventDisplayName(node) === member.name;
+                return eventMemberBodyName(node) === member.name;
               });
             if (existing) {
               focusEvent(existing.id, member.name);
@@ -773,15 +949,18 @@ export function MyClassPanel(_props: MyClassPanelProps) {
             const next = ensureEventNodeOnGraph(graph, eventType, {
               name:
                 eventType === "flow.event.custom"
-                  ? member.name.replace(/^Event\s+/, "")
+                  ? formatEventMemberName(member.name)
                   : undefined,
-              title: member.name,
+              title:
+                eventType === "flow.event.custom"
+                  ? formatEventTitle(member.name)
+                  : member.name,
             });
             persistGraph(next);
             const spawned = next.nodes.find((node) => {
               if (node.type !== eventType) return false;
               if (eventType !== "flow.event.custom") return true;
-              return eventDisplayName(node) === member.name;
+              return eventMemberBodyName(node) === formatEventMemberName(member.name);
             });
             if (spawned) focusEvent(spawned.id, member.name);
             return;
