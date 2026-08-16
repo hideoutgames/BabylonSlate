@@ -610,6 +610,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
+      '@babylonslate/debugger':
+        specifier: workspace:*
+        version: link:../debugger
     devDependencies:
       fast-check:
         specifier: ^4.3.0

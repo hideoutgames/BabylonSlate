@@ -50,6 +50,15 @@ describe("playLoadControl", () => {
     expect(msg.scenes).toEqual([{ guid: "Level2", scene: extra }]);
   });
 
+  it("forwards infinite loop detection onto the load message", () => {
+    const msg = playLoadControl({
+      infiniteLoopDetection: false,
+      loopCount: 50,
+    });
+    expect(msg.infiniteLoopDetection).toBe(false);
+    expect(msg.loopCount).toBe(50);
+  });
+
   it("defaults to a 3d world and standard gravity", () => {
     const msg = playLoadControl({});
     expect(msg.physicsWorld).toBe("3d");

@@ -18,8 +18,19 @@ The organising idea: **the command system is always present; only the debugger U
 | `TraceRecorder` | Capped in-memory session capture (`snapshot start` / `stop`) |
 | `warnDebugTierConsoleCommands` | Graph lint: ExecuteConsoleCommand literals that name a debug-tier command |
 | `ConsoleCommandHost` | Engine callbacks the registry calls (runtime implements this) |
+| `createInfiniteLoopGuard` / `InfiniteLoopError` / `instrumentJsLoops` | Per-tick iteration cap for editor Play; rewriter for `while` / `for` / `do` |
 
-Depends on `@babylonslate/core` only if needed for shared types; no React, Babylon, or Capacitor. `@babylonslate/runtime` owns the host and wires `ctx.executeConsoleCommand`.
+Depends on nothing (no React, Babylon, Capacitor, or scripting). `@babylonslate/runtime` owns the host and wires `ctx.executeConsoleCommand` and `ctx.checkInfiniteLoop`. `@babylonslate/scripting` may import `instrumentJsLoops` only.
+
+## Infinite loop detection
+
+Unreal-style **per-tick** cap, editor-only. Project Settings **General**: **Infinite Loop Detection** (default on) and **Loop Count** (default 1_000_000, min 1). Play reads live settings on session start — `loopCount` is not baked into generated JS.
+
+- `createInfiniteLoopGuard({ enabled, loopCount })` increments on `check()` and throws `InfiniteLoopError` (`name: "InfiniteLoopError"`, message **Infinite loop detected**) when `count > loopCount`. `reset()` at the start of each script phase / tick. Disabled and release (`includeDebugCommands: false`) no-op.
+- Diagnostic code `runtime.infinite_loop`. Overlay Play and Preview Build treat that code as **session-fatal**: stop immediately (same path as Stop), then the Preview session report shows the row (navigable node / ExecuteJavaScript `bodyLine`). Ordinary `runtime.uncaught` throws do not auto-close Play.
+- There is no time-based worker watchdog. Cooperative `check()` is the recovery path; uninstrumented JS from a timer cannot be interrupted in-process.
+
+See [scripting.md](scripting.md) for codegen and [exporter.md](exporter.md) for manifest fields.
 
 ## Command tiers
 

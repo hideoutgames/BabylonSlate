@@ -149,7 +149,7 @@ export const debugNodes: NodeDefinition[] = [
         .map((o) => `  let ${o.name} = ${defaultValueLiteral(o.type)};`)
         .join("\n");
       const outReturn = `{ ${outputs.map((o) => o.name).join(", ")} }`;
-      const params = inputs.map((i) => i.name).join(", ");
+      const params = ["ctx", ...inputs.map((i) => i.name)].join(", ");
       const asyncKw = isAsync ? "async " : "";
       const header = `${asyncKw}function ${fnName}(${params}) {\n${outDecls}\n  // --- user body ---`;
       const footer = `  // --- end user body ---\n  return ${outReturn};\n}`;
@@ -163,7 +163,7 @@ export const debugNodes: NodeDefinition[] = [
           bodyLine: index + 1,
         })),
       );
-      const args = inputs.map((i) => ctx.input(i.name)).join(", ");
+      const args = ["ctx", ...inputs.map((i) => ctx.input(i.name))].join(", ");
       if (isAsync) ctx.requestAsync();
       const call = isAsync ? `await ${fnName}(${args})` : `${fnName}(${args})`;
       if (outputs.length === 0) {
