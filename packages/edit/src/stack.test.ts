@@ -28,12 +28,15 @@ class IncrementCommand implements EditCommand<TestDoc> {
 
 class MergeableCommand implements EditCommand<TestDoc> {
   readonly type = "test.mergeable";
-  readonly mergeKey = "merge";
+  readonly mergeKey: string;
 
   constructor(
     readonly from: number,
     readonly target: number,
-  ) {}
+    mergeKey = "merge",
+  ) {
+    this.mergeKey = mergeKey;
+  }
 
   apply(doc: TestDoc): TestDoc {
     void doc;
@@ -41,7 +44,7 @@ class MergeableCommand implements EditCommand<TestDoc> {
   }
 
   invert(): EditCommand<TestDoc> {
-    return new MergeableCommand(this.target, this.from);
+    return new MergeableCommand(this.target, this.from, this.mergeKey);
   }
 }
 
@@ -101,6 +104,31 @@ describe("DocumentEditStack", () => {
     const undone = stack.undo(doc);
     // Inverse of the first gesture event restores the pre-gesture value.
     expect(undone?.doc.value).toBe(0);
+  });
+
+  it("requires two undos when merge keys differ across gestures", () => {
+    const stack = new DocumentEditStack<TestDoc>({
+      maxEntries: 10,
+      maxBytes: 1000,
+    });
+    let doc: TestDoc = { value: 0 };
+
+    ({ doc } = stack.apply(
+      doc,
+      new MergeableCommand(0, 1, "material-node-move:drag-1"),
+    ));
+    ({ doc } = stack.apply(
+      doc,
+      new MergeableCommand(1, 2, "material-node-move:drag-2"),
+    ));
+
+    expect(doc.value).toBe(2);
+    ({ doc } = stack.undo(doc)!);
+    expect(doc.value).toBe(1);
+    expect(stack.canUndo).toBe(true);
+    ({ doc } = stack.undo(doc)!);
+    expect(doc.value).toBe(0);
+    expect(stack.canUndo).toBe(false);
   });
 
   it("drops oldest entries when entry count exceeds maxEntries", () => {

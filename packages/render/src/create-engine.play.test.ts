@@ -309,6 +309,7 @@ describe("Play createEngine view", () => {
     });
     const mesh = handle.scene.getMeshByName("actor-1");
     expect(mesh?.material?.name).toContain("mat-1");
+    expect(handle.assignedMaterialGuids()).toEqual(["mat-1"]);
   });
 
   it("moves the post-process stack onto the authored Default Camera", () => {

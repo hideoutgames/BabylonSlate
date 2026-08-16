@@ -422,6 +422,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
+        hardwareScalingLevel: () => number | null;
+        postProcessPassCount: () => number | null;
       };
     };
     const host = globalThis as ViewportTestHost;
@@ -434,6 +436,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (!mesh) return null;
         return [mesh.position.x, mesh.position.y, mesh.position.z];
       },
+      hardwareScalingLevel: () =>
+        engineRef.current?.scaling.getLevel() ?? null,
+      postProcessPassCount: () =>
+        engineRef.current?.postProcessPassCount() ?? null,
       /**
        * Simulate a finished gizmo drag: mutate the live Babylon mesh, then
        * commit through the same path as onGizmoDragEnd (not a document-only nudge).

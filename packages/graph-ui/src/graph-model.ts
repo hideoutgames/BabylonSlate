@@ -226,18 +226,51 @@ export function createEdgeId(
   return `e:${source}:${sourceHandle ?? ""}:${target}:${targetHandle ?? ""}`;
 }
 
-/** Selection is canvas chrome, not graph IR — skip `onChange` for select-only diffs. */
+/** Selection and measured size are canvas chrome, not graph IR. */
 export function nodeChangesMutateGraph(
   changes: ReadonlyArray<{ type: string }>,
 ): boolean {
-  return changes.some((change) => change.type !== "select");
+  return changes.some(
+    (change) => change.type !== "select" && change.type !== "dimensions",
+  );
 }
 
 export type GraphChangeKind = "position" | "graph";
 
-export type GraphChangeMeta = { kind: GraphChangeKind };
+export type GraphChangeMeta = {
+  kind: GraphChangeKind;
+  /** Stable for one pointer drag; omitted for topology edits. */
+  transactionId?: string;
+};
 
 type EmitNodeChange = { type: string; dragging?: boolean };
+
+export type GraphDragTransaction = {
+  id: string | null;
+  next: string | null;
+};
+
+/**
+ * One id per pointer drag. Starts on `dragging: true`, stays until
+ * `dragging: false`, then `next` is null so the following gesture is new.
+ */
+export function allocateGraphDragTransaction(
+  current: string | null,
+  changes: ReadonlyArray<EmitNodeChange>,
+  createId: () => string,
+): GraphDragTransaction {
+  const positions = changes.filter((change) => change.type === "position");
+  if (positions.length === 0) {
+    return { id: null, next: current };
+  }
+  const ended = positions.some((change) => change.dragging === false);
+  if (ended) {
+    const id = current ?? createId();
+    return { id, next: null };
+  }
+  const id = current ?? createId();
+  return { id, next: id };
+}
 
 /**
  * When `commitPositionsOnDragEnd` is set, in-flight XYFlow position frames
@@ -249,7 +282,9 @@ export function shouldEmitNodeChanges(
 ): boolean {
   if (!nodeChangesMutateGraph(changes)) return false;
   if (!options?.commitPositionsOnDragEnd) return true;
-  const mutating = changes.filter((change) => change.type !== "select");
+  const mutating = changes.filter(
+    (change) => change.type !== "select" && change.type !== "dimensions",
+  );
   const hasOtherMutation = mutating.some((change) => change.type !== "position");
   if (hasOtherMutation) return true;
   const positions = mutating.filter((change) => change.type === "position");

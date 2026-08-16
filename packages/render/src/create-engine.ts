@@ -51,6 +51,7 @@ import {
   applyAssignMesh,
   applyPossessCamera,
   applyShadowQuality,
+  assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
@@ -110,6 +111,8 @@ export interface EngineHandle {
   setShadowQuality: (level: string) => void;
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
+  /** Unique Material guids currently assigned to Play meshes. */
+  assignedMaterialGuids: () => string[];
   /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
   postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
@@ -789,6 +792,7 @@ export function createEngine(
       scheduler.invalidate("asset");
     },
     postProcessPassCount: () => attachedStack?.passes.length ?? 0,
+    assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
     postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;

@@ -31,6 +31,7 @@ import {
 } from "@babylonslate/shader-graph";
 import { useDocuments } from "./document-context";
 import { usePlay } from "./play-context";
+import { registerMaterialPreviewCameraRadius } from "../lib/material-preview-test-host";
 
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
 const IDLE_DEBOUNCE_MS = 220;
@@ -149,11 +150,15 @@ export function MaterialEditingProvider({
       return;
     }
     hostRef.current = host;
+    registerMaterialPreviewCameraRadius(
+      () => hostRef.current?.camera.radius ?? null,
+    );
     const render = () => {
       if (!host) return;
       sharedEngine.activeView = sharedEngine.views.find(
         (view) => view.target === canvas,
       );
+      canvas.dataset.cameraRadius = String(host.camera.radius);
       host.scene.render();
     };
     const resize = () => {
@@ -171,6 +176,7 @@ export function MaterialEditingProvider({
       sharedEngine.unRegisterView(canvas);
       host?.dispose();
       hostRef.current = null;
+      registerMaterialPreviewCameraRadius(null);
       dispatch({ type: "dispose" });
     };
   }, [canvas, sharedEngine]);

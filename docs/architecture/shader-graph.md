@@ -113,7 +113,11 @@ post-process passes are always manual because neither is profiled on the device.
 Timings stay session-local and are never written into an asset.
 
 Layout-only node moves do not recompile: `materialCompileKey` / the plan hash
-ignore positions. The graph canvas commits positions once per drag.
+ignore positions. The graph canvas commits positions once per drag, with a
+per-gesture `transactionId` so Undo restores one drag at a time. Measured-size
+frames and identical payloads do not dirty the document. The preview canvas
+exposes `data-camera-radius` (and test-mode `materialPreviewCameraRadius`) so
+pinch e2e can assert the orbit camera actually moved.
 
 ## Custom GLSL
 

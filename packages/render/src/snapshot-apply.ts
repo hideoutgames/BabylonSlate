@@ -125,6 +125,23 @@ export function applyAssignMaterial(
   applyMaterialToActorMeshes(binding, command.slotId, root);
 }
 
+/** Unique Material guids currently recorded on Play meshes. */
+export function assignedMaterialGuids(
+  binding: Pick<
+    SnapshotSceneBinding,
+    "materialAssetGuids" | "componentMaterialGuids"
+  >,
+): string[] {
+  const guids = new Set<string>();
+  for (const guid of binding.materialAssetGuids.values()) {
+    if (guid) guids.add(guid);
+  }
+  for (const guid of binding.componentMaterialGuids.values()) {
+    if (guid) guids.add(guid);
+  }
+  return [...guids].sort();
+}
+
 /** Re-apply the recorded assignment after a mesh is created or rebuilt. */
 export function applyMaterialToActorMeshes(
   binding: SnapshotSceneBinding,

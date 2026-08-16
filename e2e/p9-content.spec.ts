@@ -351,6 +351,15 @@ test.describe("P9 content systems", () => {
     const session = await page.context().newCDPSession(page);
     const cx = box!.x + box!.width / 2;
     const cy = box!.y + box!.height / 2;
+    await expect
+      .poll(async () => {
+        const value = await canvas.getAttribute("data-camera-radius");
+        return value && Number.isFinite(Number(value)) ? Number(value) : null;
+      })
+      .not.toBeNull();
+    const radiusBeforePinch = Number(
+      await canvas.getAttribute("data-camera-radius"),
+    );
     await session.send("Input.dispatchTouchEvent", {
       type: "touchStart",
       touchPoints: [
@@ -372,6 +381,9 @@ test.describe("P9 content systems", () => {
     await expect(canvas).toHaveAttribute("data-status", "ready", {
       timeout: 15000,
     });
+    await expect
+      .poll(async () => Number(await canvas.getAttribute("data-camera-radius")))
+      .not.toBeCloseTo(radiusBeforePinch, 3);
   });
 
   test("Material Windows menu lists the material docks", async ({ page }) => {
@@ -414,6 +426,22 @@ test.describe("P9 content systems", () => {
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),
     ).toHaveCount(0);
+    const graph = page.getByTestId("material-graph-editor");
+    const source = graph.locator(
+      '.react-flow__node[data-id^="custom.glsl-"] [data-handleid="out"][data-handlepos="right"]',
+    );
+    const target = graph.locator(
+      '.react-flow__node[data-id="output"] [data-handleid="metallic"][data-handlepos="left"]',
+    );
+    await source.click();
+    await target.click();
+    await expect(page.getByTestId("material-render")).toBeEnabled();
+    await page.getByTestId("material-render").click();
+    await expect(page.getByTestId("material-preview-canvas")).toHaveAttribute(
+      "data-status",
+      "ready",
+      { timeout: 15_000 },
+    );
   });
 
   test("Texture Sample node can pick an inline Texture asset", async ({
@@ -514,6 +542,33 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("scene-post-process-0-material")).toContainText(
       "Bloom",
     );
+  });
+
+  test("Play assigns a MeshComponent surface material", async ({ page }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    await createAsset(page, "Material", "Rock");
+    await saveAllIfEnabled(page);
+    await openMainScene(page);
+    await page.getByTestId("outliner-add-actor").click();
+    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    await page.getByTestId("place-actors-item-shape-box").click();
+    const materialButton = page.locator('button[data-testid$="-materialGuid"]');
+    await expect(materialButton).toBeVisible();
+    await materialButton.click();
+    await expect(page.getByTestId("details-asset-picker")).toBeVisible();
+    const rockGuid = await guidForPath(page, "assets/Rock.material.babasset");
+    expect(rockGuid.length).toBeGreaterThan(0);
+    await page.getByTestId(`search-item-${rockGuid}`).click();
+    await expect(page.getByTestId("details-asset-picker")).toHaveCount(0);
+    await clickPlayAndWaitForOverlay(page);
+    const overlay = page.getByTestId("play-overlay");
+    await expect
+      .poll(async () => overlay.getAttribute("data-assigned-materials"), {
+        timeout: 15_000,
+      })
+      .toBe(rockGuid);
+    await page.getByTestId("play-overlay-close").click();
   });
 
   test("Material Function edits reach every calling material", async ({

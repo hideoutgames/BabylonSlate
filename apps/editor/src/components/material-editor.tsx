@@ -159,7 +159,9 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           onChange={(next, meta) =>
             commit(
               serializedToMaterialGraph(next, document),
-              meta?.kind === "position" ? "material-node-move" : undefined,
+              meta?.kind === "position" && meta.transactionId
+                ? `material-node-move:${meta.transactionId}`
+                : undefined,
             )
           }
         />
@@ -210,7 +212,9 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           onChange={(next, meta) =>
             commit(
               serializedToMaterialFunctionGraph(next, document),
-              meta?.kind === "position" ? "material-node-move" : undefined,
+              meta?.kind === "position" && meta.transactionId
+                ? `material-node-move:${meta.transactionId}`
+                : undefined,
             )
           }
         />

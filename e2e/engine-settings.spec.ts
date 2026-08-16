@@ -1,4 +1,32 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { openMainScene, openTestProject } from "./open-test-project";
+import { saveAllIfEnabled } from "./save-all";
+
+async function viewportPostProcessPassCount(page: Page): Promise<number | null> {
+  return page.evaluate(
+    () =>
+      (
+        globalThis as {
+          __babylonslateViewportTest?: {
+            postProcessPassCount: () => number | null;
+          };
+        }
+      ).__babylonslateViewportTest?.postProcessPassCount() ?? null,
+  );
+}
+
+async function viewportHardwareScalingLevel(page: Page): Promise<number | null> {
+  return page.evaluate(
+    () =>
+      (
+        globalThis as {
+          __babylonslateViewportTest?: {
+            hardwareScalingLevel: () => number | null;
+          };
+        }
+      ).__babylonslateViewportTest?.hardwareScalingLevel() ?? null,
+  );
+}
 
 test("viewport post-processing defaults on", async ({ page }) => {
   await page.goto("/?test=1");
@@ -83,4 +111,64 @@ test("create project dialog defaults to 1920×1080 stretch", async ({ page }) =>
   await expect(page.getByTestId("create-project-width")).toHaveValue("1920");
   await expect(page.getByTestId("create-project-height")).toHaveValue("1080");
   await expect(page.getByTestId("create-project-black-bars")).toBeVisible();
+});
+
+test("editor viewport applies hardware scaling and the post-processing gate", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await openTestProject(page);
+  await page
+    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+    .click();
+  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
+  await page.getByTestId("content-browser-new-asset").click();
+  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
+  await page.getByTestId("new-asset-type-Material").click();
+  await page.getByTestId("new-asset-name").fill("Bloom");
+  await page.getByTestId("content-browser-new-asset-create").click();
+  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(
+    0,
+  );
+  await page
+    .locator('[data-asset-path="assets/Bloom.material.babasset"]')
+    .dblclick();
+  await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+  await page.getByTestId("property-domain").click();
+  await page.getByRole("option", { name: "Post Process" }).click();
+  await saveAllIfEnabled(page);
+  await openMainScene(page);
+  await expect(page.getByTestId("scene-post-process-stack")).toBeVisible();
+  await page.getByTestId("scene-post-process-stack-add").click();
+  await expect(page.getByTestId("scene-post-process-picker")).toBeVisible();
+  const bloomGuid = await page.evaluate(() => {
+    const host = globalThis as {
+      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+    };
+    return host.__babylonslateTest?.guidForPath("assets/Bloom.material.babasset") ?? "";
+  });
+  expect(bloomGuid.length).toBeGreaterThan(0);
+  await page.getByTestId(`search-item-${bloomGuid}`).click();
+
+  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(1);
+
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("engine-settings").click();
+  await page.getByTestId("engine-settings-modal-category-viewport").click();
+  await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await page.getByTestId("setting-post-processing").click();
+  await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await expect.poll(async () => viewportPostProcessPassCount(page)).toBe(0);
+
+  const scale = page.getByTestId("setting-hardware-scale");
+  await expect(scale).toHaveValue("1");
+  await scale.click();
+  await scale.fill("2");
+  await expect.poll(async () => viewportHardwareScalingLevel(page)).toBe(2);
 });

@@ -80,6 +80,7 @@ import {
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
+import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
 import {
@@ -187,6 +188,11 @@ import {
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
 } from "../lib/play-content";
+import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
+import {
+  clearDocumentDirtyTrace,
+  documentDirtyTrace,
+} from "../lib/dirty-trace";
 import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -1630,6 +1636,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const previous = doc.content as Record<string, unknown>;
+      if (!shouldApplyAssetDocumentChange(previous, next)) {
+        return false;
+      }
       const command = new SetAssetDocumentCommand(previous, next, mergeKey);
       const current = editSessionRef.current.apply(id, previous, command).doc;
       documentService.updateAssetDocument(id, current);
@@ -2266,6 +2275,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         activeTilemapTile: (gx: number, gy: number) => number | null;
         touchAssetOnDisk: (path: string) => Promise<void>;
         runForegroundRescan: () => Promise<void>;
+        materialPreviewCameraRadius: () => number | null;
+        documentDirtyTrace: () => { kind: string; id: string }[];
+        clearDocumentDirtyTrace: () => void;
       };
       __babylonslateSourceControl?: SourceControlService;
     };
@@ -2472,6 +2484,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await storage.writeBinary(path, bytes);
       },
       runForegroundRescan: () => runForegroundRescanRef.current(),
+      materialPreviewCameraRadius,
+      documentDirtyTrace,
+      clearDocumentDirtyTrace,
     };
     return () => {
       delete host.__babylonslateTest;

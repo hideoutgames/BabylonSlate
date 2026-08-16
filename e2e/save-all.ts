@@ -2,26 +2,40 @@ import { expect, type Page } from "@playwright/test";
 
 /**
  * Click Save All when the project has unsaved documents; no-op when clean.
- *
- * Viewport load, camera pose, and layout writes can mark the project dirty
- * again immediately after a successful save, so keep saving until the button
- * stays disabled.
+ * One click, then a short window that must stay clean so a post-save mutation
+ * cannot hide behind retries.
  */
 export async function saveAllIfEnabled(page: Page): Promise<void> {
   const button = page.getByTestId("save-all-project");
   await expect(button).toBeVisible();
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (!(await button.isEnabled())) {
-      return;
-    }
-    await button.click({ force: true });
-    try {
-      await expect(button).toBeDisabled({ timeout: 3_000 });
-      return;
-    } catch {
-      // Saved, then something else dirtied the project. Save again.
-    }
+  if (!(await button.isEnabled())) {
+    return;
   }
-  await expect(button).toBeDisabled();
+  await page.evaluate(() => {
+    (
+      globalThis as {
+        __babylonslateTest?: { clearDocumentDirtyTrace?: () => void };
+      }
+    ).__babylonslateTest?.clearDocumentDirtyTrace?.();
+  });
+  await button.click({ force: true });
+  await expect(button).toBeDisabled({ timeout: 8_000 });
+  try {
+    await expect
+      .poll(async () => button.isEnabled(), { timeout: 1_500 })
+      .toBe(false);
+  } catch (error) {
+    const trace = await page.evaluate(() => {
+      const host = globalThis as {
+        __babylonslateTest?: {
+          documentDirtyTrace?: () => { kind: string; id: string }[];
+        };
+      };
+      return host.__babylonslateTest?.documentDirtyTrace?.() ?? [];
+    });
+    throw new Error(
+      `Save All re-dirtied after markAllClean: ${JSON.stringify(trace)}`,
+      { cause: error },
+    );
+  }
 }
