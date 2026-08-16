@@ -414,18 +414,18 @@ describe("scriptPinCompatibility", () => {
         id === "Hero" ? "Actor" : id === "Actor" ? "BObject" : null,
       ),
     );
-    expect(
-      rule(
-        { type: { kind: "actorRef", classId: "Hero" } },
-        { type: { kind: "objectRef", classId: "BObject" } },
-      ),
-    ).toBe(true);
-    expect(
-      rule(
-        { type: { kind: "objectRef", classId: "Hero" } },
-        { type: { kind: "actorRef", classId: "Actor" } },
-      ),
-    ).toBe(false);
+    const pin = (
+      kind: string,
+      classId: string,
+    ): { id: string; name: string; kind: "data"; direction: "out"; type: { kind: string; classId: string } } => ({
+      id: "p",
+      name: "p",
+      kind: "data",
+      direction: "out",
+      type: { kind, classId },
+    });
+    expect(rule(pin("actorRef", "Hero"), pin("objectRef", "BObject"))).toBe(true);
+    expect(rule(pin("objectRef", "Hero"), pin("actorRef", "Actor"))).toBe(false);
   });
 });
 

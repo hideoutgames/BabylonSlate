@@ -161,6 +161,7 @@ export function classHeaderMeta(graph: {
     typeClassId?: string;
     functionId?: string;
     pins?: ClassHeaderPin[];
+    assetGuid?: string;
   }>;
 }): ClassHeaderMeta {
   const functions: ClassHeaderFunction[] = [];
