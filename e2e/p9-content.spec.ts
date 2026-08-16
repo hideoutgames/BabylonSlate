@@ -443,6 +443,9 @@ test.describe("P9 content systems", () => {
 
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
+    await expect(canvas).toHaveAttribute("data-camera-radius");
+    const radiusBefore = Number(await canvas.getAttribute("data-camera-radius"));
+    expect(radiusBefore).toBeGreaterThan(0);
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await page.mouse.down();
     await page.mouse.move(
@@ -451,6 +454,9 @@ test.describe("P9 content systems", () => {
     );
     await page.mouse.up();
     await page.mouse.wheel(0, 240);
+    await expect
+      .poll(async () => Number(await canvas.getAttribute("data-camera-radius")))
+      .not.toBe(radiusBefore);
     const session = await page.context().newCDPSession(page);
     const cx = box!.x + box!.width / 2;
     const cy = box!.y + box!.height / 2;
@@ -475,6 +481,47 @@ test.describe("P9 content systems", () => {
     await expect(canvas).toHaveAttribute("data-status", "ready", {
       timeout: 15000,
     });
+  });
+
+  test("Scene viewport and Play overlay keep working after a Material tab mounts", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+    await expect(page.getByTestId("viewport-canvas")).toBeVisible();
+    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
+
+    await createAsset(page, "Material", "Studio");
+    await page
+      .locator('[data-asset-path="assets/Studio.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await expect(page.getByTestId("material-preview-canvas")).toHaveAttribute(
+      "data-status",
+      "ready",
+      { timeout: 15_000 },
+    );
+
+    await openMainScene(page);
+    await expect(page.getByTestId("viewport-canvas")).toBeVisible();
+    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
+    await expect(page.getByTestId("outliner-add-actor")).toBeVisible();
+
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-canvas")).toBeVisible();
+    await page.getByTestId("play-stats-toggle").click();
+    await expect(page.getByTestId("stats-hud-draws")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const attr = await page
+          .getByTestId("stats-hud-draws")
+          .getAttribute("data-draws");
+        return Number(attr ?? "0");
+      }, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("play-preview")).toBeEnabled();
   });
 
   test("Material Windows menu lists the material docks", async ({ page }) => {

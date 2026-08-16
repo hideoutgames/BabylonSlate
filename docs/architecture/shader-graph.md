@@ -88,10 +88,17 @@ material on screen.
 
 ## Preview and the Render button
 
-The preview is a disposable Scene and registered view on the **app-lifetime
-Engine** — never a second WebGL context. `createMaterialPreviewScene` builds
-cube, sphere, cylinder, cone, plane, or a custom Model, and applies either the
-material or a camera post-process.
+The preview is a disposable Scene on the **app-lifetime Engine** — never a
+second WebGL context. `createMaterialPreviewScene` builds cube, sphere,
+cylinder, cone, plane, or a custom Model, and applies either the material or a
+camera post-process. Present goes through `camera.outputRenderTarget` (an RTT)
+and a 2D blit onto `material-preview-canvas`. Do **not** `registerView` or
+default-framebuffer `scene.render()` — those overwrite the Scene viewport and
+Play overlay, which share that Engine. Prefab Preview is a separate Engine and
+is out of this contract. Orbit / pinch / wheel attach to the preview canvas
+only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
+Babylon binds to the Engine input element (Scene / Play). Hidden Material tabs
+and in-editor Play freeze present.
 
 `materialPreviewReducer` is generation safe:
 
