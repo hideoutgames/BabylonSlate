@@ -17,6 +17,7 @@ export * from "./editor-camera";
 export * from "./editor-grid";
 export * from "./editor-scene-sync";
 export * from "./gizmo-host";
+export * from "./gizmo-multi-select";
 export * from "./selection-outline";
 export * from "./viewport-gestures";
 export * from "./viewport-fly-keys";
