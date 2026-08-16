@@ -5,6 +5,7 @@ import {
   PanelFrame,
   PropertyGrid,
   SearchDropdown,
+  assetRowIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -18,7 +19,6 @@ import {
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { displayAssetTitle } from "../lib/content-browser-helpers";
 
 export function TilesetPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -165,10 +165,12 @@ export function TilesetEditor({
       kind: "asset",
       label: "Texture",
       value: tileset.textureGuid,
-      displayLabel: textureName ? displayAssetTitle(textureName) : undefined,
       placeholder: "None",
       onPick: () => setPickerOpen(true),
       onChange: (value) => commit({ ...tileset, textureGuid: value }),
+      ...assetRowIdentity(
+        textureName ? { name: textureName, type: "Texture" } : undefined,
+      ),
     },
     {
       id: "tileWidth",

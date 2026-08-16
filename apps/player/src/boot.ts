@@ -18,6 +18,7 @@ import type { LoadedGame } from "./artifact";
 import { applyPlayerEngineCommand } from "./engine-commands";
 import { packedContentFromGame, packedPlayControls } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
+import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 
@@ -52,10 +53,12 @@ function ktx2BasePath(): string {
 export type PlayerDiagnostic = {
   message: string;
   severity: string;
+  code?: string;
   assetGuid?: string;
   graphId?: string;
   nodeId?: string;
   btNodeId?: string;
+  bodyLine?: number;
 };
 
 export type PlayerBootHandle = {
@@ -148,7 +151,7 @@ export function startPlayer(options: {
     havokWasmUrl: havokWasmUrl(),
     gameInstanceClass: scene.settings.gameInstanceClass ?? undefined,
     scenes,
-    includeDebugCommands: manifest.bundleDebugger,
+    ...loopGuardLoadFields(manifest),
   };
 
   const spawn = spawnListForScripts(game.scripts);
@@ -156,6 +159,18 @@ export function startPlayer(options: {
   let lastWorkerTickIndex = 0;
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
+  let raf = 0;
+  let halted = false;
+
+  const haltPlayback = () => {
+    if (halted) return;
+    halted = true;
+    cancelAnimationFrame(raf);
+    worker?.postControl({ type: "stop" });
+    worker?.terminate();
+    worker = null;
+    runtime?.stop();
+  };
 
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     applyPlayerEngineCommand(handle, command);
@@ -174,12 +189,18 @@ export function startPlayer(options: {
       diagnostics.push({
         message: String(command.message ?? ""),
         severity: String(command.severity ?? "error"),
+        code: typeof command.code === "string" ? command.code : undefined,
         assetGuid: command.assetGuid as string | undefined,
         graphId: command.graphId as string | undefined,
         nodeId: command.nodeId as string | undefined,
         btNodeId: command.btNodeId as string | undefined,
+        bodyLine:
+          typeof command.bodyLine === "number" ? command.bodyLine : undefined,
       });
       options.onDiagnostic?.(diagnostics);
+      if (shouldHaltPlayerOnDiagnostic(command.code)) {
+        haltPlayback();
+      }
     }
   };
 
@@ -239,9 +260,9 @@ export function startPlayer(options: {
   const input = attachInputCapture(canvas);
   const snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
-  let raf = 0;
 
   const pump = () => {
+    if (halted) return;
     const now = performance.now();
     const elapsed = (now - last) / 1000;
     last = now;
@@ -269,6 +290,7 @@ export function startPlayer(options: {
   return {
     ticks: () => ticks,
     stop: () => {
+      halted = true;
       cancelAnimationFrame(raf);
       resizeObserver?.disconnect();
       input.dispose();

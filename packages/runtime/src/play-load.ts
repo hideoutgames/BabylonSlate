@@ -26,6 +26,8 @@ export function runtimeOptionsFromLoadControl(
   | "gameInstanceClass"
   | "sceneLibrary"
   | "includeDebugCommands"
+  | "infiniteLoopDetection"
+  | "loopCount"
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
   for (const entry of msg.scenes ?? []) {
@@ -43,6 +45,8 @@ export function runtimeOptionsFromLoadControl(
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
     includeDebugCommands: msg.includeDebugCommands,
+    infiniteLoopDetection: msg.infiniteLoopDetection,
+    loopCount: msg.loopCount,
   };
 }
 

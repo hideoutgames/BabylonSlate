@@ -123,7 +123,11 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const button = screen.getByTestId("property-actor-1-component-1-assetGuid");
     expect(button.textContent).toContain("Rock");
+    expect(button.textContent).toContain("Mesh");
     expect(button.textContent).not.toContain("mesh-1");
+    expect(button.querySelector("[data-type-family]")?.getAttribute("data-type-family")).toBe(
+      "model",
+    );
     fireEvent.click(button);
     expect(await screen.findByTestId("search-item-mesh-1")).toBeTruthy();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
@@ -184,9 +188,12 @@ describe("SceneDetailsPanel authoring", () => {
     const trigger = screen.getByTestId("property-scene-game-instance-class");
     expect(trigger.tagName).toBe("BUTTON");
     fireEvent.click(trigger);
-    expect(await screen.findByTestId("search-item-GameInstance")).toBeTruthy();
-    expect(screen.getByTestId("search-item-MyGame")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("search-item-MyGame"));
+    const gameInstance = await screen.findByTestId("search-item-GameInstance");
+    const myGame = screen.getByTestId("search-item-MyGame");
+    expect(gameInstance.textContent).toContain("Class");
+    expect(myGame.textContent).toContain("Class");
+    expect(myGame.textContent).not.toContain("Project");
+    fireEvent.click(myGame);
     expect(harness.applySceneChange).toHaveBeenCalled();
   });
 

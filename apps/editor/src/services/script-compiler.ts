@@ -96,11 +96,14 @@ export function compileGraphDocument(
     graphId?: string;
     parentClassId?: string | null;
     stripDevelopmentOnly?: boolean;
+    instrumentInfiniteLoops?: boolean;
   },
 ): ScriptBundleEntry | null {
   const graphId = options.graphId ?? "event-graph";
   const serialized = isLogicGraphPayload(content) ? null : content;
   const logic = materializeLogicGraph(content, graphId);
+  const instrumentInfiniteLoops =
+    options.instrumentInfiniteLoops ?? options.stripDevelopmentOnly !== true;
   const compiledPieces = [];
   if (logic.nodes.length > 0) {
     compiledPieces.push(
@@ -108,6 +111,7 @@ export function compileGraphDocument(
         assetGuid: options.path,
         registry: defaultNodeRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
+        instrumentInfiniteLoops,
       }),
     );
   }
@@ -130,6 +134,7 @@ export function compileGraphDocument(
           registry: defaultNodeRegistry,
           exportName,
           stripDevelopmentOnly: options.stripDevelopmentOnly,
+          instrumentInfiniteLoops,
           localPreamble: localVariablePreamble(locals),
         }),
       );

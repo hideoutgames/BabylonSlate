@@ -352,6 +352,23 @@ describe("project schema", () => {
     });
   });
 
+  it("defaults infinite loop detection on with a one-million loopCount", () => {
+    const defaults = normalizeProjectSettings(undefined);
+    expect(defaults.infiniteLoopDetection).toBe(true);
+    expect(defaults.loopCount).toBe(1_000_000);
+    expect(normalizeProjectSettings({}).infiniteLoopDetection).toBe(true);
+    expect(
+      normalizeProjectSettings({ infiniteLoopDetection: false, loopCount: 50 })
+        .infiniteLoopDetection,
+    ).toBe(false);
+    expect(
+      normalizeProjectSettings({ infiniteLoopDetection: false, loopCount: 50 })
+        .loopCount,
+    ).toBe(50);
+    expect(normalizeProjectSettings({ loopCount: 0 }).loopCount).toBe(1_000_000);
+    expect(normalizeProjectSettings({ loopCount: -3 }).loopCount).toBe(1_000_000);
+  });
+
   it("defaults compile on save and a two-minute autosave interval", () => {
     const defaults = normalizeProjectSettings(undefined);
     expect(defaults.compileOnSave).toBe(true);

@@ -1292,6 +1292,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           )?.settings.physicsWorld === "2d"
             ? "2d"
             : "3d",
+        infiniteLoopDetection:
+          projectDocument?.settings.infiniteLoopDetection,
+        loopCount: projectDocument?.settings.loopCount,
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,

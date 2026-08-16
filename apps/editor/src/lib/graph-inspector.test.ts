@@ -248,6 +248,8 @@ describe("pinDefaultPropertyRows", () => {
         label: "classId",
         value: "Pawn",
         displayLabel: "Pawn",
+        displayType: "Class",
+        visual: { classId: "Pawn", family: "class" },
       },
     ]);
     const row = rows[0];

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, waitForPlayOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, PLAY_OVERLAY_TIMEOUT_MS, waitForPlayOverlay } from "./play";
 
 test.describe("P4 Play overlay and session report", () => {
   test("Play opens overlay; fixture throw shows report and focuses node", async ({
@@ -149,6 +149,72 @@ test.describe("P4 Play overlay and session report", () => {
       page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
     ).toHaveCount(1);
     await expect(page.getByTestId("play-preview")).toBeEnabled();
+  });
+
+  test("infinite ExecuteJavaScript closes Play and opens the session report", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await expect(page.getByTestId("settings-loop-count")).toBeVisible();
+    await page.getByTestId("settings-loop-count").fill("50");
+    await page.getByTestId("settings-loop-count").blur();
+    await page
+      .getByTestId("settings-modal")
+      .locator('[data-slot="dialog-close"]')
+      .click();
+    await expect(page.getByTestId("settings-modal")).toHaveCount(0);
+
+    const installed = await page.evaluate(async (graph) => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: {
+          setMainGraphContent: (g: unknown) => Promise<boolean>;
+        };
+      };
+      if (!host.__babylonslateTest) return false;
+      return host.__babylonslateTest.setMainGraphContent(graph);
+    }, {
+      nodes: [
+        {
+          id: "tick",
+          type: "flow.event.tick",
+          position: { x: 40, y: 80 },
+          data: {},
+        },
+        {
+          id: "js",
+          type: "debug.executeJavaScript",
+          position: { x: 320, y: 80 },
+          data: {
+            inputs: [],
+            outputs: [],
+            body: "while (true) {}",
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "tick",
+          target: "js",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+      ],
+    });
+    expect(installed).toBe(true);
+
+    await openMainScene(page);
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("preview-session-report")).toBeVisible({
+      timeout: PLAY_OVERLAY_TIMEOUT_MS,
+    });
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("session-report-row")).toContainText(
+      "Infinite loop detected",
+    );
   });
 
   test("Project Settings author render resolution and a packaged startup scene", async ({
