@@ -485,10 +485,12 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("content-folder-assets/fx")).toBeVisible({
       timeout: 15_000,
     });
-    await page.getByTestId("content-folder-assets/fx").click();
-    await page
-      .locator('[data-asset-path="assets/Alpha.babasset"]')
-      .click({ button: "right" });
+    await paintSelectContentTiles(
+      page,
+      page.getByTestId("content-folder-assets/fx"),
+      page.locator('[data-asset-path="assets/Alpha.babasset"]'),
+    );
+    await page.getByTestId("content-folder-assets/fx").click({ button: "right" });
     await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
     await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
       0,

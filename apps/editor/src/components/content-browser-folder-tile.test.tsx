@@ -115,6 +115,12 @@ describe("ContentBrowserFolderTile", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("does not exclusive-select on a non-primary click", () => {
+    const { tile, onSelect } = renderTile();
+    fireEvent.click(tile, { button: 2 });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("is not an HTML5 drag source", () => {
     const { tile } = renderTile();
     expect(tile.getAttribute("draggable")).not.toBe("true");

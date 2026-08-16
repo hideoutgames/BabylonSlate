@@ -77,6 +77,7 @@ export function ContentBrowserAssetTile({
         className="flex w-full flex-col text-left hover:bg-accent/50"
         onClick={(event) => {
           event.stopPropagation();
+          if (event.button !== 0) return;
           if (consumeSelectClick?.()) return;
           onSelect();
         }}
