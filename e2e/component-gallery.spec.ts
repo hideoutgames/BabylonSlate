@@ -73,6 +73,69 @@ test("component gallery renders every editor-kit composite", async ({
   await expect(page.getByTestId("context-menu-sub-more")).toBeVisible();
 });
 
+test("gallery body scrolls on touch", { tag: IPAD_TEST_TAG }, async ({ page }) => {
+  await page.goto("/?test=1&gallery=1");
+  await expect(page.getByTestId("component-gallery")).toBeVisible();
+
+  const result = await page.evaluate(() => {
+    const viewport = document.querySelector('[data-slot="scroll-area-viewport"]');
+    if (!viewport) return { ok: false, reason: "missing viewport" };
+
+    const scrollable = viewport.scrollHeight > viewport.clientHeight;
+    const overflowY = getComputedStyle(viewport).overflowY;
+    const overflowAllowsScroll = ["auto", "scroll", "overlay"].includes(overflowY);
+    if (!scrollable || !overflowAllowsScroll) {
+      return {
+        ok: false,
+        reason: "viewport not scrollable",
+        scrollHeight: viewport.scrollHeight,
+        clientHeight: viewport.clientHeight,
+        overflowY,
+      };
+    }
+
+    viewport.scrollTop = 0;
+    const rect = viewport.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const startY = rect.top + rect.height * 0.75;
+    const endY = rect.top + rect.height * 0.25;
+    const touchTarget = viewport.querySelector("h2") ?? viewport;
+
+    const makeTouch = (clientY: number) =>
+      new Touch({
+        identifier: 1,
+        target: touchTarget,
+        clientX: x,
+        clientY,
+      });
+
+    const startTouch = makeTouch(startY);
+    const moveTouch = makeTouch(endY);
+
+    touchTarget.dispatchEvent(
+      new TouchEvent("touchstart", {
+        bubbles: true,
+        cancelable: true,
+        touches: [startTouch],
+        targetTouches: [startTouch],
+        changedTouches: [startTouch],
+      }),
+    );
+    const moveEvent = new TouchEvent("touchmove", {
+      bubbles: true,
+      cancelable: true,
+      touches: [moveTouch],
+      targetTouches: [moveTouch],
+      changedTouches: [moveTouch],
+    });
+    const prevented = !touchTarget.dispatchEvent(moveEvent);
+
+    return { ok: !prevented, prevented, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight };
+  });
+
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+});
+
 test("gallery composites meet the minimum touch target size", {
   tag: IPAD_TEST_TAG,
 }, async ({

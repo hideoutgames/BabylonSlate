@@ -82,6 +82,14 @@ describe("focusKeepPanelIds", () => {
       }),
     ).toEqual(["graph"]);
   });
+
+  it("returns the Animation Object keep list when Animation Object mode is active", () => {
+    expect(
+      focusKeepPanelIds(defaultEngineSettings(), "anim-graph", {
+        animEditorMode: "animationObject",
+      }),
+    ).toEqual(["anim-object-graph"]);
+  });
 });
 
 describe("focusKeepCandidates", () => {
@@ -155,6 +163,11 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("anim-graph", [])).toEqual([
       "anim-graph-graph",
     ]);
+    expect(
+      resolveFocusKeepPanelIds("anim-graph", [], {
+        animEditorMode: "animationObject",
+      }),
+    ).toEqual(["anim-object-graph"]);
     expect(resolveFocusKeepPanelIds("behaviour-tree", [])).toEqual([
       "behaviour-tree-graph",
     ]);

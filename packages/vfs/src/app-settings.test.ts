@@ -28,6 +28,7 @@ describe("app settings", () => {
       uiLogic: ["graph"],
       "plugin-settings": ["plugin-settings-details"],
       "anim-graph": ["anim-graph-graph"],
+      animGraphObject: ["anim-object-graph"],
       "behaviour-tree": ["behaviour-tree-graph"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
@@ -113,6 +114,7 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels.ui).toEqual(["ui-design"]);
     expect(parsed.focusKeepPanels.uiLogic).toEqual(["graph"]);
     expect(parsed.focusKeepPanels["anim-graph"]).toEqual(["anim-graph-graph"]);
+    expect(parsed.focusKeepPanels.animGraphObject).toEqual(["anim-object-graph"]);
     expect(parsed.focusKeepPanels["behaviour-tree"]).toEqual([
       "behaviour-tree-graph",
     ]);

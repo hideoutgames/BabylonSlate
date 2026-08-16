@@ -45,6 +45,8 @@ import {
   AnimGraphDetailsPanel,
   AnimGraphGraphPanel,
   AnimGraphParametersPanel,
+  AnimGraphVariablesPanel,
+  AnimObjectVariablesPanel,
 } from "../components/anim-graph-editor";
 import {
   BehaviourTreeDetailsPanel,
@@ -140,8 +142,23 @@ export const panelComponents = {
   "anim-graph-parameters": (props: IDockviewPanelProps) => (
     <AnimGraphParametersPanel {...props} />
   ),
+  "anim-graph-variables": (props: IDockviewPanelProps) => (
+    <AnimGraphVariablesPanel {...props} />
+  ),
   "anim-graph-details": (props: IDockviewPanelProps) => (
     <AnimGraphDetailsPanel {...props} />
+  ),
+  "anim-graph-compiler-results": (props: IDockviewPanelProps) => (
+    <CompilerResultsPanel {...props} />
+  ),
+  "anim-object-graph": (props: IDockviewPanelProps) => (
+    <GraphPanel {...props} />
+  ),
+  "anim-object-variables": (props: IDockviewPanelProps) => (
+    <AnimObjectVariablesPanel {...props} />
+  ),
+  "anim-object-inspector": (props: IDockviewPanelProps) => (
+    <InspectorPanel {...props} />
   ),
   "behaviour-tree-graph": (props: IDockviewPanelProps) => (
     <BehaviourTreeGraphPanel {...props} />

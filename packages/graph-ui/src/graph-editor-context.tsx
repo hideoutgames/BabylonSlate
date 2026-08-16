@@ -18,6 +18,7 @@ export type GraphEditorContextValue = {
     nodeId: string,
     attachmentId: string,
   ) => NestedMenuItem[];
+  onEdgeDoubleClick?: (edgeId: string) => void;
 };
 
 const GraphEditorContext = createContext<GraphEditorContextValue | null>(null);

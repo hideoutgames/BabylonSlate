@@ -14,6 +14,7 @@ export type SerializedPin = {
 export type GraphEdge = SerializedGraph["edges"][number] & {
   sourceHandle?: string;
   targetHandle?: string;
+  type?: string;
 };
 
 export type GraphDocument = Omit<SerializedGraph, "edges"> & {

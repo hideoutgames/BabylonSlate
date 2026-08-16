@@ -24,4 +24,14 @@ describe("editor utility events", () => {
       "onEditorStartup",
     );
   });
+
+  it("maps Animation Object lifecycle nodes to ScriptHost events", () => {
+    expect(EVENT_BY_TYPE_ID["anim.event.initialize"]).toBe(
+      "onInitializeAnimation",
+    );
+    expect(EVENT_BY_TYPE_ID["anim.event.update"]).toBe("onUpdateAnimation");
+    expect(eventNameForEntry(entry("anim.event.initialize"))).toBe(
+      "onInitializeAnimation",
+    );
+  });
 });

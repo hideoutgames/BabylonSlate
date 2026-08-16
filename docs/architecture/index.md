@@ -22,7 +22,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [UI runtime](ui-runtime.md) | UserInterface widget tree, layout, designer |
 | [Fonts](fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [Sprites](sprites.md) | Sprite atlas, packer, SpriteComponent quad |
-| [Animation graph](anim-graph.md) | Worker animation graph evaluator |
+| [Animation graph](anim-graph.md) | Worker Animation Graph evaluator, Animation Object, transition rules |
 | [Behaviour tree](behaviour-tree.md) | Tree IR, blackboard, explicit-stack evaluator |
 | [Navigation](navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
 | [Shader graph](shader-graph.md) | Shader IR to NodeMaterial |
