@@ -208,6 +208,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "variables.get" || nodeId === "variables.set") {
     return false;
   }
+  if (nodeId === "component.getNamed") {
+    return false;
+  }
   if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
   }

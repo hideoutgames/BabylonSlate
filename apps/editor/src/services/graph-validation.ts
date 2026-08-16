@@ -58,6 +58,7 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "flow.function.output" ||
     typeId === "variables.get" ||
     typeId === "variables.set" ||
+    typeId === "component.getNamed" ||
     typeId === "casting.cast"
   );
 }
