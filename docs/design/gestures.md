@@ -111,6 +111,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 | Toolbar **Delete (N)** | Open the delete confirm. Counted outline control; does not delete on the first tap. |
 | Double-tap / double-click an asset tile | Open the document (`openOrFocusDocument`) |
 | Double-tap / double-click a folder tile | Navigate into that folder |
+| Double-tap / double-click **empty grid** | Open New Asset (writable roots only; not the long-press create menu) |
 | Move past ~8px on a **tile** | Paint-select (do not open the menu; do not scroll the grid for that gesture) |
 | Move before ~500ms on **empty grid** | Scroll (do not open the menu) |
 | Hold still ≥500ms or right-click on a **tile** | Add that tile if needed, then open the asset or folder context menu. Tile pointer events do not bubble to the empty-grid menu. |

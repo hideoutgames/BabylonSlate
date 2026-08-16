@@ -33,6 +33,26 @@ export async function openContentBrowser(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
+/** Create an authored asset from the Content Browser New Asset dialog. */
+export async function createContentBrowserAsset(
+  page: Page,
+  type: string,
+  name: string,
+): Promise<void> {
+  await openContentBrowser(page);
+  await page.getByTestId("content-browser-new-asset").click();
+  await expect(
+    page.getByTestId("content-browser-new-asset-dialog"),
+  ).toBeVisible();
+  await page.getByTestId(`new-asset-type-${type}`).click();
+  await page.getByTestId("new-asset-name").fill(name);
+  await page.getByTestId("content-browser-new-asset-create").click();
+  await expect(
+    page.getByTestId("content-browser-new-asset-dialog"),
+  ).toHaveCount(0);
+  await openContentBrowser(page);
+}
+
 /** Open an asset from Content Browser, activating the browser tab if it is hidden. */
 export async function openAssetFromBrowser(
   page: Page,
