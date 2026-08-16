@@ -9,6 +9,7 @@ import {
   Field,
   FieldDescription,
   FieldGroup,
+  FieldLabel,
   FieldLegend,
   FieldSet,
 } from "@babylonslate/ui/components/field";
@@ -55,6 +56,8 @@ export function ProjectPluginsSettings() {
     exportPlugin,
     importPlugin,
     openDocument,
+    showPluginContent,
+    setShowPluginContent,
   } = useDocuments();
   const [newOpen, setNewOpen] = useState(false);
   const [confirmEnable, setConfirmEnable] = useState<PluginDescriptor | null>(
@@ -92,8 +95,10 @@ export function ProjectPluginsSettings() {
       ...overrides,
       [plugin.pluginGuid]: { enabled },
     };
-    updateProjectSettings({ pluginOverrides: next });
+    // Mount/unmount before flipping project settings so Content Browser roots
+    // never resolve as enabled while the registry root is still missing.
     await applyPluginOverrides(next);
+    updateProjectSettings({ pluginOverrides: next });
   };
 
   const requestEnableChange = (plugin: PluginDescriptor, enabled: boolean) => {
@@ -167,6 +172,24 @@ export function ProjectPluginsSettings() {
         <FieldDescription>
           Enable engine or project plugins. Disabled plugins unmount from the
           asset registry.
+        </FieldDescription>
+        <Field orientation="horizontal">
+          <FieldLabel htmlFor="settings-show-plugin-content">
+            Show Plugin Content
+          </FieldLabel>
+          <Switch
+            id="settings-show-plugin-content"
+            checked={showPluginContent}
+            onCheckedChange={(checked) =>
+              setShowPluginContent(checked === true)
+            }
+            data-testid="settings-show-plugin-content"
+            aria-label="Show Plugin Content"
+          />
+        </Field>
+        <FieldDescription>
+          When on, enabled plugin roots appear in the Content Browser. Asset
+          Picker, Play, and search still see enabled plugin assets when off.
         </FieldDescription>
         {rows.map(({ plugin, enabled }) => {
           const maturity = maturityBadge(plugin);

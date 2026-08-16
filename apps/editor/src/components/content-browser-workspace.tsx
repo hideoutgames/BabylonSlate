@@ -123,7 +123,6 @@ import {
   contentBrowserFolderOps,
   contentBrowserRoots,
   filterBabpluginFiles,
-  pluginContentToggleLabel,
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
@@ -169,7 +168,6 @@ export function ContentBrowserWorkspace() {
     thumbnailsEnabled,
     pluginDescriptors,
     showPluginContent,
-    setShowPluginContent,
     sourceControl,
     activeDocumentId,
   } = useDocuments();
@@ -287,25 +285,29 @@ export function ContentBrowserWorkspace() {
 
   const folderTrees = useMemo(() => {
     if (!assetRegistry) return [];
-    return browserRoots.map((root) => {
+    return browserRoots.flatMap((root) => {
+      if (!assetRegistry.getRoot(root.id)) return [];
       const tree = assetRegistry.folderTree(root.id);
-      return {
-        ...tree,
-        name:
-          root.id === PROJECT_ROOT_ID
-            ? tree.name
-            : root.readOnly
-              ? `${root.label} (Read Only)`
-              : root.label,
-      };
+      return [
+        {
+          ...tree,
+          name:
+            root.id === PROJECT_ROOT_ID
+              ? tree.name
+              : root.readOnly
+                ? `${root.label} (Read Only)`
+                : root.label,
+        },
+      ];
     });
   }, [assetRegistry, browserRoots, registryVersion]);
 
   const allAssets = useMemo(() => {
     if (!assetRegistry) return [];
-    return browserRoots.flatMap((root) =>
-      assetRegistry.list({ rootId: root.id }),
-    );
+    return browserRoots.flatMap((root) => {
+      if (!assetRegistry.getRoot(root.id)) return [];
+      return assetRegistry.list({ rootId: root.id });
+    });
   }, [assetRegistry, browserRoots, registryVersion]);
 
   const refuseTheirsAssetPaths = useCallback(
@@ -1502,16 +1504,6 @@ export function ContentBrowserWorkspace() {
               data-testid="content-browser-folder-tree"
             />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-1 w-full min-h-[var(--touch-target,44px)] justify-center"
-            data-testid="content-browser-show-plugin-content"
-            aria-label={pluginContentToggleLabel(showPluginContent)}
-            onClick={() => setShowPluginContent(!showPluginContent)}
-          >
-            {pluginContentToggleLabel(showPluginContent)}
-          </Button>
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
