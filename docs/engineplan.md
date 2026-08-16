@@ -1059,7 +1059,7 @@ The trade-off to watch: packing hurts incremental cache reuse between builds, si
 That packaged path is how the editor dogfoods `packages/exporter` and `apps/player` before an itch upload: a broken pack shows up on Play rather than after an upload.
 
 - **Off (default):** overlay Play, unchanged (open scene tab, `registerView` on the app Engine). Same prepare dialog, same session report, same HUD.
-- **On:** Play freshly packages the game (same tree-shake and editor-only strip as the zip: `startupSceneGuid` plus GameInstance references), then launches the web player in a fullscreen overlay that hosts a **same-origin iframe** of `apps/player`. Do not `window.open`: Capacitor is one WebView. A missing or stale startup scene blocks with an alert to set Startup Scene in Project Settings; this mode does not require an open scene tab.
+- **On:** Play freshly packages the game (same tree-shake and editor-only strip as the zip: `startupSceneGuid` plus GameInstance references), then launches the web player in a fullscreen overlay that hosts a **same-origin iframe** of `apps/player`. The chrome launch control reads **Preview**. Do not `window.open`: Capacitor is one WebView. A missing or stale startup scene blocks with an alert to set Startup Scene in Project Settings; this mode does not require an open scene tab.
 
 P4's single app-lifetime Engine still applies to the **editor document**. The iframe is a separate document with its own Engine; destroying it on close must release that WebGL context. Do not `registerView` the packaged player onto the editor Engine.
 

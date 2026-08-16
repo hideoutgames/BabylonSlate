@@ -71,7 +71,7 @@ The shared `ParameterListEditor` in `editor-kit` authors those rows (types, opti
 
 ## Console and stats HUD
 
-Play overlay chrome is a labeled top bar (Pause / Resume, Stats, Console, Stop) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`). Console remains a secondary dialog. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD; Pause / Console stay overlay-Play-only).
+Play overlay chrome is a labeled top bar (Pause / Resume, Stats, Console, Stop) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`). Console remains a secondary dialog. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples fps on the rAF pump; Pause / Console stay overlay-Play-only). When Preview Build is on, the chrome launch control reads **Preview**.
 
 Play overlay **extends** the existing FPS / `scriptMs` / `physicsMs` strip:
 

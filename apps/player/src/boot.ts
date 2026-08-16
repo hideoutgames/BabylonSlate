@@ -17,6 +17,11 @@ import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import type { LoadedGame } from "./artifact";
 import { packedContentFromGame, packedPlayControls } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
+import {
+  applyPlayerFpsSample,
+  applyWorkerPlayerStats,
+  type PlayerHudStats,
+} from "./hud";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 
@@ -143,6 +148,12 @@ export function startPlayer(options: {
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   const diagnostics: PlayerDiagnostic[] = [];
+  let hudStats: PlayerHudStats | undefined;
+
+  const emitHudStats = (next: PlayerHudStats) => {
+    hudStats = { ...next, draws: handle.drawCalls() };
+    options.onStats?.(hudStats);
+  };
 
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     if (command.type === "assignMesh") {
@@ -157,13 +168,14 @@ export function startPlayer(options: {
     if (command.type === "stats") {
       ticks = Number(command.tickIndex ?? ticks + 1);
       lastWorkerTickIndex = ticks;
-      options.onStats?.({
-        ticks,
-        fps: Number(command.fps ?? 0),
-        scriptMs: Number(command.scriptMs ?? 0),
-        physicsMs: Number(command.physicsMs ?? 0),
-        draws: handle.drawCalls(),
-      });
+      emitHudStats(
+        applyWorkerPlayerStats(hudStats, {
+          ticks,
+          fps: Number(command.fps ?? 0),
+          scriptMs: Number(command.scriptMs ?? 0),
+          physicsMs: Number(command.physicsMs ?? 0),
+        }),
+      );
     }
     if (command.type === "diagnostic") {
       diagnostics.push({
@@ -235,6 +247,8 @@ export function startPlayer(options: {
   const snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
   let raf = 0;
+  let frames = 0;
+  let fpsWindowStart = last;
 
   const pump = () => {
     const now = performance.now();
@@ -256,6 +270,12 @@ export function startPlayer(options: {
       if (runtime.copySnapshot(snapBuf)) {
         handle.pushSnapshot(snapBuf);
       }
+    }
+    frames += 1;
+    if (now - fpsWindowStart >= 1000) {
+      emitHudStats(applyPlayerFpsSample(hudStats, frames));
+      frames = 0;
+      fpsWindowStart = now;
     }
     raf = requestAnimationFrame(pump);
   };

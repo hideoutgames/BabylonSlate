@@ -95,7 +95,7 @@ Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resum
 
 ## External change (mtime, not git)
 
-`IndexedAsset.mtime` comes from `DirEntry` during registry walk. On lifecycle **foreground**, remount/rescan and diff mtimes (plus `project.json` mtime).
+`IndexedAsset.mtime` comes from `DirEntry` during registry walk. On lifecycle **foreground**, remount/rescan and diff mtimes (plus `project.json` mtime). Save All (and compile-on-save writes) recapture that snapshot (`refreshMtimeSnapshotAfterEditorSave`) so the editor’s own `project.json` mtime is not classified as **Reload Project**.
 
 | Classification | Prompt |
 | --- | --- |
