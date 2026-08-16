@@ -66,6 +66,9 @@ describe("parseGlbForBrowse", () => {
     const model = results.find((r) => r.type === "Model")!;
     expect(model.payload.textureCount).toBe(1);
     expect(model.payload.materialCount).toBe(1);
+    expect(model.payload.clipNames).toEqual(["FixtureClip"]);
+    const animation = results.find((r) => r.type === "Animation")!;
+    expect(animation.payload).toEqual({ clipName: "FixtureClip" });
   });
 
   it("falls back to stub dependents for OBJ", async () => {

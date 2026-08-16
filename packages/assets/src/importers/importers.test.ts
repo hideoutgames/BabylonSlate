@@ -40,6 +40,8 @@ describe("importers", () => {
     expect(types).toContain("Animation");
     const model = results.find((result) => result.type === "Model")!;
     expect(model.dependencies.length).toBeGreaterThan(0);
+    const animation = results.find((result) => result.type === "Animation")!;
+    expect(animation.payload).toEqual({ clipName: "Animation" });
   });
 
   it("imports audio", async () => {
