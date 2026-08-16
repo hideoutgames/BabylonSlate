@@ -12,8 +12,6 @@ import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
 import {
   normalizeFontPayload,
 } from "@babylonslate/assets";
-import { AnimGraphEditor } from "./anim-graph-editor";
-import { BehaviourTreeEditor } from "./behaviour-tree-editor";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
@@ -48,12 +46,6 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
         onChange={commit}
       />
     );
-  }
-  if (doc.ref.kind === "anim-graph") {
-    return <AnimGraphEditor payload={payload} onChange={commit} />;
-  }
-  if (doc.ref.kind === "behaviour-tree") {
-    return <BehaviourTreeEditor payload={payload} onChange={commit} />;
   }
   if (doc.ref.kind === "blackboard") {
     return <BlackboardEditor payload={payload} onChange={commit} />;

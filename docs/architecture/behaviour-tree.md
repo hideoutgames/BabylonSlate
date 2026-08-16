@@ -10,7 +10,7 @@ Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in.
 | --- | --- | --- |
 | `behaviour-tree` | Tree + Blackboard documents, parse/normalize, explicit-stack evaluator, abort matrix, `bt.*` diagnostics, scripting rule registration | React, Babylon, Capacitor |
 | `scripting` | Pin types for blackboard keys; `registerValidationRule` hook | React, Babylon, Capacitor |
-| `graph-ui` / `apps/editor` | React Flow tree host (`AssetDocumentWorkspace`, `d3-hierarchy` layout, Play overlay) | Babylon, Capacitor |
+| `graph-ui` / `apps/editor` | React Flow tree host (DockView Graph / Details, `d3-hierarchy` layout, Play overlay) | Babylon, Capacitor |
 
 `behaviour-tree` may import `@babylonslate/scripting` (pin types, `Diagnostic`, `ValidationRule`) and `@babylonslate/core`.
 
@@ -76,7 +76,7 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 ## Editor (`p11-bt-editor` + `p-bt-editor-authoring`)
 
 - New Asset: BehaviourTree (selector → sequence → succeed) and Blackboard.
-- Host is `AssetDocumentWorkspace` (not Dockview for this tab). `GraphEditor` takes `nodeTypes` / `nodesDraggable` / `toolbarExtra` / `hiddenToolbarActions` / `lockNodeDragAxis="x"`. Composites and tasks are React Flow `bt.node` nodes with Title Case titles; decorators/services are attached selectable rows (catalog titles, not raw `classId`).
+- Host is DockView (`kind: "behaviour-tree"`): **Graph** (`behaviour-tree-graph`) and **Details** (`behaviour-tree-details`). Shared selection (node + attachment) lives in `BehaviourTreeEditingProvider`. `GraphEditor` takes `nodeTypes` / `nodesDraggable` / `toolbarExtra` / `hiddenToolbarActions` / `lockNodeDragAxis="x"`. Composites and tasks are React Flow `bt.node` nodes with Title Case titles; decorators/services are attached selectable rows (catalog titles, not raw `classId`). Focus defaults to Graph.
 - Layout is `d3-hierarchy` top-down; drag is sibling-only on X, then `children[]` reorder + re-layout. Re-layout button remains for import edge cases. Toolbar keeps Delete (root is `__protected`); Break Links and Format are hidden.
 - Add Node palette: built-in composites/tasks plus project Class assets whose parent is `BTTask` / `BTComposite`. Custom composites take `kind` from ancestry (`kindForCatalogClassId`, bare `BTComposite` → sequence), not from the class name. Add Decorator / Add Service opens a `CatalogDialog` (built-ins plus `BTDecorator` / `BTService` classes). Attachments can be removed or moved up/down.
 - Details: `PropertyGrid` schemas per `classId` (Wait duration, SetBlackboard key+value, MoveTo destination + accept radius, CompareBlackboard key/op/value, Loop count, Cooldown / TimeLimit ms, service interval / deviation, decorator abort + observed keys). Blackboard key fields pick from the linked Blackboard asset when that document is open.
