@@ -41,6 +41,7 @@ describe("createActorsFromSerializedScene", () => {
       name: "Level",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [
         createActor("actor-cube", "Cube", {
           transform: {
@@ -84,6 +85,7 @@ describe("createActorsFromSerializedScene", () => {
       name: "Offset",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [
         createActor("hero", "Hero", {
           components: [
@@ -112,6 +114,7 @@ describe("createActorsFromSerializedScene", () => {
       name: "Anim",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [
         createActor("hero", "Hero", {
           components: [
@@ -133,6 +136,7 @@ describe("createActorsFromSerializedScene", () => {
       name: "AI",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [
         createActor("guard", "Guard", {
           components: [

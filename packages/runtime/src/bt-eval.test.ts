@@ -13,6 +13,7 @@ function aiScene(properties: Record<string, unknown>): SerializedScene {
     name: "AI",
     viewportMode: "3d",
     settings: createDefaultSceneSettings(),
+    folders: [],
     actors: [
       createActor("guard", "Guard", {
         components: [

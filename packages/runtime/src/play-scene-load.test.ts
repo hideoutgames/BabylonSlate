@@ -27,6 +27,7 @@ function fallingBoxScene(): SerializedScene {
     name: "Fall",
     viewportMode: "3d",
     settings: createDefaultSceneSettings("3d"),
+    folders: [],
     actors: [
       createActor("dynamic-box", "Box", {
         transform: {
@@ -81,6 +82,7 @@ function cameraPossessScene(attemptPossessViewTarget: boolean): SerializedScene 
     name: "Possess",
     viewportMode: "3d",
     settings: createDefaultSceneSettings(),
+    folders: [],
     actors: [
       createActor("cam", "Camera", {
         components: [
@@ -123,6 +125,7 @@ describe("p7-play-scene-load", () => {
           name: "Main",
           viewportMode: "3d",
           settings: createDefaultSceneSettings(),
+          folders: [],
           actors: [
             createActor("actor-1", "Cube", {
               components: [createMeshComponent("component-1", "sphere")],
@@ -162,6 +165,7 @@ describe("p7-play-scene-load", () => {
         name: "TwoMeshes",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [
           createActor("box-actor", "Box", {
             transform: {
@@ -344,6 +348,7 @@ describe("p7-play-scene-load", () => {
           name: "Parts",
           viewportMode: "3d",
           settings: createDefaultSceneSettings(),
+          folders: [],
           actors: [
             createActor("hero", "Hero", {
               components: [
@@ -403,6 +408,7 @@ describe("p7-play-scene-load", () => {
           name: "Lit",
           viewportMode: "3d",
           settings,
+          folders: [],
           actors: [
             createActor("lamp", "Lamp", {
               components: [
@@ -563,6 +569,7 @@ describe("p7-play-scene-load", () => {
         name: "Scripted",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [createActor("hero", "Hero", { classId: "Mover" })],
       },
     });
@@ -583,6 +590,7 @@ describe("p7-play-scene-load", () => {
       name: "Level2",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [createActor("other", "Other")],
     };
     const runtime = createInProcessRuntime({
@@ -593,6 +601,7 @@ describe("p7-play-scene-load", () => {
         name: "Level1",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [createActor("hero", "Hero")],
       },
       sceneLibrary: { Level2: level2 },
@@ -655,6 +664,7 @@ describe("p7-play-scene-load", () => {
         name: "Arena",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [createActor("guard", "Guard", { classId: "Bruiser" })],
       },
     });

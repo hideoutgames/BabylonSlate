@@ -13,6 +13,7 @@ function animScene(): SerializedScene {
     name: "Anim",
     viewportMode: "3d",
     settings: createDefaultSceneSettings(),
+    folders: [],
     actors: [
       createActor("hero", "Hero", {
         components: [

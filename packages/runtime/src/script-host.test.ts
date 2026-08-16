@@ -1400,6 +1400,7 @@ describe("script host runs compiled graphs", () => {
         name: "Cam",
         viewportMode: "3d",
         settings,
+        folders: [],
         actors: [
           createActor("rig", "Rig", {
             classId: "CameraRig",

@@ -124,6 +124,7 @@ function agentScene(
     name: viewportMode === "2d" ? "Nav2d" : "Nav3d",
     viewportMode,
     settings: createDefaultSceneSettings(viewportMode),
+    folders: [],
     actors: [
       createActor("guard", "Guard", {
         transform: {
@@ -319,6 +320,7 @@ function classScene(
     name: "BtClass",
     viewportMode: "3d",
     settings: createDefaultSceneSettings(),
+    folders: [],
     actors: [
       createActor("guard", "Guard", {
         components: [
@@ -576,6 +578,7 @@ describe("P11 §18 acceptance", () => {
         name: "Throw",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [
           createActor("guard", "Guard", {
             components: [
