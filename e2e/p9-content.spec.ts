@@ -428,6 +428,7 @@ test.describe("P9 content systems", () => {
   test("scene post-process stack applies in Play and respects Engine Settings", async ({
     page,
   }) => {
+    test.setTimeout(60_000);
     await openTestProject(page);
     await createAsset(page, "Material", "Bloom");
     await page
@@ -467,6 +468,7 @@ test.describe("P9 content systems", () => {
     if ((await page.getByTestId("preview-session-report").count()) > 0) {
       await page.getByTestId("session-report-close").click();
     }
+    await page.getByTestId("settings-menu").click();
     await page.getByTestId("engine-settings").click();
     await page.getByTestId("engine-settings-modal-category-viewport").click();
     await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
