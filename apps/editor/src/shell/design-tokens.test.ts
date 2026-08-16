@@ -279,3 +279,11 @@ describe("dockview theme contrast", () => {
   });
 });
 
+describe("UI Designer/Logic stacked surfaces", () => {
+  it("disables hit testing on inactive surface descendants", () => {
+    expect(chromeCss).toMatch(
+      /\.ui-dock-surface-inactive\s+\*\s*\{[^}]*pointer-events:\s*none/,
+    );
+  });
+});
+

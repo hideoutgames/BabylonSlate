@@ -136,9 +136,10 @@ function UiDocumentDocks({
         <div
           className={cn(
             "absolute inset-0",
-            mode !== "designer" && "ui-dock-surface-inactive",
+            mode === "designer" ? "ui-dock-surface-active" : "ui-dock-surface-inactive",
           )}
           aria-hidden={mode !== "designer"}
+          inert={mode !== "designer" ? true : undefined}
           data-testid="ui-dock-surface-designer"
           data-active={mode === "designer" ? "true" : "false"}
         >
@@ -154,9 +155,10 @@ function UiDocumentDocks({
         <div
           className={cn(
             "absolute inset-0",
-            mode !== "logic" && "ui-dock-surface-inactive",
+            mode === "logic" ? "ui-dock-surface-active" : "ui-dock-surface-inactive",
           )}
           aria-hidden={mode !== "logic"}
+          inert={mode !== "logic" ? true : undefined}
           data-testid="ui-dock-surface-logic"
           data-active={mode === "logic" ? "true" : "false"}
         >
