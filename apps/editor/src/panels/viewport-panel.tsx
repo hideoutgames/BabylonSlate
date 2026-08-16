@@ -460,7 +460,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           current.actors.find((actor) => actor.id === id)?.parentId ?? null;
         const followers = selectionGizmoRoots(ids, parentIdOf)
           .map((id) => handle.editor!.sync.meshForActor(id))
-          .filter((mesh) => mesh !== null && mesh !== attached);
+          .filter(
+            (mesh): mesh is NonNullable<typeof mesh> =>
+              mesh !== null && mesh !== attached,
+          );
         const drag = beginGizmoMultiSelectDrag(attached, followers);
         attached.position.x += 1.5;
         if (drag) applyGizmoMultiSelectDrag(drag, attached);

@@ -326,7 +326,10 @@ export function createEngine(
         const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
         const followers = roots
           .map((id) => editorSync.meshForActor(id))
-          .filter((mesh) => mesh !== null && mesh !== attached);
+          .filter(
+            (mesh): mesh is NonNullable<typeof mesh> =>
+              mesh !== null && mesh !== attached,
+          );
         multiSelectDrag = beginGizmoMultiSelectDrag(attached, followers);
         options.onGizmoDragStart?.();
       },
