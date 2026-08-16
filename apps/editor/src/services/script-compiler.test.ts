@@ -44,6 +44,9 @@ describe("script compiler service", () => {
     expect(classIdForGraphPath("graphs/My Enemy.graph.json")).toBe("My_Enemy");
     expect(classIdForGraphPath("")).toBe("Graph");
     expect(classIdForGraphPath("assets/HUD.ui.babasset")).toBe("HUD");
+    expect(classIdForGraphPath("assets/SceneTools.eui.babasset")).toBe(
+      "SceneTools",
+    );
   });
 
   it("compiles authored GetAxis2D pin data into getAxis2D(\"Move\")", () => {

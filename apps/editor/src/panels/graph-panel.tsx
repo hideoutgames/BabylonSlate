@@ -23,6 +23,10 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
+import {
+  replaceSerializedGraphInDocument,
+  serializedGraphFromDocument,
+} from "../lib/logic-graph-document";
 
 const registry = defaultNodeRegistry;
 const VALIDATION_DEBOUNCE_MS = 250;
@@ -30,7 +34,8 @@ const VALIDATION_DEBOUNCE_MS = 250;
 export function GraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
+  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry } =
+    useDocuments();
   const { focusedNodeId } = usePlay();
   const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId } =
     useGraphEditing();
@@ -63,13 +68,15 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const indexed = (assetRegistry?.list() ?? []).find(
     (asset) => asset.path === doc?.ref.path,
   );
-  const parentClass = indexed?.header.parentClass ?? null;
+  const parentClass =
+    indexed?.header.parentClass ??
+    (doc?.ref.kind === "ui" ? "BObject" : null);
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
-  const graphContent =
-    doc?.ref.kind === "graph" && doc.content
-      ? (doc.content as SerializedGraph)
-      : null;
+  const graphContent = serializedGraphFromDocument(
+    doc?.ref.kind ?? "",
+    doc?.content,
+  );
   const otherClassGraphs = useMemo(() => {
     const graphs: Record<string, SerializedGraph> = {};
     for (const entry of openDocuments) {
@@ -128,11 +135,13 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         graph: graphContent ?? undefined,
         otherClassGraphs,
         activeFunctionId,
+        assetType: indexed?.header.type,
       }),
     [
       activeFunctionId,
       classId,
       graphContent,
+      indexed?.header.type,
       otherClassGraphs,
       parentClass,
       parentOf,
@@ -164,30 +173,40 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         onNavigateRequest={() => setFocusDiagnostic(null)}
         onSelectionChange={setSelectedNodeIds}
         onChange={(next) => {
-          const current =
-            doc?.ref.kind === "graph"
-              ? (doc.content as SerializedGraph)
-              : null;
-          if (!current) return;
-          if (activeFunctionId) {
-            void applyGraphChange(documentId, {
-              ...current,
-              functionGraphs: {
-                ...current.functionGraphs,
-                [activeFunctionId]: {
-                  nodes: next.nodes,
-                  edges: next.edges,
+          const current = graphContent;
+          if (!current || !doc) return;
+          const merged: SerializedGraph = activeFunctionId
+            ? {
+                ...current,
+                functionGraphs: {
+                  ...current.functionGraphs,
+                  [activeFunctionId]: {
+                    nodes: next.nodes,
+                    edges: next.edges,
+                  },
                 },
-              },
-            });
+              }
+            : {
+                ...next,
+                members: next.members ?? current.members,
+                components: next.components ?? current.components,
+                functionGraphs: current.functionGraphs,
+              };
+          if (doc.ref.kind === "ui") {
+            const payload = replaceSerializedGraphInDocument(
+              "ui",
+              doc.content,
+              merged,
+            );
+            if (payload && typeof payload === "object") {
+              void applyAssetDocumentChange(
+                documentId,
+                payload as Record<string, unknown>,
+              );
+            }
             return;
           }
-          void applyGraphChange(documentId, {
-            ...next,
-            members: next.members ?? current.members,
-            components: next.components ?? current.components,
-            functionGraphs: current.functionGraphs,
-          } as SerializedGraph);
+          void applyGraphChange(documentId, merged);
         }}
       />
     </PanelFrame>

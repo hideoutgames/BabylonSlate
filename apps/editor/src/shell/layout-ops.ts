@@ -90,8 +90,9 @@ export function applyFocusLayout(
   kind: FocusDocumentKind,
   api: FocusableDockApi,
   keepPanelIds?: readonly string[],
+  options?: DockWindowOptions,
 ): void {
-  const keep = new Set(resolveFocusKeepPanelIds(kind, keepPanelIds));
+  const keep = new Set(resolveFocusKeepPanelIds(kind, keepPanelIds, options));
   const openIds = (api.panels ?? []).map((panel) => panel.id);
   for (const id of openIds) {
     if (!keep.has(id)) {

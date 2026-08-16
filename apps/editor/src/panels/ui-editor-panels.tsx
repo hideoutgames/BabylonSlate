@@ -64,12 +64,12 @@ function useDockPanelVisible(props: IDockviewPanelProps): boolean {
 export function UiDesignPanel(props: IDockviewPanelProps) {
   const panelVisible = useDockPanelVisible(props);
   const workspace = useOptionalDocumentWorkspace();
-  const { activeDocumentId } = useDocuments();
+  const { activeDocumentId, uiEditorMode } = useDocuments();
   const editing = useUiEditing();
   const viewportMeasureRef = useRef<HTMLDivElement>(null);
   const setViewportSize = editing.setViewportSize;
   const documentActive = workspace
-    ? activeDocumentId === workspace.documentId
+    ? activeDocumentId === workspace.documentId && uiEditorMode === "designer"
     : true;
 
   useEffect(() => {
@@ -243,10 +243,17 @@ export function UiLogicPanel(_props: IDockviewPanelProps) {
     setLogicMemberId,
     interfaceAssets,
     commit,
+    isEditorUtilityInterface,
   } = useUiEditing();
   const paletteNodes = useMemo(
-    () => scriptPaletteNodes(undefined, { graph: logic }),
-    [logic],
+    () =>
+      scriptPaletteNodes(undefined, {
+        graph: logic,
+        assetType: isEditorUtilityInterface
+          ? "EditorUtilityInterface"
+          : "UserInterface",
+      }),
+    [isEditorUtilityInterface, logic],
   );
   return (
     <PanelFrame data-testid="ui-logic-panel">
