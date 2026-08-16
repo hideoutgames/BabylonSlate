@@ -3,6 +3,7 @@ import {
   CLASS_PANEL_INITIAL_HEIGHT,
   CLASS_PANEL_TITLE,
   listDockWindows,
+  primaryDockPanel,
   type DockviewDocumentKind,
   type DockWindowOptions,
 } from "./window-catalog";
@@ -16,8 +17,13 @@ function applyCatalogLayout(
   options?: DockWindowOptions,
 ): void {
   const windows = listDockWindows(kind, options);
+  const primaryId = primaryDockPanel(kind, options);
+  const ordered = [
+    ...windows.filter((def) => def.id === primaryId),
+    ...windows.filter((def) => def.id !== primaryId),
+  ];
   let primary: ReturnType<DockviewApi["addPanel"]> | undefined;
-  for (const def of windows) {
+  for (const def of ordered) {
     const reference = def.defaultPosition
       ? api.getPanel(def.defaultPosition.referencePanelId)
       : undefined;
@@ -36,7 +42,7 @@ function applyCatalogLayout(
           }
         : {}),
     });
-    if (!primary) primary = panel;
+    if (def.id === primaryId) primary = panel;
   }
   primary?.api.setActive();
 }

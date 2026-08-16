@@ -67,6 +67,7 @@ import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
 import {
   collectSafeConnectPins,
+  connectEndAction,
   connectEventPointerId,
   containerPointerToClient,
   edgesAfterConnect,
@@ -78,8 +79,8 @@ import {
   nodePinLists,
   pinsAreCompatible,
   screenCentersForSafePins,
+  type ConnectEndMode,
   type PinCompatibilityRule,
-  shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
   shouldOpenAddNodeOnSecondaryPointer,
 } from "./graph-connect";
@@ -139,14 +140,37 @@ export interface GraphEditorProps {
   nodeTypes?: NodeTypes;
   edgeTypes?: EdgeTypes;
   defaultEdgeOptions?: DefaultEdgeOptions;
-  /** Defaults to `!readOnly`. Behaviour trees pass false except sibling reorder. */
+  /** Defaults to `!readOnly`. Behaviour trees pass false during Play. */
   nodesDraggable?: boolean;
   toolbarExtra?: ReactNode;
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
   hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "format">;
-  /** Lock node drag to one axis (behaviour-tree sibling reorder). */
+  /** Lock node drag to one axis (optional host constraint). */
   lockNodeDragAxis?: "x" | "y";
+  /**
+   * CSS selector stamped onto each XYFlow node as `dragHandle`.
+   * XYFlow 12 has no canvas-level `nodeDragHandle` prop. Attachments can use
+   * `nodrag`.
+   */
+  nodeDragHandle?: string;
+  /**
+   * Connect-end policy. Default keeps the 96px cancel zone and wire-break
+   * fallback. Behaviour trees use `add-node` so a short drag off a handle
+   * opens Add Node and never breaks structural edges.
+   */
+  connectEndMode?: ConnectEndMode;
+  /** Double-tap empty pane opens Add Node. Default true. */
+  emptyPaneDoubleTapAddsNode?: boolean;
+  /** Replace existing edges into the same target handle (tree parent pin). */
+  replaceIncomingOnConnect?: boolean;
+  /** Extra host connection veto after pin compatibility. */
+  canConnect?: (connection: {
+    source: string;
+    target: string;
+    sourceHandle: string;
+    targetHandle: string;
+  }) => boolean;
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
   contextMenuItemsForAttachment?: (
     nodeId: string,
@@ -193,16 +217,33 @@ function styleFlowEdges(
   });
 }
 
+function withDragHandle(node: CanvasNode, handle?: string): CanvasNode {
+  if (!handle) {
+    if (node.dragHandle === undefined) return node;
+    const rest = { ...node };
+    delete rest.dragHandle;
+    return rest;
+  }
+  if (node.dragHandle === handle) return node;
+  return { ...node, dragHandle: handle };
+}
+
 function toCanvasNodes(
   nodes: GraphDocument["nodes"],
   knownTypes: NodeTypes,
+  dragHandle?: string,
 ): CanvasNode[] {
-  return nodes.map((node) => ({
-    id: node.id,
-    type: resolveNodeType(node.type, node.data, knownTypes),
-    position: node.position,
-    data: { ...node.data, __nodeType: node.type },
-  }));
+  return nodes.map((node) =>
+    withDragHandle(
+      {
+        id: node.id,
+        type: resolveNodeType(node.type, node.data, knownTypes),
+        position: node.position,
+        data: { ...node.data, __nodeType: node.type },
+      },
+      dragHandle,
+    ),
+  );
 }
 
 function pinOnNode(
@@ -301,6 +342,11 @@ function GraphEditorCanvas({
   onAttachmentSelect,
   hiddenToolbarActions = [],
   lockNodeDragAxis: lockDragAxis,
+  nodeDragHandle,
+  connectEndMode = "default",
+  emptyPaneDoubleTapAddsNode = true,
+  replaceIncomingOnConnect = false,
+  canConnect,
   contextMenuItemsForNode,
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
@@ -317,7 +363,7 @@ function GraphEditorCanvas({
     [defaultZoom],
   );
   const [nodes, setNodes] = useState<CanvasNode[]>(() =>
-    toCanvasNodes(initialGraph.nodes, knownTypes),
+    toCanvasNodes(initialGraph.nodes, knownTypes, nodeDragHandle),
   );
   const [edges, setEdges] = useState<Edge[]>(() =>
     toFlowEdges(initialGraph.edges),
@@ -447,16 +493,19 @@ function GraphEditorCanvas({
           typeof data.__nodeType === "string"
             ? data.__nodeType
             : (node.type ?? "logMessage");
-        return {
-          id: node.id,
-          type: resolveNodeType(typeId, data, knownTypes),
-          position: node.position,
-          data,
-          selected: node.selected,
-          measured: node.measured,
-          width: node.width,
-          height: node.height,
-        };
+        return withDragHandle(
+          {
+            id: node.id,
+            type: resolveNodeType(typeId, data, knownTypes),
+            position: node.position,
+            data,
+            selected: node.selected,
+            measured: node.measured,
+            width: node.width,
+            height: node.height,
+          },
+          nodeDragHandle,
+        );
       }),
     );
     setEdges(
@@ -471,7 +520,16 @@ function GraphEditorCanvas({
         })),
       ),
     );
-  }, [initialGraph, knownTypes]);
+  }, [initialGraph, knownTypes, nodeDragHandle]);
+
+  useEffect(() => {
+    setNodes((current) => {
+      const next = current.map((node) => withDragHandle(node, nodeDragHandle));
+      return next.every((node, index) => node === current[index])
+        ? current
+        : next;
+    });
+  }, [nodeDragHandle]);
 
   const hiddenToolbar = useMemo(
     () => new Set(hiddenToolbarActions),
@@ -549,6 +607,7 @@ function GraphEditorCanvas({
           },
           (nodeId, pinId) =>
             pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
+          { replaceIncoming: replaceIncomingOnConnect },
         );
         const unchanged =
           next.length === current.length &&
@@ -558,7 +617,7 @@ function GraphEditorCanvas({
         return next;
       });
     },
-    [defaultEdgeOptions.type, emitChange],
+    [defaultEdgeOptions.type, emitChange, replaceIncomingOnConnect],
   );
 
   const onPinTap = useCallback(
@@ -632,9 +691,18 @@ function GraphEditorCanvas({
         connection.targetHandle,
       );
       if (!sourcePin || !targetPin) return true;
-      return pinsAreCompatible(sourcePin, targetPin, pinCompatibility);
+      if (!pinsAreCompatible(sourcePin, targetPin, pinCompatibility)) {
+        return false;
+      }
+      if (!canConnect) return true;
+      return canConnect({
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+      });
     },
-    [pinCompatibility],
+    [canConnect, pinCompatibility],
   );
 
   const handleConnectStart = useCallback(
@@ -677,6 +745,12 @@ function GraphEditorCanvas({
       const decision = {
         hasTargetHandle: false,
         pointerOverNode: isClientPointOverGraphNode(point, root),
+        pointerOverSourceHandle: isClientPointOverHandle(
+          point,
+          fromNode.id,
+          pinId,
+          root,
+        ),
         pointer: point,
         safePins: screenCentersForSafePins(
           root,
@@ -688,17 +762,14 @@ function GraphEditorCanvas({
           ),
         ),
       };
-      if (
-        !shouldBreakPinConnectionsOnConnectEnd({
-          ...decision,
-          pointerOverSourceHandle: isClientPointOverHandle(
-            point,
-            fromNode.id,
-            pinId,
-            root,
-          ),
-        })
-      ) {
+      const action = connectEndAction(decision, connectEndMode);
+      if (action === "add-node") {
+        const position = screenToFlowPosition(point);
+        setPendingConnect({ pin, nodeId: fromNode.id, position });
+        setPaletteOpen(true);
+        return;
+      }
+      if (action !== "break") {
         return;
       }
       setEdges((current) => {
@@ -712,7 +783,7 @@ function GraphEditorCanvas({
       pendingPinRef.current = null;
       setPendingPin(null);
     },
-    [emitChange, pinCompatibility, readOnly],
+    [connectEndMode, emitChange, pinCompatibility, readOnly, screenToFlowPosition],
   );
 
   const handleAddPaletteNode = useCallback(
@@ -737,17 +808,20 @@ function GraphEditorCanvas({
       if (paletteNode.pins && paletteNode.pins.length > 0) {
         data.__pins = paletteNode.pins;
       }
-      const nextNode: CanvasNode = {
-        id,
-        type: resolveNodeType(
-          paletteNode.nodeType ?? paletteNode.id,
+      const nextNode: CanvasNode = withDragHandle(
+        {
+          id,
+          type: resolveNodeType(
+            paletteNode.nodeType ?? paletteNode.id,
+            data,
+            knownTypes,
+          ),
+          position,
+          selected: true,
           data,
-          knownTypes,
-        ),
-        position,
-        selected: true,
-        data,
-      };
+        },
+        nodeDragHandle,
+      );
 
       setNodes((current) => {
         const next = [
@@ -782,6 +856,7 @@ function GraphEditorCanvas({
                   : {}),
               },
               (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
+              { replaceIncoming: replaceIncomingOnConnect },
             );
             setEdges(nextEdges);
           }
@@ -795,8 +870,10 @@ function GraphEditorCanvas({
       defaultEdgeOptions.type,
       emitChange,
       knownTypes,
+      nodeDragHandle,
       pendingConnect,
       pinCompatibility,
+      replaceIncomingOnConnect,
       screenToFlowPosition,
     ],
   );
@@ -861,16 +938,19 @@ function GraphEditorCanvas({
     const nextNodes = pasteable.map((node, index) => {
       const id = `${node.id}-copy-${stamp}-${index}`;
       idMap.set(node.id, id);
-      return {
-        ...node,
-        id,
-        selected: true,
-        position: {
-          x: node.position.x + PASTE_OFFSET,
-          y: node.position.y + PASTE_OFFSET,
+      return withDragHandle(
+        {
+          ...node,
+          id,
+          selected: true,
+          position: {
+            x: node.position.x + PASTE_OFFSET,
+            y: node.position.y + PASTE_OFFSET,
+          },
+          data: { ...node.data },
         },
-        data: { ...node.data },
-      };
+        nodeDragHandle,
+      );
     });
     const nextEdges = clip.edges.flatMap((edge) => {
       const source = idMap.get(edge.source);
@@ -897,7 +977,7 @@ function GraphEditorCanvas({
       });
       return next;
     });
-  }, [emitChange]);
+  }, [emitChange, nodeDragHandle]);
 
   const deleteSelection = useCallback(() => {
     const selected = new Set(
@@ -981,19 +1061,50 @@ function GraphEditorCanvas({
     );
   }, []);
 
-  const handlePaneClick = useCallback(() => {
-    if (skipPaneClickRef.current) {
-      skipPaneClickRef.current = false;
-      return;
-    }
-    clearSelection();
-    const now = Date.now();
-    if (now - lastPaneTapRef.current < DOUBLE_TAP_MS && !readOnly) {
-      setPendingConnect(null);
-      setPaletteOpen(true);
-    }
-    lastPaneTapRef.current = now;
-  }, [clearSelection, readOnly]);
+  const handlePaneClick = useCallback(
+    (event: { clientX: number; clientY: number }) => {
+      if (skipPaneClickRef.current) {
+        skipPaneClickRef.current = false;
+        return;
+      }
+      const pending = pendingPinRef.current;
+      if (!readOnly && connectEndMode === "add-node" && pending) {
+        const pin = pinOnNode(
+          graphStateRef.current.nodes,
+          pending.nodeId,
+          pending.pinId,
+        );
+        if (pin) {
+          const point = { x: event.clientX, y: event.clientY };
+          setPendingConnect({
+            pin,
+            nodeId: pending.nodeId,
+            position: screenToFlowPosition(point),
+          });
+          setPaletteOpen(true);
+          return;
+        }
+      }
+      clearSelection();
+      const now = Date.now();
+      if (
+        now - lastPaneTapRef.current < DOUBLE_TAP_MS &&
+        !readOnly &&
+        emptyPaneDoubleTapAddsNode
+      ) {
+        setPendingConnect(null);
+        setPaletteOpen(true);
+      }
+      lastPaneTapRef.current = now;
+    },
+    [
+      clearSelection,
+      connectEndMode,
+      emptyPaneDoubleTapAddsNode,
+      readOnly,
+      screenToFlowPosition,
+    ],
+  );
 
   const handlePaneContextMenu = useCallback(
     (event: {
@@ -1277,6 +1388,7 @@ function GraphEditorCanvas({
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card/90 p-1 shadow-md"
             data-testid="graph-toolbar"
           >
+            {hiddenToolbar.has("copy") ? null : (
             <Button
               type="button"
               variant="outline"
@@ -1287,6 +1399,8 @@ function GraphEditorCanvas({
             >
               Copy
             </Button>
+            )}
+            {hiddenToolbar.has("paste") ? null : (
             <Button
               type="button"
               variant="outline"
@@ -1297,6 +1411,7 @@ function GraphEditorCanvas({
             >
               Paste
             </Button>
+            )}
             {hiddenToolbar.has("delete") ? null : (
             <Button
               type="button"

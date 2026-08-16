@@ -4,11 +4,13 @@ import {
   addChildNode,
   addDecorator,
   addService,
+  canReparentNode,
   deleteSubtree,
   duplicateSubtree,
   moveAttachment,
   pruneUnreachable,
   removeAttachment,
+  reparentNode,
   wrapInSequence,
 } from "./edit";
 
@@ -141,6 +143,108 @@ describe("attachments", () => {
     expect(service.classId).toBe("bt.service.setBlackboard");
     expect(service.intervalMs).toBe(250);
     expect(service.properties).toEqual({ key: "", value: true });
+  });
+});
+
+describe("editor placement", () => {
+  it("stores an explicit child position without changing other siblings", () => {
+    const doc = createDefaultBehaviourTree();
+    doc.editorPositions = {
+      root: { x: 40, y: 10 },
+      sequence: { x: 40, y: 180 },
+      task: { x: 40, y: 360 },
+    };
+    const next = addChildNode(doc, "sequence", "bt.task.wait", {
+      position: { x: 220, y: 360 },
+    });
+    const wait = next.nodes.find((entry) => entry.classId === "bt.task.wait");
+    expect(wait).toBeDefined();
+    expect(next.editorPositions?.[wait!.id]).toEqual({ x: 220, y: 360 });
+    expect(next.editorPositions?.task).toEqual({ x: 40, y: 360 });
+  });
+
+  it("offsets duplicated subtree positions", () => {
+    const doc = createDefaultBehaviourTree();
+    doc.editorPositions = {
+      root: { x: 40, y: 10 },
+      sequence: { x: 40, y: 180 },
+      task: { x: 40, y: 360 },
+    };
+    const next = duplicateSubtree(doc, "sequence");
+    const cloneId = next.nodes.find((entry) => entry.id === "root")!.children[1]!;
+    expect(next.editorPositions?.[cloneId]).toEqual({ x: 80, y: 220 });
+    expect(next.editorPositions?.sequence).toEqual({ x: 40, y: 180 });
+  });
+
+  it("places a wrap sequence on the wrapped node without dropping its position", () => {
+    const doc = createDefaultBehaviourTree();
+    doc.editorPositions = {
+      root: { x: 40, y: 10 },
+      sequence: { x: 40, y: 180 },
+      task: { x: 90, y: 360 },
+    };
+    const next = wrapInSequence(doc, "task");
+    const wrapperId = next.nodes.find((entry) => entry.id === "sequence")!.children[0]!;
+    expect(next.editorPositions?.[wrapperId]).toEqual({ x: 90, y: 360 });
+    expect(next.editorPositions?.task?.y).toBeGreaterThan(360);
+  });
+
+  it("drops deleted subtree positions", () => {
+    const doc = createDefaultBehaviourTree();
+    doc.editorPositions = {
+      root: { x: 40, y: 10 },
+      sequence: { x: 40, y: 180 },
+      task: { x: 40, y: 360 },
+    };
+    const next = deleteSubtree(doc, "sequence");
+    expect(next.editorPositions).toEqual({ root: { x: 40, y: 10 } });
+  });
+
+  it("drops unreachable node positions", () => {
+    const doc = createDefaultBehaviourTree();
+    doc.nodes.push(node("lost", "task", "bt.task.succeed"));
+    doc.editorPositions = {
+      root: { x: 1, y: 1 },
+      sequence: { x: 2, y: 2 },
+      task: { x: 3, y: 3 },
+      lost: { x: 9, y: 9 },
+    };
+    const next = pruneUnreachable(doc);
+    expect(next.editorPositions?.lost).toBeUndefined();
+    expect(next.editorPositions?.root).toEqual({ x: 1, y: 1 });
+  });
+});
+
+describe("reparentNode", () => {
+  function branched(): BehaviourTreeDocument {
+    return tree(
+      [
+        node("root", "selector", "bt.composite.selector", ["left", "right"]),
+        node("left", "sequence", "bt.composite.sequence", ["leaf"]),
+        node("right", "sequence", "bt.composite.sequence"),
+        node("leaf", "task", "bt.task.succeed"),
+      ],
+      "root",
+    );
+  }
+
+  it("moves a node under another composite and rejects cycles", () => {
+    const doc = branched();
+    expect(canReparentNode(doc, "leaf", "right")).toBe(true);
+    const next = reparentNode(doc, "leaf", "right");
+    expect(next.nodes.find((entry) => entry.id === "left")?.children).toEqual([]);
+    expect(next.nodes.find((entry) => entry.id === "right")?.children).toEqual(["leaf"]);
+    expect(canReparentNode(doc, "left", "leaf")).toBe(false);
+    expect(reparentNode(doc, "left", "leaf")).toBe(doc);
+  });
+
+  it("refuses the root, a task parent, and self-links", () => {
+    const doc = branched();
+    expect(canReparentNode(doc, "root", "right")).toBe(false);
+    expect(canReparentNode(doc, "leaf", "leaf")).toBe(false);
+    expect(canReparentNode(doc, "right", "leaf")).toBe(false);
+    expect(reparentNode(doc, "root", "right")).toBe(doc);
+    expect(reparentNode(doc, "leaf", "leaf")).toBe(doc);
   });
 });
 

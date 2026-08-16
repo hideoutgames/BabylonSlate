@@ -53,21 +53,27 @@ export function edgesAfterConnect<T extends PinEdgeRef>(
   edges: readonly T[],
   next: T,
   pinFor: ConnectPinLookup,
+  options?: { replaceIncoming?: boolean },
 ): T[] {
   if (next.id && edges.some((edge) => edge.id === next.id)) {
     return [...edges];
   }
   const targetPin = pinFor(next.target, next.targetHandle ?? "");
-  const kept = pinAllowsMultipleIncoming(targetPin)
-    ? [...edges]
-    : edges.filter(
+  const exclusive =
+    options?.replaceIncoming === true || !pinAllowsMultipleIncoming(targetPin);
+  const kept = exclusive
+    ? edges.filter(
         (edge) =>
           !(
             edge.target === next.target &&
             edge.targetHandle === next.targetHandle
           ),
-      );
-  return [...kept, next];
+      )
+    : [...edges];
+  const id =
+    next.id ??
+    `e:${next.source}:${next.sourceHandle ?? ""}:${next.target}:${next.targetHandle ?? ""}`;
+  return [...kept, { ...next, id }];
 }
 
 export function displayNodeTitle(nodeType: string, title?: string): string {
@@ -192,6 +198,24 @@ export function shouldOpenAddNodeOnConnectEnd({
 }: ConnectEndDecision): boolean {
   if (hasTargetHandle || pointerOverNode) return false;
   return !safePins.some((pin) => isNearSourcePin(pin, pointer, thresholdPx));
+}
+
+export type ConnectEndMode = "default" | "add-node" | "disabled";
+
+export type ConnectEndAction = "add-node" | "break" | "none";
+
+export function connectEndAction(
+  decision: ConnectEndBreakDecision,
+  mode: ConnectEndMode = "default",
+): ConnectEndAction {
+  if (mode === "disabled") return "none";
+  if (decision.hasTargetHandle) return "none";
+  if (mode === "add-node") {
+    if (decision.pointerOverNode) return "none";
+    return "add-node";
+  }
+  if (shouldBreakPinConnectionsOnConnectEnd(decision)) return "break";
+  return "none";
 }
 
 export function shouldBreakPinConnectionsOnConnectEnd(

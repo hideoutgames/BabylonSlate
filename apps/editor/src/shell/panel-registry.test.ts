@@ -15,5 +15,9 @@ describe("panelComponents", () => {
   it("registers Behaviour Tree dock panels", () => {
     expect(panelComponents["behaviour-tree-graph"]).toBeTypeOf("function");
     expect(panelComponents["behaviour-tree-details"]).toBeTypeOf("function");
+    expect(panelComponents["behaviour-tree-blackboard"]).toBeTypeOf("function");
+    expect(panelComponents["behaviour-tree-compiler-results"]).toBeTypeOf(
+      "function",
+    );
   });
 });
