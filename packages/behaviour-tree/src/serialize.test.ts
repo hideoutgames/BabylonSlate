@@ -208,6 +208,51 @@ describe("behaviour tree serialize", () => {
     ]);
   });
 
+  it("keeps previous sibling order when canvas X is tied", () => {
+    const tree: BehaviourTreeDocument = {
+      name: "Tie",
+      rootId: "root",
+      blackboardGuid: null,
+      nodes: [
+        node("root", "selector", "bt.composite.selector", ["a", "b"]),
+        node("a", "task", "bt.task.succeed"),
+        node("b", "task", "bt.task.fail"),
+      ],
+    };
+    const graph = behaviourTreeToSerialized(tree);
+    const restored = serializedToBehaviourTree(
+      {
+        ...graph,
+        nodes: graph.nodes.map((entry) =>
+          entry.id === "a" || entry.id === "b"
+            ? { ...entry, position: { x: 40, y: 200 } }
+            : entry,
+        ),
+        edges: [
+          {
+            id: "bt-root-b",
+            source: "root",
+            target: "b",
+            sourceHandle: BT_CHILDREN_HANDLE,
+            targetHandle: BT_PARENT_HANDLE,
+          },
+          {
+            id: "bt-root-a",
+            source: "root",
+            target: "a",
+            sourceHandle: BT_CHILDREN_HANDLE,
+            targetHandle: BT_PARENT_HANDLE,
+          },
+        ],
+      },
+      tree,
+    );
+    expect(restored.nodes.find((entry) => entry.id === "root")?.children).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
   it("arranges nodes without changing sibling order", () => {
     const tree: BehaviourTreeDocument = {
       name: "Arrange",

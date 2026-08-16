@@ -25,7 +25,6 @@ import {
   pinsForBtKind,
   propertyFieldsForClassId,
   removeAttachment,
-  serializedToBehaviourTree,
   titleForBtClassId,
   validateBehaviourTree,
   wrapInSequence,
@@ -48,6 +47,7 @@ import {
   PropertyGrid,
   SelectableText,
   assetRowIdentity,
+  humanizePropertyLabel,
   useCatalogSearchState,
   walkAncestry,
   type NestedMenuItem,
@@ -58,6 +58,7 @@ import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+import { commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -115,11 +116,10 @@ function useBehaviourTreeDocument() {
     () => asTree((entry?.content ?? {}) as Record<string, unknown>),
     [entry?.content],
   );
-  const commit = (next: BehaviourTreeDocument, mergeKey?: string) => {
+  const commit = (next: BehaviourTreeDocument) => {
     void applyAssetDocumentChange(
       workspaceDocumentId,
       next as unknown as Record<string, unknown>,
-      mergeKey,
     );
   };
   const overlay = useMemo((): BtGraphOverlay | undefined => {
@@ -458,11 +458,15 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
             </Button>
           }
           onChange={(graph, meta) => {
-            const restored = serializedToBehaviourTree(graph, doc);
             const parentId =
               selected && selected.kind !== "task" ? selected.id : doc.rootId;
-            const next = attachNewNodes(restored, doc, parentId);
-            commit(next, meta?.kind === "position" ? "bt-node-move" : undefined);
+            const { next } = commitBehaviourTreeGraphChange(
+              doc,
+              graph,
+              meta,
+              parentId,
+            );
+            commit(next);
           }}
         />
       </div>
@@ -601,7 +605,7 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
                   data-severity={row.severity}
                 >
                   <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
-                    {row.severity}
+                    {humanizePropertyLabel(row.severity)}
                   </Badge>
                   <SelectableText>{row.message}</SelectableText>
                 </Button>
@@ -1011,31 +1015,6 @@ function patchNode(
     ...doc,
     nodes: doc.nodes.map((node) =>
       node.id === nodeId ? { ...node, ...patch } : node,
-    ),
-  };
-}
-
-function attachNewNodes(
-  next: BehaviourTreeDocument,
-  previous: BehaviourTreeDocument,
-  parentId: string | null,
-): BehaviourTreeDocument {
-  if (!parentId) return next;
-  const parent = next.nodes.find((node) => node.id === parentId);
-  if (!parent || parent.kind === "task") return next;
-  const prevIds = new Set(previous.nodes.map((node) => node.id));
-  const claimed = new Set(next.nodes.flatMap((node) => node.children));
-  const orphans = next.nodes.filter(
-    (node) =>
-      !prevIds.has(node.id) && !claimed.has(node.id) && node.id !== next.rootId,
-  );
-  if (orphans.length === 0) return next;
-  return {
-    ...next,
-    nodes: next.nodes.map((node) =>
-      node.id === parentId
-        ? { ...node, children: [...node.children, ...orphans.map((row) => row.id)] }
-        : node,
     ),
   };
 }

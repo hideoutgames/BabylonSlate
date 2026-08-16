@@ -302,6 +302,9 @@ describe("BehaviourTreeEditor", () => {
     fireEvent.click(
       screen.getByTestId("behaviour-tree-diagnostic-bt.composite_empty"),
     );
+    expect(
+      screen.getByTestId("behaviour-tree-diagnostic-bt.composite_empty").textContent,
+    ).toContain("Error");
     await waitFor(() => {
       expect(screen.getByTestId("property-classId").textContent).toContain(
         "Sequence",
