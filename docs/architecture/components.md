@@ -15,9 +15,9 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **Alert** (`AlertTitle`, `AlertDescription`, `AlertAction`) | Inline status callout. | Boot / project errors in `App` and Homepage; document tab `WorkspaceErrorBoundary`; gallery. |
-| **AlertDialog** (`AlertDialogTitle`, `AlertDialogAction`, `AlertDialogCancel`, …) | Modal confirm / blocking error. | Unsaved close, Play blocked, Content Browser destructive confirms; NamePromptDialog. |
+| **AlertDialog** (`AlertDialogTitle`, `AlertDialogAction`, `AlertDialogCancel`, `AlertDialogMedia`, …) | Modal confirm / blocking error. `variant="destructive"` is the danger chrome (red ring, red media well, red title) for irreversible file deletes. | Unsaved close, Play blocked, Content Browser and plugin delete confirms; NamePromptDialog; gallery. |
 | **Badge** | Compact status chip. | Compilation errors, Content Browser type tags, global-search result kinds, live-wire “Add Node”. |
-| **Button** | Pressable action. Sizes include `touch` / `touch-icon` (44px). Outline = visible action; ghost = tabs / close. | Chrome, panels, catalogs, overlays. |
+| **Button** | Pressable action. Sizes include `touch` / `touch-icon` (44px). Outline = visible action; ghost = tabs / close. `destructive` is a **solid** filled `--destructive` control for irreversible confirms, not a 10% tint. | Chrome, panels, catalogs, overlays; Content Browser / plugin delete confirms. |
 | **Card** (`CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`, `CardAction`) | Raised content block. | Homepage project tiles, settings field groups, Compiler Results rows. |
 | **Checkbox** | Boolean check control. | PropertyGrid booleans; gallery. |
 | **ContextMenu** (`ContextMenuTrigger`, `ContextMenuItem`, `ContextMenuGroup`, …) | Pointer-anchored menu (Radix/Base UI). | Homepage project tiles. Long-press editor menus use editor-kit `ContextMenuOverlay` instead. |
@@ -98,6 +98,6 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 | **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: `--card` thumb well (or image) with a 2px type-colored border inset 2px so it follows the Card’s top `rounded-xl`, `--card` text panel, selection, long-press / right-click menu. Pointer events do not bubble to the empty-grid menu. | Content Browser grid. |
 | **ContentBrowserFolderTile** ([`content-browser-folder-tile.tsx`](../../apps/editor/src/components/content-browser-folder-tile.tsx)) | Uncolored folder card (`--card` well, muted glyph); click selects, double-click navigates. | Content Browser grid (child folders first). |
 | **ContentBrowserMoveDialog** ([`content-browser-move-dialog.tsx`](../../apps/editor/src/components/content-browser-move-dialog.tsx)) | Destination picker: item preview, folder search, `TreeView` with muted illegal rows. Move or copy of one or many selected items. | Content Browser **Move…** / **Copy to Folder…** for the current tile selection. |
-| **ContentBrowserSelectionActions** ([`content-browser-selection-actions.tsx`](../../apps/editor/src/components/content-browser-selection-actions.tsx)) | Counted outline **Delete (N)** plus **Deselect All**. Delete is not a filled destructive primary. | Content Browser toolbar when tiles are selected. Confirm stays on `AlertDialog`. |
+| **ContentBrowserSelectionActions** ([`content-browser-selection-actions.tsx`](../../apps/editor/src/components/content-browser-selection-actions.tsx)) | Counted outline **Delete (N)** plus **Deselect All**. Delete is not a filled destructive primary. | Content Browser toolbar when tiles are selected. Confirm is `AlertDialog variant="destructive"`. |
 
 Not kit (single call site): `BrandLogo` (Homepage), `JsBodyEditor` (Inspector Execute JavaScript body).
