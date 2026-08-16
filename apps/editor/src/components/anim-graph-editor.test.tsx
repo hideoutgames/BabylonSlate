@@ -115,7 +115,7 @@ function renderAnimGraph(payload: AnimGraphDocument = createDefaultAnimGraph()) 
 
 function lastCommit(): AnimGraphDocument {
   const calls = store.applyAssetDocumentChange.mock.calls;
-  return calls[calls.length - 1]![1] as AnimGraphDocument;
+  return calls[calls.length - 1]![1] as unknown as AnimGraphDocument;
 }
 
 function locoGraph(): AnimGraphDocument {

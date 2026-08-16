@@ -175,7 +175,7 @@ function renderTree(payload: BehaviourTreeDocument = createDefaultBehaviourTree(
 
 function lastCommit(): BehaviourTreeDocument {
   const calls = store.applyAssetDocumentChange.mock.calls;
-  return calls[calls.length - 1]![1] as BehaviourTreeDocument;
+  return calls[calls.length - 1]![1] as unknown as BehaviourTreeDocument;
 }
 
 function treeWithWait(): BehaviourTreeDocument {
