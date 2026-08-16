@@ -62,6 +62,7 @@ import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
 import {
   collectSafeConnectPins,
+  edgesAfterConnect,
   edgesTouchingNodes,
   edgeTouchesPin,
   firstCompatiblePin,
@@ -69,7 +70,6 @@ import {
   isClientPointOverHandle,
   nodePinLists,
   pinsAreCompatible,
-  edgesAfterConnect,
   screenCentersForSafePins,
   type PinCompatibilityRule,
   shouldBreakPinConnectionsOnConnectEnd,

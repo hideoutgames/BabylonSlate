@@ -5,6 +5,7 @@ import {
   collectSafeConnectPins,
   containerPointerToClient,
   displayNodeTitle,
+  edgesAfterConnect,
   edgesTouchingNodes,
   edgesTouchingPin,
   edgeTouchesNode,
@@ -19,7 +20,6 @@ import {
   screenCentersForSafePins,
   shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
-  edgesAfterConnect,
 } from "./graph-connect";
 
 const execOut: SerializedPin = {
