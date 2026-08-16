@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, openTestProject } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
 /** Commit a simulated gizmo drag (mesh mutation → applySceneChange). */
@@ -133,8 +134,7 @@ test.describe("P6 first-playable scene editing", () => {
     );
 
     await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
     // Prefer resolved InputResolver Move.x (play-session.lastMoveX) over raw axis.
     await expect
@@ -160,8 +160,7 @@ test.describe("P6 first-playable scene editing", () => {
       "aria-pressed",
       "true",
     );
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await page.getByTestId("play-overlay-close").click();
   });
 

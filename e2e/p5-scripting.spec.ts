@@ -4,6 +4,7 @@ import {
   openMainScene,
   openTestProject,
 } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 async function injectGamepad(
   page: { evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown> },
@@ -89,8 +90,7 @@ test.describe("P5 visual scripting acceptance", () => {
     await expect(page.getByTestId("compile-graph")).toBeVisible();
     await expect(page.getByTestId("compilation-error")).toHaveCount(0);
 
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
 
     // The Print node only reaches the overlay if the graph compiled, loaded as
     // a module, and its Event Tick entry point ran against a live actor.
@@ -167,8 +167,7 @@ test.describe("P5 visual scripting acceptance", () => {
 
     await injectGamepad(page, { axes: [0.85, 0, 0, 0] });
     await openMainScene(page);
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("print-overlay")).toContainText("0.8", {
       timeout: 15_000,
     });

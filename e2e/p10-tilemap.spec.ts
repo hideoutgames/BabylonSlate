@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 async function openTwoDProject(page: Page): Promise<void> {
   await page.goto("/?test=1");
@@ -72,16 +73,19 @@ async function pickSelectedAsset(
   });
   await expect(card).toBeVisible();
   await card.locator(`button[data-testid$="-${property}"]`).click();
+  const picker = page.getByTestId("details-asset-picker");
+  await expect(picker).toBeVisible();
   const item = page.getByTestId(`search-item-${guid}`);
   await expect(item).toBeVisible();
   await item.click();
-  await expect(page.getByTestId("details-asset-picker")).toBeHidden();
+  await expect(picker).toBeHidden();
 }
 
 test.describe("P10 tilemaps", () => {
   test("2D project paints tiles, plays an animated sprite, and reports physics", {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {
+    test.setTimeout(120_000);
     await openTwoDProject(page);
 
     await createAsset(page, "Tileset", "Ground");
@@ -161,8 +165,7 @@ test.describe("P10 tilemaps", () => {
     );
     await page.getByTestId("property-actor-position-y").fill("3");
 
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await page.getByTestId("play-stats-toggle").click();
     await expect
       .poll(async () => {

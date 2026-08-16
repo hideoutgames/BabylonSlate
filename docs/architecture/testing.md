@@ -52,7 +52,7 @@ These have already produced false-passing tests, so check against them before tr
 
 ## Playwright
 
-Projects: `desktop-chrome` (full suite), `ipad-landscape`, and `ipad-portrait` (both set `hasTouch` and a device scale factor of 2). The suite builds with `VITE_TEST_MODE=true` and previews on port 4173.
+Projects: `desktop-chrome` (full suite), `ipad-landscape`, and `ipad-portrait` (both set `hasTouch` and a device scale factor of 2). The suite builds with `VITE_TEST_MODE=true` and previews on port 4173. Default test timeout is 60s. Dirty Play shows the Saving and compiling dialog before `play-overlay` mounts; specs that click Play after editing use `clickPlayAndWaitForOverlay` in `e2e/play.ts` (20s overlay wait) rather than the 5s default visibility timeout. Long dirty-Play cases (`p7`, `p10`, `p11` NavMesh, scene post-process) also raise `test.setTimeout`.
 
 iPad projects grep `@ipad` so they only rerun tests that depend on touch, coarse pointer, or orientation. Tag those cases with `IPAD_TEST_TAG` from `e2e/ipad-tag.ts`. Desktop still runs every spec. Behaviour that does not change with viewport or pointer (Play, scripting, import, Engine Settings, smoke) stays desktop-only. Assertions that depend on CSS-pixel size (Play HUD `data-preset` / safe-area) must branch on `testInfo.project.name` — desktop-chrome is 1280×720 (`desktop-16-9`, zero insets); iPad Playwright viewports are 1194×834 / 834×1194 and map to `desktop-4-3` (closest aspect, zero insets). `playwright.config.test.ts` lists the iPad set via `playwright test --list`.
 

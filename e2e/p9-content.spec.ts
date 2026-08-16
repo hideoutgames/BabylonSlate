@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, openTestProject } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
 async function showContentBrowser(
@@ -216,8 +217,7 @@ test.describe("P9 content systems", () => {
   }) => {
     await openTestProject(page);
     await openMainScene(page);
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-hud")).toBeVisible();
     await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
 
@@ -271,8 +271,7 @@ test.describe("P9 content systems", () => {
       });
     });
     await openMainScene(page);
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect
       .poll(async () => {
         const attr = await page
@@ -428,7 +427,7 @@ test.describe("P9 content systems", () => {
   test("scene post-process stack applies in Play and respects Engine Settings", async ({
     page,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(120_000);
     await openTestProject(page);
     await createAsset(page, "Material", "Bloom");
     await page
@@ -455,9 +454,8 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("scene-post-process-0-material")).toContainText(
       "Bloom",
     );
-    await page.getByTestId("play-preview").click();
+    await clickPlayAndWaitForOverlay(page);
     const overlay = page.getByTestId("play-overlay");
-    await expect(overlay).toBeVisible({ timeout: 20_000 });
     await expect
       .poll(async () => overlay.getAttribute("data-post-process-passes"), {
         timeout: 15_000,
@@ -485,8 +483,7 @@ test.describe("P9 content systems", () => {
       .locator('[data-slot="dialog-close"]')
       .click();
     await expect(page.getByTestId("engine-settings-modal")).toHaveCount(0);
-    await page.getByTestId("play-preview").click();
-    await expect(overlay).toBeVisible({ timeout: 20_000 });
+    await clickPlayAndWaitForOverlay(page);
     await expect
       .poll(async () => overlay.getAttribute("data-post-process-passes"), {
         timeout: 15_000,
@@ -520,8 +517,7 @@ test.describe("P9 content systems", () => {
   }, async ({ page }, testInfo) => {
     await openTestProject(page);
     await openMainScene(page);
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-hud")).toBeVisible();
     await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
     // Desktop-chrome also runs @ipad tests (see docs/architecture/testing.md).
@@ -596,8 +592,7 @@ test.describe("P9 content systems", () => {
     expect(installed).toBe(true);
 
     await openMainScene(page);
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(
       page.locator('[data-testid="play-hud"] [data-kind="Canvas"]'),
     ).toBeVisible({

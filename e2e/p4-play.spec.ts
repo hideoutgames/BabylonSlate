@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
+import { clickPlayAndWaitForOverlay, waitForPlayOverlay } from "./play";
 
 test.describe("P4 Play overlay and session report", () => {
   test("Play opens overlay; fixture throw shows report and focuses node", async ({
@@ -9,8 +10,7 @@ test.describe("P4 Play overlay and session report", () => {
 
     await openMainScene(page);
 
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
     await expect(page.getByTestId("play-frame-cap")).toHaveCount(0);
     await expect(page.getByTestId("play-overlay-pause")).toContainText("Pause");
@@ -35,8 +35,7 @@ test.describe("P4 Play overlay and session report", () => {
     await openTestProject(page);
     await openMainScene(page);
 
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-prepare-dialog")).toHaveCount(0);
     await page.getByTestId("play-stats-toggle").click();
     await expect(page.getByTestId("stats-hud-draws")).toBeVisible();
@@ -77,9 +76,7 @@ test.describe("P4 Play overlay and session report", () => {
     await expect(page.getByTestId("save-all-project")).toBeEnabled();
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("play-prepare-dialog")).toBeVisible();
-    await expect(page.getByTestId("play-overlay")).toBeVisible({
-      timeout: 15_000,
-    });
+    await waitForPlayOverlay(page);
     await expect(page.getByTestId("play-prepare-dialog")).toHaveCount(0);
 
     await page.getByTestId("play-overlay-close").click();
@@ -92,8 +89,7 @@ test.describe("P4 Play overlay and session report", () => {
     await openTestProject(page);
     await openMainScene(page);
 
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
     await expect(page.getByTestId("play-log-tail")).toHaveCount(0);
     await expect(page.getByTestId("stats-hud")).toBeHidden();

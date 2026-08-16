@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 test.describe("P14 Preview Build", () => {
   test("default overlay Play is unchanged when Preview Build is off", async ({
@@ -11,8 +12,7 @@ test.describe("P14 Preview Build", () => {
     await expect(page.getByTestId("preview-build-toggle")).toBeVisible();
     await page.keyboard.press("Escape");
     await openMainScene(page);
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("preview-build-overlay")).toHaveCount(0);
     await page.getByTestId("play-overlay-close").click();
   });
