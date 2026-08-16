@@ -597,10 +597,8 @@ describe("connectEventPointerId", () => {
   });
 
   it("falls back to 1 when the event has no pointer identity", () => {
-    expect(connectEventPointerId({ clientX: 4, clientY: 8 })).toBe(1);
-    expect(connectEventPointerId({ pointerId: 0, clientX: 4, clientY: 8 })).toBe(
-      1,
-    );
+    expect(connectEventPointerId({})).toBe(1);
+    expect(connectEventPointerId({ pointerId: 0 })).toBe(1);
   });
 });
 

@@ -116,14 +116,16 @@ export function collectSafeConnectPins(
   return refs;
 }
 
-export function connectEventPointerId(event: {
+export function connectEventPointerId(event: Event | {
   pointerId?: number;
   changedTouches?: ArrayLike<{ identifier: number }>;
 }): number {
-  if (typeof event.pointerId === "number" && event.pointerId !== 0) {
-    return event.pointerId;
+  const pointerId = (event as { pointerId?: number }).pointerId;
+  if (typeof pointerId === "number" && pointerId !== 0) {
+    return pointerId;
   }
-  const touch = event.changedTouches?.[0];
+  const touch = (event as { changedTouches?: ArrayLike<{ identifier: number }> })
+    .changedTouches?.[0];
   if (touch && typeof touch.identifier === "number") return touch.identifier;
   return 1;
 }
