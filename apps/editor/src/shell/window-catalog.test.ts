@@ -3,6 +3,7 @@ import {
   CLASS_PANEL_INITIAL_HEIGHT,
   CLASS_PANEL_TITLE,
   listDockWindows,
+  primaryDockPanel,
 } from "./window-catalog";
 import { listEditorUtilityWindows } from "./editor-utility-windows";
 
@@ -166,6 +167,12 @@ describe("listDockWindows", () => {
     ]);
     expect(windows.some((entry) => entry.id === "ui-design")).toBe(false);
     expect(windows.some((entry) => entry.id === "prefab-viewport")).toBe(false);
+  });
+
+  it("uses Design as the Designer primary and Graph as the Logic primary", () => {
+    expect(primaryDockPanel("ui")).toBe("ui-design");
+    expect(primaryDockPanel("ui", { uiEditorMode: "designer" })).toBe("ui-design");
+    expect(primaryDockPanel("ui", { uiEditorMode: "logic" })).toBe("graph");
   });
 
   it("keeps EUI Settings on Designer and omits it from Logic", () => {

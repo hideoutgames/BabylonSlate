@@ -34,17 +34,18 @@ export const SCENE_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
 export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
   catalogFocusCandidates("graph");
 
+/** Designer default for `ui`; Logic uses `primaryDockPanel("ui", { uiEditorMode: "logic" })`. */
 export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
-  scene: "viewport",
-  graph: "graph",
-  enum: "enum-members",
-  structure: "structure-members",
-  "script-interface": "script-interface-preview",
-  sprite: "sprite-preview",
-  tileset: "tileset-preview",
-  tilemap: "tilemap-paint",
-  ui: "ui-design",
-  "plugin-settings": "plugin-settings-details",
+  scene: primaryDockPanel("scene"),
+  graph: primaryDockPanel("graph"),
+  enum: primaryDockPanel("enum"),
+  structure: primaryDockPanel("structure"),
+  "script-interface": primaryDockPanel("script-interface"),
+  sprite: primaryDockPanel("sprite"),
+  tileset: primaryDockPanel("tileset"),
+  tilemap: primaryDockPanel("tilemap"),
+  ui: primaryDockPanel("ui"),
+  "plugin-settings": primaryDockPanel("plugin-settings"),
 };
 
 /**

@@ -525,7 +525,7 @@ The body editor is CodeMirror 6, chosen because it was rewritten specifically fo
 
 ### 6.2 Graph validation
 
-Mistakes in visual scripting should be caught **before Preview**, not discovered by staring at a blank screen. Every **logic graph** gets the same validator and the same diagnostic surface, whether it lives on an Object, an Actor, a FunctionLibrary, an EditorUtilityObject, a UserInterface logic tab, or inside a behaviour-tree node class. Shader and AnimationGraph assets get their own validators later, but they follow the same diagnostic model.
+Mistakes in visual scripting should be caught **before Preview**, not discovered by staring at a blank screen. Every **logic graph** gets the same validator and the same diagnostic surface, whether it lives on an Object, an Actor, a FunctionLibrary, an EditorUtilityObject, a UserInterface Logic graph (`payload.logic`), or inside a behaviour-tree node class. Shader and AnimationGraph assets get their own validators later, but they follow the same diagnostic model.
 
 **One validator in `packages/scripting`**, with behaviour-tree structural rules added by `packages/behaviour-tree` through a small rule-registration hook rather than a second linter. The validator is pure: graph IR plus project type context in, structured diagnostics out. Being pure is what lets the identical code run from unit tests, from the debounced edit-time pass, from save, from the pre-Preview gate and from CI, so a diagnostic can never differ between the editor and the build.
 

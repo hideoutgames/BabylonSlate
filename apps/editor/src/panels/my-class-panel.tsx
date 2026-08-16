@@ -52,13 +52,6 @@ export type MyClassMember = {
 
 export type MyClassPanelProps = IDockviewPanelProps;
 
-export const BLUEPRINT_SECTIONS = [
-  { id: "functions", label: "Functions", kind: "function" },
-  { id: "variables", label: "Variables", kind: "variable" },
-  { id: "events", label: "Events", kind: "event" },
-  { id: "interfaces", label: "Interfaces", kind: "interface" },
-] as const;
-
 function sectionsForTree(
   activeFunctionId?: string | null,
   options?: MembersForGraphOptions,

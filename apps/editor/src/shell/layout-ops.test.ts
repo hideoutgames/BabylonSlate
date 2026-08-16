@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyFocusLayout,
+  FOCUS_PRIMARY_PANEL,
   focusKeepCandidates,
   migrateRestoredLayout,
   resolveFocusKeepPanelIds,
@@ -91,6 +92,7 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(
       resolveFocusKeepPanelIds("ui", [], { uiEditorMode: "logic" }),
     ).toEqual(["graph"]);
+    expect(FOCUS_PRIMARY_PANEL.ui).toBe("ui-design");
     expect(resolveFocusKeepPanelIds("plugin-settings", [])).toEqual([
       "plugin-settings-details",
     ]);
