@@ -83,8 +83,8 @@ Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never l
 
 | Host | Backend |
 | --- | --- |
-| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. |
-| Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage.encryptString` / `decryptString` |
+| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. The Swift plugin is compiled in the iOS App target (`BabylonSlateSecretsPlugin.swift` in Sources) and listed in `ios/App/App/capacitor.config.json` `packageClassList`. Keep that class listed after `npx cap sync`. |
+| Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage.encryptString` / `decryptString` when encryption is available. Linux hosts without a keyring fall back to storing the packed string unencrypted (accepted host limit). |
 | Web | `UnavailableSecretStore` (`available: false`) — Source Control UI hidden |
 
 `nativeHttp`: `{ method, url, headers, body? }` → `{ status, bodyText }`. iOS/Android use `CapacitorHttp` (bypasses CORS). Electron uses IPC `lfs:fetch` → `net.fetch`. Web returns `null` (unused). Playwright covers lock UX with `FakeLockProvider` instead.
