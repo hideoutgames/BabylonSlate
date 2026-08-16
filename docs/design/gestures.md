@@ -124,6 +124,8 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 Outliner, Components, and UserInterface hierarchy `TreeView`s use **immediate** drag-to-parent (pointer move past 8px; drop on a row makes that row the parent). Outliner Duplicate / Delete and UserInterface Visible / Ignore Safe Area / Duplicate / Rename / Delete live on a trailing **⋯** button (no 500ms row long-press). **Double-tap** an outliner row frames that actor (folder rows do not frame). Content Browser folder trees keep hold-to-drag so list scroll still works.
 
+Class members use the same pointer path (`TreeView.onExternalDrop`), not HTML5 drag-and-drop: mouse arms after 8px, touch after the ~250ms hold, and the drop fires only when the pointer is released **outside** the tree. Dropping onto the Graph canvas spawns Call Custom Event / Call Function, or opens the Get/Set Dialog for variables.
+
 In the Outliner the **drop target decides what a drag means**, because folders group and `parentId` attaches:
 
 | Drag | Drop on | Result |
