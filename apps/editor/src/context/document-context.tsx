@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import type {
   AssetDocumentKind,
   DocumentRef,
@@ -1218,10 +1219,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await truncateJournal(derived, guid);
         setRecoveryAvailable(false);
       }
-      bump();
       if (savedScene) {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
       }
+      flushSync(() => {
+        bump();
+      });
       recordSaveAllTrace({
         ok: true,
         reason: "saved",

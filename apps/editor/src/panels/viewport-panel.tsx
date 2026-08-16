@@ -29,6 +29,7 @@ import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
+import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -177,8 +178,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   /** Turn the mesh state a gizmo drag left behind into one scene command. */
   const commitGizmoTransform = useCallback(() => {
     const handle = engineRef.current;
-    const current = dragStartSceneRef.current ?? sceneRef.current;
-    dragStartSceneRef.current = null;
+    const current = takeGizmoDragScene(dragStartSceneRef);
     const lives = handle?.editor?.selectedActorTransforms() ?? [];
     if (!handle || !current || lives.length === 0) return;
     const byId = new Map(lives.map((live) => [live.actorId, live]));

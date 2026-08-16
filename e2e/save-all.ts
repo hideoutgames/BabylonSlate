@@ -50,11 +50,25 @@ export async function saveAllIfEnabled(page: Page): Promise<void> {
   });
   await button.click({ force: true });
   try {
-    await expect(button).toBeDisabled({ timeout: 8_000 });
+    await expect
+      .poll(
+        async () => {
+          const diagnostics = await readSaveAllDiagnostics(page);
+          return {
+            dirty: diagnostics.dirty.length,
+            disabled: await button.isDisabled(),
+          };
+        },
+        { timeout: 15_000 },
+      )
+      .toEqual({ dirty: 0, disabled: true });
   } catch (error) {
     const diagnostics = await readSaveAllDiagnostics(page);
     throw new Error(
-      `Save All stayed dirty: ${JSON.stringify(diagnostics)}`,
+      `Save All stayed dirty: ${JSON.stringify({
+        ...diagnostics,
+        buttonDisabled: await button.isDisabled(),
+      })}`,
       { cause: error },
     );
   }
