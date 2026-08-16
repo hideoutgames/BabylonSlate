@@ -72,7 +72,7 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { useDocuments } from "../context/document-context";
-import { refuseTheirsPaths } from "../lib/source-control-file-ops";
+import { oursLockPaths, refuseTheirsPaths } from "../lib/source-control-file-ops";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
@@ -722,16 +722,20 @@ export function ContentBrowserWorkspace() {
 
   const confirmDelete = useCallback(async () => {
     if (!assetRegistry || !deleteTarget) return;
+    const deletePaths = deleteTarget.guids
+      .map((guid) => assetRegistry.getByGuid(guid)?.path)
+      .filter((path): path is string => Boolean(path));
     const locked = refuseTheirsPaths(
-      deleteTarget.guids
-        .map((guid) => assetRegistry.getByGuid(guid)?.path)
-        .filter((path): path is string => Boolean(path)),
+      deletePaths,
       (path) => sourceControl.refuseIfTheirs(path),
     );
     if (locked) {
       setOpenError(locked);
       return;
     }
+    const oursToRelease = oursLockPaths(deletePaths, (path) =>
+      sourceControl.lockStateForPath(path),
+    );
     setBusy(true);
     try {
       const folders =
@@ -760,6 +764,9 @@ export function ContentBrowserWorkspace() {
       setSelectedGuids(new Set());
       setSelectedFolderPaths(new Set());
       setDeleteTarget(null);
+      for (const path of oursToRelease) {
+        await sourceControl.releasePath(path);
+      }
       await refreshAssetRegistry();
     } finally {
       setBusy(false);

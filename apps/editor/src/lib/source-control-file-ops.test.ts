@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { refuseTheirsPaths } from "./source-control-file-ops";
+import { oursLockPaths, refuseTheirsPaths } from "./source-control-file-ops";
 
 describe("refuseTheirsPaths", () => {
   it("returns the holder message for the first path locked by someone else", () => {
@@ -17,5 +17,21 @@ describe("refuseTheirsPaths", () => {
     expect(
       refuseTheirsPaths(["assets/mine.babasset"], () => null),
     ).toBeNull();
+  });
+});
+
+describe("oursLockPaths", () => {
+  it("returns only paths we currently hold", () => {
+    expect(
+      oursLockPaths(
+        ["assets/mine.babasset", "assets/theirs.babasset", "assets/free.babasset"],
+        (path) =>
+          path === "assets/mine.babasset"
+            ? "mine"
+            : path === "assets/theirs.babasset"
+              ? "theirs"
+              : null,
+      ),
+    ).toEqual(["assets/mine.babasset"]);
   });
 });

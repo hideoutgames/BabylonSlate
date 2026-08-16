@@ -48,13 +48,7 @@ export class GitLfsLockProvider implements LockProvider {
     if (!isOk(response)) return response;
     const { status, json } = response.value;
     if (status === 409) {
-      const lock = parseLock(json.lock, false);
-      return err({
-        kind: "conflict",
-        message: messageOf(json, "already created lock"),
-        lock: lock ?? undefined,
-        status,
-      });
+      return this.conflictFromExisting(json, status);
     }
     if (status === 201 || status === 200) {
       const lock = parseLock(json.lock, true);
@@ -127,6 +121,38 @@ export class GitLfsLockProvider implements LockProvider {
     const { status, json } = response.value;
     if (status === 200 || status === 201) return ok(undefined);
     return this.httpError(status, json);
+  }
+
+  private async conflictFromExisting(
+    json: Record<string, unknown>,
+    status: number,
+  ): Promise<LockResult<FileLock>> {
+    const fallback = parseLock(json.lock, false);
+    const message = messageOf(json, "already created lock");
+    const verified = await this.verify();
+    if (isOk(verified)) {
+      const ours = verified.value.ours.find(
+        (lock) => lock.path === fallback?.path || lock.id === fallback?.id,
+      );
+      if (ours) {
+        return err({ kind: "conflict", message, lock: ours, status });
+      }
+      const theirs = verified.value.theirs.find(
+        (lock) => lock.path === fallback?.path || lock.id === fallback?.id,
+      );
+      return err({
+        kind: "conflict",
+        message,
+        lock: theirs ?? fallback ?? undefined,
+        status,
+      });
+    }
+    return err({
+      kind: "conflict",
+      message,
+      lock: fallback ?? undefined,
+      status,
+    });
   }
 
   private listUrl(cursor?: string): string {

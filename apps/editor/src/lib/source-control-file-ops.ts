@@ -9,3 +9,11 @@ export function refuseTheirsPaths(
   }
   return null;
 }
+
+/** Paths we hold, so a delete can unlock the old LFS path. */
+export function oursLockPaths(
+  paths: string[],
+  lockStateForPath: (path: string) => "mine" | "theirs" | null,
+): string[] {
+  return paths.filter((path) => lockStateForPath(path) === "mine");
+}

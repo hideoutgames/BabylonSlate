@@ -27,7 +27,7 @@ interface LockProvider {
 }
 ```
 
-`LockError.kind` is `conflict` (HTTP 409 with the existing lock), `offline`, `unauthorized`, or `http`. Create **is** the race-free check: 201 holds the lock; 409 carries the holder.
+`LockError.kind` is `conflict` (HTTP 409 with the existing lock), `offline`, `unauthorized`, or `http`. Create **is** the race-free check: 201 holds the lock; 409 carries the holder. Git LFS does not say whether that holder is us, so `GitLfsLockProvider` follows a 409 with `POST /locks/verify` and sets `ours` from the verify split. That is how a lock survives an app restart: the next auto-lock create 409s, verify lists the path in `ours`, and the editor treats it as held. If verify fails, the 409 lock stays `ours: false` (edit still applies; unlocked banner).
 
 Implementations: `GitLfsLockProvider` (injected `lfsFetch` + `getToken` — the package never imports Capacitor or Electron) and `FakeLockProvider` (in-memory map, 409 on double-create, force-unlock flag).
 
@@ -82,10 +82,10 @@ Missing settings normalize to disabled. Project Settings → **Source Control** 
 
 `SourceControlService` constructs Git LFS (native) or Fake (test mode) only when `enabled` **and** the host is ios/android/electron (or test mode). Dispose on Close Project.
 
-- **Auto-lock** on the first mutating `applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange` (after the plugin read-only check). Once per path per session. 201 / already-ours: held. 409 theirs or network failure: edit still applies; persistent unlocked banner. Failure never blocks.
+- **Auto-lock** on the first mutating `applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange` (after the plugin read-only check). Once per path per session. If verify already lists the path as ours, create is skipped. 201 / already-ours: held. 409 theirs or network failure: edit still applies; persistent unlocked banner. Failure never blocks.
 - **Advisory open**: always succeeds. Theirs starts `lockEditMode: "readonly"` with holder + age banner and **Edit Anyway**. Ours / unlocked: normal edit.
 - **Release is explicit only.** **Release All My Locks** (confirm: unpushed work becomes editable by others) plus per-asset Release. Nothing on timer, close, or heuristic. **Force Unlock** is for stale / others’ locks.
-- **Moves / deletes:** ours → unlock old + lock new; theirs → refuse with holder name.
+- **Moves / deletes:** ours → unlock old + lock new (delete only unlocks); theirs → refuse with holder name.
 - **Content Browser:** reserved `data-lock-slot` — ours `data-lock-state="mine"`; theirs `data-lock-state="theirs"` plus owner name; unlocked empty. No git modified/untracked badges.
 - **Locks** DockView window (`id: "locks"`) is listed for every `DockviewDocumentKind` only when `sourceControl: true` is passed into `listDockWindows`. Off: zero Windows-menu difference.
 
@@ -109,4 +109,4 @@ Two-device GitHub lock visibility is **manual** native acceptance, not CI.
 
 ## Tests
 
-Node: endpoint mapping, SSH→HTTPS, 201/409 create, verify ours/theirs, unlock/force, pagination, fake, poll pause, settings normalize, mtime classify. jsdom: settings hidden on web, token not in `project.json`, auto-lock, 409 banner, CB `data-lock-state`, Locks Release All copy, readonly + Edit Anyway, move refused when theirs, foreground dirty warning. Playwright `e2e/p15-source-control.spec.ts`: Fake enable → edit → mine decoration → Locks count → Edit Anyway → Release All confirm → mtime reload dialog. Desktop source-read: IPC channel names `secrets:*` and `lfs:fetch`.
+Node: endpoint mapping, SSH→HTTPS, 201/409 create, 409+verify already-ours, verify ours/theirs, unlock/force, pagination, fake, poll pause, settings normalize, mtime classify. jsdom: settings hidden on web, token not in `project.json`, auto-lock, skip create when already ours, 409 banner, CB `data-lock-state`, Locks Release All copy, readonly + Edit Anyway, move refused when theirs, delete unlocks ours, foreground dirty warning, iOS pbxproj/`packageClassList` Keychain plugin. Playwright `e2e/p15-source-control.spec.ts`: Fake enable → edit → mine decoration → Locks count → Edit Anyway → Release All confirm → mtime reload dialog. Desktop source-read: IPC channel names `secrets:*` and `lfs:fetch`.
