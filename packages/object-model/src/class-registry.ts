@@ -5,6 +5,9 @@ import {
   isLockedEngineClassId,
 } from "./ids";
 
+/** Max ancestry length including the class itself (15 parents above). */
+export const MAX_CLASS_INHERITANCE_DEPTH = 16;
+
 export type VariableDef = {
   name: string;
   type: string;
@@ -135,6 +138,14 @@ export class ClassRegistry {
     if (def.parentClassId && !this.classes.has(def.parentClassId)) {
       return err(`unknown parent class: ${def.parentClassId}`);
     }
+    if (def.parentClassId) {
+      const parentDepth = this.ancestry(def.parentClassId).length;
+      if (parentDepth >= MAX_CLASS_INHERITANCE_DEPTH) {
+        return err(
+          `inheritance depth limit (${MAX_CLASS_INHERITANCE_DEPTH}) exceeded for parent ${def.parentClassId}`,
+        );
+      }
+    }
     this.classes.set(def.id, {
       ...def,
       variables: [...def.variables],
@@ -250,6 +261,13 @@ export class ClassRegistry {
     }
     if (classId === newParentId || this.isA(newParentId, classId)) {
       return err(`reparent would create a cycle: ${classId} -> ${newParentId}`);
+    }
+    const parentDepth = this.ancestry(newParentId).length;
+    // Reparent keeps this class in the chain, so parent depth must leave room.
+    if (parentDepth >= MAX_CLASS_INHERITANCE_DEPTH) {
+      return err(
+        `inheritance depth limit (${MAX_CLASS_INHERITANCE_DEPTH}) exceeded for parent ${newParentId}`,
+      );
     }
 
     const before = new Set(this.inheritedVariables(classId).map((v) => v.name));

@@ -70,11 +70,33 @@ describe("ContentBrowserNewAssetDialog", () => {
       />,
     );
     expect(screen.getByTestId("new-asset-parent")).toBeTruthy();
+    expect(screen.getByTestId("new-asset-parent-search")).toBeTruthy();
     expect(
       screen.getByTestId("new-asset-parent-BObject").getAttribute("data-selected"),
     ).toBe("true");
     fireEvent.click(screen.getByTestId("new-asset-parent-Actor"));
     expect(onParentClassChange).toHaveBeenCalledWith("Actor");
+  });
+
+  it("lists project Classes in the Parent Class tree and filters by search", () => {
+    renderDialog({
+      type: "Class",
+      classAssets: [
+        {
+          path: "assets/Hero.class.babasset",
+          header: { type: "Class", name: "Hero", parentClass: "Actor" },
+        },
+      ],
+    });
+    expect(screen.getByTestId("new-asset-parent-Hero")).toBeTruthy();
+    expect(screen.getByTestId("new-asset-parent-Hero").getAttribute("data-depth")).toBe(
+      "2",
+    );
+    fireEvent.change(screen.getByTestId("new-asset-parent-search"), {
+      target: { value: "Hero" },
+    });
+    expect(screen.getByTestId("new-asset-parent-Hero")).toBeTruthy();
+    expect(screen.queryByTestId("new-asset-parent-GameInstance")).toBeNull();
   });
 
   it("disables Create when the name is empty or taken", () => {

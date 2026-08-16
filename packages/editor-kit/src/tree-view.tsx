@@ -65,6 +65,13 @@ export interface TreeViewProps {
   onReparent?: (dragId: string, targetId: string | null) => void;
   /** Drop a row onto a client point outside the tree (graph canvas spawn). */
   onExternalDrop?: (id: string, clientX: number, clientY: number) => void;
+  /** Fired while an external drag is armed (for graph drop hints). */
+  onExternalDragMove?: (
+    id: string,
+    clientX: number,
+    clientY: number,
+  ) => void;
+  onExternalDragEnd?: () => void;
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
@@ -108,6 +115,8 @@ export function TreeView({
   onToggleExpanded,
   onReparent,
   onExternalDrop,
+  onExternalDragMove,
+  onExternalDragEnd,
   onActivate,
   onContextMenu,
   reparentArm = "hold",
@@ -178,10 +187,12 @@ export function TreeView({
         /* jsdom and detached nodes */
       }
     }
+    const wasArmed = Boolean(drag?.armed);
     dragRef.current = null;
     extraPointerRef.current = null;
     setDropTargetId(undefined);
-  }, []);
+    if (wasArmed) onExternalDragEnd?.();
+  }, [onExternalDragEnd]);
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>, nodeId: string) => {
@@ -314,11 +325,15 @@ export function TreeView({
         if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
         drag.longPressTimer = null;
       }
+      if (onExternalDrop && !onReparent) {
+        onExternalDragMove?.(drag.nodeId, event.clientX, event.clientY);
+        return;
+      }
       if (!onReparent) return;
       const target = nodeIdAtClientY(event.clientY);
       setDropTargetId(target === drag.nodeId ? undefined : target);
     },
-    [nodeIdAtClientY, onExternalDrop, onReparent],
+    [nodeIdAtClientY, onExternalDragMove, onExternalDrop, onReparent],
   );
 
   const onPointerUp = useCallback(

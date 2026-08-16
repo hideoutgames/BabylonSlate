@@ -210,6 +210,36 @@ describe("editor-only assets", () => {
       interfaces: [
         { id: "if-1", name: "Damageable", assetGuid: "g1" },
       ],
+      components: [],
+    });
+  });
+
+  it("indexes prefab components on Class headers", () => {
+    expect(
+      classHeaderMeta({
+        members: [],
+        components: [
+          {
+            id: "mesh-1",
+            classId: "MeshComponent",
+            parentId: null,
+            properties: { meshKind: "box" },
+          },
+        ],
+      }),
+    ).toEqual({
+      functions: [],
+      variables: [],
+      events: [],
+      interfaces: [],
+      components: [
+        {
+          id: "mesh-1",
+          classId: "MeshComponent",
+          parentId: null,
+          properties: { meshKind: "box" },
+        },
+      ],
     });
   });
 });

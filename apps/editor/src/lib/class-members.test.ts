@@ -105,8 +105,8 @@ describe("addClassMember", () => {
           type: "flow.event.call",
           position: { x: 200, y: 80 },
           data: {
-            title: "Call On Hit",
-            name: "On Hit",
+            title: "Call Event On Hit",
+            name: "Event On Hit",
             __nodeType: "flow.event.call",
           },
         },
@@ -117,6 +117,8 @@ describe("addClassMember", () => {
     expect(graph.members?.[0]?.pins).toEqual(pins);
     expect(graph.nodes[0]?.data.pins).toEqual(pins);
     expect(graph.nodes[1]?.data.pins).toEqual(pins);
+    expect(graph.nodes[1]?.data.name).toBe("On Hit");
+    expect(graph.nodes[1]?.data.title).toBe("Call On Hit");
   });
 
   it("uses one id for the event member and node so Class tree remove matches", () => {

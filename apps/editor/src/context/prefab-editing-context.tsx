@@ -18,15 +18,20 @@ import {
   applyPrefabComponentTransform,
   applyPrefabPivotDelta,
   componentSubtreeIds,
+  mergePrefabComponents,
   nextPrefabComponentId,
   prefabComponentsFromGraph,
   PREFAB_ROOT_ID,
   reparentPrefabComponents,
+  type PrefabComponentView,
 } from "../lib/prefab-preview";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
+import { classParentLookup } from "../lib/content-browser-helpers";
+import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { classIdForGraphPath } from "../services/script-compiler";
 
 interface PrefabEditingContextValue {
-  components: SerializedComponent[];
+  components: PrefabComponentView[];
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
   addComponent: (classId: string) => void;
@@ -48,6 +53,22 @@ const PrefabEditingContext = createContext<PrefabEditingContextValue | null>(
   null,
 );
 
+function stripInheritance(
+  components: readonly PrefabComponentView[],
+): SerializedComponent[] {
+  return components.map((component) => {
+    const { inheritedFrom: _ignored, ...rest } = component;
+    void _ignored;
+    return {
+      id: rest.id,
+      classId: rest.classId,
+      properties: { ...rest.properties },
+      parentId: rest.parentId ?? null,
+      ...(rest.transform ? { transform: rest.transform } : {}),
+    };
+  });
+}
+
 export function PrefabEditingProvider({
   children,
   initialSelectedId = PREFAB_ROOT_ID,
@@ -56,7 +77,7 @@ export function PrefabEditingProvider({
   initialSelectedId?: string | null;
 }) {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange } = useDocuments();
+  const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
   const [selectedId, setSelectedId] = useState<string | null>(
     initialSelectedId,
   );
@@ -67,49 +88,126 @@ export function PrefabEditingProvider({
     return doc.content as SerializedGraph;
   }, [documentId, openDocuments]);
 
-  const components = prefabComponentsFromGraph(graph);
+  const classId = useMemo(() => {
+    const doc = openDocuments.find((entry) => entry.id === documentId);
+    return doc?.ref.path ? classIdForGraphPath(doc.ref.path) : null;
+  }, [documentId, openDocuments]);
 
-  const persist = useCallback(
-    (next: SerializedComponent[]) => {
+  const parentOf = useMemo(
+    () => classParentLookup(assetRegistry?.list() ?? []),
+    [assetRegistry],
+  );
+
+  const parentGraphs = useMemo(
+    () =>
+      collectClassGraphsForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+        classIdForPath: classIdForGraphPath,
+      }),
+    [assetRegistry, openDocuments],
+  );
+
+  const localComponents = useMemo(
+    () => prefabComponentsFromGraph(graph),
+    [graph],
+  );
+
+  const components = useMemo(() => {
+    const ancestors: Array<{
+      classId: string;
+      components: SerializedComponent[];
+    }> = [];
+    const seen = new Set<string>();
+    let current = classId ? parentOf(classId) : null;
+    const chain: string[] = [];
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      chain.push(current);
+      current = parentOf(current);
+    }
+    // Root-first for merge.
+    for (const id of [...chain].reverse()) {
+      const parentGraph = parentGraphs[id];
+      if (!parentGraph?.components?.length) continue;
+      ancestors.push({ classId: id, components: parentGraph.components });
+    }
+    // When local is still the default singleton and parents contribute, prefer merge.
+    const local =
+      graph && Array.isArray(graph.components)
+        ? graph.components
+        : ancestors.length > 0
+          ? []
+          : localComponents;
+    return mergePrefabComponents(ancestors, local);
+  }, [classId, graph, localComponents, parentGraphs, parentOf]);
+
+  const persistLocal = useCallback(
+    (nextLocal: SerializedComponent[]) => {
       if (!graph) return;
-      void applyGraphChange(documentId, { ...graph, components: next });
+      void applyGraphChange(documentId, { ...graph, components: nextLocal });
     },
     [applyGraphChange, documentId, graph],
   );
 
+  const upsertLocalFromViews = useCallback(
+    (views: PrefabComponentView[]) => {
+      // Persist owned components and inherited overrides (full merged snapshot
+      // minus pure-parent-only rows that were never touched stays via merge).
+      // Store every view so child documents round-trip transforms for inherited.
+      persistLocal(stripInheritance(views));
+    },
+    [persistLocal],
+  );
+
   const addComponent = useCallback(
-    (classId: string) => {
-      persist([
+    (classIdToAdd: string) => {
+      const next: PrefabComponentView[] = [
         ...components,
         {
           id: nextPrefabComponentId(components),
-          classId,
-          properties: defaultPropertiesFor(classId),
+          classId: classIdToAdd,
+          properties: defaultPropertiesFor(classIdToAdd),
           parentId: null,
           transform: identitySerializedTransform(),
         },
-      ]);
+      ];
+      upsertLocalFromViews(next);
     },
-    [components, persist],
+    [components, upsertLocalFromViews],
   );
 
   const removeSelected = useCallback(() => {
     if (!selectedId || selectedId === PREFAB_ROOT_ID) return;
+    const selected = components.find((component) => component.id === selectedId);
+    if (selected?.inheritedFrom) return;
     const doomed = componentSubtreeIds(components, selectedId);
-    persist(components.filter((component) => !doomed.has(component.id)));
+    // Block if any doomed row is inherited.
+    if (
+      components.some(
+        (component) => doomed.has(component.id) && component.inheritedFrom,
+      )
+    ) {
+      return;
+    }
+    upsertLocalFromViews(
+      components.filter((component) => !doomed.has(component.id)),
+    );
     setSelectedId(PREFAB_ROOT_ID);
-  }, [components, persist, selectedId]);
+  }, [components, selectedId, upsertLocalFromViews]);
 
   const reparentComponent = useCallback(
     (dragId: string, targetId: string | null) => {
-      persist(reparentPrefabComponents(components, dragId, targetId));
+      upsertLocalFromViews(
+        reparentPrefabComponents(components, dragId, targetId),
+      );
     },
-    [components, persist],
+    [components, upsertLocalFromViews],
   );
 
   const updateComponent = useCallback(
     (componentId: string, property: string, value: unknown) => {
-      persist(
+      upsertLocalFromViews(
         components.map((component) =>
           component.id === componentId
             ? {
@@ -120,21 +218,23 @@ export function PrefabEditingProvider({
         ),
       );
     },
-    [components, persist],
+    [components, upsertLocalFromViews],
   );
 
   const updateComponentTransform = useCallback(
     (componentId: string, transform: SerializedTransform) => {
-      persist(applyPrefabComponentTransform(components, componentId, transform));
+      upsertLocalFromViews(
+        applyPrefabComponentTransform(components, componentId, transform),
+      );
     },
-    [components, persist],
+    [components, upsertLocalFromViews],
   );
 
   const applyPivotTransform = useCallback(
     (transform: SerializedTransform) => {
-      persist(applyPrefabPivotDelta(components, transform));
+      upsertLocalFromViews(applyPrefabPivotDelta(components, transform));
     },
-    [components, persist],
+    [components, upsertLocalFromViews],
   );
 
   const value = useMemo(
