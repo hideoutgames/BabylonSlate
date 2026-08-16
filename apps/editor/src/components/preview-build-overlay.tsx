@@ -1,11 +1,19 @@
 import { XIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@babylonslate/ui/components/alert";
+import { SelectableText } from "@babylonslate/editor-kit";
 
 export type PreviewBuildOverlayProps = {
   src: string;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   onClose: () => void;
   onLoad?: () => void;
+  /** Boot failure reported by the player, so the black canvas is explained. */
+  error?: string | null;
 };
 
 export function PreviewBuildOverlay({
@@ -13,6 +21,7 @@ export function PreviewBuildOverlay({
   iframeRef,
   onClose,
   onLoad,
+  error = null,
 }: PreviewBuildOverlayProps) {
   return (
     <div
@@ -31,6 +40,16 @@ export function PreviewBuildOverlay({
           <XIcon />
         </Button>
       </div>
+      {error ? (
+        <div className="p-4">
+          <Alert variant="destructive" data-testid="preview-build-error">
+            <AlertTitle>Preview Build Failed To Start</AlertTitle>
+            <AlertDescription>
+              <SelectableText>{error}</SelectableText>
+            </AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
       <iframe
         ref={iframeRef}
         title="Preview Build"

@@ -1,7 +1,11 @@
 export const PREVIEW_PACK_MESSAGE = "babylonslate-preview-pack";
+/** Player → editor: the pack listener is installed, send (or resend) the pack. */
+export const PREVIEW_REQUEST_PACK_MESSAGE = "babylonslate-preview-request-pack";
 export const PREVIEW_READY_MESSAGE = "babylonslate-preview-ready";
 export const PREVIEW_STATS_MESSAGE = "babylonslate-preview-stats";
 export const PREVIEW_DIAGNOSTICS_MESSAGE = "babylonslate-preview-diagnostics";
+/** Player → editor: boot failed, so the overlay can explain the black canvas. */
+export const PREVIEW_ERROR_MESSAGE = "babylonslate-preview-error";
 export const PREVIEW_STOP_MESSAGE = "babylonslate-preview-stop";
 
 export type PreviewPackMessage = {
@@ -9,9 +13,18 @@ export type PreviewPackMessage = {
   files: Record<string, ArrayBuffer>;
 };
 
+export type PreviewRequestPackMessage = {
+  type: typeof PREVIEW_REQUEST_PACK_MESSAGE;
+};
+
 export type PreviewReadyMessage = {
   type: typeof PREVIEW_READY_MESSAGE;
   startupSceneGuid: string;
+};
+
+export type PreviewErrorMessage = {
+  type: typeof PREVIEW_ERROR_MESSAGE;
+  message: string;
 };
 
 export type PreviewStatsMessage = {
@@ -44,6 +57,23 @@ export function isPreviewDiagnosticsMessage(
 ): value is PreviewDiagnosticsMessage {
   if (!value || typeof value !== "object") return false;
   return (value as { type?: unknown }).type === PREVIEW_DIAGNOSTICS_MESSAGE;
+}
+
+export function isPreviewRequestPackMessage(
+  value: unknown,
+): value is PreviewRequestPackMessage {
+  if (!value || typeof value !== "object") return false;
+  return (value as { type?: unknown }).type === PREVIEW_REQUEST_PACK_MESSAGE;
+}
+
+export function isPreviewErrorMessage(
+  value: unknown,
+): value is PreviewErrorMessage {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { type?: unknown; message?: unknown };
+  return (
+    record.type === PREVIEW_ERROR_MESSAGE && typeof record.message === "string"
+  );
 }
 
 export function filesFromPreviewPack(
