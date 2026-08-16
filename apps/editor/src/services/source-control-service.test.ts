@@ -212,6 +212,59 @@ describe("SourceControlService", () => {
     expect(service.autoLockOnEdit).toBe(false);
   });
 
+  it("skips create when verify already holds the path as ours", async () => {
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    const first = new SourceControlService();
+    await first.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    await first.autoLock("assets/a.babasset");
+    fake.createCount = 0;
+
+    const second = new SourceControlService();
+    await second.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    await second.refresh();
+    await second.autoLock("assets/a.babasset");
+    expect(fake.createCount).toBe(0);
+    expect(second.lockForPath("assets/a.babasset")?.ours).toBe(true);
+    expect(second.bannerFor("assets/a.babasset")).toBeNull();
+  });
+
+  it("releases our lock for a deleted path and keeps theirs", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    fake.addTheirs("assets/theirs.babasset", "Bob");
+    await service.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    await service.autoLock("assets/mine.babasset");
+    await service.refresh();
+    await service.releasePath("assets/mine.babasset");
+    await service.releasePath("assets/theirs.babasset");
+    expect(service.lockForPath("assets/mine.babasset")).toBeUndefined();
+    expect(service.lockForPath("assets/theirs.babasset")?.ours).toBe(false);
+  });
+
   it("releases all of our locks", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();

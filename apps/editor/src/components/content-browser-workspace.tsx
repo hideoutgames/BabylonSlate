@@ -78,6 +78,7 @@ import {
   applyLockTransfers,
   containedAssetPaths,
   folderMoveLockTransfers,
+  oursLockPaths,
   refuseTheirsPaths,
 } from "../lib/source-control-file-ops";
 import { useProjectSearch } from "../context/project-search-context";
@@ -775,6 +776,9 @@ export function ContentBrowserWorkspace() {
       }
     }
     if (refuseTheirsAssetPaths([...paths])) return;
+    const oursToRelease = oursLockPaths([...paths], (path) =>
+      sourceControl.lockStateForPath(path),
+    );
     setBusy(true);
     try {
       for (const path of folders) {
@@ -797,6 +801,9 @@ export function ContentBrowserWorkspace() {
       setSelectedGuids(new Set());
       setSelectedFolderPaths(new Set());
       setDeleteTarget(null);
+      for (const path of oursToRelease) {
+        await sourceControl.releasePath(path);
+      }
       await refreshAssetRegistry();
     } finally {
       setBusy(false);
@@ -808,6 +815,7 @@ export function ContentBrowserWorkspace() {
     deleteTarget,
     refreshAssetRegistry,
     refuseTheirsAssetPaths,
+    sourceControl,
   ]);
 
   const importPickedFiles = useCallback(

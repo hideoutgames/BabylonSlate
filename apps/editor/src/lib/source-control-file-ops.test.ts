@@ -3,6 +3,7 @@ import {
   applyLockTransfers,
   containedAssetPaths,
   folderMoveLockTransfers,
+  oursLockPaths,
   refuseTheirsPaths,
 } from "./source-control-file-ops";
 
@@ -22,6 +23,22 @@ describe("refuseTheirsPaths", () => {
     expect(
       refuseTheirsPaths(["assets/mine.babasset"], () => null),
     ).toBeNull();
+  });
+});
+
+describe("oursLockPaths", () => {
+  it("returns only paths we currently hold", () => {
+    expect(
+      oursLockPaths(
+        ["assets/mine.babasset", "assets/theirs.babasset", "assets/free.babasset"],
+        (path) =>
+          path === "assets/mine.babasset"
+            ? "mine"
+            : path === "assets/theirs.babasset"
+              ? "theirs"
+              : null,
+      ),
+    ).toEqual(["assets/mine.babasset"]);
   });
 });
 

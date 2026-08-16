@@ -16,6 +16,7 @@ export class FakeLockProvider implements LockProvider {
   private readonly now: () => string;
   private readonly byId = new Map<string, FileLock>();
   private nextId = 1;
+  createCount = 0;
 
   constructor(options: FakeLockProviderOptions = {}) {
     this.selfName = options.selfName ?? "Me";
@@ -39,6 +40,7 @@ export class FakeLockProvider implements LockProvider {
   }
 
   async create(path: string): Promise<LockResult<FileLock>> {
+    this.createCount += 1;
     const existing = this.findByPath(path);
     if (existing) {
       return err({

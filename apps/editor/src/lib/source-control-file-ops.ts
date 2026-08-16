@@ -19,6 +19,14 @@ export function refuseTheirsPaths(
   return null;
 }
 
+/** Paths we hold, so a delete can unlock the old LFS path. */
+export function oursLockPaths(
+  paths: string[],
+  lockStateForPath: (path: string) => LockPathState,
+): string[] {
+  return paths.filter((path) => lockStateForPath(path) === "mine");
+}
+
 /** Asset paths in a folder, including nested files. Sibling prefixes are excluded. */
 export function containedAssetPaths(
   assets: readonly { path: string }[],
