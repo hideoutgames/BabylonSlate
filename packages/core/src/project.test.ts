@@ -164,6 +164,14 @@ describe("project schema", () => {
           pins: [{ name: "amount", typeId: "float", direction: "in" }],
         },
         { id: "if-1", kind: "interface", name: "Damageable", assetGuid: "guid-1" },
+        {
+          id: "loc-1",
+          kind: "variable",
+          name: "Temp",
+          typeId: "int",
+          functionId: "fn-2",
+          defaultValue: 4,
+        },
       ]),
     ).toEqual([
       {
@@ -184,6 +192,14 @@ describe("project schema", () => {
         kind: "interface",
         name: "Damageable",
         assetGuid: "guid-1",
+      },
+      {
+        id: "loc-1",
+        kind: "variable",
+        name: "Temp",
+        typeId: "int",
+        defaultValue: 4,
+        functionId: "fn-2",
       },
     ]);
   });

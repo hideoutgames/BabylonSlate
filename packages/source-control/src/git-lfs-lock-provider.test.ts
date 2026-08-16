@@ -52,16 +52,23 @@ describe("GitLfsLockProvider", () => {
     });
   });
 
-  it("maps 409 to a conflict carrying the existing lock", async () => {
+  it("maps 409 to a conflict when verify lists the lock as theirs", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo.git",
       branch: "main",
       getToken: async () => "token",
-      fetch: async () =>
-        jsonResponse(409, {
+      fetch: async (request) => {
+        if (request.url.endsWith("/locks/verify")) {
+          return jsonResponse(200, {
+            ours: [],
+            theirs: [{ ...sampleLock, owner: { name: "Bob" } }],
+          });
+        }
+        return jsonResponse(409, {
           lock: { ...sampleLock, owner: { name: "Bob" } },
           message: "already created lock",
-        }),
+        });
+      },
     });
     const result = await provider.create("assets/hero.scene.babasset");
     expect(isErr(result)).toBe(true);
@@ -71,52 +78,32 @@ describe("GitLfsLockProvider", () => {
     expect(result.error.lock?.ours).toBe(false);
   });
 
-  it("marks a 409 as ours when verify lists the same path in ours", async () => {
-    const calls: string[] = [];
+  it("treats 409 as held when verify lists the path as ours", async () => {
+    const urls: string[] = [];
     const provider = new GitLfsLockProvider({
-      repositoryUrl: "https://github.com/org/repo",
+      repositoryUrl: "https://github.com/org/repo.git",
       branch: "main",
       getToken: async () => "token",
       fetch: async (request) => {
-        calls.push(`${request.method} ${request.url}`);
-        if (request.url.endsWith("/verify")) {
+        urls.push(`${request.method} ${request.url}`);
+        if (request.method === "POST" && request.url.endsWith("/locks")) {
+          return jsonResponse(409, {
+            lock: sampleLock,
+            message: "already created lock",
+          });
+        }
+        if (request.url.endsWith("/locks/verify")) {
           return jsonResponse(200, { ours: [sampleLock], theirs: [] });
         }
-        return jsonResponse(409, {
-          lock: sampleLock,
-          message: "already created lock",
-        });
+        return jsonResponse(500, { message: `unexpected ${request.url}` });
       },
     });
-    const result = await provider.create(sampleLock.path);
-    expect(isErr(result)).toBe(true);
-    if (!isErr(result)) return;
-    expect(result.error.kind).toBe("conflict");
-    expect(result.error.lock?.id).toBe("lock-1");
-    expect(result.error.lock?.ours).toBe(true);
-    expect(calls.some((call) => call.includes("/verify"))).toBe(true);
-  });
-
-  it("keeps a 409 as theirs when verify lists the path in theirs", async () => {
-    const theirs = { ...sampleLock, owner: { name: "Bob" } };
-    const provider = new GitLfsLockProvider({
-      repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
-      getToken: async () => "token",
-      fetch: async (request) => {
-        if (request.url.endsWith("/verify")) {
-          return jsonResponse(200, { ours: [], theirs: [theirs] });
-        }
-        return jsonResponse(409, {
-          lock: theirs,
-          message: "already created lock",
-        });
-      },
-    });
-    const result = await provider.create(sampleLock.path);
-    expect(isErr(result) && result.error.lock?.ours).toBe(false);
-    if (!isErr(result)) return;
-    expect(result.error.lock?.ownerName).toBe("Bob");
+    const result = await provider.create("assets/hero.scene.babasset");
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.ours).toBe(true);
+    expect(result.value.id).toBe("lock-1");
+    expect(urls.some((url) => url.endsWith("/locks/verify"))).toBe(true);
   });
 
   it("paginates GET /locks", async () => {

@@ -9,6 +9,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   ListFilterIcon,
+  OctagonAlertIcon,
   PlusIcon,
   UploadIcon,
 } from "lucide-react";
@@ -69,10 +70,17 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { useDocuments } from "../context/document-context";
-import { oursLockPaths, refuseTheirsPaths } from "../lib/source-control-file-ops";
+import {
+  applyLockTransfers,
+  containedAssetPaths,
+  folderMoveLockTransfers,
+  oursLockPaths,
+  refuseTheirsPaths,
+} from "../lib/source-control-file-ops";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
@@ -296,6 +304,32 @@ export function ContentBrowserWorkspace() {
       assetRegistry.list({ rootId: root.id }),
     );
   }, [assetRegistry, browserRoots, registryVersion]);
+
+  const refuseTheirsAssetPaths = useCallback(
+    (paths: string[]): boolean => {
+      const locked = refuseTheirsPaths(paths, (path) =>
+        sourceControl.refuseIfTheirs(path),
+      );
+      if (locked) {
+        setOpenError(locked);
+        return true;
+      }
+      return false;
+    },
+    [sourceControl],
+  );
+
+  const transferFolderLocks = useCallback(
+    async (fromPath: string, nextFolder: string) => {
+      await applyLockTransfers(
+        folderMoveLockTransfers(allAssets, fromPath, nextFolder),
+        (path) => sourceControl.lockStateForPath(path),
+        (from, to) => sourceControl.transferLock(from, to),
+      );
+    },
+    [allAssets, sourceControl],
+  );
+
   const classParentOf = useMemo(
     () => classParentLookup(allAssets),
     [allAssets],
@@ -722,28 +756,28 @@ export function ContentBrowserWorkspace() {
 
   const confirmDelete = useCallback(async () => {
     if (!assetRegistry || !deleteTarget) return;
-    const deletePaths = deleteTarget.guids
-      .map((guid) => assetRegistry.getByGuid(guid)?.path)
-      .filter((path): path is string => Boolean(path));
-    const locked = refuseTheirsPaths(
-      deletePaths,
-      (path) => sourceControl.refuseIfTheirs(path),
-    );
-    if (locked) {
-      setOpenError(locked);
-      return;
+    const paths = new Set<string>();
+    for (const guid of deleteTarget.guids) {
+      const path = assetRegistry.getByGuid(guid)?.path;
+      if (path) paths.add(path);
     }
-    const oursToRelease = oursLockPaths(deletePaths, (path) =>
+    const folders =
+      deleteTarget.kind === "folder"
+        ? [deleteTarget.path]
+        : deleteTarget.kind === "selection"
+          ? deleteTarget.folders
+          : [];
+    for (const folder of folders) {
+      for (const path of containedAssetPaths(allAssets, folder)) {
+        paths.add(path);
+      }
+    }
+    if (refuseTheirsAssetPaths([...paths])) return;
+    const oursToRelease = oursLockPaths([...paths], (path) =>
       sourceControl.lockStateForPath(path),
     );
     setBusy(true);
     try {
-      const folders =
-        deleteTarget.kind === "folder"
-          ? [deleteTarget.path]
-          : deleteTarget.kind === "selection"
-            ? deleteTarget.folders
-            : [];
       for (const path of folders) {
         const from = contentBrowserFolderOps(path, browserRoots);
         if (from.readOnly) continue;
@@ -771,7 +805,15 @@ export function ContentBrowserWorkspace() {
     } finally {
       setBusy(false);
     }
-  }, [assetRegistry, browserRoots, deleteTarget, refreshAssetRegistry, sourceControl]);
+  }, [
+    allAssets,
+    assetRegistry,
+    browserRoots,
+    deleteTarget,
+    refreshAssetRegistry,
+    refuseTheirsAssetPaths,
+    sourceControl,
+  ]);
 
   const importPickedFiles = useCallback(
     async (files: Array<{ name: string; bytes: Uint8Array }>) => {
@@ -848,12 +890,16 @@ export function ContentBrowserWorkspace() {
           (asset) =>
             asset.path === fromPath || asset.path.startsWith(`${fromPath}/`),
         );
+        if (refuseTheirsAssetPaths(contained.map((asset) => asset.path))) {
+          return;
+        }
         await assetRegistry.moveFolder(
           from.rootId,
           from.relative,
           dest.relative,
           newName,
         );
+        await transferFolderLocks(fromPath, nextFolder);
         for (const asset of contained) {
           repairDocumentPath(
             asset.path,
@@ -868,9 +914,15 @@ export function ContentBrowserWorkspace() {
       } else if (nameDialog.kind === "rename") {
         const before = assetRegistry.getByGuid(nameDialog.guid);
         if (!before) return;
+        if (refuseTheirsAssetPaths([before.path])) return;
         const renamed = await assetRegistry.renameAsset(
           nameDialog.guid,
           nameDialog.value.trim(),
+        );
+        await applyLockTransfers(
+          [{ from: before.path, to: renamed.path }],
+          (path) => sourceControl.lockStateForPath(path),
+          (from, to) => sourceControl.transferLock(from, to),
         );
         repairDocumentPath(before.path, renamed.path, renamed.header.type);
         await refreshAssetRegistry();
@@ -884,16 +936,30 @@ export function ContentBrowserWorkspace() {
     nameDialog,
     allAssets,
     refreshAssetRegistry,
+    refuseTheirsAssetPaths,
     repairDocumentPath,
     selectedFolderPath,
     selectedRoot,
     browserRoots,
+    sourceControl,
+    transferFolderLocks,
   ]);
 
   const confirmMove = useCallback(async () => {
     if (!assetRegistry || !moveTarget) return;
     const dest = contentBrowserFolderOps(moveTarget.folderPath, browserRoots);
     if (dest.readOnly) return;
+    if (moveTarget.operation !== "copy") {
+      const paths: string[] = [];
+      for (const fromPath of moveTarget.folderPaths) {
+        paths.push(...containedAssetPaths(allAssets, fromPath));
+      }
+      for (const guid of moveTarget.guids) {
+        const path = assetRegistry.getByGuid(guid)?.path;
+        if (path) paths.push(path);
+      }
+      if (refuseTheirsAssetPaths(paths)) return;
+    }
     setBusy(true);
     try {
       const destPath = moveTarget.folderPath;
@@ -919,6 +985,7 @@ export function ContentBrowserWorkspace() {
             from.relative,
             destRelative,
           );
+          await transferFolderLocks(fromPath, nextFolder);
           for (const asset of contained) {
             repairDocumentPath(
               asset.path,
@@ -935,11 +1002,6 @@ export function ContentBrowserWorkspace() {
         if (moveTarget.operation === "copy") {
           await assetRegistry.copyAsset(guid, dest.rootId, destRelative);
         } else {
-          const refused = sourceControl.refuseIfTheirs(before.path);
-          if (refused) {
-            setOpenError(refused);
-            return;
-          }
           const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
           const relative = destRelative
             ? `${destRelative}/${fileName}`
@@ -949,9 +1011,11 @@ export function ContentBrowserWorkspace() {
             dest.rootId,
             relative,
           );
-          if (sourceControl.lockStateForPath(before.path) === "mine") {
-            await sourceControl.transferLock(before.path, moved.path);
-          }
+          await applyLockTransfers(
+            [{ from: before.path, to: moved.path }],
+            (path) => sourceControl.lockStateForPath(path),
+            (from, to) => sourceControl.transferLock(from, to),
+          );
           repairDocumentPath(before.path, moved.path, moved.header.type);
           setSelectedFolderPath(destPath);
         }
@@ -966,9 +1030,11 @@ export function ContentBrowserWorkspace() {
     assetRegistry,
     moveTarget,
     refreshAssetRegistry,
+    refuseTheirsAssetPaths,
     repairDocumentPath,
     browserRoots,
     sourceControl,
+    transferFolderLocks,
   ]);
 
   const handleImport = useCallback(async () => {
@@ -1136,11 +1202,15 @@ export function ContentBrowserWorkspace() {
                 asset.path === fromPath ||
                 asset.path.startsWith(`${fromPath}/`),
             );
+            if (refuseTheirsAssetPaths(contained.map((asset) => asset.path))) {
+              return;
+            }
             await assetRegistry.moveFolder(
               from.rootId,
               from.relative,
               dest.relative,
             );
+            await transferFolderLocks(fromPath, nextFolder);
             for (const asset of contained) {
               repairDocumentPath(
                 asset.path,
@@ -1152,11 +1222,7 @@ export function ContentBrowserWorkspace() {
           } else if (move.guid) {
             const before = assetRegistry.getByGuid(move.guid);
             if (!before) return;
-            const refused = sourceControl.refuseIfTheirs(before.path);
-            if (refused) {
-              setOpenError(refused);
-              return;
-            }
+            if (refuseTheirsAssetPaths([before.path])) return;
             const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
             const dest = contentBrowserFolderOps(
               move.destinationPath,
@@ -1171,9 +1237,11 @@ export function ContentBrowserWorkspace() {
               dest.rootId,
               relative,
             );
-            if (sourceControl.lockStateForPath(before.path) === "mine") {
-              await sourceControl.transferLock(before.path, moved.path);
-            }
+            await applyLockTransfers(
+              [{ from: before.path, to: moved.path }],
+              (path) => sourceControl.lockStateForPath(path),
+              (from, to) => sourceControl.transferLock(from, to),
+            );
             repairDocumentPath(before.path, moved.path, moved.header.type);
             setSelectedFolderPath(move.destinationPath);
           }
@@ -1190,8 +1258,10 @@ export function ContentBrowserWorkspace() {
       browserRoots,
       rootPrefixes,
       refreshAssetRegistry,
+      refuseTheirsAssetPaths,
       repairDocumentPath,
       sourceControl,
+      transferFolderLocks,
     ],
   );
 
@@ -1623,8 +1693,14 @@ export function ContentBrowserWorkspace() {
           if (!open) setDeleteTarget(null);
         }}
       >
-        <AlertDialogContent data-testid="content-browser-delete-dialog">
+        <AlertDialogContent
+          variant="destructive"
+          data-testid="content-browser-delete-dialog"
+        >
           <AlertDialogHeader>
+            <AlertDialogMedia data-testid="content-browser-delete-media">
+              <OctagonAlertIcon />
+            </AlertDialogMedia>
             <AlertDialogTitle>
               {deleteTarget?.kind === "folder"
                 ? "Delete folder?"

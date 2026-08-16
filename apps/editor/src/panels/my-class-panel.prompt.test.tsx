@@ -13,6 +13,22 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
+function dispatchPointerEvent(
+  target: Element,
+  type: "pointerdown" | "pointerup",
+  init: { clientX: number; clientY: number },
+): void {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: init.clientX,
+    clientY: init.clientY,
+  });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerType", { value: "mouse" });
+  target.dispatchEvent(event);
+}
+
 const applyGraphChange = vi.hoisted(() => vi.fn(async () => true));
 
 vi.mock("../context/document-workspace-context", () => ({
@@ -31,7 +47,15 @@ vi.mock("../context/document-context", () => ({
           path: "assets/Hero.class.babasset",
           label: "Hero Class",
         },
-        content: { nodes: [], edges: [], members: [] },
+        content: {
+          nodes: [],
+          edges: [],
+          members: [
+            { id: "fn-1", kind: "function", name: "Jump", pins: [] },
+            { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
+          ],
+          functionGraphs: { "fn-1": { nodes: [], edges: [] } },
+        },
         layout: null,
         dirty: false,
       },
@@ -75,5 +99,58 @@ describe("MyClassPanel name prompt", () => {
       }),
     );
     prompt.mockRestore();
+  });
+
+  it("hides Local Variables on the event graph and shows them on a function graph", () => {
+    const { rerender } = render(
+      <GraphEditingProvider key="event">
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    expect(screen.queryByTestId("class-add-local-variables")).toBeNull();
+    rerender(
+      <GraphEditingProvider key="fn" initialActiveFunctionId="fn-1">
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
+  });
+
+  it("adds a local variable with the open function id", () => {
+    render(
+      <GraphEditingProvider initialActiveFunctionId="fn-1">
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("class-add-local-variables"));
+    fireEvent.change(screen.getByTestId("name-prompt-input"), {
+      target: { value: "Temp" },
+    });
+    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    expect(applyGraphChange).toHaveBeenCalledWith(
+      "graph:assets/Hero.class.babasset",
+      expect.objectContaining({
+        members: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "variable",
+            name: "Temp",
+            functionId: "fn-1",
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("keeps the function graph open when selecting a class variable", () => {
+    render(
+      <GraphEditingProvider initialActiveFunctionId="fn-1">
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
+    const row = screen.getByTestId("tree-row-var-1");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 10 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 10 });
+    expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
   });
 });

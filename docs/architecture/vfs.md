@@ -47,7 +47,7 @@ Global Engine Settings stored **outside** any project:
 | localStorage | Web |
 | Electron userData + project IPC | Desktop — `globalThis.babylonslate.userData` for Engine Settings; `babylonslate.project` for the Node VFS |
 
-Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap (visible scene + Prefab Preview; freeze when hidden or a modal is open), hardware scaling, thumbnail toggle, debugger defaults, Focus keep-lists (`focusKeepPanels.scene` default `["viewport"]`, `focusKeepPanels.graph` default `["graph"]` — already-open dock tabs that stay when Focus is on), graph default zoom (`graphDefaultZoom` default 0.5, range 0.1–1.5 — opening fit-view cap for node graphs), UserInterface designer presets (`uiDesignerPresets` default `[]` — `{ id, label, width, height, safeArea }`; width/height clamped `>= 1`, insets `>= 0`). `vfs` does not import `@babylonslate/ui-runtime`; the editor merges this list with built-in device presets.
+Fields: templates folder, default project location, recents + bookmarks, appearance, undo history length (default 50), viewport frame cap (visible scene + Prefab Preview; freeze when hidden or a modal is open), hardware scaling, thumbnail toggle, debugger defaults, Focus keep-lists (`focusKeepPanels.scene` default `["viewport"]`, `focusKeepPanels.graph` default `["graph"]` — already-open dock tabs that stay when Focus is on), graph default zoom (`graphDefaultZoom` default 0.5, range 0.1–1.5 — opening, Controls, and focused-node fit-view cap for node graphs), UserInterface designer presets (`uiDesignerPresets` default `[]` — `{ id, label, width, height, safeArea }`; width/height clamped `>= 1`, insets `>= 0`). `vfs` does not import `@babylonslate/ui-runtime`; the editor merges this list with built-in device presets.
 
 Number fields (frame cap, hardware scaling, pointer scale, undo length, graph default zoom, custom UI preset size/insets, and Project Settings `pixelsPerUnit`) use `NumberField`: an empty draft while typing does not persist, and blur restores the last valid value. Out-of-range drafts clamp on blur.
 
@@ -83,8 +83,8 @@ Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never l
 
 | Host | Backend |
 | --- | --- |
-| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. The Swift plugin lives in the iOS **App target** (`BabylonSlateSecretsPlugin.swift` in `project.pbxproj` Sources) and in `packageClassList`. There is no Android editor shell yet. |
-| Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage.encryptString` / `decryptString` |
+| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. The Swift plugin is compiled in the iOS App target (`BabylonSlateSecretsPlugin.swift` in Sources) and listed in `ios/App/App/capacitor.config.json` `packageClassList`. Keep that class listed after `npx cap sync`. There is no Android editor shell yet. |
+| Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage.encryptString` / `decryptString` when encryption is available. Linux hosts without a keyring fall back to storing the packed string unencrypted (accepted host limit). |
 | Web | `UnavailableSecretStore` (`available: false`) — Source Control UI hidden |
 
 `nativeHttp`: `{ method, url, headers, body? }` → `{ status, bodyText }`. iOS/Android use `CapacitorHttp` (bypasses CORS). Electron uses IPC `lfs:fetch` → `net.fetch`. Web returns `null` (unused). Playwright covers lock UX with `FakeLockProvider` instead.

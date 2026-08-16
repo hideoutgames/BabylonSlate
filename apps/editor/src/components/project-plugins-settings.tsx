@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { OctagonAlertIcon } from "lucide-react";
 import { NamePromptDialog } from "@babylonslate/editor-kit";
 import type { PluginDescriptor } from "@babylonslate/assets";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
@@ -20,6 +21,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { documentKindForAssetType } from "@babylonslate/core";
@@ -239,7 +241,7 @@ export function ProjectPluginsSettings() {
                   {plugin.source === "project" ? (
                     <Button
                       type="button"
-                      variant="destructive"
+                      variant="outline"
                       size="sm"
                       className="min-h-[var(--touch-target,44px)]"
                       data-testid={`settings-plugin-delete-${plugin.pluginGuid}`}
@@ -362,8 +364,14 @@ export function ProjectPluginsSettings() {
           if (!open) setConfirmDelete(null);
         }}
       >
-        <AlertDialogContent data-testid="settings-plugin-delete-dialog">
+        <AlertDialogContent
+          variant="destructive"
+          data-testid="settings-plugin-delete-dialog"
+        >
           <AlertDialogHeader>
+            <AlertDialogMedia>
+              <OctagonAlertIcon />
+            </AlertDialogMedia>
             <AlertDialogTitle>Delete Plugin</AlertDialogTitle>
             <AlertDialogDescription>
               Permanently delete {confirmDelete?.settings.displayName} from disk.
@@ -371,8 +379,11 @@ export function ProjectPluginsSettings() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel size="touch">Cancel</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
+              size="touch"
+              data-testid="settings-plugin-delete-confirm"
               onClick={() => {
                 if (!confirmDelete) return;
                 const guid = confirmDelete.pluginGuid;

@@ -54,4 +54,19 @@ describe("LocksPanelContents", () => {
     rerender(<LocksPanelContents sourceControl={service} />);
     expect(service.heldCount).toBe(0);
   });
+
+  it("shows a Title Case empty state when there are no locks", async () => {
+    const service = new SourceControlService();
+    await service.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake: new FakeLockProvider(),
+    });
+    render(<LocksPanelContents sourceControl={service} />);
+    expect(screen.getByText("No Locks.")).toBeTruthy();
+  });
 });

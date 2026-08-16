@@ -248,4 +248,20 @@ describe("SettingsModal project authoring", () => {
       }),
     );
   });
+
+  it("shows Title Case token status without revealing the secret", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    expect(screen.getByText("Not Saved")).toBeTruthy();
+    sourceControl.hasToken = true;
+    cleanup();
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    expect(screen.getByText("Token Saved")).toBeTruthy();
+    sourceControl.hasToken = false;
+  });
 });

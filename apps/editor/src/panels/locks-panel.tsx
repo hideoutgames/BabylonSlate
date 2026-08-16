@@ -53,7 +53,7 @@ export function LocksPanelContents({
       </div>
       <ScrollArea className="flex-1 p-2">
         {locks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No locks.</p>
+          <p className="text-sm text-muted-foreground">No Locks.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {locks.map((lock) => (

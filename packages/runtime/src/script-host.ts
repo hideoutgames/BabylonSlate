@@ -100,6 +100,12 @@ export interface ScriptContext {
   ): void;
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
+  getVariableFrom(target: Actor | null | undefined, name: string): unknown;
+  setVariableOn(
+    target: Actor | null | undefined,
+    name: string,
+    value: unknown,
+  ): void;
   destroyActor(actor: Actor | null | undefined): void;
   setActorLocation(
     actor: Actor | null | undefined,
@@ -407,6 +413,11 @@ export class ScriptHost {
         services.print(message, key, duration, color),
       getVariable: (name) => self?.getVariable(name),
       setVariable: (name, value) => self?.setVariable(name, value),
+      getVariableFrom: (target, name) =>
+        (target ?? self)?.getVariable(name),
+      setVariableOn: (target, name, value) => {
+        (target ?? self)?.setVariable(name, value);
+      },
       destroyActor: (actor) => services.destroyActor(actor ?? self),
       setActorLocation: (actor, location) => {
         const target = actor ?? self;

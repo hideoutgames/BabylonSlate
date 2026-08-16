@@ -14,6 +14,21 @@ test("component gallery renders shadcn primitives in test mode", async ({
   await expect(page.getByTestId("gallery-prefab-tab-note")).toBeVisible();
 });
 
+test("gallery danger dialog uses a solid destructive confirm", async ({
+  page,
+}) => {
+  await page.goto("/?test=1&gallery=1");
+  await page.getByTestId("gallery-danger-dialog-open").click();
+  const dialog = page.getByTestId("gallery-danger-dialog");
+  const confirm = page.getByTestId("gallery-danger-dialog-confirm");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("data-variant", "destructive");
+  await expect(page.getByTestId("gallery-danger-dialog-media")).toBeVisible();
+  await expect(confirm).toHaveClass(/bg-destructive/);
+  await expect(confirm).not.toHaveClass(/bg-destructive\/10/);
+  await expect(confirm).toHaveClass(/text-destructive-foreground/);
+});
+
 test("gallery catalog dialog does not autofocus search", async ({ page }) => {
   await page.goto("/?test=1&gallery=1");
   await page.getByTestId("gallery-open-catalog").click();
