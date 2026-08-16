@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import {
+  classHierarchyFromParentOf,
   createDefaultLogicGraphSerialized,
   hydrateClassDocumentPayload,
   hydrateSerializedGraphForEditor,
   scriptPaletteNodes,
+  scriptPinCompatibility,
   validateSerializedGraph,
 } from "./graph-validation";
 
@@ -280,6 +282,63 @@ describe("validateSerializedGraph", () => {
       { assetGuid: "g1", graphId: "event-graph" },
     );
     expect(diags.some((d) => d.code === "console.debug_tier")).toBe(true);
+  });
+
+  it("flags a stale Call Function when the class symbol table is supplied", () => {
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          {
+            id: "call",
+            type: "functions.call",
+            position: { x: 0, y: 0 },
+            data: { functionName: "Jump", classId: "Hero", implicitSelf: true },
+          },
+        ],
+        edges: [],
+      },
+      {
+        assetGuid: "g1",
+        graphId: "event-graph",
+        classId: "Hero",
+        members: [
+          { id: "fn-1", name: "Dash", kind: "function", classId: "Hero" },
+        ],
+      },
+    );
+    expect(diags.some((d) => d.code === "member.missing_function")).toBe(true);
+  });
+});
+
+describe("classHierarchyFromParentOf", () => {
+  it("treats Hero as a subclass of Actor and BObject", () => {
+    const hierarchy = classHierarchyFromParentOf((id) =>
+      id === "Hero" ? "Actor" : id === "Actor" ? "BObject" : null,
+    );
+    expect(hierarchy.isSubclassOf("Hero", "BObject")).toBe(true);
+    expect(hierarchy.isSubclassOf("BObject", "Hero")).toBe(false);
+  });
+});
+
+describe("scriptPinCompatibility", () => {
+  it("allows an actor reference into a live object pin of a superclass", () => {
+    const rule = scriptPinCompatibility(
+      classHierarchyFromParentOf((id) =>
+        id === "Hero" ? "Actor" : id === "Actor" ? "BObject" : null,
+      ),
+    );
+    expect(
+      rule(
+        { type: { kind: "actorRef", classId: "Hero" } },
+        { type: { kind: "objectRef", classId: "BObject" } },
+      ),
+    ).toBe(true);
+    expect(
+      rule(
+        { type: { kind: "objectRef", classId: "Hero" } },
+        { type: { kind: "actorRef", classId: "Actor" } },
+      ),
+    ).toBe(false);
   });
 });
 

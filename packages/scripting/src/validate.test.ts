@@ -157,6 +157,32 @@ describe("validateGraphs", () => {
     };
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.filter((d) => d.code === "pin.missing_input")).toHaveLength(2);
+    expect(diags.filter((d) => d.code === "pin.missing_input")[0]?.severity).toBe(
+      "warning",
+    );
+  });
+
+  it("errors pin.missing_input for an unconnected required object reference", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "destroy",
+          typeId: "actor.destroy",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("target", "target", "in", objectRef("Actor")),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    const missing = diags.find((d) => d.code === "pin.missing_input");
+    expect(missing?.severity).toBe("error");
   });
 
   it("errors pin.invalid_default when an objectRef stores a literal", () => {
@@ -353,5 +379,128 @@ describe("validateGraphs", () => {
     };
     const diags = validateGraphs([graph], { assetGuid: "asset-1" });
     expect(diags.some((d) => d.code === "type.mismatch")).toBe(true);
+  });
+
+  it("flags stale Get/Set and Call nodes against the class symbol table", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "get",
+          typeId: "variables.get",
+          position: { x: 0, y: 0 },
+          pins: [pin("value", "Health", "out", FLOAT)],
+          properties: {
+            variableId: "missing-var",
+            variableName: "Health",
+            classId: "Hero",
+          },
+        },
+        {
+          id: "callFn",
+          typeId: "functions.call",
+          position: { x: 0, y: 0 },
+          pins: [],
+          properties: { functionName: "Jump", classId: "Hero", implicitSelf: true },
+        },
+        {
+          id: "callEvt",
+          typeId: "flow.event.call",
+          position: { x: 0, y: 0 },
+          pins: [],
+          properties: { name: "On Hit", classId: "Hero", implicitSelf: true },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      classId: "Hero",
+      members: [
+        { id: "var-1", name: "Armor", kind: "variable", classId: "Hero" },
+      ],
+    });
+    expect(diags.some((d) => d.code === "member.missing_variable")).toBe(true);
+    expect(diags.some((d) => d.code === "member.missing_function")).toBe(true);
+    expect(diags.some((d) => d.code === "member.missing_event")).toBe(true);
+  });
+
+  it("errors when a local variable name collides with another local or class variable", () => {
+    const graph: LogicGraph = {
+      id: "Jump",
+      kind: "function",
+      nodes: [],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      classId: "Hero",
+      activeFunctionId: "fn-1",
+      members: [
+        { id: "var-1", name: "Health", kind: "variable", classId: "Hero" },
+        {
+          id: "loc-1",
+          name: "Health",
+          kind: "variable",
+          classId: "Hero",
+          functionId: "fn-1",
+        },
+        {
+          id: "loc-2",
+          name: "Temp",
+          kind: "variable",
+          classId: "Hero",
+          functionId: "fn-1",
+        },
+        {
+          id: "loc-3",
+          name: "Temp",
+          kind: "variable",
+          classId: "Hero",
+          functionId: "fn-1",
+        },
+      ],
+    });
+    expect(
+      diags.filter((d) => d.code === "member.local_name_conflict"),
+    ).toHaveLength(2);
+  });
+
+  it("errors unknown class constraints when a known-class table is provided", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "get",
+          typeId: "variables.get",
+          position: { x: 0, y: 0 },
+          pins: [pin("value", "Target", "out", objectRef("MissingClass"))],
+          properties: {
+            variableId: "var-1",
+            variableName: "Target",
+            typeClassId: "MissingClass",
+            classId: "Hero",
+          },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      classId: "Hero",
+      knownClassIds: new Set(["Hero", "Actor", "BObject"]),
+      members: [
+        {
+          id: "var-1",
+          name: "Target",
+          kind: "variable",
+          classId: "Hero",
+          typeClassId: "MissingClass",
+        },
+      ],
+    });
+    expect(diags.some((d) => d.code === "member.unknown_class")).toBe(true);
   });
 });

@@ -23,9 +23,13 @@ import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
 import {
+  classHierarchyFromParentOf,
+  classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
+  knownClassIdSet,
   scriptPaletteNodes,
+  scriptPinCompatibility,
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
@@ -112,6 +116,23 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       }),
     [assetRegistry, openDocuments, parentOf],
   );
+  const hierarchy = useMemo(
+    () => classHierarchyFromParentOf(parentOf),
+    [parentOf],
+  );
+  const memberSymbols = useMemo(() => {
+    const graphs = { ...otherClassGraphs };
+    if (classId && graphContent) graphs[classId] = graphContent;
+    return classMemberSymbolsFromGraphs(graphs);
+  }, [classId, graphContent, otherClassGraphs]);
+  const knownClassIds = useMemo(
+    () => knownClassIdSet(parentOf, Object.keys(otherClassGraphs)),
+    [otherClassGraphs, parentOf],
+  );
+  const pinCompatibility = useMemo(
+    () => scriptPinCompatibility(hierarchy),
+    [hierarchy],
+  );
   const graph = useMemo(() => {
     const slice =
       activeFunctionId && graphContent?.functionGraphs?.[activeFunctionId]
@@ -155,16 +176,29 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     }
     const handle = window.setTimeout(() => {
       setDiagnostics(
-        validateSerializedGraph(graph, { assetGuid, graphId: documentId }),
+        validateSerializedGraph(graph, {
+          assetGuid,
+          graphId: documentId,
+          hierarchy,
+          classId,
+          activeFunctionId,
+          members: memberSymbols,
+          knownClassIds,
+        }),
       );
     }, VALIDATION_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [
     activeDocumentId,
+    activeFunctionId,
     assetGuid,
+    classId,
     doc?.ref.kind,
     documentId,
     graph,
+    hierarchy,
+    knownClassIds,
+    memberSymbols,
     setDiagnostics,
     uiEditorMode,
   ]);
@@ -231,6 +265,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           focusedNodeId={focusId}
           diagnostics={graphDiagnostics}
           paletteNodes={paletteNodes}
+          pinCompatibility={pinCompatibility}
           onCanvasApi={setCanvasDropApi}
           onNavigateRequest={() => setFocusDiagnostic(null)}
           onSelectionChange={setSelectedNodeIds}

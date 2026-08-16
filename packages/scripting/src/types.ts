@@ -135,16 +135,18 @@ export function isAssignable(
   if (from.kind === "int" && to.kind === "float") return true;
   if (pinTypeEquals(from, to)) return true;
 
-  if (
-    (from.kind === "objectRef" ||
-      from.kind === "actorRef" ||
-      from.kind === "classRef") &&
-    from.kind === to.kind
-  ) {
+  if (from.kind === "classRef" && to.kind === "classRef") {
     if (from.classId === to.classId) return true;
-    return (
-      options.hierarchy?.isSubclassOf(from.classId, to.classId) ?? false
-    );
+    return options.hierarchy?.isSubclassOf(from.classId, to.classId) ?? false;
+  }
+
+  if (
+    (from.kind === "objectRef" || from.kind === "actorRef") &&
+    (to.kind === "objectRef" || to.kind === "actorRef")
+  ) {
+    if (from.kind === "objectRef" && to.kind === "actorRef") return false;
+    if (from.classId === to.classId) return true;
+    return options.hierarchy?.isSubclassOf(from.classId, to.classId) ?? false;
   }
 
   if (from.kind === "array" && to.kind === "array") {
