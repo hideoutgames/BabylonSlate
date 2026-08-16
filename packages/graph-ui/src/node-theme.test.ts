@@ -95,6 +95,21 @@ describe("nodeVisualRole", () => {
     expect(
       nodeVisualRole({ title: "Event Tick", category: "flow", pure: true }),
     ).toBe("event");
+    expect(
+      nodeVisualRole({
+        nodeType: "anim.event.initialize",
+        category: "animation",
+        pure: true,
+      }),
+    ).toBe("event");
+    expect(
+      nodeVisualRole({
+        nodeType: "anim.rule.exitState",
+        title: "Exit State",
+        category: "animation",
+        pure: true,
+      }),
+    ).toBe("event");
   });
 
   it("maps latent and timer nodes", () => {
@@ -126,6 +141,9 @@ describe("nodeRoleClass", () => {
     expect(nodeRoleClass("event")).toBe("bg-node-event");
     expect(nodeRoleClass("function")).toBe("bg-node-function");
     expect(nodeRoleClass("variable-set")).toBe("bg-node-variable-set");
+    expect(nodeRoleClass("bt-root")).toBe("bg-node-bt-root");
+    expect(nodeRoleClass("bt-composite")).toBe("bg-node-bt-composite");
+    expect(nodeRoleClass("bt-task")).toBe("bg-node-bt-task");
   });
 });
 

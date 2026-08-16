@@ -43,4 +43,23 @@ describe("shouldPublishGraphDiagnostics", () => {
       }),
     ).toBe(true);
   });
+
+  it("publishes Animation Object graphs only in Animation Object mode", () => {
+    expect(
+      shouldPublishGraphDiagnostics({
+        documentId: "anim-graph:loco",
+        activeDocumentId: "anim-graph:loco",
+        documentKind: "anim-graph",
+        animEditorMode: "stateMachine",
+      }),
+    ).toBe(false);
+    expect(
+      shouldPublishGraphDiagnostics({
+        documentId: "anim-graph:loco",
+        activeDocumentId: "anim-graph:loco",
+        documentKind: "anim-graph",
+        animEditorMode: "animationObject",
+      }),
+    ).toBe(true);
+  });
 });

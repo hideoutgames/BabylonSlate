@@ -71,4 +71,95 @@ export const mathNodes: NodeDefinition[] = [
       out: `(Math.abs((${ctx.input("a")}) - (${ctx.input("b")})) < 1e-6)`,
     }),
   },
+  {
+    id: "math.greater",
+    title: "Greater Than",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "a", "in", FLOAT),
+      pin("b", "b", "in", FLOAT),
+      pin("out", "out", "out", BOOL),
+    ],
+    codegen: (ctx) => ({ out: `((${ctx.input("a")}) > (${ctx.input("b")}))` }),
+  },
+  {
+    id: "math.greaterEqual",
+    title: "Greater or Equal",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "a", "in", FLOAT),
+      pin("b", "b", "in", FLOAT),
+      pin("out", "out", "out", BOOL),
+    ],
+    codegen: (ctx) => ({
+      out: `((${ctx.input("a")}) >= (${ctx.input("b")}))`,
+    }),
+  },
+  {
+    id: "math.less",
+    title: "Less Than",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "a", "in", FLOAT),
+      pin("b", "b", "in", FLOAT),
+      pin("out", "out", "out", BOOL),
+    ],
+    codegen: (ctx) => ({ out: `((${ctx.input("a")}) < (${ctx.input("b")}))` }),
+  },
+  {
+    id: "math.lessEqual",
+    title: "Less or Equal",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "a", "in", FLOAT),
+      pin("b", "b", "in", FLOAT),
+      pin("out", "out", "out", BOOL),
+    ],
+    codegen: (ctx) => ({
+      out: `((${ctx.input("a")}) <= (${ctx.input("b")}))`,
+    }),
+  },
+  {
+    id: "boolean.and",
+    title: "Boolean And",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "a", "in", BOOL),
+      pin("b", "b", "in", BOOL),
+      pin("out", "out", "out", BOOL),
+    ],
+    codegen: (ctx) => ({
+      out: `((${ctx.input("a")}) && (${ctx.input("b")}))`,
+    }),
+  },
+  {
+    id: "boolean.or",
+    title: "Boolean Or",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "a", "in", BOOL),
+      pin("b", "b", "in", BOOL),
+      pin("out", "out", "out", BOOL),
+    ],
+    codegen: (ctx) => ({
+      out: `((${ctx.input("a")}) || (${ctx.input("b")}))`,
+    }),
+  },
+  {
+    id: "boolean.not",
+    title: "Boolean Not",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("in", "in", "in", BOOL),
+      pin("out", "out", "out", BOOL),
+    ],
+    codegen: (ctx) => ({ out: `!(${ctx.input("in")})` }),
+  },
 ];

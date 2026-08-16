@@ -779,7 +779,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
     const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
-    if (commit.kind === "ui") {
+    if (commit.kind !== "graph") {
       void applyAssetDocumentChange(documentId, commit.payload);
       return;
     }

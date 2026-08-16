@@ -106,7 +106,7 @@ export function GraphConnectionLineView({
         <foreignObject
           x={badge.x}
           y={badge.y - 10}
-          width={88}
+          width={160}
           height={24}
           overflow="visible"
           className="pointer-events-none"
@@ -115,9 +115,9 @@ export function GraphConnectionLineView({
             variant="default"
             data-testid="add-node-hint"
             aria-hidden="true"
-            className="pointer-events-none shadow-md"
+            className="pointer-events-none whitespace-nowrap shadow-md"
           >
-            Add Node
+            Tap to Add Node
           </Badge>
         </foreignObject>
       ) : null}

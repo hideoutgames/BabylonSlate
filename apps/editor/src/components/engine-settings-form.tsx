@@ -76,7 +76,13 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "User Interface Logic",
     options: { uiEditorMode: "logic" },
   },
-  { kind: "anim-graph", keepKey: "anim-graph", label: "Animation Graph" },
+  { kind: "anim-graph", keepKey: "anim-graph", label: "Animation Graph State Machine" },
+  {
+    kind: "anim-graph",
+    keepKey: "animGraphObject",
+    label: "Animation Graph Object",
+    options: { animEditorMode: "animationObject" },
+  },
   {
     kind: "behaviour-tree",
     keepKey: "behaviour-tree",

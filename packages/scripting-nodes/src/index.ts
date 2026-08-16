@@ -23,6 +23,7 @@ import { timerNodes } from "./timers";
 import { behaviourTreeNodes } from "./behaviour-tree";
 import { navigationNodes } from "./navigation";
 import { illuminationNodes } from "./illumination";
+import { animationNodes } from "./animation";
 
 export * from "./flow";
 export * from "./math";
@@ -49,6 +50,7 @@ export * from "./timers";
 export * from "./behaviour-tree";
 export * from "./navigation";
 export * from "./illumination";
+export * from "./animation";
 
 export const ALL_NODE_CATEGORIES = [
   "flow",
@@ -76,6 +78,7 @@ export const ALL_NODE_CATEGORIES = [
   "navigation",
   "camera",
   "light",
+  "animation",
 ] as const;
 
 export function allNodeDefinitions(): NodeDefinition[] {
@@ -104,6 +107,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...behaviourTreeNodes,
     ...navigationNodes,
     ...illuminationNodes,
+    ...animationNodes,
   ];
 }
 

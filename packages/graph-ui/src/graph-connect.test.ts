@@ -18,8 +18,11 @@ import {
   pinAllowsMultipleIncoming,
   pinsAreCompatible,
   screenCentersForSafePins,
+  connectEndAction,
   shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
+  connectEventPointerId,
+  shouldOpenAddNodeOnSecondaryPointer,
 } from "./graph-connect";
 
 const execOut: SerializedPin = {
@@ -590,6 +593,110 @@ describe("screen-space connect helpers", () => {
   });
 });
 
+describe("connectEndAction", () => {
+  const far = {
+    hasTargetHandle: false,
+    pointerOverNode: false,
+    pointerOverSourceHandle: false,
+    pointer: { x: 200, y: 0 },
+    safePins: [{ x: 0, y: 0 }],
+  };
+  const near = {
+    ...far,
+    pointer: { x: 40, y: 0 },
+  };
+
+  it("does not open Add Node on default connect-end; near drags break wires", () => {
+    expect(connectEndAction(far)).toBe("none");
+    expect(connectEndAction(near)).toBe("break");
+  });
+
+  it("opens Add Node from a short drag in add-node mode and never breaks wires", () => {
+    expect(connectEndAction(near, "add-node")).toBe("add-node");
+    expect(connectEndAction(far, "add-node")).toBe("add-node");
+    expect(
+      connectEndAction({ ...far, pointerOverNode: true }, "add-node"),
+    ).toBe("none");
+    expect(
+      connectEndAction({ ...far, hasTargetHandle: true }, "add-node"),
+    ).toBe("none");
+  });
+
+  it("disables connect-end side effects", () => {
+    expect(connectEndAction(far, "disabled")).toBe("none");
+    expect(connectEndAction(near, "disabled")).toBe("none");
+  });
+});
+
+describe("connectEventPointerId", () => {
+  it("reads pointerId from a pointer event", () => {
+    const event = new MouseEvent("pointerdown");
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    expect(connectEventPointerId(event)).toBe(7);
+  });
+
+  it("reads the changed touch identifier", () => {
+    const event = {
+      changedTouches: [{ identifier: 3, clientX: 10, clientY: 20 }],
+    };
+    expect(connectEventPointerId(event)).toBe(3);
+  });
+
+  it("falls back to 1 when the event has no pointer identity", () => {
+    expect(connectEventPointerId({})).toBe(1);
+    expect(connectEventPointerId({ pointerId: 0 })).toBe(1);
+  });
+});
+
+describe("shouldOpenAddNodeOnSecondaryPointer", () => {
+  const inZone = {
+    connectionActive: true,
+    dragPointerId: 1,
+    eventPointerId: 2,
+    inAddNodeZone: true,
+  };
+
+  it("opens when a different pointer arrives in the Add Node zone", () => {
+    expect(shouldOpenAddNodeOnSecondaryPointer(inZone)).toBe(true);
+  });
+
+  it("ignores the drag pointer itself", () => {
+    expect(
+      shouldOpenAddNodeOnSecondaryPointer({
+        ...inZone,
+        eventPointerId: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a second pointer outside the Add Node zone", () => {
+    expect(
+      shouldOpenAddNodeOnSecondaryPointer({
+        ...inZone,
+        inAddNodeZone: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a second pointer when no connection drag is active", () => {
+    expect(
+      shouldOpenAddNodeOnSecondaryPointer({
+        ...inZone,
+        connectionActive: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a second pointer when the drag pointer id is unknown", () => {
+    expect(
+      shouldOpenAddNodeOnSecondaryPointer({
+        ...inZone,
+        dragPointerId: null,
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("pinAllowsMultipleIncoming", () => {
   it("allows multiple wires into exec pins", () => {
     expect(pinAllowsMultipleIncoming(execIn)).toBe(true);
@@ -606,6 +713,35 @@ describe("pinAllowsMultipleIncoming", () => {
 });
 
 describe("edgesAfterConnect", () => {
+  const existing = {
+    id: "e:root:children:old:parent",
+    source: "root",
+    target: "old",
+    sourceHandle: "children",
+    targetHandle: "parent",
+  };
+  const next = {
+    id: "e:sequence:children:old:parent",
+    source: "sequence",
+    target: "old",
+    sourceHandle: "children",
+    targetHandle: "parent",
+  };
+  const unknownPin = () => undefined;
+
+  it("appends a second incoming edge by default", () => {
+    const edges = edgesAfterConnect([existing], next, unknownPin);
+    expect(edges).toHaveLength(2);
+    expect(edges[1]?.source).toBe("sequence");
+  });
+
+  it("replaces the existing incoming edge on the same target handle", () => {
+    const edges = edgesAfterConnect([existing], next, unknownPin, {
+      replaceIncoming: true,
+    });
+    expect(edges).toEqual([next]);
+  });
+
   const pins = new Map<string, SerializedPin>([
     ["src-a:value", stringOut],
     ["src-b:value", { ...stringOut, id: "value" }],
@@ -622,7 +758,7 @@ describe("edgesAfterConnect", () => {
   }
 
   it("keeps exec fan-out from one output to two inputs", () => {
-    const existing = [
+    const existingExec = [
       {
         id: "e:a:execOut:b:execIn",
         source: "a",
@@ -631,8 +767,8 @@ describe("edgesAfterConnect", () => {
         targetHandle: "execIn",
       },
     ];
-    const next = edgesAfterConnect(
-      existing,
+    const connected = edgesAfterConnect(
+      existingExec,
       {
         id: "e:a:execOut:c:execIn",
         source: "a",
@@ -642,11 +778,11 @@ describe("edgesAfterConnect", () => {
       },
       pinFor,
     );
-    expect(next).toHaveLength(2);
+    expect(connected).toHaveLength(2);
   });
 
   it("keeps exec fan-in from two outputs onto one input", () => {
-    const existing = [
+    const existingExec = [
       {
         id: "e:a:execOut:c:execIn",
         source: "a",
@@ -655,8 +791,8 @@ describe("edgesAfterConnect", () => {
         targetHandle: "execIn",
       },
     ];
-    const next = edgesAfterConnect(
-      existing,
+    const connected = edgesAfterConnect(
+      existingExec,
       {
         id: "e:b:execOut:c:execIn",
         source: "b",
@@ -666,11 +802,11 @@ describe("edgesAfterConnect", () => {
       },
       pinFor,
     );
-    expect(next).toHaveLength(2);
+    expect(connected).toHaveLength(2);
   });
 
   it("replaces an existing data wire on the same input", () => {
-    const existing = [
+    const existingData = [
       {
         id: "e:src-a:value:log:message",
         source: "src-a",
@@ -679,8 +815,8 @@ describe("edgesAfterConnect", () => {
         targetHandle: "message",
       },
     ];
-    const next = edgesAfterConnect(
-      existing,
+    const connected = edgesAfterConnect(
+      existingData,
       {
         id: "e:src-b:value:log:message",
         source: "src-b",
@@ -690,7 +826,7 @@ describe("edgesAfterConnect", () => {
       },
       pinFor,
     );
-    expect(next).toEqual([
+    expect(connected).toEqual([
       {
         id: "e:src-b:value:log:message",
         source: "src-b",
@@ -702,7 +838,7 @@ describe("edgesAfterConnect", () => {
   });
 
   it("keeps data fan-out from one output to two inputs", () => {
-    const existing = [
+    const existingData = [
       {
         id: "e:src-a:value:log:message",
         source: "src-a",
@@ -711,8 +847,8 @@ describe("edgesAfterConnect", () => {
         targetHandle: "message",
       },
     ];
-    const next = edgesAfterConnect(
-      existing,
+    const connected = edgesAfterConnect(
+      existingData,
       {
         id: "e:src-a:value:log-b:message",
         source: "src-a",
@@ -722,11 +858,11 @@ describe("edgesAfterConnect", () => {
       },
       pinFor,
     );
-    expect(next).toHaveLength(2);
+    expect(connected).toHaveLength(2);
   });
 
   it("does not strip existing wires when the target pin is unknown", () => {
-    const existing = [
+    const existingUnknown = [
       {
         id: "e:mystery:out:unknown:in",
         source: "mystery",
@@ -735,8 +871,8 @@ describe("edgesAfterConnect", () => {
         targetHandle: "in",
       },
     ];
-    const next = edgesAfterConnect(
-      existing,
+    const connected = edgesAfterConnect(
+      existingUnknown,
       {
         id: "e:other:out:unknown:in",
         source: "other",
@@ -746,11 +882,11 @@ describe("edgesAfterConnect", () => {
       },
       pinFor,
     );
-    expect(next).toHaveLength(2);
+    expect(connected).toHaveLength(2);
   });
 
   it("is a no-op when the same edge id already exists", () => {
-    const existing = [
+    const existingData = [
       {
         id: "e:src-a:value:log:message",
         source: "src-a",
@@ -759,7 +895,7 @@ describe("edgesAfterConnect", () => {
         targetHandle: "message",
       },
     ];
-    const next = edgesAfterConnect(existing, existing[0]!, pinFor);
-    expect(next).toEqual(existing);
+    const connected = edgesAfterConnect(existingData, existingData[0]!, pinFor);
+    expect(connected).toEqual(existingData);
   });
 });

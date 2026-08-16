@@ -328,7 +328,7 @@ P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `
 | UserInterface + designer | `p9-ui-system` (done) | `ui-runtime`, `render`, `bridge`, `runtime`, `apps/editor`, `edit` | Anchoring + fonts |
 | Widget library + touch axis | `p9-widget-library` (done) | `ui-runtime`, `input`, `apps/editor` | UI system |
 | Sprite packer + quad | `p9-sprite` (done) | `assets`, `render`, `apps/editor` | Design notes |
-| AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `apps/editor` | Sprite (clips) + graph-ui host with Parameters / States / Details |
+| AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `scripting`, `apps/editor` | Dual-mode State Machine / Animation Object host, typed variables, compiled transition rules |
 | Shader graph | `p9-shader-graph` (done) | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
 
 Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
@@ -364,8 +364,9 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | C — Sprite Texture picker | Done (`cursor/authoring-surface-8678`) |
 | D — Shader `NodeMaterial.Parse` preview + shader/anim catalog pin hydration | Done (`cursor/authoring-surface-8678`) |
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
-| F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
+| F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`); dual-mode State Machine \| Animation Object + compiled rules on `cursor/complete-animation-graph-9a46` |
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
+| G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`) |
 
 Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
@@ -382,6 +383,7 @@ Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer Cu
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
 | UserInterface + EditorUtilityInterface **authoring** editors | Chrome **Designer \| Logic** mode bar; Designer Design / Hierarchy / Details (EUI Settings); Logic Class docks on `payload.logic`. Live EditorUtilityInterface **tabs** stay P12 Dockview + `createUiSurface` from Windows → Editor Utilities | Done (`p12-ui-editors` + `cursor/ui-logic-graph-pass-2e3e`) |
+| Animation Graph Object + transition-rule graphs | Chrome **State Machine \| Animation Object**; typed variables; compiled `AnimGraph:` / `AnimRule:` scripts; per-slot `animState` layers; Unreal state nodes + nested Enter/Exit rule graphs | Done (`cursor/complete-animation-graph-9a46`) |
 
 ## P10 tilemaps
 
@@ -456,6 +458,18 @@ Authoring-surface residual, same class as the Anim Graph host pass. Do **not** u
 | Loop/Cooldown/TimeLimit + Play stack overlay | same | `behaviour-tree` (eval), `bridge`/`runtime` `btState.stack`, `e2e/p11-ai.spec.ts` | Tree ops |
 
 Out of scope: RotateToFace / PlayAnimation / PlaySound hosts; nav cost-carve / auto-bake; Dockview for asset tabs; large-tree iPad virtualization; P12; lighting.
+
+## Behaviour tree editor UX (`p-bt-editor-ux`)
+
+Authoring-surface residual. Do **not** uncheck `p11-bt-editor` or `p-bt-editor-authoring`. Packages: `behaviour-tree` (layout field only), `graph-ui`, `apps/editor`. Runtime evaluator is unchanged.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Optional `editorPositions` + stable X sibling reorder + Auto Arrange | `p-bt-editor-ux` | `behaviour-tree` | `p-bt-editor-authoring` |
+| GraphEditor `connectEndMode="add-node"` + TreeNode chrome | same | `graph-ui` | connect policies |
+| Blackboard / Compiler Results docks, free drag, one-undo moves | same | `apps/editor`, `e2e/bt-editor.spec.ts` | GraphEditor policies |
+
+Out of scope: changing `children[]` semantics at runtime; 96px cancel / wire-break on script, material, or anim graphs; large-tree iPad virtualization; reopening P11.
 
 ## Behaviour tree class events (`p-bt-class-events`)
 

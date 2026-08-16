@@ -49,3 +49,69 @@
     var(--node-editor-only-tape) 12px
   );
 }
+
+.anim-state-node {
+  min-width: 140px;
+  min-height: 48px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: #2a2a2a;
+  border: 1px solid #6a6a6a;
+  color: #f0f0f0;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 45%);
+}
+
+.anim-state-node-selected {
+  border-color: #f5c542;
+  box-shadow: 0 0 0 1px #f5c542;
+}
+
+.anim-state-node-entry {
+  border-color: #7ad07a;
+}
+
+.anim-state-node-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.anim-state-node-entry-mark {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7ad07a;
+  text-align: center;
+}
+
+.anim-state-handle {
+  width: 10px;
+  height: 10px;
+  background: #cfcfcf;
+  border: 1px solid #1a1a1a;
+}
+
+.anim-transition-badge {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #1a1a1a;
+  background: #d8d8d8;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.anim-transition-badge::after {
+  content: "";
+  position: absolute;
+  inset: 5px 4px 5px 6px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid #1a1a1a;
+}
+
+.anim-transition-badge-selected {
+  background: #f5c542;
+}

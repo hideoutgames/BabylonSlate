@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
@@ -9,6 +9,8 @@ import {
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import {
+  BehaviourTreeBlackboardPanel,
+  BehaviourTreeCompilerResultsPanel,
   BehaviourTreeDetailsPanel,
   BehaviourTreeGraphPanel,
 } from "./behaviour-tree-editor";
@@ -27,26 +29,41 @@ if (typeof window !== "undefined") {
 }
 
 const DOC_ID = "behaviour-tree:assets/Patrol.bt.babasset";
+const BB_ID = "blackboard:assets/Guard.blackboard.babasset";
+const BB_PATH = "assets/Guard.blackboard.babasset";
 const openDocument = vi.hoisted(() => vi.fn());
+const loadAssetDocument = vi.hoisted(() => vi.fn());
+
+const defaultBlackboard = vi.hoisted(() => ({
+  name: "Guard",
+  keys: [
+    { name: "alert", type: { kind: "bool" } },
+    { name: "hp", type: { kind: "float" } },
+  ],
+}));
 
 const store = vi.hoisted(() => {
   let content: Record<string, unknown> = {};
+  let blackboard: Record<string, unknown> = { ...defaultBlackboard };
   const listeners = new Set<() => void>();
   return {
     applyAssetDocumentChange: vi.fn(
-      async (_id: string, next: Record<string, unknown>) => {
-        content = next;
+      async (id: string, next: Record<string, unknown>) => {
+        if (id === DOC_ID) content = next;
+        else if (id === BB_ID) blackboard = next;
         listeners.forEach((listener) => listener());
         return true;
       },
     ),
     getSnapshot: () => content,
+    getBlackboard: () => blackboard,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     reset: (next: Record<string, unknown>) => {
       content = next;
+      blackboard = { ...defaultBlackboard };
       listeners.forEach((listener) => listener());
     },
   };
@@ -57,6 +74,7 @@ vi.mock("../context/document-context", async () => {
   return {
   useDocuments: () => {
     const content = useSyncExternalStore(store.subscribe, store.getSnapshot);
+    const blackboard = useSyncExternalStore(store.subscribe, store.getBlackboard);
     return {
       openDocuments: [
         {
@@ -65,18 +83,14 @@ vi.mock("../context/document-context", async () => {
           content,
         },
         {
-          ref: { kind: "blackboard", path: "assets/Guard.blackboard.babasset" },
-          content: {
-            name: "Guard",
-            keys: [
-              { name: "alert", type: { kind: "bool" } },
-              { name: "hp", type: { kind: "float" } },
-            ],
-          },
+          id: BB_ID,
+          ref: { kind: "blackboard", path: BB_PATH },
+          content: blackboard,
         },
       ],
       applyAssetDocumentChange: store.applyAssetDocumentChange,
       openDocument,
+      loadAssetDocument,
       assetRegistry: {
         list: () => [
           {
@@ -113,14 +127,14 @@ vi.mock("../context/document-context", async () => {
               type: "Blackboard",
               parentClass: null,
             },
-            path: "assets/Guard.blackboard.babasset",
+            path: BB_PATH,
           },
         ],
         getByGuid: (guid: string) =>
           guid === "bb-1"
             ? {
                 header: { guid: "bb-1", name: "Guard", type: "Blackboard" },
-                path: "assets/Guard.blackboard.babasset",
+                path: BB_PATH,
               }
             : guid === "class-1"
               ? {
@@ -150,10 +164,12 @@ vi.mock("../context/play-context", () => ({
 afterEach(() => {
   cleanup();
   openDocument.mockClear();
+  loadAssetDocument.mockClear();
 });
 
 beforeEach(() => {
   store.applyAssetDocumentChange.mockClear();
+  loadAssetDocument.mockResolvedValue(defaultBlackboard);
   store.reset(
     createDefaultBehaviourTree() as unknown as Record<string, unknown>,
   );
@@ -168,13 +184,17 @@ function renderTree(payload: BehaviourTreeDocument = createDefaultBehaviourTree(
       <BehaviourTreeEditingProvider>
         <BehaviourTreeGraphPanel {...panelProps} />
         <BehaviourTreeDetailsPanel {...panelProps} />
+        <BehaviourTreeBlackboardPanel {...panelProps} />
+        <BehaviourTreeCompilerResultsPanel {...panelProps} />
       </BehaviourTreeEditingProvider>
     </DocumentWorkspaceProvider>,
   );
 }
 
 function lastCommit(): BehaviourTreeDocument {
-  const calls = store.applyAssetDocumentChange.mock.calls;
+  const calls = store.applyAssetDocumentChange.mock.calls.filter(
+    (call) => call[0] === DOC_ID,
+  );
   return calls[calls.length - 1]![1] as unknown as BehaviourTreeDocument;
 }
 
@@ -187,15 +207,106 @@ function treeWithWait(): BehaviourTreeDocument {
   return doc;
 }
 
+function treeWithMisorderedSiblings(): BehaviourTreeDocument {
+  const doc = createDefaultBehaviourTree();
+  doc.nodes.push({
+    id: "wait",
+    kind: "task",
+    classId: "bt.task.wait",
+    children: [],
+    decorators: [],
+    services: [],
+    properties: { durationMs: 100 },
+  });
+  const sequence = doc.nodes.find((node) => node.id === "sequence")!;
+  sequence.children = ["task", "wait"];
+  doc.editorPositions = {
+    root: { x: 0, y: 0 },
+    sequence: { x: 0, y: 180 },
+    task: { x: 400, y: 360 },
+    wait: { x: 0, y: 360 },
+  };
+  return doc;
+}
+
 describe("BehaviourTreeEditor", () => {
-  it("renders the default selector/sequence/succeed tree and relayout", () => {
+  it("renders the default selector/sequence/succeed tree and Auto Arrange", () => {
     renderTree(createDefaultBehaviourTree("Patrol"));
     expect(screen.getByTestId("behaviour-tree-editor")).toBeTruthy();
     expect(screen.getByTestId("bt-node-root")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("bt-relayout"));
+    fireEvent.click(screen.getByTestId("bt-auto-arrange"));
     expect(store.applyAssetDocumentChange).toHaveBeenCalled();
     expect(screen.queryByTestId("graph-break-links")).toBeNull();
     expect(screen.queryByTestId("graph-format")).toBeNull();
+    expect(screen.queryByTestId("graph-copy")).toBeNull();
+    expect(screen.queryByTestId("graph-paste")).toBeNull();
+  });
+
+  it("auto-arranges positions without changing children order", () => {
+    const doc = treeWithMisorderedSiblings();
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-auto-arrange"));
+    const next = lastCommit();
+    expect(next.nodes.find((node) => node.id === "sequence")?.children).toEqual([
+      "task",
+      "wait",
+    ]);
+    expect(next.editorPositions?.wait?.x).toBeGreaterThan(
+      next.editorPositions?.task?.x ?? 0,
+    );
+  });
+
+  it("keeps the Blackboard asset picker out of Details", () => {
+    renderTree();
+    expect(
+      within(screen.getByTestId("bt-details")).queryByTestId("property-blackboard"),
+    ).toBeNull();
+    expect(screen.getByTestId("behaviour-tree-blackboard")).toBeTruthy();
+    expect(
+      within(screen.getByTestId("behaviour-tree-blackboard")).getByTestId(
+        "property-blackboard",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("links a Blackboard asset from the Blackboard dock", async () => {
+    renderTree();
+    fireEvent.click(
+      within(screen.getByTestId("behaviour-tree-blackboard")).getByTestId(
+        "property-blackboard",
+      ),
+    );
+    fireEvent.click(await screen.findByTestId("search-item-bb-1"));
+    expect(lastCommit().blackboardGuid).toBe("bb-1");
+  });
+
+  it("edits blackboard keys through the linked blackboard document", () => {
+    renderTree(treeWithWait());
+    expect(screen.getByTestId("blackboard-editor")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("blackboard-add-key"));
+    const call = store.applyAssetDocumentChange.mock.calls.find(
+      (entry) => entry[0] === BB_ID,
+    );
+    expect(call).toBeTruthy();
+    const next = call![1] as { keys: Array<{ name: string }> };
+    expect(next.keys.some((key) => key.name === "key")).toBe(true);
+  });
+
+  it("lists compiler diagnostics and focuses the node when tapped", async () => {
+    const doc = createDefaultBehaviourTree();
+    const sequence = doc.nodes.find((node) => node.id === "sequence")!;
+    sequence.children = [];
+    doc.nodes = doc.nodes.filter((node) => node.id !== "task");
+    renderTree(doc);
+    expect(screen.getByTestId("behaviour-tree-compiler-results")).toBeTruthy();
+    fireEvent.click(
+      screen.getByTestId("behaviour-tree-diagnostic-bt.composite_empty"),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("property-classId").textContent).toContain(
+        "Sequence",
+      );
+    });
   });
 
   it("adds a decorator from the attachment catalog", () => {

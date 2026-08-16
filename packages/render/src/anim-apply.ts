@@ -42,9 +42,12 @@ export function applySpriteAnimFrame(
 
 export type AnimStateCommand = Extract<CommandMessage, { type: "animState" }>;
 
+export type AnimClipLayer = NonNullable<AnimStateCommand["layers"]>[number];
+
 export interface SpriteAnimSlot {
   mesh: Mesh;
   payload: SpritePayload;
+  overlayMesh?: Mesh;
 }
 
 export function resolvePlaySpriteSlot(
@@ -57,41 +60,171 @@ export function resolvePlaySpriteSlot(
   if (!mesh || !guid || !payloads) return undefined;
   const payload = payloads.get(guid);
   if (!payload) return undefined;
-  return { mesh, payload };
+  return {
+    mesh,
+    payload,
+    overlayMesh: binding.spriteOverlays?.get(slotId),
+  };
+}
+
+export type NamedSeekableGroup = SeekableAnimationGroup & {
+  name: string;
+  from: number;
+  to: number;
+  clipAssetGuid?: string;
+};
+
+export interface MissingAnimClip {
+  slotId: number;
+  clipName: string;
+  clipAssetGuid?: string;
+  clipKind: "animation" | "sprite";
 }
 
 export interface SceneAnimHost {
-  animationGroups: Array<
-    SeekableAnimationGroup & { name: string; from: number; to: number }
-  >;
+  animationGroups: NamedSeekableGroup[];
+  getAnimationGroup?(
+    slotId: number,
+    clipName: string,
+    clipAssetGuid?: string,
+  ): NamedSeekableGroup | undefined;
   getSpriteSlot?(slotId: number): SpriteAnimSlot | undefined;
+  onMissingClip?(info: MissingAnimClip): void;
 }
 
-/** Seek a named AnimationGroup, or bake sprite clip UVs for `clipKind: "sprite"`. */
+function animStateLayers(command: AnimStateCommand): AnimClipLayer[] {
+  if (command.layers && command.layers.length > 0) {
+    return command.layers;
+  }
+  if (!command.clipName) return [];
+  return [
+    {
+      stateId: command.stateId,
+      clipAssetGuid: command.clipAssetGuid ?? "",
+      clipName: command.clipName,
+      clipKind: command.clipKind ?? "animation",
+      normalisedTime: command.normalisedTime,
+      weight: command.blendWeights[command.stateId] ?? 1,
+    },
+  ];
+}
+
+function resolveAnimationGroup(
+  scene: SceneAnimHost,
+  slotId: number,
+  layer: AnimClipLayer,
+): NamedSeekableGroup | undefined {
+  const fromHost = scene.getAnimationGroup?.(
+    slotId,
+    layer.clipName,
+    layer.clipAssetGuid,
+  );
+  if (fromHost) return fromHost;
+  return scene.animationGroups.find((entry) => {
+    if (entry.name !== layer.clipName) return false;
+    if (layer.clipAssetGuid && entry.clipAssetGuid) {
+      return entry.clipAssetGuid === layer.clipAssetGuid;
+    }
+    return true;
+  });
+}
+
+function applySpriteLayers(
+  scene: SceneAnimHost,
+  slotId: number,
+  layers: AnimClipLayer[],
+): void {
+  const slot = scene.getSpriteSlot?.(slotId);
+  if (!slot) {
+    const first = layers[0];
+    if (first) {
+      scene.onMissingClip?.({
+        slotId,
+        clipName: first.clipName,
+        clipAssetGuid: first.clipAssetGuid,
+        clipKind: "sprite",
+      });
+    }
+    return;
+  }
+  const primary = layers[0]!;
+  applySpriteAnimFrame(
+    slot.mesh,
+    slot.payload,
+    primary.clipName,
+    primary.normalisedTime,
+  );
+  slot.mesh.visibility = primary.weight;
+  if (slot.overlayMesh) {
+    const secondary = layers[1];
+    if (secondary) {
+      applySpriteAnimFrame(
+        slot.overlayMesh,
+        slot.payload,
+        secondary.clipName,
+        secondary.normalisedTime,
+      );
+      slot.overlayMesh.visibility = secondary.weight;
+    } else {
+      slot.overlayMesh.visibility = 0;
+    }
+  }
+}
+
+/** Seek weighted AnimationGroups, or bake sprite clip UVs (two-layer blend). */
 export function applyAnimStateToScene(
   scene: SceneAnimHost,
   command: AnimStateCommand,
 ): void {
-  if (!command.clipName) return;
-  if (command.clipKind === "sprite") {
-    const slot = scene.getSpriteSlot?.(command.slotId);
-    if (!slot) return;
-    applySpriteAnimFrame(
-      slot.mesh,
-      slot.payload,
-      command.clipName,
-      command.normalisedTime,
+  const layers = animStateLayers(command);
+  if (layers.length === 0) return;
+  const spriteLayers = layers.filter((layer) => layer.clipKind === "sprite");
+  const animationLayers = layers.filter((layer) => layer.clipKind !== "sprite");
+  for (const layer of animationLayers) {
+    const group = resolveAnimationGroup(scene, command.slotId, layer);
+    if (!group) {
+      scene.onMissingClip?.({
+        slotId: command.slotId,
+        clipName: layer.clipName,
+        clipAssetGuid: layer.clipAssetGuid,
+        clipKind: "animation",
+      });
+      continue;
+    }
+    seekGameplayAnimation(
+      group,
+      layer.normalisedTime,
+      group.to - group.from,
+      layer.weight,
     );
-    return;
   }
-  const group = scene.animationGroups.find(
-    (entry) => entry.name === command.clipName,
-  );
-  if (!group) return;
-  seekGameplayAnimation(
-    group,
-    command.normalisedTime,
-    group.to - group.from,
-    command.blendWeights[command.stateId] ?? 1,
-  );
+  if (spriteLayers.length > 0) {
+    applySpriteLayers(scene, command.slotId, spriteLayers);
+  }
+}
+
+export function sceneAnimHostFromBinding(
+  binding: SnapshotSceneBinding,
+  options: {
+    animationGroups: NamedSeekableGroup[];
+    spritePayloads?: ReadonlyMap<string, SpritePayload>;
+    onMissingClip?: (info: MissingAnimClip) => void;
+  },
+): SceneAnimHost {
+  return {
+    animationGroups: options.animationGroups,
+    getAnimationGroup: (slotId, clipName, clipAssetGuid) => {
+      const groups = binding.slotAnimationGroups?.get(slotId) ?? [];
+      return groups.find((group) => {
+        if (group.name !== clipName) return false;
+        if (clipAssetGuid && group.clipAssetGuid) {
+          return group.clipAssetGuid === clipAssetGuid;
+        }
+        return true;
+      });
+    },
+    getSpriteSlot: (slotId) =>
+      resolvePlaySpriteSlot(binding, options.spritePayloads, slotId),
+    onMissingClip: options.onMissingClip,
+  };
 }

@@ -301,18 +301,46 @@ describe("material dock catalog", () => {
 });
 
 describe("animation graph and behaviour tree dock catalogs", () => {
-  it("lists Parameters, Graph, and Details for an Animation Graph", () => {
-    const windows = listDockWindows("anim-graph");
+  it("lists Variables, Graph, Details, and Compiler Results for State Machine mode", () => {
+    const windows = listDockWindows("anim-graph", {
+      animEditorMode: "stateMachine",
+    });
     expect(windows.map((entry) => entry.id)).toEqual([
       "anim-graph-graph",
-      "anim-graph-parameters",
+      "anim-graph-variables",
       "anim-graph-details",
+      "anim-graph-compiler-results",
     ]);
     expect(windows.map((entry) => entry.title)).toEqual([
       "Graph",
-      "Parameters",
+      "Variables",
       "Details",
+      "Compiler Results",
     ]);
+  });
+
+  it("lists Graph, Variables, Inspector, and Compiler Results for Animation Object mode", () => {
+    const windows = listDockWindows("anim-graph", {
+      animEditorMode: "animationObject",
+    });
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "anim-object-graph",
+      "anim-object-variables",
+      "anim-object-inspector",
+      "anim-graph-compiler-results",
+    ]);
+    expect(primaryDockPanel("anim-graph", { animEditorMode: "animationObject" })).toBe(
+      "anim-object-graph",
+    );
+  });
+
+  it("defaults Animation Graph catalogs to State Machine", () => {
+    expect(listDockWindows("anim-graph").map((entry) => entry.id)).toEqual(
+      listDockWindows("anim-graph", { animEditorMode: "stateMachine" }).map(
+        (entry) => entry.id,
+      ),
+    );
+    expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
   });
 
   it("anchors Animation Graph side docks to the graph", () => {
@@ -322,13 +350,36 @@ describe("animation graph and behaviour tree dock catalogs", () => {
     }
   });
 
-  it("lists Graph and Details for a Behaviour Tree", () => {
+  it("lists Blackboard, Graph, Details, and Compiler Results for a Behaviour Tree", () => {
     const windows = listDockWindows("behaviour-tree");
     expect(windows.map((entry) => entry.id)).toEqual([
       "behaviour-tree-graph",
+      "behaviour-tree-blackboard",
       "behaviour-tree-details",
+      "behaviour-tree-compiler-results",
     ]);
-    expect(windows.map((entry) => entry.title)).toEqual(["Graph", "Details"]);
+    expect(windows.map((entry) => entry.title)).toEqual([
+      "Graph",
+      "Blackboard",
+      "Details",
+      "Compiler Results",
+    ]);
+    expect(
+      windows.find((entry) => entry.id === "behaviour-tree-blackboard")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "behaviour-tree-graph",
+      direction: "left",
+      initialWidth: 224,
+    });
+    expect(
+      windows.find((entry) => entry.id === "behaviour-tree-compiler-results")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "behaviour-tree-graph",
+      direction: "below",
+      initialHeight: 160,
+    });
   });
 
   it("focuses the graph as the primary panel", () => {
