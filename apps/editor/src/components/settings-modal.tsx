@@ -65,7 +65,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   {
     id: "general",
     label: "General",
-    keywords: "project name version touch target editor utility objects",
+    keywords: "project name version touch target editor utility objects infinite loop detection loop count",
   },
   {
     id: "input",
@@ -410,6 +410,41 @@ export function SettingsModal({
                 }
                 data-testid="settings-compile-on-save"
               />
+            </Field>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="settings-infinite-loop-detection">
+                Infinite Loop Detection
+              </FieldLabel>
+              <Switch
+                id="settings-infinite-loop-detection"
+                checked={projectDocument.settings.infiniteLoopDetection}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({
+                    infiniteLoopDetection: checked === true,
+                  })
+                }
+                data-testid="settings-infinite-loop-detection"
+              />
+            </Field>
+            <FieldDescription>
+              Editor Play and Preview Build abort compiled scripts that exceed
+              Loop Count in one tick. Release exports never include this guard.
+            </FieldDescription>
+            <Field>
+              <FieldLabel htmlFor="settings-loop-count">Loop Count</FieldLabel>
+              <NumberField
+                id="settings-loop-count"
+                min={1}
+                step={1}
+                disabled={!projectDocument.settings.infiniteLoopDetection}
+                className="min-h-[var(--touch-target,44px)]"
+                value={projectDocument.settings.loopCount}
+                onChange={(loopCount) => updateProjectSettings({ loopCount })}
+                data-testid="settings-loop-count"
+              />
+              <FieldDescription>
+                Iterations in one tick that count as an infinite loop.
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="settings-autosave-interval">

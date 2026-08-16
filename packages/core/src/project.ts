@@ -120,6 +120,13 @@ export interface ProjectSettings {
   playFrameCap: number;
   /** Recompile open graphs whenever the project is saved. */
   compileOnSave: boolean;
+  /**
+   * Editor Play / Preview Build: abort compiled scripts that exceed
+   * `loopCount` iterations in one tick. Release exports omit this guard.
+   */
+  infiniteLoopDetection: boolean;
+  /** Iterations in one tick that count as infinite when detection is on. */
+  loopCount: number;
   /** Idle interval before dirty documents are written. */
   autoSaveIntervalMs: number;
   /** Play overlay letterbox; used when `render.customResolution` is off. */
@@ -269,6 +276,8 @@ export const DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS: SourceControlProjectSettin
   };
 
 export const DEFAULT_PLAY_FRAME_CAP = 60;
+export const DEFAULT_INFINITE_LOOP_DETECTION = true;
+export const DEFAULT_LOOP_COUNT = 1_000_000;
 export const DEFAULT_AUTO_SAVE_INTERVAL_MS = 120_000;
 export const DEFAULT_PLAY_PREVIEW_ASPECT_WIDTH = 16;
 export const DEFAULT_PLAY_PREVIEW_ASPECT_HEIGHT = 9;
@@ -523,6 +532,13 @@ export function normalizeProjectSettings(
         ? settings.playFrameCap
         : DEFAULT_PLAY_FRAME_CAP,
     compileOnSave: settings?.compileOnSave !== false,
+    infiniteLoopDetection: settings?.infiniteLoopDetection !== false,
+    loopCount:
+      typeof settings?.loopCount === "number" &&
+      Number.isFinite(settings.loopCount) &&
+      settings.loopCount >= 1
+        ? Math.round(settings.loopCount)
+        : DEFAULT_LOOP_COUNT,
     autoSaveIntervalMs:
       typeof settings?.autoSaveIntervalMs === "number" &&
       settings.autoSaveIntervalMs > 0

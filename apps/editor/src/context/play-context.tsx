@@ -10,6 +10,8 @@ import {
 } from "react";
 import type { Engine } from "@babylonjs/core";
 import {
+  DEFAULT_INFINITE_LOOP_DETECTION,
+  DEFAULT_LOOP_COUNT,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   isErr,
@@ -48,6 +50,10 @@ import { createAppSettingsStore } from "@babylonslate/vfs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { playerPreviewSrc } from "../lib/player-host-url";
 import { canSendPreviewPack } from "../lib/preview-build-handoff";
+import {
+  sessionEntriesFromPreviewDiagnostics,
+  shouldClosePreviewOnDiagnostics,
+} from "../lib/preview-diagnostics";
 import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
@@ -426,23 +432,17 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (!isPreviewDiagnosticsMessage(event.data)) return;
-      previewDiagnosticsRef.current = event.data.diagnostics.map((entry) => ({
-        severity: entry.severity === "warning" ? "warning" : "error",
-        code: "preview",
-        message: entry.message,
-        assetGuid: entry.assetGuid,
-        graphId: entry.graphId,
-        nodeId: entry.nodeId,
-        btNodeId: entry.btNodeId,
-        frameId: 0,
-        count: 1,
-        firstFrameId: 0,
-        lastFrameId: 0,
-      }));
+      const entries = sessionEntriesFromPreviewDiagnostics(
+        event.data.diagnostics,
+      );
+      previewDiagnosticsRef.current = entries;
+      if (shouldClosePreviewOnDiagnostics(entries) && !previewClosingRef.current) {
+        closePreview();
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [appendLog, sendPreviewPack]);
+  }, [appendLog, closePreview, sendPreviewPack]);
 
   const requestPreviewBuild = useCallback(async () => {
     if (playing || preparingRef.current) return;
@@ -941,6 +941,13 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
+            }
+            infiniteLoopDetection={
+              projectDocument?.settings.infiniteLoopDetection ??
+              DEFAULT_INFINITE_LOOP_DETECTION
+            }
+            loopCount={
+              projectDocument?.settings.loopCount ?? DEFAULT_LOOP_COUNT
             }
             playPreview={
               projectDocument?.settings.playPreview ??

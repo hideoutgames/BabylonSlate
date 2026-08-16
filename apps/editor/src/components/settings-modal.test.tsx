@@ -201,6 +201,19 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
   });
 
+  it("authors infinite loop detection on the General category", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-general"));
+    expect(screen.getByTestId("settings-infinite-loop-detection")).toBeTruthy();
+    expect(screen.getByTestId("settings-loop-count")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("settings-infinite-loop-detection"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ infiniteLoopDetection: false }),
+    );
+  });
+
   it("registers EditorUtilityObject classes from a ClassPicker list", async () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,

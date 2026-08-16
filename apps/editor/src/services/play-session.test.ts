@@ -4,6 +4,7 @@ import {
   applyPlayFpsSample,
   applyWorkerPlayStats,
   diagnosticFromCommand,
+  isFatalPlayDiagnostic,
   playInputStampTick,
   previewFixtureThrowHint,
   resolvePlayFrameCap,
@@ -77,6 +78,13 @@ describe("diagnosticFromCommand", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.count).toBe(3);
     expect(entries[0]!.nodeId).toBe("node-1");
+  });
+
+  it("treats runtime.infinite_loop as session-fatal and other codes as not", () => {
+    expect(isFatalPlayDiagnostic("runtime.infinite_loop")).toBe(true);
+    expect(isFatalPlayDiagnostic("runtime.uncaught")).toBe(false);
+    expect(isFatalPlayDiagnostic("preview")).toBe(false);
+    expect(isFatalPlayDiagnostic(undefined)).toBe(false);
   });
 });
 

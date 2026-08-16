@@ -39,10 +39,12 @@ export type PreviewDiagnosticsMessage = {
   diagnostics: Array<{
     message: string;
     severity: string;
+    code?: string;
     assetGuid?: string;
     graphId?: string;
     nodeId?: string;
     btNodeId?: string;
+    bodyLine?: number;
   }>;
 };
 
