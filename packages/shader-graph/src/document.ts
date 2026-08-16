@@ -120,7 +120,7 @@ function normalizeNodeProperties(
       : typeof properties.glsl === "string"
         ? properties.glsl
         : "a + b";
-  const next = { ...properties, body };
+  const next: Record<string, unknown> = { ...properties, body };
   delete next.glsl;
   return next;
 }

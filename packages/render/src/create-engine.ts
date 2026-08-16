@@ -3,6 +3,7 @@ import {
   KhronosTextureContainer2,
   Scene,
   ScenePerformancePriority,
+  Texture,
 } from "@babylonjs/core";
 import type { SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
@@ -69,7 +70,7 @@ import {
   attachPostProcessStack,
   normalizePostProcessStack,
   type AttachedPostProcessStack,
-  type PostProcessStackEntry,
+  type PostProcessStackInput,
 } from "./post-process-material";
 
 export interface EngineHandle {
@@ -109,7 +110,7 @@ export interface EngineHandle {
   postProcessPassCount: () => number;
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
-  setPostProcessStack: (stack: readonly PostProcessStackEntry[]) => void;
+  setPostProcessStack: (stack: readonly PostProcessStackInput[]) => void;
   setMaterialDocuments: (
     documents: ReadonlyMap<string, MaterialDocument>,
     functions?: ReadonlyMap<string, MaterialFunctionDocument>,
@@ -168,7 +169,7 @@ export interface CreateEngineOptions {
   /** Material Function documents keyed by asset guid. */
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   /** Authored scene post-process stack. */
-  postProcessStack?: readonly PostProcessStackEntry[];
+  postProcessStack?: readonly PostProcessStackInput[];
   /**
    * Local Engine Settings gate (default on). Skips attaching the authored
    * stack without mutating scene documents.
@@ -328,7 +329,8 @@ export function createEngine(
     resolveTexture: (guid) => {
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
-      return resourceCache.getTexture(guid, engine, bytes);
+      const texture = resourceCache.getTexture(guid, engine, bytes);
+      return texture instanceof Texture ? texture : null;
     },
   });
   binding.resolveMaterial = (guid) => {
@@ -767,7 +769,7 @@ export function createEngine(
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
     },
-    setPostProcessStack: (stack: readonly PostProcessStackEntry[]) => {
+    setPostProcessStack: (stack: readonly PostProcessStackInput[]) => {
       postProcessStack = normalizePostProcessStack(stack);
       rebuildPostProcessStack();
       scheduler.invalidate("asset");

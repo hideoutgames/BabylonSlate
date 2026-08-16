@@ -12,6 +12,13 @@ export interface PostProcessStackEntry {
   order: number;
 }
 
+/** Scene documents omit `order`; normalize fills it from array index. */
+export type PostProcessStackInput = {
+  materialGuid: string;
+  enabled?: boolean;
+  order?: number;
+};
+
 export function normalizePostProcessStack(
   value: unknown,
 ): PostProcessStackEntry[] {

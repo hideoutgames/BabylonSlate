@@ -17,7 +17,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 const harness = vi.hoisted(() => ({
   selectedActorIds: [] as string[],
   scene: null as SerializedScene | null,
-  applySceneChange: vi.fn(async () => true),
+  applySceneChange: vi.fn(async (_id: string, _scene: SerializedScene) => true),
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
