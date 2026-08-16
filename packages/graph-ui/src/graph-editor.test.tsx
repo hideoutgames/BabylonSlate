@@ -921,17 +921,55 @@ describe("GraphEditor", () => {
     expect(container.querySelector(".react-flow")?.className).toMatch(/\bdark\b/);
   });
 
-  it("does not render an Add node button", () => {
-    const { queryByRole, getByTestId } = render(
+  it("renders an Add node toolbar button", () => {
+    const { getByRole, getByTestId } = render(
       <GraphEditor
         initialGraph={{ nodes: [], edges: [] }}
         paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
       />,
     );
-    expect(queryByRole("button", { name: "Add node" })).toBeNull();
+    expect(getByRole("button", { name: "Add node" })).toBeTruthy();
+    expect(getByTestId("graph-add-node")).toBeTruthy();
     expect(getByTestId("graph-toolbar")).toBeTruthy();
     expect(getByTestId("graph-format")).toHaveProperty("disabled", true);
     expect(getByTestId("graph-break-links")).toHaveProperty("disabled", true);
+    fireEvent.click(getByTestId("graph-add-node"));
+    expect(getByTestId("node-palette-body")).toBeTruthy();
+  });
+
+  it("opens Add node from an empty-pane context menu without node items", () => {
+    const { container, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+      />,
+    );
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    fireEvent.contextMenu(pane!);
+    expect(getByTestId("node-palette-body")).toBeTruthy();
+  });
+
+  it("opens the palette on double-tap after remounting for a new function", () => {
+    const paletteNodes = [
+      { id: "debug.log", title: "Log", category: "Debug" },
+    ];
+    const { container, rerender, getByTestId } = render(
+      <GraphEditor
+        key="event"
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={paletteNodes}
+      />,
+    );
+    rerender(
+      <GraphEditor
+        key="fn-1"
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={paletteNodes}
+      />,
+    );
+    openPalette(container);
+    expect(getByTestId("node-palette-body")).toBeTruthy();
   });
 
   it("keeps Break Links disabled for an unwired selection", () => {
