@@ -1,0 +1,180 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { NullEngine, Scene } from "@babylonjs/core";
+import {
+  createDefaultMaterialDocument,
+  type MaterialDocument,
+} from "@babylonslate/shader-graph";
+import { MaterialLibrary } from "./material-library";
+
+const disposers: Array<() => void> = [];
+
+afterEach(() => {
+  while (disposers.length > 0) disposers.pop()?.();
+});
+
+function host(): Scene {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  disposers.push(() => {
+    scene.dispose();
+    engine.dispose();
+  });
+  return scene;
+}
+
+function tinted(value: number): MaterialDocument {
+  const doc = createDefaultMaterialDocument();
+  doc.nodes[0]!.properties = { value: [value, 0, 0, 1] };
+  return doc;
+}
+
+describe("material library", () => {
+  it("compiles a material document for a scene", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const result = library.acquire(scene, "mat-1", tinted(1));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.material.getClassName()).toBe("NodeMaterial");
+  });
+
+  it("reuses one compiled material for the same graph in the same scene", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "mat-1", tinted(1));
+    const second = library.acquire(scene, "mat-1", tinted(1));
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(second.material).toBe(first.material);
+  });
+
+  it("recompiles when the graph content changes", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "mat-1", tinted(1));
+    const second = library.acquire(scene, "mat-1", tinted(0.25));
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(second.material).not.toBe(first.material);
+  });
+
+  it("never shares one material instance across two scenes", () => {
+    const first = host();
+    const second = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const a = library.acquire(first, "mat-1", tinted(1));
+    const b = library.acquire(second, "mat-1", tinted(1));
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.material).not.toBe(b.material);
+  });
+
+  it("keeps a material alive until the last reference is released", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const result = library.acquire(scene, "mat-1", tinted(1));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    library.acquire(scene, "mat-1", tinted(1));
+    library.release(scene, "mat-1");
+    expect(scene.materials).toContain(result.material);
+    library.release(scene, "mat-1");
+    expect(scene.materials).not.toContain(result.material);
+  });
+
+  it("reports compile diagnostics instead of throwing", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const broken = createDefaultMaterialDocument();
+    broken.nodes.push({
+      id: "bogus",
+      type: "math.doesNotExist",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    const result = library.acquire(scene, "mat-1", broken);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.length).toBeGreaterThan(0);
+  });
+
+  it("resolves textures through the injected provider", () => {
+    const scene = host();
+    const resolveTexture = vi.fn(() => null);
+    const library = new MaterialLibrary({ resolveTexture });
+    disposers.push(() => library.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "tex",
+        type: "param.texture",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-1" },
+      },
+      {
+        id: "texUv",
+        type: "input.uv",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-rgb-output");
+    doc.edges.push(
+      {
+        id: "e-tex",
+        sourceNodeId: "tex",
+        sourcePinId: "out",
+        targetNodeId: "sample",
+        targetPinId: "texture",
+      },
+      {
+        id: "e-uv",
+        sourceNodeId: "texUv",
+        sourcePinId: "uv",
+        targetNodeId: "sample",
+        targetPinId: "uv",
+      },
+      {
+        id: "e-out",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    library.acquire(scene, "mat-1", doc);
+    expect(resolveTexture).toHaveBeenCalledWith("tex-1");
+  });
+
+  it("drops every material for a scene when that scene is released", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const result = library.acquire(scene, "mat-1", tinted(1));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    library.releaseScene(scene);
+    expect(scene.materials).not.toContain(result.material);
+  });
+
+  it("reports whether a graph is already compiled for a scene", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    expect(library.isCompiled(scene, "mat-1", tinted(1))).toBe(false);
+    library.acquire(scene, "mat-1", tinted(1));
+    expect(library.isCompiled(scene, "mat-1", tinted(1))).toBe(true);
+  });
+});
