@@ -76,7 +76,7 @@ sourceControl: {
 }
 ```
 
-Missing settings normalize to disabled. Project Settings → **Source Control** (hidden on production web): Enable, Repository URL, Branch, Auto-Lock On First Edit, Poll Interval (seconds), Token (password field + Save / Clear). UI shows **Token Saved** / **Not Saved**, never the secret.
+Missing settings normalize to disabled. Project Settings → **Source Control** (hidden on production web): Enable, Repository URL, Branch, Auto-Lock On First Edit, Poll Interval (seconds), Token (password field + Save / Clear). UI shows **Token Saved** plus **Not written to the project. This browser only.**, never the secret. Enable is not labeled Not Saved. Turning Enable off asks for confirm; Off/On does not clear the in-memory lock list.
 
 ## Editor UX
 

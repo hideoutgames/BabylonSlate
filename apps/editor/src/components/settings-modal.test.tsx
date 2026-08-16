@@ -11,18 +11,26 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const { updateProjectSettings, setShowPluginContent, sourceControl, host } =
-  vi.hoisted(() => ({
-    updateProjectSettings: vi.fn(),
-    setShowPluginContent: vi.fn(),
-    sourceControl: {
-      hasToken: false,
-      saveToken: vi.fn(async () => undefined),
-      clearToken: vi.fn(async () => undefined),
-      readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
-    },
-    host: { platform: "electron", testMode: true },
-  }));
+const {
+  updateProjectSettings,
+  setShowPluginContent,
+  sourceControl,
+  host,
+  exportGameArtifact,
+  sourceControlEnabled,
+} = vi.hoisted(() => ({
+  updateProjectSettings: vi.fn(),
+  setShowPluginContent: vi.fn(),
+  sourceControl: {
+    hasToken: false,
+    saveToken: vi.fn(async () => undefined),
+    clearToken: vi.fn(async () => undefined),
+    readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
+  },
+  host: { platform: "electron", testMode: true },
+  exportGameArtifact: vi.fn(),
+  sourceControlEnabled: { current: false },
+}));
 
 vi.mock("@babylonslate/vfs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
@@ -36,10 +44,18 @@ vi.mock("@babylonslate/vfs", async (importOriginal) => {
 vi.mock("../context/document-context", async () => {
   const { createEmptyProject: emptyProject } = await import("@babylonslate/core");
   return {
-    useDocuments: () => ({
-      projectDocument: emptyProject("Demo"),
+    useDocuments: () => {
+      const projectDocument = emptyProject("Demo");
+      if (sourceControlEnabled.current) {
+        projectDocument.settings.sourceControl = {
+          ...projectDocument.settings.sourceControl,
+          enabled: true,
+        };
+      }
+      return {
+      projectDocument,
       exportProject: vi.fn(),
-      exportGameArtifact: vi.fn(),
+      exportGameArtifact,
       zipExportedGame: vi.fn(),
       retryFailedTextureEncoding: vi.fn(),
       updateProjectSettings,
@@ -88,7 +104,8 @@ vi.mock("../context/document-context", async () => {
       exportPlugin: vi.fn(),
       importPlugin: vi.fn(),
       openDocument: vi.fn(),
-    }),
+    };
+    },
   };
 });
 
@@ -101,6 +118,8 @@ afterEach(() => {
   sourceControl.hasToken = false;
   host.platform = "electron";
   host.testMode = true;
+  exportGameArtifact.mockReset();
+  sourceControlEnabled.current = false;
 });
 
 describe("SettingsModal project authoring", () => {
@@ -269,14 +288,58 @@ describe("SettingsModal project authoring", () => {
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    expect(screen.getByText("Not Saved")).toBeTruthy();
+    const copy = screen.getByTestId("settings-source-control-token-copy");
+    expect(copy.textContent).toMatch(/Not written to the project/i);
+    expect(copy.textContent).toMatch(/This browser only/i);
+    expect(copy.textContent).not.toMatch(/Not Saved/);
+    expect(screen.queryByText("Not Saved")).toBeNull();
     sourceControl.hasToken = true;
     cleanup();
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    expect(screen.getByText("Token Saved")).toBeTruthy();
+    expect(screen.getByText(/Token Saved/)).toBeTruthy();
     sourceControl.hasToken = false;
+  });
+
+  it("labels the Session category Done instead of Close", () => {
+    render(
+      <SettingsModal
+        open
+        onOpenChange={() => {}}
+        scope="project"
+        onCloseProject={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-project"));
+    expect(screen.getByTestId("settings-modal-category-project").textContent).toBe(
+      "Done",
+    );
+    expect(screen.getByTestId("close-project").textContent).toMatch(/Close Project/);
+  });
+
+  it("confirms before turning Source Control Enable off", () => {
+    sourceControlEnabled.current = true;
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    expect(updateProjectSettings).not.toHaveBeenCalled();
+    expect(screen.getByTestId("settings-source-control-disable-confirm")).toBeTruthy();
+  });
+
+  it("surfaces a thrown Export Game failure", async () => {
+    exportGameArtifact.mockRejectedValueOnce(new Error("zip failed"));
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("export-game"));
+    expect(await screen.findByTestId("export-game-error")).toBeTruthy();
+    expect(screen.getByTestId("export-game-error").textContent).toMatch(
+      /zip failed/,
+    );
   });
 });

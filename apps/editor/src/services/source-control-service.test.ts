@@ -284,4 +284,45 @@ describe("SourceControlService", () => {
     expect(service.heldCount).toBe(0);
     expect(fake.snapshot()).toHaveLength(0);
   });
+
+  it("keeps the lock list when Enable is turned off and on", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    await service.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    await service.autoLock("assets/hero.scene.babasset");
+    expect(service.lockForPath("assets/hero.scene.babasset")?.ours).toBe(true);
+
+    await service.configure({
+      settings: { ...enabled, enabled: false },
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    expect(service.enabled).toBe(false);
+    expect(service.lockForPath("assets/hero.scene.babasset")?.ours).toBe(true);
+
+    await service.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    expect(service.enabled).toBe(true);
+    expect(service.lockForPath("assets/hero.scene.babasset")?.ours).toBe(true);
+    expect(service.lockStateForPath("assets/hero.scene.babasset")).toBe("mine");
+  });
 });

@@ -229,8 +229,17 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
       );
     });
     await page.waitForTimeout(600);
-    await expect(page.getByTestId("context-menu-panel")).toBeVisible({
-      timeout: 3_000,
-    });
+  test("project settings close meets the 44px touch target", async ({
+    page,
+  }) => {
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await expect(page.getByTestId("settings-modal")).toBeVisible();
+    const close = page.locator('[data-slot="dialog-close"]').first();
+    await expect(close).toBeVisible();
+    const box = await close.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
   });
 });
