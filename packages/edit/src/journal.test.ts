@@ -17,6 +17,7 @@ import {
   ReparentComponentCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
+  SetActorsTransformsCommand,
   SetComponentPropertyCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
@@ -113,6 +114,18 @@ describe("journal", () => {
         scene.actors[0]!.transform,
         { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
       ),
+      new SetActorsTransformsCommand([
+        {
+          actorId,
+          from: scene.actors[0]!.transform,
+          to: { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        },
+        {
+          actorId: "other",
+          from: scene.actors[0]!.transform,
+          to: { position: [4, 5, 6], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        },
+      ]),
       new RenameActorCommand(actorId, "Cube", "Renamed"),
       new ReparentActorCommand(actorId, null, null),
       new ReorderActorCommand(actorId, 0, 0),

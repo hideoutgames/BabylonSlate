@@ -5,17 +5,19 @@ import {
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import {
+  applyGizmoMultiSelectDrag,
+  beginGizmoMultiSelectDrag,
+  collectNavBakeGeometry,
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
-  collectNavBakeGeometry,
   NavMeshDebugOverlay,
+  selectionGizmoRoots,
   syncEditorPlayState,
   type EngineHandle,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import {
   engineCommandBus,
-  findActor,
   type SerializedScene,
 } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
@@ -176,24 +178,23 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const handle = engineRef.current;
     const current = dragStartSceneRef.current ?? sceneRef.current;
     dragStartSceneRef.current = null;
-    const live = handle?.editor?.attachedActorTransform();
-    if (!handle || !current || !live) return;
-    const actor = findActor(current, live.actorId);
-    if (!actor) return;
+    const lives = handle?.editor?.selectedActorTransforms() ?? [];
+    if (!handle || !current || lives.length === 0) return;
+    const byId = new Map(lives.map((live) => [live.actorId, live]));
     const next: SerializedScene = {
       ...current,
-      actors: current.actors.map((entry) =>
-        entry.id === live.actorId
-          ? {
-              ...entry,
-              transform: {
-                position: live.position,
-                rotation: live.rotation,
-                scale: live.scale,
-              },
-            }
-          : entry,
-      ),
+      actors: current.actors.map((entry) => {
+        const live = byId.get(entry.id);
+        if (!live) return entry;
+        return {
+          ...entry,
+          transform: {
+            position: live.position,
+            rotation: live.rotation,
+            scale: live.scale,
+          },
+        };
+      }),
     };
     void applySceneChange(documentId, next);
   }, [applySceneChange, documentId]);
@@ -412,6 +413,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     type ViewportTestHost = {
       __babylonslateViewportTest?: {
         commitGizmoNudge: () => Promise<boolean>;
+        commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
       };
     };
@@ -438,6 +440,30 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (!mesh) return false;
         handle.editor.setSelectedActors([actorId]);
         mesh.position.x += 1.5;
+        dragStartSceneRef.current = current;
+        commitGizmoTransform();
+        return true;
+      },
+      commitMultiSelectGizmoNudge: async () => {
+        const handle = engineRef.current;
+        const current = sceneRef.current;
+        if (!handle?.editor || !current || current.actors.length < 2) {
+          return false;
+        }
+        const ids = current.actors
+          .filter((actor) => !actor.locked)
+          .map((actor) => actor.id);
+        handle.editor.setSelectedActors(ids);
+        const attached = handle.editor.gizmos.attachedMesh();
+        if (!attached) return false;
+        const parentIdOf = (id: string) =>
+          current.actors.find((actor) => actor.id === id)?.parentId ?? null;
+        const followers = selectionGizmoRoots(ids, parentIdOf)
+          .map((id) => handle.editor!.sync.meshForActor(id))
+          .filter((mesh) => mesh !== null && mesh !== attached);
+        const drag = beginGizmoMultiSelectDrag(attached, followers);
+        attached.position.x += 1.5;
+        if (drag) applyGizmoMultiSelectDrag(drag, attached);
         dragStartSceneRef.current = current;
         commitGizmoTransform();
         return true;
