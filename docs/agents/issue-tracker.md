@@ -190,7 +190,7 @@ Appendix A `p4-*` checkboxes are landed as a vertical Play path. Leftovers below
 | Play 60fps on A16 iPad | `p14-perf-smoke` / `p1-device-spikes` | CI does not prove device frame rate |
 | WKWebView `Error.stack` parse | `p1-device-spikes` | V8 + WebKit-shaped strings unit-tested; hardware WKWebView unconfirmed |
 | Capacitor app-state pause | later polish (`vfs`) | Editor listens for `babylonslate:appstate`; no vfs emitter yet. `visibilitychange` works |
-| `renderquality` / Engine Settings `hardwareScalingLevel` → Engine | later polish (`render`, `runtime`, editor) | Valve exists; console `renderquality` logs; settings field is persisted only |
+| `renderquality` / Engine Settings `hardwareScalingLevel` → Engine | Done (`cursor/material-shader-improvements-fa96`) | Engine Settings `hardwareScalingLevel` is applied at viewport/Play start and on change. Console `renderquality` still logs. |
 | §2.4 editor idle freezes + scene-load shader warm | later polish (`render`) | No `freezeActiveMeshes` / `material.freeze` / `useGeometryUniqueIdsMap`; `forceCompilationAsync` is shader-graph only |
 | Context-loss user notify | later polish (`render`, editor) | Restore drops a quality tier and flushes LRU; no one-shot toast |
 | Mesh live-object assert on Play close | later polish (`play-session`) | Texture-cache growth is logged; mesh counts are captured unused |

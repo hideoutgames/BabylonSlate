@@ -153,6 +153,7 @@ export function PlayOverlay({
   const [hudScene, setHudScene] = useState<import("@babylonjs/core").Scene | null>(
     null,
   );
+  const [postProcessPasses, setPostProcessPasses] = useState(0);
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -323,6 +324,7 @@ export function PlayOverlay({
         setTextureCount(counts.textures);
         setDraws(current.drawCalls());
         setBridgeRate(current.bridgeMessagesPerSec());
+        setPostProcessPasses(current.handle.postProcessPassCount());
         const recorded = current.lastTrace();
         if (recorded) setTrace(recorded);
       }
@@ -331,6 +333,7 @@ export function PlayOverlay({
       const detail = (event as CustomEvent<LiveEngineSettings>).detail;
       if (!detail) return;
       applyLiveEngineSettings(session.handle, detail);
+      setPostProcessPasses(session.handle.postProcessPassCount());
     };
     window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
     return () => {
@@ -357,6 +360,7 @@ export function PlayOverlay({
           : "items-center justify-center bg-black",
       )}
       data-testid="play-overlay"
+      data-post-process-passes={String(postProcessPasses)}
     >
       <PlayOverlayChrome
         paused={paused}

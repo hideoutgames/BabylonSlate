@@ -944,6 +944,26 @@ export function isPostProcessMaterialAsset(asset: {
   );
 }
 
+export function isPostProcessMaterialForPicker(
+  asset: {
+    path: string;
+    header: { type: string; payload?: Record<string, unknown> };
+  },
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+): boolean {
+  const open = openDocuments.find(
+    (entry) =>
+      entry.ref.kind === "material" && entry.ref.path === asset.path,
+  );
+  if (open && open.content && typeof open.content === "object") {
+    return (open.content as { domain?: unknown }).domain === "postProcess";
+  }
+  return isPostProcessMaterialAsset(asset);
+}
+
 function documentAsset(
   type: string,
   name: string,

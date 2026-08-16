@@ -29,12 +29,12 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Label** | Accessible control caption. | Not imported by app code; Field wraps it. |
 | **Progress** (`ProgressTrack`, `ProgressIndicator`, `ProgressLabel`, `ProgressValue`) | Determinate progress. | Content Browser encode / import; Preparing Preview modal. |
 | **ScrollArea** (`ScrollBar`) | Overlay scrollbar region. | Gallery, Output Log, Compiler Results, SearchDialog body. |
-| **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. Popup is at least the trigger width (`min-w-(--anchor-width)`), not stretched across the panel. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset; Project Settings global font fallback. |
+| **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. Popup is at least the trigger width (`min-w-(--anchor-width)`), not stretched across the panel. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset; Project Settings global font fallback; Material preview mesh. |
 | **Separator** | Horizontal or vertical rule. | Toolbar strips, search dialog, catalog layout. |
 | **Sheet** (`SheetTitle`, `SheetContent`, `SheetHeader`, …) | Edge drawer. Title required. | Installed; unused in production chrome. Pick lists use SearchDialog / SearchDropdown; console and session report use Dialog. |
 | **Slider** | Bounded numeric track (44px hit area). Accepts a scalar or range array. | PropertyGrid slider rows; Trace playback frame scrubber; gallery. |
-| **Switch** | On/off toggle. | Engine / Project Settings booleans; NodePalette **Context Sensitive**. |
-| **Textarea** | Multi-line text. | Gallery; not used for Input mappings (structured `InputMappingEditor`). |
+| **Switch** | On/off toggle. | Engine / Project Settings booleans (including Viewport **Post-processing**); NodePalette **Context Sensitive**; scene post-process pass Enabled. |
+| **Textarea** | Multi-line text. | Custom GLSL expression body; gallery. Input mappings stay on structured `InputMappingEditor`. |
 | **Toggle** | Pressed/unpressed tool. Selected = accent fill + primary border + `aria-pressed`. | Viewport tools, Outliner filters, chrome Play-adjacent tools; FlagsField bits. |
 | **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; Tilemap paint tools; UserInterface **Designer \| Logic** mode bar; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
@@ -58,10 +58,10 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | **SearchInput** | Text field with a trailing clear control. | CatalogDialog, SearchDialog, SearchDropdown, global search, Content Browser, Content Browser Move dialog. |
 | **SearchDialog** | Searchable item list in a compact centered Dialog. | AssetPicker; ClassPicker; SceneComponentPicker; gallery. Add Component / Place Actors use CatalogDialog instead. |
 | **SearchDropdown** | Searchable `DropdownMenu` (`modal={false}`) anchored to a trigger. Scrollable; width is content-sized, not full viewport. | Tilemap tile palette; PinTypePicker; gallery. |
-| **AssetPicker** | Asset-guid picker on SearchDialog, optional None row and type filter. | Scene Details mesh / sprite / tilemap / widget / animation-graph rows; Project Settings default font and **Startup Scene**; Font fallbacks; Sprite and Tileset Texture; UserInterface nested UI, image, font, and visual override; AnimationGraph clip (Sprite or Animation). |
+| **AssetPicker** | Asset-guid picker on SearchDialog, optional None row and type filter. | Scene Details mesh / sprite / tilemap / widget / animation-graph rows and **post-process Materials**; Project Settings default font and **Startup Scene**; Font fallbacks; Sprite and Tileset Texture; UserInterface nested UI, image, font, and visual override; AnimationGraph clip (Sprite or Animation); Material Texture Sample inline texture. |
 | **ClassPicker** | Class-id picker on SearchDialog (engine + project Class assets). | Scene Game Instance (GameInstance lineage); Inspector **classRef** pin defaults (subclasses of the pin constraint). |
 | **SceneComponentPicker** | SearchDialog picker of components in the open scene; `allowedClassIds` is a source-code filter (no user type dropdown); optional None; button shows actor name + component. | Scene **Default Camera** (`CameraComponent` only). Reuse for other scene-settings that name a component (light, listener). |
-| **NamedListEditor** | Reorderable named string rows (add / remove / up / down, 44px). Optional custom item control or Add-only. | Project Settings sorting layers; Font `fallbackGuids`; ParameterListEditor enum values; AnimationGraph parameters; Tilemap layers. |
+| **NamedListEditor** | Reorderable named string rows (add / remove / up / down, 44px). Optional custom item control or Add-only. | Project Settings sorting layers; Font `fallbackGuids`; ParameterListEditor enum values; AnimationGraph parameters; Tilemap layers; Scene **Post Process** stack. |
 | **InputMappingEditor** | Actions/axes with bindings, listen-to-bind, device toggles, touch control ids. | Project Settings Input. |
 | **BindingCaptureButton** | Listen-to-bind: next keydown / mouse button / gamepad. | InputMappingEditor bindings. |
 | **NamePromptDialog** | AlertDialog + 44px name field. Replaces `window.prompt`. | Class panel member add (including Local Variables); UserInterface Logic members; UserInterface widget rename. |

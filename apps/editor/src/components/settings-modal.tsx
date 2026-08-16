@@ -136,7 +136,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "viewport",
     label: "Viewport",
-    keywords: "frame cap hardware scaling",
+    keywords: "frame cap hardware scaling post processing",
   },
   {
     id: "graph",

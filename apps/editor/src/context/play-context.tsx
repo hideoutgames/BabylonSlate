@@ -75,6 +75,10 @@ import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { collectFontAssetEntries } from "../lib/play-fonts";
+import {
+  ENGINE_SETTINGS_CHANGED_EVENT,
+  type LiveEngineSettings,
+} from "../lib/viewport-render-gate";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -241,13 +245,35 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId);
 
   useEffect(() => {
+    const apply = (settings: {
+      postProcessingEnabled?: boolean;
+      hardwareScalingLevel?: number;
+      debuggerDefaults?: { previewBuild?: boolean };
+    }) => {
+      if (typeof settings.debuggerDefaults?.previewBuild === "boolean") {
+        setPreviewBuildState(settings.debuggerDefaults.previewBuild);
+      }
+      if (typeof settings.postProcessingEnabled === "boolean") {
+        setPostProcessingEnabled(settings.postProcessingEnabled);
+      }
+      if (typeof settings.hardwareScalingLevel === "number") {
+        setHardwareScalingLevel(settings.hardwareScalingLevel);
+      }
+    };
     void createAppSettingsStore()
       .load()
       .then((settings) => {
         setPreviewBuildState(settings.debuggerDefaults.previewBuild === true);
-        setPostProcessingEnabled(settings.postProcessingEnabled !== false);
-        setHardwareScalingLevel(settings.hardwareScalingLevel);
+        apply(settings);
       });
+    const onSettings = (event: Event) => {
+      const detail = (event as CustomEvent<LiveEngineSettings>).detail;
+      if (detail) apply(detail);
+    };
+    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+    return () => {
+      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+    };
   }, []);
 
   const setPreviewBuild = useCallback((value: boolean) => {

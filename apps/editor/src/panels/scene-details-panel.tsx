@@ -43,7 +43,7 @@ import {
   sceneComponentDisplayLabel,
   sceneComponentEntries,
 } from "../lib/scene-component-entries";
-import { isPostProcessMaterialAsset } from "../lib/content-browser-helpers";
+import { isPostProcessMaterialForPicker } from "../lib/content-browser-helpers";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -67,7 +67,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     path: asset.path,
   }));
   const postProcessPickerAssets = (assetRegistry?.list() ?? [])
-    .filter(isPostProcessMaterialAsset)
+    .filter((asset) => isPostProcessMaterialForPicker(asset, openDocuments))
     .map((asset) => ({
       guid: asset.header.guid,
       name: asset.header.name,

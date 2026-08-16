@@ -160,6 +160,30 @@ describe("attachViewportRenderGate", () => {
     expect(scheduler.shouldRender(100)).toBe(true);
     detach();
   });
+
+  it("forwards the post-processing gate when engine settings change", async () => {
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 200 });
+    Object.defineProperty(canvas, "clientHeight", { value: 120 });
+    document.body.append(canvas);
+
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    const setPostProcessingEnabled = vi.fn();
+    const detach = attachViewportRenderGate({
+      canvas,
+      scheduler,
+      loadFrameCap: async () => 60,
+      setPostProcessingEnabled,
+    });
+    await Promise.resolve();
+    dispatchEngineSettingsChanged({
+      viewportFrameCap: 60,
+      postProcessingEnabled: false,
+    });
+    expect(setPostProcessingEnabled).toHaveBeenCalledWith(false);
+    detach();
+  });
 });
 
 describe("applyLiveEngineSettings", () => {

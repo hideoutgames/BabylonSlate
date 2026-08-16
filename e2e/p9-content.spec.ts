@@ -1,10 +1,11 @@
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, openTestProject } from "./open-test-project";
+import { saveAllIfEnabled } from "./save-all";
 
 async function showContentBrowser(
-  page: import("@playwright/test").Page,
+  page: Page,
 ): Promise<void> {
   await page
     .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
@@ -13,7 +14,7 @@ async function showContentBrowser(
 }
 
 async function createAsset(
-  page: import("@playwright/test").Page,
+  page: Page,
   type:
     | "UserInterface"
     | "Sprite"
@@ -30,6 +31,30 @@ async function createAsset(
   await page.getByTestId("new-asset-name").fill(name);
   await page.getByTestId("content-browser-new-asset-create").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
+}
+
+async function guidForPath(page: Page, assetPath: string): Promise<string> {
+  return page.evaluate((path) => {
+    const host = globalThis as {
+      __babylonslateTest?: { guidForPath: (path: string) => string | null };
+    };
+    return host.__babylonslateTest?.guidForPath(path) ?? "";
+  }, assetPath);
+}
+
+async function addMaterialPaletteNode(
+  page: Page,
+  search: string,
+  itemId: string,
+): Promise<void> {
+  const graph = page.getByTestId("material-graph-editor");
+  await expect(graph).toBeVisible();
+  await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
+  await expect(page.getByTestId("node-palette")).toBeVisible();
+  await page.getByTestId("node-palette-search").fill(search);
+  await page.getByTestId(`node-palette-item-${itemId}`).click();
+  await expect(page.getByTestId("node-palette")).toHaveCount(0);
+  await graph.locator(`.react-flow__node[data-id^="${itemId}-"]`).click();
 }
 
 test.describe("P9 content systems", () => {
@@ -306,13 +331,28 @@ test.describe("P9 content systems", () => {
       "No Issues",
     );
 
-    // Every primitive is reachable and keeps the preview compiling.
+    // Every primitive is reachable from the compact preview mesh Select.
     for (const mesh of ["cube", "cylinder", "cone", "plane"]) {
+      await page.getByTestId("material-preview-mesh").click();
       await page.getByTestId(`material-preview-mesh-${mesh}`).click();
       await expect(canvas).toHaveAttribute("data-status", "ready", {
         timeout: 15000,
       });
     }
+
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      box!.x + box!.width / 2 + 48,
+      box!.y + box!.height / 2 + 24,
+    );
+    await page.mouse.up();
+    await page.mouse.wheel(0, 240);
+    await expect(canvas).toHaveAttribute("data-status", "ready", {
+      timeout: 15000,
+    });
   });
 
   test("Material Windows menu lists the material docks", async ({ page }) => {
@@ -329,6 +369,133 @@ test.describe("P9 content systems", () => {
     await expect(
       page.getByTestId("windows-menu-material-compiler-results"),
     ).toBeVisible();
+  });
+
+  test("Custom GLSL node compiles an expression in the Material editor", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "Material", "Glsl");
+    await page
+      .locator('[data-asset-path="assets/Glsl.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await expect(page.getByTestId("material-details-panel")).toBeVisible();
+    await addMaterialPaletteNode(page, "Custom GLSL", "custom.glsl");
+    const glsl = page.getByTestId("material-node-glsl");
+    await expect(glsl).toBeVisible();
+    await expect(page.getByTestId("material-node-glsl-signature")).toContainText(
+      "result = fn(a, b)",
+    );
+    await glsl.fill("#define X 1");
+    await expect(
+      page.getByTestId("material-diagnostic-material.customGlsl"),
+    ).toBeVisible({ timeout: 10_000 });
+    await glsl.fill("a + b");
+    await expect(
+      page.getByTestId("material-diagnostic-material.customGlsl"),
+    ).toHaveCount(0);
+  });
+
+  test("Texture Sample node can pick an inline Texture asset", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await showContentBrowser(page);
+    await page
+      .getByTestId("content-browser-import-input")
+      .setInputFiles([path.join(process.cwd(), "e2e/fixtures/albedo.png")]);
+    await expect(
+      page.locator('[data-asset-path="assets/albedo.babasset"]'),
+    ).toBeVisible({ timeout: 15_000 });
+    await createAsset(page, "Material", "Sampled");
+    await page
+      .locator('[data-asset-path="assets/Sampled.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await addMaterialPaletteNode(page, "Texture Sample", "texture.sample");
+    await page.getByTestId("material-node-texture").click();
+    await expect(page.getByTestId("material-node-texture-picker")).toBeVisible();
+    const albedoGuid = await guidForPath(page, "assets/albedo.babasset");
+    expect(albedoGuid.length).toBeGreaterThan(0);
+    await page.getByTestId(`search-item-${albedoGuid}`).click();
+    await expect(page.getByTestId("material-node-texture-picker")).toHaveCount(0);
+    await expect(page.getByTestId("material-node-texture")).toContainText(
+      /albedo/i,
+    );
+  });
+
+  test("scene post-process stack applies in Play and respects Engine Settings", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "Material", "Bloom");
+    await page
+      .locator('[data-asset-path="assets/Bloom.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await expect(page.getByTestId("property-domain")).toBeVisible();
+    await page.getByTestId("property-domain").click();
+    await page.getByRole("option", { name: "Post Process" }).click();
+    await expect(page.getByTestId("property-domain")).toContainText(
+      "Post Process",
+    );
+    await saveAllIfEnabled(page);
+    await openMainScene(page);
+    await expect(page.getByTestId("scene-post-process-stack")).toBeVisible();
+    await page.getByTestId("scene-post-process-stack-add").click();
+    await expect(page.getByTestId("scene-post-process-picker")).toBeVisible();
+    const bloomGuid = await guidForPath(
+      page,
+      "assets/Bloom.material.babasset",
+    );
+    expect(bloomGuid.length).toBeGreaterThan(0);
+    await page.getByTestId(`search-item-${bloomGuid}`).click();
+    await expect(page.getByTestId("scene-post-process-0-material")).toContainText(
+      "Bloom",
+    );
+    await saveAllIfEnabled(page);
+    await page.getByTestId("play-preview").click();
+    const overlay = page.getByTestId("play-overlay");
+    await expect(overlay).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(async () => overlay.getAttribute("data-post-process-passes"), {
+        timeout: 15_000,
+      })
+      .toBe("1");
+    await page.getByTestId("play-overlay-close").click();
+    await expect(overlay).toHaveCount(0);
+    if ((await page.getByTestId("preview-session-report").count()) > 0) {
+      await page.getByTestId("session-report-close").click();
+    }
+    await page.getByTestId("engine-settings").click();
+    await page.getByTestId("engine-settings-modal-category-viewport").click();
+    await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
+      "data-state",
+      "checked",
+    );
+    await page.getByTestId("setting-post-processing").click();
+    await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
+      "data-state",
+      "unchecked",
+    );
+    await page
+      .getByTestId("engine-settings-modal")
+      .locator('[data-slot="dialog-close"]')
+      .click();
+    await expect(page.getByTestId("engine-settings-modal")).toHaveCount(0);
+    await page.getByTestId("play-preview").click();
+    await expect(overlay).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(async () => overlay.getAttribute("data-post-process-passes"), {
+        timeout: 15_000,
+      })
+      .toBe("0");
+    await page.getByTestId("play-overlay-close").click();
+    await expect(overlay).toHaveCount(0);
+    await expect(page.getByTestId("scene-post-process-0-material")).toContainText(
+      "Bloom",
+    );
   });
 
   test("Material Function edits reach every calling material", async ({

@@ -33,6 +33,7 @@ import {
   materialAssetDependencies,
   materialHeaderMeta,
   isPostProcessMaterialAsset,
+  isPostProcessMaterialForPicker,
   classParentLookup,
   addSelectedAssetGuid,
   addSelectedFolderPath,
@@ -1085,5 +1086,24 @@ describe("content-browser-helpers", () => {
         asset({ type: "Material", payload: { domain: "surface" } }),
       ),
     ).toBe(false);
+  });
+
+  it("prefers an open Material document domain over a stale header", () => {
+    const bloom = asset({
+      type: "Material",
+      path: "assets/Bloom.material.babasset",
+      guid: "pp-bloom",
+      name: "Bloom",
+      payload: { domain: "surface" },
+    });
+    expect(
+      isPostProcessMaterialForPicker(bloom, [
+        {
+          ref: { kind: "material", path: "assets/Bloom.material.babasset" },
+          content: { domain: "postProcess" },
+        },
+      ]),
+    ).toBe(true);
+    expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
   });
 });
