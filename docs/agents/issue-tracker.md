@@ -19,6 +19,10 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-16 | cursor/bt-editor-ux-review-ed63 | p-bt-editor-ux | Spec | Consecutive finished node moves reused `mergeKey` `"bt-node-move"`, so two completed drags undid as one. Position commits now call `applyNodePositions` with no merge key (`commitPositionsOnDragEnd` already emits once) | Resolved |
+| 2026-08-16 | cursor/bt-editor-ux-review-ed63 | p-bt-editor-ux | Spec | `serializedToBehaviourTree` X-sorted siblings without a previous-`children[]` tie-break; canvas round-trip could flip equal-X order. Graph position path now uses `applyNodePositions` | Resolved |
+| 2026-08-16 | cursor/bt-editor-ux-review-ed63 | p-bt-editor-ux | Spec | Drag-off-handle e2e only asserted Wait Details, not a parent→child edge | Resolved |
+| 2026-08-16 | cursor/bt-editor-ux-review-ed63 | p-bt-editor-ux | Standards | Compiler Results severity badge rendered `error` / `warning` instead of Title Case | Resolved |
 | 2026-08-16 | cursor/material-shader-review-fa96 | material shader improvements | Spec | Packaged player packed Material JSON but never hydrated documents, the scene stack, or `assignMaterial`, so exported games could not run authored materials | Resolved |
 | 2026-08-16 | cursor/material-shader-review-fa96 | material shader improvements | Spec | Scene Depth did not enable/release a linearized depth renderer; missing buffers were unanchored strings and `deviceBuffers` omitted counted as present | Resolved |
 | 2026-08-16 | cursor/material-shader-review-fa96 | material shader improvements | Spec | Preview e2e covered orbit/wheel only; pinch was missing from p9 and GraphEditor `commitPositionsOnDragEnd` was absent from the components catalog | Resolved |
