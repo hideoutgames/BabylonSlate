@@ -51,6 +51,14 @@ async function closeWindowsMenu(page: Page): Promise<void> {
   await expect(content).toHaveCount(0);
 }
 
+function animStateMachine(page: Page) {
+  return page.getByTestId("anim-dock-surface-state-machine");
+}
+
+function animObject(page: Page) {
+  return page.getByTestId("anim-dock-surface-animation-object");
+}
+
 async function guidForPath(page: Page, assetPath: string): Promise<string> {
   return page.evaluate((path) => {
     const host = globalThis as {
@@ -324,7 +332,7 @@ test.describe("P9 content systems", () => {
       "true",
     );
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
-    await expect(page.getByTestId("anim-graph-parameters")).toBeVisible();
+    await expect(animStateMachine(page).getByTestId("anim-graph-parameters")).toBeVisible();
     await expect(page.getByTestId("anim-graph-add-state")).toBeVisible();
 
     await createAsset(page, "Material", "Surface");
@@ -349,9 +357,10 @@ test.describe("P9 content systems", () => {
       "data-active",
       "true",
     );
-    await expect(page.getByTestId("anim-graph-add-variable")).toBeVisible();
-    await page.getByTestId("anim-graph-add-variable").click();
-    await expect(page.getByTestId("anim-graph-variable-var-1")).toBeVisible();
+    const stateMachine = animStateMachine(page);
+    await expect(stateMachine.getByTestId("anim-graph-add-variable")).toBeVisible();
+    await stateMachine.getByTestId("anim-graph-add-variable").click();
+    await expect(stateMachine.getByTestId("anim-graph-variable-var-1")).toBeVisible();
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
 
     await openWindowsMenu(page);
