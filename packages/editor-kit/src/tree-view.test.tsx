@@ -115,6 +115,49 @@ describe("TreeView", () => {
     expect(onReparent).not.toHaveBeenCalled();
   });
 
+  it("does not capture the pointer on down when reparent uses hold so the list can scroll", () => {
+    const capture = vi.fn();
+    render(
+      <TreeView nodes={nodes} onReparent={() => {}} data-testid="tree" />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.setPointerCapture = capture;
+    dispatchPointerEvent(screen.getByTestId("tree-row-child"), "pointerdown", {
+      clientX: 10,
+      clientY: 40,
+      pointerId: 7,
+    });
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it("captures the pointer after the reparent hold arms", () => {
+    vi.useFakeTimers();
+    const capture = vi.fn();
+    render(
+      <TreeView nodes={nodes} onReparent={() => {}} data-testid="tree" />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.setPointerCapture = capture;
+    dispatchPointerEvent(screen.getByTestId("tree-row-child"), "pointerdown", {
+      clientX: 10,
+      clientY: 40,
+      pointerId: 7,
+    });
+    expect(capture).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(DRAG_ARM_MS);
+    });
+    expect(capture).toHaveBeenCalledWith(7);
+    vi.useRealTimers();
+  });
+
+  it("lets rows pan vertically instead of taking touch-action none", () => {
+    render(<TreeView nodes={nodes} data-testid="tree" />);
+    expect(screen.getByTestId("tree-row-child").className).not.toContain(
+      "touch-none",
+    );
+  });
+
   it("does not select a row when the pointer dragged", () => {
     const onSelect = vi.fn();
     render(
