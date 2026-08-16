@@ -83,7 +83,7 @@ Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never l
 
 | Host | Backend |
 | --- | --- |
-| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. |
+| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. The Swift plugin lives in the iOS **App target** (`BabylonSlateSecretsPlugin.swift` in `project.pbxproj` Sources) and in `packageClassList`. There is no Android editor shell yet. |
 | Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage.encryptString` / `decryptString` |
 | Web | `UnavailableSecretStore` (`available: false`) — Source Control UI hidden |
 
