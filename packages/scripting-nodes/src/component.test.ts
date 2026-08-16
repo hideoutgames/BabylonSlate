@@ -36,6 +36,7 @@ function loadModule(source: string): Record<string, unknown> {
 describe("component nodes", () => {
   it("registers Add Component", () => {
     expect(componentNodes.map((n) => n.id)).toContain("component.add");
+    expect(componentNodes.map((n) => n.id)).toContain("component.getNamed");
   });
 
   it("uses a classRef pin for component classId", () => {
@@ -45,6 +46,19 @@ describe("component nodes", () => {
         classRef("ActorComponent"),
       );
     }
+  });
+
+  it("Get Component Ref uses typed objectRef and implicit self", () => {
+    const def = componentNodes.find((node) => node.id === "component.getNamed");
+    const pins = def?.pins({
+      componentClassId: "MeshComponent",
+      implicitSelf: true,
+    });
+    expect(pins?.find((entry) => entry.id === "actor")).toBeUndefined();
+    expect(pins?.find((entry) => entry.id === "out")?.type).toEqual({
+      kind: "objectRef",
+      classId: "MeshComponent",
+    });
   });
 
   it("compiled Add Component calls ctx.addComponent", () => {

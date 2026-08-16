@@ -1596,6 +1596,7 @@ export function ContentBrowserWorkspace() {
         onNameChange={setNewAssetName}
         parentClass={newAssetParent}
         onParentClassChange={setNewAssetParent}
+        classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         nameTaken={newAssetNameTaken}
         busy={busy}
         onCreate={() => {

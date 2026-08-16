@@ -8,6 +8,7 @@ export {
 } from "./ids";
 export {
   ClassRegistry,
+  MAX_CLASS_INHERITANCE_DEPTH,
   type ClassDef,
   type ClassKind,
   type ReparentResult,

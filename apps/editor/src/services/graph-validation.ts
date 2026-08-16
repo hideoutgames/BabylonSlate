@@ -6,7 +6,7 @@ import {
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
-import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
+import { engineParentOf, formatEventMemberName, walkAncestry } from "@babylonslate/editor-kit";
 import {
   fromSerializedGraph,
   validateGraphs,
@@ -61,6 +61,7 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "flow.function.output" ||
     typeId === "variables.get" ||
     typeId === "variables.set" ||
+    typeId === "component.getNamed" ||
     typeId === "casting.cast"
   );
 }
@@ -195,6 +196,16 @@ export function hydrateSerializedGraphForEditor(
         };
       }
 
+      if (typeId === "flow.event.call") {
+        const rawName =
+          typeof properties.name === "string" ? properties.name : "";
+        const bodyName = formatEventMemberName(rawName);
+        if (bodyName) {
+          properties.name = bodyName;
+          properties.title = `Call ${bodyName}`;
+        }
+      }
+
       const def = nodeRegistry.get(typeId);
       const pins: GraphPin[] = def ? def.pins(properties) : [];
 
@@ -205,7 +216,13 @@ export function hydrateSerializedGraphForEditor(
           {
             ...properties,
             ...(def
-              ? { title: authoredTitle ?? def.title }
+              ? {
+                  title:
+                    typeId === "flow.event.call" &&
+                    typeof properties.title === "string"
+                      ? properties.title
+                      : (authoredTitle ?? def.title),
+                }
               : authoredTitle
                 ? { title: authoredTitle }
                 : {}),
@@ -317,14 +334,22 @@ function customEventRows(graph?: SerializedGraph): CustomEventRow[] {
   const byName = new Map<string, CustomEventRow>();
   for (const member of graph?.members ?? []) {
     if (member.kind !== "event" || !member.name) continue;
-    byName.set(member.name, {
-      name: member.name,
+    const name = formatEventMemberName(member.name);
+    if (!name) continue;
+    byName.set(name, {
+      name,
       pins: member.pins ?? [],
     });
   }
   for (const node of graph?.nodes ?? []) {
     if (node.type !== "flow.event.custom") continue;
-    const name = typeof node.data.name === "string" ? node.data.name : "";
+    const raw =
+      typeof node.data.name === "string"
+        ? node.data.name
+        : typeof node.data.title === "string"
+          ? node.data.title
+          : "";
+    const name = formatEventMemberName(raw);
     if (!name || byName.has(name)) continue;
     const pins = Array.isArray(node.data.pins)
       ? (node.data.pins as GraphClassMemberPin[])
@@ -852,9 +877,14 @@ export function classMemberSymbolsFromGraphs(
   for (const [classId, graph] of Object.entries(graphs)) {
     for (const member of graph.members ?? []) {
       if (member.kind === "interface") continue;
+      const name =
+        member.kind === "event"
+          ? formatEventMemberName(member.name)
+          : member.name;
+      if (!name) continue;
       const symbol: ClassMemberSymbol = {
         id: member.id,
-        name: member.name,
+        name,
         kind: member.kind,
         classId,
       };

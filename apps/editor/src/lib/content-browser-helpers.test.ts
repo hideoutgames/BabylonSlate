@@ -5,6 +5,7 @@ import {
   CREATABLE_ASSET_TYPES,
   CREATABLE_ASSET_TYPE_GROUPS,
   ENGINE_BASE_CLASSES,
+  buildParentClassTreeRows,
   creatableAssetTypeDescription,
   creatableAssetTypeLabel,
   filterCreatableAssetTypes,
@@ -686,6 +687,39 @@ describe("content-browser-helpers", () => {
     expect(ENGINE_BASE_CLASSES).toContain("BTDecorator");
     expect(ENGINE_BASE_CLASSES).toContain("BTService");
     expect(ENGINE_BASE_CLASSES).toContain("BTComposite");
+  });
+
+  it("builds a searchable Parent Class tree with project Classes nested", () => {
+    const rows = buildParentClassTreeRows([
+      {
+        path: "assets/Hero.class.babasset",
+        header: { type: "Class", name: "Hero", parentClass: "Actor" },
+      },
+      {
+        path: "plugins/pack/assets/PackActor.class.babasset",
+        header: { type: "Class", name: "PackActor", parentClass: "Actor" },
+      },
+    ]);
+    const hero = rows.find((row) => row.id === "Hero");
+    const pack = rows.find((row) => row.id === "PackActor");
+    const actor = rows.find((row) => row.id === "Actor");
+    expect(actor?.depth).toBe(1);
+    expect(hero?.depth).toBe(2);
+    expect(hero?.group).toBe("Project");
+    expect(pack?.group).toBe("Project");
+    const filtered = buildParentClassTreeRows(
+      [
+        {
+          path: "assets/Hero.class.babasset",
+          header: { type: "Class", name: "Hero", parentClass: "Actor" },
+        },
+      ],
+      { search: "hero" },
+    );
+    expect(filtered.map((row) => row.id)).toEqual(
+      expect.arrayContaining(["BObject", "Actor", "Hero"]),
+    );
+    expect(filtered.some((row) => row.id === "GameInstance")).toBe(false);
   });
 
   it("seeds P9 document assets with typed suffixes", () => {

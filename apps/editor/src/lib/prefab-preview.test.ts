@@ -4,6 +4,7 @@ import {
   PREFAB_ROOT_ID,
   defaultPrefabComponents,
   instantiatePrefabComponents,
+  mergePrefabComponents,
   prefabComponentsFromGraph,
   prefabSelectedActorIds,
   prefabSelectedIdFromPick,
@@ -24,6 +25,35 @@ describe("prefabComponentsFromGraph", () => {
   it("falls back to the default mesh when the class has no prefab field", () => {
     expect(prefabComponentsFromGraph({})).toEqual(defaultPrefabComponents());
     expect(prefabComponentsFromGraph(null)).toEqual(defaultPrefabComponents());
+  });
+
+  it("merges parent components under local overrides without removing inherited", () => {
+    const parentMesh = createMeshComponent("prefab-mesh", "box");
+    const merged = mergePrefabComponents(
+      [{ classId: "HeroBase", components: [parentMesh] }],
+      [
+        {
+          ...parentMesh,
+          properties: { ...parentMesh.properties, meshKind: "sphere" },
+        },
+        createMeshComponent("child-only", "cylinder"),
+      ],
+    );
+    expect(merged).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "prefab-mesh",
+          inheritedFrom: "HeroBase",
+          properties: expect.objectContaining({ meshKind: "sphere" }),
+        }),
+        expect.objectContaining({
+          id: "child-only",
+        }),
+      ]),
+    );
+    expect(merged.find((row) => row.id === "child-only")?.inheritedFrom).toBe(
+      undefined,
+    );
   });
 
   it("remaps prefab component ids onto a spawned actor", () => {

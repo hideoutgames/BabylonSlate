@@ -35,6 +35,96 @@ export function prefabComponentsFromGraph(
   return defaultPrefabComponents();
 }
 
+export type PrefabComponentView = SerializedComponent & {
+  /** Declaring parent class id when this row comes from inheritance. */
+  inheritedFrom?: string;
+};
+
+/**
+ * Merge ancestor prefab components (root-first) under local overrides.
+ * Child may override transform/properties by id; may add new components;
+ * inherited rows keep `inheritedFrom`.
+ */
+export function mergePrefabComponents(
+  ancestors: ReadonlyArray<{
+    classId: string;
+    components: readonly SerializedComponent[];
+  }>,
+  local: readonly SerializedComponent[],
+): PrefabComponentView[] {
+  const byId = new Map<string, PrefabComponentView>();
+  for (const ancestor of ancestors) {
+    for (const component of ancestor.components) {
+      if (byId.has(component.id)) continue;
+      byId.set(component.id, {
+        ...component,
+        properties: { ...component.properties },
+        transform: component.transform
+          ? {
+              position: [...component.transform.position] as [
+                number,
+                number,
+                number,
+              ],
+              rotation: [...component.transform.rotation] as [
+                number,
+                number,
+                number,
+                number,
+              ],
+              scale: [...component.transform.scale] as [number, number, number],
+            }
+          : undefined,
+        inheritedFrom: ancestor.classId,
+      });
+    }
+  }
+  for (const component of local) {
+    const prior = byId.get(component.id);
+    byId.set(component.id, {
+      ...component,
+      properties: { ...component.properties },
+      transform: component.transform
+        ? {
+            position: [...component.transform.position] as [
+              number,
+              number,
+              number,
+            ],
+            rotation: [...component.transform.rotation] as [
+              number,
+              number,
+              number,
+              number,
+            ],
+            scale: [...component.transform.scale] as [number, number, number],
+          }
+        : undefined,
+      ...(prior?.inheritedFrom
+        ? { inheritedFrom: prior.inheritedFrom }
+        : {}),
+    });
+  }
+  return [...byId.values()];
+}
+
+/** Strip view-only inheritance flags before persisting local graph.components. */
+export function serializePrefabComponents(
+  views: readonly PrefabComponentView[],
+): SerializedComponent[] {
+  return views.map((component) => {
+    const { inheritedFrom: _ignored, ...rest } = component;
+    void _ignored;
+    return {
+      id: rest.id,
+      classId: rest.classId,
+      properties: { ...rest.properties },
+      parentId: rest.parentId ?? null,
+      ...(rest.transform ? { transform: rest.transform } : {}),
+    };
+  });
+}
+
 export function instantiatePrefabComponents(
   components: readonly SerializedComponent[],
   actorId: string,
@@ -76,10 +166,10 @@ export function instantiatePrefabComponents(
 }
 
 /** Nested flatten: Prefab Root then children by `parentId`. */
-export function childrenOfPrefabParent(
-  components: readonly SerializedComponent[],
+export function childrenOfPrefabParent<T extends SerializedComponent>(
+  components: readonly T[],
   parentId: string | null,
-): SerializedComponent[] {
+): T[] {
   return components.filter(
     (component) => (component.parentId ?? null) === parentId,
   );
