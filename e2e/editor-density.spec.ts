@@ -342,7 +342,7 @@ test.describe("Editor density and IA", () => {
     const tree = page.getByTestId("content-browser-folder-tree");
     await expect(tree).toHaveCSS("overflow-y", "auto");
 
-    await page.setViewportSize({ width: 1280, height: 360 });
+    await page.setViewportSize({ width: 1280, height: 400 });
     for (let index = 0; index < 8; index += 1) {
       await page.getByTestId("content-browser-new-folder").click();
       await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
@@ -359,11 +359,16 @@ test.describe("Editor density and IA", () => {
       overflowY: getComputedStyle(el).overflowY,
     }));
     expect(before.overflowY).toBe("auto");
+    expect(before.clientHeight).toBeGreaterThan(40);
     expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
 
-    await tree.hover();
+    const box = await tree.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + Math.min(40, box!.height / 2));
     await page.mouse.wheel(0, 120);
-    expect(await tree.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect
+      .poll(async () => tree.evaluate((el) => el.scrollTop))
+      .toBeGreaterThan(0);
   });
 
   test("Content Browser folder tree pans vertically on touch before reparent hold", {
