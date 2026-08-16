@@ -45,6 +45,8 @@ function shouldRegeneratePins(typeId: string): boolean {
   return (
     typeId === "flow.event.call" ||
     typeId === "functions.call" ||
+    typeId === "flow.function.input" ||
+    typeId === "flow.function.output" ||
     typeId === "variables.get" ||
     typeId === "variables.set"
   );

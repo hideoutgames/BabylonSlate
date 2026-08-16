@@ -91,6 +91,39 @@ const twoDataInPins: SerializedPin[] = [
   execPins[1]!,
 ];
 
+const execWithResultOut: SerializedPin[] = [
+  execPins[0]!,
+  execPins[1]!,
+  {
+    id: "result",
+    name: "result",
+    kind: "data",
+    direction: "out",
+    type: { kind: "string" },
+  },
+];
+
+const dataInPins: SerializedPin[] = [
+  {
+    id: "value",
+    name: "value",
+    kind: "data",
+    direction: "in",
+    type: { kind: "string" },
+  },
+];
+
+const dataThruPins: SerializedPin[] = [
+  {
+    id: "in",
+    name: "in",
+    kind: "data",
+    direction: "in",
+    type: { kind: "string" },
+  },
+  ...dataOutPins,
+];
+
 function node(
   id: string,
   x: number,
@@ -137,17 +170,51 @@ describe("collectThenChain", () => {
     expect(collectThenChain("a", nodes, edges)).toEqual(["a", "b"]);
   });
 
-  it("includes data-out successors of the exec chain", () => {
+  it("does not include data-out successors of an exec chain", () => {
     const nodes = [
-      node("a", 0, 0),
-      node("b", 200, 0),
-      node("pure", 400, 80, dataOutPins),
+      node("event", 0, 0),
+      node("call", 200, 0, execWithResultOut),
+      node("print", 400, 0, execWithValueIn),
+      node("toUpper", 400, 80, dataThruPins),
     ];
     const edges = [
-      execEdge("a", "b"),
-      { source: "b", target: "pure", sourceHandle: "message" },
+      execEdge("event", "call"),
+      execEdge("call", "print"),
+      dataEdge("call", "toUpper", "in", "result"),
+      dataEdge("toUpper", "print", "value", "value"),
     ];
-    expect(collectThenChain("a", nodes, edges)).toEqual(["a", "b", "pure"]);
+    expect(collectThenChain("event", nodes, edges)).toEqual([
+      "event",
+      "call",
+      "print",
+    ]);
+  });
+
+  it("includes data-out successors when the start node is pure", () => {
+    const nodes = [
+      node("get", 0, 0, dataOutPins),
+      node("left", 200, 0, dataInPins),
+      node("right", 200, 80, dataInPins),
+    ];
+    const edges = [
+      dataEdge("get", "left"),
+      dataEdge("get", "right"),
+    ];
+    expect(collectThenChain("get", nodes, edges)).toEqual([
+      "get",
+      "left",
+      "right",
+    ]);
+  });
+
+  it("does not follow exec-out from an impure data consumer of a pure start", () => {
+    const nodes = [
+      node("get", 0, 0, dataOutPins),
+      node("print", 200, 0, execWithValueIn),
+      node("later", 400, 0),
+    ];
+    const edges = [dataEdge("get", "print"), execEdge("print", "later")];
+    expect(collectThenChain("get", nodes, edges)).toEqual(["get", "print"]);
   });
 
   it("does not include data-in sources of the exec chain", () => {
@@ -394,6 +461,85 @@ describe("formatGraphNodes", () => {
     expect(next.find((entry) => entry.id === "get")?.position).toEqual({
       x: 200 - 100 - FORMAT_GAP_X,
       y: 50,
+    });
+  });
+
+  it("places a call return-value pure left of its consumer, not on the exec row of then", () => {
+    const nodes = [
+      node("event", 10, 20),
+      node("call", 12, 90, execWithResultOut),
+      node("print", 15, 200, execWithValueIn),
+      node("toUpper", 5, 400, dataThruPins),
+    ];
+    const edges = [
+      execEdge("event", "call"),
+      execEdge("call", "print"),
+      dataEdge("call", "toUpper", "in", "result"),
+      dataEdge("toUpper", "print", "value", "value"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["event"]);
+    expect(next.find((entry) => entry.id === "event")?.position).toEqual({
+      x: 10,
+      y: 20,
+    });
+    expect(next.find((entry) => entry.id === "call")?.position).toEqual({
+      x: 10 + 100 + FORMAT_GAP_X,
+      y: 20,
+    });
+    expect(next.find((entry) => entry.id === "toUpper")?.position).toEqual({
+      x: 10 + (100 + FORMAT_GAP_X) * 2,
+      y: 20,
+    });
+    expect(next.find((entry) => entry.id === "print")?.position).toEqual({
+      x: 10 + (100 + FORMAT_GAP_X) * 3,
+      y: 20,
+    });
+  });
+
+  it("stacks data-out branches of a selected pure node to the right", () => {
+    const nodes = [
+      node("get", 10, 20, dataOutPins),
+      node("first", 0, 200, dataInPins),
+      node("second", 0, 0, dataInPins),
+    ];
+    const edges = [
+      dataEdge("get", "first"),
+      dataEdge("get", "second"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["get"]);
+    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
+      x: 10,
+      y: 20,
+    });
+    expect(next.find((entry) => entry.id === "second")?.position).toEqual({
+      x: 10 + 100 + FORMAT_GAP_X,
+      y: 20,
+    });
+    expect(next.find((entry) => entry.id === "first")?.position).toEqual({
+      x: 10 + 100 + FORMAT_GAP_X,
+      y: 20 + 40 + FORMAT_GAP_Y,
+    });
+  });
+
+  it("does not pull exec successors when formatting from a pure node", () => {
+    const nodes = [
+      node("get", 10, 20, dataOutPins),
+      node("print", 200, 50, execWithValueIn),
+      node("later", 400, 80),
+    ];
+    const edges = [dataEdge("get", "print"), execEdge("print", "later")];
+    const next = formatGraphNodes(nodes, edges, ["get"]);
+    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
+      x: 10,
+      y: 20,
+    });
+    expect(next.find((entry) => entry.id === "print")?.position).toEqual({
+      x: 10 + 100 + FORMAT_GAP_X,
+      y: 20,
+    });
+    expect(next.find((entry) => entry.id === "later")?.position).toEqual({
+      x: 400,
+      y: 80,
     });
   });
 });
