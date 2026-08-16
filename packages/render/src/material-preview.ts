@@ -175,3 +175,116 @@ export function createMaterialPreviewScene(
   };
   return host;
 }
+
+export interface MaterialPreviewGestureHandle {
+  dispose: () => void;
+}
+
+function clampPreviewRadius(camera: ArcRotateCamera, radius: number): number {
+  const lower = camera.lowerRadiusLimit ?? 0.01;
+  const upper = camera.upperRadiusLimit ?? Number.POSITIVE_INFINITY;
+  return Math.min(upper, Math.max(lower, radius));
+}
+
+/**
+ * Drive the preview orbit camera from the registerView canvas.
+ *
+ * `camera.attachControl` listens on the shared Engine's hidden canvas, so
+ * wheel and pinch on the visible preview would otherwise never move radius.
+ */
+export function attachMaterialPreviewGestures(
+  canvas: HTMLCanvasElement,
+  camera: ArcRotateCamera,
+): MaterialPreviewGestureHandle {
+  const pointers = new Map<number, { x: number; y: number }>();
+  let lastSpread = 0;
+  let lastPoint: { x: number; y: number } | null = null;
+
+  const pointOf = (event: PointerEvent) => ({
+    x: event.clientX,
+    y: event.clientY,
+  });
+
+  const applyPinch = () => {
+    if (pointers.size !== 2) {
+      lastSpread = 0;
+      return;
+    }
+    const samples = [...pointers.values()];
+    const spread = Math.hypot(
+      samples[0]!.x - samples[1]!.x,
+      samples[0]!.y - samples[1]!.y,
+    );
+    if (lastSpread > 1 && spread > 1) {
+      camera.radius = clampPreviewRadius(
+        camera,
+        camera.radius * (lastSpread / spread),
+      );
+    }
+    lastSpread = spread;
+  };
+
+  const onPointerDown = (event: PointerEvent) => {
+    pointers.set(event.pointerId, pointOf(event));
+    lastPoint = pointOf(event);
+    try {
+      canvas.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* jsdom / already captured */
+    }
+    if (pointers.size === 2) lastPoint = null;
+    applyPinch();
+  };
+
+  const onPointerMove = (event: PointerEvent) => {
+    if (!pointers.has(event.pointerId)) return;
+    const next = pointOf(event);
+    pointers.set(event.pointerId, next);
+    if (pointers.size === 2) {
+      applyPinch();
+      return;
+    }
+    if (pointers.size === 1 && lastPoint) {
+      camera.alpha -= (next.x - lastPoint.x) * 0.005;
+      camera.beta += (next.y - lastPoint.y) * 0.005;
+      lastPoint = next;
+    }
+  };
+
+  const endPointer = (event: PointerEvent) => {
+    pointers.delete(event.pointerId);
+    lastPoint = pointers.size === 1 ? [...pointers.values()][0]! : null;
+    if (pointers.size < 2) lastSpread = 0;
+  };
+
+  const onWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1 / 1.1 : 1.1;
+    camera.radius = clampPreviewRadius(camera, camera.radius * factor);
+  };
+
+  const onTouch = (event: TouchEvent) => {
+    event.preventDefault();
+  };
+
+  canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  canvas.addEventListener("touchstart", onTouch, { passive: false });
+  canvas.addEventListener("touchmove", onTouch, { passive: false });
+
+  return {
+    dispose: () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", endPointer);
+      canvas.removeEventListener("pointercancel", endPointer);
+      canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("touchstart", onTouch);
+      canvas.removeEventListener("touchmove", onTouch);
+      pointers.clear();
+    },
+  };
+}

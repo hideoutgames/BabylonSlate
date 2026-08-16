@@ -42,6 +42,59 @@ async function guidForPath(page: Page, assetPath: string): Promise<string> {
   }, assetPath);
 }
 
+async function dispatchPreviewWheel(
+  canvas: ReturnType<Page["getByTestId"]>,
+  deltaY: number,
+): Promise<void> {
+  await canvas.evaluate((node, dy) => {
+    node.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: dy,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }, deltaY);
+}
+
+async function dispatchPreviewPinch(
+  canvas: ReturnType<Page["getByTestId"]>,
+  fromSpread: number,
+  toSpread: number,
+): Promise<void> {
+  await canvas.evaluate(
+    (node, spreads) => {
+      const box = node.getBoundingClientRect();
+      const cx = box.left + box.width / 2;
+      const cy = box.top + box.height / 2;
+      const fire = (
+        type: string,
+        pointerId: number,
+        x: number,
+        y: number,
+      ) => {
+        node.dispatchEvent(
+          new PointerEvent(type, {
+            pointerId,
+            pointerType: "touch",
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      };
+      fire("pointerdown", 1, cx - spreads.from, cy);
+      fire("pointerdown", 2, cx + spreads.from, cy);
+      fire("pointermove", 1, cx - spreads.to, cy);
+      fire("pointermove", 2, cx + spreads.to, cy);
+      fire("pointerup", 1, cx - spreads.to, cy);
+      fire("pointerup", 2, cx + spreads.to, cy);
+    },
+    { from: fromSpread, to: toSpread },
+  );
+}
+
 async function addMaterialPaletteNode(
   page: Page,
   search: string,
@@ -347,37 +400,23 @@ test.describe("P9 content systems", () => {
       box!.y + box!.height / 2 + 24,
     );
     await page.mouse.up();
-    await page.mouse.wheel(0, 240);
-    const session = await page.context().newCDPSession(page);
-    const cx = box!.x + box!.width / 2;
-    const cy = box!.y + box!.height / 2;
     await expect
       .poll(async () => {
         const value = await canvas.getAttribute("data-camera-radius");
         return value && Number.isFinite(Number(value)) ? Number(value) : null;
       })
       .not.toBeNull();
+    const radiusBeforeWheel = Number(
+      await canvas.getAttribute("data-camera-radius"),
+    );
+    await dispatchPreviewWheel(canvas, 400);
+    await expect
+      .poll(async () => Number(await canvas.getAttribute("data-camera-radius")))
+      .not.toBeCloseTo(radiusBeforeWheel, 3);
     const radiusBeforePinch = Number(
       await canvas.getAttribute("data-camera-radius"),
     );
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [
-        { x: cx - 36, y: cy },
-        { x: cx + 36, y: cy },
-      ],
-    });
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: [
-        { x: cx - 72, y: cy },
-        { x: cx + 72, y: cy },
-      ],
-    });
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchEnd",
-      touchPoints: [],
-    });
+    await dispatchPreviewPinch(canvas, 36, 72);
     await expect(canvas).toHaveAttribute("data-status", "ready", {
       timeout: 15000,
     });

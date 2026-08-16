@@ -117,7 +117,9 @@ ignore positions. The graph canvas commits positions once per drag, with a
 per-gesture `transactionId` so Undo restores one drag at a time. Measured-size
 frames and identical payloads do not dirty the document. The preview canvas
 exposes `data-camera-radius` (and test-mode `materialPreviewCameraRadius`) so
-pinch e2e can assert the orbit camera actually moved.
+e2e can dispatch wheel and two-pointer pinch on the preview canvas. Those
+gestures attach to the visible canvas because `camera.attachControl` listens
+on the shared Engine's hidden canvas.
 
 ## Custom GLSL
 

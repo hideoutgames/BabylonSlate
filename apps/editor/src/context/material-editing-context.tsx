@@ -12,6 +12,7 @@ import {
 import type { Engine } from "@babylonjs/core";
 import {
   MaterialLibrary,
+  attachMaterialPreviewGestures,
   createMaterialPreviewScene,
   materialUnavailable,
   type MaterialPreviewScene,
@@ -139,13 +140,15 @@ export function MaterialEditingProvider({
   useEffect(() => {
     if (!sharedEngine || !canvas) return;
     let host: MaterialPreviewScene | null = null;
+    let gestures: { dispose: () => void } | null = null;
     try {
       sharedEngine.registerView(canvas, undefined, true);
       host = createMaterialPreviewScene(sharedEngine, {
         mesh: document?.preview.mesh ?? "sphere",
       });
-      host.camera.attachControl(canvas, true);
+      gestures = attachMaterialPreviewGestures(canvas, host.camera);
     } catch {
+      gestures?.dispose();
       host?.dispose();
       return;
     }
@@ -174,6 +177,7 @@ export function MaterialEditingProvider({
       observer.disconnect();
       sharedEngine.stopRenderLoop(render);
       sharedEngine.unRegisterView(canvas);
+      gestures?.dispose();
       host?.dispose();
       hostRef.current = null;
       registerMaterialPreviewCameraRadius(null);
