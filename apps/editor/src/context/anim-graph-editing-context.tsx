@@ -10,6 +10,11 @@ import {
 export interface AnimGraphEditingContextValue {
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
+  selectedTransitionId: string | null;
+  setSelectedTransitionId: (id: string | null) => void;
+  openTransitionId: string | null;
+  openTransitionRule: (id: string) => void;
+  closeTransitionRule: () => void;
 }
 
 const AnimGraphEditingContext =
@@ -17,12 +22,43 @@ const AnimGraphEditingContext =
 
 export function AnimGraphEditingProvider({ children }: { children: ReactNode }) {
   const [selectedId, setSelectedIdState] = useState<string | null>(null);
+  const [selectedTransitionId, setSelectedTransitionIdState] = useState<
+    string | null
+  >(null);
+  const [openTransitionId, setOpenTransitionId] = useState<string | null>(null);
   const setSelectedId = useCallback((id: string | null) => {
     setSelectedIdState(id);
+    if (id) setSelectedTransitionIdState(null);
+  }, []);
+  const setSelectedTransitionId = useCallback((id: string | null) => {
+    setSelectedTransitionIdState(id);
+  }, []);
+  const openTransitionRule = useCallback((id: string) => {
+    setOpenTransitionId(id);
+    setSelectedTransitionIdState(id);
+  }, []);
+  const closeTransitionRule = useCallback(() => {
+    setOpenTransitionId(null);
   }, []);
   const value = useMemo<AnimGraphEditingContextValue>(
-    () => ({ selectedId, setSelectedId }),
-    [selectedId, setSelectedId],
+    () => ({
+      selectedId,
+      setSelectedId,
+      selectedTransitionId,
+      setSelectedTransitionId,
+      openTransitionId,
+      openTransitionRule,
+      closeTransitionRule,
+    }),
+    [
+      closeTransitionRule,
+      openTransitionId,
+      openTransitionRule,
+      selectedId,
+      selectedTransitionId,
+      setSelectedId,
+      setSelectedTransitionId,
+    ],
   );
   return (
     <AnimGraphEditingContext.Provider value={value}>

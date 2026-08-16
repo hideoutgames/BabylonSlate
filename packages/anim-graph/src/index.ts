@@ -14,6 +14,7 @@ export {
   createDefaultTransitionRuleGraph,
   defaultAnimStatePosition,
   defaultAnimVariableValue,
+  animGraphMembersFromVariables,
   evaluateAnimGraph,
   parseAnimGraphDocument,
   validateAnimGraph,

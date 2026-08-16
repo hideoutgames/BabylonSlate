@@ -30,6 +30,7 @@ export function WindowsMenu() {
     assetRegistry,
     sourceControl,
     uiEditorMode,
+    animEditorMode,
   } = useDocuments();
   useDockWindowTick();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -65,6 +66,8 @@ export function WindowsMenu() {
           editorUtilityInterface,
           sourceControl: sourceControl.enabled,
           uiEditorMode: activeKind === "ui" ? uiEditorMode : undefined,
+          animEditorMode:
+            activeKind === "anim-graph" ? animEditorMode : undefined,
         })
       : [];
     const editorUtilities = listEditorUtilityWindows({
@@ -116,6 +119,7 @@ export function WindowsMenu() {
     actorPrefab,
     editorUtilityInterface,
     uiEditorMode,
+    animEditorMode,
     assetRegistry,
     openDocuments,
     sourceControl.enabled,

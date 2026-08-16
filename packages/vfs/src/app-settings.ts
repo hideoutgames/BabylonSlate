@@ -20,6 +20,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   uiLogic: ["graph"],
   "plugin-settings": ["plugin-settings-details"],
   "anim-graph": ["anim-graph-graph"],
+  animGraphObject: ["anim-object-graph"],
   "behaviour-tree": ["behaviour-tree-graph"],
 } as const;
 
@@ -95,6 +96,9 @@ export const engineSettingsSchema = z.object({
         DEFAULT_FOCUS_KEEP_PANELS["plugin-settings"],
       ),
       "anim-graph": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["anim-graph"]),
+      animGraphObject: focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS.animGraphObject,
+      ),
       "behaviour-tree": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["behaviour-tree"],
       ),

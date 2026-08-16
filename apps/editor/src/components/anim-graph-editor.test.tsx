@@ -4,6 +4,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
+import { ValidationProvider } from "../context/validation-context";
 import {
   AnimGraphDetailsPanel,
   AnimGraphGraphPanel,
@@ -62,6 +63,8 @@ vi.mock("../context/document-context", async () => {
         },
       ],
       applyAssetDocumentChange: store.applyAssetDocumentChange,
+      activeDocumentId: DOC_ID,
+      animEditorMode: "stateMachine",
       assetRegistry: {
         list: () => [
           {
@@ -103,13 +106,15 @@ const panelProps = {} as IDockviewPanelProps;
 function renderAnimGraph(payload: AnimGraphDocument = createDefaultAnimGraph()) {
   store.reset(payload as unknown as Record<string, unknown>);
   return render(
-    <DocumentWorkspaceProvider documentId={DOC_ID}>
-      <AnimGraphEditingProvider>
-        <AnimGraphParametersPanel {...panelProps} />
-        <AnimGraphGraphPanel {...panelProps} />
-        <AnimGraphDetailsPanel {...panelProps} />
-      </AnimGraphEditingProvider>
-    </DocumentWorkspaceProvider>,
+    <ValidationProvider>
+      <DocumentWorkspaceProvider documentId={DOC_ID}>
+        <AnimGraphEditingProvider>
+          <AnimGraphParametersPanel {...panelProps} />
+          <AnimGraphGraphPanel {...panelProps} />
+          <AnimGraphDetailsPanel {...panelProps} />
+        </AnimGraphEditingProvider>
+      </DocumentWorkspaceProvider>
+    </ValidationProvider>,
   );
 }
 
@@ -177,6 +182,21 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("anim-graph-state-idle")).toBeTruthy();
   });
 
+  it("adds a typed Animation Graph variable", () => {
+    renderAnimGraph();
+    fireEvent.click(screen.getByTestId("anim-graph-add-variable"));
+    expect(lastCommit().variables).toEqual([
+      expect.objectContaining({ name: "Variable", typeId: "bool" }),
+    ]);
+  });
+
+  it("renders Unreal-style state nodes", async () => {
+    renderAnimGraph(locoGraph());
+    await waitFor(() => {
+      expect(screen.getByTestId("anim-state-node-idle")).toBeTruthy();
+    });
+  });
+
   it("adds a state from the States list", () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-add-state"));
@@ -207,22 +227,30 @@ describe("AnimGraphEditor", () => {
     );
   });
 
-  it("edits an outgoing transition without wiping its condition", () => {
+  it("edits outgoing transition blend and priority without a condition row", () => {
     renderAnimGraph(locoGraph());
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
-    fireEvent.click(screen.getByTestId("property-idle-to-run-hasExitTime"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        transitions: [
-          expect.objectContaining({
-            id: "idle-to-run",
-            condition: "moving",
-            blendSeconds: 0.25,
-            hasExitTime: true,
-          }),
-        ],
-      }),
+    expect(screen.queryByTestId("property-idle-to-run-hasExitTime")).toBeNull();
+    expect(screen.queryByTestId("property-idle-to-run-condition")).toBeNull();
+    expect(screen.getByTestId("property-idle-to-run-blendSeconds")).toBeTruthy();
+    expect(screen.getByTestId("property-idle-to-run-priority")).toBeTruthy();
+    expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
+  });
+
+  it("opens a nested transition rule graph from Details", async () => {
+    renderAnimGraph(locoGraph());
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.click(screen.getByTestId("anim-graph-open-rule-idle-to-run"));
+    expect(screen.getByTestId("anim-rule-graph")).toBeTruthy();
+    expect(screen.getByTestId("anim-rule-breadcrumb").textContent).toBe(
+      "Idle To Run",
     );
+    await waitFor(() => {
+      expect(screen.getByTestId("graph-editor")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("anim-rule-breadcrumb-state-machine"));
+    expect(screen.queryByTestId("anim-rule-graph")).toBeNull();
+    expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
   });
 
   it("picks an Animation clip for the selected state", async () => {

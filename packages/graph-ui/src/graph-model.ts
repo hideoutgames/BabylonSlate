@@ -79,6 +79,7 @@ export function toSerializedGraph(
       target: edge.target,
       ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
       ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+      ...(edge.type ? { type: edge.type } : {}),
     })),
     ...(extras?.members && extras.members.length > 0
       ? { members: extras.members }
@@ -106,6 +107,7 @@ export type ReconcileCanvasEdge = {
   target: string;
   sourceHandle?: string | null;
   targetHandle?: string | null;
+  type?: string;
 };
 
 function stableJsonValue(value: unknown): unknown {
@@ -168,6 +170,7 @@ function graphFromCanvas(
       target: edge.target,
       ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
       ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+      ...(edge.type ? { type: edge.type } : {}),
     })),
   );
 }
@@ -217,6 +220,7 @@ export function reconcileCanvasGraph(options: {
     target: edge.target,
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
+    ...(edge.type ? { type: edge.type } : {}),
   }));
   return { nodes, edges };
 }
@@ -234,7 +238,9 @@ export function createEdgeId(
 export function nodeChangesMutateGraph(
   changes: ReadonlyArray<{ type: string }>,
 ): boolean {
-  return changes.some((change) => change.type !== "select");
+  return changes.some(
+    (change) => change.type !== "select" && change.type !== "dimensions",
+  );
 }
 
 export type GraphChangeKind = "position" | "graph";

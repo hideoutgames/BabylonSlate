@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   ANIM_STATE_LAYOUT_GAP_X,
+  animGraphMembersFromVariables,
   animGraphToSerialized,
   animPaletteNodes,
   createDefaultAnimGraph,
   defaultAnimStatePosition,
+  defaultAnimVariableValue,
   hydrateAnimGraphForEditor,
   parseAnimGraphDocument,
   serializedToAnimGraph,
@@ -13,23 +15,43 @@ import {
   type AnimClipKind,
   type AnimClipRef,
   type AnimGraphDocument,
+  type AnimGraphVariable,
   type AnimState,
   type AnimTransition,
+  type AnimVariableTypeId,
 } from "@babylonslate/anim-graph";
 import {
   AssetPicker,
-  NamedListEditor,
   PanelFrame,
   PropertyGrid,
+  ToolbarStrip,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import { GraphEditor } from "@babylonslate/graph-ui";
+import {
+  GraphEditor,
+  animGraphEdgeTypes,
+  animGraphNodeTypes,
+} from "@babylonslate/graph-ui";
+import type { Diagnostic } from "@babylonslate/scripting";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
+import { useValidation } from "../context/validation-context";
+import {
+  defaultNodeRegistry,
+  hydrateSerializedGraphForEditor,
+  scriptPaletteNodes,
+  validateSerializedGraph,
+} from "../services/graph-validation";
 
-const ALWAYS_CONDITION = "__always__";
+const VARIABLE_TYPE_OPTIONS: Array<{ value: AnimVariableTypeId; label: string }> =
+  [
+    { value: "bool", label: "Bool" },
+    { value: "int", label: "Int" },
+    { value: "float", label: "Float" },
+    { value: "string", label: "String" },
+  ];
 
 function asAnimGraph(payload: Record<string, unknown>): AnimGraphDocument {
   return parseAnimGraphDocument(payload) ?? createDefaultAnimGraph();
@@ -59,6 +81,21 @@ function uniqueStateName(doc: AnimGraphDocument, base = "State"): string {
   return `${base} ${index}`;
 }
 
+function uniqueVariableId(doc: AnimGraphDocument): string {
+  const ids = new Set(doc.variables.map((variable) => variable.id));
+  let index = 1;
+  while (ids.has(`var-${index}`)) index += 1;
+  return `var-${index}`;
+}
+
+function uniqueVariableName(doc: AnimGraphDocument, base = "Variable"): string {
+  const names = new Set(doc.variables.map((variable) => variable.name));
+  if (!names.has(base)) return base;
+  let index = 2;
+  while (names.has(`${base} ${index}`)) index += 1;
+  return `${base} ${index}`;
+}
+
 function addAnimState(doc: AnimGraphDocument): AnimGraphDocument {
   const id = uniqueStateId(doc);
   return {
@@ -74,6 +111,19 @@ function addAnimState(doc: AnimGraphDocument): AnimGraphDocument {
         position: nextAnimStatePosition(doc.states),
       },
     ],
+  };
+}
+
+function withVariables(
+  doc: AnimGraphDocument,
+  variables: AnimGraphVariable[],
+): AnimGraphDocument {
+  return {
+    ...doc,
+    variables,
+    parameters: variables
+      .filter((variable) => variable.typeId === "bool")
+      .map((variable) => variable.name),
   };
 }
 
@@ -135,6 +185,16 @@ function upsertStateClip(
   };
 }
 
+function transitionLabel(doc: AnimGraphDocument, transition: AnimTransition): string {
+  const from =
+    doc.states.find((state) => state.id === transition.fromStateId)?.name ??
+    transition.fromStateId;
+  const to =
+    doc.states.find((state) => state.id === transition.toStateId)?.name ??
+    transition.toStateId;
+  return `${from} To ${to}`;
+}
+
 function useAnimGraphDocument() {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
@@ -149,85 +209,313 @@ function useAnimGraphDocument() {
       next as unknown as Record<string, unknown>,
     );
   };
-  return { doc, commit, assetRegistry };
+  return { doc, commit, assetRegistry, documentId };
 }
 
-export function AnimGraphParametersPanel(_props: IDockviewPanelProps) {
-  void _props;
+function AnimGraphVariablesList({
+  showStates,
+}: {
+  showStates: boolean;
+}) {
   const { doc, commit } = useAnimGraphDocument();
   const { selectedId, setSelectedId } = useAnimGraphEditing();
   return (
     <PanelFrame>
       <div className="flex flex-col gap-4 p-3">
-        <NamedListEditor
-          title="Parameters"
-          values={doc.parameters}
-          addLabel="Add Parameter"
-          addPlaceholder="Name"
-          onChange={(parameters) => commit({ ...doc, parameters })}
-          data-testid="anim-graph-parameters"
-        />
-        <div className="flex flex-col gap-2">
-          <div className="text-sm font-medium">States</div>
-          {doc.states.map((state) => (
-            <Button
-              key={state.id}
-              type="button"
-              variant={selectedId === state.id ? "outline" : "ghost"}
-              className="min-h-[var(--touch-target,44px)] w-full justify-start"
-              aria-pressed={selectedId === state.id}
-              data-testid={`anim-graph-state-${state.id}`}
-              onClick={() => setSelectedId(state.id)}
+        <div className="flex flex-col gap-2" data-testid="anim-graph-parameters">
+          <div className="text-sm font-medium">Variables</div>
+          {doc.variables.map((variable) => (
+            <div
+              key={variable.id}
+              className="rounded-md border border-border p-2"
+              data-testid={`anim-graph-variable-${variable.id}`}
             >
-              {state.name}
-            </Button>
+              <PropertyGrid
+                rows={[
+                  {
+                    id: `${variable.id}-name`,
+                    kind: "text",
+                    label: "Name",
+                    value: variable.name,
+                    onChange: (name) =>
+                      commit(
+                        withVariables(
+                          doc,
+                          doc.variables.map((row) =>
+                            row.id === variable.id ? { ...row, name } : row,
+                          ),
+                        ),
+                      ),
+                  },
+                  {
+                    id: `${variable.id}-type`,
+                    kind: "enum",
+                    label: "Type",
+                    value: variable.typeId,
+                    options: VARIABLE_TYPE_OPTIONS,
+                    onChange: (value) => {
+                      const typeId = value as AnimVariableTypeId;
+                      commit(
+                        withVariables(
+                          doc,
+                          doc.variables.map((row) =>
+                            row.id === variable.id
+                              ? {
+                                  ...row,
+                                  typeId,
+                                  defaultValue: defaultAnimVariableValue(typeId),
+                                }
+                              : row,
+                          ),
+                        ),
+                      );
+                    },
+                  },
+                ]}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                className="mt-2 min-h-[var(--touch-target,44px)]"
+                data-testid={`anim-graph-variable-remove-${variable.id}`}
+                onClick={() =>
+                  commit(
+                    withVariables(
+                      doc,
+                      doc.variables.filter((row) => row.id !== variable.id),
+                    ),
+                  )
+                }
+              >
+                Remove
+              </Button>
+            </div>
           ))}
           <Button
             type="button"
             variant="outline"
             className="min-h-[var(--touch-target,44px)] w-fit"
-            data-testid="anim-graph-add-state"
-            onClick={() => commit(addAnimState(doc))}
+            data-testid="anim-graph-add-variable"
+            onClick={() => {
+              const typeId: AnimVariableTypeId = "bool";
+              commit(
+                withVariables(doc, [
+                  ...doc.variables,
+                  {
+                    id: uniqueVariableId(doc),
+                    name: uniqueVariableName(doc),
+                    typeId,
+                    defaultValue: defaultAnimVariableValue(typeId),
+                  },
+                ]),
+              );
+            }}
           >
-            Add State
+            Add Variable
           </Button>
         </div>
+        {showStates ? (
+          <div className="flex flex-col gap-2">
+            <div className="text-sm font-medium">States</div>
+            {doc.states.map((state) => (
+              <Button
+                key={state.id}
+                type="button"
+                variant={selectedId === state.id ? "outline" : "ghost"}
+                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                aria-pressed={selectedId === state.id}
+                data-testid={`anim-graph-state-${state.id}`}
+                onClick={() => setSelectedId(state.id)}
+              >
+                {state.name}
+              </Button>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[var(--touch-target,44px)] w-fit"
+              data-testid="anim-graph-add-state"
+              onClick={() => commit(addAnimState(doc))}
+            >
+              Add State
+            </Button>
+          </div>
+        ) : null}
       </div>
     </PanelFrame>
   );
 }
 
+export function AnimGraphParametersPanel(_props: IDockviewPanelProps) {
+  void _props;
+  return <AnimGraphVariablesList showStates />;
+}
+
+export function AnimGraphVariablesPanel(_props: IDockviewPanelProps) {
+  void _props;
+  return <AnimGraphVariablesList showStates />;
+}
+
+export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
+  void _props;
+  return <AnimGraphVariablesList showStates={false} />;
+}
+
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, commit } = useAnimGraphDocument();
-  const { selectedId, setSelectedId } = useAnimGraphEditing();
+  const { doc, commit, documentId } = useAnimGraphDocument();
+  const {
+    selectedId,
+    setSelectedId,
+    setSelectedTransitionId,
+    openTransitionId,
+    openTransitionRule,
+    closeTransitionRule,
+  } = useAnimGraphEditing();
+  const { activeDocumentId, animEditorMode } = useDocuments();
+  const { setDiagnostics, diagnostics } = useValidation();
+  const graphDiagnostics = useMemo(
+    () =>
+      diagnostics.map((row) => ({
+        nodeId: row.nodeId,
+        pinId: row.pinId,
+        severity: row.severity,
+        message: row.message,
+      })),
+    [diagnostics],
+  );
+  const openTransition =
+    openTransitionId
+      ? (doc.transitions.find((row) => row.id === openTransitionId) ?? null)
+      : null;
   const initialGraph = useMemo(
     () => hydrateAnimGraphForEditor(animGraphToSerialized(doc)),
     [doc],
   );
-  const diagnostics = validateAnimGraph(doc).map((row) => ({
-    nodeId: row.nodeId,
-    severity: row.severity,
-    message: row.message,
-  }));
+  const ruleMembers = useMemo(
+    () => animGraphMembersFromVariables(doc.variables),
+    [doc.variables],
+  );
+  const ruleGraph = useMemo(() => {
+    if (!openTransition) return null;
+    return hydrateSerializedGraphForEditor(
+      { ...openTransition.ruleGraph, members: ruleMembers },
+      defaultNodeRegistry,
+    );
+  }, [openTransition, ruleMembers]);
+  const rulePalette = useMemo(
+    () =>
+      scriptPaletteNodes(defaultNodeRegistry, {
+        parentClass: "BObject",
+        animationGraphHost: "rule",
+        graph: { nodes: [], edges: [], members: ruleMembers },
+      }),
+    [ruleMembers],
+  );
+
+  useEffect(() => {
+    if (activeDocumentId !== documentId) return;
+    if (animEditorMode !== "stateMachine") return;
+    const animRows: Diagnostic[] = validateAnimGraph(doc).map((row) => ({
+      severity: row.severity,
+      code: row.code,
+      message: row.message,
+      assetGuid: documentId,
+      graphId: documentId,
+      nodeId: row.nodeId,
+    }));
+    const ruleRows =
+      openTransition && ruleGraph
+        ? validateSerializedGraph(ruleGraph, {
+            assetGuid: documentId,
+            graphId: `${documentId}:${openTransition.id}`,
+            members: ruleMembers.map((member) => ({
+              id: member.id,
+              name: member.name,
+              kind: "variable" as const,
+              classId: "AnimGraph",
+              typeId: member.typeId ?? "bool",
+            })),
+          })
+        : [];
+    setDiagnostics([...animRows, ...ruleRows]);
+  }, [
+    activeDocumentId,
+    animEditorMode,
+    doc,
+    documentId,
+    openTransition,
+    ruleGraph,
+    ruleMembers,
+    setDiagnostics,
+  ]);
+
+  if (openTransition && ruleGraph) {
+    return (
+      <PanelFrame className="flex-1">
+        <div className="flex h-full min-h-0 flex-col" data-testid="anim-rule-graph">
+          <ToolbarStrip>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="anim-rule-breadcrumb-state-machine"
+              onClick={closeTransitionRule}
+            >
+              State Machine
+            </Button>
+            <span className="px-2 text-sm" data-testid="anim-rule-breadcrumb">
+              {transitionLabel(doc, openTransition)}
+            </span>
+          </ToolbarStrip>
+          <GraphEditor
+            key={openTransition.id}
+            initialGraph={ruleGraph}
+            paletteNodes={rulePalette}
+            diagnostics={graphDiagnostics}
+            onChange={(next) => {
+              const nextRule = { nodes: next.nodes, edges: next.edges };
+              const transitionId = openTransition.id;
+              queueMicrotask(() => {
+                commit(patchTransition(doc, transitionId, { ruleGraph: nextRule }));
+              });
+            }}
+          />
+        </div>
+      </PanelFrame>
+    );
+  }
+
   return (
     <PanelFrame className="flex-1">
       <div className="flex h-full min-h-0 flex-col" data-testid="anim-graph-editor">
         <GraphEditor
           initialGraph={initialGraph}
-          diagnostics={diagnostics}
           paletteNodes={animPaletteNodes()}
+          nodeTypes={animGraphNodeTypes}
+          edgeTypes={animGraphEdgeTypes}
+          defaultEdgeOptions={{ type: "animTransition" }}
+          diagnostics={graphDiagnostics}
           focusedNodeId={selectedId ?? undefined}
-          onSelectionChange={(nodeIds) => setSelectedId(nodeIds[0] ?? null)}
+          onSelectionChange={(nodeIds) => {
+            queueMicrotask(() => setSelectedId(nodeIds[0] ?? null));
+          }}
+          onEdgeSelectionChange={(edgeIds) => {
+            queueMicrotask(() => setSelectedTransitionId(edgeIds[0] ?? null));
+          }}
+          onEdgeDoubleClick={(edgeId) => openTransitionRule(edgeId)}
           onChange={(next) => {
             const updated = serializedToAnimGraph(next, doc);
-            if (
-              selectedId &&
-              !updated.states.some((state) => state.id === selectedId)
-            ) {
-              setSelectedId(null);
-            }
-            commit(updated);
+            const keepSelection = selectedId;
+            queueMicrotask(() => {
+              if (
+                keepSelection &&
+                !updated.states.some((state) => state.id === keepSelection)
+              ) {
+                setSelectedId(null);
+              }
+              commit(updated);
+            });
           }}
         />
       </div>
@@ -235,12 +523,47 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   );
 }
 
+function transitionPropertyRows(
+  doc: AnimGraphDocument,
+  transition: AnimTransition,
+  commit: (next: AnimGraphDocument) => void,
+): { rows: PropertyRow[]; openRuleId: string } {
+  const target =
+    doc.states.find((state) => state.id === transition.toStateId)?.name ??
+    transition.toStateId;
+  return {
+    rows: [
+      {
+        id: `${transition.id}-blendSeconds`,
+        kind: "number",
+        label: `To ${target} Blend Seconds`,
+        value: transition.blendSeconds,
+        min: 0,
+        onChange: (blendSeconds) =>
+          commit(patchTransition(doc, transition.id, { blendSeconds })),
+      },
+      {
+        id: `${transition.id}-priority`,
+        kind: "number",
+        label: `To ${target} Priority`,
+        value: transition.priority,
+        onChange: (priority) =>
+          commit(patchTransition(doc, transition.id, { priority })),
+      },
+    ],
+    openRuleId: transition.id,
+  };
+}
+
 export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { doc, commit, assetRegistry } = useAnimGraphDocument();
-  const { selectedId } = useAnimGraphEditing();
+  const { selectedId, selectedTransitionId, openTransitionRule } =
+    useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
   const selected = doc.states.find((state) => state.id === selectedId) ?? null;
+  const selectedTransition =
+    doc.transitions.find((row) => row.id === selectedTransitionId) ?? null;
   const clip = selected?.clipId
     ? doc.clips.find((row) => row.id === selected.clipId)
     : undefined;
@@ -253,7 +576,9 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   }));
   const outgoing = selected
     ? doc.transitions.filter((row) => row.fromStateId === selected.id)
-    : [];
+    : selectedTransition
+      ? [selectedTransition]
+      : [];
   const stateRows: PropertyRow[] = selected
     ? [
         {
@@ -332,62 +657,29 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         },
       ]
     : [];
-  const transitionRows: PropertyRow[] = outgoing.flatMap((transition) => {
-    const target =
-      doc.states.find((state) => state.id === transition.toStateId)?.name ??
-      transition.toStateId;
-    return [
-      {
-        id: `${transition.id}-condition`,
-        kind: "enum" as const,
-        label: `To ${target} Condition`,
-        value: transition.condition ? transition.condition : ALWAYS_CONDITION,
-        options: [
-          { value: ALWAYS_CONDITION, label: "Always" },
-          ...doc.parameters.map((name) => ({ value: name, label: name })),
-        ],
-        onChange: (value) =>
-          commit(
-            patchTransition(doc, transition.id, {
-              condition: value === ALWAYS_CONDITION ? undefined : value,
-            }),
-          ),
-      },
-      {
-        id: `${transition.id}-blendSeconds`,
-        kind: "number" as const,
-        label: `To ${target} Blend Seconds`,
-        value: transition.blendSeconds,
-        min: 0,
-        onChange: (blendSeconds) =>
-          commit(patchTransition(doc, transition.id, { blendSeconds })),
-      },
-      {
-        id: `${transition.id}-hasExitTime`,
-        kind: "boolean" as const,
-        label: `To ${target} Has Exit Time`,
-        value: transition.hasExitTime,
-        onChange: (hasExitTime) =>
-          commit(patchTransition(doc, transition.id, { hasExitTime })),
-      },
-      {
-        id: `${transition.id}-exitTime`,
-        kind: "number" as const,
-        label: `To ${target} Exit Time`,
-        value: transition.exitTime,
-        min: 0,
-        max: 1,
-        onChange: (exitTime) =>
-          commit(patchTransition(doc, transition.id, { exitTime })),
-      },
-    ];
-  });
+  const transitionBlocks = outgoing.map((transition) =>
+    transitionPropertyRows(doc, transition, commit),
+  );
 
   return (
     <PanelFrame>
-      {selected ? (
+      {selected || selectedTransition ? (
         <div data-testid="anim-graph-details">
-          <PropertyGrid rows={[...stateRows, ...transitionRows]} />
+          {stateRows.length > 0 ? <PropertyGrid rows={stateRows} /> : null}
+          {transitionBlocks.map((block) => (
+            <div key={block.openRuleId} className="flex flex-col gap-2 px-3 pb-3">
+              <PropertyGrid rows={block.rows} />
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--touch-target,44px)] w-fit"
+                data-testid={`anim-graph-open-rule-${block.openRuleId}`}
+                onClick={() => openTransitionRule(block.openRuleId)}
+              >
+                Open Rule
+              </Button>
+            </div>
+          ))}
         </div>
       ) : (
         <p

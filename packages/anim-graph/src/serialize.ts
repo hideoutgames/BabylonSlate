@@ -104,6 +104,7 @@ export function animGraphToSerialized(doc: AnimGraphDocument): SerializedGraph {
       target: transition.toStateId,
       sourceHandle: "out",
       targetHandle: "in",
+      type: "animTransition",
     })),
   };
 }

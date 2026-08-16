@@ -14,6 +14,7 @@ import {
   animGraphToSerialized,
   serializedToAnimGraph,
   hydrateAnimGraphForEditor,
+  animGraphMembersFromVariables,
 } from "./index";
 
 describe("anim graph evaluator", () => {
@@ -200,6 +201,12 @@ describe("anim graph evaluator", () => {
       ruleGraph: createDefaultTransitionRuleGraph(),
     });
     const serialized = animGraphToSerialized(doc);
+    expect(serialized.edges[0]).toMatchObject({
+      id: "idle-to-run",
+      source: "idle",
+      target: "run",
+      type: "animTransition",
+    });
     serialized.edges[0] = { ...serialized.edges[0]!, id: "canvas-edge-1" };
     const next = serializedToAnimGraph(serialized, doc);
     expect(next.transitions[0]).toMatchObject({
@@ -343,6 +350,22 @@ describe("anim graph v2 document", () => {
     expect(rule.nodes.every((node) => node.data.__protected === true)).toBe(
       true,
     );
+  });
+
+  it("exposes Animation Graph variables as Class-style members for Get/Set", () => {
+    expect(
+      animGraphMembersFromVariables([
+        { id: "var-moving", name: "moving", typeId: "bool", defaultValue: false },
+      ]),
+    ).toEqual([
+      {
+        id: "var-moving",
+        kind: "variable",
+        name: "moving",
+        typeId: "bool",
+        defaultValue: false,
+      },
+    ]);
   });
 
   it("rejects duplicate variable names and missing rule sinks", () => {

@@ -1,4 +1,4 @@
-import type { SerializedGraph } from "@babylonslate/core";
+import type { GraphClassMember, SerializedGraph } from "@babylonslate/core";
 
 export const ANIM_GRAPH_SCHEMA_VERSION = 2 as const;
 
@@ -160,6 +160,18 @@ export function defaultAnimVariableValue(typeId: AnimVariableTypeId): unknown {
     case "string":
       return "";
   }
+}
+
+export function animGraphMembersFromVariables(
+  variables: readonly AnimGraphVariable[],
+): GraphClassMember[] {
+  return variables.map((variable) => ({
+    id: variable.id,
+    kind: "variable",
+    name: variable.name,
+    typeId: variable.typeId,
+    defaultValue: variable.defaultValue,
+  }));
 }
 
 export function createDefaultAnimationObjectGraph(): SerializedGraph {

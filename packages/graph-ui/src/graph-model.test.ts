@@ -78,6 +78,18 @@ describe("toSerializedGraph", () => {
     });
   });
 
+  it("preserves an optional edge type for custom edge components", () => {
+    const edges = [
+      {
+        id: "e1",
+        source: "n1",
+        target: "n2",
+        type: "animTransition",
+      },
+    ];
+    expect(toSerializedGraph([], edges).edges[0]).toEqual(edges[0]);
+  });
+
   it("round-trips scripting node type via internal __nodeType data", () => {
     expect(
       toSerializedGraph(
@@ -288,6 +300,25 @@ describe("reconcileCanvasGraph", () => {
     expect(next?.edges).toEqual([]);
   });
 
+  it("keeps custom edge types when applying an incoming graph", () => {
+    const incoming: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) =>
+        node.id === "a" ? { ...node, position: { x: 12, y: 24 } } : node,
+      ),
+      edges: twoNodeGraph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransition",
+      })),
+    };
+    const next = reconcileCanvasGraph({
+      localNodes,
+      localEdges,
+      incoming,
+    });
+    expect(next?.edges[0]).toMatchObject({ type: "animTransition" });
+  });
+
   it("applies data patches from incoming", () => {
     const incoming: GraphDocument = {
       ...twoNodeGraph,
@@ -338,6 +369,10 @@ describe("nodeChangesMutateGraph", () => {
     expect(
       nodeChangesMutateGraph([{ type: "select" }, { type: "select" }]),
     ).toBe(false);
+  });
+
+  it("ignores measurement-only dimension changes", () => {
+    expect(nodeChangesMutateGraph([{ type: "dimensions" }])).toBe(false);
   });
 
   it("treats position and remove changes as document mutations", () => {
