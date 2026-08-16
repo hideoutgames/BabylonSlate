@@ -33,6 +33,8 @@ import {
   modelAssetGuidsFromScene,
   materialAssetGuidsFromScene,
   postProcessMaterialGuidsFromScene,
+  materialGuidsFromScenes,
+  playSceneByGuid,
   materialClosureFromGuids,
 } from "./play-content";
 
@@ -446,6 +448,26 @@ describe("scene-referenced Play content", () => {
       functions: ["fn-tint", "fn-inner"],
       textures: ["tex-albedo", "tex-lut"],
     });
+  });
+
+  it("unions material guids across Play library scenes", () => {
+    const startup = createDefaultScene();
+    startup.settings.postProcessStack = [{ materialGuid: "pp-a", enabled: true }];
+    const level2 = createDefaultScene();
+    level2.settings.postProcessStack = [{ materialGuid: "pp-b", enabled: true }];
+    expect(materialGuidsFromScenes([startup, level2])).toEqual(["pp-a", "pp-b"]);
+  });
+
+  it("resolves an activeScene guid from the Play library", () => {
+    const startup = createDefaultScene();
+    const level2 = createDefaultScene();
+    level2.name = "Level 2";
+    expect(
+      playSceneByGuid("scene-2", [{ guid: "scene-2", scene: level2 }], {
+        guid: "scene-1",
+        scene: startup,
+      }),
+    ).toBe(level2);
   });
 });
 

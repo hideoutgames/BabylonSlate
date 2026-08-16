@@ -262,6 +262,50 @@ describe("collectExportClosure", () => {
     expect(result.value).toEqual(["scene-1"]);
   });
 
+  it("includes a Scene referenced by Change Scene display name", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "n1",
+          type: "scene.change",
+          position: { x: 0, y: 0 },
+          data: { properties: { scene: "Level 2" } },
+        },
+      ],
+      edges: [],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "scene-2", type: "Scene", name: "Level 2" }),
+        asset({
+          guid: "class-pawn",
+          type: "Class",
+          name: "Pawn",
+          parentClass: "Actor",
+        }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => "Actor",
+      sceneByGuid: (guid) =>
+        guid === "scene-1"
+          ? {
+              ...createDefaultScene(),
+              actors: [createActor("a", "Pawn", { classId: "Pawn" })],
+            }
+          : guid === "scene-2"
+            ? { ...createDefaultScene(), name: "Level 2", actors: [] }
+            : null,
+      graphByGuid: (guid) => (guid === "class-pawn" ? graph : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining(["scene-1", "scene-2", "class-pawn"]),
+    );
+  });
+
   it("includes mesh materials, post-process stack materials, and header dependencies", () => {
     const mesh = createMeshComponent("mesh-1", "box");
     mesh.properties.materialGuid = "mat-rock";

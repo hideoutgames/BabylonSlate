@@ -17,7 +17,7 @@ import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { playLoadTilemapsControl } from "../lib/play-content";
+import { playLoadTilemapsControl, playSceneByGuid } from "../lib/play-content";
 import {
   createEngine,
   type EngineHandle,
@@ -322,6 +322,17 @@ export function startPlaySession(options: {
     }
     if (command.type === "animState") {
       handle.applyCommand(command);
+    }
+    if (command.type === "activeScene") {
+      const scene = playSceneByGuid(
+        command.sceneAssetGuid,
+        options.scenes ?? [],
+        { guid: options.sceneAssetGuid, scene: options.scene },
+      );
+      if (scene) {
+        handle.loadScene(scene);
+        handle.applySceneEnvironment(scene);
+      }
     }
     if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");

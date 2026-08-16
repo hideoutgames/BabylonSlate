@@ -25,12 +25,18 @@ export function runtimeOptionsFromLoadControl(
   | "seedDemoActors"
   | "gameInstanceClass"
   | "sceneLibrary"
+  | "sceneGuidByKey"
   | "includeDebugCommands"
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
+  const sceneGuidByKey: Record<string, string> = {};
   for (const entry of msg.scenes ?? []) {
     sceneLibrary[entry.guid] = entry.scene;
-    if (entry.scene.name) sceneLibrary[entry.scene.name] = entry.scene;
+    sceneGuidByKey[entry.guid] = entry.guid;
+    if (entry.scene.name) {
+      sceneLibrary[entry.scene.name] = entry.scene;
+      sceneGuidByKey[entry.scene.name] = entry.guid;
+    }
   }
   return {
     seed: msg.seed ?? 1,
@@ -42,6 +48,8 @@ export function runtimeOptionsFromLoadControl(
     seedDemoActors: msg.scene ? false : true,
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
+    sceneGuidByKey:
+      Object.keys(sceneGuidByKey).length > 0 ? sceneGuidByKey : undefined,
     includeDebugCommands: msg.includeDebugCommands,
   };
 }

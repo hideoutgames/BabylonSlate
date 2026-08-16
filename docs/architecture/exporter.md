@@ -28,7 +28,7 @@ Not `header.dependencies` alone — scene saves often leave those empty.
 1. Apply export-preset `pluginOverrides` (layer 3) **before** the walk so disabled plugin roots are absent.
 2. Seed with `startupSceneGuid` (must be a Scene asset).
 3. Walk `SerializedScene` actors/components (guids in properties, Mesh/Model `assetGuid`, textures, UserInterface, Font, Class ids) plus `gameInstanceClass`.
-4. Load Class/Graph/UI/Sprite/Tilemap documents; pull asset-typed pin values, `header.dependencies`, and payload fields such as sprite `textureGuid`.
+4. Load Class/Graph/UI/Sprite/Tilemap documents; pull asset-typed pin values, `header.dependencies`, payload fields such as sprite `textureGuid`, and **Scene display names** on Change Scene nodes so `changeScene("Level 2")` packs that Scene.
 5. Recurse to a fixed point. Drop EditorUtilityObject / EditorUtilityInterface / PluginSettings (`isEditorOnlyAsset`).
 6. Scene library keys in the pack are **asset guids** (overlay Play may keep path-based document ids).
 
@@ -74,7 +74,7 @@ Vite canvas host: `@babylonslate/runtime` + `@babylonslate/render` + bridge/phys
 
 `includeDebugCommands: manifest.bundleDebugger`. Release player uses `createCommandRegistry({ includeDebug: false })`; core commands (`changescene`, …) stay. When the debugger is bundled, a small vanilla DOM HUD (not the editor `PlayOverlay`) shows fps / scriptMs / physicsMs / draws. Packed fonts use `FontFace(family, bytes)` — family from the manifest `name`, falling back to the guid; not blob URLs.
 
-Boot hydrates packed **Sprite / Tilemap / Tileset / AnimationGraph / BehaviourTree / Blackboard / Material / Material Function** payloads into `createEngine` and the worker (`loadAnimGraphs`, `loadTilemaps`, `loadNavMesh`, …) **before** `play`. Material documents, functions, and the startup scene `postProcessStack` go to the Engine; `assignMaterial` is forwarded with mesh/camera commands. Engine Settings `postProcessingEnabled` is editor/Play-only and is not read by the player. In-process fallback registers the same content and runs a rAF `advance` pump; both paths capture canvas input into the input ring. Overlay Play remains the path that mounts UserInterface **widget trees** onto Babylon GUI (`PlayHudOverlay`); the packaged player compiles UI logic into `scripts.js` and packs the UI JSON.
+Boot hydrates packed **Sprite / Tilemap / Tileset / AnimationGraph / BehaviourTree / Blackboard / Material / Material Function** payloads into `createEngine` and the worker (`loadAnimGraphs`, `loadTilemaps`, `loadNavMesh`, …) **before** `play`. Material documents, functions, and the startup scene `postProcessStack` go to the Engine; `assignMaterial` is forwarded with mesh/camera commands. `activeScene` looks up the packed scene guid and calls `loadScene` / `applySceneEnvironment` so a later `changescene` replaces that stack. Engine Settings `postProcessingEnabled` is editor/Play-only and is not read by the player. In-process fallback registers the same content and runs a rAF `advance` pump; both paths capture canvas input into the input ring. Overlay Play remains the path that mounts UserInterface **widget trees** onto Babylon GUI (`PlayHudOverlay`); the packaged player compiles UI logic into `scripts.js` and packs the UI JSON.
 
 `?preview=1` waits for a same-origin `postMessage` pack. Destroying the iframe drops that WebGL context.
 

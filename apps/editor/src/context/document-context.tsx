@@ -181,8 +181,7 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
-  materialAssetGuidsFromScene,
-  postProcessMaterialGuidsFromScene,
+  materialGuidsFromScenes,
   materialClosureFromGuids,
   type PlayAnimGraphEntry,
   type PlayBehaviourTreeEntry,
@@ -380,6 +379,7 @@ interface DocumentContextValue {
   /** Surface and post-process materials plus transitive Material Functions. */
   collectPlayMaterialLibrary: (
     scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<{
     documents: Map<string, MaterialDocument>;
     functions: Map<string, MaterialFunctionDocument>;
@@ -2108,6 +2108,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlayMaterialLibrary = useCallback(
     async (
       scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
     ): Promise<{
       documents: Map<string, MaterialDocument>;
       functions: Map<string, MaterialFunctionDocument>;
@@ -2132,10 +2133,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const content = await loadPlayAssetContent(kind, asset.path);
         if (content) loaded.set(guid, content);
       };
-      const needed = new Set([
-        ...materialAssetGuidsFromScene(scene),
-        ...postProcessMaterialGuidsFromScene(scene),
-      ]);
+      const needed = new Set(materialGuidsFromScenes([scene, ...extraScenes]));
       let grew = true;
       while (grew) {
         grew = false;

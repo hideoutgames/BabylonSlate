@@ -424,6 +424,35 @@ export function postProcessMaterialGuidsFromScene(
   );
 }
 
+/** Surface plus post-process Material guids from every Play library scene. */
+export function materialGuidsFromScenes(
+  scenes: readonly (SerializedScene | null | undefined)[],
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const scene of scenes) {
+    for (const guid of [
+      ...materialAssetGuidsFromScene(scene),
+      ...postProcessMaterialGuidsFromScene(scene),
+    ]) {
+      if (seen.has(guid)) continue;
+      seen.add(guid);
+      guids.push(guid);
+    }
+  }
+  return guids;
+}
+
+/** Look up the scene document for an `activeScene` command. */
+export function playSceneByGuid(
+  guid: string,
+  library: ReadonlyArray<{ guid: string; scene: SerializedScene }>,
+  current?: { guid?: string; scene?: SerializedScene },
+): SerializedScene | undefined {
+  if (current?.guid === guid) return current.scene;
+  return library.find((entry) => entry.guid === guid)?.scene;
+}
+
 /**
  * Materials plus every Material Function they call, transitively.
  * Play and export both need the closure, not just the directly referenced set.

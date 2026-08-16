@@ -179,7 +179,10 @@ disabled entries), transitive Material Functions and texture guids. Saving a
 Material writes `domain` onto `header.payload` and `materialDependencies().all`
 onto `header.dependencies[]`. The packaged player hydrates those JSON payloads
 into `createEngine` (`materialDocuments`, `materialFunctions`,
-`postProcessStack`) and forwards `assignMaterial`. Engine Settings
+`postProcessStack`) and forwards `assignMaterial`. After `changescene` /
+`ctx.changeScene` the worker emits `activeScene` with the canonical scene guid;
+editor Play and the packaged player call `loadScene` / `applySceneEnvironment`
+so the destination stack and environment replace the previous scene's. Engine Settings
 `postProcessingEnabled` is not applied to exported games — omitted means the
 authored stack runs.
 
