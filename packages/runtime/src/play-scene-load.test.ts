@@ -488,6 +488,7 @@ describe("p7-play-scene-load", () => {
           name: "Shaded",
           viewportMode: "3d",
           settings: createDefaultSceneSettings(),
+          folders: [],
           actors: [
             createActor("actor-1", "Cube", {
               components: [mesh],
@@ -527,6 +528,7 @@ describe("p7-play-scene-load", () => {
           name: "Parts",
           viewportMode: "3d",
           settings: createDefaultSceneSettings(),
+          folders: [],
           actors: [
             createActor("hero", "Hero", {
               components: [box, sphere],
