@@ -15,6 +15,14 @@ import {
 import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
+import {
+  applyGizmoMultiSelectDrag,
+  beginGizmoMultiSelectDrag,
+  pickGizmoAttachActorId,
+  readMeshLocalTransform,
+  selectionGizmoRoots,
+  type GizmoMultiSelectDrag,
+} from "./gizmo-multi-select";
 import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys } from "./viewport-fly-keys";
@@ -163,6 +171,13 @@ export interface EditorTools {
   }) => void;
   setPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
   frameActor: (actorId: string) => void;
+  /** Live local TRS of each selection-root mesh after a gizmo drag. */
+  selectedActorTransforms: () => Array<{
+    actorId: string;
+    position: [number, number, number];
+    rotation: [number, number, number, number];
+    scale: [number, number, number];
+  }>;
   /** Live transform of the gizmo-attached mesh, for turning a drag into a command. */
   attachedActorTransform: () => {
     actorId: string;
@@ -284,13 +299,58 @@ export function createEngine(
     const cameraController = createEditorCamera(scene, { mode, scheduler });
     const grid = createEditorGrid(scene, { mode, camera: cameraController.camera });
     const selection = new SelectionOutline(scene);
+    let multiSelectDrag: GizmoMultiSelectDrag | null = null;
+    const parentIdOf = (id: string): string | null =>
+      editorSync.serializedScene()?.actors.find((actor) => actor.id === id)
+        ?.parentId ?? null;
+    const selectedActorTransforms = () => {
+      const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
+      const live: Array<{
+        actorId: string;
+        position: [number, number, number];
+        rotation: [number, number, number, number];
+        scale: [number, number, number];
+      }> = [];
+      for (const actorId of roots) {
+        const mesh = editorSync.meshForActor(actorId);
+        if (!mesh) continue;
+        live.push({ actorId, ...readMeshLocalTransform(mesh) });
+      }
+      return live;
+    };
+    const gizmosRef: { host: GizmoHost | null } = { host: null };
     const gizmos = createGizmoHost(scene, {
       mode,
       scheduler,
-      onDragStart: options.onGizmoDragStart,
-      onDrag: options.onGizmoDrag,
-      onDragEnd: options.onGizmoDragEnd,
+      onDragStart: () => {
+        const attached = gizmosRef.host?.attachedMesh() ?? null;
+        const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
+        const followers = roots
+          .map((id) => editorSync.meshForActor(id))
+          .filter(
+            (mesh): mesh is NonNullable<typeof mesh> =>
+              mesh !== null && mesh !== attached,
+          );
+        multiSelectDrag = beginGizmoMultiSelectDrag(attached, followers);
+        options.onGizmoDragStart?.();
+      },
+      onDrag: () => {
+        const attached = gizmosRef.host?.attachedMesh() ?? null;
+        if (multiSelectDrag && attached) {
+          applyGizmoMultiSelectDrag(multiSelectDrag, attached);
+        }
+        options.onGizmoDrag?.();
+      },
+      onDragEnd: () => {
+        const attached = gizmosRef.host?.attachedMesh() ?? null;
+        if (multiSelectDrag && attached) {
+          applyGizmoMultiSelectDrag(multiSelectDrag, attached);
+        }
+        multiSelectDrag = null;
+        options.onGizmoDragEnd?.();
+      },
     });
+    gizmosRef.host = gizmos;
     const debugOverlayInstance = new EditorDebugOverlay(scene);
     debugOverlay = debugOverlayInstance;
 
@@ -369,10 +429,19 @@ export function createEngine(
         );
         selection.set(visuals.length > 0 ? visuals : meshes);
         // Locked actors are not pickable; keep the gizmo off them so lock is
-        // more than a pick filter.
-        const gizmoTarget =
-          meshes.find((mesh) => mesh !== null && mesh.isPickable) ?? null;
-        gizmos.attachTo(gizmoTarget);
+        // more than a pick filter. Attach to the first pickable selection root
+        // so a selected child is not the group handle when its parent is too.
+        const attachId = pickGizmoAttachActorId(
+          actorIds,
+          parentIdOf,
+          (id) => {
+            const mesh = editorSync.meshForActor(id);
+            return mesh !== null && mesh.isPickable;
+          },
+        );
+        gizmos.attachTo(
+          attachId ? editorSync.meshForActor(attachId) : null,
+        );
         scheduler.invalidate("selection");
       },
       syncSelectionDebug: (options) => {
@@ -388,20 +457,18 @@ export function createEngine(
           cameraController.frame(mesh.getAbsolutePosition());
         }
       },
+      selectedActorTransforms,
       attachedActorTransform: () => {
         const mesh = gizmos.attachedMesh();
-        if (!mesh) return null;
+        if (!mesh) return selectedActorTransforms()[0] ?? null;
         const actorId = editorSync.actorForMesh(mesh.name);
         if (!actorId) return null;
-        const rotation = mesh.rotationQuaternion;
-        return {
-          actorId,
-          position: [mesh.position.x, mesh.position.y, mesh.position.z],
-          rotation: rotation
-            ? [rotation.x, rotation.y, rotation.z, rotation.w]
-            : [0, 0, 0, 1],
-          scale: [mesh.scaling.x, mesh.scaling.y, mesh.scaling.z],
-        };
+        return (
+          selectedActorTransforms().find((entry) => entry.actorId === actorId) ?? {
+            actorId,
+            ...readMeshLocalTransform(mesh),
+          }
+        );
       },
       setPreviewGameCamera: (enabled: boolean) => {
         editorSync.setGameCameraPreview(enabled, cameraController.camera);

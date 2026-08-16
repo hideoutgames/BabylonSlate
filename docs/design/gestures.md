@@ -78,7 +78,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 - **Three fingers** pan (move the camera). In 2D this is the same 1:1 frustum / CSS-pixel mapping as one-finger pan; in 3D it uses a fixed world-units-per-pixel scale.
 - **WASD** flies in 3D (look-relative) and pans on XY in 2D. Ignored while typing, while Play is open, or when the canvas is hidden.
 - **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Scene and Prefab **Viewport Settings** menus expose Snap, Show Grid, and Joystick; Scene persists those settings, Prefab uses live context. Not the P9 game `TouchJoystick`.
-- **Gizmo drag** coalesces to one undo step via `mergeKey` on `SetActorTransformCommand` (`transform:{actorId}`).
+- **Gizmo drag** coalesces to one undo step: `SetActorTransformCommand` (`transform:{actorId}`) for one actor, `SetActorsTransformsCommand` (`transforms:{sortedIds}`) when several selection roots move together.
 - Canvas uses `touch-none` plus non-passive touch `preventDefault` so UI chrome and iOS system gestures do not steal look / pinch / pan.
 - Selection on explicit tap pick, not hover.
 
@@ -88,7 +88,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 - **Tap-to-connect:** tap an output pin, then an input pin (primary mobile path; shipped in `p5-graph-ui`). Pin hit boxes are `--touch-target` (44px); visual pins are `--graph-pin-size` (22px). Wires use `--pin-*` colors and 4–5px strokes.
 - **Drag-to-connect:** shipped. React Flow `onConnect` / `isValidConnection` persist the same `addEdge` path as tap-to-connect. Connection preview uses the dragged pin’s color. `onConnectEnd` on empty pane opens Add Node only when the pointer is **outside a 96px screen-space safe zone** around the **source pin** and **compatible opposite pins**, and is not over a node body. **Context Sensitive** (default ON) pin-filters that menu; off shows the host-legal catalog. While the drop would open Add Node, a non-interactive **Add Node** badge floats beside the moving wire end (not a persistent FAB). Releasing a dragged pin without snapping a handle and without opening Add Node **breaks all wires on that pin**. A tap or drop that stays on the source handle does not disconnect (tap-to-connect still works). Dismissing Add Node without picking a node also leaves existing wires.
 - **Double-tap empty pane** opens Add Node with all **host-legal** nodes (not the whole engine catalog). Search and category reset on every open. There is no persistent floating Add node button.
-- Overlay toolbar: Copy / Paste / Delete on the selection; **Break Links** drops every incident wire on selected nodes (nodes stay); **Format** tidies selected nodes, or walks the exec/data then-chain to the right of a single selection and lays out data-input trees to the left of those nodes.
+- Overlay toolbar: Copy / Paste / Delete on the selection; **Break Links** drops every incident wire on selected nodes (nodes stay); **Format** tidies selected nodes, or walks the exec then-chain to the right of a single impure selection and lays out data-input trees (pure nodes) to the left of those nodes. A selected pure node walks data-out instead, stacking parallel data branches on their own path.
 - Node palette is a centered `CatalogDialog` (search **not** autofocused); long-press / secondary click for node context menus when enabled.
 
 ## Document tabs (chrome bar)

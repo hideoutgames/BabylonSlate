@@ -763,7 +763,9 @@ export function buildNewAssetResult(options: {
   if (type === "UserInterface") {
     const payload = {
       ...createDefaultUserInterface(name),
-      logic: createDefaultLogicGraphSerialized(),
+      logic: createDefaultLogicGraphSerialized(defaultNodeRegistry, {
+        parentClass: "BObject",
+      }),
     } as unknown as Record<string, unknown>;
     return documentAsset(type, name, guid, payload);
   }
@@ -772,7 +774,9 @@ export function buildNewAssetResult(options: {
     const payload = {
       ...createDefaultUserInterface(name),
       dockKind: "scene",
-      logic: createDefaultLogicGraphSerialized(),
+      logic: createDefaultLogicGraphSerialized(defaultNodeRegistry, {
+        parentClass: "BObject",
+      }),
     } as unknown as Record<string, unknown>;
     return documentAsset(type, name, guid, payload);
   }

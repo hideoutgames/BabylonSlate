@@ -23,4 +23,14 @@ describe("UiEditorModeBar", () => {
       "true",
     );
   });
+
+  it("uses chrome-row ToggleGroup sizing, not 44px touch controls", () => {
+    const { getByTestId } = render(
+      <UiEditorModeBar mode="designer" onModeChange={vi.fn()} />,
+    );
+    expect(getByTestId("ui-editor-mode").getAttribute("data-size")).toBe("sm");
+    expect(getByTestId("ui-editor-mode-bar").className).not.toMatch(
+      /touch-target/,
+    );
+  });
 });

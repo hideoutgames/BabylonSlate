@@ -63,23 +63,45 @@ function isDataOutEdge(
   return Boolean(edge.sourceHandle) && !isExecOutEdge(edge, nodes);
 }
 
-function isRightwardEdge(
-  edge: FormatEdge,
-  nodes: readonly FormatNode[],
-): boolean {
-  return isExecOutEdge(edge, nodes) || isDataOutEdge(edge, nodes);
-}
+type ChainWalk = "exec" | "data";
 
-function thenSuccessors(
+function isImpureNode(
+  node: FormatNode | undefined,
   nodeId: string,
   nodes: readonly FormatNode[],
   edges: readonly FormatEdge[],
+): boolean {
+  if (node?.pins?.some((pin) => pin.kind === "exec")) return true;
+  if (node?.pins && node.pins.length > 0) return false;
+  return edges.some(
+    (edge) => edge.source === nodeId && isExecOutEdge(edge, nodes),
+  );
+}
+
+function chainWalkKind(
+  startId: string,
+  nodes: readonly FormatNode[],
+  edges: readonly FormatEdge[],
+): ChainWalk {
+  const start = nodes.find((node) => node.id === startId);
+  return isImpureNode(start, startId, nodes, edges) ? "exec" : "data";
+}
+
+function chainSuccessors(
+  nodeId: string,
+  nodes: readonly FormatNode[],
+  edges: readonly FormatEdge[],
+  walk: ChainWalk,
 ): string[] {
   const targets: string[] = [];
   const seen = new Set<string>();
   for (const edge of edges) {
-    if (edge.source !== nodeId || !isRightwardEdge(edge, nodes)) continue;
-    if (seen.has(edge.target)) continue;
+    if (edge.source !== nodeId) continue;
+    const include =
+      walk === "exec"
+        ? isExecOutEdge(edge, nodes)
+        : isDataOutEdge(edge, nodes);
+    if (!include || seen.has(edge.target)) continue;
     seen.add(edge.target);
     targets.push(edge.target);
   }
@@ -92,6 +114,7 @@ export function collectThenChain(
   edges: readonly FormatEdge[],
 ): string[] {
   if (!nodes.some((node) => node.id === startId)) return [];
+  const walk = chainWalkKind(startId, nodes, edges);
   const visited = new Set<string>();
   const order: string[] = [];
   const queue = [startId];
@@ -100,7 +123,7 @@ export function collectThenChain(
     if (visited.has(id)) continue;
     visited.add(id);
     order.push(id);
-    for (const target of thenSuccessors(id, nodes, edges)) {
+    for (const target of chainSuccessors(id, nodes, edges, walk)) {
       if (!visited.has(target)) queue.push(target);
     }
   }
@@ -113,6 +136,7 @@ function thenChainLayers(
   edges: readonly FormatEdge[],
 ): string[][] {
   const byId = new Map(nodes.map((node) => [node.id, node]));
+  const walk = chainWalkKind(startId, nodes, edges);
   const visited = new Set<string>([startId]);
   const layers: string[][] = [];
   let current = [startId];
@@ -120,7 +144,7 @@ function thenChainLayers(
     layers.push(current);
     const next: string[] = [];
     for (const id of current) {
-      for (const target of thenSuccessors(id, nodes, edges)) {
+      for (const target of chainSuccessors(id, nodes, edges, walk)) {
         if (visited.has(target) || !byId.has(target)) continue;
         visited.add(target);
         next.push(target);
