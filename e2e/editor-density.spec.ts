@@ -1,15 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openTestProject } from "./open-test-project";
+import { createContentBrowserAsset, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
-
-async function showContentBrowser(page: Page): Promise<void> {
-  await page
-    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
-    .click();
-  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
-}
 
 async function paintSelectContentTiles(
   page: Page,
@@ -33,22 +26,6 @@ async function paintSelectContentTiles(
     { steps: 16 },
   );
   await page.mouse.up();
-}
-
-async function createContentBrowserAsset(
-  page: Page,
-  type: "Enum" | "Scene",
-  name: string,
-): Promise<void> {
-  await showContentBrowser(page);
-  await page.getByTestId("content-browser-new-asset").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-  await page.getByTestId("new-asset-type").click();
-  await page.getByTestId(`new-asset-type-${type}`).click();
-  await page.getByTestId("new-asset-name").fill(name);
-  await page.getByTestId("content-browser-new-asset-create").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
-  await showContentBrowser(page);
 }
 
 test.describe("Editor density and IA", () => {
@@ -516,6 +493,22 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("context-menu-item-retry-encoding")).toHaveCount(
       0,
     );
+  });
+
+  test("Content Browser empty-grid double-click opens New Asset", {
+    tag: IPAD_TEST_TAG,
+  }, async ({ page }) => {
+    await openTestProject(page);
+    const grid = page.getByTestId("content-browser-asset-grid");
+    await grid.dblclick({ position: { x: 4, y: 4 } });
+    await expect(
+      page.getByTestId("content-browser-new-asset-dialog"),
+    ).toBeVisible();
+    await expect(page.getByTestId("new-asset-type-Scene")).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+    await expect(page.getByTestId("new-asset-name")).toHaveValue("");
   });
 
   test("multi-select Duplicate copies every asset; mixed menu hides Show References", async ({
