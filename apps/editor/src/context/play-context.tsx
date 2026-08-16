@@ -110,9 +110,6 @@ interface PlayContextValue {
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
   logLines: string[];
-  alwaysRender: boolean;
-  setAlwaysRender: (value: boolean) => void;
-  renderStats: { renderedFps: number; invalidationsPerSecond: number } | null;
   liveBtState: LiveBtState | null;
   reportBtState: (state: LiveBtState | null) => void;
 }
@@ -144,12 +141,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
-  const [alwaysRender, setAlwaysRenderState] = useState(true);
   const [sharedEngineGeneration, setSharedEngineGeneration] = useState(0);
-  const [renderStats, setRenderStats] = useState<{
-    renderedFps: number;
-    invalidationsPerSecond: number;
-  } | null>(null);
   const [lastRuntimeMode, setLastRuntimeMode] = useState<
     "worker" | "in-process" | null
   >(null);
@@ -275,19 +267,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   const registerScheduler = useCallback((scheduler: EditorLoopHandle) => {
     return schedulerRegistryRef.current.register(scheduler);
-  }, []);
-
-  const setAlwaysRender = useCallback((value: boolean) => {
-    setAlwaysRenderState(value);
-    schedulerRegistryRef.current.setAlwaysRender(value);
-  }, []);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const stats = schedulerRegistryRef.current.stats();
-      if (stats) setRenderStats(stats);
-    }, 500);
-    return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -773,9 +752,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
       logLines,
-      alwaysRender,
-      setAlwaysRender,
-      renderStats,
       liveBtState,
       reportBtState: setLiveBtState,
     }),
@@ -797,9 +773,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       focusedNodeId,
       appendLog,
       logLines,
-      alwaysRender,
-      setAlwaysRender,
-      renderStats,
       liveBtState,
       closePreview,
       previewOpen,

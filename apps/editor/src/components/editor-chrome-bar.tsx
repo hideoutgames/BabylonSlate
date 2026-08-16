@@ -41,7 +41,6 @@ import {
   documentHistoryHotkey,
   resolveTypeVisual,
 } from "@babylonslate/editor-kit";
-import { isTestModeEnabled } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
@@ -216,9 +215,6 @@ export function EditorChromeBar({
     playing,
     preparing,
     canPlay,
-    alwaysRender,
-    setAlwaysRender,
-    renderStats,
     previewBuild,
     setPreviewBuild,
   } = usePlay();
@@ -496,20 +492,6 @@ export function EditorChromeBar({
                   >
                     Preview Build
                   </DropdownMenuCheckboxItem>
-                  {isTestModeEnabled() || import.meta.env.DEV ? (
-                    <DropdownMenuCheckboxItem
-                      data-testid="always-render-toggle"
-                      checked={alwaysRender}
-                      onCheckedChange={(checked) =>
-                        setAlwaysRender(checked === true)
-                      }
-                    >
-                      Always Render
-                      {renderStats
-                        ? ` (${renderStats.renderedFps}/${renderStats.invalidationsPerSecond})`
-                        : ""}
-                    </DropdownMenuCheckboxItem>
-                  ) : null}
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>

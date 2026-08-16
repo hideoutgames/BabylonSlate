@@ -7,14 +7,14 @@ test("viewport frame cap can be emptied then retyped", async ({ page }) => {
   await page.getByTestId("engine-settings-modal-category-viewport").click();
 
   const field = page.getByTestId("setting-frame-cap");
-  await expect(field).toHaveValue("60");
+  await expect(field).toHaveValue("30");
   await field.click();
   await field.press("End");
   await field.press("Backspace");
   await field.press("Backspace");
   await expect(field).toHaveValue("");
-  await field.pressSequentially("30");
-  await expect(field).toHaveValue("30");
+  await field.pressSequentially("45");
+  await expect(field).toHaveValue("45");
 });
 
 test("graph default zoom shows 0.5", async ({ page }) => {

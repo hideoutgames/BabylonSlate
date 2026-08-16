@@ -51,7 +51,8 @@ test.describe("Debug menu", () => {
     await openTestProject(page);
     await expect(page.getByTestId("debug-menu")).toBeEnabled();
     await page.getByTestId("debug-menu").click();
-    await expect(page.getByTestId("always-render-toggle")).toBeVisible();
+    await expect(page.getByTestId("preview-build-toggle")).toBeVisible();
+    await expect(page.getByTestId("always-render-toggle")).toHaveCount(0);
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
@@ -68,7 +69,8 @@ test.describe("Debug menu", () => {
     expect(canvasBefore!.height).toBeGreaterThan(0);
 
     await page.getByTestId("debug-menu").click();
-    await expect(page.getByTestId("always-render-toggle")).toBeVisible();
+    await expect(page.getByTestId("preview-build-toggle")).toBeVisible();
+    await expect(page.getByTestId("always-render-toggle")).toHaveCount(0);
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
 
@@ -83,7 +85,7 @@ test.describe("Debug menu", () => {
       "Debug must not mount a full-viewport modal backdrop over the canvas",
     ).toEqual([]);
 
-    await page.getByTestId("always-render-toggle").click();
+    await page.getByTestId("preview-build-toggle").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     await expect(canvas).toBeVisible();

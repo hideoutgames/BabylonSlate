@@ -26,7 +26,7 @@ See [ui-runtime.md](ui-runtime.md) and [fonts.md](fonts.md). Agents applying Bab
 
 Play does **not** seed `createDefaultScene()` (the default Cube) into the Play Babylon scene. The Play scene is camera + light only; snapshot apply creates meshes for runtime actors. `assignMesh` commands carry `meshKind` from `MeshComponent` so Play primitives match the editor (sphere, box, …) instead of always being a unit box. Authored actors themselves come from the `load` message `scene` payload (`p7-play-scene-load`).
 
-Play takes a `acquireContinuous("play")` lease for the session so every overlay blit is preceded by `scene.render()`. The editor stays dirty-driven; `syncEditorPlayState(handle, playing)` pauses it while Play is open and on close resizes (undoing Play’s `setSize`) and invalidates so the docked viewport redraws.
+Play takes a `acquireContinuous("play")` lease for the session so every overlay blit is preceded by `scene.render()`. Visible editor canvases always render continuously (capped); `syncEditorPlayState(handle, playing)` pauses them while Play is open and on close resizes (undoing Play’s `setSize`) and invalidates so the docked viewport redraws.
 
 Play HUD `draws` is the last rendered frame’s Babylon draw-call count. `createEngine` resets `engine._drawCalls` before `scene.render()` and stores `_drawCalls.current` afterward (`EngineHandle.drawCalls()`). Babylon 9 has no public `engine.drawCalls` number; reading that field always showed `0`.
 
@@ -46,7 +46,7 @@ Play overlay canvas layout comes from Project Settings. When `render.customResol
 
 ## Render-on-demand
 
-Visible editor canvases (scene viewport and Prefab Preview) render at Engine Settings `viewportFrameCap` (Always Render default on). Freeze — skip `scene.render()` — when the canvas is zero-size or fully off-screen, a dialog/alert/sheet overlay is open, Play is up, or the app is backgrounded. IntersectionObserver is the fast path; if it reports not intersecting, a window-overlap `getBoundingClientRect` check still keeps an on-screen canvas visible (iOS standalone IO is unreliable under Dockview CSS transforms). Dirty-driven invalidation and refcounted continuous-render leases remain the Always Render-off path and still honor the same frame cap. Play views hold an `acquireContinuous("play")` lease for the session so the overlay blit always follows a real `scene.render()`, and they use the project `playFrameCap` (default 60) rather than the editor viewport cap. The cap is applied when Play starts from Project Settings `playFrameCap`. The overlay HUD shows FPS / script / physics and does not change the cap live. HUD exposes rendered-fps vs invalidations/sec.
+Visible editor canvases (scene viewport and Prefab Preview) always render continuously at Engine Settings `viewportFrameCap` (default 30). Freeze — skip `scene.render()` — when the canvas is zero-size or fully off-screen, a dialog/alert/sheet overlay is open, Play is up, or the app is backgrounded. IntersectionObserver is the fast path; if it reports not intersecting, a window-overlap `getBoundingClientRect` check still keeps an on-screen canvas visible (iOS standalone IO is unreliable under Dockview CSS transforms). Dirty-driven invalidation and refcounted continuous-render leases still honor the same frame cap (Play holds a continuous lease). Play views use the project `playFrameCap` (default 60) rather than the editor viewport cap. The cap is applied when Play starts from Project Settings `playFrameCap`. The overlay HUD shows FPS / script / physics and does not change the cap live. HUD exposes rendered-fps vs invalidations/sec.
 
 `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. Pause render loop, game worker, and encode queue on background.
 
@@ -70,7 +70,7 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 
 `visibilitychange` (and Capacitor app-state when present) pauses the render scheduler, game worker / in-process runtime tick, and texture encode queue. Encode pause uses a reason set (`visibility` | `play`) so ending Play does not resume encoding while the tab is still hidden.
 
-Editor canvases also freeze when zero-size or fully off-screen, or when a blocking overlay (`dialog-overlay`, `alert-dialog-overlay`, `sheet-overlay`) is open. Visibility uses IntersectionObserver plus an on-screen rect fallback so a lying iOS IO under Dockview transforms does not skip frames. Scene and Prefab Preview both register with the editor scheduler registry so Always Render and pause apply to whichever canvas is alive.
+Editor canvases also freeze when zero-size or fully off-screen, or when a blocking overlay (`dialog-overlay`, `alert-dialog-overlay`, `sheet-overlay`) is open. Visibility uses IntersectionObserver plus an on-screen rect fallback so a lying iOS IO under Dockview transforms does not skip frames. Scene and Prefab Preview both register with the editor scheduler registry so continuous render and pause apply to whichever canvas is alive.
 
 ## Editor tools (P6)
 
