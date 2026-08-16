@@ -11,7 +11,8 @@
     "test": "vitest run --config ../../vitest.workspace.ts --project node packages/scripting"
   },
   "dependencies": {
-    "@babylonslate/core": "workspace:*"
+    "@babylonslate/core": "workspace:*",
+    "@babylonslate/debugger": "workspace:*"
   },
   "devDependencies": {
     "fast-check": "^4.3.0",
