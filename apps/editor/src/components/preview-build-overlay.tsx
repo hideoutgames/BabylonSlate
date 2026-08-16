@@ -25,23 +25,19 @@ export function PreviewBuildOverlay({
 }: PreviewBuildOverlayProps) {
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-black"
+      className="fixed inset-0 z-50 bg-black"
       data-testid="preview-build-overlay"
     >
-      <div className="flex h-[var(--chrome-row,28px)] items-center justify-end px-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="chrome-icon-button"
-          aria-label="Close"
-          data-testid="preview-build-close"
-          onClick={onClose}
-        >
-          <XIcon />
-        </Button>
-      </div>
+      <iframe
+        ref={iframeRef}
+        title="Preview Build"
+        src={src}
+        className="absolute inset-0 h-full w-full border-0 bg-black"
+        data-testid="preview-build-iframe"
+        onLoad={onLoad}
+      />
       {error ? (
-        <div className="p-4">
+        <div className="absolute inset-x-0 top-16 z-20 p-4">
           <Alert variant="destructive" data-testid="preview-build-error">
             <AlertTitle>Preview Build Failed To Start</AlertTitle>
             <AlertDescription>
@@ -50,14 +46,19 @@ export function PreviewBuildOverlay({
           </Alert>
         </div>
       ) : null}
-      <iframe
-        ref={iframeRef}
-        title="Preview Build"
-        src={src}
-        className="min-h-0 flex-1 border-0 bg-black"
-        data-testid="preview-build-iframe"
-        onLoad={onLoad}
-      />
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-end p-3">
+        <Button
+          size="touch"
+          variant="secondary"
+          className="pointer-events-auto"
+          aria-label="Stop"
+          data-testid="preview-build-close"
+          onClick={onClose}
+        >
+          <XIcon data-icon="inline-start" />
+          Stop
+        </Button>
+      </div>
     </div>
   );
 }

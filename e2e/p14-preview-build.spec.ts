@@ -57,8 +57,14 @@ test.describe("P14 Preview Build", () => {
     expect(canvasBox!.width).toBeGreaterThan(0);
     expect(canvasBox!.height).toBeGreaterThan(0);
 
+    const stop = page.getByTestId("preview-build-close");
+    await expect(stop).toHaveText("Stop");
     await page.getByTestId("preview-build-close").click();
     await expect(page.getByTestId("preview-build-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("play-preview")).toBeEnabled();
+    await expect(page.getByTestId("debug-menu")).toBeVisible();
   });
 
   test("missing startup scene alerts and overlay Play still requires a scene tab when off", async ({

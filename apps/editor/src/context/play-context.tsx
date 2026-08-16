@@ -43,6 +43,7 @@ import {
 import { createAppSettingsStore } from "@babylonslate/vfs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { playerPreviewSrc } from "../lib/player-host-url";
+import { canSendPreviewPack } from "../lib/preview-build-handoff";
 import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
@@ -158,6 +159,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
   const previewCancelledRef = useRef(false);
+  const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
   const [playUiLibrary, setPlayUiLibrary] = useState<
     Record<string, UserInterfaceDocument>
@@ -327,18 +329,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   );
 
   const closePreview = useCallback(() => {
+    previewClosingRef.current = true;
     const frame = previewIframeRef.current;
     if (frame?.contentWindow) {
       frame.contentWindow.postMessage({ type: PREVIEW_STOP_MESSAGE }, "*");
     }
+    previewFilesRef.current = null;
+    setPreviewOpen(false);
+    setPreviewPhase(null);
+    setPreviewError(null);
+    setPreviewCanCancel(true);
+    setPlaying(false);
+    setEncodeQueuePauseReason("play", false);
     window.setTimeout(() => {
-      previewFilesRef.current = null;
-      setPreviewOpen(false);
-      setPreviewPhase(null);
-      setPreviewError(null);
-      setPreviewCanCancel(true);
-      setPlaying(false);
-      setEncodeQueuePauseReason("play", false);
+      previewClosingRef.current = false;
       const diagnostics = previewDiagnosticsRef.current;
       previewDiagnosticsRef.current = [];
       if (diagnostics.length > 0) {
@@ -352,9 +356,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const sendPreviewPack = useCallback(() => {
     const files = previewFilesRef.current;
     const frame = previewIframeRef.current?.contentWindow;
-    if (!files || !frame) return;
+    const handoff = { files, closing: previewClosingRef.current };
+    if (!canSendPreviewPack(handoff) || !frame) {
+      return;
+    }
     try {
-      frame.postMessage(previewPackFromFiles(files), "*");
+      frame.postMessage(previewPackFromFiles(handoff.files), "*");
     } catch (error) {
       setPreviewError(
         `Preview Build could not send the game data: ${
@@ -405,6 +412,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       return;
     }
     previewCancelledRef.current = false;
+    previewClosingRef.current = false;
     preparingRef.current = true;
     setPreparing(true);
     setPreviewCanCancel(true);
