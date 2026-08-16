@@ -16,7 +16,7 @@ afterEach(() => {
 function dispatchPointerEvent(
   target: Element,
   type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
-  init: { clientX?: number; clientY?: number } = {},
+  init: { clientX?: number; clientY?: number; pointerId?: number } = {},
 ): void {
   const event = new MouseEvent(type, {
     bubbles: true,
@@ -24,7 +24,7 @@ function dispatchPointerEvent(
     clientX: init.clientX ?? 0,
     clientY: init.clientY ?? 0,
   });
-  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerId", { value: init.pointerId ?? 1 });
   Object.defineProperty(event, "pointerType", { value: "touch" });
   target.dispatchEvent(event);
 }
@@ -206,6 +206,7 @@ function dragHandle(
   handle: Element,
   from: { x: number; y: number },
   to: { x: number; y: number },
+  during?: () => void,
 ): void {
   fireEvent.mouseDown(handle, {
     clientX: from.x,
@@ -213,6 +214,12 @@ function dragHandle(
     button: 0,
   });
   fireEvent.mouseMove(document, { clientX: to.x, clientY: to.y });
+  dispatchPointerEvent(document.body, "pointermove", {
+    clientX: to.x,
+    clientY: to.y,
+    pointerId: 1,
+  });
+  during?.();
   fireEvent.mouseUp(document, { clientX: to.x, clientY: to.y });
 }
 
@@ -221,6 +228,68 @@ function openPalette(container: HTMLElement) {
   expect(pane).not.toBeNull();
   fireEvent.click(pane!);
   fireEvent.click(pane!);
+}
+
+const farDrop = { x: 500, y: 22 };
+
+const pinDragPalette = [
+  {
+    id: "debug.log",
+    title: "Log",
+    category: "Debug",
+    pins: debugLogPins,
+  },
+  {
+    id: "math.add",
+    title: "Add",
+    category: "Math",
+    pins: [
+      {
+        id: "a",
+        name: "a",
+        kind: "data" as const,
+        direction: "in" as const,
+        type: { kind: "float" },
+      },
+      {
+        id: "b",
+        name: "b",
+        kind: "data" as const,
+        direction: "in" as const,
+        type: { kind: "float" },
+      },
+      {
+        id: "out",
+        name: "out",
+        kind: "data" as const,
+        direction: "out" as const,
+        type: { kind: "float" },
+      },
+    ],
+  },
+];
+
+function mockPinDragLayout(container: HTMLElement): Element {
+  container.querySelectorAll(".react-flow__node").forEach((node, index) => {
+    mockHandleRect(node, {
+      left: index * 280,
+      top: 0,
+      width: 180,
+      height: 80,
+    });
+  });
+  const source = container.querySelector(
+    '[data-id="log-a"] [data-handleid="execOut"][data-handlepos="right"]',
+  );
+  expect(source).not.toBeNull();
+  mockHandleRect(source!, { left: 0, top: 0, width: 44, height: 44 });
+  const other = container.querySelector(
+    '[data-id="log-b"] [data-handleid="execIn"][data-handlepos="left"]',
+  );
+  if (other) {
+    mockHandleRect(other, { left: 280, top: 0, width: 44, height: 44 });
+  }
+  return source!;
 }
 
 describe("GraphEditor", () => {
@@ -398,6 +467,197 @@ describe("GraphEditor", () => {
       });
 
       expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("does not open Add Node when a pin drag is released in empty canvas", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          paletteNodes={pinDragPalette}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop);
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("does not break wires when a far pin drag is released without a second pointer", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor
+          initialGraph={graphWithWiredPins()}
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop);
+      });
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("does not open Add Node when a second pointer lands in the source safe zone", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          paletteNodes={pinDragPalette}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      const pane = container.querySelector(".react-flow__pane");
+      expect(pane).not.toBeNull();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, { x: 40, y: 22 }, () => {
+          dispatchPointerEvent(pane!, "pointerdown", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+          dispatchPointerEvent(pane!, "pointerup", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+        });
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("opens a pin-filtered Add Node menu on a second pointer during a far pin drag", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container, getByTestId, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          paletteNodes={pinDragPalette}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      const pane = container.querySelector(".react-flow__pane");
+      expect(pane).not.toBeNull();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop, () => {
+          dispatchPointerEvent(pane!, "pointerdown", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+          dispatchPointerEvent(pane!, "pointerup", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+        });
+      });
+      expect(getByTestId("node-palette-body")).toBeTruthy();
+      expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
+      expect(queryByTestId("node-palette-item-math.add")).toBeNull();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("keeps Add Node open after the drag pointer is released", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithWiredPins()}
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      const pane = container.querySelector(".react-flow__pane");
+      expect(pane).not.toBeNull();
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop, () => {
+          dispatchPointerEvent(pane!, "pointerdown", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+          dispatchPointerEvent(pane!, "pointerup", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+        });
+      });
+      expect(getByTestId("node-palette-body")).toBeTruthy();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("spawns a picked node at the drag point and auto-connects the dragged pin", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      const pane = container.querySelector(".react-flow__pane");
+      expect(pane).not.toBeNull();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop, () => {
+          dispatchPointerEvent(pane!, "pointerdown", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+          dispatchPointerEvent(pane!, "pointerup", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+        });
+      });
+      fireEvent.click(getByTestId("node-palette-item-debug.log"));
+      expect(onChange).toHaveBeenCalled();
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      const added = lastGraph.nodes.find((node) => node.id !== "log-a" && node.id !== "log-b");
+      expect(added).toBeDefined();
+      expect(added?.position.x).not.toBe(0);
+      expect(
+        lastGraph.edges.some(
+          (edge) =>
+            edge.source === "log-a" &&
+            edge.sourceHandle === "execOut" &&
+            edge.target === added?.id &&
+            edge.targetHandle === "execIn",
+        ),
+      ).toBe(true);
     } finally {
       restoreLayout();
     }
