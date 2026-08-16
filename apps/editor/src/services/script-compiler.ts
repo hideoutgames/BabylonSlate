@@ -3,7 +3,18 @@ import type {
   ScriptBundleEntry,
   ScriptConsoleCommand,
 } from "@babylonslate/bridge";
-import { compileGraph, type LogicGraph, isLogicGraphPayload } from "@babylonslate/scripting";
+import {
+  animGraphScriptClassId,
+  animRuleScriptClassId,
+  parseAnimGraphDocument,
+  type AnimGraphDocument,
+} from "@babylonslate/anim-graph";
+import {
+  compileGraph,
+  compileTransitionRuleGraph,
+  type LogicGraph,
+  isLogicGraphPayload,
+} from "@babylonslate/scripting";
 import { localVariablePreamble } from "@babylonslate/scripting-nodes";
 import { defaultNodeRegistry, materializeLogicGraph } from "./graph-validation";
 
@@ -292,4 +303,70 @@ export function compileGraphDocumentsForExport(
   }>,
 ): ScriptBundleEntry[] {
   return compileGraphDocuments(documents, { stripDevelopmentOnly: true });
+}
+
+export type AnimGraphCompileDocument = {
+  guid: string;
+  path: string;
+  document: AnimGraphDocument | unknown;
+};
+
+/**
+ * Compile Animation Object lifecycle graphs and each transition-rule evaluate().
+ * Class ids are `AnimGraph:{guid}` / `AnimRule:{guid}:{transitionId}` so Play
+ * does not spawn extra actors.
+ */
+export function compileAnimGraphScripts(
+  documents: ReadonlyArray<AnimGraphCompileDocument>,
+  options: { stripDevelopmentOnly?: boolean } = {},
+): ScriptBundleEntry[] {
+  const scripts: ScriptBundleEntry[] = [];
+  for (const entry of documents) {
+    try {
+      const doc = parseAnimGraphDocument(entry.document);
+      const objectScript = compileGraphDocument(doc.animationObject, {
+        path: entry.path,
+        graphId: "animation-object",
+        parentClassId: "BObject",
+        stripDevelopmentOnly: options.stripDevelopmentOnly,
+      });
+      if (objectScript) {
+        scripts.push({
+          ...objectScript,
+          classId: animGraphScriptClassId(entry.guid),
+          parentClassId: "BObject",
+        });
+      }
+      for (const transition of doc.transitions) {
+        const ruleGraph = transition.ruleGraph ?? {
+          nodes: [],
+          edges: [],
+        };
+        const logic = materializeLogicGraph(
+          ruleGraph,
+          `rule-${transition.id}`,
+        );
+        const compiled = compileTransitionRuleGraph(logic, {
+          assetGuid: entry.path,
+          registry: defaultNodeRegistry,
+          stripDevelopmentOnly: options.stripDevelopmentOnly,
+        });
+        scripts.push({
+          assetGuid: entry.path,
+          classId: animRuleScriptClassId(entry.guid, transition.id),
+          source: compiled.source,
+          anchors: compiled.anchors,
+          entryPoints: compiled.entryPoints.map((point) => ({
+            name: point.name,
+            isAsync: point.isAsync,
+            ...(point.event ? { event: point.event } : {}),
+          })),
+          parentClassId: "BObject",
+        });
+      }
+    } catch (error) {
+      console.error(`[play] failed to compile AnimationGraph ${entry.path}`, error);
+    }
+  }
+  return scripts;
 }

@@ -411,6 +411,16 @@ describe("deletableNodeIds", () => {
       ]),
     ).toEqual(["log-a"]);
   });
+
+  it("protects Animation Object events and transition rule sinks by type", () => {
+    expect(
+      deletableNodeIds([
+        { id: "init", selected: true, type: "anim.event.initialize" },
+        { id: "enter", selected: true, type: "anim.rule.enterState" },
+        { id: "math", selected: true, type: "math.add" },
+      ]),
+    ).toEqual(["math"]);
+  });
 });
 
 describe("lockNodeDragAxis", () => {

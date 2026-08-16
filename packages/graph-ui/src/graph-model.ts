@@ -32,6 +32,10 @@ function serializedNodeData(data: unknown): Record<string, unknown> {
 const PROTECTED_NODE_TYPES = new Set([
   "flow.function.input",
   "flow.function.output",
+  "anim.event.initialize",
+  "anim.event.update",
+  "anim.rule.enterState",
+  "anim.rule.exitState",
 ]);
 
 export function isProtectedNode(node: {

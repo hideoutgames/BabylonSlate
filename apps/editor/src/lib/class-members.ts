@@ -77,6 +77,8 @@ export type ClassEventOptions = {
   parentOf?: (id: string) => string | null | undefined;
   assetType?: string | null;
   editorGraph?: boolean;
+  /** Animation Object event graph vs nested transition-rule graph. */
+  animationGraphHost?: "object" | "rule";
 };
 
 export type BlueprintSection = {
@@ -195,6 +197,23 @@ export function nativeEventStubs(
 }
 
 /** Whether a script catalog node is legal on a Class graph for this parent. */
+function isAnimCatalogNode(nodeId: string): boolean {
+  return nodeId.startsWith("anim.");
+}
+
+function isAnimCatalogNodeAllowed(
+  nodeId: string,
+  host: ClassEventOptions["animationGraphHost"],
+): boolean {
+  if (host === "object") {
+    return nodeId.startsWith("anim.event.");
+  }
+  if (host === "rule") {
+    return nodeId.startsWith("anim.state.");
+  }
+  return false;
+}
+
 export function isScriptCatalogNodeAllowed(
   nodeId: string,
   options?: ClassEventOptions,
@@ -210,6 +229,9 @@ export function isScriptCatalogNodeAllowed(
   }
   if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
+  }
+  if (isAnimCatalogNode(nodeId)) {
+    return isAnimCatalogNodeAllowed(nodeId, options?.animationGraphHost);
   }
   const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
     nodeId,
@@ -237,6 +259,16 @@ export function isScriptCatalogNodeAllowed(
   const isBlackboard = (BT_BLACKBOARD_NODE_IDS as readonly string[]).includes(
     nodeId,
   );
+  if (options?.animationGraphHost) {
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      !isBtLeafEvent &&
+      !isFinish &&
+      !isReturn &&
+      !isBlackboard
+    );
+  }
   if (
     chain.includes("FunctionLibrary") ||
     chain.includes("EditorFunctionLibrary")

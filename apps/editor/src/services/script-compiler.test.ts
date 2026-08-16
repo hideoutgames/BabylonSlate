@@ -444,3 +444,47 @@ describe("graphsNeedCompile", () => {
     expect(graphsNeedCompile(`${signature}-edited`, signature)).toBe(true);
   });
 });
+
+describe("compileAnimGraphScripts", () => {
+  it("compiles Animation Object lifecycle and each transition rule", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts } = await import("./script-compiler");
+    const doc = createDefaultAnimGraph();
+    doc.transitions.push({
+      id: "idle-to-idle",
+      fromStateId: "idle",
+      toStateId: "idle",
+      blendSeconds: 0,
+      priority: 0,
+      ruleGraph: {
+        nodes: [
+          {
+            id: "enter-state",
+            type: "anim.rule.enterState",
+            position: { x: 0, y: 0 },
+            data: { __protected: true },
+          },
+          {
+            id: "exit-state",
+            type: "anim.rule.exitState",
+            position: { x: 0, y: 80 },
+            data: { __protected: true },
+          },
+        ],
+        edges: [],
+      },
+    });
+    const scripts = compileAnimGraphScripts([
+      { guid: "graph-1", path: "assets/Loco.anim.babasset", document: doc },
+    ]);
+    expect(scripts.map((entry) => entry.classId)).toEqual([
+      "AnimGraph:graph-1",
+      "AnimRule:graph-1:idle-to-idle",
+    ]);
+    expect(scripts[0]?.entryPoints.map((entry) => entry.event)).toEqual(
+      expect.arrayContaining(["onInitializeAnimation", "onUpdateAnimation"]),
+    );
+    expect(scripts[1]?.source).toContain("export function evaluate(ctx)");
+    expect(scripts[1]?.source).toContain("enter: (true)");
+  });
+});
