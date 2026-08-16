@@ -4,6 +4,10 @@ import {
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
+import {
+  animGraphMembersFromVariables,
+  parseAnimGraphDocument,
+} from "@babylonslate/anim-graph";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -25,6 +29,14 @@ export function serializedGraphFromDocument(
   if (kind === "ui" && isRecord(content)) {
     return isSerializedGraph(content.logic) ? content.logic : null;
   }
+  if (kind === "anim-graph") {
+    const parsed = parseAnimGraphDocument(content);
+    if (!parsed) return null;
+    return {
+      ...parsed.animationObject,
+      members: animGraphMembersFromVariables(parsed.variables),
+    };
+  }
   return null;
 }
 
@@ -37,6 +49,12 @@ export function replaceSerializedGraphInDocument(
   if (kind === "graph") return next;
   if (kind === "ui" && isRecord(content)) {
     return { ...content, logic: next };
+  }
+  if (kind === "anim-graph" && isRecord(content)) {
+    return {
+      ...content,
+      animationObject: { nodes: next.nodes, edges: next.edges },
+    };
   }
   return next;
 }
@@ -261,6 +279,7 @@ export function collectClassGraphsForPalette(options: {
     );
   }
   for (const doc of options.openDocuments) {
+    if (doc.ref.kind !== "graph" && doc.ref.kind !== "ui") continue;
     const graph = serializedGraphFromDocument(doc.ref.kind, doc.content);
     if (!graph) continue;
     graphs[options.classIdForPath(doc.ref.path)] = graph;
@@ -270,9 +289,10 @@ export function collectClassGraphsForPalette(options: {
 
 export type LogicGraphCommit =
   | { kind: "graph"; graph: SerializedGraph }
-  | { kind: "ui"; payload: Record<string, unknown> };
+  | { kind: "ui"; payload: Record<string, unknown> }
+  | { kind: "anim-graph"; payload: Record<string, unknown> };
 
-/** Persist a logic graph as a Class body or UserInterface payload. */
+/** Persist a logic graph as a Class body, UserInterface payload, or Animation Object. */
 export function commitLogicGraph(
   kind: string,
   content: unknown,
@@ -282,6 +302,16 @@ export function commitLogicGraph(
     const payload = replaceSerializedGraphInDocument("ui", content, next);
     if (isRecord(payload)) {
       return { kind: "ui", payload };
+    }
+  }
+  if (kind === "anim-graph") {
+    const payload = replaceSerializedGraphInDocument(
+      "anim-graph",
+      content,
+      next,
+    );
+    if (isRecord(payload)) {
+      return { kind: "anim-graph", payload };
     }
   }
   return { kind: "graph", graph: next };

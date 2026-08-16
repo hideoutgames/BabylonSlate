@@ -608,11 +608,12 @@ function variableAccessPaletteNodes(
     });
   }
   const injected: PaletteNode[] = [];
+  const accessKinds =
+    options?.animationGraphHost === "rule"
+      ? ([["get", getDef]] as const)
+      : ([["get", getDef], ["set", setDef]] as const);
   for (const { classId, variable, implicitSelf } of rows) {
-    for (const [access, def] of [
-      ["get", getDef],
-      ["set", setDef],
-    ] as const) {
+    for (const [access, def] of accessKinds) {
       const defaultData: Record<string, unknown> = {
         variableName: variable.name,
         variableId: variable.id,
@@ -688,6 +689,12 @@ export function scriptPaletteNodes(
       ) {
         return false;
       }
+      if (
+        options?.animationGraphHost === "rule" &&
+        def.pure !== true
+      ) {
+        return false;
+      }
       return isScriptCatalogNodeAllowed(def.id, options);
     })
     .map((def) => {
@@ -714,13 +721,16 @@ export function scriptPaletteNodes(
         Object.keys(defaultData).length > 0 ? defaultData : undefined,
     };
   });
-  return [
-    ...catalog,
-    ...callCustomEventPaletteNodes(nodeRegistry, options),
-    ...callFunctionPaletteNodes(nodeRegistry, options),
-    ...variableAccessPaletteNodes(nodeRegistry, options),
-    ...castPaletteNodes(nodeRegistry, options),
-  ];
+  const injected =
+    options?.animationGraphHost === "rule"
+      ? variableAccessPaletteNodes(nodeRegistry, options)
+      : [
+          ...callCustomEventPaletteNodes(nodeRegistry, options),
+          ...callFunctionPaletteNodes(nodeRegistry, options),
+          ...variableAccessPaletteNodes(nodeRegistry, options),
+          ...castPaletteNodes(nodeRegistry, options),
+        ];
+  return [...catalog, ...injected];
 }
 
 export function hydrateClassDocumentPayload(
