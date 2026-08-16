@@ -30,6 +30,7 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
   collectFunctionLibrariesForPalette,
   commitLogicGraph,
@@ -42,8 +43,14 @@ const VALIDATION_DEBOUNCE_MS = 250;
 export function GraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry } =
-    useDocuments();
+  const {
+    openDocuments,
+    applyGraphChange,
+    applyAssetDocumentChange,
+    assetRegistry,
+    activeDocumentId,
+    uiEditorMode,
+  } = useDocuments();
   const { focusedNodeId } = usePlay();
   const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId } =
     useGraphEditing();
@@ -136,13 +143,31 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   // Edit-time validation is debounced so typing in a node does not re-run the
   // whole pass on every keystroke; save and pre-Preview sweeps are immediate.
   useEffect(() => {
+    if (
+      !shouldPublishGraphDiagnostics({
+        documentId,
+        activeDocumentId,
+        documentKind: doc?.ref.kind ?? "",
+        uiEditorMode: doc?.ref.kind === "ui" ? uiEditorMode : undefined,
+      })
+    ) {
+      return;
+    }
     const handle = window.setTimeout(() => {
       setDiagnostics(
         validateSerializedGraph(graph, { assetGuid, graphId: documentId }),
       );
     }, VALIDATION_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
-  }, [graph, assetGuid, documentId, setDiagnostics]);
+  }, [
+    activeDocumentId,
+    assetGuid,
+    doc?.ref.kind,
+    documentId,
+    graph,
+    setDiagnostics,
+    uiEditorMode,
+  ]);
 
   const paletteNodes = useMemo(
     (): PaletteNode[] =>

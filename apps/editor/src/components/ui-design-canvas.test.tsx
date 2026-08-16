@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
+import { resetUiHostStats, uiHostStats } from "@babylonslate/render";
 import {
   createDefaultPlayHud,
   describeUiControls,
@@ -23,6 +24,16 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
 afterEach(() => {
   cleanup();
   createUiSurfaceMock.mockReset();
+  resetUiHostStats();
+  vi.unstubAllGlobals();
+});
+
+beforeEach(() => {
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal("cancelAnimationFrame", () => {});
 });
 
 function hudCanvasProps() {
@@ -118,4 +129,101 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(setFrozen).toHaveBeenCalledWith(true);
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
   });
+
+  it("skips apply while the Design tab is frozen", () => {
+    const addControl = vi.fn();
+    createUiSurfaceMock.mockReturnValue({
+      present: vi.fn(),
+      setFrozen: vi.fn(),
+      dispose: vi.fn(),
+      host: {
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl,
+        markAsDirty: vi.fn(),
+      },
+      resizeDesign: vi.fn(),
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    render(
+      <UiDesignCanvas
+        {...hudCanvasProps()}
+        panelVisible={false}
+        documentActive={false}
+      />,
+    );
+    expect(addControl).not.toHaveBeenCalled();
+  });
+
+  it("commits a widget drag once on pointer up", () => {
+    createUiSurfaceMock.mockReturnValue({
+      present: vi.fn(),
+      setFrozen: vi.fn(),
+      dispose: vi.fn(),
+      host: {
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl: vi.fn(),
+        markAsDirty: vi.fn(),
+      },
+      resizeDesign: vi.fn(),
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    const onLayoutChange = vi.fn();
+    const props = hudCanvasProps();
+    render(
+      <UiDesignCanvas
+        {...props}
+        selectedId="stick"
+        onLayoutChange={onLayoutChange}
+      />,
+    );
+    const stick = screen.getByTestId("ui-widget-stick");
+    dispatchPointerEvent(stick, "pointerdown", { clientX: 10, clientY: 10 });
+    dispatchPointerEvent(stick, "pointermove", { clientX: 55, clientY: 10 });
+    dispatchPointerEvent(stick, "pointermove", { clientX: 90, clientY: 12 });
+    expect(onLayoutChange).not.toHaveBeenCalled();
+    dispatchPointerEvent(stick, "pointerup", { clientX: 90, clientY: 12 });
+    expect(onLayoutChange).toHaveBeenCalledTimes(1);
+    const [id, layout] = onLayoutChange.mock.calls[0] as [
+      string,
+      { left: number },
+    ];
+    expect(id).toBe("stick");
+    expect(layout.left).not.toBe(props.ui.widgets.stick?.layout.left);
+    expect(uiHostStats.commit).toBe(1);
+  });
 });
+
+function dispatchPointerEvent(
+  target: Element,
+  type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
+  init: {
+    pointerId?: number;
+    pointerType?: "touch" | "mouse" | "pen";
+    clientX?: number;
+    clientY?: number;
+  } = {},
+): void {
+  const {
+    pointerId = 1,
+    pointerType = "touch",
+    clientX = 0,
+    clientY = 0,
+  } = init;
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX,
+    clientY,
+  });
+  Object.defineProperty(event, "pointerId", { value: pointerId });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  target.dispatchEvent(event);
+}

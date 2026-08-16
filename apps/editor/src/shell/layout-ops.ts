@@ -14,6 +14,7 @@ export interface FocusKeepCandidate {
 
 export type FocusKeepOptions = DockWindowOptions & {
   editorUtilities?: FocusKeepCandidate[];
+  openUtilityIds?: string[];
 };
 
 function catalogFocusCandidates(
@@ -67,12 +68,17 @@ export function focusKeepCandidates(
 export function resolveFocusKeepPanelIds(
   kind: FocusDocumentKind,
   keepPanelIds: readonly string[] | undefined,
-  options?: DockWindowOptions,
+  options?: FocusKeepOptions,
 ): string[] {
-  if (!keepPanelIds || keepPanelIds.length === 0) {
-    return [primaryDockPanel(kind, options)];
+  const openUtilities = (options?.openUtilityIds ?? []).filter(Boolean);
+  const keep =
+    !keepPanelIds || keepPanelIds.length === 0
+      ? [primaryDockPanel(kind, options)]
+      : [...keepPanelIds];
+  for (const id of openUtilities) {
+    if (!keep.includes(id)) keep.push(id);
   }
-  return [...keepPanelIds];
+  return keep;
 }
 
 export interface FocusablePanelApi {
@@ -93,7 +99,7 @@ export function applyFocusLayout(
   kind: FocusDocumentKind,
   api: FocusableDockApi,
   keepPanelIds?: readonly string[],
-  options?: DockWindowOptions,
+  options?: FocusKeepOptions,
 ): void {
   const keep = new Set(resolveFocusKeepPanelIds(kind, keepPanelIds, options));
   const openIds = (api.panels ?? []).map((panel) => panel.id);

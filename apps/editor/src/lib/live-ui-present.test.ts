@@ -46,4 +46,13 @@ describe("freezeLiveUiSurface", () => {
     freezeLiveUiSurface({ setFrozen }, { panelVisible: true, documentActive: true });
     expect(setFrozen).toHaveBeenCalledWith(false);
   });
+
+  it("keeps a live Editor Utility unfrozen while its panel is visible", () => {
+    const setFrozen = vi.fn();
+    freezeLiveUiSurface(
+      { setFrozen },
+      { panelVisible: true, documentActive: false, requireDocumentActive: false },
+    );
+    expect(setFrozen).toHaveBeenCalledWith(false);
+  });
 });

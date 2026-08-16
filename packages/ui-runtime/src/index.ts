@@ -62,6 +62,7 @@ export {
   migrateLegacyLayout,
   migrateUserInterfacePayload,
 } from "./migrate-layout";
+export { normalizeUserInterfaceDocument } from "./normalize-document";
 export {
   compileFontStack,
   glyphsFallingToFallback,

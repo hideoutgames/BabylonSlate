@@ -18,6 +18,8 @@ import { Ellipse } from "@babylonjs/gui/2D/controls/ellipse";
 import { Grid } from "@babylonjs/gui/2D/controls/grid";
 import { ScrollViewer } from "@babylonjs/gui/2D/controls/scrollViewers/scrollViewer";
 import { Slider } from "@babylonjs/gui/2D/controls/sliders/slider";
+import { Checkbox } from "@babylonjs/gui/2D/controls/checkbox";
+import { InputText } from "@babylonjs/gui/2D/controls/inputText";
 import { StackPanel } from "@babylonjs/gui/2D/controls/stackPanel";
 import { Vector2WithInfo } from "@babylonjs/gui/2D/math2D";
 import {
@@ -449,5 +451,147 @@ describe("BabylonUiApplyHost", () => {
     expect(onTouchAxis).toHaveBeenCalledWith("joystick-x", expect.closeTo(1, 5));
     host.clear();
     control.dispose();
+  });
+
+  it("disposes each ADT control once when the host clears", () => {
+    const doc = createDefaultUserInterface();
+    const { root, host } = applyDocument(doc);
+    const canvas = named(root, "canvas");
+    expect(canvas).toBeTruthy();
+    const dispose = vi.spyOn(canvas!, "dispose");
+    host.clear();
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes stale controls through the factory without also disposing the handle", () => {
+    const dispose = vi.fn();
+    const remove = vi.fn();
+    const factory: GuiControlFactory = {
+      create(spec) {
+        return { id: spec.id, type: spec.type, spec, dispose };
+      },
+      clear() {},
+      remove,
+      update: () => true,
+    };
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const keep = descriptor({ id: "keep", kind: "Button" });
+    const drop = descriptor({ id: "drop", kind: "Button" });
+    host.reconcile([keep, drop]);
+    host.reconcile([keep]);
+    expect(remove).toHaveBeenCalledWith("drop");
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it("reuses unchanged Babylon controls on a second apply", () => {
+    const doc = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("center", "center", 160, 40),
+    );
+    button.props.text = "Play";
+    doc.widgets.canvas!.children = ["btn"];
+    doc.widgets.btn = button;
+    const { root, host } = applyDocument(doc);
+    const first = named(root, "btn");
+    expect(first).toBeTruthy();
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    expect(named(root, "btn")).toBe(first);
+  });
+
+  it("emits click, value, checked, and text widget events", () => {
+    const onWidgetEvent = vi.fn();
+    const buttonDesc = descriptor({
+      id: "btn",
+      kind: "Button",
+      text: "Play",
+    });
+    const sliderDesc = descriptor({
+      id: "slider",
+      kind: "Slider",
+      props: { value: 0.2, min: 0, max: 1 },
+    });
+    const checkDesc = descriptor({
+      id: "check",
+      kind: "CheckBox",
+      props: { checked: false },
+    });
+    const inputDesc = descriptor({
+      id: "input",
+      kind: "TextInput",
+      props: { text: "" },
+    });
+    const button = createBabylonControl(
+      guiSpecFromDescriptor(buttonDesc, { interactive: true }),
+    );
+    const slider = createBabylonControl(
+      guiSpecFromDescriptor(sliderDesc, { interactive: true }),
+    ) as Slider;
+    const box = createBabylonControl(
+      guiSpecFromDescriptor(checkDesc, { interactive: true }),
+    ) as Checkbox;
+    const input = createBabylonControl(
+      guiSpecFromDescriptor(inputDesc, { interactive: true }),
+    ) as InputText;
+    const byId = new Map<string, ReturnType<typeof createBabylonControl>>([
+      ["btn", button],
+      ["slider", slider],
+      ["check", box],
+      ["input", input],
+    ]);
+    const factory: GuiControlFactory = {
+      create(spec) {
+        const control = byId.get(spec.id);
+        return {
+          id: spec.id,
+          type: spec.type,
+          spec,
+          control,
+          dispose() {},
+        };
+      },
+      clear() {},
+    };
+    const host = new BabylonUiApplyHost(factory, {
+      interactive: true,
+      onWidgetEvent,
+    });
+    host.addControl(buttonDesc);
+    host.addControl(sliderDesc);
+    host.addControl(checkDesc);
+    host.addControl(inputDesc);
+    button.onPointerClickObservable.notifyObservers(
+      new Vector2WithInfo(new Vector2(0, 0)),
+    );
+    slider.value = 0.75;
+    box.onIsCheckedChangedObservable.notifyObservers(true);
+    input.onTextChangedObservable.notifyObservers(input);
+    expect(onWidgetEvent).toHaveBeenCalledWith({
+      kind: "click",
+      widgetId: "btn",
+    });
+    expect(onWidgetEvent).toHaveBeenCalledWith({
+      kind: "value",
+      widgetId: "slider",
+      value: 0.75,
+    });
+    expect(onWidgetEvent).toHaveBeenCalledWith({
+      kind: "checked",
+      widgetId: "check",
+      value: true,
+    });
+    expect(onWidgetEvent).toHaveBeenCalledWith({
+      kind: "text",
+      widgetId: "input",
+      value: expect.any(String),
+    });
+    host.clear();
+    button.dispose();
+    slider.dispose();
+    box.dispose();
+    input.dispose();
   });
 });
