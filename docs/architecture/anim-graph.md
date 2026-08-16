@@ -19,12 +19,11 @@ Drives:
 
 ## Authoring
 
-Asset-document host (`AnimGraphEditor`), not a Dockview Class layout. Three columns:
+DockView document (`DockviewShell`, kind `anim-graph`), not `AssetDocumentWorkspace`. Catalog:
 
-- **Parameters** — `NamedListEditor` on `doc.parameters` (bool/trigger names the worker reads as `inputs.conditions`).
-- **States** — list plus **Add State**; double-tap canvas still opens Add Node (`anim.state`).
-- **Graph** — `GraphEditor` with `hydrateAnimGraphForEditor` / `animPaletteNodes()` `in` / `out` pins so wires are connectable.
-- **Details** — selected state (name, entry, clip kind, Animation/Sprite `AssetPicker`, clip name, speed, loop) and outgoing transitions (condition, blend seconds, exit time).
+- **Parameters** (left) — `NamedListEditor` on `doc.parameters` (bool/trigger names the worker reads as `inputs.conditions`) plus a States list and **Add State**.
+- **Graph** (primary) — `GraphEditor` with `hydrateAnimGraphForEditor` / `animPaletteNodes()` `in` / `out` pins so wires are connectable. Double-tap canvas still opens Add Node (`anim.state`).
+- **Details** (right) — selected state (name, entry, clip kind, Animation/Sprite `AssetPicker`, clip name, speed, loop) and outgoing transitions (condition, blend seconds, exit time).
 
-`AnimState.position` round-trips through `animGraphToSerialized` / `serializedToAnimGraph` so drags stick. Transition condition / blend / exit-time merge from the previous document when canvas edge ids change. Own validator; diagnostics navigate like script graphs.
+Shared selection lives in `AnimGraphEditingProvider`. `AnimState.position` round-trips through `animGraphToSerialized` / `serializedToAnimGraph` so drags stick. Transition condition / blend / exit-time merge from the previous document when canvas edge ids change. Own validator; diagnostics navigate like script graphs. Focus defaults to Graph.
 

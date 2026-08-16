@@ -41,6 +41,15 @@ import {
 import { EditorUtilityPanel } from "../panels/editor-utility-panel";
 import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
 import { LocksPanel } from "../panels/locks-panel";
+import {
+  AnimGraphDetailsPanel,
+  AnimGraphGraphPanel,
+  AnimGraphParametersPanel,
+} from "../components/anim-graph-editor";
+import {
+  BehaviourTreeDetailsPanel,
+  BehaviourTreeGraphPanel,
+} from "../components/behaviour-tree-editor";
 
 export const panelComponents = {
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
@@ -124,6 +133,21 @@ export const panelComponents = {
   ),
   "plugin-settings-details": (props: IDockviewPanelProps) => (
     <PluginSettingsDetailsPanel {...props} />
+  ),
+  "anim-graph-graph": (props: IDockviewPanelProps) => (
+    <AnimGraphGraphPanel {...props} />
+  ),
+  "anim-graph-parameters": (props: IDockviewPanelProps) => (
+    <AnimGraphParametersPanel {...props} />
+  ),
+  "anim-graph-details": (props: IDockviewPanelProps) => (
+    <AnimGraphDetailsPanel {...props} />
+  ),
+  "behaviour-tree-graph": (props: IDockviewPanelProps) => (
+    <BehaviourTreeGraphPanel {...props} />
+  ),
+  "behaviour-tree-details": (props: IDockviewPanelProps) => (
+    <BehaviourTreeDetailsPanel {...props} />
   ),
   locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
 };

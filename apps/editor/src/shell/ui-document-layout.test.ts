@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyPreFocusToUiLayout,
   normalizeUiEditorMode,
   parseUiDocumentLayout,
   serializeUiDocumentLayout,
@@ -59,5 +60,48 @@ describe("serializeUiDocumentLayout", () => {
       designer: { grid: { id: "d" } },
       logic: { grid: { id: "l" } },
     });
+  });
+});
+
+describe("applyPreFocusToUiLayout", () => {
+  const current = {
+    uiEditorMode: "designer" as const,
+    designer: { focused: true },
+    logic: { graph: true },
+  };
+
+  it("writes the snapshot into the Designer slot without touching Logic", () => {
+    expect(
+      applyPreFocusToUiLayout(current, {
+        layout: { restored: true },
+        surface: "designer",
+      }),
+    ).toEqual({
+      uiEditorMode: "designer",
+      designer: { restored: true },
+      logic: { graph: true },
+    });
+  });
+
+  it("writes the snapshot into the Logic slot without touching Designer", () => {
+    expect(
+      applyPreFocusToUiLayout(
+        { ...current, uiEditorMode: "logic" },
+        { layout: { restored: true }, surface: "logic" },
+      ),
+    ).toEqual({
+      uiEditorMode: "logic",
+      designer: { focused: true },
+      logic: { restored: true },
+    });
+  });
+
+  it("leaves both surfaces alone for the default DockView surface", () => {
+    expect(
+      applyPreFocusToUiLayout(current, {
+        layout: { restored: true },
+        surface: "default",
+      }),
+    ).toEqual(current);
   });
 });

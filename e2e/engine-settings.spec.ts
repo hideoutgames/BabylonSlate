@@ -40,6 +40,18 @@ test("User Interface category can add a custom designer preset", async ({
   await expect(page.locator('[data-testid^="ui-preset-custom-"]')).toHaveCount(1);
 });
 
+test("Focus keep-list can add a Material tab", async ({ page }) => {
+  await page.goto("/?test=1");
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await page.getByTestId("engine-settings").click();
+  await page.getByTestId("engine-settings-modal-category-focus").click();
+
+  await expect(page.getByTestId("focus-keep-material-material-graph")).toBeVisible();
+  await page.getByTestId("focus-keep-material-add").click();
+  await page.getByTestId("focus-keep-material-add-material-preview").click();
+  await expect(page.getByTestId("focus-keep-material-material-preview")).toBeVisible();
+});
+
 test("Focus keep-list can add a Class tab", async ({ page }) => {
   await page.goto("/?test=1");
   await expect(page.getByTestId("homepage")).toBeVisible();

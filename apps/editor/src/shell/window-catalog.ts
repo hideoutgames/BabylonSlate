@@ -14,7 +14,9 @@ export type DockviewDocumentKind =
   | "material"
   | "material-function"
   | "ui"
-  | "plugin-settings";
+  | "plugin-settings"
+  | "anim-graph"
+  | "behaviour-tree";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -30,6 +32,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "material-function",
   "ui",
   "plugin-settings",
+  "anim-graph",
+  "behaviour-tree",
 ]);
 
 export function isDockviewDocumentKind(
@@ -68,6 +72,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "material-function": "material-function-graph",
   ui: "ui-design",
   "plugin-settings": "plugin-settings-details",
+  "anim-graph": "anim-graph-graph",
+  "behaviour-tree": "behaviour-tree-graph",
 };
 
 export function primaryDockPanel(
@@ -440,6 +446,48 @@ const PLUGIN_SETTINGS_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const ANIM_GRAPH_WINDOWS: DockWindowDefinition[] = [
+  { id: "anim-graph-graph", component: "anim-graph-graph", title: "Graph" },
+  {
+    id: "anim-graph-parameters",
+    component: "anim-graph-parameters",
+    title: "Parameters",
+    defaultPosition: {
+      referencePanelId: "anim-graph-graph",
+      direction: "left",
+      initialWidth: 224,
+    },
+  },
+  {
+    id: "anim-graph-details",
+    component: "anim-graph-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "anim-graph-graph",
+      direction: "right",
+      initialWidth: 288,
+    },
+  },
+];
+
+const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "behaviour-tree-graph",
+    component: "behaviour-tree-graph",
+    title: "Graph",
+  },
+  {
+    id: "behaviour-tree-details",
+    component: "behaviour-tree-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "behaviour-tree-graph",
+      direction: "right",
+      initialWidth: 288,
+    },
+  },
+];
+
 const UI_SETTINGS_WINDOW: DockWindowDefinition = {
   id: "ui-settings",
   component: "ui-settings",
@@ -487,6 +535,12 @@ export function listDockWindows(
   }
   if (kind === "plugin-settings") {
     return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);
+  }
+  if (kind === "anim-graph") {
+    return withOptionalLocks(kind, ANIM_GRAPH_WINDOWS, options);
+  }
+  if (kind === "behaviour-tree") {
+    return withOptionalLocks(kind, BEHAVIOUR_TREE_WINDOWS, options);
   }
   if (options?.actorPrefab === false) {
     return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);

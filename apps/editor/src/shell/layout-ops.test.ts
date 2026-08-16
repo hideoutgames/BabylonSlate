@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { defaultEngineSettings } from "@babylonslate/vfs";
 import {
   applyFocusLayout,
+  canFocusLayout,
   FOCUS_PRIMARY_PANEL,
   focusKeepCandidates,
+  focusKeepPanelIds,
   migrateRestoredLayout,
   resolveFocusKeepPanelIds,
   restoreDockviewLayout,
@@ -29,6 +32,57 @@ function fakeApi(ids: string[]) {
     addPanel: vi.fn(),
   };
 }
+
+describe("canFocusLayout", () => {
+  it("is enabled for DockView document kinds including Material and UserInterface", () => {
+    expect(canFocusLayout("scene")).toBe(true);
+    expect(canFocusLayout("graph")).toBe(true);
+    expect(canFocusLayout("material")).toBe(true);
+    expect(canFocusLayout("material-function")).toBe(true);
+    expect(canFocusLayout("ui")).toBe(true);
+    expect(canFocusLayout("script-interface")).toBe(true);
+    expect(canFocusLayout("enum")).toBe(true);
+    expect(canFocusLayout("sprite")).toBe(true);
+    expect(canFocusLayout("anim-graph")).toBe(true);
+    expect(canFocusLayout("behaviour-tree")).toBe(true);
+  });
+
+  it("is disabled on Content Browser and compact asset tabs", () => {
+    expect(canFocusLayout("content-browser")).toBe(false);
+    expect(canFocusLayout("font")).toBe(false);
+    expect(canFocusLayout("blackboard")).toBe(false);
+    expect(canFocusLayout("asset-settings")).toBe(false);
+    expect(canFocusLayout(undefined)).toBe(false);
+  });
+});
+
+describe("focusKeepPanelIds", () => {
+  it("returns the scene keep list from settings", () => {
+    expect(focusKeepPanelIds(defaultEngineSettings(), "scene")).toEqual([
+      "viewport",
+    ]);
+  });
+
+  it("returns the material keep list from settings", () => {
+    expect(focusKeepPanelIds(defaultEngineSettings(), "material")).toEqual([
+      "material-graph",
+    ]);
+  });
+
+  it("returns the User Interface Designer keep list by default", () => {
+    expect(focusKeepPanelIds(defaultEngineSettings(), "ui")).toEqual([
+      "ui-design",
+    ]);
+  });
+
+  it("returns the User Interface Logic keep list when Logic is active", () => {
+    expect(
+      focusKeepPanelIds(defaultEngineSettings(), "ui", {
+        uiEditorMode: "logic",
+      }),
+    ).toEqual(["graph"]);
+  });
+});
 
 describe("focusKeepCandidates", () => {
   it("lists scene dock tabs that Focus can keep", () => {
@@ -93,8 +147,16 @@ describe("resolveFocusKeepPanelIds", () => {
       resolveFocusKeepPanelIds("ui", [], { uiEditorMode: "logic" }),
     ).toEqual(["graph"]);
     expect(FOCUS_PRIMARY_PANEL.ui).toBe("ui-design");
+    expect(FOCUS_PRIMARY_PANEL["anim-graph"]).toBe("anim-graph-graph");
+    expect(FOCUS_PRIMARY_PANEL["behaviour-tree"]).toBe("behaviour-tree-graph");
     expect(resolveFocusKeepPanelIds("plugin-settings", [])).toEqual([
       "plugin-settings-details",
+    ]);
+    expect(resolveFocusKeepPanelIds("anim-graph", [])).toEqual([
+      "anim-graph-graph",
+    ]);
+    expect(resolveFocusKeepPanelIds("behaviour-tree", [])).toEqual([
+      "behaviour-tree-graph",
     ]);
   });
 
@@ -122,6 +184,28 @@ describe("resolveFocusKeepPanelIds", () => {
 });
 
 describe("applyFocusLayout", () => {
+  it("closes Material Preview and Details, keeping Graph", () => {
+    const api = fakeApi([
+      "material-graph",
+      "material-preview",
+      "material-details",
+      "material-compiler-results",
+    ]);
+    applyFocusLayout("material", api, ["material-graph"]);
+    expect(api.getPanel("material-graph")!.api.close).not.toHaveBeenCalled();
+    expect(api.getPanel("material-preview")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("material-details")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("material-compiler-results")!.api.close).toHaveBeenCalled();
+  });
+
+  it("closes User Interface Hierarchy, keeping Design", () => {
+    const api = fakeApi(["ui-design", "ui-hierarchy", "ui-details"]);
+    applyFocusLayout("ui", api, ["ui-design"]);
+    expect(api.getPanel("ui-design")!.api.close).not.toHaveBeenCalled();
+    expect(api.getPanel("ui-hierarchy")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("ui-details")!.api.close).toHaveBeenCalled();
+  });
+
   it("closes every open class panel except Graph when keep is graph only", () => {
     const api = fakeApi([
       "graph",

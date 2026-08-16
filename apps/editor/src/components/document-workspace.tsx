@@ -14,6 +14,8 @@ import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { MaterialEditingProvider } from "../context/material-editing-context";
 import { TypeAssetEditingProvider } from "../context/type-asset-editing-context";
+import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
+import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
@@ -323,6 +325,52 @@ export function DocumentWorkspace() {
                     />
                   </DocumentShell>
                 </MaterialEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "anim-graph") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <AnimGraphEditingProvider>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-anim-graph"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="anim-graph"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </AnimGraphEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "behaviour-tree") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <BehaviourTreeEditingProvider>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-behaviour-tree"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="behaviour-tree"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </BehaviourTreeEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );
