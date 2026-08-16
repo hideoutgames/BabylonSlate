@@ -229,6 +229,20 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
+  it("attaches the authored stack when postProcessingEnabled is omitted", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      materialDocuments: new Map([
+        ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
+      ]),
+    });
+    handles.push(handle);
+    expect(handle.postProcessPassCount()).toBeGreaterThan(0);
+  });
+
   it("skips the authored stack when the local gate is off, then restores it", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

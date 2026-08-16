@@ -285,4 +285,54 @@ describe("collectExportClosure", () => {
     if (!result.ok) return;
     expect(result.value).toEqual(expect.arrayContaining(["scene-1", "class-game"]));
   });
+
+  it("includes mesh materials, post-process stack materials, and header dependencies", () => {
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      settings: {
+        ...createDefaultScene().settings,
+        postProcessStack: [{ materialGuid: "mat-bloom", enabled: true }],
+      },
+      actors: [createActor("hero", "Hero", { components: [mesh] })],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "mat-rock",
+          type: "Material",
+          name: "Rock",
+          dependencies: ["fn-tint", "tex-albedo"],
+        }),
+        asset({
+          guid: "mat-bloom",
+          type: "Material",
+          name: "Bloom",
+          dependencies: [],
+        }),
+        asset({ guid: "fn-tint", type: "MaterialFunction", name: "Tint" }),
+        asset({ guid: "tex-albedo", type: "Texture", name: "Albedo" }),
+        asset({ guid: "unused-mat", type: "Material", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining([
+        "scene-1",
+        "mat-rock",
+        "mat-bloom",
+        "fn-tint",
+        "tex-albedo",
+      ]),
+    );
+    expect(result.value).not.toContain("unused-mat");
+  });
 });
