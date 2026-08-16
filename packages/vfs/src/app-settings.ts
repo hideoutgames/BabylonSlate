@@ -23,6 +23,17 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "behaviour-tree": ["behaviour-tree-graph"],
 } as const;
 
+function mutableFocusKeepPanels(): {
+  [K in keyof typeof DEFAULT_FOCUS_KEEP_PANELS]: string[];
+} {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_FOCUS_KEEP_PANELS).map(([key, value]) => [
+      key,
+      [...value],
+    ]),
+  ) as { [K in keyof typeof DEFAULT_FOCUS_KEEP_PANELS]: string[] };
+}
+
 const focusKeepPanelList = (fallback: readonly string[]) =>
   z.array(z.string()).default([...fallback]);
 
@@ -87,7 +98,7 @@ export const engineSettingsSchema = z.object({
         DEFAULT_FOCUS_KEEP_PANELS["behaviour-tree"],
       ),
     })
-    .default({ ...DEFAULT_FOCUS_KEEP_PANELS }),
+    .default(mutableFocusKeepPanels),
   uiDesignerPresets: z
     .array(
       z.object({
