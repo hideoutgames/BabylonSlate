@@ -209,7 +209,7 @@ Appendix A `p4-*` checkboxes are landed as a vertical Play path. Leftovers below
 | ExecuteJavaScript | `p5-execute-js` | `scripting-nodes`, `editor-kit`, `apps/editor` | Core + parameter-list editor |
 | Log / Print | `p5-log-print` | `scripting-nodes`, `runtime`, `core` (`formatValue`), thin editor HUD hook | Core + wildcard |
 | Graph UI shell | `p5-graph-ui` | `graph-ui`, `ui` (type tokens), `apps/editor` | IR serialisation stable |
-| Type assets | `p5-types` | `assets` (schemas), `object-model` (FunctionLibrary base), `apps/editor`, `editor-kit` | Pin type system |
+| Type assets | `p5-types` | `assets` (schemas), `object-model` (FunctionLibrary / EditorFunctionLibrary bases), `apps/editor`, `editor-kit` | Pin type system |
 | Validation UX | `p5-graph-validation` | `apps/editor`, `graph-ui`, `scripting` fixtures, Content Browser overlay | Validator + Compiler Results UI |
 
 Design notes: [scripting.md](../architecture/scripting.md).
@@ -242,6 +242,8 @@ Design notes: [scripting.md](../architecture/scripting.md).
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (selection tidy / then-chain); **hold-to-marquee** (`attachGraphPaneMarquee`).
 
 **Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface open DockView documents (import data types stay compact `asset-settings` tabs). Legacy Graph files still load.
+
+**Closed (`cursor/ui-logic-graph-pass-2e3e`):** FunctionLibrary static Call Function palette (open docs + `header.payload.functions`); EditorFunctionLibrary engine base; UI Designer | Logic mode bar with Class docks on `payload.logic`; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive (host-legal catalog; pin filter only when on).
 
 ## P6 slice ownership
 
@@ -362,7 +364,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 
-Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, FunctionLibrary palette, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. UserInterface / EditorUtilityInterface **authoring** editors (Dockview host + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`).
+Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
 ### P9 follow-ups / open deferrals
 
@@ -376,7 +378,7 @@ Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateF
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
-| UserInterface + EditorUtilityInterface **authoring** editors | Dockview Design / Hierarchy / Details / Logic; EUI Settings `dockKind`. Live EditorUtilityInterface **tabs** stay P12 Dockview + `createUiSurface` from Windows → Editor Utilities | Done (`p12-ui-editors`) |
+| UserInterface + EditorUtilityInterface **authoring** editors | Chrome **Designer \| Logic** mode bar; Designer Design / Hierarchy / Details (EUI Settings); Logic Class docks on `payload.logic`. Live EditorUtilityInterface **tabs** stay P12 Dockview + `createUiSurface` from Windows → Editor Utilities | Done (`p12-ui-editors` + `cursor/ui-logic-graph-pass-2e3e`) |
 
 ## P10 tilemaps
 
@@ -410,7 +412,7 @@ Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `sc
 | Sprite/tilemap textures via `ResourceCache`; GLB `assetGuid`; authored lights/cameras | Done (full lighting/camera contract landed in `p-lighting-camera`) |
 | Play HUD TouchButton / TouchDPad / default Jump+dpad mappings | Done |
 | `playSound` command (logged; no mixer) | Done |
-| FunctionLibrary palette nodes | Parked (base class exists) |
+| FunctionLibrary palette nodes | Done (`cursor/ui-logic-graph-pass-2e3e`) — static Call Function rows from open FL docs and `header.payload.functions`; EditorFunctionLibrary editor-only |
 
 ## Lighting and cameras (`p-lighting-camera`)
 
@@ -474,7 +476,9 @@ Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live 
 | UserInterface + EditorUtilityInterface **authoring** editors | Done (`p12-ui-editors`) | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
 | Lighting / cameras | Done (`p-lighting-camera`) | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5 landed |
 
-**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one Dockview designer host (`p12-ui-editors`): Design / Hierarchy / Details / Logic, editing-stage widgets paint on a healthy Engine, EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
+**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one host (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a healthy Engine, EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
+
+Follow-up (`cursor/ui-logic-graph-pass-2e3e`): dual DockView surfaces (`layout.json` `{ uiEditorMode, designer, logic }`); leftover `ui-logic` panel closed on restore; FunctionLibrary / EditorFunctionLibrary static Call Function unparked; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive.
 
 Do not start leftover chrome polish (pin flash, multi-select gizmo).
 

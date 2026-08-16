@@ -6,7 +6,7 @@ Tokens and action-vs-pressed rules: [theming.md](theming.md). Spec: [engineplan.
 
 This page lists **kit** components currently in the repo. Feature screens (Homepage, Play overlay, Settings modals, dock panels) are not listed. When you add, change, or remove a reusable component, update this page in the same change (`.cursor/rules/editor-ui-components.mdc`).
 
-**Asset document shells** are DockView (`DockviewShell` + `window-catalog.ts`), not shadcn `Tabs` and not a new `AssetDocumentWorkspace` page. Register every panel so the toolbar **Windows** menu can show, hide, and restore it. Rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../../.cursor/rules/dockview-editor-tabs.mdc). Compose each dock tab from this catalog (`PanelFrame`, `PropertyGrid`, …).
+**Asset document shells** are DockView (`DockviewShell` + `window-catalog.ts`), not shadcn `Tabs` and not a new `AssetDocumentWorkspace` page. Register every panel so the toolbar **Windows** menu can show, hide, and restore it. UserInterface / EditorUtilityInterface add a chrome **Designer | Logic** mode bar outside DockView (see the exception in the rule). Rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../../.cursor/rules/dockview-editor-tabs.mdc). Compose each dock tab from this catalog (`PanelFrame`, `PropertyGrid`, …).
 
 ## Primitives (`@babylonslate/ui`)
 
@@ -33,13 +33,13 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Separator** | Horizontal or vertical rule. | Toolbar strips, search dialog, catalog layout. |
 | **Sheet** (`SheetTitle`, `SheetContent`, `SheetHeader`, …) | Edge drawer. Title required. | Installed; unused in production chrome. Pick lists use SearchDialog / SearchDropdown; console and session report use Dialog. |
 | **Slider** | Bounded numeric track (44px hit area). Accepts a scalar or range array. | PropertyGrid slider rows; Trace playback frame scrubber; gallery. |
-| **Switch** | On/off toggle. | Engine / Project Settings booleans. |
+| **Switch** | On/off toggle. | Engine / Project Settings booleans; NodePalette **Context Sensitive**. |
 | **Textarea** | Multi-line text. | Gallery; not used for Input mappings (structured `InputMappingEditor`). |
 | **Toggle** | Pressed/unpressed tool. Selected = accent fill + primary border + `aria-pressed`. | Viewport tools, Outliner filters, chrome Play-adjacent tools; FlagsField bits. |
-| **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; Tilemap paint tools; gallery. |
+| **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. | Viewport gizmo mode; Tilemap paint tools; UserInterface **Designer \| Logic** mode bar; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
 
-Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder). **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`) is used inside some asset workspaces (Font; nested modes). UserInterface / Sprite / Tileset / Tilemap / Enum / Structure / ScriptInterface / Class document shells are DockView, not shadcn Tabs.
+Gallery-only today (installed, not yet used in production panels): **Skeleton** (loading placeholder). **Tabs** (`TabsList`, `TabsTrigger`, `TabsContent`) is used inside some asset workspaces (Font; nested modes). UserInterface / Sprite / Tileset / Tilemap / Enum / Structure / ScriptInterface / Class document shells are DockView, not shadcn Tabs. UserInterface **Designer | Logic** is `UiEditorModeBar` (`ToggleGroup`), not Tabs.
 
 ## Composites (`@babylonslate/editor-kit`)
 
@@ -48,7 +48,7 @@ Source: [`packages/editor-kit/src/`](../../packages/editor-kit/src/). Import fro
 | Component | What it does | Used for |
 | --- | --- | --- |
 | **PanelFrame** | Docked panel shell (`--sidebar` body, optional title/toolbar). Omit the title when Dockview already shows the tab name. | Outliner, Details, Inspector, Graph, Class, Prefab, Output Log, Compiler Results; AnimationGraph Parameters / States / Details columns; live Editor Utility tabs; Sprite / Tileset / Tilemap docks. |
-| **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; intended for panel toolbars. |
+| **ToolbarStrip** | Horizontal chrome row of tools. | Component Gallery; `UiEditorModeBar`; intended for panel toolbars. |
 | **PropertyGrid** | Typed Details rows: number, vector3 (2–4 axes), boolean, text, enum, color (`ColorField`), slider, flags (`FlagsField`), asset (guid stored; `displayLabel` on the button). | Scene Details (typed asset / physics / Game Instance), Inspector (node / Log / Print / **Development Only**; Prefab component Position/Rotation/Scale; action/axis / enumRef / **classRef** defaults via asset-kind rows + `ClassPicker`; Class variable Default), UserInterface widget details (alignment, left/top, width/height, layout padding), Sprite / Tileset / Tilemap / Structure settings, AnimationGraph state and transition Details. |
 | **ColorField** | Native color swatch plus a pasteable `#rrggbb` field. | Light color; Inspector color pin defaults; gallery. |
 | **FlagsField** | Compact 44px bitmask toggles (Layer 0–31 or named labels). | Collider `layer` / `mask`; Tileset tile flags; gallery. |
@@ -84,8 +84,8 @@ Reusable by script, shader, animation, and behaviour-tree graphs.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
-| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome, Development Only hazard-tape footer, tap- and drag-to-connect, cancelled pin-drag disconnect, Break Links on the selection, marquee, pin-filtered drop-to-add. Hosts may pass `nodeTypes`, `edgeTypes`, `nodesDraggable`, `toolbarExtra`, attachment selection, `hiddenToolbarActions`, `lockNodeDragAxis` (sibling-only reorder), `contextMenuItemsForNode` / `contextMenuItemsForAttachment` (pane + node `ContextMenuOverlay`), and `PaletteNode.nodeType`. Reconciles external `initialGraph` updates (undo/redo, Inspector) without emitting `onChange`; identical graphs are not re-emitted. | Graph document panel; UserInterface Logic dock; Shader / AnimationGraph / BehaviourTree hosts (catalog `__pins` hydrated so Add Node is not an empty box; Anim Graph persists `AnimState.position`; BT uses parent-child handles, computed layout, and tree-mode menus). |
-| **NodePalette** | CatalogDialog of nodes with role-color chips; optional pin compatibility filter. | Add Node from GraphEditor (empty-pane connect-end and Add Node). |
+| **GraphEditor** | Touch-first React Flow shell: Blueprint node chrome; Development Only and Editor Only hazard-tape footers (`data.__editorOnly`); hollow pin visuals until linked (`data-pin-connected="false"\|"true"`); tap- and drag-to-connect; cancelled pin-drag disconnect; Break Links; marquee; Add Node. Hosts may pass `nodeTypes`, `edgeTypes`, `nodesDraggable`, `toolbarExtra`, attachment selection, `hiddenToolbarActions`, `lockNodeDragAxis` (sibling-only reorder), `contextMenuItemsForNode` / `contextMenuItemsForAttachment` (pane + node `ContextMenuOverlay`), and `PaletteNode.nodeType`. Reconciles external `initialGraph` updates (undo/redo, Inspector) without emitting `onChange`; identical graphs are not re-emitted. | Graph document panel; UserInterface Logic (Class docks); Shader / AnimationGraph / BehaviourTree hosts (catalog `__pins` hydrated so Add Node is not an empty box; Anim Graph persists `AnimState.position`; BT uses parent-child handles, computed layout, and tree-mode menus). |
+| **NodePalette** | CatalogDialog of host-legal nodes with role-color chips. Footer **Context Sensitive** switch (`data-testid="node-palette-context-sensitive"`, default ON): pin-drag / pin filter applies only when on. Search and category reset every time the dialog opens. | Add Node from GraphEditor (empty-pane connect-end and Add Node). |
 | **TreeNode** | Behaviour-tree `bt.node` chrome: Title Case title, parent/children handles, `#sortIndex`, attached decorator/service rows, long-press node/row menus, running-branch highlight. | BehaviourTree GraphEditor `nodeTypes`. |
 
 ## App wrappers
@@ -94,6 +94,7 @@ Reusable pieces in `apps/editor/src/components/` that are not one-off screens.
 
 | Component | What it does | Used for |
 | --- | --- | --- |
+| **UiEditorModeBar** ([`ui-editor-mode-bar.tsx`](../../apps/editor/src/components/ui-editor-mode-bar.tsx)) | Chrome `ToolbarStrip` + **Designer \| Logic** `ToggleGroup` (`data-testid="ui-editor-mode-bar"`). Not a DockView tab. | UserInterface / EditorUtilityInterface document shell, above the stacked Designer and Logic DockView surfaces. |
 | **IconActionButton** ([`icon-action-button.tsx`](../../apps/editor/src/components/icon-action-button.tsx)) | Icon-only `Button` with `aria-label` plus Tooltip. | Chrome bar, Outliner, Details, Prefab panel. |
 | **ContentBrowserAssetTile** ([`content-browser-asset-tile.tsx`](../../apps/editor/src/components/content-browser-asset-tile.tsx)) | Asset card: `--card` thumb well (or image) with a 2px type-colored border inset 2px so it follows the Card’s top `rounded-xl`, `--card` text panel, exclusive tap select, paint-select via grid drag, long-press / right-click menu. Pointer events do not bubble to the empty-grid menu. | Content Browser grid. |
 | **ContentBrowserFolderTile** ([`content-browser-folder-tile.tsx`](../../apps/editor/src/components/content-browser-folder-tile.tsx)) | Uncolored folder card (`--card` well, muted glyph); tap selects exclusively, double-click navigates. | Content Browser grid (child folders first). |
