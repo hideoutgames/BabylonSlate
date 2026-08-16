@@ -753,11 +753,14 @@ describe("editor grid", () => {
       gridViewFade("3d", { radius: 400, orthoTop: null, orthoRight: null }, 1),
     ).toBe(0);
     expect(
-      gridViewFade("3d", { radius: 64, orthoTop: null, orthoRight: null }, 2),
+      gridViewFade("3d", { radius: 64, orthoTop: null, orthoRight: null }, 3),
     ).toBe(1);
     expect(
+      gridViewFade("3d", { radius: 40, orthoTop: null, orthoRight: null }, 1),
+    ).toBeCloseTo(1 - (40 - 28) / (100 - 28));
+    expect(
       gridViewFade("3d", { radius: 64, orthoTop: null, orthoRight: null }, 1),
-    ).toBeCloseTo(2 / 3);
+    ).toBeCloseTo(0.5);
   });
 
   it("writes planar edge fade and view fade uniforms on sync", () => {
