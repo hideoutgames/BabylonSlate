@@ -19,6 +19,9 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-16 | cursor/material-shader-review-fa96 | material shader improvements | Spec | Packaged player packed Material JSON but never hydrated documents, the scene stack, or `assignMaterial`, so exported games could not run authored materials | Resolved |
+| 2026-08-16 | cursor/material-shader-review-fa96 | material shader improvements | Spec | Scene Depth did not enable/release a linearized depth renderer; missing buffers were unanchored strings and `deviceBuffers` omitted counted as present | Resolved |
+| 2026-08-16 | cursor/material-shader-review-fa96 | material shader improvements | Spec | Preview e2e covered orbit/wheel only; pinch was missing from p9 and GraphEditor `commitPositionsOnDragEnd` was absent from the components catalog | Resolved |
 | 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | Git LFS create mapped every HTTP 409 as theirs (`parseLock(..., false)`), so a lock we already held flipped to unlocked until the next poll. Create now verifies and treats the path as held when it is in `ours` | Resolved |
 | 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-ux | Spec | Asset rename and folder rename/move skipped lock refuse/transfer; folder delete now also unions contained asset paths. Content Browser uses `source-control-file-ops` for all path-keyed ops | Resolved |
 | 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | `BabylonSlateSecretsPlugin.swift` existed but was not in the iOS App Sources phase or Capacitor `packageClassList`, so Keychain never registered | Resolved |
@@ -315,7 +318,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 ## P9 slice ownership
 
-P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9 packages. Authoring-surface hosts (canvas gestures, Logic palette, Sprite Texture picker, `NodeMaterial.Parse` preview) landed on `cursor/authoring-surface-8678`. Residual ADT mesh HUD / CustomBlock GLSL IDE stays later polish.
+P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9 packages. Authoring-surface hosts (canvas gestures, Logic palette, Sprite Texture picker, `NodeMaterial.Parse` preview) landed on `cursor/authoring-surface-8678`. Expression-only Custom GLSL (`CustomBlock`) landed on `cursor/material-shader-improvements-fa96`. Residual ADT mesh HUD / a richer GLSL IDE stays later polish.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -364,7 +367,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 
-Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
+Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
 ### P9 follow-ups / open deferrals
 

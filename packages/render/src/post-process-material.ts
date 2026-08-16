@@ -1,4 +1,6 @@
 import type { Camera, NodeMaterial, PostProcess, Scene } from "@babylonjs/core";
+import "@babylonjs/core/Rendering/depthRendererSceneComponent";
+import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
 import {
   lowerMaterialDocument,
   type MaterialDocument,
@@ -53,15 +55,43 @@ export interface PostProcessDeviceBuffers {
   sceneNormal: boolean;
 }
 
+export interface PostProcessStackDiagnostic {
+  message: string;
+  nodeId?: string;
+  materialGuid?: string;
+  code?: string;
+}
+
 export interface AttachPostProcessStackOptions {
   scene: Scene;
   camera: Camera;
   library: MaterialLibrary;
   stack: readonly PostProcessStackEntry[];
   documentFor: (materialGuid: string) => MaterialDocument | null;
-  onDiagnostic?: (message: string) => void;
+  onDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
   /** When a buffer is explicitly false, skip passes that sample it. */
   deviceBuffers?: PostProcessDeviceBuffers;
+}
+
+/**
+ * Probe whether this scene can provide Scene Depth / Scene Normal.
+ * Depth is a camera depth renderer (linear). Normals need a pre-pass MRT,
+ * which returns null on devices that cannot allocate it.
+ */
+export function probePostProcessDeviceBuffers(
+  scene: Scene,
+  camera: Camera | null,
+): PostProcessDeviceBuffers {
+  if (!camera) return { sceneDepth: false, sceneNormal: false };
+  let sceneNormal = false;
+  try {
+    const prePass = scene.enablePrePassRenderer();
+    sceneNormal = Boolean(prePass);
+    if (prePass) scene.disablePrePassRenderer();
+  } catch {
+    sceneNormal = false;
+  }
+  return { sceneDepth: true, sceneNormal };
 }
 
 /**
@@ -74,21 +104,27 @@ export function attachPostProcessStack(
 ): AttachedPostProcessStack {
   const passes: PostProcess[] = [];
   const acquired: string[] = [];
+  let depthHeld = false;
   let prePassHeld = false;
+  const deviceBuffers =
+    options.deviceBuffers ??
+    probePostProcessDeviceBuffers(options.scene, options.camera);
 
   for (const entry of [...options.stack].sort((a, b) => a.order - b.order)) {
     if (!entry.enabled) continue;
     const document = options.documentFor(entry.materialGuid);
     if (!document) {
-      options.onDiagnostic?.(
-        `Post-process material "${entry.materialGuid}" is not in this project`,
-      );
+      report(options, {
+        message: `Post-process material "${entry.materialGuid}" is not in this project`,
+        materialGuid: entry.materialGuid,
+      });
       continue;
     }
     if (document.domain !== "postProcess") {
-      options.onDiagnostic?.(
-        `Material "${document.name}" is a surface material and cannot run as a post-process pass`,
-      );
+      report(options, {
+        message: `Material "${document.name}" is a surface material and cannot run as a post-process pass`,
+        materialGuid: entry.materialGuid,
+      });
       continue;
     }
     const lowered = lowerMaterialDocument(document);
@@ -96,36 +132,59 @@ export function attachPostProcessStack(
       lowered.ok &&
       bufferDenied(
         lowered.plan.bufferRequirements.sceneDepth,
-        options.deviceBuffers?.sceneDepth,
+        deviceBuffers.sceneDepth,
       )
     ) {
-      options.onDiagnostic?.(
-        `Post-process material "${document.name}" needs Scene Depth, which this device cannot provide`,
-      );
+      report(options, {
+        message: `Post-process material "${document.name}" needs Scene Depth, which this device cannot provide`,
+        nodeId: firstNodeId(document, "input.sceneDepth"),
+        materialGuid: entry.materialGuid,
+        code: "material.capability",
+      });
       continue;
     }
     if (
       lowered.ok &&
       bufferDenied(
         lowered.plan.bufferRequirements.sceneNormal,
-        options.deviceBuffers?.sceneNormal,
+        deviceBuffers.sceneNormal,
       )
     ) {
-      options.onDiagnostic?.(
-        `Post-process material "${document.name}" needs Scene Normal, which this device cannot provide`,
-      );
+      report(options, {
+        message: `Post-process material "${document.name}" needs Scene Normal, which this device cannot provide`,
+        nodeId: firstNodeId(document, "input.sceneNormal"),
+        materialGuid: entry.materialGuid,
+        code: "material.capability",
+      });
       continue;
     }
     if (
       lowered.ok &&
+      lowered.plan.bufferRequirements.sceneDepth &&
+      deviceBuffers.sceneDepth
+    ) {
+      options.scene.enableDepthRenderer(
+        options.camera,
+        false,
+        false,
+        undefined,
+        false,
+      );
+      depthHeld = true;
+    }
+    if (
+      lowered.ok &&
       lowered.plan.bufferRequirements.sceneNormal &&
-      options.deviceBuffers?.sceneNormal !== false
+      deviceBuffers.sceneNormal
     ) {
       const renderer = options.scene.enablePrePassRenderer();
       if (!renderer) {
-        options.onDiagnostic?.(
-          `Post-process material "${document.name}" needs Scene Normal, which this device cannot provide`,
-        );
+        report(options, {
+          message: `Post-process material "${document.name}" needs Scene Normal, which this device cannot provide`,
+          nodeId: firstNodeId(document, "input.sceneNormal"),
+          materialGuid: entry.materialGuid,
+          code: "material.capability",
+        });
         continue;
       }
       prePassHeld = true;
@@ -136,11 +195,14 @@ export function attachPostProcessStack(
       document,
     );
     if (materialUnavailable(compiled)) {
-      options.onDiagnostic?.(
-        `Post-process material "${document.name}" failed to compile: ${
+      report(options, {
+        message: `Post-process material "${document.name}" failed to compile: ${
           compiled.diagnostics[0]?.message ?? "unknown error"
         }`,
-      );
+        nodeId: compiled.diagnostics[0]?.nodeId,
+        materialGuid: entry.materialGuid,
+        code: compiled.diagnostics[0]?.code,
+      });
       continue;
     }
     acquired.push(entry.materialGuid);
@@ -156,14 +218,29 @@ export function attachPostProcessStack(
       disposed = true;
       for (const pass of passes) pass.dispose(options.camera);
       for (const guid of acquired) options.library.release(options.scene, guid);
+      if (depthHeld) options.scene.disableDepthRenderer(options.camera);
       if (prePassHeld) options.scene.disablePrePassRenderer();
       passes.length = 0;
     },
   };
 }
 
-function bufferDenied(needed: boolean, available: boolean | undefined): boolean {
-  return needed && available === false;
+function report(
+  options: AttachPostProcessStackOptions,
+  diagnostic: PostProcessStackDiagnostic,
+): void {
+  options.onDiagnostic?.(diagnostic);
+}
+
+function firstNodeId(
+  document: MaterialDocument,
+  nodeType: string,
+): string | undefined {
+  return document.nodes.find((node) => node.type === nodeType)?.id;
+}
+
+function bufferDenied(needed: boolean, available: boolean): boolean {
+  return needed && !available;
 }
 
 function createPostProcessPass(

@@ -69,7 +69,9 @@ import {
 import {
   attachPostProcessStack,
   normalizePostProcessStack,
+  probePostProcessDeviceBuffers,
   type AttachedPostProcessStack,
+  type PostProcessStackDiagnostic,
   type PostProcessStackInput,
 } from "./post-process-material";
 
@@ -108,6 +110,8 @@ export interface EngineHandle {
   setShadowQuality: (level: string) => void;
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
+  /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
+  postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
   setPostProcessStack: (stack: readonly PostProcessStackInput[]) => void;
@@ -177,6 +181,8 @@ export interface CreateEngineOptions {
   postProcessingEnabled?: boolean;
   /** Engine Settings `hardwareScalingLevel`. 1 is native. */
   hardwareScalingLevel?: number;
+  /** Stack skip / compile messages (exported player and Play overlay). */
+  onPostProcessDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
 }
 
 export interface EditorTools {
@@ -348,10 +354,12 @@ export function createEngine(
     options.postProcessStack ?? [],
   );
   let attachedStack: AttachedPostProcessStack | null = null;
+  let lastPostProcessDiagnostics: PostProcessStackDiagnostic[] = [];
 
   const rebuildPostProcessStack = () => {
     attachedStack?.dispose();
     attachedStack = null;
+    lastPostProcessDiagnostics = [];
     if (!postProcessingEnabled) return;
     const camera = scene.activeCamera;
     if (!camera) return;
@@ -361,6 +369,11 @@ export function createEngine(
       library: materialLibrary,
       stack: postProcessStack,
       documentFor: (guid) => materialDocuments.get(guid) ?? null,
+      deviceBuffers: probePostProcessDeviceBuffers(scene, camera),
+      onDiagnostic: (diagnostic) => {
+        lastPostProcessDiagnostics.push(diagnostic);
+        options.onPostProcessDiagnostic?.(diagnostic);
+      },
     });
   };
 
@@ -764,6 +777,7 @@ export function createEngine(
       scheduler.invalidate("asset");
     },
     postProcessPassCount: () => attachedStack?.passes.length ?? 0,
+    postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;
       rebuildPostProcessStack();
