@@ -89,6 +89,8 @@ import {
   ENGINE_BASE_CLASSES,
   addSelectedAssetGuid,
   addSelectedFolderPath,
+  exclusiveSelectAsset,
+  exclusiveSelectFolder,
   buildNewAssetResult,
   classParentLookup,
   collectFolderGuidsFromTrees,
@@ -126,6 +128,7 @@ import {
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
+import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
@@ -1088,6 +1091,20 @@ export function ContentBrowserWorkspace() {
       openEmptyGridMenuAt(clientX, clientY);
     },
   });
+  const applyTileSelection = useCallback(
+    (next: { guids: Set<string>; folderPaths: Set<string> }) => {
+      setSelectedGuids(next.guids);
+      setSelectedFolderPaths(next.folderPaths);
+    },
+    [],
+  );
+  const {
+    gridBind: paintBind,
+    consumeSelectClick,
+    markMenuOpened,
+  } = useContentBrowserPaintSelect({
+    onPaint: applyTileSelection,
+  });
 
   const openSelectionMenu = useCallback(
     (
@@ -1501,7 +1518,9 @@ export function ContentBrowserWorkspace() {
           <div
             className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
             data-testid="content-browser-asset-grid"
+            style={paintBind.style}
             onClick={() => {
+              if (consumeSelectClick()) return;
               setSelectedGuids(new Set());
               setSelectedFolderPaths(new Set());
             }}
@@ -1510,6 +1529,10 @@ export function ContentBrowserWorkspace() {
             onPointerMove={emptyGridBind.onPointerMove}
             onPointerUp={emptyGridBind.onPointerUp}
             onPointerCancel={emptyGridBind.onPointerCancel}
+            onPointerDownCapture={paintBind.onPointerDownCapture}
+            onPointerMoveCapture={paintBind.onPointerMoveCapture}
+            onPointerUpCapture={paintBind.onPointerUpCapture}
+            onPointerCancelCapture={paintBind.onPointerCancelCapture}
           >
             <div className="grid grid-cols-[repeat(auto-fill,9rem)] content-start gap-2 p-3">
               {childFolders.map((folder) => (
@@ -1518,17 +1541,17 @@ export function ContentBrowserWorkspace() {
                   path={folder.path}
                   name={folder.name}
                   selected={selectedFolderPaths.has(folder.path)}
-                  onSelect={() =>
-                    setSelectedFolderPaths((current) =>
-                      addSelectedFolderPath(current, folder.path),
-                    )
-                  }
+                  consumeSelectClick={consumeSelectClick}
+                  onSelect={() => applyTileSelection(exclusiveSelectFolder(folder.path))}
                   onOpen={() => {
                     setSelectedFolderPath(folder.path);
                     setSelectedGuids(new Set());
                     setSelectedFolderPaths(new Set());
                   }}
-                  onLongPressMenu={(x, y) => openFolderMenu(folder.path, x, y)}
+                  onLongPressMenu={(x, y) => {
+                    markMenuOpened();
+                    openFolderMenu(folder.path, x, y);
+                  }}
                 />
               ))}
               {visibleAssets.map((asset) => (
@@ -1543,19 +1566,19 @@ export function ContentBrowserWorkspace() {
                     compileErrorGuids.has(asset.path)
                   }
                   onSelect={() =>
-                    setSelectedGuids((current) =>
-                      addSelectedAssetGuid(current, asset.header.guid),
-                    )
+                    applyTileSelection(exclusiveSelectAsset(asset.header.guid))
                   }
+                  consumeSelectClick={consumeSelectClick}
                   onOpen={() => void openOrFocusDocument(asset)}
                   sourceControlEnabled={sourceControl.enabled}
                   lockState={sourceControl.lockStateForPath(asset.path)}
                   lockOwnerName={
                     sourceControl.lockForPath(asset.path)?.ownerName
                   }
-                  onLongPressMenu={(x, y) =>
-                    openTileMenu(asset.header.guid, x, y)
-                  }
+                  onLongPressMenu={(x, y) => {
+                    markMenuOpened();
+                    openTileMenu(asset.header.guid, x, y);
+                  }}
                 />
               ))}
               {visibleAssets.length === 0 && childFolders.length === 0 ? (

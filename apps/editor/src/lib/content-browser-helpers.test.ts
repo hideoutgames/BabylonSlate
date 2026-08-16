@@ -33,6 +33,10 @@ import {
   classParentLookup,
   addSelectedAssetGuid,
   addSelectedFolderPath,
+  exclusiveSelectAsset,
+  exclusiveSelectFolder,
+  paintSelectTiles,
+  resolveContentBrowserPaintHit,
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
@@ -850,6 +854,48 @@ describe("content-browser-helpers", () => {
     const selected = addSelectedAssetGuid(current, "scene-1");
     expect([...selected]).toEqual(["scene-1"]);
     expect(selected).not.toBe(current);
+  });
+
+  it("replaces the Content Browser selection with a single asset tap", () => {
+    const selected = exclusiveSelectAsset("class-1");
+    expect([...selected.guids]).toEqual(["class-1"]);
+    expect([...selected.folderPaths]).toEqual([]);
+  });
+
+  it("replaces the Content Browser selection with a single folder tap", () => {
+    const selected = exclusiveSelectFolder("assets/fx");
+    expect([...selected.guids]).toEqual([]);
+    expect([...selected.folderPaths]).toEqual(["assets/fx"]);
+  });
+
+  it("paints a union of assets and folders dragged over, ignoring prior selection", () => {
+    const selected = paintSelectTiles([
+      { kind: "asset", guid: "scene-1" },
+      { kind: "folder", path: "assets/fx" },
+      { kind: "asset", guid: "class-1" },
+      { kind: "asset", guid: "scene-1" },
+    ]);
+    expect([...selected.guids]).toEqual(["scene-1", "class-1"]);
+    expect([...selected.folderPaths]).toEqual(["assets/fx"]);
+  });
+
+  it("resolves a paint hit from an asset or folder tile element", () => {
+    const assetTile = document.createElement("button");
+    assetTile.setAttribute("data-asset-guid", "hero-1");
+    const inner = document.createElement("span");
+    assetTile.append(inner);
+    expect(resolveContentBrowserPaintHit(inner)).toEqual({
+      kind: "asset",
+      guid: "hero-1",
+    });
+
+    const folderTile = document.createElement("button");
+    folderTile.setAttribute("data-folder-path", "assets/fx");
+    expect(resolveContentBrowserPaintHit(folderTile)).toEqual({
+      kind: "folder",
+      path: "assets/fx",
+    });
+    expect(resolveContentBrowserPaintHit(document.createElement("div"))).toBeNull();
   });
 
   it("re-exports an inset thumb type outline", () => {
