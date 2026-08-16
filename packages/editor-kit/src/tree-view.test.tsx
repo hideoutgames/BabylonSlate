@@ -404,6 +404,45 @@ describe("TreeView", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("still external-drops after a horizontal move that would swipe-add", () => {
+    const onExternalDrop = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onExternalDrop={onExternalDrop}
+        onSelect={onSelect}
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84, width: 200, height: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 10 + TREE_SWIPE_ADD_PX,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    expect(onExternalDrop).toHaveBeenCalledWith("child", 260, 180);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("does not external-drop a touch drag until the hold arms", () => {
     vi.useFakeTimers();
     const onExternalDrop = vi.fn();

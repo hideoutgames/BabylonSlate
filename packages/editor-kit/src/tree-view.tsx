@@ -284,7 +284,7 @@ export function TreeView({
           event.clientX <= rect.right &&
           event.clientY >= rect.top &&
           event.clientY <= rect.bottom);
-      if (inside && isTreeSwipeAdd(dx, dy)) {
+      if (inside && isTreeSwipeAdd(dx, dy) && !onExternalDrop) {
         drag.swipeAdd = true;
         drag.canDrag = false;
         drag.armed = false;
@@ -318,7 +318,7 @@ export function TreeView({
       const target = nodeIdAtClientY(event.clientY);
       setDropTargetId(target === drag.nodeId ? undefined : target);
     },
-    [nodeIdAtClientY, onReparent],
+    [nodeIdAtClientY, onExternalDrop, onReparent],
   );
 
   const onPointerUp = useCallback(

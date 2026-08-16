@@ -240,11 +240,22 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("project-settings").click();
     await expect(page.getByTestId("settings-modal")).toBeVisible();
-    const close = page.locator('[data-slot="dialog-close"]').first();
+    const close = page
+      .getByTestId("settings-modal")
+      .locator('[data-slot="dialog-close"]');
     await expect(close).toBeVisible();
-    const box = await close.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThanOrEqual(44);
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    const metrics = await close.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        offsetWidth: el.offsetWidth,
+        offsetHeight: el.offsetHeight,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+    expect(metrics.offsetWidth).toBeGreaterThanOrEqual(44);
+    expect(metrics.offsetHeight).toBeGreaterThanOrEqual(44);
+    expect(Math.round(metrics.width)).toBeGreaterThanOrEqual(44);
+    expect(Math.round(metrics.height)).toBeGreaterThanOrEqual(44);
   });
 });

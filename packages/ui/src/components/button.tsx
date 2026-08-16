@@ -33,7 +33,8 @@ const buttonVariants = cva(
         "icon-lg": "size-9",
         touch:
           "min-h-[var(--touch-target,44px)] gap-1.5 px-3 has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5",
-        "touch-icon": "size-[var(--touch-target,44px)]",
+        "touch-icon":
+          "box-border size-[var(--touch-target,44px)] min-h-[var(--touch-target,44px)] min-w-[var(--touch-target,44px)]",
       },
     },
     defaultVariants: {
