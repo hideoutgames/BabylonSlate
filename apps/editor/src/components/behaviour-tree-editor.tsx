@@ -121,18 +121,18 @@ function useBehaviourTreeDocument() {
       mergeKey,
     );
   };
-  const overlay: BtGraphOverlay | undefined =
-    play.playing && play.liveBtState
-      ? {
-          lastResults: play.liveBtState.lastResults as Record<string, BtResult>,
-          btNodeId: play.liveBtState.btNodeId,
-          stack: (play.liveBtState.stack ?? []).map((frame) => ({
-            nodeId: frame.nodeId,
-            childIndex: frame.childIndex,
-            opened: frame.opened,
-          })),
-        }
-      : undefined;
+  const overlay = useMemo((): BtGraphOverlay | undefined => {
+    if (!play.playing || !play.liveBtState) return undefined;
+    return {
+      lastResults: play.liveBtState.lastResults as Record<string, BtResult>,
+      btNodeId: play.liveBtState.btNodeId,
+      stack: (play.liveBtState.stack ?? []).map((frame) => ({
+        nodeId: frame.nodeId,
+        childIndex: frame.childIndex,
+        opened: frame.opened,
+      })),
+    };
+  }, [play.playing, play.liveBtState]);
   const initialGraph = useMemo(
     () => hydrateBehaviourTreeForEditor(behaviourTreeToSerialized(doc, overlay)),
     [doc, overlay],

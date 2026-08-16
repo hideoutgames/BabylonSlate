@@ -121,7 +121,8 @@ export function withEditorPositions(
 ): BehaviourTreeDocument {
   if (!positions || Object.keys(positions).length === 0) {
     if (!doc.editorPositions) return doc;
-    const { editorPositions: _dropped, ...rest } = doc;
+    const rest = { ...doc };
+    delete rest.editorPositions;
     return rest;
   }
   return { ...doc, editorPositions: positions };
