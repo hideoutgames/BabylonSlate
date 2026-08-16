@@ -66,12 +66,9 @@ function normalizeWidget(id: string, value: unknown): WidgetNode {
     children,
     style,
     props,
-    nestedUiGuid:
-      typeof record.nestedUiGuid === "string" ? record.nestedUiGuid : (record.nestedUiGuid ?? null),
+    nestedUiGuid: typeof record.nestedUiGuid === "string" ? record.nestedUiGuid : null,
     visualOverrideGuid:
-      typeof record.visualOverrideGuid === "string"
-        ? record.visualOverrideGuid
-        : (record.visualOverrideGuid ?? null),
+      typeof record.visualOverrideGuid === "string" ? record.visualOverrideGuid : null,
     ignoreSafeArea: record.ignoreSafeArea === true,
   };
 }

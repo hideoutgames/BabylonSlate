@@ -18,6 +18,8 @@ import { Ellipse } from "@babylonjs/gui/2D/controls/ellipse";
 import { Grid } from "@babylonjs/gui/2D/controls/grid";
 import { ScrollViewer } from "@babylonjs/gui/2D/controls/scrollViewers/scrollViewer";
 import { Slider } from "@babylonjs/gui/2D/controls/sliders/slider";
+import { Checkbox } from "@babylonjs/gui/2D/controls/checkbox";
+import { InputText } from "@babylonjs/gui/2D/controls/inputText";
 import { StackPanel } from "@babylonjs/gui/2D/controls/stackPanel";
 import { Vector2WithInfo } from "@babylonjs/gui/2D/math2D";
 import {
@@ -510,10 +512,10 @@ describe("BabylonUiApplyHost", () => {
     ) as Slider;
     const box = createBabylonControl(
       guiSpecFromDescriptor(checkDesc, { interactive: true }),
-    );
+    ) as Checkbox;
     const input = createBabylonControl(
       guiSpecFromDescriptor(inputDesc, { interactive: true }),
-    );
+    ) as InputText;
     const byId = new Map<string, ReturnType<typeof createBabylonControl>>([
       ["btn", button],
       ["slider", slider],

@@ -593,7 +593,8 @@ export function createAdtControlFactory(
     disposeAttached(control);
     const index = handles.indexOf(control);
     if (index >= 0) handles.splice(index, 1);
-    byId.delete(control.name);
+    const name = control.name;
+    if (name) byId.delete(name);
   }
 
   function disposeAttached(control: Control): void {

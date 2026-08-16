@@ -34,7 +34,7 @@ export function createEditorUtilityInterfaceHost(
         console.info(message);
       }),
     print: (message) => {
-      options.log?.("info", "Print", String(message));
+      options.log?.("log", "Print", String(message));
     },
     destroyActor: () => {},
     executeConsoleCommand: () => ({

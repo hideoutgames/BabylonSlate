@@ -3,6 +3,7 @@ import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { PointerEventTypes, PointerInfoPre } from "@babylonjs/core/Events/pointerEvents";
+import type { IMouseEvent } from "@babylonjs/core/Events/deviceInputEvents";
 import type { Engine } from "@babylonjs/core/Engines/engine";
 import { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
 import type { ScaleRule } from "@babylonslate/ui-runtime";
@@ -230,7 +231,12 @@ export function attachAdtCanvasPointers(
     try {
       const pointer = event as PointerEvent;
       const { x, y } = coords(pointer);
-      const info = new PointerInfoPre(pointerTypeFor(type), event, x, y);
+      const info = new PointerInfoPre(
+        pointerTypeFor(type),
+        pointer as unknown as IMouseEvent,
+        x,
+        y,
+      );
       adt.pick(x, y, info);
       afterPick?.();
     } catch (error) {
@@ -240,7 +246,9 @@ export function attachAdtCanvasPointers(
 
   const onPointer = (event: PointerEvent) => {
     event.stopPropagation?.();
+    const isPrimary = event.isPrimary !== false;
     if (event.type === "pointerdown") {
+      if (!isPrimary) return;
       try {
         canvas.setPointerCapture?.(event.pointerId);
       } catch {
@@ -248,6 +256,10 @@ export function attachAdtCanvasPointers(
       }
       capturedId = event.pointerId;
       canvas.focus?.();
+    } else if (capturedId != null) {
+      if (event.pointerId !== capturedId) return;
+    } else if (!isPrimary) {
+      return;
     }
     if (
       event.type === "pointerup" ||

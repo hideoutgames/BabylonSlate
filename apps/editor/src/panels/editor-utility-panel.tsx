@@ -25,6 +25,7 @@ import {
   presentLiveUiIfVisible,
 } from "../lib/live-ui-present";
 import { loadLatest } from "../lib/load-latest";
+import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
 import {
   bindEditorUtilityWidgetEvent,
   compileEditorUtilityInterfaceLogic,
@@ -38,6 +39,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const surfaceRef = useRef<UiSurface | null>(null);
+  const paintSchedulerRef = useRef(createUiFrameScheduler());
   const hostRef = useRef<ReturnType<typeof createEditorUtilityInterfaceHost> | null>(
     null,
   );
@@ -120,6 +122,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       requireDocumentActive: false,
     });
     return () => {
+      paintSchedulerRef.current.cancel();
       surface?.dispose();
       surfaceRef.current = null;
     };
@@ -173,11 +176,18 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
         },
       });
     };
-    paint();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(paint);
+    paintSchedulerRef.current.schedule(paint);
+    if (typeof ResizeObserver === "undefined") {
+      return () => paintSchedulerRef.current.cancel();
+    }
+    const observer = new ResizeObserver(() => {
+      paintSchedulerRef.current.schedule(paint);
+    });
     observer.observe(canvas);
-    return () => observer.disconnect();
+    return () => {
+      paintSchedulerRef.current.cancel();
+      observer.disconnect();
+    };
   }, [panelVisible, ui]);
 
   useEffect(() => {

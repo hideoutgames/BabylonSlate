@@ -8,7 +8,7 @@ declare global {
   }
 }
 
-/** Expose apply/create/present counters for Playwright regression fixtures. */
+/** Expose apply/create/present/commit counters for Playwright regression fixtures. */
 export function TestUiHostStats() {
   useEffect(() => {
     if (!isTestModeEnabled()) return;

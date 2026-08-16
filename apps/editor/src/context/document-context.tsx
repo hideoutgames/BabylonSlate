@@ -117,6 +117,7 @@ import {
   serializeUiDocumentLayout,
   type UiEditorMode,
 } from "../shell/ui-document-layout";
+import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
 import {
   closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
@@ -923,6 +924,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setLastCompiledSignature(null);
       setRoute("editor");
       setUiEditorModes({});
+      resetProjectUiAssets();
       const { probeKtx2TranscoderAvailable } = await import(
         "@babylonslate/render"
       );
@@ -1177,6 +1179,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setLastCompiledSignature(null);
     setRoute("home");
     setUiEditorModes({});
+    resetProjectUiAssets();
     mtimeSnapshotRef.current = null;
     setExternalChangePrompt(null);
     await refreshProjectList();

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createDefaultPlayHud, createWidget } from "@babylonslate/ui-runtime";
+import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
 import { UiDesigner } from "./ui-designer";
 
 function dispatchPointerEvent(
@@ -125,6 +126,7 @@ vi.mock("../context/document-context", () => ({
     },
     openDocuments: [],
     collectPlayUiLibrary: async () => ({}),
+    projectName: "Demo",
     readAssetChunk: async () => null,
     projectDocument: {
       settings: {
@@ -142,6 +144,7 @@ vi.mock("../context/document-context", () => ({
 
 afterEach(() => {
   cleanup();
+  resetProjectUiAssets();
 });
 
 function renderHud() {

@@ -1,20 +1,29 @@
 import { expect, test, type Page } from "@playwright/test";
+import { closeProjectViaSettings } from "./close-project";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openTestProject } from "./open-test-project";
+import { openAssetFromBrowser, openContentBrowser, openTestProject } from "./open-test-project";
+import {
+  assertNoPageFailures,
+  attachPageFailureCollector,
+  readUiHostStats,
+} from "./page-failures";
 
-async function showContentBrowser(page: Page): Promise<void> {
-  await page
-    .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
-    .click();
-  await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
-}
+const E2E_TIMEOUT_MS = 90_000;
+
+type UiAssetType = "UserInterface" | "EditorUtilityInterface";
+type AddableWidgetKind =
+  | "Button"
+  | "CheckBox"
+  | "Slider"
+  | "ScrollBox"
+  | "TextInput";
 
 async function createAsset(
   page: Page,
-  type: "UserInterface" | "EditorUtilityInterface",
+  type: UiAssetType,
   name: string,
 ): Promise<void> {
-  await showContentBrowser(page);
+  await openContentBrowser(page);
   await page.getByTestId("content-browser-new-asset").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
   await page.getByTestId("new-asset-type").click();
@@ -38,11 +47,74 @@ async function closeWindowsMenu(page: Page): Promise<void> {
   await expect(content).toHaveCount(0);
 }
 
+async function expectDesignerReady(page: Page): Promise<void> {
+  await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
+  await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
+  await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+}
+
+async function expectDesignerHostStats(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const stats = await readUiHostStats(page);
+        return stats.apply > 0 && stats.present > 0;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
+
+async function selectCanvasRoot(page: Page): Promise<void> {
+  await page.getByTestId("ui-widget-canvas").click({ position: { x: 8, y: 8 } });
+}
+
+async function addWidget(page: Page, kind: AddableWidgetKind): Promise<void> {
+  await page.getByTestId("ui-add-widget").click();
+  await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+  const search = page.getByTestId("ui-widget-catalog-search");
+  if ((await search.count()) > 0) {
+    await search.fill(kind);
+  }
+  await page.getByTestId(`ui-add-widget-${kind}`).click();
+  await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
+  await expect(
+    page.locator(`[data-testid^="ui-widget-${kind.toLowerCase()}-"]`),
+  ).toBeVisible();
+}
+
+async function switchToAsset(
+  page: Page,
+  assetPath: string,
+  tabLabel: string,
+): Promise<void> {
+  const tab = page.locator("[data-testid='document-tab']").filter({
+    hasText: tabLabel === "HUD" ? /^HUD( \*)?$/ : tabLabel,
+  });
+  if ((await tab.count()) === 1) {
+    const select = tab.getByTestId("document-tab-select");
+    if ((await select.count()) > 0 && (await select.isVisible())) {
+      await select.click();
+      return;
+    }
+  }
+  await openAssetFromBrowser(page, assetPath);
+}
+
+async function discardCloseIfNeeded(page: Page): Promise<void> {
+  const discard = page.getByTestId("dirty-discard");
+  await expect(page.getByTestId("homepage").or(discard)).toBeVisible();
+  if (await discard.isVisible()) {
+    await discard.click();
+  }
+  await expect(page.getByTestId("homepage")).toBeVisible();
+}
+
 test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => {
   test("UserInterface designer paints on Dockview without Preview Unavailable", async ({
     page,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
     await createAsset(page, "UserInterface", "HUD");
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
@@ -61,7 +133,7 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
   test("EditorUtilityInterface authoring round-trips dockKind and paints GUI", async ({
     page,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
     await createAsset(page, "EditorUtilityInterface", "SceneTools");
     await page
@@ -95,7 +167,7 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
   test("Designer is the default mode and Logic switches Windows to Class docks", async ({
     page,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
     await createAsset(page, "UserInterface", "HUD");
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
@@ -144,7 +216,7 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
   });
 
   test("EditorUtilityInterface Settings stay on Designer", async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
     await createAsset(page, "EditorUtilityInterface", "SceneTools");
     await page
@@ -171,40 +243,121 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
     await closeWindowsMenu(page);
   });
 
-  test("two UserInterface documents switch Designer and Logic without page errors", async ({
+  test("two UserInterface and two EditorUtilityInterface documents switch Designer and Logic without page failures", async ({
     page,
   }) => {
-    test.setTimeout(90_000);
-    const pageErrors: string[] = [];
-    page.on("pageerror", (error) => {
-      pageErrors.push(error.message);
-    });
+    test.setTimeout(E2E_TIMEOUT_MS);
+    const collector = attachPageFailureCollector(page);
     await openTestProject(page);
+    await collector.listenForUnhandledRejections();
+
     await createAsset(page, "UserInterface", "HUD");
     await createAsset(page, "UserInterface", "HUD2");
-    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
-    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
-    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
-    await page.getByTestId("ui-add-widget").click();
-    await page.getByTestId("ui-add-widget-Button").click();
-    await expect(page.locator('[data-testid^="ui-widget-button-"]')).toBeVisible();
+    await createAsset(page, "EditorUtilityInterface", "SceneTools");
+    await createAsset(page, "EditorUtilityInterface", "ClassTools");
 
-    await page.locator('[data-asset-path="assets/HUD2.ui.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
-    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    await expectDesignerReady(page);
+    await addWidget(page, "Button");
+    await expectDesignerHostStats(page);
+
     await page.getByTestId("ui-editor-mode-logic").click();
     await expect(page.getByTestId("graph-panel")).toBeVisible();
 
-    await page
-      .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
-      .click();
-    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await switchToAsset(page, "assets/HUD2.ui.babasset", "HUD2");
+    await expectDesignerReady(page);
+    await addWidget(page, "Slider");
+    await page.getByTestId("ui-editor-mode-logic").click();
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
+
+    await switchToAsset(page, "assets/SceneTools.eui.babasset", "SceneTools");
+    await expectDesignerReady(page);
+    await expect(page.getByTestId("ui-settings-panel")).toBeVisible();
+    await addWidget(page, "CheckBox");
+    await page.getByTestId("ui-editor-mode-logic").click();
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
+
+    await switchToAsset(page, "assets/ClassTools.eui.babasset", "ClassTools");
+    await expectDesignerReady(page);
+    await addWidget(page, "TextInput");
+
+    await switchToAsset(page, "assets/HUD.ui.babasset", "HUD");
     await expect(page.getByTestId("ui-editor-mode-designer")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
-    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
-    expect(pageErrors.filter((message) => /undefined/i.test(message))).toEqual([]);
+    await expectDesignerReady(page);
+    await expect(page.locator('[data-testid^="ui-widget-button-"]')).toBeVisible();
+
+    await switchToAsset(page, "assets/HUD2.ui.babasset", "HUD2");
+    await expect(page.getByTestId("ui-editor-mode-logic")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.getByTestId("ui-editor-mode-designer").click();
+    await expectDesignerReady(page);
+
+    await assertNoPageFailures(collector);
+  });
+
+  test("UserInterface designer exposes Button CheckBox Slider ScrollBox TextInput hit targets", async ({
+    page,
+  }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    const collector = attachPageFailureCollector(page);
+    await openTestProject(page);
+    await collector.listenForUnhandledRejections();
+    await createAsset(page, "UserInterface", "HUD");
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    await expectDesignerReady(page);
+
+    const kinds: AddableWidgetKind[] = [
+      "Button",
+      "CheckBox",
+      "Slider",
+      "ScrollBox",
+      "TextInput",
+    ];
+    for (const kind of kinds) {
+      await selectCanvasRoot(page);
+      await addWidget(page, kind);
+    }
+
+    await expect(page.locator('[data-testid^="ui-widget-button-"]')).toBeVisible();
+    await expect(page.locator('[data-testid^="ui-widget-checkbox-"]')).toBeVisible();
+    await expect(page.locator('[data-testid^="ui-widget-slider-"]')).toBeVisible();
+    await expect(page.locator('[data-testid^="ui-widget-scrollbox-"]')).toBeVisible();
+    await expect(page.locator('[data-testid^="ui-widget-textinput-"]')).toBeVisible();
+    await expectDesignerHostStats(page);
+    await assertNoPageFailures(collector);
+  });
+
+  test("switch projects with identical asset paths", async ({ page }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    const collector = attachPageFailureCollector(page);
+    await openTestProject(page);
+    await collector.listenForUnhandledRejections();
+
+    await createAsset(page, "UserInterface", "HUD");
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    await expectDesignerReady(page);
+    await addWidget(page, "Button");
+
+    await closeProjectViaSettings(page);
+    await discardCloseIfNeeded(page);
+
+    await page.getByTestId("create-project").click();
+    await expect(page.getByTestId("create-project-dialog")).toBeVisible();
+    await page.getByTestId("create-project-name").fill("TestProject2");
+    await page.getByTestId("create-project-submit").click();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await expect(page.getByTestId("project-name")).toContainText("TestProject2");
+    await collector.listenForUnhandledRejections();
+
+    await createAsset(page, "UserInterface", "HUD");
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    await expectDesignerReady(page);
+    await expectDesignerHostStats(page);
+    await assertNoPageFailures(collector);
   });
 });

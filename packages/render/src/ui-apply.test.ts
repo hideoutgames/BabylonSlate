@@ -70,5 +70,6 @@ describe("UI apply", () => {
     const layout = layoutUserInterface(doc, { width: 400, height: 300 });
     applyUiControls(host, describeUiControls(doc, layout));
     expect(uiHostStats.apply).toBe(1);
+    expect(uiHostStats.commit).toBe(0);
   });
 });

@@ -4,12 +4,14 @@ export const uiHostStats = {
   apply: 0,
   create: 0,
   present: 0,
+  commit: 0,
 };
 
 export function resetUiHostStats(): void {
   uiHostStats.apply = 0;
   uiHostStats.create = 0;
   uiHostStats.present = 0;
+  uiHostStats.commit = 0;
 }
 
 export interface UiApplyHost {

@@ -13,6 +13,7 @@ import {
   createUiSurface,
   FontRegistry,
   isHardUiPresentFailure,
+  uiHostStats,
   type DesignerGizmoState,
   type UiSurface,
 } from "@babylonslate/render";
@@ -56,6 +57,7 @@ import {
   freezeLiveUiSurface,
   presentLiveUiIfVisible,
 } from "../lib/live-ui-present";
+import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
 
 export function UiDesignCanvas({
   ui,
@@ -130,6 +132,8 @@ export function UiDesignCanvas({
   );
   const previewLayoutsRef = useRef(previewLayouts);
   previewLayoutsRef.current = previewLayouts;
+  const paintSchedulerRef = useRef(createUiFrameScheduler());
+  const gizmoSchedulerRef = useRef(createUiFrameScheduler());
   latestUiRef.current = ui;
   viewRef.current = view;
   const viewScale = previewScale * view.zoom * bitmapScale;
@@ -190,6 +194,8 @@ export function UiDesignCanvas({
       surfaceRef.current = null;
       setGuiLive(false);
       setLiveRects({});
+      paintSchedulerRef.current.cancel();
+      gizmoSchedulerRef.current.cancel();
     };
     // panelVisible / documentActive: freezeLiveUiSurface on the new surface this
     // frame; the next effect updates freeze when those flags change.
@@ -236,27 +242,31 @@ export function UiDesignCanvas({
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
-    try {
-      const frozen = !panelVisible || !documentActive;
-      surface.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
-      applyUiControlsIfUnfrozen(frozen, surface.host, displayControls);
-      presentLiveUiIfVisible({
-        panelVisible,
-        documentActive,
-        present: () => {
-          surface.present();
-          setPreviewError(null);
-          setLiveRects(surface.host.measureControls());
-        },
-      });
-    } catch (error) {
-      if (!isHardUiPresentFailure(error)) return;
-      const message =
-        error instanceof Error ? error.message : "Failed to present GUI";
-      console.error("UI designer present failed", error);
-      setPreviewError(message);
-      setGuiLive(false);
-    }
+    paintSchedulerRef.current.schedule(() => {
+      const live = surfaceRef.current;
+      if (!live) return;
+      try {
+        const frozen = !panelVisible || !documentActive;
+        live.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
+        applyUiControlsIfUnfrozen(frozen, live.host, displayControls);
+        presentLiveUiIfVisible({
+          panelVisible,
+          documentActive,
+          present: () => {
+            live.present();
+            setPreviewError(null);
+            setLiveRects(live.host.measureControls());
+          },
+        });
+      } catch (error) {
+        if (!isHardUiPresentFailure(error)) return;
+        const message =
+          error instanceof Error ? error.message : "Failed to present GUI";
+        console.error("UI designer present failed", error);
+        setPreviewError(message);
+        setGuiLive(false);
+      }
+    });
   }, [
     displayControls,
     documentActive,
@@ -315,17 +325,19 @@ export function UiDesignCanvas({
       safeArea: hasSafeArea ? safeScreen : null,
       pivot: canTransform ? pivotScreen : null,
     };
-    try {
-      presentLiveUiIfVisible({
-        panelVisible,
-        documentActive,
-        present: () => surface.presentGizmos(state),
-      });
-    } catch (error) {
-      if (isHardUiPresentFailure(error)) {
-        console.error("UI designer gizmos failed", error);
+    gizmoSchedulerRef.current.schedule(() => {
+      try {
+        presentLiveUiIfVisible({
+          panelVisible,
+          documentActive,
+          present: () => surface.presentGizmos(state),
+        });
+      } catch (error) {
+        if (isHardUiPresentFailure(error)) {
+          console.error("UI designer gizmos failed", error);
+        }
       }
-    }
+    });
   }, [
     canTransform,
     documentActive,
@@ -351,9 +363,14 @@ export function UiDesignCanvas({
       surfaceRef.current?.resizeGizmos(width, height);
     };
     apply();
-    const observer = new ResizeObserver(apply);
+    const observer = new ResizeObserver(() => {
+      gizmoSchedulerRef.current.schedule(apply);
+    });
     observer.observe(host);
-    return () => observer.disconnect();
+    return () => {
+      gizmoSchedulerRef.current.cancel();
+      observer.disconnect();
+    };
   }, [guiLive]);
 
   const capturePointer = (event: PointerEvent<HTMLDivElement>) => {
@@ -524,6 +541,7 @@ export function UiDesignCanvas({
       const nextLayout = drag.previewLayout ?? previewLayoutsRef.current[drag.id];
       if (nextLayout) {
         onLayoutChange(drag.id, nextLayout);
+        uiHostStats.commit += 1;
       }
       previewLayoutsRef.current = {};
       setPreviewLayouts({});

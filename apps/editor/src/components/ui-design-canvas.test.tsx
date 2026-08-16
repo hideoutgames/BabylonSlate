@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
+import { resetUiHostStats, uiHostStats } from "@babylonslate/render";
 import {
   createDefaultPlayHud,
   describeUiControls,
@@ -23,6 +24,16 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
 afterEach(() => {
   cleanup();
   createUiSurfaceMock.mockReset();
+  resetUiHostStats();
+  vi.unstubAllGlobals();
+});
+
+beforeEach(() => {
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal("cancelAnimationFrame", () => {});
 });
 
 function hudCanvasProps() {
@@ -186,6 +197,7 @@ describe("UiDesignCanvas preview fallback", () => {
     ];
     expect(id).toBe("stick");
     expect(layout.left).not.toBe(props.ui.widgets.stick?.layout.left);
+    expect(uiHostStats.commit).toBe(1);
   });
 });
 

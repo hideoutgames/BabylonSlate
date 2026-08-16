@@ -44,6 +44,10 @@ import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 import type { FontAssetEntry } from "@babylonslate/render";
 import {
+  projectUiAssetCacheKey,
+  rememberProjectUiAssets,
+} from "../lib/project-ui-asset-cache";
+import {
   resolveDesignerCanvasId,
   useEngineUiDesignerPresets,
 } from "../lib/engine-ui-presets";
@@ -118,6 +122,7 @@ export function UiEditingProvider({
     assetRegistry,
     collectPlayUiLibrary,
     projectDocument,
+    projectName,
     readAssetChunk,
     applyAssetDocumentChange,
   } = useDocuments();
@@ -170,29 +175,28 @@ export function UiEditingProvider({
       type: asset.header.type,
       payload: asset.header.payload,
     }));
-    void collectFontAssetEntries(assets, readAssetChunk ?? (async () => null)).then(
-      (entries) => {
-        if (!cancelled) setFontEntries(entries);
+    const cached = rememberProjectUiAssets(
+      projectUiAssetCacheKey(projectName, assets),
+      {
+        loadLibrary: collectPlayUiLibrary,
+        loadFonts: () =>
+          collectFontAssetEntries(assets, readAssetChunk ?? (async () => null)),
       },
     );
-    return () => {
-      cancelled = true;
-    };
-  }, [assetRegistry, readAssetChunk]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void collectPlayUiLibrary()
+    void cached.library
       .then((library) => {
         if (!cancelled) setUiLibrary(library);
       })
       .catch(() => {
         if (!cancelled) setUiLibrary({});
       });
+    void cached.fonts.then((entries) => {
+      if (!cancelled) setFontEntries(entries);
+    });
     return () => {
       cancelled = true;
     };
-  }, [collectPlayUiLibrary]);
+  }, [assetRegistry, collectPlayUiLibrary, projectName, readAssetChunk]);
 
   const resolveNested = useCallback(
     (guid: string) => {

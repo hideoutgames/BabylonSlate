@@ -199,4 +199,57 @@ describe("attachAdtCanvasPointers", () => {
     } as unknown as Event);
     expect(processKeyboard).toHaveBeenCalled();
   });
+
+  it("ignores non-primary pointerdown and only tracks the captured pointer", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    attachAdtCanvasPointers(canvas, adt);
+    listeners.pointerdown?.(
+      {
+        type: "pointerdown",
+        pointerId: 2,
+        isPrimary: false,
+        clientX: 10,
+        clientY: 10,
+        preventDefault: vi.fn(),
+      } as unknown as Event,
+    );
+    expect(canvas.setPointerCapture).not.toHaveBeenCalled();
+    expect(pick).not.toHaveBeenCalled();
+    listeners.pointerdown?.(
+      {
+        type: "pointerdown",
+        pointerId: 1,
+        isPrimary: true,
+        clientX: 20,
+        clientY: 20,
+        preventDefault: vi.fn(),
+      } as unknown as Event,
+    );
+    expect(canvas.setPointerCapture).toHaveBeenCalledWith(1);
+    expect(pick).toHaveBeenCalledTimes(1);
+    listeners.pointermove?.(
+      {
+        type: "pointermove",
+        pointerId: 9,
+        isPrimary: false,
+        clientX: 40,
+        clientY: 40,
+        preventDefault: vi.fn(),
+      } as unknown as Event,
+    );
+    expect(pick).toHaveBeenCalledTimes(1);
+    listeners.pointermove?.(
+      {
+        type: "pointermove",
+        pointerId: 1,
+        isPrimary: true,
+        clientX: 30,
+        clientY: 30,
+        preventDefault: vi.fn(),
+      } as unknown as Event,
+    );
+    expect(pick).toHaveBeenCalledTimes(2);
+  });
 });
