@@ -608,4 +608,99 @@ describe("validateGraphs", () => {
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.some((d) => d.code === "pin.duplicate_connection")).toBe(false);
   });
+
+  it("errors when a declared ScriptInterface method is not implemented", () => {
+    const diags = validateGraphs([createEmptyLogicGraph("g")], {
+      assetGuid: "a",
+      implementedInterfaces: [
+        {
+          guid: "iface-1",
+          name: "Damageable",
+          methods: [{ name: "Apply Damage", pins: [] }],
+        },
+      ],
+      members: [],
+    });
+    expect(diags.some((d) => d.code === "interface.unimplemented")).toBe(true);
+  });
+
+  it("errors when an interface implementation signature differs", () => {
+    const diags = validateGraphs([createEmptyLogicGraph("g")], {
+      assetGuid: "a",
+      implementedInterfaces: [
+        {
+          guid: "iface-1",
+          name: "Damageable",
+          methods: [
+            {
+              name: "Apply Damage",
+              pins: [{ name: "amount", typeId: "float", direction: "in" }],
+            },
+          ],
+        },
+      ],
+      members: [
+        {
+          id: "fn-1",
+          name: "Apply Damage",
+          kind: "function",
+          classId: "Hero",
+          implementsInterface: {
+            assetGuid: "iface-1",
+            methodName: "Apply Damage",
+          },
+          pins: [{ name: "amount", typeId: "int", direction: "in" }],
+        },
+      ],
+    });
+    expect(diags.some((d) => d.code === "interface.signature_mismatch")).toBe(
+      true,
+    );
+  });
+
+  it("errors missing interface implementation outputs without defaults", () => {
+    const graph: LogicGraph = {
+      id: "Apply Damage",
+      kind: "function",
+      nodes: [
+        {
+          id: "out",
+          typeId: "flow.function.output",
+          position: { x: 0, y: 0 },
+          pins: [pin("remaining", "remaining", "in", FLOAT)],
+          properties: {},
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      interfaceImplementation: true,
+    });
+    const missing = diags.filter((d) => d.code === "pin.missing_input");
+    expect(missing).toHaveLength(1);
+    expect(missing[0]?.severity).toBe("error");
+  });
+
+  it("accepts an authored default on an interface implementation output", () => {
+    const graph: LogicGraph = {
+      id: "Apply Damage",
+      kind: "function",
+      nodes: [
+        {
+          id: "out",
+          typeId: "flow.function.output",
+          position: { x: 0, y: 0 },
+          pins: [pin("remaining", "remaining", "in", FLOAT)],
+          properties: { "default:remaining": 0 },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      interfaceImplementation: true,
+    });
+    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
+  });
 });

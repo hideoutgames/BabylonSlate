@@ -18,6 +18,7 @@ import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { createMeshFromModelBytes } from "./model-mesh";
+import { beginSlotModelAnimLoad, invalidateSlotAnimLoad } from "./glb-anim";
 import { applySerializedTransform, createPrimitiveMesh } from "./scene-loader";
 import {
   AUTHORED_CAMERA_PREFIX,
@@ -77,10 +78,17 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
       pause(): void;
       goToFrame(frame: number): void;
       setWeightForAllAnimatables?(weight: number): void;
+      dispose?(): void;
     }>
   >;
   /** Last animState per slot, replayed when groups become available. */
   pendingAnimState?: Map<number, Extract<CommandMessage, { type: "animState" }>>;
+  /** In-flight GLB AnimationGroup loads, keyed by slotId. */
+  slotAnimLoads?: Map<number, Promise<void>>;
+  /** Cancels in-flight loads when incremented. */
+  slotAnimEpoch?: Map<number, number>;
+  /** Called after a slot's AnimationGroups are registered (replay pending seek). */
+  slotAnimReady?: (slotId: number) => void;
   defaultCameraSlotId: number | null;
   possessedCameraSlotId: number | null;
   shadow: ShadowGenerator | null;
@@ -108,6 +116,8 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     spriteOverlays: new Map(),
     slotAnimationGroups: new Map(),
     pendingAnimState: new Map(),
+    slotAnimLoads: new Map(),
+    slotAnimEpoch: new Map(),
     defaultCameraSlotId: null,
     possessedCameraSlotId: null,
     shadow: null,
@@ -351,7 +361,7 @@ function disposeSlotVisuals(
   binding.meshes.delete(slotId);
   binding.spriteOverlays?.get(slotId)?.dispose();
   binding.spriteOverlays?.delete(slotId);
-  binding.slotAnimationGroups?.delete(slotId);
+  invalidateSlotAnimLoad(binding, slotId);
   binding.lights.get(slotId)?.dispose();
   binding.lights.delete(slotId);
   binding.cameras.get(slotId)?.dispose();
@@ -457,7 +467,17 @@ export function createPlayMesh(
       name,
       binding.modelBytes.get(assetGuid)!,
     );
-    if (loaded) return loaded;
+    if (loaded) {
+      void beginSlotModelAnimLoad(
+        scene,
+        binding,
+        slotId,
+        assetGuid,
+        binding.modelBytes.get(assetGuid)!,
+        loaded,
+      );
+      return loaded;
+    }
   }
   if (meshKind?.startsWith("light:") && binding) {
     const mesh = createPrimitiveMesh(scene, name, null);
@@ -568,6 +588,10 @@ export function applySnapshotToScene(
         binding.meshAssetGuids.delete(slotId);
         binding.meshParts.delete(slotId);
         binding.materialAssetGuids.delete(slotId);
+        binding.spriteOverlays?.get(slotId)?.dispose();
+        binding.spriteOverlays?.delete(slotId);
+        invalidateSlotAnimLoad(binding, slotId);
+        binding.pendingAnimState?.delete(slotId);
         for (const key of [...binding.componentMaterialGuids.keys()]) {
           if (key.startsWith(`${slotId}|`)) {
             binding.componentMaterialGuids.delete(key);
@@ -620,6 +644,9 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   for (const overlay of binding.spriteOverlays?.values() ?? []) {
     overlay.dispose();
   }
+  for (const slotId of [...(binding.slotAnimationGroups?.keys() ?? [])]) {
+    invalidateSlotAnimLoad(binding, slotId);
+  }
   for (const light of binding.lights.values()) light.dispose();
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.shadow?.dispose();
@@ -627,6 +654,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.spriteOverlays?.clear();
   binding.slotAnimationGroups?.clear();
   binding.pendingAnimState?.clear();
+  binding.slotAnimLoads?.clear();
+  binding.slotAnimEpoch?.clear();
   binding.lights.clear();
   binding.cameras.clear();
   binding.lightProps.clear();

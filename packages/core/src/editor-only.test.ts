@@ -143,6 +143,7 @@ describe("editor-only assets", () => {
             id: "fn-1",
             kind: "function",
             name: "Possess",
+            overridable: true,
             pins: [
               {
                 name: "pawn",
@@ -173,6 +174,7 @@ describe("editor-only assets", () => {
         {
           id: "fn-1",
           name: "Possess",
+          overridable: true,
           pins: [
             {
               name: "pawn",
@@ -204,6 +206,9 @@ describe("editor-only assets", () => {
             },
           ],
         },
+      ],
+      interfaces: [
+        { id: "if-1", name: "Damageable", assetGuid: "g1" },
       ],
     });
   });

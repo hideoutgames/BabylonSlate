@@ -326,6 +326,9 @@ export function createEngine(
   binding.textureBytes = options.textureBytes;
   binding.modelBytes = options.modelBytes;
   binding.resourceCache = resourceCache;
+  binding.slotAnimReady = () => {
+    scheduler.invalidate("snapshot");
+  };
 
   const materialDocuments = new Map<string, MaterialDocument>(
     options.materialDocuments ?? [],

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  AddFunctionDialog,
   AssetPicker,
   ContextMenuOverlay,
   NamePromptDialog,
@@ -39,9 +40,11 @@ import { IconActionButton } from "../components/icon-action-button";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import {
   collectClassGraphsForPalette,
+  collectScriptInterfacesForPalette,
   commitLogicGraph,
   serializedGraphFromDocument,
 } from "../lib/logic-graph-document";
+import { collectOverridableFunctionRows } from "../lib/overridable-functions";
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
@@ -71,6 +74,14 @@ export type MembersForGraphOptions = {
   parentClass?: string | null;
   parentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
+  scriptInterfaces?: Array<{
+    guid: string;
+    name: string;
+    methods: Array<{
+      name: string;
+      pins?: import("@babylonslate/core").GraphClassMemberPin[];
+    }>;
+  }>;
 };
 
 function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
@@ -288,6 +299,7 @@ export function ClassMembersView({
   const [memberPromptLocal, setMemberPromptLocal] = useState(false);
   const [renameMemberId, setRenameMemberId] = useState<string | null>(null);
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
+  const [functionDialogOpen, setFunctionDialogOpen] = useState(false);
   const [accessDrop, setAccessDrop] = useState<{
     memberId: string;
     position: { x: number; y: number };
@@ -302,9 +314,36 @@ export function ClassMembersView({
       setInterfacePickerOpen(true);
       return;
     }
+    if (kind === "function" && !local) {
+      setFunctionDialogOpen(true);
+      return;
+    }
     setMemberPromptLocal(local);
     setMemberPromptKind(kind);
   };
+  const selectAddedFunction = (next: SerializedGraph) => {
+    onGraphChange(next);
+    const added = next.members?.[next.members.length - 1];
+    if (added) {
+      onSelectMember?.(added.id, {
+        kind: added.kind,
+        name: added.name,
+        detail: added.id,
+        typeId: added.typeId,
+      });
+    }
+  };
+  const overridableRows = useMemo(
+    () =>
+      collectOverridableFunctionRows({
+        graph: graph ?? undefined,
+        classId,
+        parentOf: membersOptions?.parentOf,
+        parentGraphs: membersOptions?.parentGraphs,
+        scriptInterfaces: membersOptions?.scriptInterfaces,
+      }),
+    [classId, graph, membersOptions],
+  );
   const spawnAccess = (
     access: "get" | "set",
     memberId: string | null | undefined = selectedId,
@@ -553,6 +592,27 @@ export function ClassMembersView({
           }
         }}
       />
+      <AddFunctionDialog
+        open={functionDialogOpen}
+        onOpenChange={setFunctionDialogOpen}
+        items={overridableRows}
+        onCreateEmpty={(name) => {
+          if (!graph) return;
+          selectAddedFunction(addClassMember(graph, "function", name));
+        }}
+        onPick={(id) => {
+          if (!graph) return;
+          const row = overridableRows.find((entry) => entry.id === id);
+          if (!row || row.overwritten) return;
+          selectAddedFunction(
+            addClassMember(graph, "function", row.name, undefined, {
+              pins: row.pins,
+              implementsInterface: row.implementsInterface,
+              overrides: row.overrides,
+            }),
+          );
+        }}
+      />
       <NamePromptDialog
         open={renameMemberId !== null}
         onOpenChange={(open) => {
@@ -651,6 +711,10 @@ export function MyClassPanel(_props: MyClassPanelProps) {
       (doc?.ref.kind === "ui" ? "BObject" : null),
     parentOf,
     parentGraphs,
+    scriptInterfaces: collectScriptInterfacesForPalette({
+      assets: assetRegistry?.list() ?? [],
+      openDocuments,
+    }),
   };
 
   const focusEvent = (nodeId: string, name: string) => {

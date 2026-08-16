@@ -9,6 +9,7 @@ import {
   InputMappingEditor,
   NamedListEditor,
   NamePromptDialog,
+  AddFunctionDialog,
   NestedMenu,
   NumericDragField,
   PanelFrame,
@@ -158,6 +159,7 @@ function GalleryComposites() {
   const [sceneComponentPickerOpen, setSceneComponentPickerOpen] =
     useState(false);
   const [namePromptOpen, setNamePromptOpen] = useState(false);
+  const [addFunctionOpen, setAddFunctionOpen] = useState(false);
   const [layers, setLayers] = useState(["Default", "Foreground"]);
   const [mappings, setMappings] = useState(createDefaultInputMappings);
   const [parameters, setParameters] = useState<ParameterRow[]>([
@@ -487,10 +489,25 @@ function GalleryComposites() {
       <NamePromptDialog
         open={namePromptOpen}
         onOpenChange={setNamePromptOpen}
-        title="Add Function"
-        label="Function Name"
+        title="Add Variable"
+        label="Variable Name"
         onSubmit={() => {}}
         data-testid="gallery-name-prompt"
+      />
+      <AddFunctionDialog
+        open={addFunctionOpen}
+        onOpenChange={setAddFunctionOpen}
+        items={[
+          {
+            id: "interface:g:Apply Damage",
+            name: "Apply Damage",
+            description: "Interface · Damageable",
+            overwritten: false,
+            kind: "interface",
+          },
+        ]}
+        onCreateEmpty={() => {}}
+        onPick={() => {}}
       />
     </div>
   );
