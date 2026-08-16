@@ -101,6 +101,41 @@ describe("behaviour tree documents", () => {
     expect(parseBlackboardDocument(null)).toBeNull();
   });
 
+  it("omits editor positions from a default tree", () => {
+    const tree = createDefaultBehaviourTree();
+    expect("editorPositions" in tree).toBe(false);
+  });
+
+  it("round-trips authored editor positions and drops invalid rows", () => {
+    const parsed = parseBehaviourTreeDocument({
+      name: "Placed",
+      rootId: "root",
+      nodes: [
+        { id: "root", kind: "selector", children: ["leaf"] },
+        { id: "leaf", kind: "task" },
+      ],
+      editorPositions: {
+        root: { x: 40, y: 12 },
+        leaf: { x: 40, y: 200 },
+        ghost: { x: 1, y: 1 },
+        bad: { x: "nope", y: 0 },
+        inf: { x: Number.POSITIVE_INFINITY, y: 0 },
+      },
+    });
+    expect(parsed?.editorPositions).toEqual({
+      root: { x: 40, y: 12 },
+      leaf: { x: 40, y: 200 },
+    });
+  });
+
+  it("omits editorPositions when the payload has none", () => {
+    const parsed = parseBehaviourTreeDocument({
+      nodes: [{ id: "root", kind: "selector" }],
+    });
+    expect(parsed).not.toBeNull();
+    expect("editorPositions" in (parsed ?? {})).toBe(false);
+  });
+
   it("keeps attached decorator and service rows on parse", () => {
     const tree = createDefaultBehaviourTree();
     const sequence = tree.nodes.find((node) => node.kind === "sequence")!;

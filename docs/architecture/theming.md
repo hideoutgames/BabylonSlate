@@ -89,6 +89,11 @@ Title-bar fills for Blueprint-like nodes:
 | `--node-dev-only-stripe` | Development Only hazard-tape black stripe |
 | `--node-editor-only-tape` | Editor Only hazard-tape cyan (same in light and dark) |
 | `--node-editor-only-stripe` | Editor Only hazard-tape black stripe |
+| `--node-bt-root` | Behaviour tree Root |
+| `--node-bt-composite` | Behaviour tree Selector / Sequence / Parallel |
+| `--node-bt-task` | Behaviour tree task leaves |
+| `--node-bt-decorator` | Attached decorator row tint |
+| `--node-bt-service` | Attached service row tint |
 
 ## Asset type colors
 

@@ -5,6 +5,7 @@ import type {
   BlackboardKey,
   BtAbortMode,
   BtDecorator,
+  BtEditorPosition,
   BtNode,
   BtNodeKind,
   BtService,
@@ -74,6 +75,24 @@ function parseService(value: unknown, index: number): BtService | null {
     randomDeviationMs,
     properties: parseProperties(row.properties),
   };
+}
+
+function parseEditorPositions(
+  value: unknown,
+  knownIds: ReadonlySet<string>,
+): Record<string, BtEditorPosition> | undefined {
+  const row = asRecord(value);
+  if (!row) return undefined;
+  const out: Record<string, BtEditorPosition> = {};
+  for (const [id, entry] of Object.entries(row)) {
+    if (!knownIds.has(id)) continue;
+    const pos = asRecord(entry);
+    if (!pos) continue;
+    if (typeof pos.x !== "number" || !Number.isFinite(pos.x)) continue;
+    if (typeof pos.y !== "number" || !Number.isFinite(pos.y)) continue;
+    out[id] = { x: pos.x, y: pos.y };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function parseNode(value: unknown): BtNode | null {
@@ -152,11 +171,16 @@ export function parseBehaviourTreeDocument(value: unknown): BehaviourTreeDocumen
   if (nodes.length === 0) return null;
   const rootId =
     typeof row.rootId === "string" && row.rootId !== "" ? row.rootId : nodes[0]!.id;
+  const editorPositions = parseEditorPositions(
+    row.editorPositions,
+    new Set(nodes.map((node) => node.id)),
+  );
   return {
     name: typeof row.name === "string" && row.name !== "" ? row.name : "Behaviour Tree",
     rootId,
     nodes,
     blackboardGuid: typeof row.blackboardGuid === "string" ? row.blackboardGuid : null,
+    ...(editorPositions ? { editorPositions } : {}),
   };
 }
 

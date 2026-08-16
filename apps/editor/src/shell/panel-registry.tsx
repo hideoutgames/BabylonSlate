@@ -49,6 +49,8 @@ import {
   AnimObjectVariablesPanel,
 } from "../components/anim-graph-editor";
 import {
+  BehaviourTreeBlackboardPanel,
+  BehaviourTreeCompilerResultsPanel,
   BehaviourTreeDetailsPanel,
   BehaviourTreeGraphPanel,
 } from "../components/behaviour-tree-editor";
@@ -165,6 +167,12 @@ export const panelComponents = {
   ),
   "behaviour-tree-details": (props: IDockviewPanelProps) => (
     <BehaviourTreeDetailsPanel {...props} />
+  ),
+  "behaviour-tree-blackboard": (props: IDockviewPanelProps) => (
+    <BehaviourTreeBlackboardPanel {...props} />
+  ),
+  "behaviour-tree-compiler-results": (props: IDockviewPanelProps) => (
+    <BehaviourTreeCompilerResultsPanel {...props} />
   ),
   locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
 };

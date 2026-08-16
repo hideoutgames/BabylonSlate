@@ -1,10 +1,17 @@
 import type {
   BehaviourTreeDocument,
   BtDecorator,
+  BtEditorPosition,
   BtNode,
   BtService,
 } from "./types";
 import { defaultPropertiesForClassId, kindForCatalogClassId } from "./catalog";
+import {
+  BT_DUPLICATE_OFFSET,
+  BT_LAYOUT_NODE_HEIGHT,
+  keepEditorPositionsFor,
+  withEditorPositions,
+} from "./serialize";
 
 function uniqueId(prefix: string, used: Set<string>): string {
   let index = 1;
@@ -24,6 +31,17 @@ function usedIds(doc: BehaviourTreeDocument): Set<string> {
     for (const row of node.services) used.add(row.id);
   }
   return used;
+}
+
+function clonePositions(
+  positions: Readonly<Record<string, BtEditorPosition>> | undefined,
+): Record<string, BtEditorPosition> {
+  const out: Record<string, BtEditorPosition> = {};
+  if (!positions) return out;
+  for (const [id, pos] of Object.entries(positions)) {
+    out[id] = { x: pos.x, y: pos.y };
+  }
+  return out;
 }
 
 function patchNode(
@@ -71,24 +89,45 @@ export function wrapInSequence(
     properties: {},
   };
   if (doc.rootId === nodeId) {
-    return { ...doc, rootId: wrapperId, nodes: [...doc.nodes, wrapper] };
+    return withEditorPositions(
+      { ...doc, rootId: wrapperId, nodes: [...doc.nodes, wrapper] },
+      placedWrapPositions(doc, nodeId, wrapperId),
+    );
   }
-  return {
-    ...doc,
-    nodes: [
-      ...doc.nodes.map((node) =>
-        node.children.includes(nodeId)
-          ? {
-              ...node,
-              children: node.children.map((childId) =>
-                childId === nodeId ? wrapperId : childId,
-              ),
-            }
-          : node,
-      ),
-      wrapper,
-    ],
-  };
+  return withEditorPositions(
+    {
+      ...doc,
+      nodes: [
+        ...doc.nodes.map((node) =>
+          node.children.includes(nodeId)
+            ? {
+                ...node,
+                children: node.children.map((childId) =>
+                  childId === nodeId ? wrapperId : childId,
+                ),
+              }
+            : node,
+        ),
+        wrapper,
+      ],
+    },
+    placedWrapPositions(doc, nodeId, wrapperId),
+  );
+}
+
+function placedWrapPositions(
+  doc: BehaviourTreeDocument,
+  nodeId: string,
+  wrapperId: string,
+): Record<string, BtEditorPosition> | undefined {
+  if (!doc.editorPositions) return undefined;
+  const next = clonePositions(doc.editorPositions);
+  const wrapped = next[nodeId];
+  if (wrapped) {
+    next[wrapperId] = { x: wrapped.x, y: wrapped.y };
+    next[nodeId] = { x: wrapped.x, y: wrapped.y + BT_LAYOUT_NODE_HEIGHT };
+  }
+  return next;
 }
 
 function cloneNode(node: BtNode, idMap: Map<string, string>): BtNode {
@@ -138,22 +177,48 @@ export function duplicateSubtree(
     .filter((node) => ids.has(node.id))
     .map((node) => cloneNode(node, idMap));
   const cloneRoot = idMap.get(nodeId)!;
+  const positions = duplicatedPositions(doc, ids, idMap);
   if (doc.rootId === nodeId) {
-    return { ...doc, nodes: [...doc.nodes, ...clones] };
+    return withEditorPositions(
+      { ...doc, nodes: [...doc.nodes, ...clones] },
+      positions,
+    );
   }
-  return {
-    ...doc,
-    nodes: [
-      ...doc.nodes.map((node) => {
-        const index = node.children.indexOf(nodeId);
-        if (index < 0) return node;
-        const children = [...node.children];
-        children.splice(index + 1, 0, cloneRoot);
-        return { ...node, children };
-      }),
-      ...clones,
-    ],
-  };
+  return withEditorPositions(
+    {
+      ...doc,
+      nodes: [
+        ...doc.nodes.map((node) => {
+          const index = node.children.indexOf(nodeId);
+          if (index < 0) return node;
+          const children = [...node.children];
+          children.splice(index + 1, 0, cloneRoot);
+          return { ...node, children };
+        }),
+        ...clones,
+      ],
+    },
+    positions,
+  );
+}
+
+function duplicatedPositions(
+  doc: BehaviourTreeDocument,
+  ids: ReadonlySet<string>,
+  idMap: ReadonlyMap<string, string>,
+): Record<string, BtEditorPosition> | undefined {
+  if (!doc.editorPositions) return undefined;
+  const next = clonePositions(doc.editorPositions);
+  for (const id of ids) {
+    const source = doc.editorPositions[id];
+    const cloneId = idMap.get(id);
+    if (!source || !cloneId) continue;
+    next[cloneId] = {
+      x: source.x + BT_DUPLICATE_OFFSET.x,
+      y: source.y + BT_DUPLICATE_OFFSET.y,
+    };
+  }
+  return next;
 }
 
 export function deleteSubtree(
@@ -163,15 +228,21 @@ export function deleteSubtree(
   if (nodeId === doc.rootId) return doc;
   if (!doc.nodes.some((node) => node.id === nodeId)) return doc;
   const ids = subtreeIds(doc, nodeId);
-  return {
-    ...doc,
-    nodes: doc.nodes
-      .filter((node) => !ids.has(node.id))
-      .map((node) => ({
-        ...node,
-        children: node.children.filter((childId) => !ids.has(childId)),
-      })),
-  };
+  const remaining = new Set(
+    doc.nodes.filter((node) => !ids.has(node.id)).map((node) => node.id),
+  );
+  return withEditorPositions(
+    {
+      ...doc,
+      nodes: doc.nodes
+        .filter((node) => !ids.has(node.id))
+        .map((node) => ({
+          ...node,
+          children: node.children.filter((childId) => !ids.has(childId)),
+        })),
+    },
+    keepEditorPositionsFor(doc, remaining),
+  );
 }
 
 export function addDecorator(
@@ -257,27 +328,49 @@ export function pruneUnreachable(
   doc: BehaviourTreeDocument,
 ): BehaviourTreeDocument {
   const keep = subtreeIds(doc, doc.rootId);
-  return {
-    ...doc,
-    nodes: doc.nodes
-      .filter((node) => keep.has(node.id))
-      .map((node) => ({
-        ...node,
-        children: node.children.filter((childId) => keep.has(childId)),
-      })),
-  };
+  return withEditorPositions(
+    {
+      ...doc,
+      nodes: doc.nodes
+        .filter((node) => keep.has(node.id))
+        .map((node) => ({
+          ...node,
+          children: node.children.filter((childId) => keep.has(childId)),
+        })),
+    },
+    keepEditorPositionsFor(doc, keep),
+  );
+}
+
+export type AddChildNodeOptions = {
+  parentOf?: (id: string) => string | null | undefined;
+  position?: BtEditorPosition;
+};
+
+function addChildOptions(
+  parentOfOrOptions?:
+    | ((id: string) => string | null | undefined)
+    | AddChildNodeOptions,
+): AddChildNodeOptions {
+  if (typeof parentOfOrOptions === "function") {
+    return { parentOf: parentOfOrOptions };
+  }
+  return parentOfOrOptions ?? {};
 }
 
 export function addChildNode(
   doc: BehaviourTreeDocument,
   parentId: string,
   classId: string,
-  parentOf?: (id: string) => string | null | undefined,
+  parentOfOrOptions?:
+    | ((id: string) => string | null | undefined)
+    | AddChildNodeOptions,
 ): BehaviourTreeDocument {
+  const options = addChildOptions(parentOfOrOptions);
   const parent = doc.nodes.find((node) => node.id === parentId);
   if (!parent || parent.kind === "task") return doc;
   const used = usedIds(doc);
-  const kind = kindForCatalogClassId(classId, parentOf);
+  const kind = kindForCatalogClassId(classId, options.parentOf);
   const id = uniqueId(kind === "task" ? "task" : kind, used);
   const child: BtNode = {
     id,
@@ -288,7 +381,7 @@ export function addChildNode(
     services: [],
     properties: defaultPropertiesForClassId(classId),
   };
-  return {
+  const next: BehaviourTreeDocument = {
     ...doc,
     nodes: [
       ...doc.nodes.map((node) =>
@@ -296,5 +389,45 @@ export function addChildNode(
       ),
       child,
     ],
+  };
+  if (!options.position && !doc.editorPositions) return next;
+  const positions = clonePositions(doc.editorPositions);
+  if (options.position) {
+    positions[id] = { x: options.position.x, y: options.position.y };
+  }
+  return withEditorPositions(next, positions);
+}
+
+export function canReparentNode(
+  doc: BehaviourTreeDocument,
+  nodeId: string,
+  newParentId: string,
+): boolean {
+  if (nodeId === doc.rootId || nodeId === newParentId) return false;
+  const child = doc.nodes.find((node) => node.id === nodeId);
+  const parent = doc.nodes.find((node) => node.id === newParentId);
+  if (!child || !parent || parent.kind === "task") return false;
+  if (subtreeIds(doc, nodeId).has(newParentId)) return false;
+  return true;
+}
+
+export function reparentNode(
+  doc: BehaviourTreeDocument,
+  nodeId: string,
+  newParentId: string,
+): BehaviourTreeDocument {
+  if (!canReparentNode(doc, nodeId, newParentId)) return doc;
+  return {
+    ...doc,
+    nodes: doc.nodes.map((node) => {
+      const without = node.children.filter((childId) => childId !== nodeId);
+      if (node.id === newParentId) {
+        return { ...node, children: [...without, nodeId] };
+      }
+      if (without.length !== node.children.length) {
+        return { ...node, children: without };
+      }
+      return node;
+    }),
   };
 }
