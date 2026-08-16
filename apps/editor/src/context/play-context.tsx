@@ -35,11 +35,14 @@ import {
 import {
   MISSING_STARTUP_SCENE_MESSAGE,
   isPreviewDiagnosticsMessage,
+  isPreviewErrorMessage,
+  isPreviewRequestPackMessage,
   previewPackFromFiles,
   PREVIEW_STOP_MESSAGE,
 } from "@babylonslate/exporter";
 import { createAppSettingsStore } from "@babylonslate/vfs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
+import { playerPreviewSrc } from "../lib/player-host-url";
 import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
@@ -154,10 +157,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [previewBuild, setPreviewBuildState] = useState(false);
   const [startupAlertOpen, setStartupAlertOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState("/player/index.html?preview=1");
+  const [previewSrc, setPreviewSrc] = useState(() => playerPreviewSrc(0));
   const [previewPhase, setPreviewPhase] = useState<PreviewPreparePhase | null>(
     null,
   );
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
@@ -352,6 +356,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       previewFilesRef.current = null;
       setPreviewOpen(false);
       setPreviewPhase(null);
+      setPreviewError(null);
       setPreviewCanCancel(true);
       setPlaying(false);
       setEncodeQueuePauseReason("play", false);
@@ -365,8 +370,34 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     }, 100);
   }, []);
 
+  const sendPreviewPack = useCallback(() => {
+    const files = previewFilesRef.current;
+    const frame = previewIframeRef.current?.contentWindow;
+    if (!files || !frame) return;
+    try {
+      frame.postMessage(previewPackFromFiles(files), "*");
+    } catch (error) {
+      setPreviewError(
+        `Preview Build could not send the game data: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }, []);
+
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      // The player asks once its listener exists, which removes the race
+      // between iframe `load` and the player module evaluating.
+      if (isPreviewRequestPackMessage(event.data)) {
+        sendPreviewPack();
+        return;
+      }
+      if (isPreviewErrorMessage(event.data)) {
+        setPreviewError(event.data.message);
+        appendLog(`Preview Build failed: ${event.data.message}`);
+        return;
+      }
       if (!isPreviewDiagnosticsMessage(event.data)) return;
       previewDiagnosticsRef.current = event.data.diagnostics.map((entry) => ({
         severity: entry.severity === "warning" ? "warning" : "error",
@@ -384,7 +415,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [appendLog, sendPreviewPack]);
 
   const requestPreviewBuild = useCallback(async () => {
     if (playing || preparingRef.current) return;
@@ -432,7 +463,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setPreviewPhase("Launching");
       setEncodeQueuePauseReason("play", true);
       setPlaying(true);
-      setPreviewSrc(`/player/index.html?preview=1&t=${Date.now()}`);
+      setPreviewError(null);
+      setPreviewSrc(playerPreviewSrc(Date.now()));
       setPreviewOpen(true);
     } catch (error) {
       previewFilesRef.current = null;
@@ -877,13 +909,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           <PreviewBuildOverlay
             src={previewSrc}
             iframeRef={previewIframeRef}
+            error={previewError}
             onClose={closePreview}
-            onLoad={() => {
-              const files = previewFilesRef.current;
-              const frame = previewIframeRef.current?.contentWindow;
-              if (!files || !frame) return;
-              frame.postMessage(previewPackFromFiles(files), "*");
-            }}
+            onLoad={sendPreviewPack}
           />
         ) : null}
         <PreviewSessionReport

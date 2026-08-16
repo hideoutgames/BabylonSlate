@@ -159,6 +159,9 @@ test.describe("P10 tilemaps", () => {
       graphGuid,
       "graphGuid",
     );
+    // Place Actors offsets new actors clear of occupied space, so put the hero
+    // back over the painted tiles explicitly before dropping it.
+    await page.getByTestId("property-actor-position-x").fill("0");
     await page.getByTestId("property-actor-position-y").fill("3");
 
     await page.getByTestId("play-preview").click();

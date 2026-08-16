@@ -241,6 +241,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly gameInstanceClass: string;
   private readonly sceneLibrary = new Map<string, SerializedScene>();
   private playWorldRealized = false;
+  /** A script `Possess Camera` outranks the authored per-camera option. */
+  private cameraPossessedByScript = false;
   private readonly commands: CommandRegistry;
   private readonly trace = new TraceRecorder();
   private lastTrace: TracePayload | null = null;
@@ -683,7 +685,29 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.registerNavAgents();
     this.registerNavObstacles();
+    this.attemptPossessViewTarget();
     this.world.loadScene(this.playSceneGuid);
+  }
+
+  /**
+   * Opt-in per camera (`attemptPossessViewTarget`). Runs after every actor has
+   * spawned so the slot exists, and yields to a Begin Play `Possess Camera`
+   * because an explicit script choice outranks the authored default.
+   */
+  private attemptPossessViewTarget(): void {
+    if (this.cameraPossessedByScript) return;
+    for (const actor of this.playScene?.actors ?? []) {
+      const opted = actor.components.some(
+        (component) =>
+          component.classId === "CameraComponent" &&
+          component.properties.attemptPossessViewTarget === true,
+      );
+      if (!opted) continue;
+      const slotId = this.slotByGuid.get(actor.id);
+      if (slotId === undefined) continue;
+      this.emit({ type: "possessCamera", slotId });
+      return;
+    }
   }
 
   private applyChangeScene(sceneKey: string): void {
@@ -715,6 +739,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.playScene = next;
     this.playSceneGuid = key;
     this.playWorldRealized = false;
+    // The new scene owns its own camera choice.
+    this.cameraPossessedByScript = false;
     this.realizePlayWorld();
   }
 
@@ -1391,6 +1417,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (!actor) return;
     const slotId = this.slotByGuid.get(actor.guid);
     if (slotId === undefined) return;
+    this.cameraPossessedByScript = true;
     this.emit({ type: "possessCamera", slotId });
   }
 

@@ -1,4 +1,5 @@
 import { defaultPlayerIndexHtml } from "@babylonslate/exporter";
+import { playerHostBase } from "../lib/player-host-url";
 
 const PLAYER_CANDIDATES = [
   "player-files.json",
@@ -31,7 +32,7 @@ async function fetchBytes(
 }
 
 export async function loadPlayerDistFiles(
-  base = "/player/",
+  base: string = playerHostBase(),
   fetchImpl: typeof fetch = fetch,
 ): Promise<Map<string, Uint8Array>> {
   const files = new Map<string, Uint8Array>();

@@ -3,15 +3,34 @@ import { createDefaultScene } from "./project";
 import {
   actorChildren,
   actorSubtree,
+  actorsInFolder,
   createActor,
   createMeshComponent,
   findActor,
+  folderSubtree,
+  nextFolderId,
   normalizeScene,
   normalizeTransform,
   wouldCreateComponentCycle,
   wouldCreateCycle,
+  wouldCreateFolderCycle,
   type SerializedScene,
 } from "./scene";
+
+function foldersScene(): SerializedScene {
+  return {
+    ...createDefaultScene(),
+    folders: [
+      { id: "root-folder", name: "Root Folder", parentFolderId: null },
+      { id: "child-folder", name: "Child Folder", parentFolderId: "root-folder" },
+      { id: "other-folder", name: "Other Folder", parentFolderId: null },
+    ],
+    actors: [
+      { ...createActor("inside", "Inside"), folderId: "child-folder" },
+      createActor("outside", "Outside"),
+    ],
+  };
+}
 
 function nestedScene(): SerializedScene {
   return {
@@ -106,6 +125,89 @@ describe("scene schema", () => {
       properties: { meshKind: "box" },
       parentId: "missing",
     });
+  });
+
+  it("gives duplicated actor ids a unique id so both actors stay addressable", () => {
+    const scene = normalizeScene({
+      actors: [
+        { id: "dupe", name: "First" },
+        { id: "dupe", name: "Second" },
+        { id: "dupe", name: "Third" },
+      ],
+    });
+    const ids = scene.actors.map((actor) => actor.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids[0]).toBe("dupe");
+    expect(scene.actors.map((actor) => actor.name)).toEqual([
+      "First",
+      "Second",
+      "Third",
+    ]);
+  });
+
+  it("keeps parent links pointing at the first actor that owned a duplicated id", () => {
+    const scene = normalizeScene({
+      actors: [
+        { id: "root", name: "Root" },
+        { id: "root", name: "Impostor" },
+        { id: "child", name: "Child", parentId: "root" },
+      ],
+    });
+    expect(scene.actors[1]!.id).not.toBe("root");
+    expect(scene.actors[2]!.parentId).toBe("root");
+  });
+
+  it("normalizes a scene without folders to an empty folder list", () => {
+    const scene = normalizeScene({ actors: [{ id: "a" }] });
+    expect(scene.folders).toEqual([]);
+    expect(scene.actors[0]!.folderId).toBeNull();
+  });
+
+  it("keeps authored folders and drops malformed rows", () => {
+    const scene = normalizeScene({
+      folders: [
+        { id: "f1", name: "Lighting" },
+        { id: "f2", name: "Spots", parentFolderId: "f1" },
+        { id: "", name: "Nameless" },
+        "junk",
+      ],
+      actors: [{ id: "a", folderId: "f2" }],
+    });
+    expect(scene.folders).toEqual([
+      { id: "f1", name: "Lighting", parentFolderId: null },
+      { id: "f2", name: "Spots", parentFolderId: "f1" },
+    ]);
+    expect(scene.actors[0]!.folderId).toBe("f2");
+  });
+
+  it("clears folder references that no longer exist", () => {
+    const scene = normalizeScene({
+      folders: [{ id: "f1", name: "Lighting", parentFolderId: "gone" }],
+      actors: [{ id: "a", folderId: "missing" }],
+    });
+    expect(scene.folders[0]!.parentFolderId).toBeNull();
+    expect(scene.actors[0]!.folderId).toBeNull();
+  });
+
+  it("breaks a folder parent cycle rather than hiding the folders", () => {
+    const scene = normalizeScene({
+      folders: [
+        { id: "f1", name: "One", parentFolderId: "f2" },
+        { id: "f2", name: "Two", parentFolderId: "f1" },
+      ],
+    });
+    const roots = scene.folders.filter((folder) => folder.parentFolderId === null);
+    expect(roots.length).toBeGreaterThan(0);
+  });
+
+  it("gives duplicated folder ids a unique id", () => {
+    const scene = normalizeScene({
+      folders: [
+        { id: "f1", name: "One" },
+        { id: "f1", name: "Two" },
+      ],
+    });
+    expect(new Set(scene.folders.map((folder) => folder.id)).size).toBe(2);
   });
 
   it("keeps the grid visible unless showGrid is explicitly false", () => {
@@ -226,6 +328,43 @@ describe("scene schema", () => {
     expect(wouldCreateCycle(scene, "root", "grandchild")).toBe(true);
     expect(wouldCreateCycle(scene, "root", "other")).toBe(false);
     expect(wouldCreateCycle(scene, "root", null)).toBe(false);
+  });
+
+  it("collects a folder subtree so deletes can promote its contents", () => {
+    const scene = foldersScene();
+    expect(folderSubtree(scene, "root-folder").map((folder) => folder.id)).toEqual([
+      "root-folder",
+      "child-folder",
+    ]);
+  });
+
+  it("rejects folder moves that would create a cycle", () => {
+    const scene = foldersScene();
+    expect(wouldCreateFolderCycle(scene, "root-folder", "child-folder")).toBe(true);
+    expect(wouldCreateFolderCycle(scene, "root-folder", null)).toBe(false);
+    expect(wouldCreateFolderCycle(scene, "child-folder", null)).toBe(false);
+  });
+
+  it("lists actors by folder in scene order", () => {
+    const scene = foldersScene();
+    expect(actorsInFolder(scene, "child-folder").map((actor) => actor.id)).toEqual([
+      "inside",
+    ]);
+    expect(actorsInFolder(scene, null).map((actor) => actor.id)).toEqual(["outside"]);
+  });
+
+  it("allocates a folder id that no folder is using", () => {
+    const scene = foldersScene();
+    expect(nextFolderId(scene)).toBe("folder-1");
+    expect(
+      nextFolderId({
+        ...scene,
+        folders: [
+          ...scene.folders,
+          { id: "folder-1", name: "Taken", parentFolderId: null },
+        ],
+      }),
+    ).toBe("folder-2");
   });
 
   it("detects component reparent cycles", () => {

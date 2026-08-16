@@ -23,16 +23,24 @@ function contentType(file: string): string {
  * same-origin on the editor preview host.
  */
 export function playerHostVitePlugin(playerDist: string, editorDist: string): Plugin {
+  let mount = "/player/";
   return {
     name: "player-host",
+    configResolved(config) {
+      // Preview Build requests the player through the Vite base, so a deployed
+      // sub-path such as `/BabylonSlate/` must be served here too.
+      const base = config.base && config.base !== "" ? config.base : "/";
+      mount = `${base.endsWith("/") ? base : `${base}/`}player/`;
+    },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split("?")[0] ?? "";
-        if (!url.startsWith("/player/") && url !== "/player") return next();
+        const bare = mount.slice(0, -1);
+        if (!url.startsWith(mount) && url !== bare) return next();
         const rel =
-          url === "/player" || url === "/player/"
+          url === bare || url === mount
             ? "index.html"
-            : decodeURIComponent(url.slice("/player/".length));
+            : decodeURIComponent(url.slice(mount.length));
         const file = path.resolve(playerDist, rel);
         if (!file.startsWith(path.resolve(playerDist))) return next();
         if (!existsSync(file) || statSync(file).isDirectory()) return next();

@@ -7,6 +7,11 @@ import type {
 import {
   AddActorCommand,
   AddComponentCommand,
+  AddFolderCommand,
+  RemoveFolderCommand,
+  RenameFolderCommand,
+  ReparentFolderCommand,
+  SetActorFolderCommand,
   RemoveActorCommand,
   RemoveComponentCommand,
   RenameActorCommand,
@@ -127,6 +132,53 @@ function diffComponents(
   }
 }
 
+function diffFolders(
+  before: SerializedScene,
+  after: SerializedScene,
+  commands: SceneEditCommand[],
+): void {
+  const beforeFolders = new Map(
+    before.folders.map((folder) => [folder.id, folder]),
+  );
+  const afterFolders = new Map(after.folders.map((folder) => [folder.id, folder]));
+
+  for (const [id, folder] of afterFolders) {
+    const previous = beforeFolders.get(id);
+    if (!previous) {
+      commands.push(
+        new AddFolderCommand(
+          folder,
+          after.folders.findIndex((entry) => entry.id === id),
+        ),
+      );
+      continue;
+    }
+    if (previous.name !== folder.name) {
+      commands.push(new RenameFolderCommand(id, previous.name, folder.name));
+    }
+    if (previous.parentFolderId !== folder.parentFolderId) {
+      commands.push(
+        new ReparentFolderCommand(
+          id,
+          previous.parentFolderId,
+          folder.parentFolderId,
+        ),
+      );
+    }
+  }
+
+  for (const [id, folder] of beforeFolders) {
+    if (!afterFolders.has(id)) {
+      commands.push(
+        new RemoveFolderCommand(
+          folder,
+          before.folders.findIndex((entry) => entry.id === id),
+        ),
+      );
+    }
+  }
+}
+
 /**
  * Derives minimal scene edit commands from a before/after pair, mirroring
  * `diffGraphCommands` so every editing surface can route through the undo stack.
@@ -162,6 +214,8 @@ export function diffSceneCommands(
     }
   }
 
+  diffFolders(before, after, commands);
+
   const beforeActors = new Map(before.actors.map((actor) => [actor.id, actor]));
   const afterActors = new Map(after.actors.map((actor) => [actor.id, actor]));
 
@@ -182,6 +236,15 @@ export function diffSceneCommands(
     if (previous.parentId !== actor.parentId) {
       commands.push(
         new ReparentActorCommand(id, previous.parentId, actor.parentId),
+      );
+    }
+    if ((previous.folderId ?? null) !== (actor.folderId ?? null)) {
+      commands.push(
+        new SetActorFolderCommand(
+          id,
+          previous.folderId ?? null,
+          actor.folderId ?? null,
+        ),
       );
     }
     if (!transformEqual(previous.transform, actor.transform)) {

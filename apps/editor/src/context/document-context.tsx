@@ -2118,6 +2118,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
         guidForPath: (path: string) => string | null;
+        projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
         enginePluginLoad: () => {
           entries: number;
@@ -2297,6 +2298,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      projectStartupSceneGuid: () =>
+        projectDocument?.settings.startupSceneGuid?.trim() ?? "",
       pluginGuids: () =>
         projectService.plugins.map((plugin) => plugin.pluginGuid),
       enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
@@ -2360,6 +2363,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService,
     ensureDerived,
     projectService,
+    projectDocument,
     updateProjectSettings,
   ]);
 

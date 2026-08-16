@@ -8,7 +8,9 @@ import {
   filesFromPreviewPack,
   isPreviewPackMessage,
   PREVIEW_DIAGNOSTICS_MESSAGE,
+  PREVIEW_ERROR_MESSAGE,
   PREVIEW_READY_MESSAGE,
+  PREVIEW_REQUEST_PACK_MESSAGE,
   PREVIEW_STATS_MESSAGE,
   PREVIEW_STOP_MESSAGE,
 } from "./preview-protocol";
@@ -133,13 +135,25 @@ unlockAudioOnFirstGesture();
 function bootFailure(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   rootEl().dataset.error = message;
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: PREVIEW_ERROR_MESSAGE, message }, "*");
+  }
 }
 
 if (previewMode()) {
+  let launched = false;
   window.addEventListener("message", (event) => {
     if (!isPreviewPackMessage(event.data)) return;
+    // The host may resend the pack until it sees the player boot; ignore repeats.
+    if (launched) return;
+    launched = true;
     void launchFromFiles(filesFromPreviewPack(event.data)).catch(bootFailure);
   });
+  // Ask only once the listener above exists. Waiting for the parent's iframe
+  // `load` event alone raced module evaluation and silently dropped the pack.
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: PREVIEW_REQUEST_PACK_MESSAGE }, "*");
+  }
 } else {
   void launchFromHttp().catch(bootFailure);
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CatalogDialog,
   CatalogItemButton,
@@ -24,6 +24,14 @@ export function PlaceActorsDialog({
 }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
+
+  // The Outliner closes this dialog itself once an actor spawns, so resetting
+  // from `onOpenChange` alone would leave the previous filter in place.
+  useEffect(() => {
+    if (open) return;
+    setSearch("");
+    setActiveCategory("all");
+  }, [open]);
 
   const items = useMemo(
     () => [...ENGINE_PLACE_ACTORS, ...projectItems],
@@ -56,13 +64,7 @@ export function PlaceActorsDialog({
   return (
     <CatalogDialog
       open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) {
-          setSearch("");
-          setActiveCategory("all");
-        }
-      }}
+      onOpenChange={onOpenChange}
       title="Place Actors"
       description="Spawn a shape, light, camera, empty actor, or project asset."
       categories={categories}

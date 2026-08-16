@@ -18,20 +18,26 @@ export type { PackSource } from "./pack-source";
 export { concatenateScripts, serializeScriptRegistry, parseScriptRegistry } from "./scripts";
 export {
   PREVIEW_PACK_MESSAGE,
+  PREVIEW_REQUEST_PACK_MESSAGE,
   PREVIEW_READY_MESSAGE,
   PREVIEW_STATS_MESSAGE,
   PREVIEW_DIAGNOSTICS_MESSAGE,
+  PREVIEW_ERROR_MESSAGE,
   PREVIEW_STOP_MESSAGE,
   isPreviewPackMessage,
   isPreviewDiagnosticsMessage,
+  isPreviewRequestPackMessage,
+  isPreviewErrorMessage,
   filesFromPreviewPack,
   previewPackFromFiles,
 } from "./preview-protocol";
 export type {
   PreviewPackMessage,
+  PreviewRequestPackMessage,
   PreviewReadyMessage,
   PreviewStatsMessage,
   PreviewDiagnosticsMessage,
+  PreviewErrorMessage,
 } from "./preview-protocol";
 export {
   exportGame,
