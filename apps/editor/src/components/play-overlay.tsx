@@ -161,6 +161,18 @@ export function PlayOverlay({
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const closedRef = useRef(false);
+  const finishSessionRef = useRef<() => void>(() => {});
+  finishSessionRef.current = () => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    const result = sessionRef.current?.stop() ?? emptyPlayResult();
+    sessionRef.current = null;
+    setHudScene(null);
+    onCloseRef.current(result);
+  };
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
   const animGraphsRef = useRef(animGraphs);
@@ -302,6 +314,7 @@ export function PlayOverlay({
         const current = sessionRef.current;
         if (current) syncFramebuffer(current.handle);
       },
+      onFatalDiagnostic: () => finishSessionRef.current(),
     });
     sessionRef.current = session;
     setHudScene(session.handle.scene);
@@ -383,12 +396,7 @@ export function PlayOverlay({
         }}
         onStatsToggle={() => setStatsOpen((open) => !open)}
         onConsoleOpen={() => setConsoleOpen(true)}
-        onClose={() => {
-          const result = sessionRef.current?.stop() ?? emptyPlayResult();
-          sessionRef.current = null;
-          setHudScene(null);
-          onClose(result);
-        }}
+        onClose={() => finishSessionRef.current()}
         stats={
           <StatsHud
             fps={fps}
