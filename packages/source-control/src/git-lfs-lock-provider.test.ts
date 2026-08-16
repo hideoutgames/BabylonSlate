@@ -52,16 +52,23 @@ describe("GitLfsLockProvider", () => {
     });
   });
 
-  it("maps 409 to a conflict carrying the existing lock", async () => {
+  it("maps 409 to a conflict when verify lists the lock as theirs", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo.git",
       branch: "main",
       getToken: async () => "token",
-      fetch: async () =>
-        jsonResponse(409, {
+      fetch: async (request) => {
+        if (request.url.endsWith("/locks/verify")) {
+          return jsonResponse(200, {
+            ours: [],
+            theirs: [{ ...sampleLock, owner: { name: "Bob" } }],
+          });
+        }
+        return jsonResponse(409, {
           lock: { ...sampleLock, owner: { name: "Bob" } },
           message: "already created lock",
-        }),
+        });
+      },
     });
     const result = await provider.create("assets/hero.scene.babasset");
     expect(isErr(result)).toBe(true);
@@ -69,6 +76,34 @@ describe("GitLfsLockProvider", () => {
     expect(result.error.kind).toBe("conflict");
     expect(result.error.lock?.ownerName).toBe("Bob");
     expect(result.error.lock?.ours).toBe(false);
+  });
+
+  it("treats 409 as held when verify lists the path as ours", async () => {
+    const urls: string[] = [];
+    const provider = new GitLfsLockProvider({
+      repositoryUrl: "https://github.com/org/repo.git",
+      branch: "main",
+      getToken: async () => "token",
+      fetch: async (request) => {
+        urls.push(`${request.method} ${request.url}`);
+        if (request.method === "POST" && request.url.endsWith("/locks")) {
+          return jsonResponse(409, {
+            lock: sampleLock,
+            message: "already created lock",
+          });
+        }
+        if (request.url.endsWith("/locks/verify")) {
+          return jsonResponse(200, { ours: [sampleLock], theirs: [] });
+        }
+        return jsonResponse(500, { message: `unexpected ${request.url}` });
+      },
+    });
+    const result = await provider.create("assets/hero.scene.babasset");
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.ours).toBe(true);
+    expect(result.value.id).toBe("lock-1");
+    expect(urls.some((url) => url.endsWith("/locks/verify"))).toBe(true);
   });
 
   it("paginates GET /locks", async () => {

@@ -46,6 +46,9 @@ describe("ExternalChangeDialogs", () => {
       />,
     );
     expect(screen.getByTestId("external-change-dirty-disk")).toBeTruthy();
+    expect(
+      screen.getByText("assets/a.babasset").className,
+    ).toContain("selectable-text");
     fireEvent.click(screen.getByTestId("external-change-keep-edits"));
     expect(onKeepEdits).toHaveBeenCalled();
   });

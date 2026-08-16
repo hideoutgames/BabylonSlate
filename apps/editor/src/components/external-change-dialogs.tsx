@@ -1,4 +1,5 @@
 import type { ExternalChangeClassification } from "@babylonslate/assets";
+import { SelectableText } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   AlertDialog,
@@ -69,7 +70,9 @@ export function ExternalChangeDialogs({
           </AlertDialogHeader>
           <ul className="list-disc pl-5 text-sm">
             {prompt.dirtyChangedPaths.map((path) => (
-              <li key={path}>{path}</li>
+              <li key={path}>
+                <SelectableText>{path}</SelectableText>
+              </li>
             ))}
           </ul>
           <AlertDialogFooter>
@@ -106,7 +109,9 @@ export function ExternalChangeDialogs({
         </AlertDialogHeader>
         <ul className="list-disc pl-5 text-sm">
           {prompt.cleanChangedPaths.map((path) => (
-            <li key={path}>{path}</li>
+            <li key={path}>
+              <SelectableText>{path}</SelectableText>
+            </li>
           ))}
         </ul>
         <AlertDialogFooter>

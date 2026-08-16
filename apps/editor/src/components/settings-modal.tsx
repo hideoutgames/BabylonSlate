@@ -1061,7 +1061,7 @@ export function SettingsModal({
                 data-testid="settings-source-control-token"
               />
               <FieldDescription>
-                {sourceControl.hasToken ? "Token Saved" : "Not saved"}
+                {sourceControl.hasToken ? "Token Saved" : "Not Saved"}
               </FieldDescription>
             </Field>
             <div className="flex flex-wrap gap-2">

@@ -19,6 +19,11 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | Git LFS create mapped every HTTP 409 as theirs (`parseLock(..., false)`), so a lock we already held flipped to unlocked until the next poll. Create now verifies and treats the path as held when it is in `ours` | Resolved |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-ux | Spec | Asset rename and folder rename/move skipped lock refuse/transfer; folder delete now also unions contained asset paths. Content Browser uses `source-control-file-ops` for all path-keyed ops | Resolved |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | `BabylonSlateSecretsPlugin.swift` existed but was not in the iOS App Sources phase or Capacitor `packageClassList`, so Keychain never registered | Resolved |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-ux | Standards | Token status and Locks empty copy were sentence case; external-change path lists were not `SelectableText` | Resolved |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | Electron `secrets:set` stores the PAT unencrypted when `safeStorage.isEncryptionAvailable()` is false (Linux without a keyring) | Accepted |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-export / p14-platforms | Spec | Packaged player booted an empty Engine: no sprite/tilemap/navmesh hydrate, no UI-logic compile, no in-process rAF `advance` or canvas input | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-packed-mode | Spec | `game.json` omitted `pixelsPerUnit` / `pixelPerfect`; Font index entries had no authored family `name` | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-platforms | Spec | Packaged player compiles UserInterface logic and packs UI JSON; Babylon GUI widget mount stays overlay Play (`PlayHudOverlay`) | Accepted |
@@ -490,7 +495,7 @@ Spec: [engineplan.md](../engineplan.md) §12, Appendix A `p15-*`. Design note: [
 | Settings, auto-lock, advisory open, CB decoration, Locks panel | Done (`p15-lock-ux`) | `apps/editor`, `source-control` | lock provider |
 | Foreground mtime rescan + reload prompts | Done (`p15-external-change`) | `assets` (`IndexedAsset.mtime`), `apps/editor` | lock UX |
 
-**P15 is Done** in CI (FakeLockProvider + Playwright). Two-device GitHub lock visibility and Working Copy branch-switch on a real iPad remain **manual** native acceptance. Out of scope: git clone/commit/pull/push UI, `lockable` in `.gitattributes`, git status badges, CORS proxy, web production source control.
+**P15 is Done** in CI (FakeLockProvider + Playwright). Two-device GitHub lock visibility and Working Copy branch-switch on a real iPad remain **manual** native acceptance. Out of scope: git clone/commit/pull/push UI, `lockable` in `.gitattributes`, git status badges, CORS proxy, web production source control. Review follow-up (`cursor/p15-review-fixes-419b`): 409 already-ours via verify, rename/folder lock ops, iOS Keychain plugin compile wiring.
 
 
 

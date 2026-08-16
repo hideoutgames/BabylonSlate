@@ -35,4 +35,20 @@ describe("Capacitor 8 iOS host", () => {
     );
     expect(gitignore).toMatch(/App\/App\/public/);
   });
+
+  it("compiles BabylonSlateSecretsPlugin into the iOS app target", () => {
+    const pbx = readFileSync(
+      join(repoRoot, "apps/editor/ios/App/App.xcodeproj/project.pbxproj"),
+      "utf8",
+    );
+    expect(pbx).toMatch(/BabylonSlateSecretsPlugin\.swift in Sources/);
+    expect(pbx).toMatch(/BabylonSlateSecretsPlugin\.swift \*\/ = \{isa = PBXFileReference/);
+    const cap = JSON.parse(
+      readFileSync(
+        join(repoRoot, "apps/editor/ios/App/App/capacitor.config.json"),
+        "utf8",
+      ),
+    ) as { packageClassList?: string[] };
+    expect(cap.packageClassList).toContain("BabylonSlateSecretsPlugin");
+  });
 });

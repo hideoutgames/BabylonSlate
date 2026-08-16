@@ -8,5 +8,7 @@
 	"ios": {
 		"contentInset": "always"
 	},
-	"packageClassList": []
+	"packageClassList": [
+		"BabylonSlateSecretsPlugin"
+	]
 }
