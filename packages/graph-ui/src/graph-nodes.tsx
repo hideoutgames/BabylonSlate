@@ -53,7 +53,7 @@ function visualFromData(
   };
 }
 
-function zipPinRows(
+export function zipPinRows(
   pins: SerializedPin[],
 ): Array<{ in?: SerializedPin; out?: SerializedPin }> {
   const execIn = pins.filter(
@@ -73,9 +73,27 @@ function zipPinRows(
   for (let i = 0; i < execCount; i++) {
     rows.push({ in: execIn[i], out: execOut[i] });
   }
-  const dataCount = Math.max(dataIn.length, dataOut.length);
+  let dataInIndex = 0;
+  let dataOutIndex = 0;
+  for (const row of rows) {
+    if (!row.in && dataInIndex < dataIn.length) {
+      row.in = dataIn[dataInIndex];
+      dataInIndex += 1;
+    }
+    if (!row.out && dataOutIndex < dataOut.length) {
+      row.out = dataOut[dataOutIndex];
+      dataOutIndex += 1;
+    }
+  }
+  const dataCount = Math.max(
+    dataIn.length - dataInIndex,
+    dataOut.length - dataOutIndex,
+  );
   for (let i = 0; i < dataCount; i++) {
-    rows.push({ in: dataIn[i], out: dataOut[i] });
+    rows.push({
+      in: dataIn[dataInIndex + i],
+      out: dataOut[dataOutIndex + i],
+    });
   }
   return rows;
 }
