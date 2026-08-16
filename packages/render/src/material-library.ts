@@ -5,11 +5,37 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
+import {
+  compileMaterialPlan,
+  materialCompileFailed,
+  prewarmMaterial,
+} from "./material-compiler";
 
-export type MaterialAcquireResult =
-  | { ok: true; material: NodeMaterial; hash: string }
-  | { ok: false; diagnostics: MaterialDiagnostic[] };
+export interface AcquiredMaterial {
+  ok: true;
+  material: NodeMaterial;
+  hash: string;
+}
+
+export interface UnavailableMaterial {
+  ok: false;
+  diagnostics: MaterialDiagnostic[];
+}
+
+export type MaterialAcquireResult = AcquiredMaterial | UnavailableMaterial;
+
+/** See `materialCompileFailed`: the editor compiles this without strict mode. */
+export function materialUnavailable(
+  result: MaterialAcquireResult,
+): result is UnavailableMaterial {
+  return result.ok === false;
+}
+
+export function materialAvailable(
+  result: MaterialAcquireResult,
+): result is AcquiredMaterial {
+  return result.ok === true;
+}
 
 export interface MaterialLibraryOptions {
   resolveTexture?: (guid: string) => Texture | null;
@@ -88,7 +114,7 @@ export class MaterialLibrary {
       name: `material:${assetGuid}`,
       resolveTexture: this.options.resolveTexture,
     });
-    if (!compiled.ok) {
+    if (materialCompileFailed(compiled)) {
       return { ok: false, diagnostics: compiled.diagnostics };
     }
     // Replace only after the new material builds, so a failed edit leaves the

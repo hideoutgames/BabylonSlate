@@ -84,6 +84,7 @@ export {
   classifyMaterialCost,
   materialPreviewReducer,
   createMaterialPreviewState,
+  renderActionEnabled,
   shouldAutoCompile,
   type MaterialCostClass,
   type MaterialPreviewEvent,

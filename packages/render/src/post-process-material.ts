@@ -1,6 +1,6 @@
 import type { Camera, NodeMaterial, PostProcess, Scene } from "@babylonjs/core";
 import type { MaterialDocument } from "@babylonslate/shader-graph";
-import type { MaterialLibrary } from "./material-library";
+import { materialUnavailable, type MaterialLibrary } from "./material-library";
 
 /** One authored entry of a scene's ordered post-process chain. */
 export interface PostProcessStackEntry {
@@ -78,7 +78,7 @@ export function attachPostProcessStack(
       entry.materialGuid,
       document,
     );
-    if (!compiled.ok) {
+    if (materialUnavailable(compiled)) {
       options.onDiagnostic?.(
         `Post-process material "${document.name}" failed to compile: ${
           compiled.diagnostics[0]?.message ?? "unknown error"

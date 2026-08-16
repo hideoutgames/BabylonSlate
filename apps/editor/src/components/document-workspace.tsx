@@ -12,6 +12,7 @@ import {
 import { NavBakeProvider } from "../context/nav-bake-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
+import { MaterialEditingProvider } from "../context/material-editing-context";
 import { TypeAssetEditingProvider } from "../context/type-asset-editing-context";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
@@ -296,6 +297,32 @@ export function DocumentWorkspace() {
                 </UiEditingProvider>
                 </GraphEditingProvider>
                 </PrefabEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (
+          doc.ref.kind === "material" ||
+          doc.ref.kind === "material-function"
+        ) {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <MaterialEditingProvider documentId={id}>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId={`document-workspace-${doc.ref.kind}`}
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind={doc.ref.kind}
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </MaterialEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );

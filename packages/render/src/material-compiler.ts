@@ -38,14 +38,30 @@ export interface CompileMaterialOptions {
   resolveTexture?: (guid: string) => Texture | null;
 }
 
-export type CompileMaterialResult =
-  | {
-      ok: true;
-      material: NodeMaterial;
-      /** Idempotent: disposes the material and every block it created. */
-      dispose: () => void;
-    }
-  | { ok: false; diagnostics: MaterialDiagnostic[] };
+export interface CompiledMaterial {
+  ok: true;
+  material: NodeMaterial;
+  /** Idempotent: disposes the material and every block it created. */
+  dispose: () => void;
+}
+
+export interface FailedMaterial {
+  ok: false;
+  diagnostics: MaterialDiagnostic[];
+}
+
+export type CompileMaterialResult = CompiledMaterial | FailedMaterial;
+
+/**
+ * Explicit guard rather than a bare `result.ok` check: `apps/editor` compiles
+ * these sources without `strictNullChecks`, where TypeScript does not narrow a
+ * union by a boolean discriminant.
+ */
+export function materialCompileFailed(
+  result: CompileMaterialResult,
+): result is FailedMaterial {
+  return result.ok === false;
+}
 
 /** Diagnostics anchor to the outermost call node so tapping one navigates. */
 function anchorNodeId(operation: MaterialOperation): string {

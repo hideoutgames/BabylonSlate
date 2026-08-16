@@ -657,7 +657,10 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("UserInterface", "HUD")).toBe("HUD.ui.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
     expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.babasset");
-    expect(newAssetFileName("Shader", "Surface")).toBe("Surface.shader.babasset");
+    expect(newAssetFileName("Material", "Rock")).toBe("Rock.material.babasset");
+    expect(newAssetFileName("MaterialFunction", "Tint")).toBe(
+      "Tint.matfunc.babasset",
+    );
     expect(newAssetFileName("Class", "Hero")).toBe("Hero.class.babasset");
     expect(newAssetFileName("Tileset", "Ground")).toBe(
       "Ground.tileset.babasset",
@@ -742,7 +745,8 @@ describe("content-browser-helpers", () => {
       "UserInterface",
       "Sprite",
       "AnimationGraph",
-      "Shader",
+      "Material",
+      "MaterialFunction",
       "Tileset",
       "Tilemap",
       "BehaviourTree",

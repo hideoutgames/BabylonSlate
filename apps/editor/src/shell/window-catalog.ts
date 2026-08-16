@@ -11,6 +11,8 @@ export type DockviewDocumentKind =
   | "sprite"
   | "tileset"
   | "tilemap"
+  | "material"
+  | "material-function"
   | "ui"
   | "plugin-settings";
 export type { DockWindowDirection };
@@ -24,6 +26,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "sprite",
   "tileset",
   "tilemap",
+  "material",
+  "material-function",
   "ui",
   "plugin-settings",
 ]);
@@ -60,6 +64,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   sprite: "sprite-preview",
   tileset: "tileset-preview",
   tilemap: "tilemap-paint",
+  material: "material-graph",
+  "material-function": "material-function-graph",
   ui: "ui-design",
   "plugin-settings": "plugin-settings-details",
 };
@@ -330,6 +336,78 @@ const TILEMAP_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const MATERIAL_WINDOWS: DockWindowDefinition[] = [
+  { id: "material-graph", component: "material-graph", title: "Graph" },
+  {
+    id: "material-preview",
+    component: "material-preview",
+    title: "Preview",
+    defaultPosition: {
+      referencePanelId: "material-graph",
+      direction: "left",
+      initialWidth: 320,
+    },
+  },
+  {
+    id: "material-details",
+    component: "material-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "material-graph",
+      direction: "right",
+      initialWidth: 300,
+    },
+  },
+  {
+    id: "material-compiler-results",
+    component: "material-compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "material-graph",
+      direction: "below",
+      initialHeight: 160,
+    },
+  },
+];
+
+const MATERIAL_FUNCTION_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "material-function-graph",
+    component: "material-function-graph",
+    title: "Graph",
+  },
+  {
+    id: "material-function-interface",
+    component: "material-function-interface",
+    title: "Interface",
+    defaultPosition: {
+      referencePanelId: "material-function-graph",
+      direction: "left",
+      initialWidth: 300,
+    },
+  },
+  {
+    id: "material-details",
+    component: "material-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "material-function-graph",
+      direction: "right",
+      initialWidth: 300,
+    },
+  },
+  {
+    id: "material-compiler-results",
+    component: "material-compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "material-function-graph",
+      direction: "below",
+      initialHeight: 160,
+    },
+  },
+];
+
 const UI_DESIGNER_WINDOWS: DockWindowDefinition[] = [
   { id: "ui-design", component: "ui-design", title: "Design" },
   {
@@ -391,6 +469,12 @@ export function listDockWindows(
   }
   if (kind === "tilemap") {
     return withOptionalLocks(kind, TILEMAP_WINDOWS, options);
+  }
+  if (kind === "material") {
+    return withOptionalLocks(kind, MATERIAL_WINDOWS, options);
+  }
+  if (kind === "material-function") {
+    return withOptionalLocks(kind, MATERIAL_FUNCTION_WINDOWS, options);
   }
   if (kind === "ui") {
     if (options?.uiEditorMode === "logic") {

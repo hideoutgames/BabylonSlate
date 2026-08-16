@@ -8,13 +8,20 @@ import {
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
+  isLegacyMaterialAssetType,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
   createDefaultBehaviourTree,
   createDefaultBlackboard,
 } from "@babylonslate/behaviour-tree";
-import { createDefaultShaderGraph } from "@babylonslate/shader-graph";
+import {
+  createDefaultMaterialDocument,
+  createDefaultMaterialFunctionDocument,
+  materialDependencies,
+  normalizeMaterialDocument,
+  normalizeMaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import { createDefaultUserInterface } from "@babylonslate/ui-runtime";
 import {
   engineParentOf,
@@ -73,7 +80,8 @@ export const CREATABLE_ASSET_TYPES = [
   "UserInterface",
   "Sprite",
   "AnimationGraph",
-  "Shader",
+  "Material",
+  "MaterialFunction",
   "Tileset",
   "Tilemap",
   "BehaviourTree",
@@ -787,13 +795,19 @@ export function buildNewAssetResult(options: {
     );
   }
 
-  if (type === "Shader") {
-    return documentAsset(
-      type,
+  if (type === "Material") {
+    const payload = createDefaultMaterialDocument(name) as unknown as Record<
+      string,
+      unknown
+    >;
+    return documentAsset(type, name, guid, payload);
+  }
+
+  if (type === "MaterialFunction") {
+    const payload = createDefaultMaterialFunctionDocument(
       name,
-      guid,
-      createDefaultShaderGraph(name) as unknown as Record<string, unknown>,
-    );
+    ) as unknown as Record<string, unknown>;
+    return documentAsset(type, name, guid, payload);
   }
 
   if (type === "Tileset") {
@@ -862,37 +876,46 @@ export function buildNewAssetResult(options: {
   throw new Error(`Unsupported creatable asset type: ${String(exhaustive)}`);
 }
 
+const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
+  Scene: ".scene.babasset",
+  Class: ".class.babasset",
+  UserInterface: ".ui.babasset",
+  EditorUtilityInterface: ".eui.babasset",
+  Sprite: ".sprite.babasset",
+  AnimationGraph: ".anim.babasset",
+  Material: ".material.babasset",
+  MaterialFunction: ".matfunc.babasset",
+  Tileset: ".tileset.babasset",
+  Tilemap: ".tilemap.babasset",
+  BehaviourTree: ".bt.babasset",
+  Blackboard: ".blackboard.babasset",
+};
+
 export function newAssetFileName(
   type: CreatableAssetType,
   name: string,
 ): string {
   const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
   if (!safe) return "";
-  const suffix =
-    type === "Scene"
-      ? ".scene.babasset"
-      : type === "Class"
-        ? ".class.babasset"
-        : type === "UserInterface"
-          ? ".ui.babasset"
-          : type === "Sprite"
-            ? ".sprite.babasset"
-            : type === "AnimationGraph"
-              ? ".anim.babasset"
-              : type === "Shader"
-                ? ".shader.babasset"
-                : type === "Tileset"
-                  ? ".tileset.babasset"
-                : type === "Tilemap"
-                  ? ".tilemap.babasset"
-                  : type === "BehaviourTree"
-                    ? ".bt.babasset"
-                    : type === "Blackboard"
-                      ? ".blackboard.babasset"
-                      : type === "EditorUtilityInterface"
-                        ? ".eui.babasset"
-                    : ".babasset";
-  return `${safe}${suffix}`;
+  return `${safe}${ASSET_FILE_SUFFIX[type] ?? ".babasset"}`;
+}
+
+/**
+ * Textures, called functions and the preview mesh a material references.
+ * Saving writes these into `header.dependencies[]` so Show References, delete
+ * guards and the export closure all see them.
+ */
+export function materialAssetDependencies(
+  assetType: string,
+  payload: Record<string, unknown>,
+): string[] {
+  if (assetType === "Material" || isLegacyMaterialAssetType(assetType)) {
+    return materialDependencies(normalizeMaterialDocument(payload)).all;
+  }
+  if (assetType === "MaterialFunction") {
+    return materialDependencies(normalizeMaterialFunctionDocument(payload)).all;
+  }
+  return [];
 }
 
 function documentAsset(

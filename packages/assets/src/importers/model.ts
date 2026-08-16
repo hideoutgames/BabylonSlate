@@ -1,4 +1,6 @@
+import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { newAssetGuid } from "../guid";
+import { MATERIAL_PAYLOAD_VERSION } from "../migration";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import {
@@ -20,7 +22,23 @@ const MIME_BY_EXTENSION: Record<string, string> = {
  * Models import as a Model asset plus browsable Material / Texture / Animation
  * dependents. GLB/glTF parse enough of the container for CB headers and
  * embedded albedo images; mesh runtime fidelity can stay thin until Play.
+ *
+ * Imported materials are authored Material documents from the start, seeded
+ * with the albedo texture, so opening one shows an editable graph rather than
+ * an empty settings tab.
  */
+
+/** Material document for an imported glTF material slot. */
+function importedMaterialPayload(
+  name: string,
+  textureGuid: string | undefined,
+): Record<string, unknown> {
+  const document = migrateLegacyShaderPayload(
+    {},
+    { textureGuids: textureGuid ? [textureGuid] : [] },
+  );
+  return { ...document, name } as unknown as Record<string, unknown>;
+}
 export async function importModel(
   bytes: Uint8Array,
   options: ImportOptions,
@@ -103,14 +121,14 @@ function importFromBrowse(
       type: "Material",
       name: `${name}_Material`,
       guid: materialGuid,
-      version: 1,
+      version: MATERIAL_PAYLOAD_VERSION,
       dependencies: [textureGuid],
       parentClass: null,
-      payload: {},
+      payload: importedMaterialPayload(`${name}_Material`, textureGuid),
       chunks: [],
     });
   } else {
-    for (const material of browse.materials) {
+    for (const [i, material] of browse.materials.entries()) {
       const materialGuid = newAssetGuid();
       materialGuids.push(materialGuid);
       const dep =
@@ -124,10 +142,15 @@ function importFromBrowse(
         type: "Material",
         name: `${name}_${material.name}`,
         guid: materialGuid,
-        version: 1,
+        version: MATERIAL_PAYLOAD_VERSION,
         dependencies: dep,
         parentClass: null,
-        payload: {},
+        // The slot index keeps model-to-material assignment stable across
+        // re-imports even when material names change.
+        payload: {
+          ...importedMaterialPayload(`${name}_${material.name}`, dep[0]),
+          slotIndex: i,
+        },
         chunks: [],
       });
     }
@@ -165,6 +188,11 @@ function importFromBrowse(
       materialCount: materialGuids.length,
       textureCount: imageGuids.length,
       animationCount: animationGuids.length,
+      // Ordered slots so a MeshComponent can override one material per slot.
+      materialSlots: materialGuids.map((guid, index) => ({
+        index,
+        materialGuid: guid,
+      })),
     },
     chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
   });
@@ -197,10 +225,10 @@ function importStubDependents(
       type: "Material",
       name: `${name}_Material`,
       guid: materialGuid,
-      version: 1,
+      version: MATERIAL_PAYLOAD_VERSION,
       dependencies: [textureGuid],
       parentClass: null,
-      payload: {},
+      payload: importedMaterialPayload(`${name}_Material`, textureGuid),
       chunks: [],
     },
     {
