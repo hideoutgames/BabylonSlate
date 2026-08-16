@@ -74,7 +74,7 @@ Vite canvas host: `@babylonslate/runtime` + `@babylonslate/render` + bridge/phys
 
 `includeDebugCommands: manifest.bundleDebugger`. Release player uses `createCommandRegistry({ includeDebug: false })`; core commands (`changescene`, …) stay. When the debugger is bundled, a small vanilla DOM HUD (not the editor `PlayOverlay`) shows fps / scriptMs / physicsMs / draws. Packed fonts use `FontFace(family, bytes)` — family from the manifest `name`, falling back to the guid; not blob URLs.
 
-Boot hydrates packed **Sprite / Tilemap / Tileset / AnimationGraph / BehaviourTree / Blackboard** payloads into `createEngine` and the worker (`loadAnimGraphs`, `loadTilemaps`, `loadNavMesh`, …) **before** `play`. In-process fallback registers the same content and runs a rAF `advance` pump; both paths capture canvas input into the input ring. Overlay Play remains the path that mounts UserInterface **widget trees** onto Babylon GUI (`PlayHudOverlay`); the packaged player compiles UI logic into `scripts.js` and packs the UI JSON.
+Boot hydrates packed **Sprite / Tilemap / Tileset / AnimationGraph / BehaviourTree / Blackboard / Material / Material Function** payloads into `createEngine` and the worker (`loadAnimGraphs`, `loadTilemaps`, `loadNavMesh`, …) **before** `play`. Material documents, functions, and the startup scene `postProcessStack` go to the Engine; `assignMaterial` is forwarded with mesh/camera commands. Engine Settings `postProcessingEnabled` is editor/Play-only and is not read by the player. In-process fallback registers the same content and runs a rAF `advance` pump; both paths capture canvas input into the input ring. Overlay Play remains the path that mounts UserInterface **widget trees** onto Babylon GUI (`PlayHudOverlay`); the packaged player compiles UI logic into `scripts.js` and packs the UI JSON.
 
 `?preview=1` waits for a same-origin `postMessage` pack. Destroying the iframe drops that WebGL context.
 
@@ -89,7 +89,7 @@ Debug-dropdown checkbox only (`debuggerDefaults.previewBuild`, default **off**).
 ## Tests
 
 - Closure BFS (GameInstance, EUO strip, plugin disable, sprite `textureGuid` payloads), zip `index.html` at root, packed boot + per-scene packs, Havok XOR Rapier, file-count warn/fail, range + whole-fetch dual servers, `pixelsPerUnit` / Font `name` on `game.json`, UserInterface logic in `scripts.js`, Scene navmesh sidecars.
-- Player `packedContentFromGame` hydrates sprite/tilemap/navmesh payloads from the pack.
+- Player `packedContentFromGame` hydrates sprite/tilemap/navmesh and Material / Material Function payloads from the pack, plus the startup scene post-process stack.
 - `e2e/p14-export.spec.ts`: unzip, serve range-capable **and** range-blind, assert boot + ticks on `startupSceneGuid`, file count &lt; 800, no `main.scene.babasset`.
 - `e2e/p14-preview-build.spec.ts`: default overlay Play; toggle on/off; missing startup scene alert; a booted proof (`data-startup-scene` matches the project guid, `data-booted="true"`, ticks advance, no `data-error`, canvas laid out) so a black overlay cannot pass again; and **Stop** restores the editor (overlay and iframe gone, Play enabled, Debug menu visible). `preview-build-overlay.test.tsx` pins the labeled 44px Stop above the iframe.
 - `apps/editor/vite-player-host.test.ts`: the dev mount follows the configured base and ignores the origin-root path under a sub-path deployment.
