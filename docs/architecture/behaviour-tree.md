@@ -2,7 +2,7 @@
 
 Shared surface for the tree IR, Blackboard, and deterministic evaluator (engineplan §14.1, checklist `p11-behaviour-tree`). Implementation: `@babylonslate/behaviour-tree`. No React, no Babylon — the evaluator runs in the game worker.
 
-Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. The **authoring-surface** pass (`p-bt-editor-authoring`) fills typed Details, catalogs, tree operations, canvas diagnostics, honest Loop/Cooldown/TimeLimit, and the Play running-branch overlay. User subclasses now get ancestry-specific class events and runtime hosts (`p-bt-class-events`): `BTTask` On Activate / On Tick / On Abort, `BTDecorator` On Evaluate, `BTService` On Tick; `BTComposite` stays data (selector / sequence / parallel from ancestry, not a scripted VM). `BehaviourTreeComponent` and `NavAgentComponent` are addable. Runtime `BTTask_MoveTo` drives the crowd when a navmesh and `NavAgentComponent` are present; the package evaluator still succeeds immediately when no task host is provided. **P11 is Done.** Do not uncheck `p11-bt-editor` or `p11-bt-authoring`. §18: `packages/runtime/src/p11-acceptance.test.ts` plus `e2e/p11-ai.spec.ts`.
+Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. The **authoring-surface** pass (`p-bt-editor-authoring`) fills typed Details, catalogs, tree operations, canvas diagnostics, honest Loop/Cooldown/TimeLimit, and the Play running-branch overlay. The **UX** pass (`p-bt-editor-ux`) adds optional persisted `editorPositions`, free X/Y placement, Auto Arrange that never rewrites `children[]`, drag-off-handle Add Node, TreeNode chrome, and DockView Blackboard + Compiler Results. User subclasses now get ancestry-specific class events and runtime hosts (`p-bt-class-events`): `BTTask` On Activate / On Tick / On Abort, `BTDecorator` On Evaluate, `BTService` On Tick; `BTComposite` stays data (selector / sequence / parallel from ancestry, not a scripted VM). `BehaviourTreeComponent` and `NavAgentComponent` are addable. Runtime `BTTask_MoveTo` drives the crowd when a navmesh and `NavAgentComponent` are present; the package evaluator still succeeds immediately when no task host is provided. **P11 is Done.** Do not uncheck `p11-bt-editor` or `p11-bt-authoring`. §18: `packages/runtime/src/p11-acceptance.test.ts` plus `e2e/p11-ai.spec.ts`.
 
 ## Package
 
@@ -10,7 +10,7 @@ Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in.
 | --- | --- | --- |
 | `behaviour-tree` | Tree + Blackboard documents, parse/normalize, explicit-stack evaluator, abort matrix, `bt.*` diagnostics, scripting rule registration | React, Babylon, Capacitor |
 | `scripting` | Pin types for blackboard keys; `registerValidationRule` hook | React, Babylon, Capacitor |
-| `graph-ui` / `apps/editor` | React Flow tree host (DockView Graph / Details, `d3-hierarchy` layout, Play overlay) | Babylon, Capacitor |
+| `graph-ui` / `apps/editor` | React Flow tree host (DockView Graph / Details / Blackboard / Compiler Results, optional `editorPositions`, Play overlay) | Babylon, Capacitor |
 
 `behaviour-tree` may import `@babylonslate/scripting` (pin types, `Diagnostic`, `ValidationRule`) and `@babylonslate/core`.
 
@@ -73,23 +73,24 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 - Runtime `BTTask_MoveTo` abort calls `stopNavAgent` and clears `__moveRequested` so the crowd does not keep walking the aborted path.
 - Custom `BTComposite` subclasses are **data** composites: `kind` walks ancestry (`BTComposite_Selector` → selector, `_Sequence` → sequence, `_Parallel` → parallel, bare `BTComposite` → sequence). There is no scripted composite VM.
 
-## Editor (`p11-bt-editor` + `p-bt-editor-authoring`)
+## Editor (`p11-bt-editor` + `p-bt-editor-authoring` + `p-bt-editor-ux`)
 
 - New Asset: BehaviourTree (selector → sequence → succeed) and Blackboard.
-- Host is DockView (`kind: "behaviour-tree"`): **Graph** (`behaviour-tree-graph`) and **Details** (`behaviour-tree-details`). Shared selection (node + attachment) lives in `BehaviourTreeEditingProvider`. `GraphEditor` takes `nodeTypes` / `nodesDraggable` / `toolbarExtra` / `hiddenToolbarActions` / `lockNodeDragAxis="x"`. Composites and tasks are React Flow `bt.node` nodes with Title Case titles; decorators/services are attached selectable rows (catalog titles, not raw `classId`). Focus defaults to Graph.
-- Layout is `d3-hierarchy` top-down; drag is sibling-only on X, then `children[]` reorder + re-layout. Re-layout button remains for import edge cases. Toolbar keeps Delete (root is `__protected`); Break Links and Format are hidden.
-- Add Node palette: built-in composites/tasks plus project Class assets whose parent is `BTTask` / `BTComposite`. Custom composites take `kind` from ancestry (`kindForCatalogClassId`, bare `BTComposite` → sequence), not from the class name. Add Decorator / Add Service opens a `CatalogDialog` (built-ins plus `BTDecorator` / `BTService` classes). Attachments can be removed or moved up/down.
-- Details: `PropertyGrid` schemas per `classId` (Wait duration, SetBlackboard key+value, MoveTo destination + accept radius, CompareBlackboard key/op/value, Loop count, Cooldown / TimeLimit ms, service interval / deviation, decorator abort + observed keys). Blackboard key fields pick from the linked Blackboard asset when that document is open.
-- Blackboard editor: add / rename / typed default (bool / number / text) / delete key.
+- Host is DockView (`kind: "behaviour-tree"`): **Graph** (`behaviour-tree-graph`), **Details** (`behaviour-tree-details`), **Blackboard** (`behaviour-tree-blackboard`), **Compiler Results** (`behaviour-tree-compiler-results`). Shared selection (node + attachment) lives in `BehaviourTreeEditingProvider`. Focus defaults to Graph; Focus keep-list stays Graph only.
+- `GraphEditor` takes `nodeTypes` / `nodesDraggable` / `nodeDragHandle=".bt-node-drag-handle"` / `commitPositionsOnDragEnd` / `connectEndMode="add-node"` / `replaceIncomingOnConnect` / `canConnect` / `toolbarExtra` / `hiddenToolbarActions` (Copy, Paste, Break Links, Format). Composites and tasks are React Flow `bt.node` (`TreeNode`) with Title Case titles, visible exec diamonds, numeric priority badges, and reserved last-result rows. Decorators/services are attached selectable rows (catalog titles, not raw `classId`).
+- **Positions.** Optional document field `editorPositions`. Runtime ignores it. Missing field → in-memory `d3-hierarchy` layout, asset stays clean until the first authoring change. A completed move writes coordinates and stably re-sorts siblings by X (`applyNodePositions`). **Auto Arrange** writes computed positions and never changes `children[]`.
+- Add Node palette: built-in composites/tasks plus project Class assets whose parent is `BTTask` / `BTComposite`. Custom composites take `kind` from ancestry (`kindForCatalogClassId`, bare `BTComposite` → sequence), not from the class name. Dragging off a children handle (including a short drag) opens the filtered catalog and auto-connects; script/material/anim graphs keep the 96px cancel + wire-break. Add Decorator / Add Service opens a `CatalogDialog` (built-ins plus `BTDecorator` / `BTService` classes). Attachments can be removed or moved up/down.
+- Details: `PropertyGrid` schemas per `classId` (Wait duration, SetBlackboard key+value, MoveTo destination + accept radius, CompareBlackboard key/op/value, Loop count, Cooldown / TimeLimit ms, service interval / deviation, decorator abort + observed keys). Blackboard **key** fields pick from the linked Blackboard; the **asset** picker lives on the Blackboard dock.
+- Blackboard dock: `AssetPicker` for `blackboardGuid` plus `BlackboardEditor` (add / rename / typed default / delete key) and the Play blackboard watch.
+- Compiler Results: `validateBehaviourTree` rows; tapping a row focuses that node. The same diagnostics still badge the canvas.
 - Long-press `ContextMenuOverlay` on the node, attachment row, and empty pane (selected node): Add Decorator, Wrap In Sequence, Duplicate, Delete. Double-tap a node or attachment whose `classId` matches a Class asset opens that class document.
-- `validateBehaviourTree` is passed to `GraphEditor` `diagnostics` (error badge on the node).
-- Play: running **branch** from `btState.stack` (not only `btNodeId`) plus last-result overlay and blackboard watch. Session report `btNodeId` opens the tree and focuses the node.
+- Play: running **branch** from `btState.stack` (not only `btNodeId`) plus last-result overlay. Session report `btNodeId` opens the tree and focuses the node.
 - P8: `TraceFrame.bt` records stack, blackboard, lastResults, and nodeMemory. `restoreBtFromTrace` reapplies that state.
 
 ## Honest residuals
 
 - RotateToFace / PlayAnimation / PlaySound succeed without a host.
-- §18 patrol, live obstacle close, abort, compiled throw, and `.babtrace` BT replay are the headless harness. Compiled custom decorator On Evaluate (false gates Wait), On Abort, and service Set Blackboard live in `p11-acceptance.test.ts`. Editor e2e covers New Asset, add Wait + duration + keyed decorator + remove attachment, New Class parent `BTDecorator` (Events show On Evaluate, Add Decorator catalogs the class), bake, and session-report `btNodeId` (Playwright Preview throw is test-mode `previewThrow` when a tree is attached).
+- §18 patrol, live obstacle close, abort, compiled throw, and `.babtrace` BT replay are the headless harness. Compiled custom decorator On Evaluate (false gates Wait), On Abort, and service Set Blackboard live in `p11-acceptance.test.ts`. Editor e2e covers New Asset, add Wait + duration + keyed decorator + remove attachment, New Class parent `BTDecorator` (Events show On Evaluate, Add Decorator catalogs the class), bake, session-report `btNodeId` (Playwright Preview throw is test-mode `previewThrow` when a tree is attached), and `e2e/bt-editor.spec.ts` (free move, sibling X order, Auto Arrange, save/reopen, drag-off-handle add, Windows Blackboard + Compiler Results).
 - Undo is already via `applyAssetDocumentChange`.
 - Large-tree iPad virtualization (§19) is not this slice.
 

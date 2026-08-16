@@ -363,6 +363,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
+| G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`) |
 
 Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
@@ -453,6 +454,18 @@ Authoring-surface residual, same class as the Anim Graph host pass. Do **not** u
 | Loop/Cooldown/TimeLimit + Play stack overlay | same | `behaviour-tree` (eval), `bridge`/`runtime` `btState.stack`, `e2e/p11-ai.spec.ts` | Tree ops |
 
 Out of scope: RotateToFace / PlayAnimation / PlaySound hosts; nav cost-carve / auto-bake; Dockview for asset tabs; large-tree iPad virtualization; P12; lighting.
+
+## Behaviour tree editor UX (`p-bt-editor-ux`)
+
+Authoring-surface residual. Do **not** uncheck `p11-bt-editor` or `p-bt-editor-authoring`. Packages: `behaviour-tree` (layout field only), `graph-ui`, `apps/editor`. Runtime evaluator is unchanged.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Optional `editorPositions` + stable X sibling reorder + Auto Arrange | `p-bt-editor-ux` | `behaviour-tree` | `p-bt-editor-authoring` |
+| GraphEditor `connectEndMode="add-node"` + TreeNode chrome | same | `graph-ui` | connect policies |
+| Blackboard / Compiler Results docks, free drag, one-undo moves | same | `apps/editor`, `e2e/bt-editor.spec.ts` | GraphEditor policies |
+
+Out of scope: changing `children[]` semantics at runtime; 96px cancel / wire-break on script, material, or anim graphs; large-tree iPad virtualization; reopening P11.
 
 ## Behaviour tree class events (`p-bt-class-events`)
 
