@@ -105,7 +105,14 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
       "true",
     );
     await expect(page.getByTestId("ui-design-panel")).toBeVisible();
-    await expect(page.getByTestId("graph-panel")).toBeHidden();
+    await expect(page.getByTestId("ui-dock-surface-designer")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await expect(page.getByTestId("ui-dock-surface-logic")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
 
     await openWindowsMenu(page);
     await expect(page.getByTestId("windows-menu-ui-design")).toBeVisible();
@@ -118,9 +125,16 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
       "aria-pressed",
       "true",
     );
+    await expect(page.getByTestId("ui-dock-surface-logic")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await expect(page.getByTestId("ui-dock-surface-designer")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
     await expect(page.getByTestId("graph-panel")).toBeVisible();
     await expect(page.getByTestId("my-class-panel")).toBeVisible();
-    await expect(page.getByTestId("ui-design-panel")).toBeHidden();
 
     await openWindowsMenu(page);
     await expect(page.getByTestId("windows-menu-graph")).toBeVisible();
@@ -143,7 +157,14 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
 
     await page.getByTestId("ui-editor-mode-logic").click();
     await expect(page.getByTestId("graph-panel")).toBeVisible();
-    await expect(page.getByTestId("ui-settings-panel")).toBeHidden();
+    await expect(page.getByTestId("ui-dock-surface-designer")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    await expect(page.getByTestId("ui-dock-surface-logic")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
     await openWindowsMenu(page);
     await expect(page.getByTestId("windows-menu-ui-settings")).toHaveCount(0);
     await expect(page.getByTestId("windows-menu-graph")).toBeVisible();

@@ -170,3 +170,9 @@
 .chrome-tab-pinned .chrome-tab-label {
   padding-inline: 0.5rem;
 }
+
+/* Keep inactive UI Designer/Logic DockView measured but not hit-testable. */
+.ui-dock-surface-inactive {
+  visibility: hidden;
+  pointer-events: none;
+}

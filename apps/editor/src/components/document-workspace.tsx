@@ -136,9 +136,11 @@ function UiDocumentDocks({
         <div
           className={cn(
             "absolute inset-0",
-            mode !== "designer" && "pointer-events-none invisible",
+            mode !== "designer" && "ui-dock-surface-inactive",
           )}
           aria-hidden={mode !== "designer"}
+          data-testid="ui-dock-surface-designer"
+          data-active={mode === "designer" ? "true" : "false"}
         >
           <RegisteredDockviewShell
             id={id}
@@ -152,9 +154,11 @@ function UiDocumentDocks({
         <div
           className={cn(
             "absolute inset-0",
-            mode !== "logic" && "pointer-events-none invisible",
+            mode !== "logic" && "ui-dock-surface-inactive",
           )}
           aria-hidden={mode !== "logic"}
+          data-testid="ui-dock-surface-logic"
+          data-active={mode === "logic" ? "true" : "false"}
         >
           <RegisteredDockviewShell
             id={id}
