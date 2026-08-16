@@ -720,6 +720,7 @@ export type ClassMemberDropRow = {
   name: string;
   eventType?: string;
   inherited?: boolean;
+  inheritedFrom?: string;
   pins?: GraphClassMemberPin[];
 };
 
@@ -769,7 +770,7 @@ export function resolveClassMemberDrop(options: {
   const spawn: GraphSpawnOptions = {
     position,
     functionId: options.functionId,
-    classId: options.classId,
+    classId: row.inheritedFrom ?? options.classId,
     idFactory: options.idFactory,
   };
   if (row.kind === "variable") {

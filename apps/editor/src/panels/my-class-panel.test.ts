@@ -172,6 +172,20 @@ describe("My Class members", () => {
               },
             ],
             edges: [],
+            members: [
+              {
+                id: "var-1",
+                kind: "variable",
+                name: "Health",
+                typeId: "float",
+              },
+              {
+                id: "fn-1",
+                kind: "function",
+                name: "Jump",
+                pins: [],
+              },
+            ],
           },
         },
       },
@@ -182,9 +196,27 @@ describe("My Class members", () => {
           kind: "event",
           name: "On Hit",
           inherited: true,
+          inheritedFrom: "HeroBase",
+        }),
+        expect.objectContaining({
+          kind: "variable",
+          name: "Health",
+          inherited: true,
+          inheritedFrom: "HeroBase",
+        }),
+        expect.objectContaining({
+          kind: "function",
+          name: "Jump",
+          inherited: true,
+          inheritedFrom: "HeroBase",
         }),
       ]),
     );
+    const tree = blueprintTreeNodes(members, new Set(), {
+      parentClass: "HeroBase",
+    });
+    const health = tree.find((row) => row.label === "Health");
+    expect(health?.trailing).toBeTruthy();
   });
 
   it("places event members under Events and leaves other sections empty", () => {
