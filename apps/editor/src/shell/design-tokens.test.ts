@@ -214,6 +214,8 @@ describe("Minimal Neutral theme tokens", () => {
     expect(tokenValue(dark, "--graph-pin-size")).toBe("22px");
     expect(tokenValue(dark, "--graph-edge-exec")).toBe("5px");
     expect(tokenValue(dark, "--graph-edge-data")).toBe("4px");
+    expect(tokenValue(root, "--graph-pin-default-max-width")).toBe("4.5rem");
+    expect(tokenValue(dark, "--graph-pin-default-max-width")).toBe("4.5rem");
   });
 
   it("defines a compact chrome row token", () => {

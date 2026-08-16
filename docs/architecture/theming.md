@@ -120,6 +120,7 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 | `--touch-target` | `44px` | Graph pin rows and remaining large hit boxes |
 | `--chrome-row` | `28px` | Editor chrome, panel headers, property rows, catalog item rows |
 | `--graph-pin-size` | `22px` | Visual pin diamond / circle / list |
+| `--graph-pin-default-max-width` | `4.5rem` | Truncation cap for on-node literal default fields |
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 
