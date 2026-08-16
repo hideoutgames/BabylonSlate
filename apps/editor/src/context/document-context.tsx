@@ -170,10 +170,19 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
+  materialAssetGuidsFromScene,
+  postProcessMaterialGuidsFromScene,
+  materialClosureFromGuids,
   type PlayAnimGraphEntry,
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
 } from "../lib/play-content";
+import {
+  normalizeMaterialDocument,
+  normalizeMaterialFunctionDocument,
+  type MaterialDocument,
+  type MaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 export type AppRoute = "home" | "editor";
 
@@ -347,15 +356,24 @@ interface DocumentContextValue {
     tilemaps: Map<string, TilemapPayload>;
     tilesets: Map<string, TilesetPayload>;
   }>;
-  /** Texture pixels/source bytes for sprite and tileset `textureGuid`s. */
+  /** Texture pixels/source bytes for sprite, tileset, and material `textureGuid`s. */
   collectPlayTextureBytes: (
     sprites: ReadonlyMap<string, SpritePayload>,
     tilesets: ReadonlyMap<string, TilesetPayload>,
+    extraGuids?: readonly string[],
   ) => Promise<Map<string, Uint8Array>>;
   /** Model source bytes for scene MeshComponent `assetGuid`s. */
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, Uint8Array>>;
+  /** Surface and post-process materials plus transitive Material Functions. */
+  collectPlayMaterialLibrary: (
+    scene?: SerializedScene | null,
+  ) => Promise<{
+    documents: Map<string, MaterialDocument>;
+    functions: Map<string, MaterialFunctionDocument>;
+    textureGuids: string[];
+  }>;
   /** Mounted Scene assets (all roots) so Play `changescene` can instantiate them. */
   collectPlaySceneLibrary: () => Promise<
     Array<{ guid: string; scene: SerializedScene }>
@@ -1792,7 +1810,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "sprite"
         | "ui"
         | "tileset"
-        | "tilemap",
+        | "tilemap"
+        | "material"
+        | "material-function",
       path: string,
     ): Promise<unknown | null> => {
       const openDoc = documentService
@@ -1981,13 +2001,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (
       sprites: ReadonlyMap<string, SpritePayload>,
       tilesets: ReadonlyMap<string, TilesetPayload>,
+      extraGuids: readonly string[] = [],
     ): Promise<Map<string, Uint8Array>> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
         assets.map((asset) => [asset.header.guid, asset] as const),
       );
       const bytes = new Map<string, Uint8Array>();
-      for (const guid of textureGuidsFromPlayPayloads(sprites, tilesets)) {
+      const guids = [
+        ...textureGuidsFromPlayPayloads(sprites, tilesets),
+        ...extraGuids,
+      ];
+      const seen = new Set<string>();
+      for (const guid of guids) {
+        if (!guid || seen.has(guid)) continue;
+        seen.add(guid);
         const asset = byGuid.get(guid);
         if (!asset) continue;
         const pixels = await projectService.readAssetChunk(asset.path, "pixels");
@@ -2019,6 +2047,70 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return bytes;
     },
     [projectService],
+  );
+
+  const collectPlayMaterialLibrary = useCallback(
+    async (
+      scene?: SerializedScene | null,
+    ): Promise<{
+      documents: Map<string, MaterialDocument>;
+      functions: Map<string, MaterialFunctionDocument>;
+      textureGuids: string[];
+    }> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets.map((asset) => [asset.header.guid, asset] as const),
+      );
+      const loaded = new Map<string, unknown>();
+      const loadGuid = async (guid: string) => {
+        if (loaded.has(guid)) return;
+        const asset = byGuid.get(guid);
+        if (!asset) return;
+        const kind =
+          asset.header.type === "MaterialFunction"
+            ? "material-function"
+            : asset.header.type === "Material"
+              ? "material"
+              : null;
+        if (!kind) return;
+        const content = await loadPlayAssetContent(kind, asset.path);
+        if (content) loaded.set(guid, content);
+      };
+      const needed = new Set([
+        ...materialAssetGuidsFromScene(scene),
+        ...postProcessMaterialGuidsFromScene(scene),
+      ]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const guid of [...needed]) await loadGuid(guid);
+        const closure = materialClosureFromGuids([...needed], (guid) =>
+          loaded.get(guid) ?? null,
+        );
+        for (const guid of [...closure.materials, ...closure.functions]) {
+          if (needed.has(guid)) continue;
+          needed.add(guid);
+          grew = true;
+        }
+      }
+      const closure = materialClosureFromGuids([...needed], (guid) =>
+        loaded.get(guid) ?? null,
+      );
+      const documents = new Map<string, MaterialDocument>();
+      const functions = new Map<string, MaterialFunctionDocument>();
+      for (const guid of closure.materials) {
+        const content = loaded.get(guid);
+        if (content) documents.set(guid, normalizeMaterialDocument(content));
+      }
+      for (const guid of closure.functions) {
+        const content = loaded.get(guid);
+        if (content) {
+          functions.set(guid, normalizeMaterialFunctionDocument(content));
+        }
+      }
+      return { documents, functions, textureGuids: closure.textures };
+    },
+    [loadPlayAssetContent, projectService],
   );
 
   const loadGraphDocument = useCallback(
@@ -2778,6 +2870,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       loadGraphDocument,
       graphsNeedCompile: compileSignatureIsStale(
@@ -2821,6 +2914,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       loadGraphDocument,
       lastCompiledSignature,

@@ -38,6 +38,10 @@ import {
   previewPackFromFiles,
   PREVIEW_STOP_MESSAGE,
 } from "@babylonslate/exporter";
+import type {
+  MaterialDocument,
+  MaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import { createAppSettingsStore } from "@babylonslate/vfs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { useDocuments } from "./document-context";
@@ -185,6 +189,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
   );
+  const [playMaterialDocuments, setPlayMaterialDocuments] = useState<
+    Map<string, MaterialDocument>
+  >(() => new Map());
+  const [playMaterialFunctions, setPlayMaterialFunctions] = useState<
+    Map<string, MaterialFunctionDocument>
+  >(() => new Map());
+  const [postProcessingEnabled, setPostProcessingEnabled] = useState(true);
+  const [hardwareScalingLevel, setHardwareScalingLevel] = useState(1);
   const [playNavmeshBytes, setPlayNavmeshBytes] = useState<Uint8Array | null>(
     null,
   );
@@ -201,6 +213,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
+    collectPlayMaterialLibrary,
     collectPlaySceneLibrary,
     exportGameArtifact,
     openDocuments,
@@ -232,6 +245,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       .load()
       .then((settings) => {
         setPreviewBuildState(settings.debuggerDefaults.previewBuild === true);
+        setPostProcessingEnabled(settings.postProcessingEnabled !== false);
+        setHardwareScalingLevel(settings.hardwareScalingLevel);
       });
   }, []);
 
@@ -585,12 +600,30 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayTilesets(new Map());
         }
         try {
-          setPlayTextureBytes(await collectPlayTextureBytes(sprites, tilesets));
+          const materials = await collectPlayMaterialLibrary(resolvedScene?.scene);
+          setPlayMaterialDocuments(materials.documents);
+          setPlayMaterialFunctions(materials.functions);
+          setPlayTextureBytes(
+            await collectPlayTextureBytes(
+              sprites,
+              tilesets,
+              materials.textureGuids,
+            ),
+          );
         } catch (error) {
           appendLog(
-            `Texture load failed: ${error instanceof Error ? error.message : String(error)}`,
+            `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
-          setPlayTextureBytes(new Map());
+          setPlayMaterialDocuments(new Map());
+          setPlayMaterialFunctions(new Map());
+          try {
+            setPlayTextureBytes(await collectPlayTextureBytes(sprites, tilesets));
+          } catch (textureError) {
+            appendLog(
+              `Texture load failed: ${textureError instanceof Error ? textureError.message : String(textureError)}`,
+            );
+            setPlayTextureBytes(new Map());
+          }
         }
         try {
           setPlayModelBytes(await collectPlayModelBytes(resolvedScene?.scene));
@@ -646,6 +679,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       diagnostics,
       dirtyDocuments,
@@ -841,6 +875,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
             modelBytes={playModelBytes}
+            materialDocuments={playMaterialDocuments}
+            materialFunctions={playMaterialFunctions}
+            postProcessingEnabled={postProcessingEnabled}
+            hardwareScalingLevel={hardwareScalingLevel}
             navmeshBytes={playNavmeshBytes}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100

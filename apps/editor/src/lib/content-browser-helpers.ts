@@ -922,6 +922,28 @@ export function materialAssetDependencies(
   return [];
 }
 
+/** Header payload fields Content Browser / pickers can read without loading the document. */
+export function materialHeaderMeta(
+  assetType: string,
+  payload: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (assetType !== "Material" && !isLegacyMaterialAssetType(assetType)) {
+    return undefined;
+  }
+  return {
+    domain: payload.domain === "postProcess" ? "postProcess" : "surface",
+  };
+}
+
+export function isPostProcessMaterialAsset(asset: {
+  header: { type: string; payload?: Record<string, unknown> };
+}): boolean {
+  return (
+    asset.header.type === "Material" &&
+    asset.header.payload?.domain === "postProcess"
+  );
+}
+
 function documentAsset(
   type: string,
   name: string,

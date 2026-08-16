@@ -8,6 +8,10 @@ import type { SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { CommandMessage } from "@babylonslate/bridge";
+import type {
+  MaterialDocument,
+  MaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import {
   createEditorCamera,
   type EditorCameraController,
@@ -57,6 +61,16 @@ import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
+import {
+  MaterialLibrary,
+  materialUnavailable,
+} from "./material-library";
+import {
+  attachPostProcessStack,
+  normalizePostProcessStack,
+  type AttachedPostProcessStack,
+  type PostProcessStackEntry,
+} from "./post-process-material";
 
 export interface EngineHandle {
   engine: Engine;
@@ -91,6 +105,15 @@ export interface EngineHandle {
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
   applySceneEnvironment: (sceneData: SerializedScene) => void;
   setShadowQuality: (level: string) => void;
+  /** Authored camera post-process passes currently attached. */
+  postProcessPassCount: () => number;
+  /** Local Engine Settings gate. Does not mutate the scene document. */
+  setPostProcessingEnabled: (enabled: boolean) => void;
+  setPostProcessStack: (stack: readonly PostProcessStackEntry[]) => void;
+  setMaterialDocuments: (
+    documents: ReadonlyMap<string, MaterialDocument>,
+    functions?: ReadonlyMap<string, MaterialFunctionDocument>,
+  ) => void;
 }
 
 export interface CreateEngineOptions {
@@ -140,6 +163,19 @@ export interface CreateEngineOptions {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   /** Self-hosted KTX2 transcoder directory. Editor uses `/ktx2/`; the player uses a relative folder. */
   ktx2BasePath?: string;
+  /** Compiled Material documents keyed by asset guid. */
+  materialDocuments?: ReadonlyMap<string, MaterialDocument>;
+  /** Material Function documents keyed by asset guid. */
+  materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  /** Authored scene post-process stack. */
+  postProcessStack?: readonly PostProcessStackEntry[];
+  /**
+   * Local Engine Settings gate (default on). Skips attaching the authored
+   * stack without mutating scene documents.
+   */
+  postProcessingEnabled?: boolean;
+  /** Engine Settings `hardwareScalingLevel`. 1 is native. */
+  hardwareScalingLevel?: number;
 }
 
 export interface EditorTools {
@@ -265,7 +301,11 @@ export function createEngine(
     ? scheduler.acquireContinuous("play")
     : null;
   const resourceCache = new ResourceCache();
-  const scaling = new HardwareScalingController(engine);
+  const scaling = new HardwareScalingController(engine, {
+    minLevel: 0.25,
+    maxLevel: 4,
+    initialLevel: options.hardwareScalingLevel ?? 1,
+  });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
   binding.tilemaps = options.tilemapPayloads;
@@ -277,14 +317,64 @@ export function createEngine(
   binding.modelBytes = options.modelBytes;
   binding.resourceCache = resourceCache;
 
+  const materialDocuments = new Map<string, MaterialDocument>(
+    options.materialDocuments ?? [],
+  );
+  const materialFunctions = new Map<string, MaterialFunctionDocument>(
+    options.materialFunctions ?? [],
+  );
+  const materialLibrary = new MaterialLibrary({
+    functions: () => Object.fromEntries(materialFunctions),
+    resolveTexture: (guid) => {
+      const bytes = binding.textureBytes?.get(guid);
+      if (!bytes) return null;
+      return resourceCache.getTexture(guid, engine, bytes);
+    },
+  });
+  binding.resolveMaterial = (guid) => {
+    const live = materialLibrary.materialFor(scene, guid);
+    if (live) return live;
+    const document = materialDocuments.get(guid);
+    if (!document) return null;
+    const acquired = materialLibrary.acquire(scene, guid, document);
+    if (materialUnavailable(acquired)) return null;
+    return acquired.material;
+  };
+
+  let postProcessingEnabled = options.postProcessingEnabled !== false;
+  let postProcessStack = normalizePostProcessStack(
+    options.postProcessStack ?? [],
+  );
+  let attachedStack: AttachedPostProcessStack | null = null;
+
+  const rebuildPostProcessStack = () => {
+    attachedStack?.dispose();
+    attachedStack = null;
+    if (!postProcessingEnabled) return;
+    const camera = scene.activeCamera;
+    if (!camera) return;
+    attachedStack = attachPostProcessStack({
+      scene,
+      camera,
+      library: materialLibrary,
+      stack: postProcessStack,
+      documentFor: (guid) => materialDocuments.get(guid) ?? null,
+    });
+  };
+
   const editorSync = options.editor ? new EditorSceneSync(scene, scheduler) : null;
 
   const loadScene = (sceneData: SerializedScene) => {
+    postProcessStack = normalizePostProcessStack(
+      sceneData.settings.postProcessStack,
+    );
     if (editorSync) {
       editorSync.apply(sceneData);
+      rebuildPostProcessStack();
       return;
     }
     applySceneToBabylonScene(scene, sceneData, binding);
+    rebuildPostProcessStack();
     scheduler.invalidate("asset");
   };
 
@@ -553,6 +643,8 @@ export function createEngine(
     canvas.addEventListener("pointerdown", onPointerDown);
   }
 
+  rebuildPostProcessStack();
+
   return {
     engine,
     scene,
@@ -575,6 +667,9 @@ export function createEngine(
         document.removeEventListener("visibilitychange", onVisibility);
       }
       disposeSnapshotBinding(binding);
+      attachedStack?.dispose();
+      attachedStack = null;
+      materialLibrary.dispose();
       scene.dispose();
       if (options.sharedEngine) {
         engine.unRegisterView(canvas);
@@ -607,6 +702,7 @@ export function createEngine(
       }
       if (command.type === "possessCamera") {
         applyPossessCamera(scene, binding, command.slotId);
+        rebuildPostProcessStack();
         scheduler.invalidate("camera");
       }
       if (command.type === "setShadowQuality") {
@@ -663,6 +759,34 @@ export function createEngine(
     setShadowQuality: (level: string) => {
       applyShadowQuality(scene, binding, level);
       editor?.setShadowQuality(level);
+      scheduler.invalidate("asset");
+    },
+    postProcessPassCount: () => attachedStack?.passes.length ?? 0,
+    setPostProcessingEnabled: (enabled: boolean) => {
+      postProcessingEnabled = enabled;
+      rebuildPostProcessStack();
+      scheduler.invalidate("asset");
+    },
+    setPostProcessStack: (stack: readonly PostProcessStackEntry[]) => {
+      postProcessStack = normalizePostProcessStack(stack);
+      rebuildPostProcessStack();
+      scheduler.invalidate("asset");
+    },
+    setMaterialDocuments: (
+      documents: ReadonlyMap<string, MaterialDocument>,
+      functions?: ReadonlyMap<string, MaterialFunctionDocument>,
+    ) => {
+      materialDocuments.clear();
+      for (const [guid, document] of documents) {
+        materialDocuments.set(guid, document);
+      }
+      if (functions) {
+        materialFunctions.clear();
+        for (const [guid, document] of functions) {
+          materialFunctions.set(guid, document);
+        }
+      }
+      rebuildPostProcessStack();
       scheduler.invalidate("asset");
     },
   };

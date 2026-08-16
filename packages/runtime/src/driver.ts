@@ -1326,6 +1326,7 @@ class InProcessRuntime implements RuntimeDriver {
         meshKind,
         ...(parts ? { parts } : {}),
       });
+      this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
       return;
     }
     const light = actor.components.find(
@@ -1384,6 +1385,23 @@ class InProcessRuntime implements RuntimeDriver {
     const slotId = this.assignSlot(actor);
     this.emitMeshAssignment(actor, slotId);
     this.world.spawnActorNow(actor);
+  }
+
+  private emitMaterialAssignments(
+    renderables: readonly ActorComponent[],
+    slotId: number,
+    multipart: boolean,
+  ): void {
+    for (const component of renderables) {
+      const guid = component.getVariable("materialGuid");
+      if (typeof guid !== "string" || guid === "") continue;
+      this.emit({
+        type: "assignMaterial",
+        slotId,
+        materialAssetGuid: guid,
+        ...(multipart ? { componentId: component.guid } : {}),
+      });
+    }
   }
 
   private possessCamera(target: unknown): void {

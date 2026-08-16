@@ -118,6 +118,21 @@ describe("asset documents", () => {
     expect(decoded.payload.dockKind).toBe("class");
   });
 
+  it("writes supplied dependencies onto the scanned header", async () => {
+    const bytes = await encodeAssetDocument(
+      {
+        type: "Material",
+        name: "Rock",
+        guid: "mat-1",
+        version: 2,
+        payload: { domain: "surface", nodes: [], edges: [] },
+      },
+      { dependencies: ["tex-albedo", "fn-tint"] },
+    );
+    const header = readAssetDocumentHeader(bytes);
+    expect(header.dependencies).toEqual(["tex-albedo", "fn-tint"]);
+  });
+
   it("writes settings payloads onto the header without a document chunk", async () => {
     const pixels = new Uint8Array([1, 2, 3, 4]);
     const bytes = await encodeAssetDocument(

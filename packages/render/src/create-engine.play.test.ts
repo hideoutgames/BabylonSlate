@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core";
+import {
+  snapshotFloatCount,
+  writeActorSlot,
+  writeSnapshotHeader,
+} from "@babylonslate/bridge";
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { editorMeshName } from "./scene-loader";
 
@@ -194,5 +200,94 @@ describe("Play createEngine view", () => {
     expect(handle.scene.clearColor.g).toBeCloseTo(0.4);
     expect(handle.scene.clearColor.b).toBeCloseTo(0.6);
     expect(handle.scene.clearColor.a).toBe(1);
+  });
+
+  it("applies Engine Settings hardware scaling to the shared Engine", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      hardwareScalingLevel: 1.5,
+    });
+    handles.push(handle);
+    expect(handle.scaling.getLevel()).toBe(1.5);
+  });
+
+  it("attaches an authored post-process stack when the local gate is on", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      postProcessingEnabled: true,
+      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      materialDocuments: new Map([
+        ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
+      ]),
+    });
+    handles.push(handle);
+    expect(handle.postProcessPassCount()).toBeGreaterThan(0);
+  });
+
+  it("skips the authored stack when the local gate is off, then restores it", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      postProcessingEnabled: false,
+      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      materialDocuments: new Map([
+        ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
+      ]),
+    });
+    handles.push(handle);
+    expect(handle.postProcessPassCount()).toBe(0);
+    handle.setPostProcessingEnabled(true);
+    expect(handle.postProcessPassCount()).toBeGreaterThan(0);
+    handle.setPostProcessingEnabled(false);
+    expect(handle.postProcessPassCount()).toBe(0);
+  });
+
+  it("resolves assignMaterial through the scene-local material library", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      materialDocuments: new Map([["mat-1", createDefaultMaterialDocument()]]),
+    });
+    handles.push(handle);
+    const callback = runRenderLoop.mock.calls[0]?.[0];
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "box",
+      meshAssetGuid: null,
+    });
+    const buf = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(buf, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(buf, 0, {
+      slotId: 1,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    handle.pushSnapshot(buf);
+    callback?.();
+    handle.applyCommand({
+      type: "assignMaterial",
+      slotId: 1,
+      materialAssetGuid: "mat-1",
+    });
+    const mesh = handle.scene.getMeshByName("actor-1");
+    expect(mesh?.material?.name).toContain("mat-1");
   });
 });

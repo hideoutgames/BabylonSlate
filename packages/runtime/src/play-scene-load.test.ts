@@ -263,6 +263,84 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("emits assignMaterial when a MeshComponent stores a materialGuid", () => {
+    const commands: CommandMessage[] = [];
+    const mesh = createMeshComponent("component-1", "sphere");
+    mesh.properties.materialGuid = "mat-rock";
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/mat.scene.babasset",
+        scene: {
+          name: "Shaded",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          actors: [
+            createActor("actor-1", "Cube", {
+              components: [mesh],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.filter((c) => c.type === "assignMaterial")).toEqual([
+      {
+        type: "assignMaterial",
+        slotId: 0,
+        materialAssetGuid: "mat-rock",
+      },
+    ]);
+    runtime.stop();
+  });
+
+  it("emits per-component assignMaterial for a two-mesh actor", () => {
+    const commands: CommandMessage[] = [];
+    const box = createMeshComponent("box", "box");
+    box.properties.materialGuid = "mat-box";
+    const sphere = createMeshComponent("sphere", "sphere");
+    sphere.properties.materialGuid = "mat-sphere";
+    sphere.transform = {
+      position: [2, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    };
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/parts-mat.scene.babasset",
+        scene: {
+          name: "Parts",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          actors: [
+            createActor("hero", "Hero", {
+              components: [box, sphere],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.filter((c) => c.type === "assignMaterial")).toEqual([
+      {
+        type: "assignMaterial",
+        slotId: 0,
+        materialAssetGuid: "mat-box",
+        componentId: "box",
+      },
+      {
+        type: "assignMaterial",
+        slotId: 0,
+        materialAssetGuid: "mat-sphere",
+        componentId: "sphere",
+      },
+    ]);
+    runtime.stop();
+  });
+
   it("steps authored rigid bodies after realizePlayWorld", () => {
     const runtime = createInProcessRuntime({
       seed: 3,

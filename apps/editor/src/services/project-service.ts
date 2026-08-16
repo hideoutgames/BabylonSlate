@@ -74,7 +74,11 @@ import {
 } from "@babylonslate/assets";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
-import { classParentLookup } from "../lib/content-browser-helpers";
+import {
+  classParentLookup,
+  materialAssetDependencies,
+  materialHeaderMeta,
+} from "../lib/content-browser-helpers";
 import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
@@ -88,6 +92,11 @@ function headerMetaForSave(
   content: SerializedScene | SerializedGraph | Record<string, unknown>,
   parentOf: () => (id: string) => string | null,
 ): Record<string, unknown> | undefined {
+  const materialMeta = materialHeaderMeta(
+    type,
+    content as Record<string, unknown>,
+  );
+  if (materialMeta) return materialMeta;
   if (type === "EditorUtilityInterface") {
     return {
       dockKind:
@@ -1053,6 +1062,10 @@ export class ProjectService {
             : undefined,
           headerMeta: headerMetaForSave(type, parentClass, content, () =>
             classParentLookup(this.assetRegistry?.list() ?? []),
+          ),
+          dependencies: materialAssetDependencies(
+            type,
+            content as unknown as Record<string, unknown>,
           ),
         },
       );
