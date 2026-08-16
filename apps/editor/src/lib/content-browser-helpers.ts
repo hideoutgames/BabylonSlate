@@ -74,6 +74,106 @@ export const ENGINE_BASE_CLASSES = [
   "BTComposite",
 ] as const;
 
+export type ParentClassTreeRow = {
+  id: string;
+  parentClassId: string | null;
+  depth: number;
+  group: "Engine" | "Project";
+  /** False when selecting this parent would exceed MAX_CLASS_INHERITANCE_DEPTH. */
+  selectable: boolean;
+};
+
+/**
+ * Flattened inheritance tree for the New Asset Parent Class picker.
+ * Engine bases first (forest), then project/plugin Classes nested under their parents.
+ */
+export function buildParentClassTreeRows(
+  assets: ReadonlyArray<{
+    path?: string;
+    header: { type: string; name: string; parentClass?: string | null };
+  }>,
+  options?: { search?: string; maxDepth?: number },
+): ParentClassTreeRow[] {
+  const maxDepth = options?.maxDepth ?? 16;
+  const parentOf = classParentLookup(assets);
+  const projectIds: string[] = [];
+  const seenProject = new Set<string>();
+  for (const asset of assets) {
+    if (asset.header.type !== "Class") continue;
+    const id = classIdFromClassAsset(asset);
+    if (seenProject.has(id)) continue;
+    seenProject.add(id);
+    projectIds.push(id);
+  }
+  projectIds.sort((a, b) => a.localeCompare(b));
+
+  const children = new Map<string | null, string[]>();
+  const addChild = (parent: string | null, id: string) => {
+    const list = children.get(parent) ?? [];
+    if (!list.includes(id)) list.push(id);
+    children.set(parent, list);
+  };
+  for (const id of ENGINE_BASE_CLASSES) {
+    const parent = engineParentOf(id) ?? null;
+    // Only nest engine bases under other engine bases that appear in the picker.
+    if (parent && (ENGINE_BASE_CLASSES as readonly string[]).includes(parent)) {
+      addChild(parent, id);
+    } else {
+      addChild(null, id);
+    }
+  }
+  for (const id of projectIds) {
+    const parent = parentOf(id);
+    addChild(parent, id);
+  }
+  for (const [, list] of children) {
+    list.sort((a, b) => a.localeCompare(b));
+  }
+
+  const rows: ParentClassTreeRow[] = [];
+  const visited = new Set<string>();
+  const walk = (id: string, depth: number) => {
+    if (visited.has(id)) return;
+    visited.add(id);
+    const ancestryLen = walkAncestry(id, parentOf).length;
+    const group: "Engine" | "Project" = (
+      ENGINE_BASE_CLASSES as readonly string[]
+    ).includes(id)
+      ? "Engine"
+      : "Project";
+    rows.push({
+      id,
+      parentClassId: parentOf(id),
+      depth,
+      group,
+      selectable: ancestryLen < maxDepth,
+    });
+    for (const child of children.get(id) ?? []) {
+      walk(child, depth + 1);
+    }
+  };
+  for (const root of children.get(null) ?? []) {
+    walk(root, 0);
+  }
+  // Orphans (parent not in tree) still appear.
+  for (const id of [...ENGINE_BASE_CLASSES, ...projectIds]) {
+    if (!visited.has(id)) walk(id, 0);
+  }
+
+  const query = options?.search?.trim().toLowerCase() ?? "";
+  if (!query) return rows;
+  const matched = new Set(
+    rows.filter((row) => row.id.toLowerCase().includes(query)).map((row) => row.id),
+  );
+  // Keep ancestors of matches so the tree context stays readable.
+  for (const id of [...matched]) {
+    for (const ancestor of walkAncestry(id, parentOf)) {
+      matched.add(ancestor);
+    }
+  }
+  return rows.filter((row) => matched.has(row.id));
+}
+
 /** Asset types creatable from the Content Browser New Asset flow. */
 export const CREATABLE_ASSET_TYPES = [
   "Scene",
