@@ -933,6 +933,14 @@ export function componentPropertyRows(
           min: 0.01,
           onChange: (next) => update("farClip", next),
         },
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "attemptPossessViewTarget"),
+          label: "Attempt Possess View Target",
+          value: component.properties.attemptPossessViewTarget === true,
+          defaultValue: false,
+          onChange: (next) => update("attemptPossessViewTarget", next),
+        },
         ...genericRows(
           actorId,
           component,
@@ -943,6 +951,7 @@ export function componentPropertyRows(
             "projectionMode",
             "nearClip",
             "farClip",
+            "attemptPossessViewTarget",
           ]),
         ),
       ];

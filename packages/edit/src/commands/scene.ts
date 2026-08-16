@@ -2,6 +2,7 @@ import type {
   SceneSettings,
   SerializedActor,
   SerializedComponent,
+  SerializedOutlinerFolder,
   SerializedScene,
   SerializedTransform,
   ViewportMode,
@@ -533,6 +534,144 @@ export class SetViewportModeCommand implements EditCommand<SerializedScene> {
   }
 }
 
+export class AddFolderCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.addFolder";
+  readonly folder: SerializedOutlinerFolder;
+  readonly index: number;
+  readonly byteSize: number;
+
+  constructor(folder: SerializedOutlinerFolder, index = -1) {
+    this.folder = folder;
+    this.index = index;
+    this.byteSize = byteSizeOf(folder);
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    if (doc.folders.some((folder) => folder.id === this.folder.id)) {
+      return doc;
+    }
+    const folders = [...doc.folders];
+    if (this.index >= 0 && this.index <= folders.length) {
+      folders.splice(this.index, 0, this.folder);
+    } else {
+      folders.push(this.folder);
+    }
+    return { ...doc, folders };
+  }
+
+  invert(): RemoveFolderCommand {
+    return new RemoveFolderCommand(this.folder, this.index);
+  }
+}
+
+/**
+ * Removes the folder row only. Callers promote its contents in the same edit so
+ * a folder delete never destroys actors.
+ */
+export class RemoveFolderCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.removeFolder";
+  readonly folder: SerializedOutlinerFolder;
+  readonly index: number;
+  readonly byteSize: number;
+
+  constructor(folder: SerializedOutlinerFolder, index = -1) {
+    this.folder = folder;
+    this.index = index;
+    this.byteSize = byteSizeOf(folder);
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return {
+      ...doc,
+      folders: doc.folders.filter((folder) => folder.id !== this.folder.id),
+    };
+  }
+
+  invert(): AddFolderCommand {
+    return new AddFolderCommand(this.folder, this.index);
+  }
+}
+
+export class RenameFolderCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.renameFolder";
+  readonly mergeKey: string;
+  readonly folderId: string;
+  readonly from: string;
+  readonly to: string;
+
+  constructor(folderId: string, from: string, to: string) {
+    this.folderId = folderId;
+    this.from = from;
+    this.to = to;
+    this.mergeKey = `renameFolder:${folderId}`;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return {
+      ...doc,
+      folders: doc.folders.map((folder) =>
+        folder.id === this.folderId ? { ...folder, name: this.to } : folder,
+      ),
+    };
+  }
+
+  invert(): RenameFolderCommand {
+    return new RenameFolderCommand(this.folderId, this.to, this.from);
+  }
+}
+
+export class ReparentFolderCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.reparentFolder";
+  readonly folderId: string;
+  readonly from: string | null;
+  readonly to: string | null;
+
+  constructor(folderId: string, from: string | null, to: string | null) {
+    this.folderId = folderId;
+    this.from = from;
+    this.to = to;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return {
+      ...doc,
+      folders: doc.folders.map((folder) =>
+        folder.id === this.folderId
+          ? { ...folder, parentFolderId: this.to }
+          : folder,
+      ),
+    };
+  }
+
+  invert(): ReparentFolderCommand {
+    return new ReparentFolderCommand(this.folderId, this.to, this.from);
+  }
+}
+
+export class SetActorFolderCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.setActorFolder";
+  readonly actorId: string;
+  readonly from: string | null;
+  readonly to: string | null;
+
+  constructor(actorId: string, from: string | null, to: string | null) {
+    this.actorId = actorId;
+    this.from = from;
+    this.to = to;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return replaceActor(doc, this.actorId, (actor) => ({
+      ...actor,
+      folderId: this.to,
+    }));
+  }
+
+  invert(): SetActorFolderCommand {
+    return new SetActorFolderCommand(this.actorId, this.to, this.from);
+  }
+}
+
 export class SetSceneNameCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setSceneName";
   readonly from: string;
@@ -568,7 +707,12 @@ export type SceneEditCommand =
   | SetComponentPropertyCommand
   | SetSceneSettingCommand
   | SetViewportModeCommand
-  | SetSceneNameCommand;
+  | SetSceneNameCommand
+  | AddFolderCommand
+  | RemoveFolderCommand
+  | RenameFolderCommand
+  | ReparentFolderCommand
+  | SetActorFolderCommand;
 
 export const SCENE_COMMAND_TYPES = [
   "scene.addActor",
@@ -587,6 +731,11 @@ export const SCENE_COMMAND_TYPES = [
   "scene.setSceneSetting",
   "scene.setViewportMode",
   "scene.setSceneName",
+  "scene.addFolder",
+  "scene.removeFolder",
+  "scene.renameFolder",
+  "scene.reparentFolder",
+  "scene.setActorFolder",
 ] as const;
 
 export function createAddActorCommandFromJson(
@@ -741,4 +890,52 @@ export function createSetSceneNameCommandFromJson(
   payload: Record<string, unknown>,
 ): SetSceneNameCommand {
   return new SetSceneNameCommand(String(payload.from), String(payload.to));
+}
+
+export function createAddFolderCommandFromJson(
+  payload: Record<string, unknown>,
+): AddFolderCommand {
+  return new AddFolderCommand(
+    payload.folder as SerializedOutlinerFolder,
+    Number(payload.index ?? -1),
+  );
+}
+
+export function createRemoveFolderCommandFromJson(
+  payload: Record<string, unknown>,
+): RemoveFolderCommand {
+  return new RemoveFolderCommand(
+    payload.folder as SerializedOutlinerFolder,
+    Number(payload.index ?? -1),
+  );
+}
+
+export function createRenameFolderCommandFromJson(
+  payload: Record<string, unknown>,
+): RenameFolderCommand {
+  return new RenameFolderCommand(
+    String(payload.folderId),
+    String(payload.from),
+    String(payload.to),
+  );
+}
+
+export function createReparentFolderCommandFromJson(
+  payload: Record<string, unknown>,
+): ReparentFolderCommand {
+  return new ReparentFolderCommand(
+    String(payload.folderId),
+    (payload.from as string | null) ?? null,
+    (payload.to as string | null) ?? null,
+  );
+}
+
+export function createSetActorFolderCommandFromJson(
+  payload: Record<string, unknown>,
+): SetActorFolderCommand {
+  return new SetActorFolderCommand(
+    String(payload.actorId),
+    (payload.from as string | null) ?? null,
+    (payload.to as string | null) ?? null,
+  );
 }

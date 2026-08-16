@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
   editorUtilityGuidFromWindowId,
   editorUtilityWindowId,
   findDockOrUtilityWindow,
   listEditorUtilityWindows,
+  mergeEditorUtilityListingPayload,
 } from "./editor-utility-windows";
 
 describe("listEditorUtilityWindows", () => {
@@ -111,5 +113,74 @@ describe("listEditorUtilityWindows", () => {
     expect(findDockOrUtilityWindow("scene", "viewport")?.component).toBe(
       "viewport",
     );
+  });
+});
+
+describe("mergeEditorUtilityListingPayload", () => {
+  it("prefers a dirty open document over the registry header", () => {
+    expect(
+      mergeEditorUtilityListingPayload({ dockKind: "scene" }, { dockKind: "class" }),
+    ).toEqual({ dockKind: "class" });
+    expect(mergeEditorUtilityListingPayload({ dockKind: "scene" }, null)).toEqual({
+      dockKind: "scene",
+    });
+  });
+});
+
+describe("editorUtilityAssetsFromIndexed open payload", () => {
+  it("uses open document payload when the EUI is dirty", () => {
+    expect(
+      editorUtilityAssetsFromIndexed(
+        [
+          {
+            path: "assets/Tools.eui.babasset",
+            header: {
+              guid: "eui-1",
+              name: "Tools",
+              type: "EditorUtilityInterface",
+              payload: { dockKind: "scene" },
+            },
+          },
+        ],
+        [
+          {
+            ref: { path: "assets/Tools.eui.babasset" },
+            content: { dockKind: "class", name: "Tools" },
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        guid: "eui-1",
+        name: "Tools",
+        type: "EditorUtilityInterface",
+        payload: { dockKind: "class", name: "Tools" },
+      },
+    ]);
+  });
+});
+
+describe("closeMismatchedEditorUtilityPanels", () => {
+  it("closes an open EUI tab whose dockKind no longer matches this dock", () => {
+    const close = vi.fn();
+    const api = {
+      getPanel: (id: string) =>
+        id === "eui-moved"
+          ? { api: { close } }
+          : id === "viewport"
+            ? { api: { close: vi.fn() } }
+            : undefined,
+      panels: [{ id: "viewport" }, { id: "eui-moved" }],
+    };
+    const assets = [
+      {
+        guid: "stays",
+        name: "Stay",
+        type: "EditorUtilityInterface",
+        payload: { dockKind: "scene" },
+      },
+    ];
+    closeMismatchedEditorUtilityPanels(api, "scene", assets);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

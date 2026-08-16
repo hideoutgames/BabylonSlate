@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createDefaultPlayHud, createWidget } from "@babylonslate/ui-runtime";
+import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
 import { UiDesigner } from "./ui-designer";
 
 function dispatchPointerEvent(
@@ -125,6 +126,7 @@ vi.mock("../context/document-context", () => ({
     },
     openDocuments: [],
     collectPlayUiLibrary: async () => ({}),
+    projectName: "Demo",
     readAssetChunk: async () => null,
     projectDocument: {
       settings: {
@@ -142,6 +144,7 @@ vi.mock("../context/document-context", () => ({
 
 afterEach(() => {
   cleanup();
+  resetProjectUiAssets();
 });
 
 function renderHud() {
@@ -178,17 +181,15 @@ describe("UiDesigner", () => {
     expect(screen.getByTestId("ui-gizmo-canvas")).toBeTruthy();
   });
 
-  it("drags a widget to write left/top under one undo merge key", () => {
+  it("drags a widget to write left/top once on pointer up", () => {
     const { onChange } = renderHud();
     const stick = screen.getByTestId("ui-widget-stick");
     dispatchPointerEvent(stick, "pointerdown", { clientX: 10, clientY: 10 });
     dispatchPointerEvent(stick, "pointermove", { clientX: 55, clientY: 10 });
-    expect(onChange).toHaveBeenCalled();
-    const [next, mergeKey] = onChange.mock.calls.at(-1) as [
-      Record<string, unknown>,
-      string | undefined,
-    ];
-    expect(mergeKey).toMatch(/^ui-design-stroke:/);
+    expect(onChange).not.toHaveBeenCalled();
+    dispatchPointerEvent(stick, "pointerup", { clientX: 55, clientY: 10 });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const [next] = onChange.mock.calls[0] as [Record<string, unknown>];
     const widgets = next.widgets as Record<
       string,
       { layout: { left: number; top: number } }

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   createActor,
+  createDefaultScene,
   createDefaultSceneSettings,
   createMeshComponent,
+  type SerializedScene,
 } from "@babylonslate/core";
 import { ClassRegistry } from "./class-registry";
 import { createActorsFromSerializedScene } from "./instantiate-scene";
@@ -16,6 +18,22 @@ function testWorld() {
   });
 }
 
+describe("outliner folders", () => {
+  it("never spawns a folder as a runtime actor", () => {
+    const world = testWorld();
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      folders: [{ id: "folder-1", name: "Lighting", parentFolderId: null }],
+      actors: [
+        { ...createActor("grouped", "Grouped"), folderId: "folder-1" },
+        createActor("loose", "Loose"),
+      ],
+    };
+    const actors = createActorsFromSerializedScene(world, scene);
+    expect(actors.map((actor) => actor.guid)).toEqual(["grouped", "loose"]);
+  });
+});
+
 describe("createActorsFromSerializedScene", () => {
   it("builds unspawned actors with serialized ids, transforms, and components", () => {
     const world = testWorld();
@@ -23,6 +41,7 @@ describe("createActorsFromSerializedScene", () => {
       name: "Level",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [
         createActor("actor-cube", "Cube", {
           transform: {
@@ -66,6 +85,7 @@ describe("createActorsFromSerializedScene", () => {
       name: "Offset",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [
         createActor("hero", "Hero", {
           components: [
@@ -94,6 +114,7 @@ describe("createActorsFromSerializedScene", () => {
       name: "Anim",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [
         createActor("hero", "Hero", {
           components: [
@@ -115,6 +136,7 @@ describe("createActorsFromSerializedScene", () => {
       name: "AI",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [
         createActor("guard", "Guard", {
           components: [

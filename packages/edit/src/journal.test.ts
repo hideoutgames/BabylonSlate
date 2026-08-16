@@ -22,6 +22,12 @@ import {
   SetSceneNameCommand,
   SetSceneSettingCommand,
   SetViewportModeCommand,
+  AddFolderCommand,
+  RemoveFolderCommand,
+  RenameFolderCommand,
+  ReparentFolderCommand,
+  SetActorFolderCommand,
+  SCENE_COMMAND_TYPES,
 } from "./commands/scene";
 import { SetAssetDocumentCommand } from "./commands/asset-document";
 import {
@@ -152,6 +158,11 @@ describe("journal", () => {
       new SetSceneSettingCommand("fogEnabled", false, true),
       new SetViewportModeCommand("3d", "2d"),
       new SetSceneNameCommand("Main", "Level 1"),
+      new AddFolderCommand({ id: "f1", name: "One", parentFolderId: null }),
+      new RemoveFolderCommand({ id: "f1", name: "One", parentFolderId: null }),
+      new RenameFolderCommand("f1", "One", "Renamed"),
+      new ReparentFolderCommand("f1", null, "f2"),
+      new SetActorFolderCommand(actorId, null, "f1"),
     ];
 
     for (const command of commands) {
@@ -163,6 +174,11 @@ describe("journal", () => {
         command.apply(createDefaultScene()),
       );
     }
+
+    // Guards against a new scene command shipping without a journal reviver.
+    expect(new Set(commands.map((command) => command.type))).toEqual(
+      new Set(SCENE_COMMAND_TYPES),
+    );
   });
 
   it("round-trips asset document merge keys", () => {

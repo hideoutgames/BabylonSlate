@@ -81,7 +81,10 @@ export function ContentBrowserAssetTile({
           if (consumeSelectClick?.()) return;
           onSelect();
         }}
-        onDoubleClick={onOpen}
+        onDoubleClick={(event) => {
+          event.stopPropagation();
+          onOpen();
+        }}
         {...bind}
       >
         <div className="aspect-square w-full overflow-hidden rounded-t-xl p-0.5">

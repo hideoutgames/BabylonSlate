@@ -58,7 +58,10 @@ export function ContentBrowserFolderTile({
           if (consumeSelectClick?.()) return;
           onSelect();
         }}
-        onDoubleClick={onOpen}
+        onDoubleClick={(event) => {
+          event.stopPropagation();
+          onOpen();
+        }}
         {...bind}
       >
         <div className="flex aspect-square w-full items-center justify-center bg-card">
