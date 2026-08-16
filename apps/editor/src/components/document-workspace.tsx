@@ -271,6 +271,7 @@ export function DocumentWorkspace() {
           return (
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
+                <PrefabEditingProvider>
                 <GraphEditingProvider>
                 <UiEditingProvider>
                   <DocumentShell
@@ -288,6 +289,7 @@ export function DocumentWorkspace() {
                   </DocumentShell>
                 </UiEditingProvider>
                 </GraphEditingProvider>
+                </PrefabEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );
