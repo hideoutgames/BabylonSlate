@@ -85,6 +85,10 @@ import {
   flowRectFromPoints,
   nodesIntersectingMarquee,
 } from "./graph-marquee";
+import {
+  createGraphCanvasDropApi,
+  type GraphCanvasDropApi,
+} from "./graph-canvas-api";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
@@ -130,6 +134,8 @@ export interface GraphEditorProps {
   onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
   /** Host connection rule (material Float splat). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
+  /** Registers client hit-test / flow conversion for Class-member drops. */
+  onCanvasApi?: (api: GraphCanvasDropApi | null) => void;
 }
 
 const DOUBLE_TAP_MS = 350;
@@ -257,6 +263,7 @@ function GraphEditorCanvas({
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
   pinCompatibility,
+  onCanvasApi,
 }: GraphEditorProps) {
   const knownTypes = useMemo(
     () => ({ ...graphNodeTypes, ...nodeTypesProp }),
@@ -895,6 +902,16 @@ function GraphEditorCanvas({
 
   const screenToFlowPositionRef = useRef(screenToFlowPosition);
   screenToFlowPositionRef.current = screenToFlowPosition;
+
+  useEffect(() => {
+    if (!onCanvasApi) return;
+    onCanvasApi(
+      createGraphCanvasDropApi(wrapperRef.current, (point) =>
+        screenToFlowPositionRef.current(point),
+      ),
+    );
+    return () => onCanvasApi(null);
+  }, [onCanvasApi]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;

@@ -52,7 +52,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     uiEditorMode,
   } = useDocuments();
   const { focusedNodeId } = usePlay();
-  const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId } =
+  const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId, setCanvasDropApi } =
     useGraphEditing();
   const {
     diagnostics,
@@ -231,6 +231,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           focusedNodeId={focusId}
           diagnostics={graphDiagnostics}
           paletteNodes={paletteNodes}
+          onCanvasApi={setCanvasDropApi}
           onNavigateRequest={() => setFocusDiagnostic(null)}
           onSelectionChange={setSelectedNodeIds}
           onChange={(next) => {

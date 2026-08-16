@@ -24,7 +24,10 @@ import {
   nativeStubId,
   patchClassMember,
   removeClassMember,
+  resolveClassMemberDrop,
+  type GraphDropPoint,
 } from "../lib/class-members";
+import { MemberAccessChooser } from "../components/member-access-chooser";
 import { PlusIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -266,6 +269,7 @@ export function ClassMembersView({
   membersOptions,
   activeFunctionId,
   classId,
+  canvasDropApi,
 }: {
   graph: SerializedGraph | null;
   onGraphChange: (next: SerializedGraph) => void;
@@ -275,6 +279,7 @@ export function ClassMembersView({
   membersOptions?: MembersForGraphOptions;
   activeFunctionId?: string | null;
   classId?: string;
+  canvasDropApi?: GraphDropPoint | null;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [memberPromptKind, setMemberPromptKind] =
@@ -282,6 +287,10 @@ export function ClassMembersView({
   const [memberPromptLocal, setMemberPromptLocal] = useState(false);
   const [renameMemberId, setRenameMemberId] = useState<string | null>(null);
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
+  const [accessDrop, setAccessDrop] = useState<{
+    memberId: string;
+    position: { x: number; y: number };
+  } | null>(null);
   const members = useMemo(
     () => membersForGraph(graph, membersOptions),
     [graph, membersOptions],
@@ -298,6 +307,7 @@ export function ClassMembersView({
   const spawnAccess = (
     access: "get" | "set",
     memberId: string | null | undefined = selectedId,
+    position?: { x: number; y: number },
   ) => {
     if (!graph || !memberId) return;
     const declared = (graph.members ?? []).find(
@@ -308,8 +318,35 @@ export function ClassMembersView({
       addVariableAccessNode(graph, declared, access, {
         functionId: activeFunctionId,
         classId,
+        ...(position ? { position } : {}),
       }),
     );
+  };
+  const dropMember = (id: string, clientX: number, clientY: number) => {
+    if (!graph) return;
+    const result = resolveClassMemberDrop({
+      graph,
+      memberId: id,
+      members: members.map((member) => ({
+        id: member.detail ?? `${member.kind}-${member.name}`,
+        kind: member.kind,
+        name: member.name,
+        eventType: member.eventType,
+        inherited: member.inherited,
+      })),
+      clientX,
+      clientY,
+      canvas: canvasDropApi ?? null,
+      functionId: activeFunctionId,
+      classId,
+    });
+    if (result.kind === "spawn") {
+      onGraphChange(result.graph);
+      return;
+    }
+    if (result.kind === "choose-access") {
+      setAccessDrop({ memberId: result.memberId, position: result.position });
+    }
   };
   const nodes = useMemo(
     () =>
@@ -436,10 +473,29 @@ export function ClassMembersView({
           ];
           openMenuAt(x, y, items);
         }}
+        onExternalDrop={dropMember}
         emptyLabel="No class members"
         data-testid="my-blueprint-tree"
       />
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+      <MemberAccessChooser
+        open={accessDrop !== null}
+        memberName={
+          members.find(
+            (entry) =>
+              (entry.detail ?? `${entry.kind}-${entry.name}`) ===
+              accessDrop?.memberId,
+          )?.name ?? "Variable"
+        }
+        onOpenChange={(open) => {
+          if (!open) setAccessDrop(null);
+        }}
+        onChoose={(access) => {
+          if (!accessDrop) return;
+          spawnAccess(access, accessDrop.memberId, accessDrop.position);
+          setAccessDrop(null);
+        }}
+      />
       <NamePromptDialog
         open={memberPromptKind !== null}
         onOpenChange={(open) => {
@@ -550,6 +606,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   const {
     selectedMemberId,
     selectedNodeIds,
+    canvasDropApi,
     setSelectedMemberId,
     setSelectedNodeIds,
     activeFunctionId,
@@ -624,6 +681,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
         selectedId={selectedId}
         activeFunctionId={activeFunctionId}
         classId={className ?? undefined}
+        canvasDropApi={canvasDropApi}
         interfaceAssets={interfaceAssets}
         membersOptions={membersOptions}
         onGraphChange={persistGraph}
