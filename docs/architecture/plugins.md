@@ -39,7 +39,7 @@ Later wins:
 2. `project.json` `pluginOverrides[guid].enabled` (editor uses 1–2)
 3. Export-preset `pluginOverrides` (export / Preview Build only; consumed by `collectExportClosure` in `@babylonslate/exporter`)
 
-Disable **unmounts** the content root — assets leave the registry. **Show Plugin Content** is a Project Settings → Plugins **Switch** (`settings-show-plugin-content`, persisted in `layout.json`, default off). **New Plugin** turns it on automatically. AssetPicker / Play / search still see **enabled** plugin assets when the tree is hidden. Extra tree roots appear when shown; engine roots show a Read Only badge and skip New / Import / Delete.
+Disable **unmounts** the content root — assets leave the registry. **Show Plugin Content** is a Project Settings → Plugins **Switch** (`settings-show-plugin-content`, persisted in `layout.json`, default off). **New Plugin** turns it on automatically. Turning the switch off while the Content Browser is inside a plugin folder resets the grid to project `assets` (path-prefix check, not `rootId`). AssetPicker / Play / search still see **enabled** plugin assets when the tree is hidden. Extra tree roots appear when shown; engine roots show a Read Only badge and skip New / Import / Delete.
 
 Override guids with **no discovered plugin** become Unresolved placeholders. Discovered PluginSettings guids are not indexed as placeholders (PluginSettings lives outside the mounted `assets/` root).
 

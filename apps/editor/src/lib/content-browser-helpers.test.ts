@@ -20,6 +20,9 @@ import {
   flattenFolderTree,
   filterFolderTreeRows,
   isFolderNameTaken,
+  contentBrowserDeleteListNames,
+  contentBrowserDeletingGuids,
+  lastSceneClassDeleteLines,
   isFolderTreeRoot,
   isNewAssetNameTaken,
   isValidMoveDestination,
@@ -1173,5 +1176,60 @@ describe("content-browser-helpers", () => {
       ]),
     ).toBe(true);
     expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
+  });
+
+  it("lists selected folders and assets for Delete confirm, not flattened contents", () => {
+    expect(
+      contentBrowserDeleteListNames({
+        folderPaths: ["assets/fx"],
+        assetNames: ["qa1"],
+      }),
+    ).toEqual(["assets/fx", "qa1"]);
+    expect(
+      contentBrowserDeleteListNames({
+        folderPaths: ["assets/empty"],
+        assetNames: [],
+      }),
+    ).toEqual(["assets/empty"]);
+  });
+
+  it("collects extra guids plus assets inside selected folders for last-Scene checks", () => {
+    const assets = [
+      asset({ guid: "s1", type: "Scene", name: "Main", path: "assets/fx/Main.scene.babasset" }),
+      asset({ guid: "a1", type: "Enum", name: "qa1", path: "assets/qa1.babasset" }),
+    ];
+    expect(
+      [...contentBrowserDeletingGuids({
+        extraGuids: ["a1"],
+        folderPaths: ["assets/fx"],
+        assets,
+      })].sort(),
+    ).toEqual(["a1", "s1"]);
+  });
+
+  it("warns when deleting the last Scene and last Class", () => {
+    const assets = [
+      asset({ guid: "s1", type: "Scene", name: "Main" }),
+      asset({ guid: "c1", type: "Class", name: "Hero" }),
+      asset({ guid: "t1", type: "Texture", name: "Tex" }),
+    ];
+    expect(
+      lastSceneClassDeleteLines(assets, new Set(["s1", "c1"])),
+    ).toEqual([
+      "This is the last Scene in the project.",
+      "This is the last Class in the project.",
+    ]);
+    expect(lastSceneClassDeleteLines(assets, new Set(["s1"]))).toEqual([
+      "This is the last Scene in the project.",
+    ]);
+    expect(
+      lastSceneClassDeleteLines(
+        [
+          asset({ guid: "s1", type: "Scene", name: "Main" }),
+          asset({ guid: "s2", type: "Scene", name: "Other" }),
+        ],
+        new Set(["s1"]),
+      ),
+    ).toEqual([]);
   });
 });

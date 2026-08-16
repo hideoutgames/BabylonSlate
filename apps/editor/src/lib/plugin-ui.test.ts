@@ -8,6 +8,7 @@ import {
   filterBabpluginFiles,
   inboundRefsFromOtherRoots,
   isBabpluginFile,
+  isPluginContentFolderPath,
   isPluginDocumentReadOnly,
   isPluginSettingsReadOnly,
   playSceneLibraryPaths,
@@ -130,6 +131,23 @@ describe("content browser plugin roots", () => {
         { name: "Pack.babplugin" },
       ]).map((file) => file.name),
     ).toEqual(["Hero.class.babasset"]);
+  });
+});
+
+describe("isPluginContentFolderPath", () => {
+  it("detects a plugin folder even when project is the only visible root", () => {
+    expect(
+      isPluginContentFolderPath("plugins/pack/assets/actors", [
+        "plugins/pack/assets",
+        "starter-content/assets",
+      ]),
+    ).toBe(true);
+    expect(isPluginContentFolderPath("assets/fx", ["plugins/pack/assets"])).toBe(
+      false,
+    );
+    expect(isPluginContentFolderPath("assets", ["plugins/pack/assets"])).toBe(
+      false,
+    );
   });
 });
 

@@ -1123,6 +1123,47 @@ export function isFolderNameTaken(
   return false;
 }
 
+/** Names shown in Delete (N) confirm — selected folders and assets, not flattened contents. */
+export function contentBrowserDeleteListNames(options: {
+  folderPaths?: readonly string[];
+  assetNames?: readonly string[];
+}): string[] {
+  return [...(options.folderPaths ?? []), ...(options.assetNames ?? [])];
+}
+
+/** Every asset guid a confirm will remove, including files inside selected folders. */
+export function contentBrowserDeletingGuids(options: {
+  extraGuids: readonly string[];
+  folderPaths: readonly string[];
+  assets: ReadonlyArray<{ header: { guid: string }; path: string }>;
+}): Set<string> {
+  const guids = new Set(options.extraGuids);
+  for (const folder of options.folderPaths) {
+    const prefix = `${folder}/`;
+    for (const asset of options.assets) {
+      if (asset.path === folder || asset.path.startsWith(prefix)) {
+        guids.add(asset.header.guid);
+      }
+    }
+  }
+  return guids;
+}
+
+export function lastSceneClassDeleteLines(
+  assets: ReadonlyArray<{ header: { guid: string; type: string } }>,
+  deletingGuids: ReadonlySet<string>,
+): string[] {
+  const lines: string[] = [];
+  for (const type of ["Scene", "Class"] as const) {
+    const ofType = assets.filter((asset) => asset.header.type === type);
+    if (ofType.length === 0) continue;
+    if (ofType.every((asset) => deletingGuids.has(asset.header.guid))) {
+      lines.push(`This is the last ${type} in the project.`);
+    }
+  }
+  return lines;
+}
+
 export function isRenameNameTaken(
   existingPaths: Iterable<string>,
   currentPath: string,

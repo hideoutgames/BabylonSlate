@@ -80,8 +80,11 @@ import {
   classParentLookup,
   collectFolderGuidsFromTrees,
   contentBrowserContextActions,
+  contentBrowserDeleteListNames,
+  contentBrowserDeletingGuids,
   contentBrowserMoveFromDrop,
   contentBrowserMovePreviewName,
+  lastSceneClassDeleteLines,
   defaultParentClassForType,
   displayAssetTitle,
   filterAssets,
@@ -109,6 +112,7 @@ import {
   contentBrowserFolderOps,
   contentBrowserRoots,
   filterBabpluginFiles,
+  isPluginContentFolderPath,
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
@@ -256,6 +260,10 @@ export function ContentBrowserWorkspace() {
     () => browserRoots.map((root) => root.pathPrefix),
     [browserRoots],
   );
+  const pluginContentPrefixes = useMemo(
+    () => pluginDescriptors.map((plugin) => plugin.contentPath),
+    [pluginDescriptors],
+  );
   const selectedRoot = useMemo(
     () => contentBrowserFolderOps(selectedFolderPath, browserRoots),
     [browserRoots, selectedFolderPath],
@@ -265,10 +273,13 @@ export function ContentBrowserWorkspace() {
   );
 
   useEffect(() => {
-    if (!showPluginContent && selectedRoot.rootId !== PROJECT_ROOT_ID) {
+    if (
+      !showPluginContent &&
+      isPluginContentFolderPath(selectedFolderPath, pluginContentPrefixes)
+    ) {
       setSelectedFolderPath(ASSETS_ROOT);
     }
-  }, [selectedRoot.rootId, showPluginContent]);
+  }, [pluginContentPrefixes, selectedFolderPath, showPluginContent]);
 
   const folderTrees = useMemo(() => {
     if (!assetRegistry) return [];
@@ -534,7 +545,7 @@ export function ContentBrowserWorkspace() {
       setDeleteTarget({
         kind: "selection",
         folders,
-        guids: [...folderGuidsSet, ...extraGuids],
+        guids: extraGuids,
       });
     },
     [folderTrees, requestDelete, requestDeleteFolder, rootPrefixes],
@@ -745,6 +756,41 @@ export function ContentBrowserWorkspace() {
       name: resolveAssetName(guid),
     }));
   }, [assetRegistry, deleteTarget, resolveAssetName]);
+
+  const deleteListNames = useMemo(() => {
+    if (!deleteTarget) return [];
+    if (deleteTarget.kind === "folder") {
+      return contentBrowserDeleteListNames({
+        folderPaths: [deleteTarget.path],
+      });
+    }
+    const assetNames = deleteTarget.guids.map(resolveAssetName);
+    if (deleteTarget.kind === "selection") {
+      return contentBrowserDeleteListNames({
+        folderPaths: deleteTarget.folders,
+        assetNames,
+      });
+    }
+    return contentBrowserDeleteListNames({ assetNames });
+  }, [deleteTarget, resolveAssetName]);
+
+  const deleteLastSceneClassLines = useMemo(() => {
+    if (!deleteTarget) return [];
+    const folderPaths =
+      deleteTarget.kind === "folder"
+        ? [deleteTarget.path]
+        : deleteTarget.kind === "selection"
+          ? deleteTarget.folders
+          : [];
+    return lastSceneClassDeleteLines(
+      allAssets,
+      contentBrowserDeletingGuids({
+        extraGuids: deleteTarget.guids,
+        folderPaths,
+        assets: allAssets,
+      }),
+    );
+  }, [allAssets, deleteTarget]);
 
   const confirmDelete = useCallback(async () => {
     if (!assetRegistry || !deleteTarget) return;
@@ -1633,13 +1679,25 @@ export function ContentBrowserWorkspace() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-            <ul className="list-disc pl-5">
-              {deleteTarget?.guids.map((guid) => (
-                <li key={guid}>
-                  <SelectableText>{resolveAssetName(guid)}</SelectableText>
+            <ul
+              className="list-disc pl-5"
+              data-testid="content-browser-delete-list"
+            >
+              {deleteListNames.map((name) => (
+                <li key={name}>
+                  <SelectableText>{name}</SelectableText>
                 </li>
               ))}
             </ul>
+            {deleteLastSceneClassLines.map((line) => (
+              <p
+                key={line}
+                className="font-medium text-foreground"
+                data-testid="content-browser-delete-last-warning"
+              >
+                {line}
+              </p>
+            ))}
             {deleteInboundRefs.length > 0 ? (
               <>
                 <p>Inbound references from other assets:</p>
