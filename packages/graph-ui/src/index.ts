@@ -9,7 +9,7 @@ export * from "./graph-execution";
 export * from "./graph-format";
 export * from "./graph-marquee";
 export * from "./node-theme";
-export { BlueprintNodeShell, graphNodeTypes, resolveNodeType } from "./graph-nodes";
+export { BlueprintNodeShell, graphNodeTypes, resolveNodeType, zipPinRows } from "./graph-nodes";
 export type { CanvasNode } from "./graph-nodes";
 export { TreeNode, treeNodeTypes } from "./tree-node";
 export {
