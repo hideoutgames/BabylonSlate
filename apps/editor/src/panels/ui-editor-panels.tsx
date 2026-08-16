@@ -244,7 +244,10 @@ export function UiLogicPanel(_props: IDockviewPanelProps) {
     interfaceAssets,
     commit,
   } = useUiEditing();
-  const paletteNodes = useMemo(() => scriptPaletteNodes(), []);
+  const paletteNodes = useMemo(
+    () => scriptPaletteNodes(undefined, { graph: logic }),
+    [logic],
+  );
   return (
     <PanelFrame data-testid="ui-logic-panel">
       <div className="flex h-full min-h-0">

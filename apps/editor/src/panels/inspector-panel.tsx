@@ -63,8 +63,10 @@ import {
   pinDefaultPropertyRows,
   pinListFromParameterRows,
   pinsFromNodeData,
+  variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
-import { pinDefaultPropertyKey } from "@babylonslate/scripting";
+import { defaultJsValue, pinDefaultPropertyKey } from "@babylonslate/scripting";
+import { pinTypeForMember } from "@babylonslate/scripting-nodes";
 import { patchClassMember } from "../lib/class-members";
 
 function ClassMemberDetails({
@@ -84,10 +86,7 @@ function ClassMemberDetails({
   };
 
   if (member.kind === "variable") {
-    const defaultText =
-      member.defaultValue === undefined || member.defaultValue === null
-        ? ""
-        : String(member.defaultValue);
+    const typeId = member.typeId ?? "float";
     return (
       <div
         className="flex flex-col gap-3 p-3"
@@ -103,20 +102,21 @@ function ClassMemberDetails({
               value: member.name,
               onChange: (name) => commit({ name }),
             },
-            {
-              id: "default",
-              kind: "text",
-              label: "Default",
-              value: defaultText,
-              onChange: (value) => commit({ defaultValue: value }),
-            },
+            ...variableDefaultPropertyRows(typeId, member.defaultValue, (value) =>
+              commit({ defaultValue: value }),
+            ),
           ]}
         />
         <div className="flex flex-col gap-1">
           <div className="text-sm font-medium">Type</div>
           <PinTypePicker
-            value={member.typeId ?? "float"}
-            onChange={(typeId) => commit({ typeId })}
+            value={typeId}
+            onChange={(nextType) =>
+              commit({
+                typeId: nextType,
+                defaultValue: defaultJsValue(pinTypeForMember(nextType)),
+              })
+            }
             data-testid="inspector-member-type"
           />
         </div>

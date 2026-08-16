@@ -8,6 +8,7 @@ import {
   VEC2,
   VEC3,
   classRef,
+  defaultValueLiteral,
   enumRef,
   objectRef,
   structRef,
@@ -23,6 +24,11 @@ export type MemberPinRow = {
 export function jsIdent(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
   return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
+}
+
+/** Function-local ident so authored names cannot collide with `ctx`. */
+export function localVariableIdent(name: string): string {
+  return `__lv_${jsIdent(name)}`;
 }
 
 export function objectLiteralKey(name: string): string {
@@ -72,5 +78,22 @@ export function dataMemberPins(
     }
     if (row.typeId === "exec") return [];
     return [pin(row.name, row.name, direction, pinTypeForMember(row.typeId))];
+  });
+}
+
+export function localVariablePreamble(
+  locals: ReadonlyArray<{
+    name: string;
+    typeId?: string;
+    defaultValue?: unknown;
+  }>,
+): string[] {
+  return locals.map((local) => {
+    const ident = localVariableIdent(local.name);
+    const value =
+      local.defaultValue !== undefined
+        ? JSON.stringify(local.defaultValue)
+        : defaultValueLiteral(pinTypeForMember(local.typeId));
+    return `  let ${ident} = ${value};`;
   });
 }

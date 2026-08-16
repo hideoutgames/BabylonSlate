@@ -101,6 +101,17 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await page.getByTestId("name-prompt-input").fill("Health");
     await page.getByTestId("name-prompt-confirm").click();
     await expect(page.getByTestId("inspector-member-type")).toBeVisible();
+    await expect(page.getByTestId("class-add-local-variables")).toHaveCount(0);
+
+    await page.getByTestId("class-add-functions").click();
+    await page.getByTestId("name-prompt-input").fill("Jump");
+    await page.getByTestId("name-prompt-confirm").click();
+    await expect(page.getByTestId("class-add-local-variables")).toBeVisible();
+    await page
+      .getByTestId("my-class-panel")
+      .getByText("Event Begin Play", { exact: true })
+      .click();
+    await expect(page.getByTestId("class-add-local-variables")).toHaveCount(0);
   });
 
   test("Outliner immediate drag parents an actor; row menu deletes", async ({

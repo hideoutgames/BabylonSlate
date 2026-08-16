@@ -127,8 +127,16 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         classId,
         graph: graphContent ?? undefined,
         otherClassGraphs,
+        activeFunctionId,
       }),
-    [classId, graphContent, otherClassGraphs, parentClass, parentOf],
+    [
+      activeFunctionId,
+      classId,
+      graphContent,
+      otherClassGraphs,
+      parentClass,
+      parentOf,
+    ],
   );
 
   const focusId = focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined;

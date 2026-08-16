@@ -2,9 +2,59 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  STRING,
-  BOXED_WILDCARD,
+  objectRef,
 } from "@babylonslate/scripting";
+import {
+  localVariableIdent,
+  pinTypeForMember,
+} from "./member-pins";
+
+function variableNameOf(properties: Record<string, unknown>): string {
+  return typeof properties.variableName === "string" &&
+    properties.variableName.trim()
+    ? properties.variableName.trim()
+    : "Value";
+}
+
+function targetPins(properties: Record<string, unknown>) {
+  if (properties.implicitSelf === true) return [];
+  const classId =
+    typeof properties.classId === "string" && properties.classId.trim()
+      ? properties.classId.trim()
+      : "BObject";
+  return [pin("target", "target", "in", objectRef(classId))];
+}
+
+function targetConnected(
+  ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
+): boolean {
+  const targetPin = ctx.node.pins.find(
+    (entry) => entry.name === "target" && entry.direction === "in",
+  );
+  if (!targetPin) return false;
+  return ctx.graph.edges.some(
+    (edge) =>
+      edge.targetNodeId === ctx.node.id && edge.targetPinId === targetPin.id,
+  );
+}
+
+function usesImplicitSelf(
+  ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
+): boolean {
+  const hasTarget = ctx.node.pins.some(
+    (entry) => entry.name === "target" && entry.direction === "in",
+  );
+  return !hasTarget || (!targetConnected(ctx) && ctx.node.properties.implicitSelf === true);
+}
+
+function memberGetExpr(
+  ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
+  name: string,
+): string {
+  const quoted = JSON.stringify(name);
+  if (usesImplicitSelf(ctx)) return `ctx.getVariable(${quoted})`;
+  return `ctx.getVariableFrom(${ctx.input("target")}, ${quoted})`;
+}
 
 export const variableNodes: NodeDefinition[] = [
   {
@@ -12,28 +62,58 @@ export const variableNodes: NodeDefinition[] = [
     title: "Get Variable",
     category: "variables",
     pure: true,
-    pins: () => [
-      pin("name", "name", "in", STRING),
-      pin("out", "out", "out", BOXED_WILDCARD),
+    pins: (properties) => [
+      ...targetPins(properties),
+      pin(
+        "value",
+        "value",
+        "out",
+        pinTypeForMember(
+          typeof properties.typeId === "string" ? properties.typeId : "float",
+        ),
+      ),
     ],
-    codegen: (ctx) => ({
-      out: `ctx.getVariable(${ctx.input("name")})`,
-    }),
+    codegen: (ctx) => {
+      const name = variableNameOf(ctx.node.properties);
+      if (ctx.node.properties.scope === "local") {
+        return { value: localVariableIdent(name) };
+      }
+      return { value: memberGetExpr(ctx, name) };
+    },
   },
   {
     id: "variables.set",
     title: "Set Variable",
     category: "variables",
-    pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      pin("name", "name", "in", STRING),
-      pin("value", "value", "in", BOXED_WILDCARD),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(
-        `ctx.setVariable(${ctx.input("name")}, ${ctx.input("value")});`,
+    pins: (properties) => {
+      const type = pinTypeForMember(
+        typeof properties.typeId === "string" ? properties.typeId : "float",
       );
+      return [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        ...targetPins(properties),
+        pin("value", "value", "in", type),
+        pin("out", "out", "out", type),
+      ];
+    },
+    codegen: (ctx) => {
+      const name = variableNameOf(ctx.node.properties);
+      const value = ctx.input("value");
+      if (ctx.node.properties.scope === "local") {
+        const ident = localVariableIdent(name);
+        ctx.emit(`${ident} = ${value};`);
+        return { out: ident };
+      }
+      const quoted = JSON.stringify(name);
+      if (usesImplicitSelf(ctx)) {
+        ctx.emit(`ctx.setVariable(${quoted}, ${value});`);
+      } else {
+        ctx.emit(
+          `ctx.setVariableOn(${ctx.input("target")}, ${quoted}, ${value});`,
+        );
+      }
+      return { out: value };
     },
   },
 ];

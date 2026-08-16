@@ -272,4 +272,52 @@ describe("My Class members", () => {
       "bool",
     );
   });
+
+  it("keeps function-local variables out of the Variables section", () => {
+    const graph: SerializedGraph = {
+      nodes: [],
+      edges: [],
+      members: [
+        { id: "fn-1", kind: "function", name: "Jump" },
+        { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
+        {
+          id: "loc-1",
+          kind: "variable",
+          name: "Temp",
+          typeId: "int",
+          functionId: "fn-1",
+        },
+      ],
+    };
+    const members = membersForGraph(graph);
+    expect(membersForSection(members, "variable")).toEqual([
+      { kind: "variable", name: "Health", detail: "var-1", typeId: "float" },
+      {
+        kind: "variable",
+        name: "Temp",
+        detail: "loc-1",
+        typeId: "int",
+        functionId: "fn-1",
+      },
+    ]);
+    const eventRows = blueprintTreeNodes(members, new Set());
+    expect(eventRows.map((row) => row.id)).not.toContain("section-local-variables");
+    expect(eventRows.map((row) => row.id)).not.toContain("loc-1");
+    expect(eventRows.map((row) => row.id)).toContain("var-1");
+    const functionRows = blueprintTreeNodes(members, new Set(), {
+      activeFunctionId: "fn-1",
+    });
+    expect(functionRows.map((row) => row.id)).toEqual(
+      expect.arrayContaining([
+        "section-variables",
+        "var-1",
+        "section-local-variables",
+        "loc-1",
+      ]),
+    );
+    const localIndex = functionRows.findIndex(
+      (row) => row.id === "section-local-variables",
+    );
+    expect(functionRows[localIndex]?.label).toBe("Local Variables");
+  });
 });
