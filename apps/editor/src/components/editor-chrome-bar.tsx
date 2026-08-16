@@ -69,6 +69,7 @@ import { IconActionButton } from "./icon-action-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
 import { displayProjectName } from "../lib/display-project-name";
+import { canFocusLayout } from "../shell/layout-ops";
 import "../shell/editor-chrome.css";
 
 function kindIcon(kind: DocumentKind, assetType?: string) {
@@ -232,7 +233,7 @@ export function EditorChromeBar({
   );
   const activeKind = openDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
-  const canFocus = activeKind === "scene" || activeKind === "graph";
+  const canFocus = canFocusLayout(activeKind);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {

@@ -32,10 +32,51 @@ import {
   focusKeepCandidates,
   type FocusDocumentKind,
 } from "../shell/layout-ops";
+import type { DockWindowOptions } from "../shell/window-catalog";
 import {
   editorUtilityAssetsFromIndexed,
   listEditorUtilityWindows,
 } from "../shell/editor-utility-windows";
+
+type FocusKeepSettingKey = keyof EngineSettings["focusKeepPanels"];
+
+const FOCUS_KEEP_SETTING_ROWS: Array<{
+  kind: FocusDocumentKind;
+  keepKey: FocusKeepSettingKey;
+  label: string;
+  options?: DockWindowOptions;
+}> = [
+  { kind: "scene", keepKey: "scene", label: "Scene" },
+  { kind: "graph", keepKey: "graph", label: "Class" },
+  { kind: "enum", keepKey: "enum", label: "Enum" },
+  { kind: "structure", keepKey: "structure", label: "Structure" },
+  {
+    kind: "script-interface",
+    keepKey: "script-interface",
+    label: "Script Interface",
+  },
+  { kind: "sprite", keepKey: "sprite", label: "Sprite" },
+  { kind: "tileset", keepKey: "tileset", label: "Tileset" },
+  { kind: "tilemap", keepKey: "tilemap", label: "Tilemap" },
+  { kind: "material", keepKey: "material", label: "Material" },
+  {
+    kind: "material-function",
+    keepKey: "material-function",
+    label: "Material Function",
+  },
+  {
+    kind: "ui",
+    keepKey: "ui",
+    label: "User Interface Designer",
+    options: { editorUtilityInterface: true },
+  },
+  {
+    kind: "ui",
+    keepKey: "uiLogic",
+    label: "User Interface Logic",
+    options: { uiEditorMode: "logic" },
+  },
+];
 
 export type EngineSettingsCategoryId =
   | "appearance"
@@ -250,30 +291,26 @@ export function EngineSettingsForm({
         />
       ) : null}
 
-      {categoryId === "focus" ? (
-        <>
-          <FocusKeepPanelList
-            kind="scene"
-            label="Scene"
-            ids={settings.focusKeepPanels.scene}
-            onChange={(scene) =>
-              void onChange({
-                focusKeepPanels: { ...settings.focusKeepPanels, scene },
-              })
-            }
-          />
-          <FocusKeepPanelList
-            kind="graph"
-            label="Class"
-            ids={settings.focusKeepPanels.graph}
-            onChange={(graph) =>
-              void onChange({
-                focusKeepPanels: { ...settings.focusKeepPanels, graph },
-              })
-            }
-          />
-        </>
-      ) : null}
+      {categoryId === "focus"
+        ? FOCUS_KEEP_SETTING_ROWS.map((row) => (
+            <FocusKeepPanelList
+              key={row.keepKey}
+              kind={row.kind}
+              keepKey={row.keepKey}
+              label={row.label}
+              options={row.options}
+              ids={settings.focusKeepPanels[row.keepKey]}
+              onChange={(ids) =>
+                void onChange({
+                  focusKeepPanels: {
+                    ...settings.focusKeepPanels,
+                    [row.keepKey]: ids,
+                  },
+                })
+              }
+            />
+          ))
+        : null}
 
       {categoryId === "templates" ? (
         <FieldSet>
@@ -311,9 +348,10 @@ function focusKeepTitle(
   kind: FocusDocumentKind,
   id: string,
   editorUtilities: { id: string; title: string }[],
+  options?: DockWindowOptions,
 ): string {
   return (
-    focusKeepCandidates(kind, { editorUtilities }).find(
+    focusKeepCandidates(kind, { ...options, editorUtilities }).find(
       (candidate) => candidate.id === id,
     )?.title ?? id
   );
@@ -321,14 +359,18 @@ function focusKeepTitle(
 
 function FocusKeepPanelList({
   kind,
+  keepKey,
   label,
   ids,
   onChange,
+  options,
 }: {
   kind: FocusDocumentKind;
+  keepKey: string;
   label: string;
   ids: string[];
   onChange: (ids: string[]) => void;
+  options?: DockWindowOptions;
 }) {
   const { assetRegistry, openDocuments } = useDocuments();
   const editorUtilities = listEditorUtilityWindows({
@@ -338,9 +380,10 @@ function FocusKeepPanelList({
       openDocuments,
     ),
   }).map((entry) => ({ id: entry.id, title: entry.title }));
-  const remaining = focusKeepCandidates(kind, { editorUtilities }).filter(
-    (candidate) => !ids.includes(candidate.id),
-  );
+  const remaining = focusKeepCandidates(kind, {
+    ...options,
+    editorUtilities,
+  }).filter((candidate) => !ids.includes(candidate.id));
   return (
     <FieldSet>
       <FieldLegend>{label}</FieldLegend>
@@ -351,12 +394,12 @@ function FocusKeepPanelList({
         </FieldDescription>
       </Field>
       {ids.map((id) => {
-        const title = focusKeepTitle(kind, id, editorUtilities);
+        const title = focusKeepTitle(kind, id, editorUtilities, options);
         return (
           <Field
             key={id}
             orientation="horizontal"
-            data-testid={`focus-keep-${kind}-${id}`}
+            data-testid={`focus-keep-${keepKey}-${id}`}
           >
             <FieldLabel>{title}</FieldLabel>
             <Button
@@ -364,7 +407,7 @@ function FocusKeepPanelList({
               variant="ghost"
               size="touch-icon"
               aria-label={`Remove ${title}`}
-              data-testid={`focus-keep-${kind}-remove-${id}`}
+              data-testid={`focus-keep-${keepKey}-remove-${id}`}
               onClick={() => onChange(ids.filter((entry) => entry !== id))}
             >
               <XIcon />
@@ -382,7 +425,7 @@ function FocusKeepPanelList({
                   variant="outline"
                   size="sm"
                   className="min-h-[var(--touch-target,44px)] w-full"
-                  data-testid={`focus-keep-${kind}-add`}
+                  data-testid={`focus-keep-${keepKey}-add`}
                 />
               }
             >
@@ -394,7 +437,7 @@ function FocusKeepPanelList({
                 {remaining.map((candidate) => (
                   <DropdownMenuItem
                     key={candidate.id}
-                    data-testid={`focus-keep-${kind}-add-${candidate.id}`}
+                    data-testid={`focus-keep-${keepKey}-add-${candidate.id}`}
                     onClick={() => onChange([...ids, candidate.id])}
                   >
                     {candidate.title}

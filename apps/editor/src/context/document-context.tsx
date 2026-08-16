@@ -97,7 +97,7 @@ import {
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { validateSerializedGraph } from "../services/graph-validation";
-import { applyFocusLayout } from "../shell/layout-ops";
+import { applyFocusLayout, focusKeepPanelIds } from "../shell/layout-ops";
 import {
   capturePanelPlacement,
   isDockWindowOpen as isDockWindowOpenOnApi,
@@ -113,8 +113,10 @@ import {
   type DockviewSurface,
 } from "../shell/dockview-surface";
 import {
+  applyPreFocusToUiLayout,
   parseUiDocumentLayout,
   serializeUiDocumentLayout,
+  type PreFocusSnapshot,
   type UiEditorMode,
 } from "../shell/ui-document-layout";
 import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
@@ -438,6 +440,16 @@ function findWindowDefinition(
   return findDockOrUtilityWindow(kind, panelId, { ...dockOptions, assets });
 }
 
+function restorePreFocusSnapshot(
+  id: string,
+  snapshot: PreFocusSnapshot,
+  apis: Map<string, DockviewApi>,
+): void {
+  const api =
+    apis.get(dockviewApiKey(id, snapshot.surface)) ?? apis.get(id);
+  api?.fromJSON(snapshot.layout as never);
+}
+
 export function DocumentProvider({ children }: { children: ReactNode }) {
   const projectStorage = useMemo(() => createStorage(), []);
   const projectService = useMemo(
@@ -462,7 +474,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
-  const preFocusLayoutsRef = useRef(new Map<string, Record<string, unknown>>());
+  const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
   const [uiEditorModes, setUiEditorModes] = useState<Record<string, UiEditorMode>>(
     {},
   );
@@ -660,23 +672,27 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           dockviewApiKey(id, "designer"),
         );
         const logicApi = dockviewApisRef.current.get(dockviewApiKey(id, "logic"));
+        const live: typeof parsed = {
+          uiEditorMode: mode,
+          designer: designerApi
+            ? projectService.captureLayout(designerApi)
+            : parsed.designer,
+          logic: logicApi
+            ? projectService.captureLayout(logicApi)
+            : parsed.logic,
+        };
+        const preFocus = preFocusLayoutsRef.current.get(id);
         documentService.setLayout(
           id,
-          serializeUiDocumentLayout({
-            uiEditorMode: mode,
-            designer: designerApi
-              ? projectService.captureLayout(designerApi)
-              : parsed.designer,
-            logic: logicApi
-              ? projectService.captureLayout(logicApi)
-              : parsed.logic,
-          }),
+          serializeUiDocumentLayout(
+            preFocus ? applyPreFocusToUiLayout(live, preFocus) : live,
+          ),
         );
         return;
       }
       const preFocus = preFocusLayoutsRef.current.get(id);
       if (preFocus) {
-        documentService.setLayout(id, preFocus);
+        documentService.setLayout(id, preFocus.layout);
         return;
       }
       const api = dockviewApisRef.current.get(id);
@@ -2500,10 +2516,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const setUiEditorMode = useCallback(
     (id: string, mode: UiEditorMode) => {
+      const doc = documentService.getDocument(id);
+      const currentMode = uiEditorModeForDocument(id, uiEditorModes, doc);
+      if (currentMode !== mode) {
+        const snapshot = preFocusLayoutsRef.current.get(id);
+        if (snapshot) {
+          restorePreFocusSnapshot(id, snapshot, dockviewApisRef.current);
+          preFocusLayoutsRef.current.delete(id);
+          setFocusedLayoutIds((current) => {
+            if (!current.has(id)) return current;
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+        }
+      }
       setUiEditorModes((current) =>
         current[id] === mode ? current : { ...current, [id]: mode },
       );
-      const doc = documentService.getDocument(id);
       if (doc?.ref.kind === "ui") {
         const parsed = parseUiDocumentLayout(doc.layout);
         if (parsed.uiEditorMode !== mode) {
@@ -2515,7 +2545,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       bumpDockWindows();
     },
-    [bumpDockWindows, documentService],
+    [bumpDockWindows, documentService, uiEditorModes],
   );
 
   const activateDockPanel = useCallback((panelId: string) => {
@@ -2597,7 +2627,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const snapshot = preFocusLayoutsRef.current.get(activeDocumentId);
       preFocusLayoutsRef.current.delete(activeDocumentId);
       if (snapshot) {
-        api.fromJSON(snapshot as never);
+        restorePreFocusSnapshot(
+          activeDocumentId,
+          snapshot,
+          dockviewApisRef.current,
+        );
       }
       setFocusedLayoutIds((current) => {
         const next = new Set(current);
@@ -2612,30 +2646,35 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return;
     }
     const dock = api;
-
-    preFocusLayoutsRef.current.set(
-      activeDocumentId,
-      dock.toJSON() as unknown as Record<string, unknown>,
+    const indexed = projectService.registry
+      ?.list()
+      .find((asset) => asset.path === doc.ref.path);
+    const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+    const uiMode =
+      doc.ref.kind === "ui"
+        ? uiEditorModeForDocument(activeDocumentId, uiEditorModes, doc)
+        : undefined;
+    const dockOptions = dockOptionsForIndexed(
+      doc.ref.kind,
+      indexed,
+      parentOf,
+      sourceControlRef.current.enabled,
+      uiMode,
     );
+
+    preFocusLayoutsRef.current.set(activeDocumentId, {
+      layout: dock.toJSON() as unknown as Record<string, unknown>,
+      surface: uiMode ? dockviewSurfaceForUiMode(uiMode) : "default",
+    });
     const openUtilityIds = listDockPanels(asDockWindowApi(dock))
       .map((panel) => panel.id)
       .filter((id) => id.startsWith("eui-"));
     applyFocusLayout(
       doc.ref.kind,
       dock,
-      doc.ref.kind === "scene" || doc.ref.kind === "graph"
-        ? settings.focusKeepPanels[doc.ref.kind]
-        : undefined,
+      focusKeepPanelIds(settings, doc.ref.kind, dockOptions),
       {
-        ...(doc.ref.kind === "ui"
-          ? {
-              uiEditorMode: uiEditorModeForDocument(
-                activeDocumentId,
-                uiEditorModes,
-                doc,
-              ),
-            }
-          : {}),
+        ...dockOptions,
         openUtilityIds,
       },
     );
@@ -2644,7 +2683,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       next.add(activeDocumentId);
       return next;
     });
-  }, [activeDockApi, documentService, settingsStore, uiEditorModes]);
+  }, [activeDockApi, documentService, projectService, settingsStore, uiEditorModes]);
 
   const captureActiveLayout = useCallback(() => {
     const { activeDocumentId } = documentService.getState();

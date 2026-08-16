@@ -1,9 +1,16 @@
+import type { DockviewSurface } from "./dockview-surface";
+
 export type UiEditorMode = "designer" | "logic";
 
 export type UiDocumentLayout = {
   uiEditorMode: UiEditorMode;
   designer: Record<string, unknown> | null;
   logic: Record<string, unknown> | null;
+};
+
+export type PreFocusSnapshot = {
+  layout: Record<string, unknown>;
+  surface: DockviewSurface;
 };
 
 const SPLIT_KEYS = new Set(["uiEditorMode", "designer", "logic"]);
@@ -45,4 +52,18 @@ export function serializeUiDocumentLayout(
     designer: layout.designer,
     logic: layout.logic,
   };
+}
+
+/** Persist a pre-Focus DockView snapshot into the matching Designer or Logic slot. */
+export function applyPreFocusToUiLayout(
+  current: UiDocumentLayout,
+  snapshot: PreFocusSnapshot,
+): UiDocumentLayout {
+  if (snapshot.surface === "designer") {
+    return { ...current, designer: snapshot.layout };
+  }
+  if (snapshot.surface === "logic") {
+    return { ...current, logic: snapshot.layout };
+  }
+  return current;
 }

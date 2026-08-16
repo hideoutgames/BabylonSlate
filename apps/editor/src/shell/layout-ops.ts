@@ -1,4 +1,6 @@
+import type { EngineSettings } from "@babylonslate/vfs";
 import {
+  isDockviewDocumentKind,
   listDockWindows,
   primaryDockPanel,
   type DockviewDocumentKind,
@@ -25,6 +27,26 @@ function catalogFocusCandidates(
     id: entry.id,
     title: entry.title,
   }));
+}
+
+export function canFocusLayout(kind: string | undefined): boolean {
+  return isDockviewDocumentKind(kind);
+}
+
+/**
+ * Engine Settings keep-list for a document kind.
+ * UserInterface Logic uses `uiLogic`; Designer uses `ui`.
+ */
+export function focusKeepPanelIds(
+  settings: Pick<EngineSettings, "focusKeepPanels">,
+  kind: FocusDocumentKind,
+  options?: DockWindowOptions,
+): readonly string[] | undefined {
+  const panels = settings.focusKeepPanels;
+  if (kind === "ui" && options?.uiEditorMode === "logic") {
+    return panels.uiLogic;
+  }
+  return panels[kind];
 }
 
 /** Built-in Scene dock tabs Focus may keep. EditorUtility widgets merge in via `focusKeepCandidates`. */

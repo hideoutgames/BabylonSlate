@@ -16,6 +16,19 @@ describe("app settings", () => {
     expect(settings.focusKeepPanels).toEqual({
       scene: ["viewport"],
       graph: ["graph"],
+      enum: ["enum-members"],
+      structure: ["structure-members"],
+      "script-interface": ["script-interface-preview"],
+      sprite: ["sprite-preview"],
+      tileset: ["tileset-preview"],
+      tilemap: ["tilemap-paint"],
+      material: ["material-graph"],
+      "material-function": ["material-function-graph"],
+      ui: ["ui-design"],
+      uiLogic: ["graph"],
+      "plugin-settings": ["plugin-settings-details"],
+      "anim-graph": ["anim-graph-graph"],
+      "behaviour-tree": ["behaviour-tree-graph"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
@@ -88,6 +101,29 @@ describe("app settings", () => {
     });
     expect(parsed.focusKeepPanels.scene).toEqual(["viewport"]);
     expect(parsed.focusKeepPanels.graph).toEqual(["graph"]);
+    expect(parsed.focusKeepPanels.material).toEqual(["material-graph"]);
+    expect(parsed.focusKeepPanels.ui).toEqual(["ui-design"]);
+    expect(parsed.focusKeepPanels.uiLogic).toEqual(["graph"]);
+    expect(parsed.focusKeepPanels["anim-graph"]).toEqual(["anim-graph-graph"]);
+    expect(parsed.focusKeepPanels["behaviour-tree"]).toEqual([
+      "behaviour-tree-graph",
+    ]);
+  });
+
+  it("fills new focus keep-list keys when saved JSON only has scene and graph", () => {
+    const parsed = engineSettingsSchema.parse({
+      focusKeepPanels: {
+        scene: ["viewport", "scene-outliner"],
+        graph: ["graph", "inspector"],
+      },
+    });
+    expect(parsed.focusKeepPanels.scene).toEqual(["viewport", "scene-outliner"]);
+    expect(parsed.focusKeepPanels.graph).toEqual(["graph", "inspector"]);
+    expect(parsed.focusKeepPanels.material).toEqual(["material-graph"]);
+    expect(parsed.focusKeepPanels.uiLogic).toEqual(["graph"]);
+    expect(parsed.focusKeepPanels["script-interface"]).toEqual([
+      "script-interface-preview",
+    ]);
   });
 
   it("round-trips through the memory store", async () => {

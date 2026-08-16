@@ -5,6 +5,27 @@ function clampMin(value: unknown, min: number): unknown {
   return Math.max(min, value);
 }
 
+export const DEFAULT_FOCUS_KEEP_PANELS = {
+  scene: ["viewport"],
+  graph: ["graph"],
+  enum: ["enum-members"],
+  structure: ["structure-members"],
+  "script-interface": ["script-interface-preview"],
+  sprite: ["sprite-preview"],
+  tileset: ["tileset-preview"],
+  tilemap: ["tilemap-paint"],
+  material: ["material-graph"],
+  "material-function": ["material-function-graph"],
+  ui: ["ui-design"],
+  uiLogic: ["graph"],
+  "plugin-settings": ["plugin-settings-details"],
+  "anim-graph": ["anim-graph-graph"],
+  "behaviour-tree": ["behaviour-tree-graph"],
+} as const;
+
+const focusKeepPanelList = (fallback: readonly string[]) =>
+  z.array(z.string()).default([...fallback]);
+
 export const engineSettingsSchema = z.object({
   templatesFolder: z.string().nullable().default(null),
   defaultProjectLocation: z.string().nullable().default(null),
@@ -33,19 +54,40 @@ export const engineSettingsSchema = z.object({
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.min(1.5, Math.max(0.1, value));
   }, z.number().min(0.1).max(1.5).default(0.5)),
-    debuggerDefaults: z
-      .object({
-        showFps: z.boolean().default(false),
-        logLevel: z.enum(["error", "warn", "info", "debug"]).default("warn"),
-        previewBuild: z.boolean().default(false),
-      })
-      .default({ showFps: false, logLevel: "warn", previewBuild: false }),
+  debuggerDefaults: z
+    .object({
+      showFps: z.boolean().default(false),
+      logLevel: z.enum(["error", "warn", "info", "debug"]).default("warn"),
+      previewBuild: z.boolean().default(false),
+    })
+    .default({ showFps: false, logLevel: "warn", previewBuild: false }),
   focusKeepPanels: z
     .object({
-      scene: z.array(z.string()).default(["viewport"]),
-      graph: z.array(z.string()).default(["graph"]),
+      scene: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.scene),
+      graph: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.graph),
+      enum: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.enum),
+      structure: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.structure),
+      "script-interface": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["script-interface"],
+      ),
+      sprite: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sprite),
+      tileset: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.tileset),
+      tilemap: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.tilemap),
+      material: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.material),
+      "material-function": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["material-function"],
+      ),
+      ui: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.ui),
+      uiLogic: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.uiLogic),
+      "plugin-settings": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["plugin-settings"],
+      ),
+      "anim-graph": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["anim-graph"]),
+      "behaviour-tree": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["behaviour-tree"],
+      ),
     })
-    .default({ scene: ["viewport"], graph: ["graph"] }),
+    .default({ ...DEFAULT_FOCUS_KEEP_PANELS }),
   uiDesignerPresets: z
     .array(
       z.object({
