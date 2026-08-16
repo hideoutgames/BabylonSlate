@@ -344,6 +344,7 @@ test.describe("Editor density and IA", () => {
 
     await page.setViewportSize({ width: 1280, height: 400 });
     for (let index = 0; index < 8; index += 1) {
+      await page.getByTestId("tree-row-assets").click();
       await page.getByTestId("content-browser-new-folder").click();
       await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
       await page
@@ -377,6 +378,7 @@ test.describe("Editor density and IA", () => {
     await openTestProject(page);
     await page.setViewportSize({ width: 1194, height: 400 });
     for (let index = 0; index < 8; index += 1) {
+      await page.getByTestId("tree-row-assets").click();
       await page.getByTestId("content-browser-new-folder").click();
       await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
       await page
