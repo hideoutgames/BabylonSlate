@@ -30,11 +30,15 @@ export interface BtNode {
   properties: Record<string, unknown>;
 }
 
+export type BtEditorPosition = { x: number; y: number };
+
 export interface BehaviourTreeDocument {
   name: string;
   rootId: string;
   nodes: BtNode[];
   blackboardGuid: string | null;
+  /** Editor-only canvas coordinates. Runtime ignores this field. */
+  editorPositions?: Record<string, BtEditorPosition>;
 }
 
 export interface BlackboardKey {

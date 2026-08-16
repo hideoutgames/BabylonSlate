@@ -323,6 +323,7 @@ export function BlueprintNodeShell({
   selected,
   data,
   children,
+  compact = false,
 }: {
   nodeId: string;
   title: string;
@@ -330,6 +331,7 @@ export function BlueprintNodeShell({
   selected?: boolean;
   data?: Record<string, unknown>;
   children: ReactNode;
+  compact?: boolean;
 }) {
   const { nodeErrorCount } = useGraphEditorContext();
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
@@ -341,7 +343,8 @@ export function BlueprintNodeShell({
       <div
         data-node-role={role}
         className={cn(
-          "min-w-72 overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
+          "overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
+          compact ? "min-w-48" : "min-w-72",
           selected && "ring-2 ring-primary",
         )}
       >

@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
 import { useCallback, useMemo, useRef, type MouseEvent } from "react";
 import {
   ContextMenuOverlay,
@@ -9,6 +9,7 @@ import {
 import { cn } from "@babylonslate/ui/lib/utils";
 import { BlueprintNodeShell, type CanvasNode } from "./graph-nodes";
 import { useGraphEditorContext } from "./graph-editor-context";
+import type { NodeVisualRole } from "./node-theme";
 
 const DOUBLE_TAP_MS = 350;
 
@@ -31,6 +32,80 @@ function attachmentTitle(row: AttachedRow): string {
   return humanizePropertyLabel(last);
 }
 
+function treeRole(
+  kind: string,
+  protectedNode: boolean,
+): NodeVisualRole {
+  if (protectedNode) return "bt-root";
+  if (kind === "task") return "bt-task";
+  return "bt-composite";
+}
+
+function treeState(running: boolean, lastResult: string | null): string {
+  if (running) return "running";
+  if (lastResult === "success" || lastResult === "failure") return lastResult;
+  return "idle";
+}
+
+function TreePinHandle({
+  nodeId,
+  pinId,
+  direction,
+  position,
+  label,
+}: {
+  nodeId: string;
+  pinId: string;
+  direction: "in" | "out";
+  position: Position;
+  label: string;
+}) {
+  const { onPinTap, pendingPin } = useGraphEditorContext();
+  const pending = pendingPin?.nodeId === nodeId && pendingPin.pinId === pinId;
+  const connected = useStore((state) =>
+    state.edges.some((edge) =>
+      direction === "out"
+        ? edge.source === nodeId && (edge.sourceHandle ?? "") === pinId
+        : edge.target === nodeId && (edge.targetHandle ?? "") === pinId,
+    ),
+  );
+
+  return (
+    <Handle
+      id={pinId}
+      type={direction === "out" ? "source" : "target"}
+      position={position}
+      aria-label={label}
+      data-pin-type="exec"
+      className={cn(
+        "!flex !size-11 !min-h-11 !min-w-11 items-center justify-center",
+        "!border-0 !bg-transparent touch-manipulation",
+        pending && "ring-2 ring-primary ring-offset-1 ring-offset-card",
+      )}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPinTap(nodeId, pinId, direction);
+      }}
+    >
+      <span
+        className={cn(
+          "graph-pin-visual block rotate-45 rounded-sm border-2",
+          connected ? "border-card" : "",
+        )}
+        data-pin-shape="diamond"
+        data-pin-connected={connected ? "true" : "false"}
+        style={{
+          width: "var(--graph-pin-size, 22px)",
+          height: "var(--graph-pin-size, 22px)",
+          background: connected ? "var(--pin-exec)" : "transparent",
+          borderColor: connected ? undefined : "var(--pin-exec)",
+        }}
+        aria-hidden="true"
+      />
+    </Handle>
+  );
+}
+
 export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const {
     onNavigateRequest,
@@ -47,9 +122,11 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const sortIndex = typeof data.sortIndex === "number" ? data.sortIndex : 0;
   const lastResult = typeof data.lastResult === "string" ? data.lastResult : null;
   const running = data.running === true;
+  const protectedNode = data.__protected === true;
   const decorators = asRows(data.decorators);
   const services = asRows(data.services);
   const showChildren = kind !== "task";
+  const state = treeState(running, lastResult);
   const nodeMenuItems = useMemo(
     () => contextMenuItemsForNode?.(id) ?? [],
     [contextMenuItemsForNode, id],
@@ -86,23 +163,26 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
     <BlueprintNodeShell
       nodeId={id}
       title={title}
-      role={kind === "task" ? "function" : "flow"}
+      role={treeRole(kind, protectedNode)}
       selected={selected}
       data={data}
+      compact
     >
-      <Handle
-        id="parent"
-        type="target"
+      <TreePinHandle
+        nodeId={id}
+        pinId="parent"
+        direction="in"
         position={Position.Top}
-        className="!size-11 !min-h-11 !min-w-11 !border-0 !bg-transparent"
-        aria-label="Parent"
+        label="Parent"
       />
       <button
         type="button"
-        className="flex w-full items-center justify-between px-3 py-1 text-left text-xs text-muted-foreground"
+        className="bt-node-drag-handle flex w-full items-center justify-between gap-2 px-3 py-1 text-left text-xs text-muted-foreground"
         data-testid={`bt-node-${id}`}
         data-running={running ? "true" : "false"}
         data-last-result={lastResult ?? ""}
+        data-bt-state={state}
+        aria-label={`${title}, ${humanizePropertyLabel(kind)}, priority ${sortIndex}, ${state}`}
         onClick={handleHeaderClick}
         onContextMenu={(event) => {
           event.stopPropagation();
@@ -114,27 +194,31 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
         onPointerCancel={nodeMenu.bind.onPointerCancel}
       >
         <span>{humanizePropertyLabel(kind)}</span>
-        <span data-testid={`bt-sort-${id}`}>#{sortIndex}</span>
-      </button>
-      {lastResult || running ? (
-        <div
-          className={cn(
-            "px-3 py-1 text-xs",
-            running && "bg-primary/20 text-primary",
-            lastResult === "success" && "text-emerald-500",
-            lastResult === "failure" && "text-destructive",
-          )}
-          data-testid={`bt-result-${id}`}
+        <span
+          className="flex size-5 items-center justify-center rounded-full bg-background text-[10px] font-semibold text-foreground"
+          data-testid={`bt-sort-${id}`}
         >
-          {running ? "Running" : humanizePropertyLabel(lastResult ?? "")}
-        </div>
-      ) : null}
+          {sortIndex}
+        </span>
+      </button>
+      <div
+        className="min-h-5 px-3 text-xs leading-5"
+        data-testid={`bt-result-${id}`}
+        aria-live="polite"
+      >
+        {running
+          ? "Running"
+          : lastResult
+            ? humanizePropertyLabel(lastResult)
+            : "\u00a0"}
+      </div>
       {decorators.map((row) => (
         <AttachmentRow
           key={row.id}
           prefix="Decorator"
           testId={`bt-decorator-${row.id}`}
           label={attachmentTitle(row)}
+          tone="decorator"
           selected={selectedAttachmentId === row.id}
           items={contextMenuItemsForAttachment?.(id, row.id) ?? []}
           onClick={(event) => handleAttachmentClick(event, row.id)}
@@ -146,18 +230,19 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
           prefix="Service"
           testId={`bt-service-${row.id}`}
           label={attachmentTitle(row)}
+          tone="service"
           selected={selectedAttachmentId === row.id}
           items={contextMenuItemsForAttachment?.(id, row.id) ?? []}
           onClick={(event) => handleAttachmentClick(event, row.id)}
         />
       ))}
       {showChildren ? (
-        <Handle
-          id="children"
-          type="source"
+        <TreePinHandle
+          nodeId={id}
+          pinId="children"
+          direction="out"
           position={Position.Bottom}
-          className="!size-11 !min-h-11 !min-w-11 !border-0 !bg-transparent"
-          aria-label="Children"
+          label="Children"
         />
       ) : null}
       <ContextMenuOverlay menu={nodeMenu.menu} onClose={nodeMenu.closeMenu} />
@@ -169,6 +254,7 @@ function AttachmentRow({
   prefix,
   testId,
   label,
+  tone,
   selected,
   items,
   onClick,
@@ -176,6 +262,7 @@ function AttachmentRow({
   prefix: string;
   testId: string;
   label: string;
+  tone: "decorator" | "service";
   selected: boolean;
   items: NestedMenuItem[];
   onClick: (event: MouseEvent) => void;
@@ -186,7 +273,8 @@ function AttachmentRow({
       <button
         type="button"
         className={cn(
-          "flex min-h-11 w-full items-center px-3 text-left text-xs",
+          "nodrag nopan flex min-h-11 w-full items-center px-3 text-left text-xs",
+          tone === "decorator" ? "bg-node-bt-decorator/20" : "bg-node-bt-service/20",
           selected && "bg-accent",
         )}
         data-testid={testId}
