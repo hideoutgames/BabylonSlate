@@ -98,6 +98,22 @@ describe("resolveFocusKeepPanelIds", () => {
     ]);
   });
 
+  it("keeps already-open Editor Utility tabs when the keep list is the default", () => {
+    expect(
+      resolveFocusKeepPanelIds("scene", [], {
+        openUtilityIds: ["eui-scene-tools"],
+      }),
+    ).toEqual(["viewport", "eui-scene-tools"]);
+  });
+
+  it("unions already-open Editor Utility tabs into a non-empty keep list", () => {
+    expect(
+      resolveFocusKeepPanelIds("scene", ["viewport"], {
+        openUtilityIds: ["eui-scene-tools"],
+      }),
+    ).toEqual(["viewport", "eui-scene-tools"]);
+  });
+
   it("keeps an explicit list as-is", () => {
     expect(
       resolveFocusKeepPanelIds("graph", ["graph", "inspector"]),
@@ -147,6 +163,15 @@ describe("applyFocusLayout", () => {
     expect(api.getPanel("scene-outliner")!.api.close).not.toHaveBeenCalled();
     expect(api.getPanel("scene-details")!.api.close).toHaveBeenCalled();
     expect(api.getPanel("output-log")!.api.close).toHaveBeenCalled();
+  });
+
+  it("does not close an open Editor Utility when Focus uses the default keep list", () => {
+    const api = fakeApi(["viewport", "eui-scene-tools"]);
+    applyFocusLayout("scene", api, [], {
+      openUtilityIds: ["eui-scene-tools"],
+    });
+    expect(api.getPanel("viewport")!.api.close).not.toHaveBeenCalled();
+    expect(api.getPanel("eui-scene-tools")!.api.close).not.toHaveBeenCalled();
   });
 });
 

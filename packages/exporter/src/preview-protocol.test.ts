@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   filesFromPreviewPack,
   isPreviewDiagnosticsMessage,
+  isPreviewErrorMessage,
   isPreviewPackMessage,
+  isPreviewRequestPackMessage,
   PREVIEW_DIAGNOSTICS_MESSAGE,
+  PREVIEW_ERROR_MESSAGE,
   PREVIEW_PACK_MESSAGE,
+  PREVIEW_REQUEST_PACK_MESSAGE,
   previewPackFromFiles,
 } from "./preview-protocol";
 
@@ -26,5 +30,20 @@ describe("preview pack protocol", () => {
     expect(
       isPreviewDiagnosticsMessage({ type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics: [] }),
     ).toBe(true);
+  });
+
+  it("recognises the player asking for the pack once its listener is live", () => {
+    expect(
+      isPreviewRequestPackMessage({ type: PREVIEW_REQUEST_PACK_MESSAGE }),
+    ).toBe(true);
+    expect(isPreviewRequestPackMessage({ type: PREVIEW_PACK_MESSAGE })).toBe(false);
+    expect(isPreviewRequestPackMessage(null)).toBe(false);
+  });
+
+  it("carries a boot failure back to the editor", () => {
+    const message = { type: PREVIEW_ERROR_MESSAGE, message: "Export is missing game.json" };
+    expect(isPreviewErrorMessage(message)).toBe(true);
+    expect(isPreviewErrorMessage({ type: PREVIEW_ERROR_MESSAGE })).toBe(false);
+    expect(isPreviewErrorMessage({ type: "other", message: "x" })).toBe(false);
   });
 });

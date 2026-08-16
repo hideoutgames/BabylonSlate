@@ -230,7 +230,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     registerSharedEngine(handle.engine);
     const unregisterScheduler = registerScheduler({
       setAlwaysRender: (v) => handle.scheduler.setAlwaysRender(v),
-      stats: () => handle.scheduler.stats(),
       setPaused: (v) => handle.setPaused(v),
     });
     const detachRenderGate = attachViewportRenderGate({

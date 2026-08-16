@@ -117,7 +117,9 @@ import {
   serializeUiDocumentLayout,
   type UiEditorMode,
 } from "../shell/ui-document-layout";
+import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
 import {
+  closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
   findDockOrUtilityWindow,
 } from "../shell/editor-utility-windows";
@@ -517,10 +519,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
-  const bumpDockWindows = useCallback(
-    () => setDockWindowTick((v) => v + 1),
-    [],
-  );
+  const bumpDockWindows = useCallback(() => {
+    const assets = editorUtilityAssetsFromIndexed(
+      projectService.registry?.list() ?? [],
+      documentServiceRef.current.getOpenDocumentsOrdered(),
+    );
+    for (const [key, api] of dockviewApisRef.current) {
+      const documentId = key.split("::")[0] ?? key;
+      const doc = documentServiceRef.current.getDocument(documentId);
+      if (doc?.ref.kind === "scene" || doc?.ref.kind === "graph") {
+        closeMismatchedEditorUtilityPanels(
+          asDockWindowApi(api),
+          doc.ref.kind,
+          assets,
+        );
+      }
+    }
+    setDockWindowTick((v) => v + 1);
+  }, [projectService]);
   const documentService = documentServiceRef.current;
   const runForegroundRescanRef = useRef<() => Promise<void>>(async () => {});
 
@@ -925,6 +941,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setMigrationPending(pending);
       setLastCompiledSignature(null);
       setRoute("editor");
+      setUiEditorModes({});
+      resetProjectUiAssets();
       const { probeKtx2TranscoderAvailable } = await import(
         "@babylonslate/render"
       );
@@ -1178,6 +1196,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setMigrationPending([]);
     setLastCompiledSignature(null);
     setRoute("home");
+    setUiEditorModes({});
+    resetProjectUiAssets();
     mtimeSnapshotRef.current = null;
     setExternalChangePrompt(null);
     await refreshProjectList();
@@ -2190,6 +2210,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
         guidForPath: (path: string) => string | null;
+        projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
         enginePluginLoad: () => {
           entries: number;
@@ -2369,6 +2390,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      projectStartupSceneGuid: () =>
+        projectDocument?.settings.startupSceneGuid?.trim() ?? "",
       pluginGuids: () =>
         projectService.plugins.map((plugin) => plugin.pluginGuid),
       enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
@@ -2432,6 +2455,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService,
     ensureDerived,
     projectService,
+    projectDocument,
     updateProjectSettings,
   ]);
 
@@ -2527,6 +2551,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               dockOptions,
               editorUtilityAssetsFromIndexed(
                 projectService.registry?.list() ?? [],
+                documentService.getOpenDocumentsOrdered(),
               ),
             )
           : undefined;
@@ -2615,7 +2640,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       doc.ref.kind,
       panelId,
       dockOptions,
-      editorUtilityAssetsFromIndexed(projectService.registry?.list() ?? []),
+      editorUtilityAssetsFromIndexed(
+        projectService.registry?.list() ?? [],
+        documentService.getOpenDocumentsOrdered(),
+      ),
     );
     if (!def) return;
     const remembered =
@@ -2681,21 +2709,27 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       activeDocumentId,
       dock.toJSON() as unknown as Record<string, unknown>,
     );
+    const openUtilityIds = listDockPanels(asDockWindowApi(dock))
+      .map((panel) => panel.id)
+      .filter((id) => id.startsWith("eui-"));
     applyFocusLayout(
       doc.ref.kind,
       dock,
       doc.ref.kind === "scene" || doc.ref.kind === "graph"
         ? settings.focusKeepPanels[doc.ref.kind]
         : undefined,
-      doc.ref.kind === "ui"
-        ? {
-            uiEditorMode: uiEditorModeForDocument(
-              activeDocumentId,
-              uiEditorModes,
-              doc,
-            ),
-          }
-        : undefined,
+      {
+        ...(doc.ref.kind === "ui"
+          ? {
+              uiEditorMode: uiEditorModeForDocument(
+                activeDocumentId,
+                uiEditorModes,
+                doc,
+              ),
+            }
+          : {}),
+        openUtilityIds,
+      },
     );
     setFocusedLayoutIds((current) => {
       const next = new Set(current);

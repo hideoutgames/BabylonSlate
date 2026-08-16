@@ -26,7 +26,7 @@ export const engineSettingsSchema = z.object({
     })
     .default({ theme: "system", coarsePointerTargetScale: 1 }),
   undoHistoryLength: z.number().int().positive().default(50),
-  viewportFrameCap: z.number().positive().default(60),
+  viewportFrameCap: z.number().positive().default(30),
   hardwareScalingLevel: z.number().positive().default(1),
   postProcessingEnabled: z.boolean().default(true),
   thumbnailsEnabled: z.boolean().default(true),

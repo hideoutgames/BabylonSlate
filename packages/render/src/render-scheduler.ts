@@ -13,7 +13,7 @@ function nowMs(): number {
 
 /**
  * Dirty-driven render scheduler with refcounted continuous-render leases.
- * Visible editor viewports also honor Always Render + a frame cap; freeze
+ * Visible editor viewports always render continuously plus a frame cap; freeze
  * when paused, not visible, or obstructed.
  */
 export class RenderScheduler {

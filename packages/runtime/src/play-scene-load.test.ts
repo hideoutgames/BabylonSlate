@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
+  readActorSlot,
+  readSnapshotHeader,
+  snapshotFloatCount,
+} from "@babylonslate/bridge";
+import {
   createActor,
   createDefaultSceneSettings,
   createMeshComponent,
@@ -22,6 +27,7 @@ function fallingBoxScene(): SerializedScene {
     name: "Fall",
     viewportMode: "3d",
     settings: createDefaultSceneSettings("3d"),
+    folders: [],
     actors: [
       createActor("dynamic-box", "Box", {
         transform: {
@@ -71,6 +77,26 @@ function fallingBoxScene(): SerializedScene {
   };
 }
 
+function cameraPossessScene(attemptPossessViewTarget: boolean): SerializedScene {
+  return {
+    name: "Possess",
+    viewportMode: "3d",
+    settings: createDefaultSceneSettings(),
+    folders: [],
+    actors: [
+      createActor("cam", "Camera", {
+        components: [
+          {
+            id: "cam-comp",
+            classId: "CameraComponent",
+            properties: { projectionMode: "perspective", attemptPossessViewTarget },
+          },
+        ],
+      }),
+    ],
+  };
+}
+
 function node(
   registry: NodeRegistry,
   id: string,
@@ -99,6 +125,7 @@ describe("p7-play-scene-load", () => {
           name: "Main",
           viewportMode: "3d",
           settings: createDefaultSceneSettings(),
+          folders: [],
           actors: [
             createActor("actor-1", "Cube", {
               components: [createMeshComponent("component-1", "sphere")],
@@ -127,6 +154,190 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("gives every mesh actor its own slot and snapshot row", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "TwoMeshes",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("box-actor", "Box", {
+            transform: {
+              position: [-3, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [createMeshComponent("box-mesh", "box")],
+          }),
+          createActor("sphere-actor", "Sphere", {
+            transform: {
+              position: [3, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [createMeshComponent("sphere-mesh", "sphere")],
+          }),
+        ],
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+
+    const assigned = commands.filter((c) => c.type === "assignMesh");
+    expect(assigned.map((c) => (c as { meshKind: string }).meshKind)).toEqual([
+      "box",
+      "sphere",
+    ]);
+    const slotIds = assigned.map((c) => (c as { slotId: number }).slotId);
+    expect(new Set(slotIds).size).toBe(2);
+
+    runtime.start();
+    runtime.tick();
+    const buf = new Float32Array(snapshotFloatCount(8));
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    expect(readSnapshotHeader(buf).actorCount).toBe(2);
+    const first = readActorSlot(buf, 0);
+    const second = readActorSlot(buf, 1);
+    expect(new Set([first.slotId, second.slotId]).size).toBe(2);
+    expect([first.position.x, second.position.x].sort((a, b) => a - b)).toEqual([
+      -3, 3,
+    ]);
+    runtime.stop();
+  });
+
+  it("possesses a camera that opts into Attempt Possess View Target", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/possess.scene.babasset",
+        scene: cameraPossessScene(true),
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+
+    const possess = commands.filter((c) => c.type === "possessCamera");
+    expect(possess).toHaveLength(1);
+    const cameraSlot = commands.find(
+      (c) => c.type === "assignMesh" && (c as { meshKind: string }).meshKind === "camera",
+    ) as { slotId: number } | undefined;
+    expect((possess[0] as { slotId: number }).slotId).toBe(cameraSlot?.slotId);
+    runtime.stop();
+  });
+
+  it("leaves the camera alone when the option is off", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/possess.scene.babasset",
+        scene: cameraPossessScene(false),
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.some((c) => c.type === "possessCamera")).toBe(false);
+    runtime.stop();
+  });
+
+  it("does not possess a camera whose actor never reached the world", () => {
+    const commands: CommandMessage[] = [];
+    const scene = cameraPossessScene(true);
+    scene.actors = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/possess.scene.babasset",
+        scene,
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.some((c) => c.type === "possessCamera")).toBe(false);
+    runtime.stop();
+  });
+
+  it("lets a Begin Play script possession win over the scene option", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "possess-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "possess", "camera.possess"),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "possess",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "self",
+          sourcePinId: "out",
+          targetNodeId: "possess",
+          targetPinId: "target",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, {
+      assetGuid: "hero-asset",
+      registry,
+    });
+
+    const commands: CommandMessage[] = [];
+    const scene = cameraPossessScene(true);
+    scene.actors.push(
+      createActor("hero", "Hero", {
+        classId: "Hero",
+        components: [
+          {
+            id: "hero-camera",
+            classId: "CameraComponent",
+            properties: { projectionMode: "perspective" },
+          },
+        ],
+      }),
+    );
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/possess.scene.babasset",
+        scene,
+      },
+      (command) => commands.push(command),
+    );
+    await runtime.loadScripts([
+      {
+        assetGuid: "hero-asset",
+        classId: "Hero",
+        source: compiled.source,
+        anchors: compiled.anchors,
+        entryPoints: compiled.entryPoints,
+      },
+    ]);
+    runtime.realizePlayWorld();
+
+    const possess = commands.filter((c) => c.type === "possessCamera");
+    expect(possess).toHaveLength(1);
+    const heroSlot = commands.find(
+      (c) => c.type === "spawn" && (c as { actorGuid: string }).actorGuid === "hero",
+    ) as { slotId: number } | undefined;
+    expect((possess[0] as { slotId: number }).slotId).toBe(heroSlot?.slotId);
+    runtime.stop();
+  });
+
   it("emits assignMesh.parts for a two-mesh actor", () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
@@ -137,6 +348,7 @@ describe("p7-play-scene-load", () => {
           name: "Parts",
           viewportMode: "3d",
           settings: createDefaultSceneSettings(),
+          folders: [],
           actors: [
             createActor("hero", "Hero", {
               components: [
@@ -196,6 +408,7 @@ describe("p7-play-scene-load", () => {
           name: "Lit",
           viewportMode: "3d",
           settings,
+          folders: [],
           actors: [
             createActor("lamp", "Lamp", {
               components: [
@@ -434,6 +647,7 @@ describe("p7-play-scene-load", () => {
         name: "Scripted",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [createActor("hero", "Hero", { classId: "Mover" })],
       },
     });
@@ -454,6 +668,7 @@ describe("p7-play-scene-load", () => {
       name: "Level2",
       viewportMode: "3d",
       settings: createDefaultSceneSettings(),
+      folders: [],
       actors: [createActor("other", "Other")],
     };
     const runtime = createInProcessRuntime({
@@ -464,6 +679,7 @@ describe("p7-play-scene-load", () => {
         name: "Level1",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [createActor("hero", "Hero")],
       },
       sceneLibrary: { Level2: level2 },
@@ -526,6 +742,7 @@ describe("p7-play-scene-load", () => {
         name: "Arena",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [createActor("guard", "Guard", { classId: "Bruiser" })],
       },
     });

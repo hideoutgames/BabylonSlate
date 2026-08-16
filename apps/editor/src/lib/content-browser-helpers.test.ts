@@ -3,7 +3,12 @@ import type { IndexedAsset } from "@babylonslate/assets";
 import { createDefaultMigrationRegistry } from "@babylonslate/assets";
 import {
   CREATABLE_ASSET_TYPES,
+  CREATABLE_ASSET_TYPE_GROUPS,
   ENGINE_BASE_CLASSES,
+  creatableAssetTypeDescription,
+  creatableAssetTypeLabel,
+  filterCreatableAssetTypes,
+  isContentBrowserEmptyGridDoubleClickTarget,
   buildNewAssetResult,
   classDocumentShowsPrefab,
   collectFolderGuids,
@@ -765,6 +770,69 @@ describe("content-browser-helpers", () => {
       "ScriptInterface",
       "EditorUtilityInterface",
     ]);
+  });
+
+  it("labels creatable types in Title Case with spaces", () => {
+    expect(creatableAssetTypeLabel("Scene")).toBe("Scene");
+    expect(creatableAssetTypeLabel("UserInterface")).toBe("User Interface");
+    expect(creatableAssetTypeLabel("EditorUtilityInterface")).toBe(
+      "Editor Utility Interface",
+    );
+    expect(creatableAssetTypeLabel("AnimationGraph")).toBe("Animation Graph");
+    expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
+    expect(creatableAssetTypeLabel("BehaviourTree")).toBe("Behaviour Tree");
+    expect(creatableAssetTypeLabel("ScriptInterface")).toBe("Script Interface");
+  });
+
+  it("groups every creatable type once", () => {
+    const grouped = CREATABLE_ASSET_TYPE_GROUPS.flatMap((group) => [
+      ...group.types,
+    ]);
+    expect([...grouped].sort()).toEqual([...CREATABLE_ASSET_TYPES].sort());
+    expect(CREATABLE_ASSET_TYPE_GROUPS.map((group) => group.label)).toEqual([
+      "World",
+      "Scripting",
+      "UI",
+      "2D",
+      "Rendering",
+      "AI",
+    ]);
+  });
+
+  it("describes the selected creatable type", () => {
+    expect(creatableAssetTypeDescription("Scene")).toMatch(/world/i);
+    expect(creatableAssetTypeDescription("Class")).toMatch(/parent/i);
+  });
+
+  it("filters creatable types by Title Case label", () => {
+    expect(filterCreatableAssetTypes("user")).toEqual(["UserInterface"]);
+    expect(filterCreatableAssetTypes("  ")).toEqual([...CREATABLE_ASSET_TYPES]);
+  });
+
+  it("treats empty grid space as a new-asset double-click target, not tiles", () => {
+    document.body.innerHTML = `
+      <div data-testid="content-browser-asset-grid">
+        <p data-testid="content-browser-empty-copy">No assets</p>
+        <button data-asset-path="assets/main.scene.babasset">Scene</button>
+        <button data-folder-path="assets/fx">Folder</button>
+      </div>
+      <div data-testid="outside">outside</div>
+    `;
+    const grid = document.querySelector(
+      '[data-testid="content-browser-asset-grid"]',
+    );
+    const empty = document.querySelector(
+      '[data-testid="content-browser-empty-copy"]',
+    );
+    const assetTile = document.querySelector("[data-asset-path]");
+    const folderTile = document.querySelector("[data-folder-path]");
+    const outside = document.querySelector('[data-testid="outside"]');
+    expect(isContentBrowserEmptyGridDoubleClickTarget(grid)).toBe(true);
+    expect(isContentBrowserEmptyGridDoubleClickTarget(empty)).toBe(true);
+    expect(isContentBrowserEmptyGridDoubleClickTarget(assetTile)).toBe(false);
+    expect(isContentBrowserEmptyGridDoubleClickTarget(folderTile)).toBe(false);
+    expect(isContentBrowserEmptyGridDoubleClickTarget(outside)).toBe(false);
+    expect(isContentBrowserEmptyGridDoubleClickTarget(null)).toBe(false);
   });
 
   it("creates Class assets with a logic graph and parent class", () => {

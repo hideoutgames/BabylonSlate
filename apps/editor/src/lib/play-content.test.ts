@@ -156,6 +156,12 @@ describe("asUiDocument", () => {
     });
     expect(doc.desiredSize).toEqual({ width: 1920, height: 1080 });
   });
+
+  it("creates a Canvas root instead of leaving widgets empty", () => {
+    const doc = asUiDocument({ name: "Broken" });
+    expect(doc.rootId).toBe("canvas");
+    expect(doc.widgets.canvas?.kind).toBe("Canvas");
+  });
 });
 
 describe("playAnimGraphsFromOpenDocuments", () => {

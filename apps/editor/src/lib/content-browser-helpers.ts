@@ -94,6 +94,96 @@ export const CREATABLE_ASSET_TYPES = [
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
 
+export type CreatableAssetTypeGroup = {
+  id: string;
+  label: string;
+  types: readonly CreatableAssetType[];
+};
+
+/** Catalog groups for the New Asset type-card grid. */
+export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
+  { id: "world", label: "World", types: ["Scene"] },
+  {
+    id: "scripting",
+    label: "Scripting",
+    types: ["Class", "Enum", "Structure", "ScriptInterface"],
+  },
+  {
+    id: "ui",
+    label: "UI",
+    types: ["UserInterface", "EditorUtilityInterface"],
+  },
+  {
+    id: "2d",
+    label: "2D",
+    types: ["Sprite", "Tileset", "Tilemap", "AnimationGraph"],
+  },
+  {
+    id: "rendering",
+    label: "Rendering",
+    types: ["Material", "MaterialFunction"],
+  },
+  {
+    id: "ai",
+    label: "AI",
+    types: ["BehaviourTree", "Blackboard"],
+  },
+];
+
+const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
+  Scene: "A 3D or 2D world document.",
+  Class: "A Blueprint-style class with a parent and logic graph.",
+  UserInterface: "A game HUD or menu authored with Babylon GUI.",
+  Sprite: "A 2D sprite sheet with named frames and pivots.",
+  AnimationGraph: "A state machine that plays Sprite or Animation clips.",
+  Material: "A shader graph that compiles to a Babylon material.",
+  MaterialFunction: "A reusable shader subgraph for materials.",
+  Tileset: "Tile definitions and collision for painting tilemaps.",
+  Tilemap: "A painted 2D tile layer that references a Tileset.",
+  BehaviourTree: "An AI tree of composites, tasks, and decorators.",
+  Blackboard: "Shared keys that a behaviour tree reads and writes.",
+  Enum: "Named integer members used by pins and variables.",
+  Structure: "A user-defined struct of typed fields.",
+  ScriptInterface: "A contract of methods that classes can implement.",
+  EditorUtilityInterface: "An editor-only Babylon GUI widget for Windows.",
+};
+
+/** Title Case label for a creatable asset type (`User Interface`). */
+export function creatableAssetTypeLabel(type: CreatableAssetType): string {
+  return type
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
+}
+
+export function creatableAssetTypeDescription(
+  type: CreatableAssetType,
+): string {
+  return CREATABLE_ASSET_TYPE_DESCRIPTIONS[type];
+}
+
+export function filterCreatableAssetTypes(
+  query: string,
+  types: readonly CreatableAssetType[] = CREATABLE_ASSET_TYPES,
+): CreatableAssetType[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [...types];
+  return types.filter((type) => {
+    const haystack = `${type} ${creatableAssetTypeLabel(type)}`.toLowerCase();
+    return haystack.includes(needle);
+  });
+}
+
+/** True when a double-click landed on empty Content Browser grid space, not a tile. */
+export function isContentBrowserEmptyGridDoubleClickTarget(
+  target: EventTarget | null,
+): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest("[data-asset-path], [data-folder-path]")) return false;
+  return Boolean(
+    target.closest('[data-testid="content-browser-asset-grid"]'),
+  );
+}
+
 export function isFolderTreeRoot(
   path: string,
   rootPath: string | readonly string[] = ASSETS_ROOT,

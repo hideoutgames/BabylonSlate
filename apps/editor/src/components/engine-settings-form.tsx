@@ -349,10 +349,13 @@ function FocusKeepPanelList({
   ids: string[];
   onChange: (ids: string[]) => void;
 }) {
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry, openDocuments } = useDocuments();
   const editorUtilities = listEditorUtilityWindows({
     kind,
-    assets: editorUtilityAssetsFromIndexed(assetRegistry?.list() ?? []),
+    assets: editorUtilityAssetsFromIndexed(
+      assetRegistry?.list() ?? [],
+      openDocuments,
+    ),
   }).map((entry) => ({ id: entry.id, title: entry.title }));
   const remaining = focusKeepCandidates(kind, { editorUtilities }).filter(
     (candidate) => !ids.includes(candidate.id),

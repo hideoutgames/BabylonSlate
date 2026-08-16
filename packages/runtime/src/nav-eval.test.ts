@@ -34,6 +34,7 @@ function patrolScene(): SerializedScene {
     name: "Nav",
     viewportMode: "3d",
     settings: createDefaultSceneSettings(),
+    folders: [],
     actors: [
       createActor("ground", "Ground", {
         components: [{ id: "mesh", classId: "MeshComponent", properties: { meshKind: "ground" } }],
@@ -116,6 +117,7 @@ describe("runtime navmesh import and crowd", () => {
         name: "Nav",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [
           createActor("guard", "Guard", {
             transform: {
@@ -164,6 +166,7 @@ describe("runtime navmesh import and crowd", () => {
         name: "Nav",
         viewportMode: "3d",
         settings: createDefaultSceneSettings(),
+        folders: [],
         actors: [
           createActor("agent", "Agent", {
             transform: {
@@ -230,6 +233,7 @@ describe("runtime navmesh import and crowd", () => {
         name: "Nav2d",
         viewportMode: "2d",
         settings: createDefaultSceneSettings("2d"),
+        folders: [],
         actors: [
           createActor("agent", "Agent", {
             transform: {

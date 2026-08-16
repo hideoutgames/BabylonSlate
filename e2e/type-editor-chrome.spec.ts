@@ -125,20 +125,20 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await page.getByTestId("outliner-add-actor").click();
     await page.getByTestId("place-actors-item-shape-box").click();
     await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
-    await expect(page.getByTestId("tree-row-actor-2")).toBeVisible();
-    await expect(page.getByTestId("tree-row-actor-2")).toHaveAttribute(
+    await expect(page.getByTestId("tree-row-actor:actor-2")).toBeVisible();
+    await expect(page.getByTestId("tree-row-actor:actor-2")).toHaveAttribute(
       "data-depth",
       "0",
     );
-    await dragTreeRow(page, "actor-2", "actor-1");
-    await expect(page.getByTestId("tree-row-actor-2")).toHaveAttribute(
+    await dragTreeRow(page, "actor:actor-2", "actor:actor-1");
+    await expect(page.getByTestId("tree-row-actor:actor-2")).toHaveAttribute(
       "data-depth",
       "1",
     );
 
     await page.getByTestId("outliner-menu-actor-2").click();
     await page.getByTestId("outliner-delete-actor-2").click();
-    await expect(page.getByTestId("tree-row-actor-2")).toHaveCount(0);
+    await expect(page.getByTestId("tree-row-actor:actor-2")).toHaveCount(0);
   });
 
   test("Components drag-to-parent nests under another component", async ({

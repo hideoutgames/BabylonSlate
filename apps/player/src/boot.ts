@@ -107,7 +107,19 @@ export function startPlayer(options: {
     : null;
   if (framebuffer) {
     handle.setSize(framebuffer.width, framebuffer.height);
+  } else {
+    handle.resize();
   }
+
+  // Without a locked framebuffer the canvas is CSS-sized, so the backing store
+  // has to follow the element or the first frames draw at the wrong size.
+  const resizeObserver =
+    framebuffer || typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => {
+          if (canvas.clientWidth > 0 && canvas.clientHeight > 0) handle.resize();
+        });
+  resizeObserver?.observe(canvas);
 
   const scenes = [...game.scenes.entries()].map(([guid, authored]) => ({
     guid,
@@ -253,6 +265,7 @@ export function startPlayer(options: {
     ticks: () => ticks,
     stop: () => {
       cancelAnimationFrame(raf);
+      resizeObserver?.disconnect();
       input.dispose();
       worker?.terminate();
       runtime?.stop();

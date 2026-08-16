@@ -286,6 +286,22 @@ describe("componentPropertyRows", () => {
       kind: "enum",
       value: "perspective",
     });
+  });
+
+  it("offers Attempt Possess View Target as an off-by-default camera toggle", () => {
+    const camera = rowsFor({
+      id: "cam",
+      classId: "CameraComponent",
+      properties: { fieldOfView: 60 },
+    });
+    expect(
+      camera.rows.find((row) => row.id.endsWith("-attemptPossessViewTarget")),
+    ).toMatchObject({
+      kind: "boolean",
+      label: "Attempt Possess View Target",
+      value: false,
+      defaultValue: false,
+    });
     expect(camera.rows.find((row) => row.id.endsWith("-nearClip"))).toMatchObject({
       kind: "number",
       value: 0.1,

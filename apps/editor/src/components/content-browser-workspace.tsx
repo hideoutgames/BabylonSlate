@@ -36,25 +36,12 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import {
   Progress,
   ProgressLabel,
   ProgressValue,
 } from "@babylonslate/ui/components/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@babylonslate/ui/components/select";
 import {
   Dialog,
   DialogContent,
@@ -85,8 +72,6 @@ import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
 import {
   ASSETS_ROOT,
-  CREATABLE_ASSET_TYPES,
-  ENGINE_BASE_CLASSES,
   addSelectedAssetGuid,
   addSelectedFolderPath,
   exclusiveSelectAsset,
@@ -105,6 +90,7 @@ import {
   guidsOutsideSelectedFolders,
   isFolderNameTaken,
   isFolderTreeRoot,
+  isContentBrowserEmptyGridDoubleClickTarget,
   isNewAssetNameTaken,
   isRenameNameTaken,
   joinAssetFolderPath,
@@ -131,6 +117,7 @@ import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-s
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
+import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 
 const PROJECT_ROOT_ID = PROJECT_CONTENT_ROOT_ID;
@@ -1057,6 +1044,12 @@ export function ContentBrowserWorkspace() {
     importInputRef.current?.click();
   }, [importPickedFiles]);
 
+  const openNewAssetDialog = useCallback(() => {
+    if (busy || !selectedRootWritable) return;
+    setNewAssetName("");
+    setNewAssetOpen(true);
+  }, [busy, selectedRootWritable]);
+
   const emptyGridItems = useMemo(
     () => [
       {
@@ -1067,10 +1060,7 @@ export function ContentBrowserWorkspace() {
       {
         id: "new-asset",
         label: "New Asset",
-        onSelect: () => {
-          setNewAssetName("");
-          setNewAssetOpen(true);
-        },
+        onSelect: openNewAssetDialog,
       },
       {
         id: "import",
@@ -1080,7 +1070,7 @@ export function ContentBrowserWorkspace() {
         },
       },
     ],
-    [handleImport],
+    [handleImport, openNewAssetDialog],
   );
   const {
     menu: emptyGridMenu,
@@ -1380,10 +1370,7 @@ export function ContentBrowserWorkspace() {
           size="sm"
           data-testid="content-browser-new-asset"
           disabled={busy || !selectedRootWritable}
-          onClick={() => {
-            setNewAssetName("");
-            setNewAssetOpen(true);
-          }}
+          onClick={openNewAssetDialog}
         >
           <PlusIcon data-icon="inline-start" />
           New Asset
@@ -1516,6 +1503,14 @@ export function ContentBrowserWorkspace() {
               setSelectedGuids(new Set());
               setSelectedFolderPaths(new Set());
             }}
+            onDoubleClick={(event) => {
+              if (
+                !isContentBrowserEmptyGridDoubleClickTarget(event.target)
+              ) {
+                return;
+              }
+              openNewAssetDialog();
+            }}
             onContextMenu={emptyGridBind.onContextMenu}
             onPointerDown={emptyGridBind.onPointerDown}
             onPointerMove={emptyGridBind.onPointerMove}
@@ -1574,7 +1569,10 @@ export function ContentBrowserWorkspace() {
                 />
               ))}
               {visibleAssets.length === 0 && childFolders.length === 0 ? (
-                <p className="col-span-full text-sm text-muted-foreground">
+                <p
+                  className="col-span-full text-sm text-muted-foreground"
+                  data-testid="content-browser-empty-copy"
+                >
                   No assets in this folder match the current filters.
                 </p>
               ) : null}
@@ -1586,121 +1584,24 @@ export function ContentBrowserWorkspace() {
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <ContextMenuOverlay menu={emptyGridMenu} onClose={closeEmptyGridMenu} />
 
-      <AlertDialog
+      <ContentBrowserNewAssetDialog
         open={newAssetOpen}
         onOpenChange={(open) => {
           setNewAssetOpen(open);
           if (open) setNewAssetName("");
         }}
-      >
-        <AlertDialogContent data-testid="content-browser-new-asset-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>New Asset</AlertDialogTitle>
-            <AlertDialogDescription>
-              Create a new asset in the selected folder.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <FieldGroup className="py-2">
-            <Field>
-              <FieldLabel htmlFor="new-asset-type">Type</FieldLabel>
-              <Select
-                value={newAssetType}
-                onValueChange={(value) =>
-                  setNewAssetType(value as CreatableAssetType)
-                }
-              >
-                <SelectTrigger
-                  id="new-asset-type"
-                  data-testid="new-asset-type"
-                  className="min-h-[var(--touch-target,44px)] w-full"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CREATABLE_ASSET_TYPES.map((type) => (
-                    <SelectItem
-                      key={type}
-                      value={type}
-                      data-testid={`new-asset-type-${type}`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <TypeVisualIcon
-                          visual={resolveTypeVisual({ assetType: type })}
-                          className="size-4"
-                        />
-                        {type}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field data-invalid={newAssetNameTaken || undefined}>
-              <FieldLabel htmlFor="new-asset-name">Name</FieldLabel>
-              <Input
-                id="new-asset-name"
-                data-testid="new-asset-name"
-                className="min-h-[var(--touch-target,44px)]"
-                value={newAssetName}
-                aria-invalid={newAssetNameTaken || undefined}
-                onChange={(event) => setNewAssetName(event.target.value)}
-              />
-              {newAssetNameTaken ? (
-                <FieldError data-testid="new-asset-name-taken">
-                  An asset with this name already exists in the folder.
-                </FieldError>
-              ) : null}
-            </Field>
-            {newAssetType === "Class" ? (
-              <Field>
-                <FieldLabel htmlFor="new-asset-parent">Parent class</FieldLabel>
-                <Select value={newAssetParent} onValueChange={setNewAssetParent}>
-                  <SelectTrigger
-                    id="new-asset-parent"
-                    data-testid="new-asset-parent"
-                    className="min-h-[var(--touch-target,44px)] w-full"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ENGINE_BASE_CLASSES.map((base) => (
-                      <SelectItem
-                        key={base}
-                        value={base}
-                        data-testid={`new-asset-parent-${base}`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <TypeVisualIcon
-                            visual={resolveTypeVisual({
-                              classId: base,
-                              family: "class",
-                            })}
-                            className="size-4"
-                          />
-                          {base}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            ) : null}
-          </FieldGroup>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy || newAssetNameTaken || !newAssetName.trim()}
-              data-testid="content-browser-new-asset-create"
-              onClick={(event) => {
-                event.preventDefault();
-                void handleCreateAsset();
-              }}
-            >
-              Create
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        type={newAssetType}
+        onTypeChange={setNewAssetType}
+        name={newAssetName}
+        onNameChange={setNewAssetName}
+        parentClass={newAssetParent}
+        onParentClassChange={setNewAssetParent}
+        nameTaken={newAssetNameTaken}
+        busy={busy}
+        onCreate={() => {
+          void handleCreateAsset();
+        }}
+      />
 
       <AlertDialog
         open={deleteTarget !== null}

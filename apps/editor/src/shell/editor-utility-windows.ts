@@ -38,6 +38,7 @@ export function editorUtilityGuidFromWindowId(windowId: string): string | null {
 
 export function editorUtilityAssetsFromIndexed(
   assets: ReadonlyArray<{
+    path?: string;
     header: {
       guid: string;
       name: string;
@@ -45,13 +46,33 @@ export function editorUtilityAssetsFromIndexed(
       payload?: Record<string, unknown>;
     };
   }>,
+  openDocuments: ReadonlyArray<{
+    ref: { path: string };
+    content: unknown;
+  }> = [],
 ): EditorUtilityAssetRef[] {
+  const openByPath = new Map(
+    openDocuments.map((doc) => [doc.ref.path, doc.content]),
+  );
   return assets.map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
     type: asset.header.type,
-    payload: asset.header.payload,
+    payload: mergeEditorUtilityListingPayload(
+      asset.header.payload,
+      asset.path ? openByPath.get(asset.path) : undefined,
+    ),
   }));
+}
+
+export function mergeEditorUtilityListingPayload(
+  headerPayload: Record<string, unknown> | undefined,
+  openContent: unknown,
+): Record<string, unknown> | undefined {
+  if (openContent && typeof openContent === "object" && !Array.isArray(openContent)) {
+    return openContent as Record<string, unknown>;
+  }
+  return headerPayload;
 }
 
 /** EditorUtilityInterface widgets opened from Windows → Editor Utilities. */
@@ -98,4 +119,28 @@ export function findDockOrUtilityWindow(
       (entry) => entry.id === panelId,
     )
   );
+}
+
+export function closeMismatchedEditorUtilityPanels(
+  api: {
+    getPanel: (id: string) => { api: { close: () => void } } | undefined;
+    panels?: ReadonlyArray<{ id: string }> | Iterable<{ id: string }>;
+  },
+  kind: string,
+  assets: EditorUtilityAssetRef[],
+): void {
+  const allowed = new Set(
+    listEditorUtilityWindows({ kind, assets }).map((entry) => entry.id),
+  );
+  const panels = api.panels
+    ? Array.isArray(api.panels)
+      ? api.panels
+      : [...api.panels]
+    : [];
+  for (const panel of panels) {
+    if (!panel.id.startsWith("eui-")) continue;
+    if (!allowed.has(panel.id)) {
+      api.getPanel(panel.id)?.api.close();
+    }
+  }
 }

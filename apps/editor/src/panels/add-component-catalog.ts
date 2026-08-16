@@ -103,6 +103,7 @@ export function defaultPropertiesFor(
         projectionMode: viewportMode === "2d" ? "orthographic" : "perspective",
         nearClip: 0.1,
         farClip: 1000,
+        attemptPossessViewTarget: false,
       };
     case "LightComponent":
       return {

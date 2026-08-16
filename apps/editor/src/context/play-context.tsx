@@ -35,6 +35,8 @@ import {
 import {
   MISSING_STARTUP_SCENE_MESSAGE,
   isPreviewDiagnosticsMessage,
+  isPreviewErrorMessage,
+  isPreviewRequestPackMessage,
   previewPackFromFiles,
   PREVIEW_STOP_MESSAGE,
 } from "@babylonslate/exporter";
@@ -44,6 +46,8 @@ import type {
 } from "@babylonslate/shader-graph";
 import { createAppSettingsStore } from "@babylonslate/vfs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
+import { playerPreviewSrc } from "../lib/player-host-url";
+import { canSendPreviewPack } from "../lib/preview-build-handoff";
 import { useDocuments } from "./document-context";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
@@ -79,6 +83,10 @@ import {
   ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
 } from "../lib/viewport-render-gate";
+import {
+  isUsableEngine,
+  nextSharedEngineGeneration,
+} from "../lib/shared-engine-generation";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -105,14 +113,12 @@ interface PlayContextValue {
   stopPlay: () => void;
   registerSharedEngine: (engine: Engine | null) => void;
   ensureSharedEngine: () => Engine | null;
+  sharedEngineGeneration: number;
   registerScheduler: (scheduler: EditorLoopHandle) => () => void;
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
   appendLog: (line: string) => void;
   logLines: string[];
-  alwaysRender: boolean;
-  setAlwaysRender: (value: boolean) => void;
-  renderStats: { renderedFps: number; invalidationsPerSecond: number } | null;
   liveBtState: LiveBtState | null;
   reportBtState: (state: LiveBtState | null) => void;
 }
@@ -144,11 +150,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
-  const [alwaysRender, setAlwaysRenderState] = useState(true);
-  const [renderStats, setRenderStats] = useState<{
-    renderedFps: number;
-    invalidationsPerSecond: number;
-  } | null>(null);
+  const [sharedEngineGeneration, setSharedEngineGeneration] = useState(0);
   const [lastRuntimeMode, setLastRuntimeMode] = useState<
     "worker" | "in-process" | null
   >(null);
@@ -156,14 +158,16 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [previewBuild, setPreviewBuildState] = useState(false);
   const [startupAlertOpen, setStartupAlertOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState("/player/index.html?preview=1");
+  const [previewSrc, setPreviewSrc] = useState(() => playerPreviewSrc(0));
   const [previewPhase, setPreviewPhase] = useState<PreviewPreparePhase | null>(
     null,
   );
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
   const previewCancelledRef = useRef(false);
+  const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
   const [playUiLibrary, setPlayUiLibrary] = useState<
     Record<string, UserInterfaceDocument>
@@ -296,29 +300,16 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const registerSharedEngine = useCallback((engine: Engine | null) => {
-    // Prefer viewport-owned engine; keep fallback owned engine if viewport gone.
-    if (engine) {
-      engineRef.current = engine;
-      return;
-    }
-    engineRef.current = ownedEngineRef.current;
+    const previous = engineRef.current;
+    const next = isUsableEngine(engine) ? engine : ownedEngineRef.current;
+    engineRef.current = isUsableEngine(next) ? next : null;
+    setSharedEngineGeneration((current) =>
+      nextSharedEngineGeneration(current, engineRef.current, previous),
+    );
   }, []);
 
   const registerScheduler = useCallback((scheduler: EditorLoopHandle) => {
     return schedulerRegistryRef.current.register(scheduler);
-  }, []);
-
-  const setAlwaysRender = useCallback((value: boolean) => {
-    setAlwaysRenderState(value);
-    schedulerRegistryRef.current.setAlwaysRender(value);
-  }, []);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const stats = schedulerRegistryRef.current.stats();
-      if (stats) setRenderStats(stats);
-    }, 500);
-    return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -341,7 +332,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   }, [projectDocument]);
 
   const ensureEngine = useCallback((): Engine | null => {
-    if (engineRef.current) return engineRef.current;
+    if (isUsableEngine(engineRef.current)) return engineRef.current;
+    if (isUsableEngine(ownedEngineRef.current)) {
+      engineRef.current = ownedEngineRef.current;
+      return ownedEngineRef.current;
+    }
     const canvas = document.createElement("canvas");
     canvas.width = 8;
     canvas.height = 8;
@@ -350,7 +345,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     const engine = createAppEngine(canvas);
     ownedCanvasRef.current = canvas;
     ownedEngineRef.current = engine;
+    const previous = engineRef.current;
     engineRef.current = engine;
+    setSharedEngineGeneration((current) =>
+      nextSharedEngineGeneration(current, engine, previous),
+    );
     return engine;
   }, []);
 
@@ -371,17 +370,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   );
 
   const closePreview = useCallback(() => {
+    previewClosingRef.current = true;
     const frame = previewIframeRef.current;
     if (frame?.contentWindow) {
       frame.contentWindow.postMessage({ type: PREVIEW_STOP_MESSAGE }, "*");
     }
+    previewFilesRef.current = null;
+    setPreviewOpen(false);
+    setPreviewPhase(null);
+    setPreviewError(null);
+    setPreviewCanCancel(true);
+    setPlaying(false);
+    setEncodeQueuePauseReason("play", false);
     window.setTimeout(() => {
-      previewFilesRef.current = null;
-      setPreviewOpen(false);
-      setPreviewPhase(null);
-      setPreviewCanCancel(true);
-      setPlaying(false);
-      setEncodeQueuePauseReason("play", false);
+      previewClosingRef.current = false;
       const diagnostics = previewDiagnosticsRef.current;
       previewDiagnosticsRef.current = [];
       if (diagnostics.length > 0) {
@@ -392,8 +394,37 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     }, 100);
   }, []);
 
+  const sendPreviewPack = useCallback(() => {
+    const files = previewFilesRef.current;
+    const frame = previewIframeRef.current?.contentWindow;
+    const handoff = { files, closing: previewClosingRef.current };
+    if (!canSendPreviewPack(handoff) || !frame) {
+      return;
+    }
+    try {
+      frame.postMessage(previewPackFromFiles(handoff.files), "*");
+    } catch (error) {
+      setPreviewError(
+        `Preview Build could not send the game data: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }, []);
+
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      // The player asks once its listener exists, which removes the race
+      // between iframe `load` and the player module evaluating.
+      if (isPreviewRequestPackMessage(event.data)) {
+        sendPreviewPack();
+        return;
+      }
+      if (isPreviewErrorMessage(event.data)) {
+        setPreviewError(event.data.message);
+        appendLog(`Preview Build failed: ${event.data.message}`);
+        return;
+      }
       if (!isPreviewDiagnosticsMessage(event.data)) return;
       previewDiagnosticsRef.current = event.data.diagnostics.map((entry) => ({
         severity: entry.severity === "warning" ? "warning" : "error",
@@ -411,7 +442,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [appendLog, sendPreviewPack]);
 
   const requestPreviewBuild = useCallback(async () => {
     if (playing || preparingRef.current) return;
@@ -422,6 +453,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       return;
     }
     previewCancelledRef.current = false;
+    previewClosingRef.current = false;
     preparingRef.current = true;
     setPreparing(true);
     setPreviewCanCancel(true);
@@ -459,7 +491,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setPreviewPhase("Launching");
       setEncodeQueuePauseReason("play", true);
       setPlaying(true);
-      setPreviewSrc(`/player/index.html?preview=1&t=${Date.now()}`);
+      setPreviewError(null);
+      setPreviewSrc(playerPreviewSrc(Date.now()));
       setPreviewOpen(true);
     } catch (error) {
       previewFilesRef.current = null;
@@ -781,14 +814,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       },
       registerSharedEngine,
       ensureSharedEngine: ensureEngine,
+      sharedEngineGeneration,
       registerScheduler,
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
       appendLog,
       logLines,
-      alwaysRender,
-      setAlwaysRender,
-      renderStats,
       liveBtState,
       reportBtState: setLiveBtState,
     }),
@@ -805,13 +836,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       cancelPlayMigration,
       registerSharedEngine,
       ensureEngine,
+      sharedEngineGeneration,
       registerScheduler,
       focusedNodeId,
       appendLog,
       logLines,
-      alwaysRender,
-      setAlwaysRender,
-      renderStats,
       liveBtState,
       closePreview,
       previewOpen,
@@ -925,13 +954,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           <PreviewBuildOverlay
             src={previewSrc}
             iframeRef={previewIframeRef}
+            error={previewError}
             onClose={closePreview}
-            onLoad={() => {
-              const files = previewFilesRef.current;
-              const frame = previewIframeRef.current?.contentWindow;
-              if (!files || !frame) return;
-              frame.postMessage(previewPackFromFiles(files), "*");
-            }}
+            onLoad={sendPreviewPack}
           />
         ) : null}
         <PreviewSessionReport

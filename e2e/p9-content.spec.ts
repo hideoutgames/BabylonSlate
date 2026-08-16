@@ -27,7 +27,6 @@ async function createAsset(
   await showContentBrowser(page);
   await page.getByTestId("content-browser-new-asset").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-  await page.getByTestId("new-asset-type").click();
   await page.getByTestId(`new-asset-type-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
   await page.getByTestId("content-browser-new-asset-create").click();

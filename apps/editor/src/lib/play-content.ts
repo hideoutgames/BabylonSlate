@@ -18,13 +18,8 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import type { UserInterfaceDocument, WidgetNode } from "@babylonslate/ui-runtime";
+import { normalizeUserInterfaceDocument, type UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import {
-  migrateUserInterfacePayload,
-  normalizeLayout,
-  isBabylonWidgetLayout,
-} from "@babylonslate/ui-runtime";
 
 export interface PlayContentDocument {
   id: string;
@@ -38,49 +33,9 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function sizeFrom(value: unknown): { width: number; height: number } | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as { width?: unknown; height?: unknown };
-  const width = record.width;
-  const height = record.height;
-  if (typeof width !== "number" || !Number.isFinite(width)) return null;
-  if (typeof height !== "number" || !Number.isFinite(height)) return null;
-  return { width: Math.max(1, width), height: Math.max(1, height) };
-}
-
 /** Hydrate a UserInterface document from an open asset payload. */
 export function asUiDocument(value: unknown): UserInterfaceDocument {
-  const record = migrateUserInterfacePayload(asRecord(value));
-  const designResolution =
-    sizeFrom(record.designResolution) ?? { width: 1920, height: 1080 };
-  return {
-    name: typeof record.name === "string" ? record.name : "HUD",
-    rootId: typeof record.rootId === "string" ? record.rootId : "canvas",
-    designResolution,
-    desiredSize:
-      sizeFrom(record.desiredSize) ?? { ...designResolution },
-    scaleRule:
-      record.scaleRule === "fitWidth" || record.scaleRule === "fitHeight"
-        ? record.scaleRule
-        : "shortestSide",
-    viewportLayer: record.viewportLayer !== false,
-    widgets: asUiWidgets(asRecord(record.widgets)),
-  };
-}
-
-function asUiWidgets(
-  widgets: Record<string, unknown>,
-): UserInterfaceDocument["widgets"] {
-  const next: UserInterfaceDocument["widgets"] = {};
-  for (const [id, widget] of Object.entries(widgets)) {
-    if (!widget || typeof widget !== "object") continue;
-    const record = widget as WidgetNode;
-    const layout = isBabylonWidgetLayout(record.layout)
-      ? normalizeLayout(record.layout)
-      : record.layout;
-    next[id] = { ...record, id: typeof record.id === "string" ? record.id : id, layout };
-  }
-  return next;
+  return normalizeUserInterfaceDocument(value);
 }
 
 function isSerializedGraph(value: unknown): value is SerializedGraph {

@@ -32,7 +32,6 @@ async function createAsset(
   await showContentBrowser(page);
   await page.getByTestId("content-browser-new-asset").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-  await page.getByTestId("new-asset-type").click();
   await page.getByTestId(`new-asset-type-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
   await page.getByTestId("content-browser-new-asset-create").click();
@@ -163,6 +162,9 @@ test.describe("P10 tilemaps", () => {
       graphGuid,
       "graphGuid",
     );
+    // Place Actors offsets new actors clear of occupied space, so put the hero
+    // back over the painted tiles explicitly before dropping it.
+    await page.getByTestId("property-actor-position-x").fill("0");
     await page.getByTestId("property-actor-position-y").fill("3");
 
     await clickPlayAndWaitForOverlay(page);

@@ -30,14 +30,41 @@ test.describe("P14 Preview Build", () => {
     await expect(page.getByTestId("preview-build-overlay")).toBeVisible({
       timeout: 30_000,
     });
+
+    const startupGuid = await page.evaluate(async () => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: { projectStartupSceneGuid: () => string };
+      };
+      return host.__babylonslateTest?.projectStartupSceneGuid() ?? "";
+    });
+    expect(startupGuid.length).toBeGreaterThan(0);
+
     const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
-    await expect(frame.getByTestId("player-root")).toBeVisible({ timeout: 30_000 });
-    await expect(frame.getByTestId("player-root")).not.toHaveAttribute(
-      "data-startup-scene",
-      "assets/main.scene.babasset",
-    );
+    const root = frame.getByTestId("player-root");
+    await expect(root).toBeVisible({ timeout: 30_000 });
+    // A black overlay used to hide a player that never booted, so assert the
+    // packaged game actually started and is drawing.
+    await expect(page.getByTestId("preview-build-error")).toHaveCount(0);
+    await expect(root).toHaveAttribute("data-startup-scene", startupGuid);
+    await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
+    await expect
+      .poll(async () => root.getAttribute("data-ticks"), { timeout: 30_000 })
+      .not.toBe("0");
+    await expect(root).not.toHaveAttribute("data-error", /.+/);
+
+    const canvasBox = await frame.getByTestId("player-canvas").boundingBox();
+    expect(canvasBox, "player canvas should be laid out").not.toBeNull();
+    expect(canvasBox!.width).toBeGreaterThan(0);
+    expect(canvasBox!.height).toBeGreaterThan(0);
+
+    const stop = page.getByTestId("preview-build-close");
+    await expect(stop).toHaveText("Stop");
     await page.getByTestId("preview-build-close").click();
     await expect(page.getByTestId("preview-build-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("play-preview")).toBeEnabled();
+    await expect(page.getByTestId("debug-menu")).toBeVisible();
   });
 
   test("missing startup scene alerts and overlay Play still requires a scene tab when off", async ({
