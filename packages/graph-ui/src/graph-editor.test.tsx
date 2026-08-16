@@ -515,6 +515,30 @@ describe("GraphEditor", () => {
     expect(lastGraph.nodes[0]?.data.message).toBe("");
   });
 
+  it("stamps __editorOnly when adding an editor-only palette node", () => {
+    const onChange = vi.fn();
+    const { getByText, container } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={[
+          {
+            id: "flow.sequence",
+            title: "Sequence",
+            category: "Flow",
+            editorOnly: true,
+          },
+        ]}
+        onChange={onChange}
+      />,
+    );
+
+    openPalette(container);
+    fireEvent.click(getByText("Sequence"));
+
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.nodes[0]?.data.__editorOnly).toBe(true);
+  });
+
   it("renders Blueprint chrome with type-colored pins and wide exec wires", () => {
     const graph: GraphDocument = {
       nodes: [
@@ -575,6 +599,39 @@ describe("GraphEditor", () => {
       '[data-handleid="message"][data-pin-type="string"]',
     );
     expect(messageHandle).not.toBeNull();
+  });
+
+  it("marks unwired pin visuals as disconnected", () => {
+    const { container } = render(<GraphEditor initialGraph={graphWithPins()} />);
+    const visuals = container.querySelectorAll("[data-pin-connected]");
+    expect(visuals.length).toBeGreaterThan(0);
+    for (const visual of visuals) {
+      expect(visual.getAttribute("data-pin-connected")).toBe("false");
+    }
+  });
+
+  it("marks wired exec pins connected and leaves unused pins on the same node hollow", () => {
+    const { container } = render(
+      <GraphEditor initialGraph={graphWithWiredPins()} />,
+    );
+
+    const execOut = container.querySelector(
+      '[data-id="log-a"] [data-handleid="execOut"] [data-pin-connected]',
+    );
+    const execInB = container.querySelector(
+      '[data-id="log-b"] [data-handleid="execIn"] [data-pin-connected]',
+    );
+    const messageA = container.querySelector(
+      '[data-id="log-a"] [data-handleid="message"] [data-pin-connected]',
+    );
+    const execOutB = container.querySelector(
+      '[data-id="log-b"] [data-handleid="execOut"] [data-pin-connected]',
+    );
+
+    expect(execOut?.getAttribute("data-pin-connected")).toBe("true");
+    expect(execInB?.getAttribute("data-pin-connected")).toBe("true");
+    expect(messageA?.getAttribute("data-pin-connected")).toBe("false");
+    expect(execOutB?.getAttribute("data-pin-connected")).toBe("false");
   });
 
   it("shows a Development Only tape on Print by default", () => {
@@ -702,6 +759,102 @@ describe("GraphEditor", () => {
     expect(shell?.contains(badge)).toBe(false);
     expect(shell?.className).toMatch(/\boverflow-hidden\b/);
     expect(shell?.className).toMatch(/\brounded-lg\b/);
+  });
+
+  it("shows an Editor Only tape when __editorOnly is set", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "sequence",
+          type: "flow.sequence",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Sequence",
+            __editorOnly: true,
+            __category: "flow",
+            __pins: [],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { getByTestId, queryByTestId } = render(
+      <GraphEditor initialGraph={graph} />,
+    );
+    const banner = getByTestId("editor-only-banner");
+    expect(banner.getAttribute("aria-label")).toBe("Editor Only");
+    expect(banner.className).toMatch(/graph-node-editor-only-tape/);
+    expect(queryByTestId("development-only-banner")).toBeNull();
+  });
+
+  it("does not show an Editor Only tape without __editorOnly", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Log",
+            __category: "debug",
+            __pins: debugLogPins,
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { queryByTestId } = render(<GraphEditor initialGraph={graph} />);
+    expect(queryByTestId("editor-only-banner")).toBeNull();
+  });
+
+  it("does not treat Development Only as Editor Only", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Print",
+            __category: "debug",
+            __pins: [],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { getByTestId, queryByTestId } = render(
+      <GraphEditor initialGraph={graph} />,
+    );
+    expect(getByTestId("development-only-banner")).toBeTruthy();
+    expect(queryByTestId("editor-only-banner")).toBeNull();
+  });
+
+  it("shows both tapes when a node is development-only and editor-only", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Print",
+            __editorOnly: true,
+            __category: "debug",
+            __pins: [],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { getByTestId } = render(<GraphEditor initialGraph={graph} />);
+    const development = getByTestId("development-only-banner");
+    const editor = getByTestId("editor-only-banner");
+    expect(development.nextElementSibling).toBe(editor);
   });
 
   it("renders array pins with a list icon and scalar pins as circles", () => {

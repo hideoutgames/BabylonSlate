@@ -57,6 +57,8 @@ const NODE_TOKENS = [
   "--node-debug",
   "--node-dev-only-tape",
   "--node-dev-only-stripe",
+  "--node-editor-only-tape",
+  "--node-editor-only-stripe",
 ] as const;
 
 function cssBlock(css: string, selector: string): string {
@@ -193,6 +195,15 @@ describe("Minimal Neutral theme tokens", () => {
     for (const name of [
       "--node-dev-only-tape",
       "--node-dev-only-stripe",
+    ] as const) {
+      expect(tokenValue(dark, name), name).toBe(tokenValue(root, name));
+    }
+  });
+
+  it("keeps Editor Only tape hues identical in both schemes", () => {
+    for (const name of [
+      "--node-editor-only-tape",
+      "--node-editor-only-stripe",
     ] as const) {
       expect(tokenValue(dark, name), name).toBe(tokenValue(root, name));
     }

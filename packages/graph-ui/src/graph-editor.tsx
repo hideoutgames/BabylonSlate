@@ -617,6 +617,9 @@ function GraphEditorCanvas({
         __pure: paletteNode.pure ?? false,
         __latent: paletteNode.latent ?? false,
       };
+      if (paletteNode.editorOnly === true) {
+        data.__editorOnly = true;
+      }
       if (paletteNode.pins && paletteNode.pins.length > 0) {
         data.__pins = paletteNode.pins;
       }

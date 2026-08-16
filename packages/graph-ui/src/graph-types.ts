@@ -39,6 +39,8 @@ export type PaletteNode = {
   nodeType?: string;
   pure?: boolean;
   latent?: boolean;
+  /** When true, added nodes stamp `data.__editorOnly` for the canvas banner. */
+  editorOnly?: boolean;
 };
 
 export type NavigateRequest = {

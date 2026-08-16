@@ -38,3 +38,13 @@
     var(--node-dev-only-tape) 12px
   );
 }
+
+.graph-node-editor-only-tape {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--node-editor-only-stripe),
+    var(--node-editor-only-stripe) 6px,
+    var(--node-editor-only-tape) 6px,
+    var(--node-editor-only-tape) 12px
+  );
+}
