@@ -127,6 +127,25 @@ export function shouldOpenAddNodeOnConnectEnd({
   return !safePins.some((pin) => isNearSourcePin(pin, pointer, thresholdPx));
 }
 
+export type ConnectEndMode = "default" | "add-node" | "disabled";
+
+export type ConnectEndAction = "add-node" | "break" | "none";
+
+export function connectEndAction(
+  decision: ConnectEndBreakDecision,
+  mode: ConnectEndMode = "default",
+): ConnectEndAction {
+  if (mode === "disabled") return "none";
+  if (decision.hasTargetHandle) return "none";
+  if (mode === "add-node") {
+    if (decision.pointerOverNode) return "none";
+    return "add-node";
+  }
+  if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
+  if (shouldBreakPinConnectionsOnConnectEnd(decision)) return "break";
+  return "none";
+}
+
 export function shouldBreakPinConnectionsOnConnectEnd(
   decision: ConnectEndBreakDecision,
 ): boolean {
@@ -135,6 +154,47 @@ export function shouldBreakPinConnectionsOnConnectEnd(
   }
   if (shouldOpenAddNodeOnConnectEnd(decision)) return false;
   return true;
+}
+
+type ConnectableEdge = {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+};
+
+export function edgesAfterConnect<T extends ConnectableEdge>(
+  edges: readonly T[],
+  connection: {
+    source: string;
+    target: string;
+    sourceHandle: string;
+    targetHandle: string;
+  },
+  options?: { replaceIncoming?: boolean },
+): T[] {
+  const id = `e:${connection.source}:${connection.sourceHandle}:${connection.target}:${connection.targetHandle}`;
+  if (edges.some((edge) => edge.id === id)) return [...edges];
+  const next = options?.replaceIncoming
+    ? edges.filter(
+        (edge) =>
+          !(
+            edge.target === connection.target &&
+            (edge.targetHandle ?? "") === connection.targetHandle
+          ),
+      )
+    : [...edges];
+  return [
+    ...next,
+    {
+      id,
+      source: connection.source,
+      target: connection.target,
+      sourceHandle: connection.sourceHandle,
+      targetHandle: connection.targetHandle,
+    } as T,
+  ];
 }
 
 export function edgeTouchesPin(

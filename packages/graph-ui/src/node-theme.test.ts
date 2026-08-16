@@ -126,6 +126,9 @@ describe("nodeRoleClass", () => {
     expect(nodeRoleClass("event")).toBe("bg-node-event");
     expect(nodeRoleClass("function")).toBe("bg-node-function");
     expect(nodeRoleClass("variable-set")).toBe("bg-node-variable-set");
+    expect(nodeRoleClass("bt-root")).toBe("bg-node-bt-root");
+    expect(nodeRoleClass("bt-composite")).toBe("bg-node-bt-composite");
+    expect(nodeRoleClass("bt-task")).toBe("bg-node-bt-task");
   });
 });
 

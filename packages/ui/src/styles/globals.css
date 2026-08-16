@@ -65,6 +65,11 @@
     --color-node-variable-set: var(--node-variable-set);
     --color-node-latent: var(--node-latent);
     --color-node-debug: var(--node-debug);
+    --color-node-bt-root: var(--node-bt-root);
+    --color-node-bt-composite: var(--node-bt-composite);
+    --color-node-bt-task: var(--node-bt-task);
+    --color-node-bt-decorator: var(--node-bt-decorator);
+    --color-node-bt-service: var(--node-bt-service);
     --color-node-title: var(--node-title-foreground);
     --color-asset-scene: var(--asset-scene);
     --color-asset-graph: var(--asset-graph);
@@ -182,6 +187,11 @@
     --node-variable-set: oklch(0.42 0.14 20);
     --node-latent: oklch(0.55 0.14 80);
     --node-debug: oklch(0.40 0.04 80);
+    --node-bt-root: oklch(0.42 0.10 25);
+    --node-bt-composite: oklch(0.40 0.06 250);
+    --node-bt-task: oklch(0.42 0.12 220);
+    --node-bt-decorator: oklch(0.48 0.12 80);
+    --node-bt-service: oklch(0.45 0.10 175);
     --node-dev-only-tape: oklch(0.84 0.16 90);
     --node-dev-only-stripe: oklch(0.16 0 0);
     --node-editor-only-tape: oklch(0.78 0.12 210);
@@ -275,6 +285,11 @@
     --node-variable: oklch(0.45 0.10 210);
     --node-variable-set: oklch(0.42 0.14 20);
     --node-debug: oklch(0.40 0.04 80);
+    --node-bt-root: oklch(0.42 0.10 25);
+    --node-bt-composite: oklch(0.40 0.06 250);
+    --node-bt-task: oklch(0.42 0.12 220);
+    --node-bt-decorator: oklch(0.48 0.12 80);
+    --node-bt-service: oklch(0.45 0.10 175);
     --node-latent: oklch(0.55 0.14 80);
     --node-dev-only-tape: oklch(0.84 0.16 90);
     --node-dev-only-stripe: oklch(0.16 0 0);

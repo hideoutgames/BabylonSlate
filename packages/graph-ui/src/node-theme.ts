@@ -13,7 +13,10 @@ export type NodeVisualRole =
   | "variable"
   | "variable-set"
   | "latent"
-  | "debug";
+  | "debug"
+  | "bt-root"
+  | "bt-composite"
+  | "bt-task";
 
 const ROLE_CLASS: Record<NodeVisualRole, string> = {
   event: "bg-node-event",
@@ -24,6 +27,9 @@ const ROLE_CLASS: Record<NodeVisualRole, string> = {
   "variable-set": "bg-node-variable-set",
   latent: "bg-node-latent",
   debug: "bg-node-debug",
+  "bt-root": "bg-node-bt-root",
+  "bt-composite": "bg-node-bt-composite",
+  "bt-task": "bg-node-bt-task",
 };
 
 export type PinVisualShape = "diamond" | "circle" | "list";

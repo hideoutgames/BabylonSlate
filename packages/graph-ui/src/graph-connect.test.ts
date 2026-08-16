@@ -16,6 +16,8 @@ import {
   nodePinLists,
   pinsAreCompatible,
   screenCentersForSafePins,
+  connectEndAction,
+  edgesAfterConnect,
   shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
@@ -577,5 +579,75 @@ describe("screen-space connect helpers", () => {
     expect(
       isClientPointOverHandle({ x: 10, y: 10 }, "source", "execOut", document),
     ).toBe(false);
+  });
+});
+
+describe("connectEndAction", () => {
+  const far = {
+    hasTargetHandle: false,
+    pointerOverNode: false,
+    pointerOverSourceHandle: false,
+    pointer: { x: 200, y: 0 },
+    safePins: [{ x: 0, y: 0 }],
+  };
+  const near = {
+    ...far,
+    pointer: { x: 40, y: 0 },
+  };
+
+  it("keeps the default 96px cancel zone and wire-break fallback", () => {
+    expect(connectEndAction(far)).toBe("add-node");
+    expect(connectEndAction(near)).toBe("break");
+  });
+
+  it("opens Add Node from a short drag in add-node mode and never breaks wires", () => {
+    expect(connectEndAction(near, "add-node")).toBe("add-node");
+    expect(connectEndAction(far, "add-node")).toBe("add-node");
+    expect(
+      connectEndAction({ ...far, pointerOverNode: true }, "add-node"),
+    ).toBe("none");
+    expect(
+      connectEndAction({ ...far, hasTargetHandle: true }, "add-node"),
+    ).toBe("none");
+  });
+
+  it("disables connect-end side effects", () => {
+    expect(connectEndAction(far, "disabled")).toBe("none");
+    expect(connectEndAction(near, "disabled")).toBe("none");
+  });
+});
+
+describe("edgesAfterConnect", () => {
+  const existing = {
+    id: "e:root:children:old:parent",
+    source: "root",
+    target: "old",
+    sourceHandle: "children",
+    targetHandle: "parent",
+  };
+  const next = {
+    source: "sequence",
+    target: "old",
+    sourceHandle: "children",
+    targetHandle: "parent",
+  };
+
+  it("appends a second incoming edge by default", () => {
+    const edges = edgesAfterConnect([existing], next);
+    expect(edges).toHaveLength(2);
+    expect(edges[1]?.source).toBe("sequence");
+  });
+
+  it("replaces the existing incoming edge on the same target handle", () => {
+    const edges = edgesAfterConnect([existing], next, { replaceIncoming: true });
+    expect(edges).toEqual([
+      {
+        id: "e:sequence:children:old:parent",
+        source: "sequence",
+        target: "old",
+        sourceHandle: "children",
+        targetHandle: "parent",
+      },
+    ]);
   });
 });
