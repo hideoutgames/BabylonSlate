@@ -7,6 +7,7 @@ import {
   PanelFrame,
   TreeView,
   TypeColorMark,
+  formatEventMemberName,
   formatEventTitle,
   pinPickerColorVar,
   useContextMenu,
@@ -48,10 +49,12 @@ export type MyClassMember = {
   name: string;
   detail?: string;
   inherited?: boolean;
-  hasError?: boolean;
-  typeId?: string;
+  /** Declaring parent class id when `inherited` is set. */
+  inheritedFrom?: string;
   eventType?: string;
+  typeId?: string;
   functionId?: string;
+  hasError?: boolean;
 };
 
 export type MyClassPanelProps = IDockviewPanelProps;
@@ -73,7 +76,29 @@ export type MembersForGraphOptions = {
   parentGraphs?: Record<string, SerializedGraph>;
 };
 
+/** Body name for a custom/native event node (no leading "Event "). */
+function eventMemberBodyName(node: SerializedGraph["nodes"][number]): string {
+  const named = node.data.name;
+  if (typeof named === "string" && named.trim()) {
+    return formatEventMemberName(named);
+  }
+  const title = node.data.title;
+  if (typeof title === "string" && title.trim()) {
+    return formatEventMemberName(title);
+  }
+  const catalog = defaultNodeRegistry.get(node.type)?.title;
+  if (catalog) return formatEventMemberName(catalog);
+  const typeName = node.type.startsWith("flow.event.")
+    ? node.type.slice("flow.event.".length)
+    : node.type;
+  return formatEventMemberName(typeName);
+}
+
+/** Display label for Class Events tree (native stubs keep Event … titles). */
 function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
+  if (node.type === "flow.event.custom") {
+    return eventMemberBodyName(node);
+  }
   const title = node.data.title;
   if (typeof title === "string" && title.trim()) {
     return formatEventTitle(title);
@@ -126,30 +151,32 @@ function inheritedCustomEvents(
   for (const className of chain) {
     const parentGraph = options.parentGraphs[className];
     if (!parentGraph) continue;
-    for (const node of parentGraph.nodes) {
-      if (node.type !== "flow.event.custom") continue;
-      const name = eventDisplayName(node);
-      if (seenNames.has(name)) continue;
-      seenNames.add(name);
-      rows.push({
-        kind: "event",
-        name,
-        detail: nativeStubId(`custom:${name}`),
-        eventType: "flow.event.custom",
-        inherited: true,
-      });
-    }
     for (const member of parentGraph.members ?? []) {
       if (member.kind !== "event") continue;
-      const name = formatEventTitle(member.name);
-      if (seenNames.has(name)) continue;
+      const name = formatEventMemberName(member.name);
+      if (!name || seenNames.has(name)) continue;
       seenNames.add(name);
       rows.push({
         kind: "event",
         name,
-        detail: nativeStubId(`custom:${name}`),
+        detail: nativeStubId(`custom:${className}:${name}`),
         eventType: "flow.event.custom",
         inherited: true,
+        inheritedFrom: className,
+      });
+    }
+    for (const node of parentGraph.nodes) {
+      if (node.type !== "flow.event.custom") continue;
+      const name = eventMemberBodyName(node);
+      if (!name || seenNames.has(name)) continue;
+      seenNames.add(name);
+      rows.push({
+        kind: "event",
+        name,
+        detail: nativeStubId(`custom:${className}:${name}`),
+        eventType: "flow.event.custom",
+        inherited: true,
+        inheritedFrom: className,
       });
     }
   }
@@ -699,7 +726,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
               graph?.nodes.find((node) => {
                 if (node.type !== eventType) return false;
                 if (eventType !== "flow.event.custom") return true;
-                return eventDisplayName(node) === member.name;
+                return eventMemberBodyName(node) === member.name;
               });
             if (existing) {
               focusEvent(existing.id, member.name);
@@ -709,15 +736,18 @@ export function MyClassPanel(_props: MyClassPanelProps) {
             const next = ensureEventNodeOnGraph(graph, eventType, {
               name:
                 eventType === "flow.event.custom"
-                  ? member.name.replace(/^Event\s+/, "")
+                  ? formatEventMemberName(member.name)
                   : undefined,
-              title: member.name,
+              title:
+                eventType === "flow.event.custom"
+                  ? formatEventTitle(member.name)
+                  : member.name,
             });
             persistGraph(next);
             const spawned = next.nodes.find((node) => {
               if (node.type !== eventType) return false;
               if (eventType !== "flow.event.custom") return true;
-              return eventDisplayName(node) === member.name;
+              return eventMemberBodyName(node) === formatEventMemberName(member.name);
             });
             if (spawned) focusEvent(spawned.id, member.name);
             return;

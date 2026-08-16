@@ -34,7 +34,7 @@ describe("My Class members", () => {
       },
       {
         kind: "event",
-        name: "Event On Hit",
+        name: "On Hit",
         detail: "hit",
         eventType: "flow.event.custom",
       },
@@ -130,7 +130,7 @@ describe("My Class members", () => {
       expect.arrayContaining([
         expect.objectContaining({
           eventType: "flow.event.custom",
-          name: "Event On Hit",
+          name: "On Hit",
           detail: "hit",
         }),
       ]),
@@ -180,7 +180,7 @@ describe("My Class members", () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: "event",
-          name: "Event On Hit",
+          name: "On Hit",
           inherited: true,
         }),
       ]),

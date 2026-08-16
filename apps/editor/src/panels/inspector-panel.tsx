@@ -12,6 +12,7 @@ import {
   TypeVisualIcon,
   assetRowIdentity,
   classRowIdentity,
+  formatEventMemberName,
   resolveTypeVisual,
   selectedPickerIdentity,
   type ClassPickerEntry,
@@ -697,7 +698,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         (member) =>
           member.kind === "event" &&
           (member.id === selectedNode.id ||
-            member.name === selectedNode.data.name),
+            formatEventMemberName(String(member.name)) ===
+              formatEventMemberName(String(selectedNode.data.name ?? ""))),
       )
     : undefined;
   const eventOutputRows: PinListRow[] = (
@@ -891,7 +893,39 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
                 persistGraph(patchClassMember(graph, eventMember.id, { pins }));
                 return;
               }
-              updateNodeData({ pins });
+              // Canvas custom-event without a members[] row: upsert then sync Calls.
+              const bodyName = formatEventMemberName(
+                String(selectedNode.data.name ?? selectedNode.data.title ?? "Custom"),
+              );
+              const memberId = selectedNode.id;
+              const withMember: SerializedGraph = {
+                ...graph,
+                members: [
+                  ...(graph.members ?? []).filter(
+                    (entry) => entry.id !== memberId,
+                  ),
+                  {
+                    id: memberId,
+                    kind: "event",
+                    name: bodyName,
+                    pins,
+                  },
+                ],
+                nodes: graph.nodes.map((node) =>
+                  node.id === selectedNode.id
+                    ? {
+                        ...node,
+                        data: {
+                          ...node.data,
+                          name: bodyName,
+                          title: `Event ${bodyName}`,
+                          pins,
+                        },
+                      }
+                    : node,
+                ),
+              };
+              persistGraph(patchClassMember(withMember, memberId, { pins }));
             }}
           />
         ) : null}

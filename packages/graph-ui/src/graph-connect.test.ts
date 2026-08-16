@@ -75,6 +75,14 @@ describe("displayNodeTitle", () => {
     expect(displayNodeTitle("flow.event.custom")).toBe("Event Custom");
     expect(displayNodeTitle("flow.event.camera2D")).toBe("Event Camera 2D");
   });
+
+  it("does not Event-prefix Call Custom Event titles", () => {
+    expect(displayNodeTitle("flow.event.call", "Call Test")).toBe("Call Test");
+    expect(displayNodeTitle("flow.event.call", "Call Event Test")).toBe(
+      "Call Event Test",
+    );
+    expect(displayNodeTitle("flow.event.call")).toBe("Call Custom Event");
+  });
 });
 
 describe("pinsAreCompatible", () => {

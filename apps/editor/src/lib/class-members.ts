@@ -432,16 +432,25 @@ function syncEventPins(
   member: GraphClassMember,
   pins: GraphClassMemberPin[],
 ): SerializedGraph {
+  const memberName = formatEventMemberName(member.name);
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
+      const nodeName =
+        typeof node.data.name === "string"
+          ? formatEventMemberName(node.data.name)
+          : "";
       const isEvent =
         node.type === "flow.event.custom" &&
-        (node.id === member.id || node.data.name === member.name);
+        (node.id === member.id || nodeName === memberName);
       const isCall =
-        node.type === "flow.event.call" && node.data.name === member.name;
+        node.type === "flow.event.call" && nodeName === memberName;
       if (!isEvent && !isCall) return node;
       const nextData: Record<string, unknown> = { ...node.data, pins };
+      if (isCall) {
+        nextData.name = memberName;
+        nextData.title = `Call ${memberName}`;
+      }
       delete nextData.__pins;
       return { ...node, data: nextData };
     }),
@@ -655,9 +664,10 @@ export function addCallEventNode(
   options?: GraphSpawnOptions,
 ): SerializedGraph {
   const type = "flow.event.call";
+  const bodyName = formatEventMemberName(member.name);
   const data: Record<string, unknown> = {
-    title: `Call ${member.name}`,
-    name: member.name,
+    title: `Call ${bodyName}`,
+    name: bodyName,
     implicitSelf: options?.implicitSelf ?? true,
     pins: member.pins ?? [],
     __nodeType: type,

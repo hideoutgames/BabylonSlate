@@ -1038,18 +1038,6 @@ function GraphEditorCanvas({
         data-readonly={readOnly ? "true" : undefined}
         data-nodes-draggable={nodesDraggable ? "true" : "false"}
       >
-        {marqueeScreen ? (
-          <div
-            data-testid="graph-marquee"
-            className="pointer-events-none absolute z-20 border border-dashed border-primary bg-primary/15"
-            style={{
-              left: marqueeScreen.x,
-              top: marqueeScreen.y,
-              width: marqueeScreen.width,
-              height: marqueeScreen.height,
-            }}
-          />
-        ) : null}
         {readOnly ? null : (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
@@ -1153,7 +1141,7 @@ function GraphEditorCanvas({
             gap={20}
             size={1}
             color="var(--border)"
-            bgColor="var(--background)"
+            bgColor="var(--card)"
           />
           <Controls
             showInteractive={false}
@@ -1164,6 +1152,22 @@ function GraphEditorCanvas({
             fitViewOptions={graphViewport.focusedFitViewOptions}
           />
         </ReactFlow>
+        {marqueeScreen ? (
+          <div
+            data-testid="graph-marquee"
+            className="pointer-events-none absolute inset-0 z-30 overflow-hidden"
+          >
+            <div
+              className="absolute border-2 border-dashed border-primary bg-primary/25"
+              style={{
+                left: marqueeScreen.x,
+                top: marqueeScreen.y,
+                width: marqueeScreen.width,
+                height: marqueeScreen.height,
+              }}
+            />
+          </div>
+        ) : null}
         {readOnly ? null : (
         <NodePalette
           open={paletteOpen}
