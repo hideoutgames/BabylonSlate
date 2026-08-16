@@ -31,7 +31,7 @@ export * from "./ui-surface";
 export * from "./sprite-quad";
 export * from "./tilemap-mesh";
 export * from "./mesh-assets";
-export * from "./model-mesh";
+export * from "./glb-anim";
 export * from "./scene-illumination";
 export * from "./material-block-registry";
 export * from "./material-compiler";

@@ -224,6 +224,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "flow.event.call" || nodeId === "functions.call") {
     return false;
   }
+  if (nodeId === "interface.call") {
+    return false;
+  }
   if (nodeId === "variables.get" || nodeId === "variables.set") {
     return false;
   }
@@ -380,7 +383,15 @@ function memberDefaults(
     };
   }
   if (kind === "function") {
-    return { pins: extras?.pins ?? DEFAULT_FUNCTION_PINS };
+    const next: Partial<GraphClassMember> = {
+      pins: extras?.pins ?? DEFAULT_FUNCTION_PINS,
+    };
+    if (extras?.overridable === true) next.overridable = true;
+    if (extras?.implementsInterface) {
+      next.implementsInterface = extras.implementsInterface;
+    }
+    if (extras?.overrides) next.overrides = extras.overrides;
+    return next;
   }
   if (kind === "interface") {
     return { assetGuid: extras?.assetGuid ?? "" };
@@ -888,9 +899,14 @@ export function patchClassMember(
   patch: Partial<GraphClassMember>,
 ): SerializedGraph {
   const previous = (graph.members ?? []).find((member) => member.id === memberId);
-  const members = (graph.members ?? []).map((member) =>
-    member.id === memberId ? { ...member, ...patch } : member,
-  );
+  const members = (graph.members ?? []).map((member) => {
+    if (member.id !== memberId) return member;
+    const next = { ...member, ...patch };
+    if ("overridable" in patch && patch.overridable !== true) {
+      delete next.overridable;
+    }
+    return next;
+  });
   const next = { ...graph, members };
   const declared = next.members?.find((member) => member.id === memberId);
   if (declared?.kind === "variable") {

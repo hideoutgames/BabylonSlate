@@ -91,3 +91,19 @@ export function createEmptyFunctionLibrary(
     functionGraphIds: [],
   };
 }
+
+export function scriptInterfaceHeaderMeta(asset: {
+  guid?: string;
+  name?: string;
+  methods?: InterfaceMethod[];
+}): {
+  guid: string;
+  name: string;
+  methods: InterfaceMethod[];
+} {
+  return {
+    guid: typeof asset.guid === "string" ? asset.guid : "",
+    name: typeof asset.name === "string" && asset.name ? asset.name : "Interface",
+    methods: Array.isArray(asset.methods) ? asset.methods : [],
+  };
+}

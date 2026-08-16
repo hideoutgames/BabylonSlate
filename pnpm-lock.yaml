@@ -533,6 +533,9 @@ importers:
       '@babylonjs/ktx2decoder':
         specifier: 9.20.0
         version: 9.20.0(@babylonjs/core@9.20.0)
+      '@babylonjs/loaders':
+        specifier: 9.20.0
+        version: 9.20.0(@babylonjs/core@9.20.0)(babylonjs-gltf2interface@9.21.2)
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../assets
@@ -973,6 +976,12 @@ packages:
     resolution: {integrity: sha512-hMafgr6KbFsl5rm2l4eQDzk8SeX0TQRV78/qthgTPInR+hSG+JCTaWaXD9ejryqW+FehGZUnQ6VRqHfKfKJqSQ==}
     peerDependencies:
       '@babylonjs/core': ^9.0.0
+
+  '@babylonjs/loaders@9.20.0':
+    resolution: {integrity: sha512-zGu6SRvN4uzk5KF0exoSjBZbBcvkEz6iteSvgCn4EP4nQD60W2D4WCtF8m2usZ/yALUOQE5EQON6Tuq1I4LWXg==}
+    peerDependencies:
+      '@babylonjs/core': ^9.0.0
+      babylonjs-gltf2interface: ^9.0.0
 
   '@base-ui/react@1.7.0':
     resolution: {integrity: sha512-j+8QjX44C32jrXD/qyEAGpFr70FRpGL2CY61mQd9nBPWN737CK0xxD1ceJ055rW4RtdvFDT1e7otzdlfxvsYug==}
@@ -2518,6 +2527,9 @@ packages:
   atomically@1.7.0:
     resolution: {integrity: sha512-Xcz9l0z7y9yQ9rdDaxlmaI4uJHf/T8g9hOEzJcsEqX2SjCj4J20uK7+ldkDHMbpJDK76wF7xEIgxc/vSlsfw5w==}
     engines: {node: '>=10.12.0'}
+
+  babylonjs-gltf2interface@9.21.2:
+    resolution: {integrity: sha512-L4tPMoIgDz/lWQFYKkQMG0oIq5S24Z6Sc3aBX6nvczDLoFDs13auaC2ObOL2Tc24IiUVESjCnDa1DzrJq/m0NQ==}
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
@@ -5325,6 +5337,11 @@ snapshots:
     dependencies:
       '@babylonjs/core': 9.20.0
 
+  '@babylonjs/loaders@9.20.0(@babylonjs/core@9.20.0)(babylonjs-gltf2interface@9.21.2)':
+    dependencies:
+      '@babylonjs/core': 9.20.0
+      babylonjs-gltf2interface: 9.21.2
+
   '@base-ui/react@1.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@babel/runtime': 7.29.7
@@ -6818,6 +6835,8 @@ snapshots:
   at-least-node@1.0.0: {}
 
   atomically@1.7.0: {}
+
+  babylonjs-gltf2interface@9.21.2: {}
 
   balanced-match@1.0.2: {}
 

@@ -14,6 +14,7 @@
     "@babylonjs/core": "^9.20.0",
     "@babylonjs/gui": "^9.20.0",
     "@babylonjs/ktx2decoder": "9.20.0",
+    "@babylonjs/loaders": "9.20.0",
     "@babylonslate/assets": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",

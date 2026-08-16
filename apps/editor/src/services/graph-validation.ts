@@ -13,10 +13,12 @@ import {
   hasBlockingErrors,
   toSerializedGraph as logicToSerializedGraph,
   isAssignable,
+  isLogicGraphPayload,
   type ClassHierarchy,
   type ClassMemberSymbol,
   type Diagnostic,
-  isLogicGraphPayload,
+  type InterfaceMethodContext,
+  type ParentFunctionSignature,
   type LogicGraph,
   type NodeRegistry,
   type GraphPin,
@@ -27,7 +29,7 @@ import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
 } from "@babylonslate/object-model";
-import { createDefaultNodeRegistry, castDefaultClassId } from "@babylonslate/scripting-nodes";
+import { createDefaultNodeRegistry, castDefaultClassId, callInterfaceTitle } from "@babylonslate/scripting-nodes";
 import { warnDebugTierConsoleCommands } from "@babylonslate/debugger";
 import type { PaletteNode, PinCompatibilityRule } from "@babylonslate/graph-ui";
 import {
@@ -54,6 +56,7 @@ function shouldRegeneratePins(typeId: string): boolean {
   return (
     typeId === "flow.event.call" ||
     typeId === "functions.call" ||
+    typeId === "interface.call" ||
     typeId === "flow.function.input" ||
     typeId === "flow.function.output" ||
     typeId === "variables.get" ||
@@ -305,6 +308,11 @@ export type ScriptPaletteOptions = ClassEventOptions & {
     parentClass?: string | null;
     functions: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
   }>;
+  scriptInterfaces?: Array<{
+    guid: string;
+    name: string;
+    methods: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
+  }>;
 };
 
 function otherClassAllowedOnHost(
@@ -545,6 +553,43 @@ function callFunctionPaletteNodes(
   });
 }
 
+function callInterfacePaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get("interface.call");
+  if (!def) return [];
+  const rows: PaletteNode[] = [];
+  const seen = new Set<string>();
+  for (const iface of options?.scriptInterfaces ?? []) {
+    for (const method of iface.methods) {
+      if (!method.name) continue;
+      const key = `${iface.guid}:${method.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const pins = method.pins ?? [];
+      const defaultData: Record<string, unknown> = {
+        interfaceGuid: iface.guid,
+        method: method.name,
+        implicitSelf: true,
+        pins,
+        title: callInterfaceTitle(method.name),
+      };
+      rows.push({
+        id: `interface.call:${iface.guid}:${method.name}`,
+        nodeType: "interface.call",
+        title: callInterfaceTitle(method.name),
+        category: def.category,
+        pins: def.pins(defaultData),
+        pure: def.pure,
+        latent: def.latent,
+        defaultData,
+      });
+    }
+  }
+  return rows;
+}
+
 type VariableRow = {
   id: string;
   name: string;
@@ -752,6 +797,7 @@ export function scriptPaletteNodes(
       : [
           ...callCustomEventPaletteNodes(nodeRegistry, options),
           ...callFunctionPaletteNodes(nodeRegistry, options),
+          ...callInterfacePaletteNodes(nodeRegistry, options),
           ...variableAccessPaletteNodes(nodeRegistry, options),
           ...castPaletteNodes(nodeRegistry, options),
         ];
@@ -845,6 +891,13 @@ export function classMemberSymbolsFromGraphs(
       if (member.functionId) symbol.functionId = member.functionId;
       if (member.typeId) symbol.typeId = member.typeId;
       if (member.typeClassId) symbol.typeClassId = member.typeClassId;
+      if (member.kind === "function") {
+        if (member.pins) symbol.pins = member.pins;
+        if (member.implementsInterface) {
+          symbol.implementsInterface = member.implementsInterface;
+        }
+        if (member.overrides) symbol.overrides = member.overrides;
+      }
       symbols.push(symbol);
     }
   }
@@ -884,23 +937,44 @@ export type ValidateSerializedGraphOptions = {
   activeFunctionId?: string | null;
   members?: readonly ClassMemberSymbol[];
   knownClassIds?: ReadonlySet<string>;
+  implementedInterfaces?: readonly InterfaceMethodContext[];
+  parentFunctionSignatures?: readonly ParentFunctionSignature[];
 };
 
 export function validateSerializedGraph(
   content: SerializedGraph | LogicGraph,
   options: ValidateSerializedGraphOptions,
 ): Diagnostic[] {
-  const graph = materializeLogicGraph(content, options.graphId);
+  const ctx = {
+    assetGuid: options.assetGuid,
+    hierarchy: options.hierarchy,
+    classId: options.classId,
+    activeFunctionId: options.activeFunctionId,
+    members: options.members,
+    knownClassIds: options.knownClassIds,
+    implementedInterfaces: options.implementedInterfaces,
+    parentFunctionSignatures: options.parentFunctionSignatures,
+  };
+  if (isLogicGraphPayload(content)) {
+    return [
+      ...validateGraphs([content], ctx),
+      ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
+    ];
+  }
+  const eventGraph = materializeLogicGraph(content, options.graphId);
+  const graphs = [eventGraph];
+  for (const [memberId, slice] of Object.entries(content.functionGraphs ?? {})) {
+    graphs.push(
+      materializeLogicGraph(
+        { nodes: slice.nodes, edges: slice.edges },
+        memberId,
+        "function",
+      ),
+    );
+  }
   return [
-    ...validateGraphs([graph], {
-      assetGuid: options.assetGuid,
-      hierarchy: options.hierarchy,
-      classId: options.classId,
-      activeFunctionId: options.activeFunctionId,
-      members: options.members,
-      knownClassIds: options.knownClassIds,
-    }),
-    ...warnDebugTierConsoleCommands([graph], { assetGuid: options.assetGuid }),
+    ...validateGraphs(graphs, ctx),
+    ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
   ];
 }
 
