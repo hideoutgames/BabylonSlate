@@ -32,6 +32,7 @@ import {
 } from "../lib/class-members";
 import { MemberAccessChooser } from "../components/member-access-chooser";
 import { PlusIcon } from "lucide-react";
+import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
@@ -395,6 +396,7 @@ export function ClassMembersView({
     memberId: string;
     position: { x: number; y: number };
   } | null>(null);
+  const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   const members = useMemo(
     () => membersForGraph(graph, membersOptions),
     [graph, membersOptions],
@@ -611,6 +613,13 @@ export function ClassMembersView({
           openMenuAt(x, y, items);
         }}
         onExternalDrop={dropMember}
+        onExternalDragMove={(_id, clientX, clientY) => {
+          const allowed = Boolean(
+            canvasDropApi?.containsClientPoint(clientX, clientY),
+          );
+          setDropHint({ clientX, clientY, allowed });
+        }}
+        onExternalDragEnd={() => setDropHint(null)}
         onActivate={(id) => {
           if (id.startsWith("section-")) return;
           const member = members.find(
@@ -625,6 +634,7 @@ export function ClassMembersView({
         emptyLabel="No class members"
         data-testid="my-blueprint-tree"
       />
+      <GraphDropHint hint={dropHint} />
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <MemberAccessChooser
         open={accessDrop !== null}

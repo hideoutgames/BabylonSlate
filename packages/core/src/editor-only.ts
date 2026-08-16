@@ -115,10 +115,23 @@ export type ClassHeaderEvent = {
   pins: ClassHeaderPin[];
 };
 
+export type ClassHeaderComponent = {
+  id: string;
+  classId: string;
+  parentId?: string | null;
+  properties?: Record<string, unknown>;
+  transform?: {
+    position: [number, number, number];
+    rotation: [number, number, number, number];
+    scale: [number, number, number];
+  };
+};
+
 export type ClassHeaderMeta = {
   functions: ClassHeaderFunction[];
   variables: ClassHeaderVariable[];
   events: ClassHeaderEvent[];
+  components: ClassHeaderComponent[];
 };
 
 function headerPinsFromMember(
@@ -163,6 +176,13 @@ export function classHeaderMeta(graph: {
     pins?: ClassHeaderPin[];
     assetGuid?: string;
   }>;
+  components?: Array<{
+    id?: string;
+    classId?: string;
+    parentId?: string | null;
+    properties?: Record<string, unknown>;
+    transform?: ClassHeaderComponent["transform"];
+  }>;
 }): ClassHeaderMeta {
   const functions: ClassHeaderFunction[] = [];
   const variables: ClassHeaderVariable[] = [];
@@ -196,5 +216,16 @@ export function classHeaderMeta(graph: {
       });
     }
   }
-  return { functions, variables, events };
+  const components: ClassHeaderComponent[] = [];
+  for (const component of graph.components ?? []) {
+    const id = component.id?.trim();
+    const classId = component.classId?.trim();
+    if (!id || !classId) continue;
+    const row: ClassHeaderComponent = { id, classId };
+    if (component.parentId !== undefined) row.parentId = component.parentId;
+    if (component.properties) row.properties = { ...component.properties };
+    if (component.transform) row.transform = component.transform;
+    components.push(row);
+  }
+  return { functions, variables, events, components };
 }

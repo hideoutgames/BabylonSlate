@@ -205,6 +205,35 @@ describe("editor-only assets", () => {
           ],
         },
       ],
+      components: [],
+    });
+  });
+
+  it("indexes prefab components on Class headers", () => {
+    expect(
+      classHeaderMeta({
+        members: [],
+        components: [
+          {
+            id: "mesh-1",
+            classId: "MeshComponent",
+            parentId: null,
+            properties: { meshKind: "box" },
+          },
+        ],
+      }),
+    ).toEqual({
+      functions: [],
+      variables: [],
+      events: [],
+      components: [
+        {
+          id: "mesh-1",
+          classId: "MeshComponent",
+          parentId: null,
+          properties: { meshKind: "box" },
+        },
+      ],
     });
   });
 });
