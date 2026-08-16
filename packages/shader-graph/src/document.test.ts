@@ -244,4 +244,35 @@ describe("switching material domain", () => {
     const doc = createDefaultMaterialDocument("Rock");
     expect(setMaterialDomain(doc, "surface")).toBe(doc);
   });
+
+  it("defaults Custom GLSL nodes to an a + b expression", () => {
+    const doc = normalizeMaterialDocument({
+      nodes: [
+        {
+          id: "glsl",
+          type: "custom.glsl",
+          position: { x: 0, y: 0 },
+          properties: {},
+        },
+      ],
+    });
+    const node = doc.nodes.find((entry) => entry.id === "glsl");
+    expect(node?.properties.body).toBe("a + b");
+  });
+
+  it("migrates a legacy glsl property onto the Custom GLSL body", () => {
+    const doc = normalizeMaterialDocument({
+      nodes: [
+        {
+          id: "glsl",
+          type: "custom.glsl",
+          position: { x: 0, y: 0 },
+          properties: { glsl: "a * b" },
+        },
+      ],
+    });
+    const node = doc.nodes.find((entry) => entry.id === "glsl");
+    expect(node?.properties.body).toBe("a * b");
+    expect(node?.properties.glsl).toBeUndefined();
+  });
 });

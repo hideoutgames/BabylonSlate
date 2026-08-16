@@ -247,6 +247,59 @@ describe("material validation", () => {
     );
   });
 
+  it("accepts an expression-only Custom GLSL body", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a + b" },
+    });
+    expect(codes(doc)).not.toContain("material.customGlsl");
+  });
+
+  it("flags an empty Custom GLSL body", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "   " },
+    });
+    expect(codes(doc)).toContain("material.customGlsl");
+  });
+
+  it("rejects declarations, preprocessor directives and assignments in Custom GLSL", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a; float x = 1.0" },
+    });
+    expect(codes(doc)).toContain("material.customGlsl");
+    doc.nodes[doc.nodes.length - 1]!.properties = { body: "#define X 1" };
+    expect(codes(doc)).toContain("material.customGlsl");
+    doc.nodes[doc.nodes.length - 1]!.properties = { body: "gl_FragColor" };
+    expect(codes(doc)).toContain("material.customGlsl");
+    doc.nodes[doc.nodes.length - 1]!.properties = { body: "a = b" };
+    expect(codes(doc)).toContain("material.customGlsl");
+  });
+
+  it("flags Custom GLSL when the device is not GLSL/WebGL", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a + b" },
+    });
+    const diagnostic = validateMaterialDocument(doc, {
+      capabilities: { customGlsl: false },
+    }).find((row) => row.code === "material.capability");
+    expect(diagnostic?.message).toMatch(/WebGPU|GLSL/i);
+  });
+
   it("warns that a post-process material costs fill rate on the iPad baseline", () => {
     const doc = createDefaultMaterialDocument("Blur", "postProcess");
     const warning = validateMaterialDocument(doc, {

@@ -278,6 +278,41 @@ describe("material compiler", () => {
     expect(names).not.toContain("CustomBlock");
   });
 
+  it("realizes Custom GLSL through a Babylon CustomBlock", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a + b" },
+    });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-color-a",
+        sourceNodeId: "baseColor",
+        sourcePinId: "out",
+        targetNodeId: "glsl",
+        targetPinId: "a",
+      },
+      {
+        id: "e-glsl-out",
+        sourceNodeId: "glsl",
+        sourcePinId: "out",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "test" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    expect(
+      result.material.attachedBlocks.map((block) => block.getClassName()),
+    ).toContain("CustomBlock");
+  });
+
   it("resolves a texture through the injected texture provider", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();

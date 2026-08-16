@@ -207,6 +207,39 @@ describe("material lowering", () => {
     expect(materialCompileKey(a)).not.toBe(materialCompileKey(b));
   });
 
+  it("changes the compile key when a Custom GLSL body changes", () => {
+    const withBody = (body: string) => {
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push({
+        id: "glsl",
+        type: "custom.glsl",
+        position: { x: 0, y: 0 },
+        properties: { body },
+      });
+      doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+      doc.edges.push(
+        {
+          id: "e-color-a",
+          sourceNodeId: "baseColor",
+          sourcePinId: "out",
+          targetNodeId: "glsl",
+          targetPinId: "a",
+        },
+        {
+          id: "e-glsl-out",
+          sourceNodeId: "glsl",
+          sourcePinId: "out",
+          targetNodeId: "output",
+          targetPinId: "baseColor",
+        },
+      );
+      return doc;
+    };
+    expect(materialCompileKey(withBody("a + b"))).not.toBe(
+      materialCompileKey(withBody("a * b")),
+    );
+  });
+
   it("keeps an invalid compile key stable across position-only edits", () => {
     const a = createDefaultMaterialDocument();
     a.nodes.push({

@@ -13,7 +13,8 @@ export type MaterialCapability =
   | "derivatives"
   | "textureLod"
   | "sceneDepth"
-  | "vertexTexture";
+  | "vertexTexture"
+  | "customGlsl";
 
 export type MaterialPinType =
   | { kind: MaterialValueType }
@@ -570,6 +571,7 @@ const CUSTOM_NODES: MaterialNodeDefinition[] = [
       { id: "b", name: "B", type: GENERIC, defaultValue: [0] },
     ],
     outputs: [{ id: "out", name: "Out", type: GENERIC }],
+    requires: ["customGlsl"],
   },
 ];
 

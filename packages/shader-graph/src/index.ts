@@ -74,7 +74,9 @@ export {
 } from "./types";
 export {
   collectFunctionDependencies,
+  customGlslBody,
   findGraphCycle,
+  validateCustomGlslBody,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
   type MaterialCapabilities,

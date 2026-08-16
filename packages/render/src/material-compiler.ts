@@ -196,6 +196,15 @@ export function compileMaterialPlan(
       });
       return fail();
     }
+    if (operation.nodeType === "custom.glsl" && scene.getEngine().isWebGPU) {
+      diagnostics.push({
+        code: "material.capability",
+        message: "Custom GLSL is GLSL/WebGL only and cannot run on WebGPU",
+        severity: "error",
+        nodeId: anchorNodeId(operation),
+      });
+      return fail();
+    }
 
     let realization: BlockRealization;
     try {

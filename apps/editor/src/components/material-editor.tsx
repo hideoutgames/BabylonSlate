@@ -13,6 +13,11 @@ import {
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import {
   Select,
@@ -21,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@babylonslate/ui/components/select";
+import { Textarea } from "@babylonslate/ui/components/textarea";
 import { GraphEditor } from "@babylonslate/graph-ui";
 import {
   MATERIAL_PREVIEW_MESHES,
@@ -562,6 +568,30 @@ function MaterialNodeDetails({
     <div className="flex flex-col gap-2" data-testid="material-node-details">
       <p className="px-3 text-xs text-muted-foreground">{node.type}</p>
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
+      {node.type === "custom.glsl" ? (
+        <div className="px-3" data-testid="material-node-glsl-editor">
+          <Field>
+            <FieldLabel htmlFor="material-node-glsl">Expression</FieldLabel>
+            <Textarea
+              id="material-node-glsl"
+              className="min-h-24 font-mono text-sm"
+              value={
+                typeof node.properties.body === "string"
+                  ? node.properties.body
+                  : "a + b"
+              }
+              onChange={(event) =>
+                setProperties({ body: event.target.value })
+              }
+              data-testid="material-node-glsl"
+            />
+            <FieldDescription data-testid="material-node-glsl-signature">
+              Generated signature: result = fn(a, b). Expression-only GLSL over
+              A and B. WebGPU is not supported.
+            </FieldDescription>
+          </Field>
+        </div>
+      ) : null}
       {node.type === "param.texture" ? (
         <div className="px-3">
           <Button
