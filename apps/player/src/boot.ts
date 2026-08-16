@@ -15,6 +15,7 @@ import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import type { LoadedGame } from "./artifact";
+import { applyPlayerEngineCommand } from "./engine-commands";
 import { packedContentFromGame, packedPlayControls } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
 
@@ -82,6 +83,7 @@ export function startPlayer(options: {
     throw new Error("Set Startup Scene in Project Settings.");
   }
   const content = packedContentFromGame(game);
+  const diagnostics: PlayerDiagnostic[] = [];
 
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
@@ -94,8 +96,20 @@ export function startPlayer(options: {
     pixelPerfect: content.pixelPerfect,
     textureBytes: game.textureBytes,
     modelBytes: game.modelBytes,
+    materialDocuments: content.materialDocuments,
+    materialFunctions: content.materialFunctions,
+    postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     ktx2BasePath: ktx2BasePath(),
+    onPostProcessDiagnostic: (diagnostic) => {
+      diagnostics.push({
+        message: diagnostic.message,
+        severity: "warning",
+        assetGuid: diagnostic.materialGuid,
+        nodeId: diagnostic.nodeId,
+      });
+      options.onDiagnostic?.(diagnostics);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
@@ -142,18 +156,9 @@ export function startPlayer(options: {
   let lastWorkerTickIndex = 0;
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
-  const diagnostics: PlayerDiagnostic[] = [];
 
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
-    if (command.type === "assignMesh") {
-      handle.applyCommand(command as never);
-    }
-    if (command.type === "possessCamera" || command.type === "setShadowQuality") {
-      handle.applyCommand(command as never);
-    }
-    if (command.type === "animState") {
-      handle.applyCommand(command as never);
-    }
+    applyPlayerEngineCommand(handle, command);
     if (command.type === "stats") {
       ticks = Number(command.tickIndex ?? ticks + 1);
       lastWorkerTickIndex = ticks;

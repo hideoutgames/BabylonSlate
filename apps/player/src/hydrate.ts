@@ -11,6 +11,13 @@ import {
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
 import type { ControlMessage } from "@babylonslate/bridge";
+import type { ScenePostProcessEntry } from "@babylonslate/core";
+import {
+  normalizeMaterialDocument,
+  normalizeMaterialFunctionDocument,
+  type MaterialDocument,
+  type MaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import type { LoadedGame } from "./artifact";
 
 const decoder = new TextDecoder();
@@ -24,6 +31,9 @@ export type PackedGameContent = {
   blackboards: Array<{ guid: string; document: unknown }>;
   navmeshBytes: Uint8Array | null;
   navmeshByScene: Map<string, Uint8Array>;
+  materialDocuments: Map<string, MaterialDocument>;
+  materialFunctions: Map<string, MaterialFunctionDocument>;
+  postProcessStack: ScenePostProcessEntry[];
   pixelsPerUnit: number;
   pixelPerfect: boolean;
 };
@@ -58,6 +68,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const animGraphs: Array<{ guid: string; document: unknown }> = [];
   const behaviourTrees: Array<{ guid: string; document: unknown }> = [];
   const blackboards: Array<{ guid: string; document: unknown }> = [];
+  const materialDocuments = new Map<string, MaterialDocument>();
+  const materialFunctions = new Map<string, MaterialFunctionDocument>();
 
   for (const entry of game.manifest.assets ?? []) {
     const bytes = game.payloads.get(entry.guid);
@@ -89,12 +101,30 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     if (entry.type === "Blackboard" && parsed) {
       const document = parseBlackboardDocument(parsed);
       if (document) blackboards.push({ guid: entry.guid, document });
+      continue;
+    }
+    if (entry.type === "Material" && parsed) {
+      materialDocuments.set(
+        entry.guid,
+        normalizeMaterialDocument(parsed, entry.name ?? "Material"),
+      );
+      continue;
+    }
+    if (entry.type === "MaterialFunction" && parsed) {
+      materialFunctions.set(
+        entry.guid,
+        normalizeMaterialFunctionDocument(
+          parsed,
+          entry.name ?? "Material Function",
+        ),
+      );
     }
   }
 
   const startup = game.manifest.startupSceneGuid;
   const navmeshByScene = new Map(game.navmeshBytes);
   const navmeshBytes = navmeshByScene.get(startup) ?? null;
+  const startupScene = game.scenes.get(startup);
   const pixelsPerUnit =
     typeof game.manifest.pixelsPerUnit === "number" && game.manifest.pixelsPerUnit > 0
       ? game.manifest.pixelsPerUnit
@@ -109,6 +139,9 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     blackboards,
     navmeshBytes,
     navmeshByScene,
+    materialDocuments,
+    materialFunctions,
+    postProcessStack: startupScene?.settings.postProcessStack ?? [],
     pixelsPerUnit,
     pixelPerfect: game.manifest.pixelPerfect === true,
   };
