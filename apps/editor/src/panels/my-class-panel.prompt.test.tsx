@@ -76,7 +76,7 @@ afterEach(() => {
 });
 
 describe("MyClassPanel name prompt", () => {
-  it("adds a function through NamePromptDialog instead of window.prompt", () => {
+  it("adds a function through AddFunctionDialog instead of window.prompt", () => {
     const prompt = vi.spyOn(window, "prompt");
     render(
       <GraphEditingProvider>
@@ -87,10 +87,10 @@ describe("MyClassPanel name prompt", () => {
     expect(screen.queryByTestId("class-remove-member")).toBeNull();
     fireEvent.click(screen.getByTestId("class-add-functions"));
     expect(prompt).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByTestId("name-prompt-input"), {
+    fireEvent.change(screen.getByTestId("add-function-name"), {
       target: { value: "Dash" },
     });
-    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    fireEvent.click(screen.getByTestId("add-function-confirm"));
     expect(applyGraphChange).toHaveBeenCalledWith(
       "graph:assets/Hero.class.babasset",
       expect.objectContaining({

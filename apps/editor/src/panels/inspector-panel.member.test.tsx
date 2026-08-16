@@ -58,6 +58,16 @@ vi.mock("../context/document-context", () => ({
             },
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
             {
+              id: "fn-impl",
+              kind: "function",
+              name: "Apply Damage",
+              pins: [],
+              implementsInterface: {
+                assetGuid: "iface-1",
+                methodName: "Apply Damage",
+              },
+            },
+            {
               id: "if-1",
               kind: "interface",
               name: "Damageable",
@@ -123,6 +133,14 @@ describe("Inspector class member details", () => {
     expect(screen.queryByTestId("inspector-member-pins")).toBeNull();
     expect(screen.getByTestId("class-fn-in-add")).toBeTruthy();
     expect(screen.getByTestId("class-fn-out-add")).toBeTruthy();
+    expect(screen.getByTestId("property-overridable")).toBeTruthy();
+  });
+
+  it("locks Inputs and Outputs for an interface implementation", () => {
+    renderMemberInspector("fn-impl");
+    expect(screen.getByTestId("inspector-member-interface-impl")).toBeTruthy();
+    expect(screen.queryByTestId("class-fn-in-add")).toBeNull();
+    expect(screen.queryByTestId("property-overridable")).toBeNull();
   });
 
   it("shows ScriptInterface AssetPicker for a selected interface", () => {

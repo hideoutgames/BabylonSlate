@@ -87,6 +87,7 @@ export type FunctionLibraryHeaderFunction = {
     direction?: "in" | "out";
     typeClassId?: string;
   }>;
+  overridable?: boolean;
 };
 
 export type ClassHeaderPin = {
@@ -100,6 +101,9 @@ export type ClassHeaderFunction = {
   id: string;
   name: string;
   pins: ClassHeaderPin[];
+  overridable?: boolean;
+  implementsInterface?: { assetGuid: string; methodName: string };
+  overrides?: { classId: string; name: string };
 };
 
 export type ClassHeaderVariable = {
@@ -115,10 +119,17 @@ export type ClassHeaderEvent = {
   pins: ClassHeaderPin[];
 };
 
+export type ClassHeaderInterface = {
+  id: string;
+  name: string;
+  assetGuid?: string;
+};
+
 export type ClassHeaderMeta = {
   functions: ClassHeaderFunction[];
   variables: ClassHeaderVariable[];
   events: ClassHeaderEvent[];
+  interfaces: ClassHeaderInterface[];
 };
 
 function headerPinsFromMember(
@@ -140,6 +151,7 @@ export function functionLibraryHeaderMeta(graph: {
     kind: string;
     name: string;
     pins?: FunctionLibraryHeaderFunction["pins"];
+    overridable?: boolean;
   }>;
 }): { functions: FunctionLibraryHeaderFunction[] } {
   return {
@@ -148,6 +160,7 @@ export function functionLibraryHeaderMeta(graph: {
       .map((member) => ({
         name: member.name,
         pins: headerPinsFromMember(member.pins),
+        ...(member.overridable === true ? { overridable: true } : {}),
       })),
   };
 }
@@ -162,19 +175,37 @@ export function classHeaderMeta(graph: {
     functionId?: string;
     pins?: ClassHeaderPin[];
     assetGuid?: string;
+    overridable?: boolean;
+    implementsInterface?: { assetGuid: string; methodName: string };
+    overrides?: { classId: string; name: string };
   }>;
 }): ClassHeaderMeta {
   const functions: ClassHeaderFunction[] = [];
   const variables: ClassHeaderVariable[] = [];
   const events: ClassHeaderEvent[] = [];
+  const interfaces: ClassHeaderInterface[] = [];
   for (const member of graph.members ?? []) {
     if (!member.id || !member.name) continue;
     if (member.kind === "function") {
-      functions.push({
+      const fn: ClassHeaderFunction = {
         id: member.id,
         name: member.name,
         pins: headerPinsFromMember(member.pins),
-      });
+      };
+      if (member.overridable === true) fn.overridable = true;
+      if (member.implementsInterface?.assetGuid && member.implementsInterface.methodName) {
+        fn.implementsInterface = {
+          assetGuid: member.implementsInterface.assetGuid,
+          methodName: member.implementsInterface.methodName,
+        };
+      }
+      if (member.overrides?.classId && member.overrides.name) {
+        fn.overrides = {
+          classId: member.overrides.classId,
+          name: member.overrides.name,
+        };
+      }
+      functions.push(fn);
       continue;
     }
     if (member.kind === "variable") {
@@ -194,7 +225,16 @@ export function classHeaderMeta(graph: {
         name: member.name,
         pins: headerPinsFromMember(member.pins),
       });
+      continue;
+    }
+    if (member.kind === "interface") {
+      const iface: ClassHeaderInterface = {
+        id: member.id,
+        name: member.name,
+      };
+      if (member.assetGuid) iface.assetGuid = member.assetGuid;
+      interfaces.push(iface);
     }
   }
-  return { functions, variables, events };
+  return { functions, variables, events, interfaces };
 }

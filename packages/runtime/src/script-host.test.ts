@@ -1058,16 +1058,30 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("Call Interface uses colon handler keys and compiled custom events", async () => {
+  it("Call Interface uses compiled function implementations", async () => {
     const registry = createDefaultNodeRegistry();
-    const implGraph: LogicGraph = {
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+    ];
+    const implFn: LogicGraph = {
+      id: "ApplyDamage",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins }),
+        node(registry, "log", "debug.log", { message: "damaged" }),
+        node(registry, "out", "flow.function.output", { pins }),
+      ],
+      edges: [
+        edge("e1", "in", "exec", "log", "execIn"),
+        edge("e2", "log", "execOut", "out", "then"),
+      ],
+    };
+    const dummy: LogicGraph = {
       id: "event-graph",
       kind: "event",
-      nodes: [
-        node(registry, "hit", "flow.event.custom", { name: "ApplyDamage" }),
-        node(registry, "log", "debug.log", { message: "damaged" }),
-      ],
-      edges: [edge("e1", "hit", "execOut", "log", "execIn")],
+      nodes: [node(registry, "begin", "flow.event.beginPlay")],
+      edges: [],
     };
     const callerGraph: LogicGraph = {
       id: "event-graph",
@@ -1092,7 +1106,22 @@ describe("script host runs compiled graphs", () => {
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
-      toScript(implGraph, registry, "Enemy", "enemy-asset"),
+      {
+        ...withFunctionExport(
+          toScript(dummy, registry, "Enemy", "enemy-asset"),
+          implFn,
+          registry,
+          "ApplyDamage",
+        ),
+        implementedInterfaces: ["iface-damageable"],
+        interfaceImplementations: [
+          {
+            interfaceGuid: "iface-damageable",
+            method: "ApplyDamage",
+            exportName: "ApplyDamage",
+          },
+        ],
+      },
       toScript(callerGraph, registry, "Enemy", "enemy-caller"),
     ]);
     const actor = runtime.spawnScriptedActor({
@@ -1111,16 +1140,30 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("binds ScriptInterface handlers from the class registry without a hand-passed array", async () => {
+  it("binds ScriptInterface handlers from function implementations without a hand-passed array", async () => {
     const registry = createDefaultNodeRegistry();
-    const implGraph: LogicGraph = {
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+    ];
+    const implFn: LogicGraph = {
+      id: "ApplyDamage",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins }),
+        node(registry, "log", "debug.log", { message: "damaged" }),
+        node(registry, "out", "flow.function.output", { pins }),
+      ],
+      edges: [
+        edge("e1", "in", "exec", "log", "execIn"),
+        edge("e2", "log", "execOut", "out", "then"),
+      ],
+    };
+    const dummy: LogicGraph = {
       id: "event-graph",
       kind: "event",
-      nodes: [
-        node(registry, "hit", "flow.event.custom", { name: "ApplyDamage" }),
-        node(registry, "log", "debug.log", { message: "damaged" }),
-      ],
-      edges: [edge("e1", "hit", "execOut", "log", "execIn")],
+      nodes: [node(registry, "begin", "flow.event.beginPlay")],
+      edges: [],
     };
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -1130,8 +1173,20 @@ describe("script host runs compiled graphs", () => {
     });
     await runtime.loadScripts([
       {
-        ...toScript(implGraph, registry, "Bruiser", "bruiser-asset"),
+        ...withFunctionExport(
+          toScript(dummy, registry, "Bruiser", "bruiser-asset"),
+          implFn,
+          registry,
+          "ApplyDamage",
+        ),
         implementedInterfaces: ["iface-damageable"],
+        interfaceImplementations: [
+          {
+            interfaceGuid: "iface-damageable",
+            method: "ApplyDamage",
+            exportName: "ApplyDamage",
+          },
+        ],
       },
     ]);
     const actor = runtime.spawnScriptedActor({ classId: "Bruiser" });

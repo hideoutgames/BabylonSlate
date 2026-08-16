@@ -218,6 +218,16 @@ export interface GraphClassMemberPin {
   typeClassId?: string;
 }
 
+export interface GraphClassMemberImplementsInterface {
+  assetGuid: string;
+  methodName: string;
+}
+
+export interface GraphClassMemberOverrides {
+  classId: string;
+  name: string;
+}
+
 export interface GraphClassMember {
   id: string;
   kind: GraphClassMemberKind;
@@ -233,6 +243,12 @@ export interface GraphClassMember {
   assetGuid?: string;
   /** When set, this variable is local to that function member. */
   functionId?: string;
+  /** User functions may be overridden by child classes. Default off. */
+  overridable?: boolean;
+  /** Function that implements a ScriptInterface method. */
+  implementsInterface?: GraphClassMemberImplementsInterface;
+  /** Function that overrides a parent-class function. */
+  overrides?: GraphClassMemberOverrides;
 }
 
 export interface SerializedGraph {
@@ -672,6 +688,30 @@ const MEMBER_KINDS = new Set<GraphClassMemberKind>([
   "interface",
 ]);
 
+function normalizeImplementsInterface(
+  value: unknown,
+): GraphClassMemberImplementsInterface | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Record<string, unknown>;
+  const assetGuid =
+    typeof row.assetGuid === "string" ? row.assetGuid.trim() : "";
+  const methodName =
+    typeof row.methodName === "string" ? row.methodName.trim() : "";
+  if (!assetGuid || !methodName) return undefined;
+  return { assetGuid, methodName };
+}
+
+function normalizeOverrides(
+  value: unknown,
+): GraphClassMemberOverrides | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Record<string, unknown>;
+  const classId = typeof row.classId === "string" ? row.classId.trim() : "";
+  const name = typeof row.name === "string" ? row.name.trim() : "";
+  if (!classId || !name) return undefined;
+  return { classId, name };
+}
+
 function optionalTypeClassId(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -733,6 +773,15 @@ export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
       }
     } else if (kind === "function" || kind === "event") {
       member.pins = normalizeMemberPins(row.pins);
+      if (kind === "function") {
+        if (row.overridable === true) member.overridable = true;
+        const implementsInterface = normalizeImplementsInterface(
+          row.implementsInterface,
+        );
+        if (implementsInterface) member.implementsInterface = implementsInterface;
+        const overrides = normalizeOverrides(row.overrides);
+        if (overrides) member.overrides = overrides;
+      }
     } else if (kind === "interface") {
       member.assetGuid =
         typeof row.assetGuid === "string" ? row.assetGuid.trim() : "";
