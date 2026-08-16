@@ -18,6 +18,8 @@ import { NumericDragField } from "./numeric-drag-field";
 import { humanizePropertyLabel } from "./humanize-property-label";
 import { ColorField, type ColorValue } from "./color-field";
 import { FlagsField } from "./flags-field";
+import { PickerIdentity } from "./picker-identity";
+import { type TypeVisualQuery } from "./type-visuals";
 
 export type Vector3Value = [number, number, number] | [number, number, number, number];
 
@@ -99,6 +101,10 @@ export type PropertyRow =
       placeholder?: string;
       /** Human name shown on the picker button; `value` stays the guid. */
       displayLabel?: string;
+      /** Secondary type line on the picker button (Texture, Class, …). */
+      displayType?: string;
+      /** Type glyph on the picker button when a value is selected. */
+      visual?: TypeVisualQuery;
       onPick: () => void;
       onChange: (value: string | null) => void;
     });
@@ -308,19 +314,29 @@ function RowControl({ row }: { row: PropertyRow }) {
           data-testid={`property-${row.id}`}
         />
       );
-    case "asset":
+    case "asset": {
+      const selected = Boolean(row.displayLabel ?? row.value);
       return (
         <Button
           id={`property-${row.id}`}
           variant="outline"
-          className="min-h-[var(--chrome-row,28px)] w-full justify-start"
+          className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
           disabled={row.disabled}
           onClick={row.onPick}
           data-testid={`property-${row.id}`}
         >
-          {row.displayLabel ?? row.value ?? row.placeholder ?? "None"}
+          {selected && (row.visual || row.displayType) ? (
+            <PickerIdentity
+              label={row.displayLabel ?? row.value ?? row.placeholder ?? "None"}
+              description={row.displayType}
+              visual={row.visual}
+            />
+          ) : (
+            (row.displayLabel ?? row.value ?? row.placeholder ?? "None")
+          )}
         </Button>
       );
+    }
   }
 }
 

@@ -191,6 +191,54 @@ describe("PropertyGrid", () => {
     expect(button.getAttribute("id")).toBe("property-mesh");
   });
 
+  it("shows icon, name, and type on a filled asset picker button", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "asset",
+            id: "texture",
+            label: "Texture",
+            value: "guid-grass",
+            displayLabel: "Grass",
+            displayType: "Texture",
+            visual: { assetType: "Texture" },
+            placeholder: "None",
+            onPick: () => {},
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const button = screen.getByLabelText("Texture");
+    expect(button.textContent).toContain("Grass");
+    expect(button.textContent).toContain("Texture");
+    expect(button.textContent).not.toContain("guid-grass");
+    const icon = button.querySelector("[data-type-family]");
+    expect(icon?.getAttribute("data-type-family")).toBe("texture");
+  });
+
+  it("keeps an empty asset picker as text-only None", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "asset",
+            id: "texture",
+            label: "Texture",
+            value: null,
+            placeholder: "None",
+            onPick: () => {},
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const button = screen.getByLabelText("Texture");
+    expect(button.textContent).toBe("None");
+    expect(button.querySelector("[data-type-family]")).toBeNull();
+  });
+
   it("humanizes camelCase property keys as Title Case", () => {
     expect(humanizePropertyLabel("meshKind")).toBe("Mesh Kind");
     expect(humanizePropertyLabel("fixedTimestepMs")).toBe("Fixed Timestep MS");

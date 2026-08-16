@@ -17,6 +17,7 @@ import {
   instantiatePrefabComponents,
   prefabComponentsFromGraph,
 } from "./prefab-preview";
+import { classIdFromClassAsset } from "./content-browser-helpers";
 
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
@@ -123,7 +124,12 @@ export function projectPlaceActors(
         guid: asset.header.guid,
         assetType: asset.header.type,
         classId:
-          asset.header.type === "Class" ? asset.header.name : undefined,
+          asset.header.type === "Class"
+            ? classIdFromClassAsset({
+                path: asset.path,
+                header: { type: "Class", name: asset.header.name },
+              })
+            : undefined,
         components: prefabForGuid?.(asset.header.guid),
       },
     }));

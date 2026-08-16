@@ -1,5 +1,6 @@
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
+  assetRowIdentity,
   walkAncestry,
   type ClassPickerEntry,
 } from "@babylonslate/editor-kit";
@@ -15,7 +16,7 @@ import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_COMPONENT_CLASS_IDS,
 } from "@babylonslate/object-model";
-import { classParentLookup } from "./content-browser-helpers";
+import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
@@ -37,6 +38,7 @@ export type AssetPickRequest = {
 export type ComponentPropertyContext = {
   sortingLayers: readonly string[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
+  assetType?: (guid: string | null | undefined) => string | undefined;
   physicsWorld: "3d" | "2d";
   onPickAsset: (request: AssetPickRequest) => void;
 };
@@ -60,12 +62,20 @@ function assetRow(
   title?: string,
 ): PropertyRow {
   const value = guidValue(component.properties[property]);
+  const name = value ? context.assetLabel(value) : undefined;
+  const type = value
+    ? (context.assetType?.(value) ?? allowedTypes[0])
+    : undefined;
+  const identity =
+    name && type ? assetRowIdentity({ name, type }) : {};
   return {
     kind: "asset",
     id: rowId(actorId, component.id, property),
     label,
     value,
-    displayLabel: value ? context.assetLabel(value) : undefined,
+    displayLabel: identity.displayLabel ?? name,
+    displayType: identity.displayType,
+    visual: identity.visual,
     placeholder: "None",
     onPick: () =>
       context.onPickAsset({
@@ -964,6 +974,7 @@ export function componentPropertyRows(
 /** Engine GameInstance plus project Class assets in that lineage. */
 export function gameInstanceClassEntries(
   assets: ReadonlyArray<{
+    path?: string;
     header: { type: string; name: string; parentClass?: string | null };
   }>,
 ): ClassPickerEntry[] {
@@ -973,7 +984,7 @@ export function gameInstanceClassEntries(
   ];
   for (const asset of assets) {
     if (asset.header.type !== "Class") continue;
-    const id = asset.header.name;
+    const id = classIdFromClassAsset(asset);
     if (id === "GameInstance") continue;
     if (!walkAncestry(id, parentOf).includes("GameInstance")) continue;
     entries.push({ id, name: id, group: "Project" });
@@ -985,6 +996,7 @@ export function gameInstanceClassEntries(
 export function subclassClassEntries(
   baseClassId: string,
   assets: ReadonlyArray<{
+    path?: string;
     header: { type: string; name: string; parentClass?: string | null };
   }>,
   options?: { editorGraph?: boolean },
@@ -1006,7 +1018,8 @@ export function subclassClassEntries(
   for (const id of ENGINE_COMPONENT_CLASS_IDS) add(id, id, "Engine");
   for (const asset of assets) {
     if (asset.header.type !== "Class") continue;
-    add(asset.header.name, asset.header.name, "Project");
+    const id = classIdFromClassAsset(asset);
+    add(id, id, "Project");
   }
   return entries;
 }

@@ -24,7 +24,10 @@ import {
   TypeColorMark,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
+  assetRowIdentity,
+  classRowIdentity,
   resolveTypeVisual,
+  selectedPickerIdentity,
   useContextMenu,
   type NestedMenuItem,
   type ParameterRow,
@@ -163,8 +166,15 @@ function GalleryComposites() {
   const [pinType, setPinType] = useState<PinPickerType>("float");
   const [pins, setPins] = useState<PinListRow[]>([
     { id: "gallery-hit", name: "hit", type: "bool", direction: "out" },
+    {
+      id: "gallery-target",
+      name: "target",
+      type: "object",
+      direction: "in",
+      typeClassId: "Actor",
+    },
   ]);
-  const [selectedPinId, setSelectedPinId] = useState<string | null>("gallery-hit");
+  const [selectedPinId, setSelectedPinId] = useState<string | null>("gallery-target");
 
   const rows: PropertyRow[] = [
     {
@@ -235,10 +245,11 @@ function GalleryComposites() {
       kind: "asset",
       id: "gallery-mesh",
       label: "Mesh",
-      value: null,
+      value: "gallery-asset",
       placeholder: "None",
       onPick: () => setPickerOpen(true),
       onChange: () => {},
+      ...assetRowIdentity({ name: "Rock", type: "Mesh" }),
     },
   ];
 
@@ -266,6 +277,10 @@ function GalleryComposites() {
             selectedId={selectedPinId}
             onSelect={setSelectedPinId}
             showDirection
+            classEntries={[
+              { id: "Actor", name: "Actor", group: "Engine" },
+              { id: "MyGame", name: "My Game", group: "Project" },
+            ]}
           />
         </PanelFrame>
       </div>
@@ -379,14 +394,31 @@ function GalleryComposites() {
         >
           <Button variant="outline">Open search dropdown</Button>
         </SearchDropdown>
-        <Button variant="outline" onClick={() => setPickerOpen(true)}>
-          Open asset picker
+        <Button variant="outline" className="h-auto" onClick={() => setPickerOpen(true)}>
+          {selectedPickerIdentity(
+            assetRowIdentity({ name: "Rock", type: "Mesh" }),
+            "Open asset picker",
+          )}
         </Button>
-        <Button variant="outline" onClick={() => setClassPickerOpen(true)}>
-          Open class picker
+        <Button variant="outline" className="h-auto" onClick={() => setClassPickerOpen(true)}>
+          {selectedPickerIdentity(
+            classRowIdentity({ id: "MyGame", name: "My Game" }),
+            "Open class picker",
+          )}
         </Button>
-        <Button variant="outline" onClick={() => setSceneComponentPickerOpen(true)}>
-          Open scene component picker
+        <Button
+          variant="outline"
+          className="h-auto"
+          onClick={() => setSceneComponentPickerOpen(true)}
+        >
+          {selectedPickerIdentity(
+            {
+              displayLabel: "Hero Camera",
+              displayType: "CameraComponent",
+              visual: { classId: "CameraComponent", family: "class" },
+            },
+            "Open scene component picker",
+          )}
         </Button>
         <Button variant="outline" onClick={() => setNamePromptOpen(true)}>
           Open name prompt

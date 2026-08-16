@@ -132,13 +132,22 @@ describe("Inspector class member details", () => {
 
   it("requires a Class Type for object variables and omits a Default", () => {
     renderMemberInspector("var-obj");
-    expect(screen.getByTestId("inspector-member-class-type")).toBeTruthy();
+    const typeButton = screen.getByTestId("inspector-member-class-type");
+    expect(typeButton.textContent).toContain("Hero");
+    expect(typeButton.textContent).toContain("Class");
+    expect(typeButton.querySelector("[data-type-family]")?.getAttribute("data-type-family")).toBe(
+      "class",
+    );
     expect(screen.queryByTestId("property-default")).toBeNull();
   });
 
   it("shows Class Type and Default class pickers for class variables", () => {
     renderMemberInspector("var-class");
-    expect(screen.getByTestId("inspector-member-class-type")).toBeTruthy();
-    expect(screen.getByTestId("inspector-member-class-default")).toBeTruthy();
+    const typeButton = screen.getByTestId("inspector-member-class-type");
+    expect(typeButton.textContent).toContain("Actor");
+    expect(typeButton.textContent).toContain("Class");
+    const defaultButton = screen.getByTestId("inspector-member-class-default");
+    expect(defaultButton.textContent).toContain("Hero");
+    expect(defaultButton.textContent).toContain("Class");
   });
 });
