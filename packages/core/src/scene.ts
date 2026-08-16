@@ -47,6 +47,19 @@ export interface SerializedActor {
   visible: boolean;
   locked: boolean;
   components: SerializedComponent[];
+  /**
+   * Outliner folder that lists this actor, or null for the scene root. Purely
+   * organizational: `parentId` still owns transform attachment, and the runtime
+   * ignores folders entirely.
+   */
+  folderId: string | null;
+}
+
+/** Editor-only Outliner grouping. Never instantiated as a runtime actor. */
+export interface SerializedOutlinerFolder {
+  id: string;
+  name: string;
+  parentFolderId: string | null;
 }
 
 export interface SceneGridSettings {
@@ -103,6 +116,8 @@ export interface SerializedScene {
   viewportMode: ViewportMode;
   settings: SceneSettings;
   actors: SerializedActor[];
+  /** Outliner folders; missing on older documents and normalized to []. */
+  folders: SerializedOutlinerFolder[];
 }
 
 export const SCENE_SCHEMA_VERSION = 3;
@@ -172,6 +187,7 @@ export function createActor(
     visible: overrides.visible ?? true,
     locked: overrides.locked ?? false,
     components: overrides.components ?? [],
+    folderId: overrides.folderId ?? null,
   };
 }
 
@@ -238,7 +254,69 @@ function normalizeActor(value: unknown, index: number): SerializedActor {
     components: Array.isArray(source.components)
       ? source.components.map(normalizeComponent)
       : [],
+    folderId: asNullableString(source.folderId),
   };
+}
+
+/**
+ * Folders are editor metadata, so a malformed row is dropped rather than
+ * repaired into a phantom group. Surviving rows get unique ids, and parent
+ * links that dangle or form a cycle fall back to the root so no folder can
+ * become unreachable in the Outliner.
+ */
+function normalizeFolders(value: unknown): SerializedOutlinerFolder[] {
+  if (!Array.isArray(value)) return [];
+  const taken = new Set<string>();
+  const folders: SerializedOutlinerFolder[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const source = entry as Record<string, unknown>;
+    const id = asNullableString(source.id);
+    const name = asNullableString(source.name);
+    if (!id || !name) continue;
+    let unique = id;
+    let suffix = 2;
+    while (taken.has(unique)) {
+      unique = `${id}-${suffix}`;
+      suffix += 1;
+    }
+    taken.add(unique);
+    folders.push({
+      id: unique,
+      name,
+      parentFolderId: asNullableString(source.parentFolderId),
+    });
+  }
+
+  const byId = new Map(folders.map((folder) => [folder.id, folder]));
+  return folders.map((folder) => {
+    let parent = folder.parentFolderId;
+    if (parent !== null && !byId.has(parent)) parent = null;
+    // Walk up to the root; a loop means this link cannot stay.
+    const seen = new Set<string>([folder.id]);
+    let cursor = parent;
+    while (cursor !== null) {
+      if (seen.has(cursor)) {
+        parent = null;
+        break;
+      }
+      seen.add(cursor);
+      cursor = byId.get(cursor)?.parentFolderId ?? null;
+    }
+    return parent === folder.parentFolderId ? folder : { ...folder, parentFolderId: parent };
+  });
+}
+
+function withResolvedFolderIds(
+  actors: SerializedActor[],
+  folders: readonly SerializedOutlinerFolder[],
+): SerializedActor[] {
+  const known = new Set(folders.map((folder) => folder.id));
+  return actors.map((actor) =>
+    actor.folderId !== null && !known.has(actor.folderId)
+      ? { ...actor, folderId: null }
+      : actor,
+  );
 }
 
 function asNullableString(value: unknown): string | null {
@@ -358,13 +436,16 @@ export function normalizeScene(value: unknown): SerializedScene {
   const source = (value ?? {}) as Record<string, unknown>;
   const viewportMode: ViewportMode =
     source.viewportMode === "2d" ? "2d" : "3d";
+  const folders = normalizeFolders(source.folders);
+  const actors = Array.isArray(source.actors)
+    ? withUniqueActorIds(source.actors.map(normalizeActor))
+    : [];
   return {
     name: typeof source.name === "string" ? source.name : "Untitled",
     viewportMode,
     settings: normalizeSceneSettings(source.settings, viewportMode),
-    actors: Array.isArray(source.actors)
-      ? withUniqueActorIds(source.actors.map(normalizeActor))
-      : [],
+    actors: withResolvedFolderIds(actors, folders),
+    folders,
   };
 }
 
@@ -400,6 +481,74 @@ export function actorSubtree(
     }
   }
   return scene.actors.filter((actor) => ids.has(actor.id));
+}
+
+export function findFolder(
+  scene: SerializedScene,
+  folderId: string,
+): SerializedOutlinerFolder | undefined {
+  return scene.folders.find((folder) => folder.id === folderId);
+}
+
+export function folderChildren(
+  scene: SerializedScene,
+  parentFolderId: string | null,
+): SerializedOutlinerFolder[] {
+  return scene.folders.filter(
+    (folder) => folder.parentFolderId === parentFolderId,
+  );
+}
+
+/** Folder plus every descendant folder, in scene order. */
+export function folderSubtree(
+  scene: SerializedScene,
+  folderId: string,
+): SerializedOutlinerFolder[] {
+  const ids = new Set<string>([folderId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const folder of scene.folders) {
+      if (
+        folder.parentFolderId !== null &&
+        ids.has(folder.parentFolderId) &&
+        !ids.has(folder.id)
+      ) {
+        ids.add(folder.id);
+        grew = true;
+      }
+    }
+  }
+  return scene.folders.filter((folder) => ids.has(folder.id));
+}
+
+/** Actors listed directly in a folder, or at the scene root when null. */
+export function actorsInFolder(
+  scene: SerializedScene,
+  folderId: string | null,
+): SerializedActor[] {
+  return scene.actors.filter((actor) => actor.folderId === folderId);
+}
+
+/** True when moving `folderId` under `parentFolderId` would create a cycle. */
+export function wouldCreateFolderCycle(
+  scene: SerializedScene,
+  folderId: string,
+  parentFolderId: string | null,
+): boolean {
+  if (parentFolderId === null) return false;
+  if (parentFolderId === folderId) return true;
+  return folderSubtree(scene, folderId).some(
+    (folder) => folder.id === parentFolderId,
+  );
+}
+
+export function nextFolderId(scene: SerializedScene): string {
+  let index = 1;
+  while (scene.folders.some((folder) => folder.id === `folder-${index}`)) {
+    index += 1;
+  }
+  return `folder-${index}`;
 }
 
 /** True when moving `actorId` under `parentId` would create a cycle. */

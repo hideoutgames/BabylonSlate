@@ -632,6 +632,7 @@ export function createDefaultScene(
     name: "Main",
     viewportMode,
     settings: createDefaultSceneSettings(viewportMode),
+    folders: [],
     actors:
       viewportMode === "2d"
         ? []

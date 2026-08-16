@@ -10,6 +10,11 @@ import {
 import {
   AddActorCommand,
   AddComponentCommand,
+  AddFolderCommand,
+  RemoveFolderCommand,
+  RenameFolderCommand,
+  ReparentFolderCommand,
+  SetActorFolderCommand,
   RemoveActorCommand,
   RemoveComponentCommand,
   RenameActorCommand,
@@ -51,12 +56,20 @@ function baseScene(): SerializedScene {
     name: "Test",
     viewportMode: "3d",
     settings: createDefaultScene().settings,
+    folders: [],
     actors: [
       createActor("a", "A", {
         components: [createMeshComponent("c1", "box")],
       }),
       createActor("b", "B", { parentId: "a" }),
     ],
+  };
+}
+
+function folderScene(): SerializedScene {
+  return {
+    ...baseScene(),
+    folders: [{ id: "f1", name: "One", parentFolderId: null }],
   };
 }
 
@@ -211,6 +224,52 @@ describe("scene commands", () => {
     const scene = baseScene();
     expectRoundTrip(scene, new SetSceneNameCommand("Test", "Level 1"));
   });
+
+  it("AddFolderCommand apply-then-invert restores the document", () => {
+    expectRoundTrip(
+      folderScene(),
+      new AddFolderCommand({ id: "f2", name: "Two", parentFolderId: null }, 1),
+    );
+  });
+
+  it("AddFolderCommand ignores a duplicate id", () => {
+    const applied = new AddFolderCommand({
+      id: "f1",
+      name: "Dup",
+      parentFolderId: null,
+    }).apply(folderScene());
+    expect(applied.folders).toHaveLength(1);
+  });
+
+  it("RemoveFolderCommand apply-then-invert restores the document", () => {
+    const scene = folderScene();
+    expectRoundTrip(scene, new RemoveFolderCommand(scene.folders[0]!, 0));
+  });
+
+  it("RenameFolderCommand apply-then-invert restores the document", () => {
+    expectRoundTrip(folderScene(), new RenameFolderCommand("f1", "One", "Renamed"));
+  });
+
+  it("ReparentFolderCommand apply-then-invert restores the document", () => {
+    const scene = {
+      ...folderScene(),
+      folders: [
+        { id: "f1", name: "One", parentFolderId: null },
+        { id: "f2", name: "Two", parentFolderId: null },
+      ],
+    };
+    expectRoundTrip(scene, new ReparentFolderCommand("f2", null, "f1"));
+  });
+
+  it("SetActorFolderCommand apply-then-invert restores the document", () => {
+    expectRoundTrip(folderScene(), new SetActorFolderCommand("a", null, "f1"));
+  });
+
+  it("SetActorFolderCommand moves only the named actor", () => {
+    const applied = new SetActorFolderCommand("a", null, "f1").apply(folderScene());
+    expect(applied.actors.find((actor) => actor.id === "a")?.folderId).toBe("f1");
+    expect(applied.actors.find((actor) => actor.id === "b")?.folderId).toBeNull();
+  });
 });
 
 describe("diffSceneCommands", () => {
@@ -345,6 +404,51 @@ describe("diffSceneCommands", () => {
     after.actors.push(createActor("c", "C"));
 
     let doc = before;
+    for (const command of diffSceneCommands(before, after)) {
+      doc = command.apply(doc);
+    }
+    expect(doc).toEqual(after);
+  });
+
+  it("derives folder add, rename, reparent, and remove commands", () => {
+    const before = folderScene();
+    const after = {
+      ...before,
+      folders: [
+        { id: "f1", name: "Renamed", parentFolderId: null },
+        { id: "f2", name: "Two", parentFolderId: "f1" },
+      ],
+    };
+    const types = diffSceneCommands(before, after).map((command) => command.type);
+    expect(types).toContain("scene.addFolder");
+    expect(types).toContain("scene.renameFolder");
+
+    const removed = diffSceneCommands(after, before).map(
+      (command) => command.type,
+    );
+    expect(removed).toContain("scene.removeFolder");
+  });
+
+  it("derives a folder move for an actor without touching its transform parent", () => {
+    const before = folderScene();
+    const after = structuredClone(before);
+    after.actors[0]!.folderId = "f1";
+    const commands = diffSceneCommands(before, after);
+    expect(commands.map((command) => command.type)).toEqual([
+      "scene.setActorFolder",
+    ]);
+  });
+
+  it("replaying derived folder commands reproduces the after document", () => {
+    const before = folderScene();
+    const after = structuredClone(before);
+    after.folders = [
+      { id: "f1", name: "One", parentFolderId: null },
+      { id: "f2", name: "Nested", parentFolderId: "f1" },
+    ];
+    after.actors[0]!.folderId = "f2";
+
+    let doc: SerializedScene = before;
     for (const command of diffSceneCommands(before, after)) {
       doc = command.apply(doc);
     }

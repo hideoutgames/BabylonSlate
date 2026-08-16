@@ -35,6 +35,11 @@ import {
   createSetSceneNameCommandFromJson,
   createSetSceneSettingCommandFromJson,
   createSetViewportModeCommandFromJson,
+  createAddFolderCommandFromJson,
+  createRemoveFolderCommandFromJson,
+  createRenameFolderCommandFromJson,
+  createReparentFolderCommandFromJson,
+  createSetActorFolderCommandFromJson,
 } from "./commands/scene";
 import {
   createSetAssetDocumentCommandFromJson,
@@ -269,6 +274,23 @@ export function registerSceneCommandRevivers(): void {
   registerCommandReviver(
     "scene.setSceneName",
     createSetSceneNameCommandFromJson,
+  );
+  registerCommandReviver("scene.addFolder", createAddFolderCommandFromJson);
+  registerCommandReviver(
+    "scene.removeFolder",
+    createRemoveFolderCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.renameFolder",
+    createRenameFolderCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.reparentFolder",
+    createReparentFolderCommandFromJson,
+  );
+  registerCommandReviver(
+    "scene.setActorFolder",
+    createSetActorFolderCommandFromJson,
   );
 }
 
