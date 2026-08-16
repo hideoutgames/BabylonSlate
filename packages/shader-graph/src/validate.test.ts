@@ -59,9 +59,16 @@ describe("material validation", () => {
 
   it("flags a vector width mismatch instead of silently truncating", () => {
     const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "wide",
+      type: "const.vec4",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
     doc.edges.push({
       id: "too-wide",
-      sourceNodeId: "baseColor",
+      sourceNodeId: "wide",
       sourcePinId: "out",
       targetNodeId: "output",
       targetPinId: "baseColor",

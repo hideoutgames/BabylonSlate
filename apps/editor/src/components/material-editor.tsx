@@ -132,7 +132,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1" data-testid="material-graph-panel">
       <div
-        className="flex min-h-0 flex-1 flex-col"
+        className="flex h-full min-h-0 flex-col"
         data-testid="material-graph-editor"
       >
         <GraphEditor
@@ -178,7 +178,7 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1" data-testid="material-function-graph-panel">
       <div
-        className="flex min-h-0 flex-1 flex-col"
+        className="flex h-full min-h-0 flex-col"
         data-testid="material-function-graph-editor"
       >
         <GraphEditor
@@ -231,7 +231,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
 
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         <ToolbarStrip>
           <ToggleGroup
             variant="outline"

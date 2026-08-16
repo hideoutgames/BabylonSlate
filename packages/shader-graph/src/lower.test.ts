@@ -22,12 +22,12 @@ function surfaceWithMultiply(): MaterialDocument {
       properties: {},
     },
   );
-  doc.edges = doc.edges.filter((edge) => edge.id !== "e-rgb-output");
+  doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
   doc.edges.push(
     {
-      id: "e-rgb-mul",
-      sourceNodeId: "rgb",
-      sourcePinId: "xyz",
+      id: "e-color-mul",
+      sourceNodeId: "baseColor",
+      sourcePinId: "out",
       targetNodeId: "mul",
       targetPinId: "a",
     },
@@ -108,12 +108,12 @@ describe("material lowering", () => {
       },
       { id: "mul", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
     );
-    doc.edges = doc.edges.filter((edge) => edge.id !== "e-rgb-output");
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
     doc.edges.push(
       {
-        id: "e-rgb-mul",
-        sourceNodeId: "rgb",
-        sourcePinId: "xyz",
+        id: "e-color-mul",
+        sourceNodeId: "baseColor",
+        sourcePinId: "out",
         targetNodeId: "mul",
         targetPinId: "a",
       },
@@ -208,7 +208,7 @@ describe("material lowering", () => {
         properties: {},
       },
     );
-    doc.edges = doc.edges.filter((edge) => edge.id !== "e-rgb-output");
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
     doc.edges.push(
       {
         id: "e-tex",
@@ -274,12 +274,12 @@ describe("material lowering", () => {
       position: { x: 0, y: 0 },
       properties: { functionGuid: "fn-tint" },
     });
-    doc.edges = doc.edges.filter((edge) => edge.id !== "e-rgb-output");
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
     doc.edges.push(
       {
-        id: "e-rgb-call",
-        sourceNodeId: "rgb",
-        sourcePinId: "xyz",
+        id: "e-color-call",
+        sourceNodeId: "baseColor",
+        sourcePinId: "out",
         targetNodeId: "call",
         targetPinId: "in_value",
       },
@@ -339,12 +339,12 @@ describe("material lowering", () => {
       position: { x: 0, y: 0 },
       properties: { functionGuid: "fn-tint" },
     });
-    doc.edges = doc.edges.filter((edge) => edge.id !== "e-rgb-output");
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
     doc.edges.push(
       {
-        id: "e-rgb-call",
-        sourceNodeId: "rgb",
-        sourcePinId: "xyz",
+        id: "e-color-call",
+        sourceNodeId: "baseColor",
+        sourcePinId: "out",
         targetNodeId: "call",
         targetPinId: "in_value",
       },

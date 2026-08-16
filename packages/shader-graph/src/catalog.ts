@@ -133,7 +133,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
     category: "Constants",
     cost: 0,
     inputs: [],
-    outputs: [{ id: "out", name: "Out", type: VEC4, colorHint: true }],
+    outputs: [{ id: "out", name: "Out", type: VEC3, colorHint: true }],
   },
   {
     type: "param.float",
@@ -149,7 +149,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
     category: "Parameters",
     cost: 0,
     inputs: [],
-    outputs: [{ id: "out", name: "Out", type: VEC4, colorHint: true }],
+    outputs: [{ id: "out", name: "Out", type: VEC3, colorHint: true }],
   },
   {
     type: "param.texture",

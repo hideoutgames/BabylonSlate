@@ -188,24 +188,12 @@ export function createDefaultMaterialDocument(
             id: "baseColor",
             type: "const.color",
             position: { x: 0, y: 0 },
-            properties: { value: [0.8, 0.8, 0.8, 1] },
-          },
-          {
-            id: "split",
-            type: "vector.split",
-            position: { x: 180, y: 0 },
-            properties: {},
-          },
-          {
-            id: "rgb",
-            type: "vector.combine",
-            position: { x: 340, y: 0 },
-            properties: {},
+            properties: { value: [0.8, 0.8, 0.8] },
           },
           {
             id: "output",
             type: "output.surface",
-            position: { x: 540, y: 0 },
+            position: { x: 300, y: 0 },
             properties: {},
           },
         ]
@@ -233,37 +221,9 @@ export function createDefaultMaterialDocument(
     domain === "surface"
       ? [
           {
-            id: "e-color-split",
+            id: "e-color-output",
             sourceNodeId: "baseColor",
             sourcePinId: "out",
-            targetNodeId: "split",
-            targetPinId: "value",
-          },
-          {
-            id: "e-split-x",
-            sourceNodeId: "split",
-            sourcePinId: "x",
-            targetNodeId: "rgb",
-            targetPinId: "x",
-          },
-          {
-            id: "e-split-y",
-            sourceNodeId: "split",
-            sourcePinId: "y",
-            targetNodeId: "rgb",
-            targetPinId: "y",
-          },
-          {
-            id: "e-split-z",
-            sourceNodeId: "split",
-            sourcePinId: "z",
-            targetNodeId: "rgb",
-            targetPinId: "z",
-          },
-          {
-            id: "e-rgb-output",
-            sourceNodeId: "rgb",
-            sourcePinId: "xyz",
             targetNodeId: "output",
             targetPinId: "baseColor",
           },

@@ -24,6 +24,7 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@babylonslate/shader-graph";
+import { materialNodeDefinition } from "@babylonslate/shader-graph";
 import {
   blockAdapterFor,
   createConstantBlock,
@@ -166,12 +167,15 @@ export function compileMaterialPlan(
       const value = Array.isArray(operation.properties.value)
         ? (operation.properties.value as number[])
         : [0];
-      const asColor = operation.nodeType.endsWith("color");
-      const type = asColor
-        ? operation.nodeType === "param.color"
-          ? "vec4"
-          : "vec4"
-        : constantTypeFor(operation.nodeType);
+      const definition = materialNodeDefinition(operation.nodeType);
+      const pin = definition?.outputs[0];
+      const asColor = pin?.colorHint === true;
+      // Take the width from the catalog so a Color constant stays whatever the
+      // pin declares rather than being forced to four components.
+      const type =
+        pin && pin.type.kind !== "generic"
+          ? (pin.type.kind as MaterialValueType)
+          : "float";
       const block = createConstantBlock(operation.id, type, value, asColor);
       created.push(block);
       realized.set(operation.id, {
@@ -316,19 +320,6 @@ export function compileMaterialPlan(
       material.dispose();
     },
   };
-}
-
-function constantTypeFor(nodeType: string): MaterialValueType {
-  switch (nodeType) {
-    case "const.vec2":
-      return "vec2";
-    case "const.vec3":
-      return "vec3";
-    case "const.vec4":
-      return "vec4";
-    default:
-      return "float";
-  }
 }
 
 /** A texture sample reads its guid from the `param.texture` node feeding it. */

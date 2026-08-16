@@ -237,7 +237,15 @@ function RowControl({ row }: { row: PropertyRow }) {
             className="min-h-[var(--chrome-row,28px)] w-full"
             data-testid={`property-${row.id}`}
           >
-            <SelectValue />
+            {/* Base UI renders the raw value unless the label is formatted. */}
+            <SelectValue>
+              {(value: unknown) =>
+                humanizePropertyLabel(
+                  row.options.find((option) => option.value === value)?.label ??
+                    String(value ?? ""),
+                )
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {row.options.map((option) => (

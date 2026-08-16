@@ -130,7 +130,7 @@ describe("material library", () => {
         properties: {},
       },
     );
-    doc.edges = doc.edges.filter((edge) => edge.id !== "e-rgb-output");
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
     doc.edges.push(
       {
         id: "e-tex",

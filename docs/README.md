@@ -35,7 +35,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/anim-graph.md](architecture/anim-graph.md) | Worker animation graph evaluator |
 | [architecture/behaviour-tree.md](architecture/behaviour-tree.md) | Behaviour tree IR, blackboard, explicit-stack evaluator |
 | [architecture/navigation.md](architecture/navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
-| [architecture/shader-graph.md](architecture/shader-graph.md) | Shader IR to NodeMaterial |
+| [architecture/shader-graph.md](architecture/shader-graph.md) | Material and Material Function graphs, compiler, preview, runtime |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
 | [architecture/editor-extensions.md](architecture/editor-extensions.md) | EditorUtilityObject / Interface, live Dockview GUI tabs |
