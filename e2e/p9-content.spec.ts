@@ -33,6 +33,32 @@ async function createAsset(
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
 }
 
+async function openWindowsMenu(page: Page): Promise<void> {
+  const content = page.getByTestId("windows-menu-content");
+  if (await content.isVisible()) return;
+  await page.getByTestId("windows-menu").click();
+  await expect(content).toBeVisible();
+}
+
+async function closeWindowsMenu(page: Page): Promise<void> {
+  const content = page.getByTestId("windows-menu-content");
+  if (!(await content.isVisible())) return;
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  if (await content.isVisible()) {
+    await page.mouse.click(12, 12);
+  }
+  await expect(content).toHaveCount(0);
+}
+
+function animStateMachine(page: Page) {
+  return page.getByTestId("anim-dock-surface-state-machine");
+}
+
+function animObject(page: Page) {
+  return page.getByTestId("anim-dock-surface-animation-object");
+}
+
 async function guidForPath(page: Page, assetPath: string): Promise<string> {
   return page.evaluate((path) => {
     const host = globalThis as {
@@ -349,8 +375,17 @@ test.describe("P9 content systems", () => {
     await createAsset(page, "AnimationGraph", "Loco");
     await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-editor-mode-bar")).toBeVisible();
+    await expect(page.getByTestId("anim-editor-mode-state-machine")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("anim-dock-surface-state-machine")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
-    await expect(page.getByTestId("anim-graph-parameters")).toBeVisible();
+    await expect(animStateMachine(page).getByTestId("anim-graph-parameters")).toBeVisible();
     await expect(page.getByTestId("anim-graph-add-state")).toBeVisible();
 
     await createAsset(page, "Material", "Surface");
@@ -360,6 +395,74 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await expect(page.getByTestId("material-graph-editor")).toBeVisible();
     await expect(page.getByTestId("material-preview-canvas")).toBeVisible();
+  });
+
+  test("Animation Graph switches State Machine and Animation Object catalogs", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openTestProject(page);
+    await createAsset(page, "AnimationGraph", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-editor-mode-bar")).toBeVisible();
+    await expect(page.getByTestId("anim-dock-surface-state-machine")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    const stateMachine = animStateMachine(page);
+    await expect(stateMachine.getByTestId("anim-graph-add-variable")).toBeVisible();
+    await stateMachine.getByTestId("anim-graph-add-variable").click();
+    await expect(stateMachine.getByTestId("anim-graph-variable-var-1")).toBeVisible();
+    await expect(page.getByTestId("windows-menu")).toBeEnabled();
+
+    await openWindowsMenu(page);
+    await expect(page.getByTestId("windows-menu-anim-graph-graph")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-anim-graph-variables")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-anim-graph-details")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-anim-object-graph")).toHaveCount(0);
+    await closeWindowsMenu(page);
+
+    await page.getByTestId("anim-graph-add-state").click();
+    await expect(page.getByTestId("anim-state-node-idle")).toBeVisible();
+    await expect(page.getByTestId("anim-state-node-state-1")).toBeVisible();
+    const idleOut = page
+      .getByTestId("anim-state-node-idle")
+      .locator(".react-flow__handle.source");
+    const nextIn = page
+      .getByTestId("anim-state-node-state-1")
+      .locator(".react-flow__handle.target");
+    await idleOut.dragTo(nextIn);
+    const badge = page.locator('[data-testid^="anim-transition-badge-"]');
+    await expect(badge).toBeVisible();
+    await badge.dblclick();
+    await expect(page.getByTestId("anim-rule-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-rule-breadcrumb")).toContainText("Idle To State");
+    await page.getByTestId("anim-rule-breadcrumb-state-machine").click();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+
+    await page.getByTestId("anim-editor-mode-animation-object").click();
+    await expect(page.getByTestId("anim-editor-mode-animation-object")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("anim-dock-surface-animation-object")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await expect(page.getByTestId("anim-dock-surface-state-machine")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await expect(page.getByTestId("inspector-panel")).toBeVisible();
+    await expect(animObject(page).getByTestId("anim-graph-variable-var-1")).toBeVisible();
+
+    await openWindowsMenu(page);
+    await expect(page.getByTestId("windows-menu-anim-object-graph")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-anim-object-inspector")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-anim-graph-details")).toHaveCount(0);
+    await closeWindowsMenu(page);
   });
 
   test("Material preview compiles the authored graph and follows the primitive picker", async ({

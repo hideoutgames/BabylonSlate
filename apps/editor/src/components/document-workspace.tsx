@@ -31,7 +31,9 @@ import {
   type DockviewDocumentKind,
 } from "../shell/window-catalog";
 import { UiEditorModeBar } from "./ui-editor-mode-bar";
+import { AnimEditorModeBar } from "./anim-editor-mode-bar";
 import { parseUiDocumentLayout } from "../shell/ui-document-layout";
+import { parseAnimDocumentLayout } from "../shell/anim-document-layout";
 import { cn } from "@babylonslate/ui/lib/utils";
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
@@ -62,6 +64,7 @@ function RegisteredDockviewShell({
   actorPrefab,
   editorUtilityInterface,
   uiEditorMode,
+  animEditorMode,
   surface,
 }: {
   id: string;
@@ -70,6 +73,7 @@ function RegisteredDockviewShell({
   actorPrefab?: boolean;
   editorUtilityInterface?: boolean;
   uiEditorMode?: import("../shell/ui-document-layout").UiEditorMode;
+  animEditorMode?: import("../shell/anim-document-layout").AnimEditorMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
   const { registerDockviewApi, sourceControl } = useDocuments();
@@ -88,6 +92,7 @@ function RegisteredDockviewShell({
       editorUtilityInterface={editorUtilityInterface}
       sourceControl={sourceControl.enabled}
       uiEditorMode={uiEditorMode}
+      animEditorMode={animEditorMode}
       onReady={onReady}
     />
   );
@@ -172,6 +177,69 @@ function UiDocumentDocks({
             actorPrefab={false}
             uiEditorMode="logic"
             surface="logic"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnimDocumentDocks({
+  id,
+  layout,
+}: {
+  id: string;
+  layout: Record<string, unknown> | null;
+}) {
+  const { animEditorMode, setAnimEditorMode, activeDocumentId } = useDocuments();
+  const parsed = parseAnimDocumentLayout(layout);
+  const mode = activeDocumentId === id ? animEditorMode : parsed.animEditorMode;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <AnimEditorModeBar
+        mode={mode}
+        onModeChange={(next) => setAnimEditorMode(id, next)}
+      />
+      <div className="relative min-h-0 flex-1">
+        <div
+          className={cn(
+            "absolute inset-0",
+            mode === "stateMachine"
+              ? "ui-dock-surface-active"
+              : "ui-dock-surface-inactive",
+          )}
+          aria-hidden={mode !== "stateMachine"}
+          inert={mode !== "stateMachine" ? true : undefined}
+          data-testid="anim-dock-surface-state-machine"
+          data-active={mode === "stateMachine" ? "true" : "false"}
+        >
+          <RegisteredDockviewShell
+            id={id}
+            documentKind="anim-graph"
+            initialLayout={parsed.stateMachine}
+            animEditorMode="stateMachine"
+            surface="stateMachine"
+          />
+        </div>
+        <div
+          className={cn(
+            "absolute inset-0",
+            mode === "animationObject"
+              ? "ui-dock-surface-active"
+              : "ui-dock-surface-inactive",
+          )}
+          aria-hidden={mode !== "animationObject"}
+          inert={mode !== "animationObject" ? true : undefined}
+          data-testid="anim-dock-surface-animation-object"
+          data-active={mode === "animationObject" ? "true" : "false"}
+        >
+          <RegisteredDockviewShell
+            id={id}
+            documentKind="anim-graph"
+            initialLayout={parsed.animationObject}
+            animEditorMode="animationObject"
+            surface="animationObject"
           />
         </div>
       </div>
@@ -336,17 +404,17 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
                 <AnimGraphEditingProvider>
-                  <DocumentShell
-                    path={doc.ref.path}
-                    testId="document-workspace-anim-graph"
-                    active={active}
-                  >
-                    <RegisteredDockviewShell
-                      id={id}
-                      documentKind="anim-graph"
-                      initialLayout={doc.layout}
-                    />
-                  </DocumentShell>
+                  <PrefabEditingProvider initialSelectedId={null}>
+                  <GraphEditingProvider>
+                    <DocumentShell
+                      path={doc.ref.path}
+                      testId="document-workspace-anim-graph"
+                      active={active}
+                    >
+                      <AnimDocumentDocks id={id} layout={doc.layout} />
+                    </DocumentShell>
+                  </GraphEditingProvider>
+                  </PrefabEditingProvider>
                 </AnimGraphEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>

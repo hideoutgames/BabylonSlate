@@ -64,6 +64,23 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   meshAssetGuids: Map<number, string | null>;
   /** Extra component parts from assignMesh, keyed by slotId. */
   meshParts: Map<number, NonNullable<AssignMeshCommand["parts"]>>;
+  /** Second sprite mesh used for two-layer clip crossfades. */
+  spriteOverlays?: Map<number, Mesh>;
+  /** Per-slot AnimationGroups keyed after model load (not the global scene list). */
+  slotAnimationGroups?: Map<
+    number,
+    Array<{
+      name: string;
+      from: number;
+      to: number;
+      clipAssetGuid?: string;
+      pause(): void;
+      goToFrame(frame: number): void;
+      setWeightForAllAnimatables?(weight: number): void;
+    }>
+  >;
+  /** Last animState per slot, replayed when groups become available. */
+  pendingAnimState?: Map<number, Extract<CommandMessage, { type: "animState" }>>;
   defaultCameraSlotId: number | null;
   possessedCameraSlotId: number | null;
   shadow: ShadowGenerator | null;
@@ -88,6 +105,9 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
     meshParts: new Map(),
+    spriteOverlays: new Map(),
+    slotAnimationGroups: new Map(),
+    pendingAnimState: new Map(),
     defaultCameraSlotId: null,
     possessedCameraSlotId: null,
     shadow: null,
@@ -329,6 +349,9 @@ function disposeSlotVisuals(
 ): void {
   binding.meshes.get(slotId)?.dispose();
   binding.meshes.delete(slotId);
+  binding.spriteOverlays?.get(slotId)?.dispose();
+  binding.spriteOverlays?.delete(slotId);
+  binding.slotAnimationGroups?.delete(slotId);
   binding.lights.get(slotId)?.dispose();
   binding.lights.delete(slotId);
   binding.cameras.get(slotId)?.dispose();
@@ -413,6 +436,19 @@ export function createPlayMesh(
       ? createSpriteQuad(scene, name, frame, payload?.pixelsPerUnit ?? binding?.pixelsPerUnit)
       : createPrimitiveMesh(scene, name, "sprite");
     applyAlbedoTexture(mesh, scene, payload?.textureGuid, binding);
+    if (frame && binding) {
+      if (!binding.spriteOverlays) binding.spriteOverlays = new Map();
+      const overlay = createSpriteQuad(
+        scene,
+        `${name}-blend`,
+        frame,
+        payload?.pixelsPerUnit ?? binding.pixelsPerUnit,
+      );
+      overlay.parent = mesh;
+      overlay.visibility = 0;
+      applyAlbedoTexture(overlay, scene, payload?.textureGuid, binding);
+      binding.spriteOverlays.set(slotId, overlay);
+    }
     return mesh;
   }
   if (assetGuid && binding?.modelBytes?.has(assetGuid)) {
@@ -581,10 +617,16 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   for (const mesh of binding.meshes.values()) {
     mesh.dispose();
   }
+  for (const overlay of binding.spriteOverlays?.values() ?? []) {
+    overlay.dispose();
+  }
   for (const light of binding.lights.values()) light.dispose();
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.shadow?.dispose();
   binding.meshes.clear();
+  binding.spriteOverlays?.clear();
+  binding.slotAnimationGroups?.clear();
+  binding.pendingAnimState?.clear();
   binding.lights.clear();
   binding.cameras.clear();
   binding.lightProps.clear();

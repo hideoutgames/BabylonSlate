@@ -188,6 +188,7 @@ describe("EngineSettingsForm focus", () => {
     expect(getByTestId("focus-keep-ui-ui-design")).toBeTruthy();
     expect(getByTestId("focus-keep-uiLogic-graph")).toBeTruthy();
     expect(getByTestId("focus-keep-anim-graph-anim-graph-graph")).toBeTruthy();
+    expect(getByTestId("focus-keep-animGraphObject-anim-object-graph")).toBeTruthy();
     expect(getByTestId("focus-keep-behaviour-tree-behaviour-tree-graph")).toBeTruthy();
   });
 

@@ -32,7 +32,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/fonts.md](architecture/fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [architecture/sprites.md](architecture/sprites.md) | Sprite atlas, packer, SpriteComponent quad |
 | [architecture/tilemaps.md](architecture/tilemaps.md) | Tileset / Tilemap assets, chunk VertexData, painting, Rapier chains |
-| [architecture/anim-graph.md](architecture/anim-graph.md) | Worker animation graph evaluator |
+| [architecture/anim-graph.md](architecture/anim-graph.md) | Worker Animation Graph evaluator, Animation Object, transition rules |
 | [architecture/behaviour-tree.md](architecture/behaviour-tree.md) | Behaviour tree IR, blackboard, explicit-stack evaluator |
 | [architecture/navigation.md](architecture/navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Material and Material Function graphs, compiler, preview, runtime |

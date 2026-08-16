@@ -79,6 +79,18 @@ describe("toSerializedGraph", () => {
     });
   });
 
+  it("preserves an optional edge type for custom edge components", () => {
+    const edges = [
+      {
+        id: "e1",
+        source: "n1",
+        target: "n2",
+        type: "animTransition",
+      },
+    ];
+    expect(toSerializedGraph([], edges).edges[0]).toEqual(edges[0]);
+  });
+
   it("round-trips scripting node type via internal __nodeType data", () => {
     expect(
       toSerializedGraph(
@@ -289,6 +301,25 @@ describe("reconcileCanvasGraph", () => {
     expect(next?.edges).toEqual([]);
   });
 
+  it("keeps custom edge types when applying an incoming graph", () => {
+    const incoming: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) =>
+        node.id === "a" ? { ...node, position: { x: 12, y: 24 } } : node,
+      ),
+      edges: twoNodeGraph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransition",
+      })),
+    };
+    const next = reconcileCanvasGraph({
+      localNodes,
+      localEdges,
+      incoming,
+    });
+    expect(next?.edges[0]).toMatchObject({ type: "animTransition" });
+  });
+
   it("applies data patches from incoming", () => {
     const incoming: GraphDocument = {
       ...twoNodeGraph,
@@ -341,7 +372,7 @@ describe("nodeChangesMutateGraph", () => {
     ).toBe(false);
   });
 
-  it("ignores measured-size frames so a remount cannot re-dirty", () => {
+  it("ignores measurement-only dimension changes so a remount cannot re-dirty", () => {
     expect(nodeChangesMutateGraph([{ type: "dimensions" }])).toBe(false);
   });
 
@@ -491,6 +522,16 @@ describe("deletableNodeIds", () => {
         { id: "log-a", selected: true, data: {} },
       ]),
     ).toEqual(["log-a"]);
+  });
+
+  it("protects Animation Object events and transition rule sinks by type", () => {
+    expect(
+      deletableNodeIds([
+        { id: "init", selected: true, type: "anim.event.initialize" },
+        { id: "enter", selected: true, type: "anim.rule.enterState" },
+        { id: "math", selected: true, type: "math.add" },
+      ]),
+    ).toEqual(["math"]);
   });
 });
 

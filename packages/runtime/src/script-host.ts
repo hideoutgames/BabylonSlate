@@ -18,6 +18,10 @@ import type {
   PhysicsTransform,
   Vec3,
 } from "@babylonslate/physics";
+import type {
+  AnimStateFacts,
+  AnimTransitionDecision,
+} from "@babylonslate/anim-graph";
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
 import { isInfiniteLoopError } from "@babylonslate/debugger";
@@ -210,12 +214,23 @@ export interface ScriptContext {
   getRandomPointInRadius(center: Vec3, radius: number): Vec3 | null;
   addObstacle(kind: string, pose: Vec3, size: Vec3): string;
   removeObstacle(id: string): void;
+  animFacts?: AnimStateFacts;
 }
+
+export type VariableStore = {
+  getVariable(name: string): unknown;
+  setVariable(name: string, value: unknown): void;
+};
 
 type BtScriptExtras = Pick<
   ScriptContext,
   "btFinish" | "btEvaluate" | "getBlackboard" | "setBlackboard"
 >;
+
+export type ScriptExtras = Partial<BtScriptExtras> & {
+  animFacts?: AnimStateFacts;
+  variableStore?: VariableStore;
+};
 
 export type CompiledScript = ScriptBundleEntry;
 
@@ -316,6 +331,42 @@ export class ScriptHost {
     this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, undefined, extras);
   }
 
+  invokeAnimEvent(
+    classId: string,
+    event: string,
+    self: Actor | null,
+    deltaSeconds: number,
+    extras: ScriptExtras = {},
+  ): void {
+    const loaded = this.byClassId.get(classId);
+    if (!loaded || loaded.length === 0) return;
+    this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, undefined, extras);
+  }
+
+  invokeAnimRule(
+    classId: string,
+    self: Actor | null,
+    extras: ScriptExtras = {},
+  ): AnimTransitionDecision | undefined {
+    const loaded = this.byClassId.get(classId);
+    if (!loaded || loaded.length === 0) return undefined;
+    const evaluate = loaded[0]?.exports.evaluate;
+    if (typeof evaluate !== "function") return undefined;
+    const ctx = this.createContext(self, 0, 0, {}, undefined, extras);
+    try {
+      const result = (evaluate as (context: ScriptContext) => unknown)(ctx);
+      if (!result || typeof result !== "object") return undefined;
+      const row = result as { enter?: unknown; exit?: unknown };
+      return {
+        enter: row.enter !== false,
+        exit: row.exit !== false,
+      };
+    } catch (error) {
+      this.services.reportError(error);
+      return undefined;
+    }
+  }
+
   /**
    * Register compiled custom events as interface handlers on `actor`.
    * Keys match `interfaceHandlerKey` (`guid:method`).
@@ -347,7 +398,7 @@ export class ScriptHost {
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
-    extras?: BtScriptExtras,
+    extras?: ScriptExtras,
   ): void {
     for (const entry of loaded) {
       for (const point of entry.script.entryPoints) {
@@ -402,15 +453,17 @@ export class ScriptHost {
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
-    extras?: BtScriptExtras,
+    extras?: ScriptExtras,
   ): ScriptContext {
     const services = this.services;
+    const store = extras?.variableStore ?? self;
     return {
       self,
       deltaSeconds,
       tickIndex,
       commandArgs,
       args: commandArgs,
+      animFacts: extras?.animFacts,
       reportCommand: (success, output) => {
         this.commandResult = { success: Boolean(success), output: String(output) };
         services.reportCommand?.(Boolean(success), String(output));
@@ -423,8 +476,10 @@ export class ScriptHost {
         services.log(severity, category, message),
       print: (message, key, duration, color) =>
         services.print(message, key, duration, color),
-      getVariable: (name) => self?.getVariable(name),
-      setVariable: (name, value) => self?.setVariable(name, value),
+      getVariable: (name) => store?.getVariable(name),
+      setVariable: (name, value) => {
+        store?.setVariable(name, value);
+      },
       getVariableFrom: (target, name) =>
         (target ?? self)?.getVariable(name),
       setVariableOn: (target, name, value) => {

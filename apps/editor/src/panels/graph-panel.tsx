@@ -55,6 +55,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     assetRegistry,
     activeDocumentId,
     uiEditorMode,
+    animEditorMode,
   } = useDocuments();
   const { focusedNodeId } = usePlay();
   const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId, setCanvasDropApi } =
@@ -90,7 +91,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   );
   const parentClass =
     indexed?.header.parentClass ??
-    (doc?.ref.kind === "ui" ? "BObject" : null);
+    (doc?.ref.kind === "ui" || doc?.ref.kind === "anim-graph" ? "BObject" : null);
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = serializedGraphFromDocument(
@@ -171,6 +172,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         activeDocumentId,
         documentKind: doc?.ref.kind ?? "",
         uiEditorMode: doc?.ref.kind === "ui" ? uiEditorMode : undefined,
+        animEditorMode:
+          doc?.ref.kind === "anim-graph" ? animEditorMode : undefined,
       })
     ) {
       return;
@@ -202,6 +205,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     memberSymbols,
     setDiagnostics,
     uiEditorMode,
+    animEditorMode,
   ]);
 
   const paletteNodes = useMemo(
@@ -215,6 +219,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         activeFunctionId,
         assetType: indexed?.header.type,
         functionLibraries,
+        animationGraphHost:
+          doc?.ref.kind === "anim-graph" ? "object" : undefined,
       }),
     [
       activeFunctionId,
@@ -225,6 +231,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       otherClassGraphs,
       parentClass,
       parentOf,
+      doc?.ref.kind,
     ],
   );
 
@@ -291,7 +298,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
                   functionGraphs: current.functionGraphs,
                 };
             const commit = commitLogicGraph(doc.ref.kind, doc.content, merged);
-            if (commit.kind === "ui") {
+            if (commit.kind !== "graph") {
               void applyAssetDocumentChange(documentId, commit.payload);
               return;
             }

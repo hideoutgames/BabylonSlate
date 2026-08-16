@@ -57,7 +57,7 @@ import {
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import type { MeshAssetContext } from "./mesh-assets";
-import { applyAnimStateToScene, resolvePlaySpriteSlot } from "./anim-apply";
+import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
@@ -723,6 +723,16 @@ export function createEngine(
         const previousCamera = scene.activeCamera;
         applyAssignMesh(scene, binding, command);
         rebuildIfActiveCameraChanged(previousCamera);
+        const pending = binding.pendingAnimState?.get(command.slotId);
+        if (pending) {
+          applyAnimStateToScene(
+            sceneAnimHostFromBinding(binding, {
+              animationGroups: scene.animationGroups,
+              spritePayloads: binding.spritePayloads ?? options.spritePayloads,
+            }),
+            pending,
+          );
+        }
         scheduler.invalidate("snapshot");
       }
       if (command.type === "assignMaterial") {
@@ -740,12 +750,25 @@ export function createEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "animState") {
+        if (!binding.pendingAnimState) binding.pendingAnimState = new Map();
+        binding.pendingAnimState.set(command.slotId, command);
         applyAnimStateToScene(
-          {
+          sceneAnimHostFromBinding(binding, {
             animationGroups: scene.animationGroups,
-            getSpriteSlot: (slotId) =>
-              resolvePlaySpriteSlot(binding, options.spritePayloads, slotId),
-          },
+            spritePayloads: binding.spritePayloads ?? options.spritePayloads,
+            onMissingClip: (info) => {
+              const groups = binding.slotAnimationGroups?.get(info.slotId);
+              if (
+                info.clipKind === "animation" &&
+                (!groups || groups.length === 0)
+              ) {
+                return;
+              }
+              console.warn(
+                `[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`,
+              );
+            },
+          }),
           command,
         );
         scheduler.invalidate("snapshot");

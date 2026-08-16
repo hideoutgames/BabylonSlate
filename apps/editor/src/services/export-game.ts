@@ -25,6 +25,7 @@ import {
 } from "@babylonslate/assets";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
+  compileAnimGraphScripts,
   compileGraphDocuments,
   compileGraphDocumentsForExport,
 } from "./script-compiler";
@@ -145,6 +146,7 @@ export async function collectAndExportGame(
     content: SerializedGraph;
     parentClassId?: string | null;
   }> = [];
+  const animDocs: Array<{ guid: string; path: string; document: unknown }> = [];
   const exportAssets: ExportAssetBytes[] = [];
   for (const guid of closure.value) {
     const asset = params.assets.find((entry) => entry.guid === guid);
@@ -169,6 +171,16 @@ export async function collectAndExportGame(
         params.payloadByGuid?.(guid) ?? null,
       );
       if (uiGraph) graphDocs.push(uiGraph);
+    }
+    if (asset.type === "AnimationGraph") {
+      const payload = params.payloadByGuid?.(guid) ?? null;
+      if (payload) {
+        const animPath =
+          asset.path && /\.anim\.(babasset|json)$/i.test(asset.path)
+            ? asset.path
+            : `assets/${asset.name}.anim.babasset`;
+        animDocs.push({ guid, path: animPath, document: payload });
+      }
     }
     const bytes = params.bytesByGuid(guid);
     if (bytes) {
@@ -200,9 +212,13 @@ export async function collectAndExportGame(
   }
 
   params.onPhase?.("Compiling");
-  const scripts: ScriptBundleEntry[] = bundleDebugger
+  const classScripts: ScriptBundleEntry[] = bundleDebugger
     ? compileGraphDocuments(graphDocs)
     : compileGraphDocumentsForExport(graphDocs);
+  const animScripts = compileAnimGraphScripts(animDocs, {
+    stripDevelopmentOnly: !bundleDebugger,
+  });
+  const scripts: ScriptBundleEntry[] = [...classScripts, ...animScripts];
 
   params.onPhase?.("Writing Pack");
   return exportGame({

@@ -222,6 +222,17 @@ export type CommandMessage =
       blendWeights: Record<string, number>;
       clipName?: string;
       clipKind?: "animation" | "sprite";
+      clipAssetGuid?: string;
+      justFinished?: boolean;
+      justLooped?: boolean;
+      layers?: Array<{
+        stateId: string;
+        clipAssetGuid: string;
+        clipName: string;
+        clipKind: "animation" | "sprite";
+        normalisedTime: number;
+        weight: number;
+      }>;
     }
   | {
       type: "btState";

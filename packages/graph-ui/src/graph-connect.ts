@@ -151,6 +151,38 @@ export function collectSafeConnectPins(
   return refs;
 }
 
+export function connectEventPointerId(event: Event | {
+  pointerId?: number;
+  changedTouches?: ArrayLike<{ identifier: number }>;
+}): number {
+  const pointerId = (event as { pointerId?: number }).pointerId;
+  if (typeof pointerId === "number" && pointerId !== 0) {
+    return pointerId;
+  }
+  const touch = (event as { changedTouches?: ArrayLike<{ identifier: number }> })
+    .changedTouches?.[0];
+  if (touch && typeof touch.identifier === "number") return touch.identifier;
+  return 1;
+}
+
+export type SecondaryAddNodePointer = {
+  connectionActive: boolean;
+  dragPointerId: number | null;
+  eventPointerId: number;
+  inAddNodeZone: boolean;
+};
+
+export function shouldOpenAddNodeOnSecondaryPointer({
+  connectionActive,
+  dragPointerId,
+  eventPointerId,
+  inAddNodeZone,
+}: SecondaryAddNodePointer): boolean {
+  if (!connectionActive || !inAddNodeZone) return false;
+  if (dragPointerId == null) return false;
+  return eventPointerId !== dragPointerId;
+}
+
 export function shouldOpenAddNodeOnConnectEnd({
   hasTargetHandle,
   pointerOverNode,
