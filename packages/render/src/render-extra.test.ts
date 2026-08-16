@@ -16,6 +16,20 @@ import { ResourceCache } from "./resource-cache";
 import { RenderScheduler } from "./render-scheduler";
 
 describe("hardware scaling", () => {
+  it("drops a hardware scaling tier and applies an initial Engine Settings level", () => {
+    const engine = new NullEngine();
+    const scaling = new HardwareScalingController(engine, {
+      minLevel: 0.25,
+      maxLevel: 2,
+      cooldownFrames: 0,
+      initialLevel: 1.5,
+    });
+    expect(scaling.getLevel()).toBe(1.5);
+    scaling.dropTier();
+    expect(scaling.getLevel()).toBe(1.75);
+    engine.dispose();
+  });
+
   it("drops a tier and applies levels on a NullEngine", () => {
     const engine = new NullEngine();
     const scaling = new HardwareScalingController(engine, {

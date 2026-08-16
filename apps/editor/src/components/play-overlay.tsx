@@ -17,6 +17,11 @@ import {
   type PlaySessionResult,
 } from "../services/play-session";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
+import {
+  applyLiveEngineSettings,
+  ENGINE_SETTINGS_CHANGED_EVENT,
+  type LiveEngineSettings,
+} from "../lib/viewport-render-gate";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
 import { DebugConsole } from "./debug-console";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
@@ -28,6 +33,10 @@ import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSiz
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
+import type {
+  MaterialDocument,
+  MaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { usePlay } from "../context/play-context";
 import { PlayHudOverlay } from "./play-hud-overlay";
@@ -63,6 +72,10 @@ export interface PlayOverlayProps {
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  materialDocuments?: ReadonlyMap<string, MaterialDocument>;
+  materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  postProcessingEnabled?: boolean;
+  hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
@@ -102,6 +115,10 @@ export function PlayOverlay({
   tilesetPayloads,
   textureBytes,
   modelBytes,
+  materialDocuments,
+  materialFunctions,
+  postProcessingEnabled,
+  hardwareScalingLevel,
   pixelsPerUnit,
   pixelPerfect,
   navmeshBytes,
@@ -136,6 +153,7 @@ export function PlayOverlay({
   const [hudScene, setHudScene] = useState<import("@babylonjs/core").Scene | null>(
     null,
   );
+  const [postProcessPasses, setPostProcessPasses] = useState(0);
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -157,6 +175,10 @@ export function PlayOverlay({
   textureBytesRef.current = textureBytes;
   const modelBytesRef = useRef(modelBytes);
   modelBytesRef.current = modelBytes;
+  const materialDocumentsRef = useRef(materialDocuments);
+  materialDocumentsRef.current = materialDocuments;
+  const materialFunctionsRef = useRef(materialFunctions);
+  materialFunctionsRef.current = materialFunctions;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
@@ -230,6 +252,10 @@ export function PlayOverlay({
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
       modelBytes: modelBytesRef.current,
+      materialDocuments: materialDocumentsRef.current,
+      materialFunctions: materialFunctionsRef.current,
+      postProcessingEnabled,
+      hardwareScalingLevel,
       pixelsPerUnit: pixelsPerUnitRef.current,
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
@@ -298,11 +324,20 @@ export function PlayOverlay({
         setTextureCount(counts.textures);
         setDraws(current.drawCalls());
         setBridgeRate(current.bridgeMessagesPerSec());
+        setPostProcessPasses(current.handle.postProcessPassCount());
         const recorded = current.lastTrace();
         if (recorded) setTrace(recorded);
       }
     }, 200);
+    const onSettings = (event: Event) => {
+      const detail = (event as CustomEvent<LiveEngineSettings>).detail;
+      if (!detail) return;
+      applyLiveEngineSettings(session.handle, detail);
+      setPostProcessPasses(session.handle.postProcessPassCount());
+    };
+    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
     return () => {
+      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
       resizeObserver.disconnect();
       window.clearInterval(movePoll);
       detachLifecycle();
@@ -325,6 +360,7 @@ export function PlayOverlay({
           : "items-center justify-center bg-black",
       )}
       data-testid="play-overlay"
+      data-post-process-passes={String(postProcessPasses)}
     >
       <PlayOverlayChrome
         paused={paused}

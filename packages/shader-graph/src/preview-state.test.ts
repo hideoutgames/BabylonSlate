@@ -18,6 +18,7 @@ function features(
     weight: 8,
     usesDerivatives: false,
     usesSceneDepth: false,
+    usesSceneNormal: false,
     customBlocks: 0,
     inlinedFunctions: 0,
     ...overrides,

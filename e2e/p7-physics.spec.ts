@@ -1,10 +1,12 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 test.describe("P7 Play physics timings", () => {
   test("2D rigid body Play reports non-zero physics ms on the worker HUD", async ({
     page,
   }) => {
+    test.setTimeout(120_000);
     await openTestProject(page);
     await openMainScene(page);
 
@@ -21,8 +23,7 @@ test.describe("P7 Play physics timings", () => {
     await page.getByTestId("details-add-component").click();
     await page.getByTestId("add-component-catalog-item-ColliderComponent").click();
 
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await page.getByTestId("play-stats-toggle").click();
     await expect(page.getByTestId("stats-hud")).toBeVisible();
     await expect

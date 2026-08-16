@@ -4,7 +4,7 @@ import {
   createDefaultMaterialFunctionDocument,
   type MaterialDocument,
 } from "./document";
-import { lowerMaterialDocument } from "./lower";
+import { lowerMaterialDocument, materialCompileKey } from "./lower";
 
 function surfaceWithMultiply(): MaterialDocument {
   const doc = createDefaultMaterialDocument();
@@ -191,6 +191,74 @@ describe("material lowering", () => {
     expect(first.plan.hash).toBe(second.plan.hash);
   });
 
+  it("keeps the compile key stable when only node positions change", () => {
+    const a = createDefaultMaterialDocument();
+    const b = createDefaultMaterialDocument();
+    b.nodes[0]!.position = { x: 999, y: -42 };
+    expect(materialCompileKey(a)).toBe(materialCompileKey(b));
+  });
+
+  it("changes the compile key when a node property changes", () => {
+    const a = createDefaultMaterialDocument();
+    const b = createDefaultMaterialDocument();
+    const color = b.nodes.find((node) => node.type === "const.color");
+    expect(color).toBeDefined();
+    color!.properties = { value: [1, 0, 0, 1] };
+    expect(materialCompileKey(a)).not.toBe(materialCompileKey(b));
+  });
+
+  it("changes the compile key when a Custom GLSL body changes", () => {
+    const withBody = (body: string) => {
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push({
+        id: "glsl",
+        type: "custom.glsl",
+        position: { x: 0, y: 0 },
+        properties: { body },
+      });
+      doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+      doc.edges.push(
+        {
+          id: "e-color-a",
+          sourceNodeId: "baseColor",
+          sourcePinId: "out",
+          targetNodeId: "glsl",
+          targetPinId: "a",
+        },
+        {
+          id: "e-glsl-out",
+          sourceNodeId: "glsl",
+          sourcePinId: "out",
+          targetNodeId: "output",
+          targetPinId: "baseColor",
+        },
+      );
+      return doc;
+    };
+    expect(materialCompileKey(withBody("a + b"))).not.toBe(
+      materialCompileKey(withBody("a * b")),
+    );
+  });
+
+  it("keeps an invalid compile key stable across position-only edits", () => {
+    const a = createDefaultMaterialDocument();
+    a.nodes.push({
+      id: "bogus",
+      type: "math.doesNotExist",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    const b = createDefaultMaterialDocument();
+    b.nodes.push({
+      id: "bogus",
+      type: "math.doesNotExist",
+      position: { x: 40, y: 80 },
+      properties: {},
+    });
+    expect(materialCompileKey(a)).toBe(materialCompileKey(b));
+    expect(materialCompileKey(a).startsWith("invalid:")).toBe(true);
+  });
+
   it("counts texture samples and cost for the preview policy", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(
@@ -240,6 +308,43 @@ describe("material lowering", () => {
     expect(result.plan.textures).toEqual([
       { operationId: "tex", textureGuid: "tex-1" },
     ]);
+  });
+
+  it("binds an inline Texture asset on a sample node", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-inline" },
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-uv",
+        sourceNodeId: "uv",
+        sourcePinId: "uv",
+        targetNodeId: "sample",
+        targetPinId: "uv",
+      },
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const result = lowerMaterialDocument(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.textures).toEqual([
+      { operationId: "sample", textureGuid: "tex-inline" },
+    ]);
+    expect(result.plan.dependencies.textures).toEqual(["tex-inline"]);
   });
 
   it("inlines a material function call with namespaced operation ids", () => {
@@ -365,4 +470,90 @@ describe("material lowering", () => {
     expect(inlined?.source.callPath).toEqual(["call"]);
     expect(inlined?.source.functionGuid).toBe("fn-tint");
   });
+
+  it("records scene color, depth, and normal buffer requirements", () => {
+    const color = lowerMaterialDocument(
+      createDefaultMaterialDocument("Blur", "postProcess"),
+    );
+    expect(color.ok).toBe(true);
+    if (!color.ok) return;
+    expect(color.plan.bufferRequirements).toEqual({
+      sceneColor: true,
+      sceneDepth: false,
+      sceneNormal: false,
+    });
+    expect(color.plan.cost.usesSceneDepth).toBe(false);
+    expect(color.plan.cost.usesSceneNormal).toBe(false);
+
+    const depth = lowerMaterialDocument(postProcessSampling("input.sceneDepth"));
+    expect(depth.ok).toBe(true);
+    if (!depth.ok) return;
+    expect(depth.plan.bufferRequirements.sceneDepth).toBe(true);
+    expect(depth.plan.cost.usesSceneDepth).toBe(true);
+
+    const normal = lowerMaterialDocument(postProcessSampling("input.sceneNormal"));
+    expect(normal.ok).toBe(true);
+    if (!normal.ok) return;
+    expect(normal.plan.bufferRequirements.sceneNormal).toBe(true);
+    expect(normal.plan.cost.usesSceneNormal).toBe(true);
+  });
 });
+
+function postProcessSampling(
+  type: "input.sceneDepth" | "input.sceneNormal",
+): MaterialDocument {
+  const doc = createDefaultMaterialDocument("Fx", "postProcess");
+  const outputPin = type === "input.sceneDepth" ? "depth" : "normal";
+  const scaleFrom = type === "input.sceneNormal" ? "len" : "extra";
+  const scalePin = type === "input.sceneNormal" ? "out" : outputPin;
+  doc.nodes.push(
+    { id: "extra", type, position: { x: 0, y: 0 }, properties: {} },
+    { id: "mul", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+  );
+  if (type === "input.sceneNormal") {
+    doc.nodes.push({
+      id: "len",
+      type: "vector.length",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+  }
+  doc.edges.push(
+    {
+      id: "e-uv-extra",
+      sourceNodeId: "screenUv",
+      sourcePinId: "uv",
+      targetNodeId: "extra",
+      targetPinId: "uv",
+    },
+    {
+      id: "e-color-mul",
+      sourceNodeId: "sceneColor",
+      sourcePinId: "color",
+      targetNodeId: "mul",
+      targetPinId: "a",
+    },
+    {
+      id: "e-extra-mul",
+      sourceNodeId: scaleFrom,
+      sourcePinId: scalePin,
+      targetNodeId: "mul",
+      targetPinId: "b",
+    },
+  );
+  if (type === "input.sceneNormal") {
+    doc.edges.push({
+      id: "e-normal-len",
+      sourceNodeId: "extra",
+      sourcePinId: "normal",
+      targetNodeId: "len",
+      targetPinId: "value",
+    });
+  }
+  doc.edges = doc.edges.map((edge) =>
+    edge.id === "e-scene-output"
+      ? { ...edge, sourceNodeId: "mul", sourcePinId: "out" }
+      : edge,
+  );
+  return doc;
+}

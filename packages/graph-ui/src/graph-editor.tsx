@@ -44,11 +44,13 @@ import {
   canonicalGraphSignature,
   createEdgeId,
   deletableNodeIds,
+  graphChangeKindFromNodeChanges,
   isProtectedNode,
   lockNodeDragAxis,
-  nodeChangesMutateGraph,
   reconcileCanvasGraph,
+  shouldEmitNodeChanges,
   toSerializedGraph,
+  type GraphChangeMeta,
 } from "./graph-model";
 import {
   type CanvasNode,
@@ -100,7 +102,12 @@ export {
 
 export interface GraphEditorProps {
   initialGraph: GraphDocument;
-  onChange?: (graph: GraphDocument) => void;
+  onChange?: (graph: GraphDocument, meta?: GraphChangeMeta) => void;
+  /**
+   * Keep node positions local while a drag is in flight and emit once on
+   * pointer up. Material graphs use this so layout does not dirty every frame.
+   */
+  commitPositionsOnDragEnd?: boolean;
   /** Selected canvas node ids; not part of the serialized graph. */
   onSelectionChange?: (nodeIds: string[]) => void;
   /** Pin click in read-only previews (does not mutate). */
@@ -241,6 +248,7 @@ function FocusedNodeSync({
 function GraphEditorCanvas({
   initialGraph,
   onChange,
+  commitPositionsOnDragEnd = false,
   onSelectionChange,
   focusedNodeId,
   diagnostics,
@@ -343,7 +351,11 @@ function GraphEditorCanvas({
   const lastEmittedRef = useRef<GraphDocument | null>(null);
 
   const emitChange = useCallback(
-    (nextNodes: CanvasNode[], nextEdges: Edge[]) => {
+    (
+      nextNodes: CanvasNode[],
+      nextEdges: Edge[],
+      kind: GraphChangeMeta["kind"] = "graph",
+    ) => {
       const graph = toSerializedGraph(
         nextNodes,
         nextEdges.map((edge) => ({
@@ -363,7 +375,7 @@ function GraphEditorCanvas({
         return;
       }
       lastEmittedRef.current = graph;
-      onChange?.(graph);
+      onChange?.(graph, { kind });
     },
     [onChange],
   );
@@ -429,13 +441,20 @@ function GraphEditorCanvas({
             )
           : constrained;
         const next = applyNodeChanges(applied, current);
-        if (!readOnly && nodeChangesMutateGraph(constrained)) {
-          emitChange(next, graphStateRef.current.edges);
+        if (
+          !readOnly &&
+          shouldEmitNodeChanges(constrained, { commitPositionsOnDragEnd })
+        ) {
+          emitChange(
+            next,
+            graphStateRef.current.edges,
+            graphChangeKindFromNodeChanges(constrained),
+          );
         }
         return next;
       });
     },
-    [emitChange, lockDragAxis, readOnly],
+    [commitPositionsOnDragEnd, emitChange, lockDragAxis, readOnly],
   );
 
   const handleEdgesChange = useCallback(

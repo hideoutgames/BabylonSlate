@@ -37,7 +37,9 @@ export {
 } from "./document";
 export {
   lowerMaterialDocument,
+  materialCompileKey,
   type MaterialBuildPlan,
+  type MaterialBufferRequirements,
   type MaterialCostFeatures,
   type MaterialLowerContext,
   type MaterialLowerResult,
@@ -73,7 +75,9 @@ export {
 } from "./types";
 export {
   collectFunctionDependencies,
+  customGlslBody,
   findGraphCycle,
+  validateCustomGlslBody,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
   type MaterialCapabilities,

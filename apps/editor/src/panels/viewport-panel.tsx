@@ -57,6 +57,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
+    collectPlayMaterialLibrary,
     readAssetChunk,
   } = useDocuments();
   const {
@@ -234,6 +235,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const detachRenderGate = attachViewportRenderGate({
       canvas,
       scheduler: handle.scheduler,
+      scaling: handle.scaling,
+      setPostProcessingEnabled: (enabled) =>
+        handle.setPostProcessingEnabled(enabled),
     });
 
     const resizeIfSized = () => resizeCanvasIfSized(canvas, handle);
@@ -311,12 +315,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       try {
         const sprites = await collectPlaySpritePayloads(scene);
         const tileContent = await collectPlayTilemapContent(scene);
+        const materials = await collectPlayMaterialLibrary(scene);
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
+          materials.textureGuids,
         );
         const modelBytes = await collectPlayModelBytes(scene);
         if (cancelled || engineRef.current !== handle) return;
+        handle.setMaterialDocuments(materials.documents, materials.functions);
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -340,6 +347,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
+    collectPlayMaterialLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
   ]);
 

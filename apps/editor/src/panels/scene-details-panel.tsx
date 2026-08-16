@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import {
   AssetPicker,
   ClassPicker,
+  NamedListEditor,
   PanelFrame,
   PropertyGrid,
   SceneComponentPicker,
@@ -21,6 +22,11 @@ import {
 } from "@babylonslate/core";
 import { ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
+import { Switch } from "@babylonslate/ui/components/switch";
+import {
+  Field,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
@@ -37,6 +43,7 @@ import {
   sceneComponentDisplayLabel,
   sceneComponentEntries,
 } from "../lib/scene-component-entries";
+import { isPostProcessMaterialForPicker } from "../lib/content-browser-helpers";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -50,12 +57,23 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [envTexturePickOpen, setEnvTexturePickOpen] = useState(false);
+  const [postProcessPick, setPostProcessPick] = useState<"add" | number | null>(
+    null,
+  );
   const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
     type: asset.header.type,
     path: asset.path,
   }));
+  const postProcessPickerAssets = (assetRegistry?.list() ?? [])
+    .filter((asset) => isPostProcessMaterialForPicker(asset, openDocuments))
+    .map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+      path: asset.path,
+    }));
   const classEntries = gameInstanceClassEntries(assetRegistry?.list() ?? []);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
@@ -384,6 +402,75 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           rows={settingsRows}
           data-testid="scene-settings-grid"
         />
+        <div className="px-2 pb-3">
+          <NamedListEditor
+            title="Post Process"
+            data-testid="scene-post-process-stack"
+            values={scene.settings.postProcessStack.map(
+              (entry) => entry.materialGuid,
+            )}
+            addLabel="Add Pass"
+            onAdd={() => setPostProcessPick("add")}
+            onChange={(guids) =>
+              mutate({
+                ...scene,
+                settings: {
+                  ...scene.settings,
+                  postProcessStack: stackFromGuids(
+                    guids,
+                    scene.settings.postProcessStack,
+                  ),
+                },
+              })
+            }
+            renderItem={({ value, index }) => (
+              <>
+                <Field className="min-w-32 flex-1">
+                  <FieldLabel htmlFor={`scene-post-process-${index}-material`}>
+                    Material
+                  </FieldLabel>
+                  <Button
+                    type="button"
+                    id={`scene-post-process-${index}-material`}
+                    variant="outline"
+                    className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                    data-testid={`scene-post-process-${index}-material`}
+                    onClick={() => setPostProcessPick(index)}
+                  >
+                    {assetLabel(value) ?? "Pick Material"}
+                  </Button>
+                </Field>
+                <Field orientation="horizontal" className="w-auto">
+                  <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
+                    Enabled
+                  </FieldLabel>
+                  <Switch
+                    id={`scene-post-process-${index}-enabled`}
+                    data-testid={`scene-post-process-${index}-enabled`}
+                    className="min-h-[var(--touch-target,44px)]"
+                    checked={
+                      scene.settings.postProcessStack[index]?.enabled !== false
+                    }
+                    onCheckedChange={(checked) =>
+                      mutate({
+                        ...scene,
+                        settings: {
+                          ...scene.settings,
+                          postProcessStack: scene.settings.postProcessStack.map(
+                            (entry, row) =>
+                              row === index
+                                ? { ...entry, enabled: checked === true }
+                                : entry,
+                          ),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+              </>
+            )}
+          />
+        </div>
         <ClassPicker
           open={classPickerOpen}
           onOpenChange={setClassPickerOpen}
@@ -414,6 +501,40 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             setEnvTexturePickOpen(false);
           }}
           data-testid="scene-environment-texture-picker"
+        />
+        <AssetPicker
+          open={postProcessPick !== null}
+          onOpenChange={(open) => {
+            if (!open) setPostProcessPick(null);
+          }}
+          assets={postProcessPickerAssets}
+          allowedTypes={["Material"]}
+          title="Pick Post-Process Material"
+          allowNone={postProcessPick !== "add"}
+          onPick={(materialGuid) => {
+            const stack = [...scene.settings.postProcessStack];
+            if (postProcessPick === "add") {
+              if (materialGuid) {
+                stack.push({ materialGuid, enabled: true });
+              }
+            } else if (typeof postProcessPick === "number") {
+              if (!materialGuid) {
+                stack.splice(postProcessPick, 1);
+              } else {
+                const current = stack[postProcessPick];
+                stack[postProcessPick] = {
+                  materialGuid,
+                  enabled: current?.enabled !== false,
+                };
+              }
+            }
+            mutate({
+              ...scene,
+              settings: { ...scene.settings, postProcessStack: stack },
+            });
+            setPostProcessPick(null);
+          }}
+          data-testid="scene-post-process-picker"
         />
         <SceneComponentPicker
           open={cameraPickerOpen}
@@ -690,4 +811,16 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       />
     </PanelFrame>
   );
+}
+
+function stackFromGuids(
+  guids: readonly string[],
+  previous: readonly { materialGuid: string; enabled: boolean }[],
+): { materialGuid: string; enabled: boolean }[] {
+  const remaining = [...previous];
+  return guids.map((guid) => {
+    const index = remaining.findIndex((entry) => entry.materialGuid === guid);
+    const prev = index >= 0 ? remaining.splice(index, 1)[0] : undefined;
+    return { materialGuid: guid, enabled: prev?.enabled !== false };
+  });
 }

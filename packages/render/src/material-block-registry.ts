@@ -13,7 +13,6 @@ import {
   DistanceBlock,
   DivideBlock,
   DotBlock,
-  FragCoordBlock,
   FresnelBlock,
   GradientBlock,
   InputBlock,
@@ -49,6 +48,9 @@ import {
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
 } from "@babylonjs/core";
+import { CustomBlock } from "@babylonjs/core/Materials/Node/Blocks/customBlock";
+import { SceneDepthBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/sceneDepthBlock";
+import { PrePassTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/prePassTextureBlock";
 import type {
   MaterialOperation,
   MaterialValueType,
@@ -666,8 +668,54 @@ ADAPTERS["input.viewDirection"] = ({ name, plumbing }) => {
 };
 
 ADAPTERS["input.sceneDepth"] = ({ name }) => {
-  const block = new FragCoordBlock(name);
-  return single(block, {}, { depth: block.z });
+  const block = new SceneDepthBlock(name);
+  block.useNonLinearDepth = false;
+  block.storeCameraSpaceZ = false;
+  return single(block, { uv: block.uv }, { depth: block.depth });
+};
+
+ADAPTERS["input.sceneNormal"] = ({ name }) => {
+  const prepass = new PrePassTextureBlock(name);
+  const sample = new TextureBlock(`${name}_sample`, true);
+  prepass.worldNormal.connectTo(sample.source);
+  return {
+    blocks: [prepass, sample],
+    inputs: { uv: sample.uv },
+    outputs: { normal: sample.rgb },
+  };
+};
+
+ADAPTERS["custom.glsl"] = ({ name, operation }) => {
+  const raw =
+    typeof operation.properties.body === "string"
+      ? operation.properties.body.trim()
+      : "";
+  const expression = raw === "" ? "a" : raw;
+  const functionName = `custom_glsl_${name}`.replace(/[^A-Za-z0-9_]/g, "_");
+  const block = new CustomBlock(name);
+  block.options = {
+    name,
+    target: "Neutral",
+    functionName,
+    inParameters: [
+      { name: "a", type: "AutoDetect" },
+      { name: "b", type: "AutoDetect" },
+    ],
+    outParameters: [
+      { name: "result", type: "BasedOnInput", typeFromInput: "a" },
+    ],
+    inLinkedConnectionTypes: [{ input1: "a", input2: "b" }],
+    code: [
+      `void ${functionName}({TYPE_a} a, {TYPE_b} b, out {TYPE_result} result) {`,
+      `result = ${expression};`,
+      `}`,
+    ],
+  };
+  return {
+    blocks: [block],
+    inputs: { a: block.inputs[0]!, b: block.inputs[1]! },
+    outputs: { out: block.outputs[0]! },
+  };
 };
 
 export function blockAdapterFor(nodeType: string): BlockAdapter | undefined {

@@ -35,6 +35,10 @@ import {
   remapPathAfterFolderMove,
   textureCompressionState,
   visualForIndexedAsset,
+  materialAssetDependencies,
+  materialHeaderMeta,
+  isPostProcessMaterialAsset,
+  isPostProcessMaterialForPicker,
   classParentLookup,
   addSelectedAssetGuid,
   addSelectedFolderPath,
@@ -1104,5 +1108,70 @@ describe("content-browser-helpers", () => {
         "assets/fx",
       ]),
     ).toEqual(["assets/textures", "assets/fx"]);
+  });
+
+  it("extracts Material texture and function guids for header.dependencies", () => {
+    expect(
+      materialAssetDependencies("Material", {
+        domain: "surface",
+        nodes: [
+          {
+            id: "tex",
+            type: "texture.sample",
+            properties: { textureGuid: "tex-albedo" },
+          },
+          {
+            id: "call",
+            type: "function.call",
+            properties: { functionGuid: "fn-tint" },
+          },
+        ],
+        edges: [],
+      }),
+    ).toEqual(["fn-tint", "tex-albedo"]);
+    expect(materialAssetDependencies("Class", {})).toEqual([]);
+  });
+
+  it("stores Material domain on the scanned header", () => {
+    expect(materialHeaderMeta("Material", { domain: "postProcess" })).toEqual({
+      domain: "postProcess",
+    });
+    expect(materialHeaderMeta("Material", {})).toEqual({ domain: "surface" });
+    expect(materialHeaderMeta("Class", { domain: "postProcess" })).toBeUndefined();
+  });
+
+  it("recognizes post-process Materials from header payload", () => {
+    expect(
+      isPostProcessMaterialAsset(
+        asset({
+          type: "Material",
+          payload: { domain: "postProcess" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isPostProcessMaterialAsset(
+        asset({ type: "Material", payload: { domain: "surface" } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("prefers an open Material document domain over a stale header", () => {
+    const bloom = asset({
+      type: "Material",
+      path: "assets/Bloom.material.babasset",
+      guid: "pp-bloom",
+      name: "Bloom",
+      payload: { domain: "surface" },
+    });
+    expect(
+      isPostProcessMaterialForPicker(bloom, [
+        {
+          ref: { kind: "material", path: "assets/Bloom.material.babasset" },
+          content: { domain: "postProcess" },
+        },
+      ]),
+    ).toBe(true);
+    expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
   });
 });

@@ -15,6 +15,16 @@ import { createMeshFromModelBytes } from "./model-mesh";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
+/** Keep orbit/pinch pivoted on the mesh, including custom Models that are off-origin. */
+export function aimPreviewCameraAtMesh(
+  camera: ArcRotateCamera,
+  mesh: Mesh,
+): void {
+  mesh.computeWorldMatrix(true);
+  const bounds = mesh.getBoundingInfo();
+  camera.setTarget(bounds.boundingBox.centerWorld.clone());
+}
+
 /**
  * Build the preview primitive for a Material document.
  *
@@ -104,6 +114,10 @@ export function createMaterialPreviewScene(
   camera.lowerRadiusLimit = 1.6;
   camera.upperRadiusLimit = 12;
   camera.wheelDeltaPercentage = 0.02;
+  camera.panningSensibility = 0;
+  camera.pinchPrecision = 24;
+  camera.pinchDeltaPercentage = 0.02;
+  camera.useNaturalPinchZoom = true;
 
   const key = new HemisphericLight(
     "materialPreviewLight",
@@ -123,6 +137,7 @@ export function createMaterialPreviewScene(
     options.mesh ?? "sphere",
     options.customMeshBytes,
   );
+  aimPreviewCameraAtMesh(camera, mesh);
   let postProcess: PostProcess | null = null;
 
   const disposePostProcess = () => {
@@ -142,6 +157,7 @@ export function createMaterialPreviewScene(
       mesh.dispose();
       mesh = createMaterialPreviewMesh(scene, kind, customMeshBytes);
       mesh.material = material;
+      aimPreviewCameraAtMesh(camera, mesh);
       return mesh;
     },
     applyMaterial: (material) => {

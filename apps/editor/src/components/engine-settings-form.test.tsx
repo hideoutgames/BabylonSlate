@@ -3,6 +3,19 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { defaultEngineSettings } from "@babylonslate/vfs";
 import { EngineSettingsForm } from "./engine-settings-form";
 
+if (typeof window !== "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  Object.defineProperty(window, "PointerEvent", {
+    configurable: true,
+    writable: true,
+    value: PointerEventPolyfill,
+  });
+}
+
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     assetRegistry: { list: () => [] },
@@ -27,6 +40,25 @@ describe("EngineSettingsForm graph", () => {
       "value",
       "0.5",
     );
+  });
+});
+
+describe("EngineSettingsForm viewport", () => {
+  it("defaults post-processing on and reports a toggle", () => {
+    const onChange = vi.fn();
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={onChange}
+        categoryId="viewport"
+      />,
+    );
+    const toggle = getByTestId("setting-post-processing");
+    expect(toggle.getAttribute("data-state") ?? toggle.getAttribute("aria-checked")).toMatch(
+      /checked|true/,
+    );
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith({ postProcessingEnabled: false });
   });
 });
 

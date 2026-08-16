@@ -33,6 +33,7 @@ describe("app settings", () => {
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
     expect(settings.debuggerDefaults.previewBuild).toBe(false);
+    expect(settings.postProcessingEnabled).toBe(true);
   });
 
   it("fills viewportFrameCap at 30 when saved JSON omits the field", () => {
@@ -84,6 +85,13 @@ describe("app settings", () => {
       undoHistoryLength: 50,
     });
     expect(parsed.debuggerDefaults.previewBuild).toBe(false);
+  });
+
+  it("defaults post-processing on when saved JSON omits the field", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.postProcessingEnabled).toBe(true);
   });
 
   it("clamps graph default zoom to 0.1–1.5", () => {

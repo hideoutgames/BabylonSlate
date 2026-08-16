@@ -109,6 +109,22 @@ function asValueType(value: unknown): MaterialValueType {
     : "float";
 }
 
+function normalizeNodeProperties(
+  type: string,
+  properties: Record<string, unknown>,
+): Record<string, unknown> {
+  if (type !== "custom.glsl") return properties;
+  const body =
+    typeof properties.body === "string"
+      ? properties.body
+      : typeof properties.glsl === "string"
+        ? properties.glsl
+        : "a + b";
+  const next: Record<string, unknown> = { ...properties, body };
+  delete next.glsl;
+  return next;
+}
+
 function normalizeNodes(value: unknown): MaterialGraphNode[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry, index) => {
@@ -120,7 +136,7 @@ function normalizeNodes(value: unknown): MaterialGraphNode[] {
         id: asString(record.id, `node-${index}`),
         type,
         position: asPosition(record.position),
-        properties: asRecord(record.properties),
+        properties: normalizeNodeProperties(type, asRecord(record.properties)),
       },
     ];
   });

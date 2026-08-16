@@ -20,6 +20,7 @@ import {
   classifyMaterialCost,
   createMaterialPreviewState,
   lowerMaterialDocument,
+  materialCompileKey,
   materialPreviewReducer,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -73,7 +74,8 @@ export function MaterialEditingProvider({
   documentId: string;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, projectDocument } = useDocuments();
+  const { openDocuments, assetRegistry, projectDocument, readAssetChunk } =
+    useDocuments();
   const play = usePlay();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const isFunctionDocument = doc?.ref.kind === "material-function";
@@ -154,22 +156,53 @@ export function MaterialEditingProvider({
       );
       host.scene.render();
     };
+    const resize = () => {
+      if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+        sharedEngine.resize();
+      }
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
     sharedEngine.runRenderLoop(render);
     return () => {
+      observer.disconnect();
       sharedEngine.stopRenderLoop(render);
       sharedEngine.unRegisterView(canvas);
       host?.dispose();
       hostRef.current = null;
       dispatch({ type: "dispose" });
     };
-  }, [canvas, document?.preview.mesh, sharedEngine]);
+  }, [canvas, sharedEngine]);
 
   // Keep the preview primitive in step with the document.
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !document) return;
-    host.setMesh(document.preview.mesh);
-  }, [document]);
+    const mesh = document.preview.mesh;
+    const guid = document.preview.customMeshGuid;
+    let cancelled = false;
+    void (async () => {
+      let bytes: Uint8Array | null = null;
+      if (mesh === "custom" && guid) {
+        const asset = assetRegistry?.getByGuid(guid);
+        if (asset && readAssetChunk) {
+          bytes = await readAssetChunk(asset.path, "source");
+        }
+      }
+      if (cancelled) return;
+      host.setMesh(mesh, bytes);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    assetRegistry,
+    canvas,
+    document?.preview.customMeshGuid,
+    document?.preview.mesh,
+    readAssetChunk,
+  ]);
 
   const costClass = useMemo(() => {
     if (!document) return "cheap" as const;
@@ -184,16 +217,19 @@ export function MaterialEditingProvider({
     // the policy as the session goes on.
   }, [document, frameBudgetMs, functions, previewState.compileSamplesMs]);
 
-  // Every document change is a new generation. `costClass` is derived from the
-  // same document, so reading it through a ref keeps the document as the only
-  // trigger and avoids re-running when only the cost estimate changes.
+  const compileKey = useMemo(() => {
+    if (!document) return null;
+    return materialCompileKey(document, { functions });
+  }, [document, functions]);
+
+  // Keyed on the lowered plan hash (positions excluded), not document identity.
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;
   useEffect(() => {
-    if (!document) return;
+    if (!compileKey) return;
     generationRef.current += 1;
     dispatch({ type: "edit", cost: costClassRef.current });
-  }, [document]);
+  }, [compileKey]);
 
   // Trailing debounce so the final edit still compiles.
   useEffect(() => {

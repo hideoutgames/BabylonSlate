@@ -199,6 +199,30 @@ describe("material validation", () => {
     expect(codes(doc)).toContain("material.domainMismatch");
   });
 
+  it("flags Scene Normal inside a surface material", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "n",
+      type: "input.sceneNormal",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    expect(codes(doc)).toContain("material.domainMismatch");
+  });
+
+  it("flags Scene Normal when the device has no sceneNormal capability", () => {
+    const doc = createDefaultMaterialDocument("Fog", "postProcess");
+    doc.nodes.push({
+      id: "n",
+      type: "input.sceneNormal",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    expect(codes(doc, { capabilities: { sceneNormal: false } })).toContain(
+      "material.capability",
+    );
+  });
+
   it("flags more than one terminal", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({
@@ -219,6 +243,19 @@ describe("material validation", () => {
       properties: {},
     });
     expect(codes(doc)).toContain("material.missingInput");
+  });
+
+  it("accepts a texture sample that stores an inline Texture asset", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "tex-1" },
+    });
+    expect(codes(doc, { textureExists: () => true })).not.toContain(
+      "material.missingInput",
+    );
   });
 
   it("flags a texture parameter whose asset is gone", () => {
@@ -245,6 +282,59 @@ describe("material validation", () => {
     expect(codes(doc, { capabilities: { derivatives: false } })).toContain(
       "material.capability",
     );
+  });
+
+  it("accepts an expression-only Custom GLSL body", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a + b" },
+    });
+    expect(codes(doc)).not.toContain("material.customGlsl");
+  });
+
+  it("flags an empty Custom GLSL body", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "   " },
+    });
+    expect(codes(doc)).toContain("material.customGlsl");
+  });
+
+  it("rejects declarations, preprocessor directives and assignments in Custom GLSL", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a; float x = 1.0" },
+    });
+    expect(codes(doc)).toContain("material.customGlsl");
+    doc.nodes[doc.nodes.length - 1]!.properties = { body: "#define X 1" };
+    expect(codes(doc)).toContain("material.customGlsl");
+    doc.nodes[doc.nodes.length - 1]!.properties = { body: "gl_FragColor" };
+    expect(codes(doc)).toContain("material.customGlsl");
+    doc.nodes[doc.nodes.length - 1]!.properties = { body: "a = b" };
+    expect(codes(doc)).toContain("material.customGlsl");
+  });
+
+  it("flags Custom GLSL when the device is not GLSL/WebGL", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a + b" },
+    });
+    const diagnostic = validateMaterialDocument(doc, {
+      capabilities: { customGlsl: false },
+    }).find((row) => row.code === "material.capability");
+    expect(diagnostic?.message).toMatch(/WebGPU|GLSL/i);
   });
 
   it("warns that a post-process material costs fill rate on the iPad baseline", () => {

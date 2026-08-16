@@ -74,6 +74,10 @@ import {
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
+  materialAssetDependencies,
+  materialHeaderMeta,
+} from "../lib/content-browser-helpers";
+import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
@@ -84,6 +88,11 @@ function headerMetaForSave(
   type: string,
   content: SerializedScene | SerializedGraph | Record<string, unknown>,
 ): Record<string, unknown> | undefined {
+  const materialMeta = materialHeaderMeta(
+    type,
+    content as Record<string, unknown>,
+  );
+  if (materialMeta) return materialMeta;
   if (type === "EditorUtilityInterface") {
     return {
       dockKind:
@@ -1050,6 +1059,10 @@ export class ProjectService {
             ? (content as unknown as Record<string, unknown>)
             : undefined,
           headerMeta: headerMetaForSave(type, content),
+          dependencies: materialAssetDependencies(
+            type,
+            content as unknown as Record<string, unknown>,
+          ),
         },
       );
       await storage.writeBinary(path, bytes);

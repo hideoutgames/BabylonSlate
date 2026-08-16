@@ -132,4 +132,62 @@ describe("post-process stack", () => {
     attached.dispose();
     expect(library.materialFor(preview.scene, "pp")).toBeNull();
   });
+
+  it("skips a pass that needs a buffer the device cannot provide", () => {
+    const { preview, library } = host();
+    const document = createDefaultMaterialDocument("Depth", "postProcess");
+    document.nodes.push({
+      id: "depth",
+      type: "input.sceneDepth",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    document.edges.push({
+      id: "e-uv-depth",
+      sourceNodeId: "screenUv",
+      sourcePinId: "uv",
+      targetNodeId: "depth",
+      targetPinId: "uv",
+    });
+    document.nodes.push({
+      id: "mul",
+      type: "math.multiply",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    document.edges = document.edges.map((edge) =>
+      edge.id === "e-scene-output"
+        ? { ...edge, sourceNodeId: "mul", sourcePinId: "out" }
+        : edge,
+    );
+    document.edges.push(
+      {
+        id: "e-color-mul",
+        sourceNodeId: "sceneColor",
+        sourcePinId: "color",
+        targetNodeId: "mul",
+        targetPinId: "a",
+      },
+      {
+        id: "e-depth-mul",
+        sourceNodeId: "depth",
+        sourcePinId: "depth",
+        targetNodeId: "mul",
+        targetPinId: "b",
+      },
+    );
+    const messages: string[] = [];
+    const attached = attachPostProcessStack({
+      scene: preview.scene,
+      camera: preview.camera,
+      library,
+      stack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      documentFor: () => document,
+      deviceBuffers: { sceneDepth: false, sceneNormal: false },
+      onDiagnostic: (message) => messages.push(message),
+    });
+    disposers.push(() => attached.dispose());
+    expect(attached.passes).toHaveLength(0);
+    expect(messages[0]).toContain("Scene Depth");
+  });
 });

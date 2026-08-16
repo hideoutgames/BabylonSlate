@@ -113,23 +113,43 @@ function lastCommit(): MaterialDocument {
   return calls[calls.length - 1]![1] as MaterialDocument;
 }
 
+/** Base UI Select ignores a click that did not start on the item. */
+function pickSelectItem(testId: string) {
+  const item = screen.getByTestId(testId);
+  fireEvent.pointerDown(item);
+  fireEvent.click(item);
+}
+
 describe("Material preview panel", () => {
-  it("offers all six preview primitives", () => {
+  it("offers preview primitives from a compact select", async () => {
     render(<MaterialPreviewPanel {...panelProps} />);
+    expect(screen.queryByTestId("material-preview-mesh-cube")).toBeNull();
+    fireEvent.click(screen.getByTestId("material-preview-mesh"));
+    await waitFor(() => {
+      expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
+    });
     for (const mesh of ["cube", "sphere", "cylinder", "cone", "plane", "custom"]) {
       expect(screen.getByTestId(`material-preview-mesh-${mesh}`)).toBeTruthy();
     }
   });
 
-  it("stores the chosen primitive on the document", () => {
+  it("stores the chosen primitive on the document", async () => {
     render(<MaterialPreviewPanel {...panelProps} />);
-    fireEvent.click(screen.getByTestId("material-preview-mesh-cube"));
+    fireEvent.click(screen.getByTestId("material-preview-mesh"));
+    await waitFor(() => {
+      expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
+    });
+    pickSelectItem("material-preview-mesh-cube");
     expect(lastCommit().preview.mesh).toBe("cube");
   });
 
   it("opens the model picker when Custom is chosen with no mesh", async () => {
     render(<MaterialPreviewPanel {...panelProps} />);
-    fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
+    fireEvent.click(screen.getByTestId("material-preview-mesh"));
+    await waitFor(() => {
+      expect(screen.getByTestId("material-preview-mesh-custom")).toBeTruthy();
+    });
+    pickSelectItem("material-preview-mesh-custom");
     await waitFor(() => {
       expect(screen.getByTestId("material-preview-mesh-picker")).toBeTruthy();
     });
@@ -238,6 +258,23 @@ describe("Material details panel", () => {
     ).toBe("expensive");
   });
 
+  it("shows a GLSL expression editor for the selected Custom GLSL node", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({
+      id: "glsl",
+      type: "custom.glsl",
+      position: { x: 0, y: 0 },
+      properties: { body: "a + b" },
+    });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "glsl";
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("material-node-glsl")).toBeTruthy();
+    expect(screen.getByTestId("material-node-glsl-signature").textContent).toMatch(
+      /a,\s*b/,
+    );
+  });
+
   it("shows a texture picker for the selected texture parameter", () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.nodes.push({
@@ -248,6 +285,22 @@ describe("Material details panel", () => {
     });
     harness.content = doc as unknown as Record<string, unknown>;
     harness.selectedNodeId = "tex";
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("material-node-texture").textContent).toContain(
+      "Bark",
+    );
+  });
+
+  it("shows a texture picker for a Texture Sample with an inline default", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "tex-1" },
+    });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "sample";
     render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("material-node-texture").textContent).toContain(
       "Bark",

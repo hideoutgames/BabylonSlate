@@ -13,6 +13,10 @@ import {
 } from "@babylonslate/runtime";
 import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type {
+  MaterialDocument,
+  MaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import { playLoadTilemapsControl } from "../lib/play-content";
 import {
   createEngine,
@@ -217,6 +221,10 @@ export function startPlaySession(options: {
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  materialDocuments?: ReadonlyMap<string, MaterialDocument>;
+  materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
+  postProcessingEnabled?: boolean;
+  hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
   /** Baked Scene navmesh bytes; Play imports and never generates. */
@@ -248,6 +256,11 @@ export function startPlaySession(options: {
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
     modelBytes: options.modelBytes,
+    materialDocuments: options.materialDocuments,
+    materialFunctions: options.materialFunctions,
+    postProcessStack: options.scene?.settings.postProcessStack,
+    postProcessingEnabled: options.postProcessingEnabled,
+    hardwareScalingLevel: options.hardwareScalingLevel,
     pixelsPerUnit: options.pixelsPerUnit,
     pixelPerfect: options.pixelPerfect,
     environmentColor: options.scene?.settings.environmentColor,
@@ -296,10 +309,12 @@ export function startPlaySession(options: {
     if (command.type === "spawn") {
       spawnedActorGuids.push(command.actorGuid);
     }
-    if (command.type === "assignMesh") {
-      handle.applyCommand(command);
-    }
-    if (command.type === "possessCamera" || command.type === "setShadowQuality") {
+    if (
+      command.type === "assignMesh" ||
+      command.type === "assignMaterial" ||
+      command.type === "possessCamera" ||
+      command.type === "setShadowQuality"
+    ) {
       handle.applyCommand(command);
     }
     if (command.type === "animState") {

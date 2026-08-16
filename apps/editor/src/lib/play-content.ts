@@ -419,9 +419,9 @@ export function materialAssetGuidsFromScene(
 export function postProcessMaterialGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
-  return (scene?.settings.postProcessStack ?? [])
-    .filter((entry) => entry.enabled)
-    .map((entry) => entry.materialGuid);
+  return (scene?.settings.postProcessStack ?? []).map(
+    (entry) => entry.materialGuid,
+  );
 }
 
 /**

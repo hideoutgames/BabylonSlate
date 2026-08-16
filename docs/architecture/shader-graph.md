@@ -112,26 +112,70 @@ two of them and compares them against the **active frame budget**
 post-process passes are always manual because neither is profiled on the device.
 Timings stay session-local and are never written into an asset.
 
+Layout-only node moves do not recompile: `materialCompileKey` / the plan hash
+ignore positions. The graph canvas commits positions once per drag.
+
+## Custom GLSL
+
+`custom.glsl` is an **expression-only** fragment helper. The selected-node
+Details panel edits a persisted `body` (Textarea) with a generated typed
+signature `result = fn(a, b)`. The validator rejects empty bodies, oversized
+source, declarations, preprocessor directives and forbidden globals, and
+reports `material.capability` on WebGPU (`customGlsl: false`). Render realises
+the node through Babylon `CustomBlock`; the expression participates in the plan
+hash so a body edit invalidates the cache.
+
+## Inline Texture Sample
+
+`texture.sample` and `texture.sampleLod` may store `textureGuid` on the node
+while still accepting a wired `param.texture`. An unwired texture input is
+valid only when that asset is set. The GUID is part of
+`materialDependencies()`, header `dependencies[]`, and the Play/export
+closure. Selected Texture Sample nodes expose an `AssetPicker` in Details.
+
+## Post-process buffers
+
+`MaterialBuildPlan.bufferRequirements` records `sceneColor`, `sceneDepth` and
+`sceneNormal`. Those nodes are post-process / fragment only.
+
+| Node | Babylon realisation |
+| --- | --- |
+| Scene Color | `CurrentScreenBlock` |
+| Scene Depth | `SceneDepthBlock` with linearized depth (`useNonLinearDepth = false`) |
+| Scene Normal | `PrePassTextureBlock.worldNormal` sampled through a `TextureBlock` |
+
+If a device cannot provide a required buffer, `attachPostProcessStack` skips
+**only that pass** and reports a diagnostic. Scene Normal lazily enables a
+shared pre-pass renderer and releases it when the last dependent pass detaches.
+
 ## Runtime
 
 `MeshComponent.materialGuid` binds a Material; imported models also carry
-ordered `materialSlots`. The runtime emits the existing `assignMaterial` bridge
-command, optionally with a `componentId`. The renderer applies a whole-actor
-assignment across a multipart actor's descendants and a component assignment to
-one named mesh, re-applies after a mesh rebuild, and releases records on
-despawn.
+ordered `materialSlots`. The runtime emits `assignMaterial`, optionally with a
+`componentId`. The renderer applies a whole-actor assignment across a multipart
+actor's descendants and a component assignment to one named mesh, re-applies
+after a mesh rebuild, and releases records on despawn.
 
-Scene settings carry an ordered `postProcessStack`. `attachPostProcessStack`
-compiles and attaches enabled entries to a camera in order, skipping (and
-reporting) a missing, surface-domain or failing material rather than blacking
-out the frame. The stack is empty by default: a full-screen pass is the classic
-mobile fill-rate cost.
+Scene Details authors `SceneSettings.postProcessStack` (ordered Material guid +
+Enabled) with `NamedListEditor` / `AssetPicker`. The picker lists post-process
+Materials only (open-document domain wins over a stale header).
+`attachPostProcessStack` compiles and attaches enabled entries to the active
+game camera, skipping (and reporting) a missing, surface-domain or failing
+material rather than blacking out the frame. The stack is empty by default.
+
+Engine Settings `postProcessingEnabled` defaults **on**. It gates editor scene
+rendering and in-editor Play preview only — not the Material editor's own
+post-process preview and not exported games. Disabling it detaches passes
+without mutating the scene document. `hardwareScalingLevel` from the same
+settings page is applied to the Engine.
+
+Play and export close over surface materials, stack materials (including
+disabled entries), transitive Material Functions and texture guids. Saving a
+Material writes `domain` onto `header.payload` and `materialDependencies().all`
+onto `header.dependencies[]`.
 
 ## Not implemented
 
-- **Custom GLSL** is in the catalog with a typed, generated signature, but the
-  authoring surface for its body is not built. It is classified expensive and
-  is GLSL-only; no WGSL implementation exists, so WebGPU portability is not
-  claimed for it.
 - Vertex-stage authoring (world position offset) has no output channel yet.
 - Decal domain is not implemented.
+- Motion vectors and object IDs are deferred.

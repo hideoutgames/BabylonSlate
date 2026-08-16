@@ -1012,6 +1012,48 @@ export function materialAssetDependencies(
   return [];
 }
 
+/** Header payload fields Content Browser / pickers can read without loading the document. */
+export function materialHeaderMeta(
+  assetType: string,
+  payload: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  if (assetType !== "Material" && !isLegacyMaterialAssetType(assetType)) {
+    return undefined;
+  }
+  return {
+    domain: payload.domain === "postProcess" ? "postProcess" : "surface",
+  };
+}
+
+export function isPostProcessMaterialAsset(asset: {
+  header: { type: string; payload?: Record<string, unknown> };
+}): boolean {
+  return (
+    asset.header.type === "Material" &&
+    asset.header.payload?.domain === "postProcess"
+  );
+}
+
+export function isPostProcessMaterialForPicker(
+  asset: {
+    path: string;
+    header: { type: string; payload?: Record<string, unknown> };
+  },
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+): boolean {
+  const open = openDocuments.find(
+    (entry) =>
+      entry.ref.kind === "material" && entry.ref.path === asset.path,
+  );
+  if (open && open.content && typeof open.content === "object") {
+    return (open.content as { domain?: unknown }).domain === "postProcess";
+  }
+  return isPostProcessMaterialAsset(asset);
+}
+
 function documentAsset(
   type: string,
   name: string,

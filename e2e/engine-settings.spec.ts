@@ -1,5 +1,16 @@
 import { expect, test } from "@playwright/test";
 
+test("viewport post-processing defaults on", async ({ page }) => {
+  await page.goto("/?test=1");
+  await expect(page.getByTestId("homepage")).toBeVisible();
+  await page.getByTestId("engine-settings").click();
+  await page.getByTestId("engine-settings-modal-category-viewport").click();
+  await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
 test("viewport frame cap can be emptied then retyped", async ({ page }) => {
   await page.goto("/?test=1");
   await expect(page.getByTestId("homepage")).toBeVisible();

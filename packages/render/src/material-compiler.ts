@@ -196,6 +196,15 @@ export function compileMaterialPlan(
       });
       return fail();
     }
+    if (operation.nodeType === "custom.glsl" && scene.getEngine().isWebGPU) {
+      diagnostics.push({
+        code: "material.capability",
+        message: "Custom GLSL is GLSL/WebGL only and cannot run on WebGPU",
+        severity: "error",
+        nodeId: anchorNodeId(operation),
+      });
+      return fail();
+    }
 
     let realization: BlockRealization;
     try {
@@ -322,7 +331,7 @@ export function compileMaterialPlan(
   };
 }
 
-/** A texture sample reads its guid from the `param.texture` node feeding it. */
+/** Prefer a wired `param.texture`; otherwise use the sample's inline asset. */
 function bindTexture(
   operation: MaterialOperation,
   plan: MaterialBuildPlan,
@@ -332,9 +341,9 @@ function bindTexture(
   const operand = operation.inputs.texture;
   const producerId =
     operand?.kind === "operation" ? operand.operationId : undefined;
-  const binding = plan.textures.find(
-    (entry) => entry.operationId === producerId,
-  );
+  const binding =
+    plan.textures.find((entry) => entry.operationId === producerId) ??
+    plan.textures.find((entry) => entry.operationId === operation.id);
   if (!binding) return;
   const texture = options.resolveTexture?.(binding.textureGuid) ?? null;
   const block = realization.blocks[0] as unknown as {

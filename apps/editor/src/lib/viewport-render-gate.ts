@@ -19,10 +19,48 @@ export function dispatchEngineSettingsChanged(settings: {
   theme?: "system" | "light" | "dark";
   graphDefaultZoom?: number;
   uiDesignerPresets?: EngineSettings["uiDesignerPresets"];
+  hardwareScalingLevel?: number;
+  postProcessingEnabled?: boolean;
 }): void {
   window.dispatchEvent(
     new CustomEvent(ENGINE_SETTINGS_CHANGED_EVENT, { detail: settings }),
   );
+}
+
+export type LiveEngineSettingsTarget = {
+  scaling?: { setLevel: (level: number) => void };
+  scheduler?: { setFrameCap: (fps: number) => void };
+  setPostProcessingEnabled?: (enabled: boolean) => void;
+};
+
+export type LiveEngineSettings = {
+  viewportFrameCap?: number;
+  hardwareScalingLevel?: number;
+  postProcessingEnabled?: boolean;
+};
+
+/** Apply local Engine Settings that must take effect without writing a scene. */
+export function applyLiveEngineSettings(
+  target: LiveEngineSettingsTarget,
+  settings: LiveEngineSettings,
+): void {
+  if (
+    typeof settings.viewportFrameCap === "number" &&
+    Number.isFinite(settings.viewportFrameCap) &&
+    settings.viewportFrameCap > 0
+  ) {
+    target.scheduler?.setFrameCap(settings.viewportFrameCap);
+  }
+  if (
+    typeof settings.hardwareScalingLevel === "number" &&
+    Number.isFinite(settings.hardwareScalingLevel) &&
+    settings.hardwareScalingLevel > 0
+  ) {
+    target.scaling?.setLevel(settings.hardwareScalingLevel);
+  }
+  if (typeof settings.postProcessingEnabled === "boolean") {
+    target.setPostProcessingEnabled?.(settings.postProcessingEnabled);
+  }
 }
 
 export function isBlockingEditorOverlayOpen(
@@ -81,15 +119,12 @@ export function canvasIsEditorVisible(
   return canvasRectIsOnScreen(rect, viewport);
 }
 
-async function defaultLoadFrameCap(): Promise<number> {
-  const settings = await createAppSettingsStore().load();
-  return settings.viewportFrameCap;
-}
-
 export function attachViewportRenderGate(options: {
   canvas: HTMLCanvasElement;
   scheduler: ViewportRenderTarget;
   loadFrameCap?: () => Promise<number>;
+  scaling?: { setLevel: (level: number) => void };
+  setPostProcessingEnabled?: (enabled: boolean) => void;
 }): () => void {
   const { canvas, scheduler } = options;
 
@@ -131,21 +166,42 @@ export function attachViewportRenderGate(options: {
     attributeFilter: ["data-open", "data-closed", "hidden", "data-slot"],
   });
 
-  const applyCap = (fps: number) => {
-    if (Number.isFinite(fps) && fps > 0) {
-      scheduler.setFrameCap(fps);
-    }
-  };
-
   const onSettings = (event: Event) => {
-    const detail = (event as CustomEvent<{ viewportFrameCap?: number }>).detail;
-    if (detail && typeof detail.viewportFrameCap === "number") {
-      applyCap(detail.viewportFrameCap);
-    }
+    const detail = (event as CustomEvent<LiveEngineSettings>).detail;
+    if (!detail) return;
+    applyLiveEngineSettings(
+      {
+        scheduler,
+        scaling: options.scaling,
+        setPostProcessingEnabled: options.setPostProcessingEnabled,
+      },
+      detail,
+    );
   };
   window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
 
-  void (options.loadFrameCap ?? defaultLoadFrameCap)().then(applyCap);
+  void (async () => {
+    if (options.loadFrameCap) {
+      applyLiveEngineSettings(
+        { scheduler },
+        { viewportFrameCap: await options.loadFrameCap() },
+      );
+      return;
+    }
+    const settings = await createAppSettingsStore().load();
+    applyLiveEngineSettings(
+      {
+        scheduler,
+        scaling: options.scaling,
+        setPostProcessingEnabled: options.setPostProcessingEnabled,
+      },
+      {
+        viewportFrameCap: settings.viewportFrameCap,
+        hardwareScalingLevel: settings.hardwareScalingLevel,
+        postProcessingEnabled: settings.postProcessingEnabled,
+      },
+    );
+  })();
 
   return () => {
     intersection?.disconnect();

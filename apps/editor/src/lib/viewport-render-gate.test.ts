@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RenderScheduler } from "@babylonslate/render";
 import {
   attachViewportRenderGate,
+  applyLiveEngineSettings,
   canvasIsEditorVisible,
   dispatchEngineSettingsChanged,
   isBlockingEditorOverlayOpen,
@@ -158,5 +159,48 @@ describe("attachViewportRenderGate", () => {
     expect(scheduler.shouldRender(50)).toBe(false);
     expect(scheduler.shouldRender(100)).toBe(true);
     detach();
+  });
+
+  it("forwards the post-processing gate when engine settings change", async () => {
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 200 });
+    Object.defineProperty(canvas, "clientHeight", { value: 120 });
+    document.body.append(canvas);
+
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    const setPostProcessingEnabled = vi.fn();
+    const detach = attachViewportRenderGate({
+      canvas,
+      scheduler,
+      loadFrameCap: async () => 60,
+      setPostProcessingEnabled,
+    });
+    await Promise.resolve();
+    dispatchEngineSettingsChanged({
+      viewportFrameCap: 60,
+      postProcessingEnabled: false,
+    });
+    expect(setPostProcessingEnabled).toHaveBeenCalledWith(false);
+    detach();
+  });
+});
+
+describe("applyLiveEngineSettings", () => {
+  it("applies hardware scaling and the post-processing gate without mutating a scene", () => {
+    const scaling = { setLevel: vi.fn() };
+    const handle = {
+      scaling,
+      scheduler: { setFrameCap: vi.fn() },
+      setPostProcessingEnabled: vi.fn(),
+    };
+    applyLiveEngineSettings(handle, {
+      viewportFrameCap: 30,
+      hardwareScalingLevel: 1.5,
+      postProcessingEnabled: false,
+    });
+    expect(handle.scheduler.setFrameCap).toHaveBeenCalledWith(30);
+    expect(scaling.setLevel).toHaveBeenCalledWith(1.5);
+    expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
 });

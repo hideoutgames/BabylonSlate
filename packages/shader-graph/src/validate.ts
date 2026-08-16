@@ -48,8 +48,67 @@ const DEFAULT_CAPABILITIES: Required<MaterialCapabilities> = {
   derivatives: true,
   textureLod: true,
   sceneDepth: true,
+  sceneNormal: true,
   vertexTexture: false,
+  customGlsl: true,
 };
+
+export const CUSTOM_GLSL_BODY_MAX = 4096;
+
+export function customGlslBody(node: MaterialGraphNode): string {
+  const body = node.properties.body;
+  if (typeof body === "string") return body;
+  const legacy = node.properties.glsl;
+  return typeof legacy === "string" ? legacy : "";
+}
+
+/**
+ * Custom GLSL is an expression over `a` and `b` only. The compiler generates
+ * the function signature; the body must not declare uniforms, samplers,
+ * preprocessor directives, or statements.
+ */
+export function validateCustomGlslBody(
+  body: string,
+): MaterialDiagnostic | null {
+  const trimmed = body.trim();
+  if (trimmed === "") {
+    return {
+      code: "material.customGlsl",
+      message: "Custom GLSL needs a non-empty expression over A and B",
+      severity: "error",
+    };
+  }
+  if (body.length > CUSTOM_GLSL_BODY_MAX) {
+    return {
+      code: "material.customGlsl",
+      message: `Custom GLSL expressions are limited to ${CUSTOM_GLSL_BODY_MAX} characters`,
+      severity: "error",
+    };
+  }
+  if (/[#;{}]/.test(body) || /\b(uniform|sampler|void|return|out)\b/.test(body)) {
+    return {
+      code: "material.customGlsl",
+      message:
+        "Custom GLSL must be a single expression: no statements, uniforms, samplers, or preprocessor directives",
+      severity: "error",
+    };
+  }
+  if (/\bgl_/.test(body)) {
+    return {
+      code: "material.customGlsl",
+      message: "Custom GLSL cannot read built-in GLSL globals such as gl_FragColor",
+      severity: "error",
+    };
+  }
+  if (/(^|[^=!<>])=(?!=)/.test(body)) {
+    return {
+      code: "material.customGlsl",
+      message: "Custom GLSL cannot assign; write an expression that produces the result",
+      severity: "error",
+    };
+  }
+  return null;
+}
 
 function pinById(
   pins: readonly MaterialPinDefinition[],
@@ -249,10 +308,20 @@ function validateGraph(
       if (capabilities[capability] === false) {
         diagnostics.push({
           code: "material.capability",
-          message: `"${definition.title}" needs ${capability} support, which this device does not report`,
+          message:
+            capability === "customGlsl"
+              ? "Custom GLSL is GLSL/WebGL only and cannot run on WebGPU"
+              : `"${definition.title}" needs ${capability} support, which this device does not report`,
           severity: "error",
           nodeId: node.id,
         });
+      }
+    }
+
+    if (node.type === "custom.glsl") {
+      const custom = validateCustomGlslBody(customGlslBody(node));
+      if (custom) {
+        diagnostics.push({ ...custom, nodeId: node.id });
       }
     }
 
@@ -420,6 +489,10 @@ function validateGraph(
         (edge) => edge.targetNodeId === node.id && edge.targetPinId === pin.id,
       );
       if (wired || pin.defaultValue) continue;
+      if (pin.type.kind === "texture") {
+        const guid = node.properties.textureGuid;
+        if (typeof guid === "string" && guid !== "") continue;
+      }
       diagnostics.push({
         code: "material.missingInput",
         message: `"${definition.title}" needs a value on "${pin.name}"`,

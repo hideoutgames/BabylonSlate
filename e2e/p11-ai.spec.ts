@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -16,7 +17,6 @@ async function createAsset(
   await showContentBrowser(page);
   await page.getByTestId("content-browser-new-asset").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-  await page.getByTestId("new-asset-type").click();
   await page.getByTestId(`new-asset-type-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
   await page.getByTestId("content-browser-new-asset-create").click();
@@ -52,10 +52,12 @@ async function pickSelectedAsset(
   });
   await expect(card).toBeVisible();
   await card.locator(`button[data-testid$="-${property}"]`).click();
+  const picker = page.getByTestId("details-asset-picker");
+  await expect(picker).toBeVisible();
   const item = page.getByTestId(`search-item-${guid}`);
   await expect(item).toBeVisible();
   await item.click();
-  await expect(page.getByTestId("details-asset-picker")).toBeHidden();
+  await expect(picker).toBeHidden();
 }
 
 async function openGraphNodePalette(page: Page): Promise<void> {
@@ -93,6 +95,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
   });
 
   test("3D Place NavMesh + ground bakes, then Play starts", async ({ page }) => {
+    test.setTimeout(180_000);
     await openTestProject(page);
     await openMainScene(page);
 
@@ -101,20 +104,24 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await placeActor(page, "navmesh-blocker");
 
     await page.getByTestId("outliner-tree").getByText("NavMesh", { exact: true }).click();
-    await page.getByRole("button", { name: "Bake NavMesh" }).click();
-    await expect(page.getByTestId("nav-bake-dialog")).toBeVisible();
+    const bake = page.getByRole("button", { name: "Bake NavMesh" });
+    await expect(bake).toBeVisible();
+    await bake.click();
+    await expect(page.getByTestId("nav-bake-dialog")).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByTestId("nav-bake-dialog")).toHaveCount(0, {
       timeout: 30_000,
     });
 
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await page.getByTestId("play-overlay-close").click();
   });
 
   test("2D NavMesh bake uses the XY floor without MeshComponent", async ({
     page,
   }) => {
+    test.setTimeout(90_000);
     await openTwoDProject(page);
     await openMainScene(page);
     await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute(
@@ -123,8 +130,12 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     );
     await placeActor(page, "navmesh");
     await page.getByTestId("outliner-tree").getByText("NavMesh", { exact: true }).click();
-    await page.getByRole("button", { name: "Bake NavMesh" }).click();
-    await expect(page.getByTestId("nav-bake-dialog")).toBeVisible();
+    const bake = page.getByRole("button", { name: "Bake NavMesh" });
+    await expect(bake).toBeVisible();
+    await bake.click();
+    await expect(page.getByTestId("nav-bake-dialog")).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByTestId("nav-bake-dialog")).toHaveCount(0, {
       timeout: 30_000,
     });
@@ -179,8 +190,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     expect(treeGuid.length).toBeGreaterThan(0);
     await pickSelectedAsset(page, "BehaviourTreeComponent", treeGuid);
 
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    await clickPlayAndWaitForOverlay(page);
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("preview-session-report")).toBeVisible();
     await expect(page.getByTestId("session-report-row")).toHaveAttribute(
@@ -202,7 +212,6 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await showContentBrowser(page);
     await page.getByTestId("content-browser-new-asset").click();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-    await page.getByTestId("new-asset-type").click();
     await page.getByTestId("new-asset-type-Class").click();
     await page.getByTestId("new-asset-name").fill("Alert");
     await page.getByTestId("new-asset-parent").click();

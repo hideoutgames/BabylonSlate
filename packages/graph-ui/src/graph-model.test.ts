@@ -4,9 +4,11 @@ import {
   createEdgeId,
   DEFAULT_NODE_TYPE,
   deletableNodeIds,
+  graphChangeKindFromNodeChanges,
   lockNodeDragAxis,
   nodeChangesMutateGraph,
   reconcileCanvasGraph,
+  shouldEmitNodeChanges,
   toSerializedGraph,
 } from "./graph-model";
 import type { GraphDocument } from "./graph-types";
@@ -343,6 +345,60 @@ describe("nodeChangesMutateGraph", () => {
       nodeChangesMutateGraph([{ type: "select" }, { type: "position" }]),
     ).toBe(true);
     expect(nodeChangesMutateGraph([{ type: "remove" }])).toBe(true);
+  });
+});
+
+describe("shouldEmitNodeChanges", () => {
+  it("skips in-flight position drags when commitPositionsOnDragEnd is set", () => {
+    expect(
+      shouldEmitNodeChanges([{ type: "position", dragging: true }], {
+        commitPositionsOnDragEnd: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("emits once when a position drag ends", () => {
+    expect(
+      shouldEmitNodeChanges([{ type: "position", dragging: false }], {
+        commitPositionsOnDragEnd: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("still emits topology changes during a drag", () => {
+    expect(
+      shouldEmitNodeChanges(
+        [
+          { type: "position", dragging: true },
+          { type: "remove" },
+        ],
+        { commitPositionsOnDragEnd: true },
+      ),
+    ).toBe(true);
+  });
+
+  it("emits live position changes when the opt-in is off", () => {
+    expect(
+      shouldEmitNodeChanges([{ type: "position", dragging: true }]),
+    ).toBe(true);
+  });
+});
+
+describe("graphChangeKindFromNodeChanges", () => {
+  it("labels a finished drag as a position-only change", () => {
+    expect(
+      graphChangeKindFromNodeChanges([{ type: "position", dragging: false }]),
+    ).toBe("position");
+  });
+
+  it("labels remove and add as graph changes", () => {
+    expect(graphChangeKindFromNodeChanges([{ type: "remove" }])).toBe("graph");
+    expect(
+      graphChangeKindFromNodeChanges([
+        { type: "position", dragging: false },
+        { type: "remove" },
+      ]),
+    ).toBe("graph");
   });
 });
 

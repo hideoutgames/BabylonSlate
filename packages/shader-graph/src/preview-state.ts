@@ -53,7 +53,7 @@ export function classifyMaterialCost(
       ? "expensive"
       : "cheap";
   }
-  if (cost.usesSceneDepth) return "expensive";
+  if (cost.usesSceneDepth || cost.usesSceneNormal) return "expensive";
   if (cost.textureSamples > CHEAP_SAMPLE_LIMIT) return "expensive";
   if (cost.weight > CHEAP_WEIGHT_LIMIT) return "expensive";
   if (cost.operations > CHEAP_OPERATION_LIMIT) return "expensive";

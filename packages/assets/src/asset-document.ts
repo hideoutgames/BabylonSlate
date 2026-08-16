@@ -51,6 +51,8 @@ export async function encodeAssetDocument(
     headerPayload?: Record<string, unknown>;
     /** Merged into the header payload without switching to header-only mode. */
     headerMeta?: Record<string, unknown>;
+    /** Outbound asset guids stored on the scanned header. */
+    dependencies?: readonly string[];
   } = {},
 ): Promise<Uint8Array> {
   const body = new TextEncoder().encode(stableStringify(document.payload));
@@ -58,7 +60,7 @@ export async function encodeAssetDocument(
   const storeInHeader = options.headerPayload !== undefined;
   return encodeBabasset({
     header: {
-      dependencies: [],
+      dependencies: [...(options.dependencies ?? [])],
       engineVersion: options.engineVersion ?? "0.0.0",
       guid: document.guid,
       mode: "thin",

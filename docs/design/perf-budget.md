@@ -26,7 +26,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`.
 - MSAA off on iPad baseline.
 - `skipPointerMovePicking: true` on all scenes (touch has no hover).
-- Shadow maps default 1024; post-processing off by default.
+- Shadow maps default 1024. Authored post-process stacks default to empty. Engine Settings `postProcessingEnabled` defaults **on** and can skip attaching those stacks in the editor / Play preview without changing the scene or exported games.
 - Pause render loop, game worker, and encode queue on `visibilitychange` / app background.
 - Visible editor viewports always render at `viewportFrameCap` (default 30); freeze when hidden (zero-size or fully off-screen), obstructed, or a modal is open. IntersectionObserver plus an on-screen rect fallback; continuous-render leases stay refcounted.
 - Play/Preview renders at project `playFrameCap` (default 60), not the editor viewport cap.

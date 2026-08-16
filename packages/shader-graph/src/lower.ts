@@ -64,6 +64,7 @@ export interface MaterialCostFeatures {
   weight: number;
   usesDerivatives: boolean;
   usesSceneDepth: boolean;
+  usesSceneNormal: boolean;
   customBlocks: number;
   inlinedFunctions: number;
 }
@@ -81,8 +82,16 @@ export interface MaterialBuildPlan {
   textures: MaterialTextureBinding[];
   cost: MaterialCostFeatures;
   dependencies: { textures: string[]; functions: string[] };
+  /** Scene buffers a post-process plan samples. Surface plans are all false. */
+  bufferRequirements: MaterialBufferRequirements;
   /** Stable content hash. Node positions and names are deliberately excluded. */
   hash: string;
+}
+
+export interface MaterialBufferRequirements {
+  sceneColor: boolean;
+  sceneDepth: boolean;
+  sceneNormal: boolean;
 }
 
 export type MaterialLowerResult =
@@ -187,6 +196,35 @@ function fnv1a(input: string): string {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, "0");
+}
+
+function compileFingerprint(document: MaterialDocument): string {
+  return JSON.stringify({
+    domain: document.domain,
+    shadingModel: document.shadingModel,
+    blendMode: document.blendMode,
+    twoSided: document.twoSided,
+    alphaCutoff: document.alphaCutoff,
+    nodes: document.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      properties: node.properties,
+    })),
+    edges: document.edges,
+  });
+}
+
+/**
+ * Preview/compile cache key. Node positions are excluded so layout drags do
+ * not rebuild GPU materials. Invalid graphs still get a stable key.
+ */
+export function materialCompileKey(
+  document: MaterialDocument,
+  context?: MaterialLowerContext,
+): string {
+  const result = lowerMaterialDocument(document, context);
+  if (result.ok) return result.plan.hash;
+  return `invalid:${fnv1a(compileFingerprint(document))}`;
 }
 
 export interface MaterialLowerContext extends MaterialValidationContext {
@@ -428,6 +466,7 @@ export function lowerMaterialDocument(
         textures: [...new Set(textures.map((entry) => entry.textureGuid))].sort(),
         functions: [...usedFunctions].sort(),
       },
+      bufferRequirements: bufferRequirementsOf(operations),
       hash: hashPlan(operations, outputs, header),
     },
   };
@@ -438,6 +477,7 @@ function costOf(operations: readonly MaterialOperation[]): MaterialCostFeatures 
   let textureSamples = 0;
   let usesDerivatives = false;
   let usesSceneDepth = false;
+  let usesSceneNormal = false;
   let customBlocks = 0;
   let inlinedFunctions = 0;
   const functionGuids = new Set<string>();
@@ -447,6 +487,7 @@ function costOf(operations: readonly MaterialOperation[]): MaterialCostFeatures 
     textureSamples += definition?.samples ?? 0;
     if (definition?.requires?.includes("derivatives")) usesDerivatives = true;
     if (definition?.requires?.includes("sceneDepth")) usesSceneDepth = true;
+    if (definition?.requires?.includes("sceneNormal")) usesSceneNormal = true;
     if (operation.nodeType === "custom.glsl") customBlocks += 1;
     if (operation.source.functionGuid) {
       functionGuids.add(operation.source.functionGuid);
@@ -459,7 +500,22 @@ function costOf(operations: readonly MaterialOperation[]): MaterialCostFeatures 
     weight,
     usesDerivatives,
     usesSceneDepth,
+    usesSceneNormal,
     customBlocks,
     inlinedFunctions,
   };
+}
+
+function bufferRequirementsOf(
+  operations: readonly MaterialOperation[],
+): MaterialBufferRequirements {
+  let sceneColor = false;
+  let sceneDepth = false;
+  let sceneNormal = false;
+  for (const operation of operations) {
+    if (operation.nodeType === "input.sceneColor") sceneColor = true;
+    if (operation.nodeType === "input.sceneDepth") sceneDepth = true;
+    if (operation.nodeType === "input.sceneNormal") sceneNormal = true;
+  }
+  return { sceneColor, sceneDepth, sceneNormal };
 }

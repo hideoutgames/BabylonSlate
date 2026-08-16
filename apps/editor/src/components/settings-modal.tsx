@@ -136,7 +136,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "viewport",
     label: "Viewport",
-    keywords: "frame cap hardware scaling",
+    keywords: "frame cap hardware scaling post processing",
   },
   {
     id: "graph",
@@ -266,6 +266,8 @@ export function SettingsModal({
         theme: next.appearance.theme,
         graphDefaultZoom: next.graphDefaultZoom,
         uiDesignerPresets: next.uiDesignerPresets,
+        hardwareScalingLevel: next.hardwareScalingLevel,
+        postProcessingEnabled: next.postProcessingEnabled,
       });
       await onEngineSaved?.();
     },

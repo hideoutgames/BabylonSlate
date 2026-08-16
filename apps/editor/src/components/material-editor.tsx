@@ -13,8 +13,20 @@ import {
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
+import { Textarea } from "@babylonslate/ui/components/textarea";
 import { GraphEditor } from "@babylonslate/graph-ui";
 import {
   MATERIAL_PREVIEW_MESHES,
@@ -143,7 +155,13 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           pinCompatibility={materialPinsAreCompatible}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
           focusedNodeId={editing.focusedNodeId ?? undefined}
-          onChange={(next) => commit(serializedToMaterialGraph(next, document))}
+          commitPositionsOnDragEnd
+          onChange={(next, meta) =>
+            commit(
+              serializedToMaterialGraph(next, document),
+              meta?.kind === "position" ? "material-node-move" : undefined,
+            )
+          }
         />
       </div>
     </PanelFrame>
@@ -188,8 +206,12 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           paletteNodes={materialPaletteNodes("surface")}
           pinCompatibility={materialPinsAreCompatible}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
-          onChange={(next) =>
-            commit(serializedToMaterialFunctionGraph(next, document))
+          commitPositionsOnDragEnd
+          onChange={(next, meta) =>
+            commit(
+              serializedToMaterialFunctionGraph(next, document),
+              meta?.kind === "position" ? "material-node-move" : undefined,
+            )
           }
         />
       </div>
@@ -234,13 +256,10 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
       <div className="flex h-full min-h-0 flex-col">
         <ToolbarStrip>
-          <ToggleGroup
-            variant="outline"
-            size="touch"
-            spacing={1}
-            value={[document.preview.mesh]}
+          <Select
+            value={document.preview.mesh}
             onValueChange={(value) => {
-              const next = value[0] as MaterialPreviewMesh | undefined;
+              const next = value as MaterialPreviewMesh | undefined;
               if (!next) return;
               commit({
                 ...document,
@@ -254,20 +273,31 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
                 setMeshPickOpen(true);
               }
             }}
-            aria-label="Preview Mesh"
-            data-testid="material-preview-mesh"
           >
-            {MATERIAL_PREVIEW_MESHES.map((mesh) => (
-              <ToggleGroupItem
-                key={mesh}
-                value={mesh}
-                aria-label={PREVIEW_MESH_LABEL[mesh]}
-                data-testid={`material-preview-mesh-${mesh}`}
-              >
-                {PREVIEW_MESH_LABEL[mesh]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+            <SelectTrigger
+              aria-label="Preview Mesh"
+              className="min-h-[var(--touch-target,44px)] w-[9.5rem]"
+              data-testid="material-preview-mesh"
+            >
+              <SelectValue>
+                {(value: unknown) =>
+                  PREVIEW_MESH_LABEL[value as MaterialPreviewMesh] ??
+                  String(value ?? "")
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {MATERIAL_PREVIEW_MESHES.map((mesh) => (
+                <SelectItem
+                  key={mesh}
+                  value={mesh}
+                  data-testid={`material-preview-mesh-${mesh}`}
+                >
+                  {PREVIEW_MESH_LABEL[mesh]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             type="button"
             variant="outline"
@@ -538,7 +568,33 @@ function MaterialNodeDetails({
     <div className="flex flex-col gap-2" data-testid="material-node-details">
       <p className="px-3 text-xs text-muted-foreground">{node.type}</p>
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
-      {node.type === "param.texture" ? (
+      {node.type === "custom.glsl" ? (
+        <div className="px-3" data-testid="material-node-glsl-editor">
+          <Field>
+            <FieldLabel htmlFor="material-node-glsl">Expression</FieldLabel>
+            <Textarea
+              id="material-node-glsl"
+              className="min-h-24 font-mono text-sm"
+              value={
+                typeof node.properties.body === "string"
+                  ? node.properties.body
+                  : "a + b"
+              }
+              onChange={(event) =>
+                setProperties({ body: event.target.value })
+              }
+              data-testid="material-node-glsl"
+            />
+            <FieldDescription data-testid="material-node-glsl-signature">
+              Generated signature: result = fn(a, b). Expression-only GLSL over
+              A and B. WebGPU is not supported.
+            </FieldDescription>
+          </Field>
+        </div>
+      ) : null}
+      {node.type === "param.texture" ||
+      node.type === "texture.sample" ||
+      node.type === "texture.sampleLod" ? (
         <div className="px-3">
           <Button
             type="button"

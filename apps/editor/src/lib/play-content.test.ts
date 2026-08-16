@@ -31,6 +31,9 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
+  materialAssetGuidsFromScene,
+  postProcessMaterialGuidsFromScene,
+  materialClosureFromGuids,
 } from "./play-content";
 
 describe("playUiLibraryFromAssets", () => {
@@ -360,6 +363,89 @@ describe("scene-referenced Play content", () => {
       }),
     );
     expect(modelAssetGuidsFromScene(scene)).toEqual(["tree-glb"]);
+  });
+
+  it("collects MeshComponent materialGuid values as surface materials", () => {
+    const scene = createDefaultScene();
+    scene.actors.push(
+      createActor("rock", "Rock", {
+        components: [
+          {
+            id: "mesh",
+            classId: "MeshComponent",
+            properties: { meshKind: "box", materialGuid: "mat-rock" },
+          },
+        ],
+      }),
+    );
+    expect(materialAssetGuidsFromScene(scene)).toEqual(["mat-rock"]);
+  });
+
+  it("collects post-process stack guids in authored order, including disabled entries", () => {
+    const scene = createDefaultScene();
+    scene.settings.postProcessStack = [
+      { materialGuid: "pp-a", enabled: true },
+      { materialGuid: "pp-b", enabled: false },
+    ];
+    expect(postProcessMaterialGuidsFromScene(scene)).toEqual(["pp-a", "pp-b"]);
+  });
+
+  it("closes over surface materials, stack materials, functions, and textures", () => {
+    const scene = createDefaultScene();
+    scene.actors[0]!.components[0]!.properties.materialGuid = "mat-rock";
+    scene.settings.postProcessStack = [{ materialGuid: "pp-blur", enabled: true }];
+    const docs: Record<string, unknown> = {
+      "mat-rock": {
+        domain: "surface",
+        nodes: [
+          {
+            id: "tex",
+            type: "param.texture",
+            properties: { textureGuid: "tex-albedo" },
+          },
+          {
+            id: "call",
+            type: "function.call",
+            properties: { functionGuid: "fn-tint" },
+          },
+        ],
+        edges: [],
+      },
+      "pp-blur": {
+        domain: "postProcess",
+        nodes: [],
+        edges: [],
+      },
+      "fn-tint": {
+        nodes: [
+          {
+            id: "nested",
+            type: "function.call",
+            properties: { functionGuid: "fn-inner" },
+          },
+        ],
+        edges: [],
+      },
+      "fn-inner": {
+        nodes: [
+          {
+            id: "tex",
+            type: "param.texture",
+            properties: { textureGuid: "tex-lut" },
+          },
+        ],
+        edges: [],
+      },
+    };
+    const guids = [
+      ...materialAssetGuidsFromScene(scene),
+      ...postProcessMaterialGuidsFromScene(scene),
+    ];
+    expect(materialClosureFromGuids(guids, (guid) => docs[guid] ?? null)).toEqual({
+      materials: ["mat-rock", "pp-blur"],
+      functions: ["fn-tint", "fn-inner"],
+      textures: ["tex-albedo", "tex-lut"],
+    });
   });
 });
 
