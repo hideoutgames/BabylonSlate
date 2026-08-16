@@ -1,6 +1,10 @@
 import type { SerializedGraph } from "@babylonslate/core";
 import type { AnimGraphDocument, AnimTransition } from "./graph";
-import { createDefaultAnimGraph, defaultAnimStatePosition } from "./graph";
+import {
+  createDefaultAnimGraph,
+  createDefaultTransitionRuleGraph,
+  defaultAnimStatePosition,
+} from "./graph";
 
 export type AnimGraphPin = {
   id: string;
@@ -74,6 +78,8 @@ function mergeTransitions(
       blendSeconds: prev?.blendSeconds ?? 0.1,
       hasExitTime: prev?.hasExitTime ?? false,
       exitTime: prev?.exitTime ?? 0,
+      priority: prev?.priority ?? 0,
+      ruleGraph: prev?.ruleGraph ?? createDefaultTransitionRuleGraph(),
     };
   });
 }
