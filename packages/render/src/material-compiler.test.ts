@@ -380,6 +380,55 @@ describe("material compiler", () => {
     ).toBe(true);
   });
 
+  it("binds an inline Texture asset when no texture parameter is wired", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "texUv",
+        type: "input.uv",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-inline" },
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-uv",
+        sourceNodeId: "texUv",
+        sourcePinId: "uv",
+        targetNodeId: "sample",
+        targetPinId: "uv",
+      },
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const requested: string[] = [];
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: (guid) => {
+        requested.push(guid);
+        return null;
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    expect(requested).toEqual(["tex-inline"]);
+  });
+
   it("inlines a material function into the same block graph", () => {
     const scene = host();
     const fn = createDefaultMaterialFunctionDocument("Tint");

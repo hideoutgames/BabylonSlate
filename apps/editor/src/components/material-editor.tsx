@@ -592,7 +592,9 @@ function MaterialNodeDetails({
           </Field>
         </div>
       ) : null}
-      {node.type === "param.texture" ? (
+      {node.type === "param.texture" ||
+      node.type === "texture.sample" ||
+      node.type === "texture.sampleLod" ? (
         <div className="px-3">
           <Button
             type="button"

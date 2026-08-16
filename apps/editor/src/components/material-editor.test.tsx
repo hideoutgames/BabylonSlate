@@ -291,6 +291,22 @@ describe("Material details panel", () => {
     );
   });
 
+  it("shows a texture picker for a Texture Sample with an inline default", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "tex-1" },
+    });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "sample";
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("material-node-texture").textContent).toContain(
+      "Bark",
+    );
+  });
+
   it("shows nothing extra when no node is selected", () => {
     render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.queryByTestId("material-node-details")).toBeNull();

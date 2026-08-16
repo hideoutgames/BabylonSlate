@@ -310,6 +310,43 @@ describe("material lowering", () => {
     ]);
   });
 
+  it("binds an inline Texture asset on a sample node", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-inline" },
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-uv",
+        sourceNodeId: "uv",
+        sourcePinId: "uv",
+        targetNodeId: "sample",
+        targetPinId: "uv",
+      },
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const result = lowerMaterialDocument(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.textures).toEqual([
+      { operationId: "sample", textureGuid: "tex-inline" },
+    ]);
+    expect(result.plan.dependencies.textures).toEqual(["tex-inline"]);
+  });
+
   it("inlines a material function call with namespaced operation ids", () => {
     const fn = createDefaultMaterialFunctionDocument("Tint");
     fn.nodes.push({

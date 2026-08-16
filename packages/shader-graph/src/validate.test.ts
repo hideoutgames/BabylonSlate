@@ -221,6 +221,19 @@ describe("material validation", () => {
     expect(codes(doc)).toContain("material.missingInput");
   });
 
+  it("accepts a texture sample that stores an inline Texture asset", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "tex-1" },
+    });
+    expect(codes(doc, { textureExists: () => true })).not.toContain(
+      "material.missingInput",
+    );
+  });
+
   it("flags a texture parameter whose asset is gone", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({

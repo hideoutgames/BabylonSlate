@@ -488,6 +488,10 @@ function validateGraph(
         (edge) => edge.targetNodeId === node.id && edge.targetPinId === pin.id,
       );
       if (wired || pin.defaultValue) continue;
+      if (pin.type.kind === "texture") {
+        const guid = node.properties.textureGuid;
+        if (typeof guid === "string" && guid !== "") continue;
+      }
       diagnostics.push({
         code: "material.missingInput",
         message: `"${definition.title}" needs a value on "${pin.name}"`,
