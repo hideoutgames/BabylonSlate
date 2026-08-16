@@ -229,6 +229,11 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
       );
     });
     await page.waitForTimeout(600);
+    await expect(page.getByTestId("context-menu-panel")).toBeVisible({
+      timeout: 3_000,
+    });
+  });
+
   test("project settings close meets the 44px touch target", async ({
     page,
   }) => {
