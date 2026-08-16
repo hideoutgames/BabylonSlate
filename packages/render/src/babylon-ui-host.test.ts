@@ -463,6 +463,26 @@ describe("BabylonUiApplyHost", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
+  it("removes stale controls through the factory without also disposing the handle", () => {
+    const dispose = vi.fn();
+    const remove = vi.fn();
+    const factory: GuiControlFactory = {
+      create(spec) {
+        return { id: spec.id, type: spec.type, spec, dispose };
+      },
+      clear() {},
+      remove,
+      update: () => true,
+    };
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const keep = descriptor({ id: "keep", kind: "Button" });
+    const drop = descriptor({ id: "drop", kind: "Button" });
+    host.reconcile([keep, drop]);
+    host.reconcile([keep]);
+    expect(remove).toHaveBeenCalledWith("drop");
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
   it("reuses unchanged Babylon controls on a second apply", () => {
     const doc = createDefaultUserInterface();
     const button = createWidget(

@@ -121,8 +121,9 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       documentActive: true,
       requireDocumentActive: false,
     });
+    const paintScheduler = paintSchedulerRef.current;
     return () => {
-      paintSchedulerRef.current.cancel();
+      paintScheduler.cancel();
       surface?.dispose();
       surfaceRef.current = null;
     };
@@ -177,15 +178,16 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       });
     };
     paintSchedulerRef.current.schedule(paint);
+    const paintScheduler = paintSchedulerRef.current;
     if (typeof ResizeObserver === "undefined") {
-      return () => paintSchedulerRef.current.cancel();
+      return () => paintScheduler.cancel();
     }
     const observer = new ResizeObserver(() => {
-      paintSchedulerRef.current.schedule(paint);
+      paintScheduler.schedule(paint);
     });
     observer.observe(canvas);
     return () => {
-      paintSchedulerRef.current.cancel();
+      paintScheduler.cancel();
       observer.disconnect();
     };
   }, [panelVisible, ui]);

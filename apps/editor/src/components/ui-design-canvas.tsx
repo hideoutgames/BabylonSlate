@@ -189,13 +189,15 @@ export function UiDesignCanvas({
     freezeLiveUiSurface(surface, { panelVisible, documentActive });
     setPreviewError(null);
     setGuiLive(true);
+    const paintScheduler = paintSchedulerRef.current;
+    const gizmoScheduler = gizmoSchedulerRef.current;
     return () => {
       surface?.dispose();
       surfaceRef.current = null;
       setGuiLive(false);
       setLiveRects({});
-      paintSchedulerRef.current.cancel();
-      gizmoSchedulerRef.current.cancel();
+      paintScheduler.cancel();
+      gizmoScheduler.cancel();
     };
     // panelVisible / documentActive: freezeLiveUiSurface on the new surface this
     // frame; the next effect updates freeze when those flags change.
@@ -363,12 +365,13 @@ export function UiDesignCanvas({
       surfaceRef.current?.resizeGizmos(width, height);
     };
     apply();
+    const gizmoScheduler = gizmoSchedulerRef.current;
     const observer = new ResizeObserver(() => {
-      gizmoSchedulerRef.current.schedule(apply);
+      gizmoScheduler.schedule(apply);
     });
     observer.observe(host);
     return () => {
-      gizmoSchedulerRef.current.cancel();
+      gizmoScheduler.cancel();
       observer.disconnect();
     };
   }, [guiLive]);

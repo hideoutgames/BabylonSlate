@@ -86,7 +86,7 @@ export function normalizeUserInterfaceDocument(value: unknown): UserInterfaceDoc
   for (const [id, widget] of Object.entries(rawWidgets)) {
     widgets[id] = normalizeWidget(id, widget);
   }
-  let rootId = typeof record.rootId === "string" && record.rootId ? record.rootId : "canvas";
+  const rootId = typeof record.rootId === "string" && record.rootId ? record.rootId : "canvas";
   if (!widgets[rootId]) {
     widgets[rootId] = createWidget(rootId, "Canvas", "Canvas");
   }

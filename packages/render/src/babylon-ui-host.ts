@@ -85,7 +85,8 @@ export class BabylonUiApplyHost implements UiApplyHost {
     const nextIds = new Set(next.map((row) => row.spec.id));
     for (const handle of this.handles) {
       if (!nextIds.has(handle.id)) {
-        this.factory.remove?.(handle.id) ?? handle.dispose();
+        if (this.factory.remove) this.factory.remove(handle.id);
+        else handle.dispose();
       }
     }
     const remaining = new Map(
@@ -106,7 +107,10 @@ export class BabylonUiApplyHost implements UiApplyHost {
         previous.spec = spec;
         this.handles.push(previous);
       } else {
-        if (previous) this.factory.remove?.(previous.id) ?? previous.dispose();
+        if (previous) {
+          if (this.factory.remove) this.factory.remove(previous.id);
+          else previous.dispose();
+        }
         const handle = this.factory.create(spec);
         this.handles.push(handle);
         this.bindInteractive(handle, descriptor);
