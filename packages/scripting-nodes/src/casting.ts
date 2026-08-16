@@ -6,8 +6,52 @@ import {
   BOOL,
   objectRef,
   actorRef,
+  classRef,
+  type PinType,
   createWildcardNodes,
 } from "@babylonslate/scripting";
+
+function stringProp(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+export function castDefaultClassId(
+  properties: Record<string, unknown>,
+): string {
+  const keyed = properties["default:class"];
+  if (typeof keyed === "string" && keyed.trim()) return keyed.trim();
+  return stringProp(properties.defaultClassId, "BObject");
+}
+
+export function castResultPinType(
+  properties: Record<string, unknown>,
+): PinType {
+  const classId = stringProp(properties.defaultClassId, castDefaultClassId(properties));
+  if (properties.resultKind === "actorRef") return actorRef(classId);
+  if (properties.resultKind === "objectRef") return objectRef(classId);
+  return classId === "Actor" ? actorRef(classId) : objectRef(classId);
+}
+
+function castPins(properties: Record<string, unknown>) {
+  return [
+    pin("object", "object", "in", objectRef("BObject")),
+    pin("class", "class", "in", classRef("BObject")),
+    pin("success", "success", "out", BOOL),
+    pin("result", "result", "out", castResultPinType(properties)),
+  ];
+}
+
+function castCodegen(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+): Record<string, string> {
+  const input = ctx.input("object");
+  const classId = ctx.input("class");
+  const ok = `ctx.isA(${input}, ${classId})`;
+  return {
+    success: ok,
+    result: `(${ok} ? ${input} : null)`,
+  };
+}
 
 export const castingNodes: NodeDefinition[] = [
   {
@@ -33,6 +77,14 @@ export const castingNodes: NodeDefinition[] = [
     codegen: (ctx) => ({ out: `(${ctx.input("in")} | 0)` }),
   },
   {
+    id: "casting.cast",
+    title: "Cast to BObject",
+    category: "casting",
+    pure: true,
+    pins: castPins,
+    codegen: castCodegen,
+  },
+  {
     id: "casting.castActor",
     title: "Cast To Actor",
     category: "casting",
@@ -43,13 +95,11 @@ export const castingNodes: NodeDefinition[] = [
       pin("asActor", "asActor", "out", actorRef("Actor")),
     ],
     codegen: (ctx) => {
-      // Pure multi-out via object — compiler expects map; use IIFE pair via side channel.
-      // Represent as expressions referencing a shared temp is hard in pure mode;
-      // emit as impure-style through codegen returning expressions that re-evaluate.
       const input = ctx.input("in");
+      const ok = `ctx.isA(${input}, "Actor")`;
       return {
-        success: `(${input} != null && ${input}.classId)`,
-        asActor: `(${input})`,
+        success: ok,
+        asActor: `(${ok} ? ${input} : null)`,
       };
     },
   },

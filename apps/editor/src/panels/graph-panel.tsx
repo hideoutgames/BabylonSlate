@@ -150,6 +150,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       visible ??
         createDefaultLogicGraphSerialized(registry, { parentClass, parentOf }),
       registry,
+      { parentOf },
     );
   }, [activeFunctionId, graphContent, parentClass, parentOf]);
 

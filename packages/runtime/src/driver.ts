@@ -397,6 +397,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.scriptHost = new ScriptHost({
       interfaceRegistry: this.world.interfaceRegistry,
+      classRegistry: registry,
       log: (severity, category, message) => {
         this.logs.push({
           severity,

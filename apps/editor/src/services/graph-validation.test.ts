@@ -80,6 +80,93 @@ describe("hydrateSerializedGraphForEditor", () => {
     );
   });
 
+  it("titles an unconnected Cast node from the default class", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "cast-1",
+          type: "casting.cast",
+          position: { x: 0, y: 0 },
+          data: {
+            defaultClassId: "Hero",
+            "default:class": "Hero",
+            title: "Cast to BObject",
+            __pins: [
+              {
+                id: "result",
+                name: "result",
+                kind: "data",
+                direction: "out",
+                type: { kind: "objectRef", classId: "BObject" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+    });
+    expect(hydrated.nodes[0]?.data.title).toBe("Cast to Hero");
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      type: { kind: string; classId?: string };
+    }>;
+    expect(pins.find((pin) => pin.id === "result")?.type).toEqual({
+      kind: "actorRef",
+      classId: "Hero",
+    });
+  });
+
+  it("titles a wired Cast node Cast to Class and types Result from the connected constraint", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "class-lit",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: {
+            variableName: "Kind",
+            typeId: "class",
+            typeClassId: "Actor",
+            implicitSelf: true,
+          },
+        },
+        {
+          id: "cast-1",
+          type: "casting.cast",
+          position: { x: 200, y: 0 },
+          data: {
+            defaultClassId: "Hero",
+            "default:class": "Hero",
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "class-lit",
+          target: "cast-1",
+          sourceHandle: "value",
+          targetHandle: "class",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+    });
+    expect(hydrated.nodes[1]?.data.title).toBe("Cast to Class");
+    const pins = hydrated.nodes[1]?.data.__pins as Array<{
+      id: string;
+      type: { kind: string; classId?: string };
+    }>;
+    expect(pins.find((pin) => pin.id === "result")?.type).toEqual({
+      kind: "actorRef",
+      classId: "Actor",
+    });
+  });
+
   it("preserves existing __pins", () => {
     const customPins = [
       {
@@ -1040,6 +1127,46 @@ describe("scriptPaletteNodes", () => {
     expect(
       nodes.filter((node) => node.id === "functions.call:MathLib:Add"),
     ).toHaveLength(1);
+  });
+
+  it("hides generic Cast catalog ids and injects Cast to <Class> rows", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
+      otherClassGraphs: {
+        Hero: { nodes: [], edges: [] },
+      },
+    });
+    expect(nodes.some((node) => node.id === "casting.cast")).toBe(false);
+    expect(nodes.some((node) => node.id === "casting.castActor")).toBe(false);
+    const actorCast = nodes.find((node) => node.id === "casting.cast:Actor");
+    expect(actorCast?.title).toBe("Cast to Actor");
+    expect(actorCast?.nodeType).toBe("casting.cast");
+    expect(actorCast?.defaultData).toMatchObject({
+      defaultClassId: "Actor",
+      "default:class": "Actor",
+      resultKind: "actorRef",
+    });
+    expect(
+      actorCast?.pins?.some(
+        (pin) =>
+          pin.id === "result" &&
+          (pin.type as { kind?: string; classId?: string }).kind === "actorRef" &&
+          (pin.type as { classId?: string }).classId === "Actor",
+      ),
+    ).toBe(true);
+    const heroCast = nodes.find((node) => node.id === "casting.cast:Hero");
+    expect(heroCast?.title).toBe("Cast to Hero");
+    expect(heroCast?.defaultData).toMatchObject({
+      defaultClassId: "Hero",
+      resultKind: "actorRef",
+    });
+    const giCast = nodes.find((node) => node.id === "casting.cast:GameInstance");
+    expect(giCast?.title).toBe("Cast to GameInstance");
+    expect(giCast?.defaultData).toMatchObject({
+      resultKind: "objectRef",
+    });
   });
 
   it("hides native and editor lifecycle events on FunctionLibrary palettes", () => {

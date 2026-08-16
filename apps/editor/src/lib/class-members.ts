@@ -208,6 +208,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "variables.get" || nodeId === "variables.set") {
     return false;
   }
+  if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
+    return false;
+  }
   const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
     nodeId,
   );

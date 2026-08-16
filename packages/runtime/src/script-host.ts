@@ -5,6 +5,7 @@ import {
   ActorComponent,
   dispatchInterface,
   interfaceHandlerKey,
+  type ClassRegistry,
   type InterfaceDispatchTarget,
   type InterfaceRegistry,
   type LifecycleHooks,
@@ -30,6 +31,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
 export interface ScriptHostServices {
   /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
   interfaceRegistry?: InterfaceRegistry;
+  /** Live-object `ctx.isA` uses ClassRegistry ancestry, not string equality. */
+  classRegistry?: ClassRegistry;
   log(severity: LogSeverity, category: string, message: string): void;
   addComponent?(
     actor: Actor | null | undefined,
@@ -125,6 +128,7 @@ export interface ScriptContext {
   getComponent(actor: Actor | null | undefined, classId: string): unknown;
   addComponent(actor: Actor | null | undefined, classId: string): unknown;
   spawnActor(classId: string): Actor | null;
+  isA(instance: unknown, classId: string): boolean;
   invokeCustomEvent(
     target: Actor | null | undefined,
     eventName: string,
@@ -446,6 +450,14 @@ export class ScriptHost {
       addComponent: (actor, classId) =>
         services.addComponent?.(actor ?? self, classId) ?? null,
       spawnActor: (classId) => services.spawnActor?.(String(classId)) ?? null,
+      isA: (instance, classId) => {
+        if (instance == null || typeof instance !== "object") return false;
+        const id = (instance as { classId?: unknown }).classId;
+        if (typeof id !== "string" || !id) return false;
+        const target = String(classId ?? "");
+        if (!target) return false;
+        return services.classRegistry?.isA(id, target) ?? id === target;
+      },
       invokeCustomEvent: (target, eventName, eventArgs) => {
         const actor = (target ?? self) as Actor | null;
         if (!actor || typeof eventName !== "string" || !eventName) return;
