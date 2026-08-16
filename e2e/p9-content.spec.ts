@@ -454,7 +454,6 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("scene-post-process-0-material")).toContainText(
       "Bloom",
     );
-    await saveAllIfEnabled(page);
     await page.getByTestId("play-preview").click();
     const overlay = page.getByTestId("play-overlay");
     await expect(overlay).toBeVisible({ timeout: 20_000 });
@@ -471,13 +470,13 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("engine-settings").click();
     await page.getByTestId("engine-settings-modal-category-viewport").click();
     await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
-      "data-state",
-      "checked",
+      "aria-checked",
+      "true",
     );
     await page.getByTestId("setting-post-processing").click();
     await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
-      "data-state",
-      "unchecked",
+      "aria-checked",
+      "false",
     );
     await page
       .getByTestId("engine-settings-modal")

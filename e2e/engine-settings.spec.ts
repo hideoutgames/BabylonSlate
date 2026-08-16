@@ -6,8 +6,8 @@ test("viewport post-processing defaults on", async ({ page }) => {
   await page.getByTestId("engine-settings").click();
   await page.getByTestId("engine-settings-modal-category-viewport").click();
   await expect(page.getByTestId("setting-post-processing")).toHaveAttribute(
-    "data-state",
-    "checked",
+    "aria-checked",
+    "true",
   );
 });
 
