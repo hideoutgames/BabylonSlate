@@ -317,12 +317,12 @@ export function createEngine(
       }
       return live;
     };
-    let gizmos: GizmoHost;
-    gizmos = createGizmoHost(scene, {
+    const gizmosRef: { host: GizmoHost | null } = { host: null };
+    const gizmos = createGizmoHost(scene, {
       mode,
       scheduler,
       onDragStart: () => {
-        const attached = gizmos.attachedMesh();
+        const attached = gizmosRef.host?.attachedMesh() ?? null;
         const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
         const followers = roots
           .map((id) => editorSync.meshForActor(id))
@@ -334,14 +334,14 @@ export function createEngine(
         options.onGizmoDragStart?.();
       },
       onDrag: () => {
-        const attached = gizmos.attachedMesh();
+        const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
         }
         options.onGizmoDrag?.();
       },
       onDragEnd: () => {
-        const attached = gizmos.attachedMesh();
+        const attached = gizmosRef.host?.attachedMesh() ?? null;
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
         }
@@ -349,6 +349,7 @@ export function createEngine(
         options.onGizmoDragEnd?.();
       },
     });
+    gizmosRef.host = gizmos;
     const debugOverlayInstance = new EditorDebugOverlay(scene);
     debugOverlay = debugOverlayInstance;
 
