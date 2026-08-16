@@ -472,6 +472,11 @@ const ANIM_GRAPH_WINDOWS: DockWindowDefinition[] = [
 
 const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
   {
+    id: "behaviour-tree-graph",
+    component: "behaviour-tree-graph",
+    title: "Graph",
+  },
+  {
     id: "behaviour-tree-blackboard",
     component: "behaviour-tree-blackboard",
     title: "Blackboard",
@@ -480,11 +485,6 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
       direction: "left",
       initialWidth: 224,
     },
-  },
-  {
-    id: "behaviour-tree-graph",
-    component: "behaviour-tree-graph",
-    title: "Graph",
   },
   {
     id: "behaviour-tree-details",

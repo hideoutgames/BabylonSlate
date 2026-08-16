@@ -325,14 +325,14 @@ describe("animation graph and behaviour tree dock catalogs", () => {
   it("lists Blackboard, Graph, Details, and Compiler Results for a Behaviour Tree", () => {
     const windows = listDockWindows("behaviour-tree");
     expect(windows.map((entry) => entry.id)).toEqual([
-      "behaviour-tree-blackboard",
       "behaviour-tree-graph",
+      "behaviour-tree-blackboard",
       "behaviour-tree-details",
       "behaviour-tree-compiler-results",
     ]);
     expect(windows.map((entry) => entry.title)).toEqual([
-      "Blackboard",
       "Graph",
+      "Blackboard",
       "Details",
       "Compiler Results",
     ]);
