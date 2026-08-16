@@ -679,6 +679,89 @@ describe("scriptPaletteNodes", () => {
     });
   });
 
+  it("regenerates function Input pins when the signature adds a data pin", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "in",
+          type: "flow.function.input",
+          position: { x: 0, y: 0 },
+          data: {
+            pins: [
+              { name: "exec", typeId: "exec", direction: "in" },
+              { name: "height", typeId: "float", direction: "in" },
+              { name: "then", typeId: "exec", direction: "out" },
+            ],
+            __pins: [
+              {
+                id: "exec",
+                name: "exec",
+                kind: "exec",
+                direction: "out",
+                type: { kind: "exec" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      direction: string;
+    }>;
+    expect(pins?.map((pin) => ({ id: pin.id, direction: pin.direction }))).toEqual(
+      [
+        { id: "exec", direction: "out" },
+        { id: "height", direction: "out" },
+      ],
+    );
+  });
+
+  it("regenerates function Output pins when the signature drops a data pin", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "out",
+          type: "flow.function.output",
+          position: { x: 0, y: 0 },
+          data: {
+            pins: [
+              { name: "exec", typeId: "exec", direction: "in" },
+              { name: "then", typeId: "exec", direction: "out" },
+            ],
+            __pins: [
+              {
+                id: "then",
+                name: "then",
+                kind: "exec",
+                direction: "in",
+                type: { kind: "exec" },
+              },
+              {
+                id: "result",
+                name: "result",
+                kind: "data",
+                direction: "in",
+                type: { kind: "float" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      direction: string;
+    }>;
+    expect(pins?.map((pin) => ({ id: pin.id, direction: pin.direction }))).toEqual(
+      [{ id: "then", direction: "in" }],
+    );
+  });
+
   it("regenerates Get Variable pins so type and Target stay in sync", () => {
     const graph: SerializedGraph = {
       nodes: [

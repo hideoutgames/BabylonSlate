@@ -120,6 +120,62 @@ export class SetActorTransformCommand implements EditCommand<SerializedScene> {
   }
 }
 
+export interface ActorTransformEntry {
+  actorId: string;
+  from: SerializedTransform;
+  to: SerializedTransform;
+}
+
+/** One undo step for a multi-select gizmo drag. */
+export class SetActorsTransformsCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.setActorsTransforms";
+  readonly mergeKey: string;
+  readonly entries: ActorTransformEntry[];
+
+  constructor(entries: ActorTransformEntry[]) {
+    this.entries = entries.map((entry) => ({
+      actorId: entry.actorId,
+      from: {
+        position: [...entry.from.position],
+        rotation: [...entry.from.rotation],
+        scale: [...entry.from.scale],
+      },
+      to: {
+        position: [...entry.to.position],
+        rotation: [...entry.to.rotation],
+        scale: [...entry.to.scale],
+      },
+    }));
+    const ids = [...new Set(this.entries.map((entry) => entry.actorId))].sort();
+    this.mergeKey = `transforms:${ids.join(",")}`;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    let next = doc;
+    for (const entry of this.entries) {
+      next = replaceActor(next, entry.actorId, (actor) => ({
+        ...actor,
+        transform: {
+          position: [...entry.to.position],
+          rotation: [...entry.to.rotation],
+          scale: [...entry.to.scale],
+        },
+      }));
+    }
+    return next;
+  }
+
+  invert(): SetActorsTransformsCommand {
+    return new SetActorsTransformsCommand(
+      this.entries.map((entry) => ({
+        actorId: entry.actorId,
+        from: entry.to,
+        to: entry.from,
+      })),
+    );
+  }
+}
+
 export class RenameActorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.renameActor";
   readonly mergeKey: string;
@@ -639,6 +695,7 @@ export type SceneEditCommand =
   | AddActorCommand
   | RemoveActorCommand
   | SetActorTransformCommand
+  | SetActorsTransformsCommand
   | RenameActorCommand
   | ReparentActorCommand
   | ReorderActorCommand
@@ -661,6 +718,7 @@ export const SCENE_COMMAND_TYPES = [
   "scene.addActor",
   "scene.removeActor",
   "scene.setActorTransform",
+  "scene.setActorsTransforms",
   "scene.renameActor",
   "scene.reparentActor",
   "scene.reorderActor",
@@ -706,6 +764,13 @@ export function createSetActorTransformCommandFromJson(
     payload.from as SerializedTransform,
     payload.to as SerializedTransform,
   );
+}
+
+export function createSetActorsTransformsCommandFromJson(
+  payload: Record<string, unknown>,
+): SetActorsTransformsCommand {
+  const entries = Array.isArray(payload.entries) ? payload.entries : [];
+  return new SetActorsTransformsCommand(entries as ActorTransformEntry[]);
 }
 
 export function createRenameActorCommandFromJson(

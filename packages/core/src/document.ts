@@ -10,7 +10,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "anim-graph",
   "behaviour-tree",
   "blackboard",
-  "shader",
+  "material",
+  "material-function",
   "tileset",
   "tilemap",
   "enum",
@@ -64,8 +65,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "BehaviourTree";
     case "blackboard":
       return "Blackboard";
-    case "shader":
-      return "Shader";
+    case "material":
+      return "Material";
+    case "material-function":
+      return "MaterialFunction";
     case "tileset":
       return "Tileset";
     case "tilemap":
@@ -83,7 +86,14 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
   }
 }
 
-/** Preserve EditorUtilityInterface when a ui document is saved. */
+/**
+ * Preserve EditorUtilityInterface when a ui document is saved.
+ *
+ * A legacy `Shader` asset opens as a Material document and is rewritten to the
+ * canonical `Material` header type on save, which the migrate-on-save approval
+ * flow gates. Its `.shader.babasset` path is deliberately left alone so open
+ * documents, layout ids, references and source-control locks stay valid.
+ */
 export function assetTypeForDocumentSave(
   kind: AssetDocumentKind,
   existingType?: string | null,
@@ -92,6 +102,13 @@ export function assetTypeForDocumentSave(
     return "EditorUtilityInterface";
   }
   return assetTypeForDocumentKind(kind);
+}
+
+/** Header types that open as a Material document. */
+export const LEGACY_MATERIAL_ASSET_TYPES = ["Shader", "ShaderGraph"] as const;
+
+export function isLegacyMaterialAssetType(type: string): boolean {
+  return (LEGACY_MATERIAL_ASSET_TYPES as readonly string[]).includes(type);
 }
 
 export function documentKindForAssetType(type: string): AssetDocumentKind | null {
@@ -114,8 +131,12 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "behaviour-tree";
     case "Blackboard":
       return "blackboard";
+    case "Material":
     case "Shader":
-      return "shader";
+    case "ShaderGraph":
+      return "material";
+    case "MaterialFunction":
+      return "material-function";
     case "Tileset":
       return "tileset";
     case "Tilemap":
@@ -129,7 +150,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "PluginSettings":
       return "plugin-settings";
     case "Texture":
-    case "Material":
     case "Model":
     case "Audio":
     case "Animation":
@@ -161,8 +181,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Behaviour Tree";
     case "blackboard":
       return "Blackboard";
-    case "shader":
-      return "Shader";
+    case "material":
+      return "Material";
+    case "material-function":
+      return "Material Function";
     case "tileset":
       return "Tileset";
     case "tilemap":
@@ -253,7 +275,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|eui|ui|sprite|anim|shader|class|tileset|tilemap|plugin)\.(babasset|json)$/i,
+        /\.(scene|graph|eui|ui|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "") ?? path;

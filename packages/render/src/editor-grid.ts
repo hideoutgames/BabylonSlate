@@ -19,9 +19,9 @@ const GRID_PLANE_OFFSET = 0.002;
 const GRID_LINE_WIDTH = 1.25;
 
 /** Start dimming when this many major cells fit in the view half-extent. */
-export const GRID_VIEW_FADE_START_CELLS = 48;
+export const GRID_VIEW_FADE_START_CELLS = 28;
 /** Hide the grid once this many major cells fit in the view half-extent. */
-export const GRID_VIEW_FADE_END_CELLS = 96;
+export const GRID_VIEW_FADE_END_CELLS = 100;
 
 export interface EditorGridOptions {
   mode?: ViewportMode;

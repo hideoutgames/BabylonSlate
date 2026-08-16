@@ -127,6 +127,7 @@ import {
 } from "../lib/content-browser-helpers";
 import {
   classAssetPaths,
+  createProjectPluginAndRevealContent,
   isPluginDocumentReadOnly,
   mergePluginEditorUtilityObjects,
   playSceneLibraryPaths,
@@ -782,15 +783,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, projectService],
   );
 
-  const createProjectPlugin = useCallback(
-    async (displayName: string) => {
-      const created = await projectService.createProjectPlugin(displayName);
-      bump();
-      return created;
-    },
-    [bump, projectService],
-  );
-
   const deleteProjectPlugin = useCallback(
     async (guid: string) => {
       await projectService.deleteProjectPlugin(guid);
@@ -1108,6 +1100,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump();
     },
     [bump, documentService, scheduleDebouncedSave],
+  );
+
+  const createProjectPlugin = useCallback(
+    async (displayName: string) =>
+      createProjectPluginAndRevealContent(
+        (name) => projectService.createProjectPlugin(name),
+        setShowPluginContent,
+        displayName,
+      ),
+    [projectService, setShowPluginContent],
   );
 
   const approveMigrationsAndSave = useCallback(async () => {

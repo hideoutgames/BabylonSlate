@@ -39,6 +39,7 @@ export {
   ReparentComponentCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
+  SetActorsTransformsCommand,
   SetComponentPropertyCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
@@ -50,6 +51,7 @@ export {
   SetActorFolderCommand,
   SCENE_COMMAND_TYPES,
   type ActorFlags,
+  type ActorTransformEntry,
   type SceneEditCommand,
 } from "./commands/scene";
 export { diffSceneCommands } from "./commands/scene-diff";

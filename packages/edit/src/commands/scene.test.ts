@@ -24,6 +24,7 @@ import {
   ReparentComponentCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
+  SetActorsTransformsCommand,
   SetComponentPropertyCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
@@ -126,6 +127,37 @@ describe("scene commands", () => {
       createActor("a", "A").transform,
       createActor("a", "A").transform,
     );
+    expect(first.mergeKey).toBe(second.mergeKey);
+  });
+
+  it("SetActorsTransformsCommand apply-then-invert restores every actor", () => {
+    const scene = baseScene();
+    const fromA = scene.actors[0]!.transform;
+    const fromB = scene.actors[1]!.transform;
+    const toA = { ...fromA, position: [4, 0, 0] as [number, number, number] };
+    const toB = { ...fromB, position: [5, 1, 0] as [number, number, number] };
+    const command = new SetActorsTransformsCommand([
+      { actorId: "a", from: fromA, to: toA },
+      { actorId: "b", from: fromB, to: toB },
+    ]);
+    expectRoundTrip(scene, command);
+    const applied = command.apply(scene);
+    expect(applied.actors[0]!.transform.position).toEqual([4, 0, 0]);
+    expect(applied.actors[1]!.transform.position).toEqual([5, 1, 0]);
+  });
+
+  it("SetActorsTransformsCommand uses a stable merge key for the group", () => {
+    const from = createActor("a", "A").transform;
+    const to = { ...from, position: [1, 0, 0] as [number, number, number] };
+    const first = new SetActorsTransformsCommand([
+      { actorId: "b", from, to },
+      { actorId: "a", from, to },
+    ]);
+    const second = new SetActorsTransformsCommand([
+      { actorId: "a", from, to },
+      { actorId: "b", from, to },
+    ]);
+    expect(first.mergeKey).toBe("transforms:a,b");
     expect(first.mergeKey).toBe(second.mergeKey);
   });
 
@@ -295,6 +327,28 @@ describe("diffSceneCommands", () => {
     expect(commands.map((command) => command.type)).toEqual([
       "scene.removeActor",
     ]);
+  });
+
+  it("derives a single-actor transform as SetActorTransformCommand", () => {
+    const before = baseScene();
+    const after = structuredClone(before);
+    after.actors[0]!.transform.position = [2, 0, 0];
+    const commands = diffSceneCommands(before, after);
+    expect(commands.map((command) => command.type)).toEqual([
+      "scene.setActorTransform",
+    ]);
+  });
+
+  it("batches multi-actor transform diffs into one SetActorsTransformsCommand", () => {
+    const before = baseScene();
+    const after = structuredClone(before);
+    after.actors[0]!.transform.position = [2, 0, 0];
+    after.actors[1]!.transform.position = [3, 0, 0];
+    const commands = diffSceneCommands(before, after);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]!.type).toBe("scene.setActorsTransforms");
+    expect(commands[0]!.apply(before)).toEqual(after);
+    expect(commands[0]!.invert().apply(after)).toEqual(before);
   });
 
   it("derives transform, rename, reparent and flag deltas", () => {

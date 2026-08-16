@@ -349,11 +349,21 @@ export function componentPropertyRows(
           context,
           "Pick Mesh",
         ),
+        assetRow(
+          actorId,
+          component,
+          "materialGuid",
+          "Material",
+          ["Material"],
+          update,
+          context,
+          "Pick Material",
+        ),
         ...genericRows(
           actorId,
           component,
           update,
-          new Set(["meshKind", "assetGuid"]),
+          new Set(["meshKind", "assetGuid", "materialGuid"]),
         ),
       ];
     case "SpriteComponent":

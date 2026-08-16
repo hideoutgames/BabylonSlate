@@ -45,15 +45,26 @@ export function displayNodeTitle(nodeType: string, title?: string): string {
   return humanizePropertyLabel(nodeType.replace(/\./g, " "));
 }
 
+/**
+ * Host-supplied connection rule. Material graphs allow a Float to splat into a
+ * vector pin, which the default exact-kind rule would reject.
+ */
+export type PinCompatibilityRule = (
+  outgoing: SerializedPin,
+  incoming: SerializedPin,
+) => boolean;
+
 export function pinsAreCompatible(
   source: SerializedPin,
   target: SerializedPin,
+  rule?: PinCompatibilityRule,
 ): boolean {
   if (source.direction === target.direction) return false;
   const outgoing = source.direction === "out" ? source : target;
   const incoming = source.direction === "in" ? source : target;
   if (outgoing.kind !== incoming.kind) return false;
   if (outgoing.kind === "exec") return true;
+  if (rule) return rule(outgoing, incoming);
   if (outgoing.type.kind === incoming.type.kind) return true;
   return (
     outgoing.type.kind.toLowerCase().includes("wildcard") ||
@@ -64,15 +75,17 @@ export function pinsAreCompatible(
 export function firstCompatiblePin(
   pins: SerializedPin[] | undefined,
   dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
 ): SerializedPin | undefined {
-  return (pins ?? []).find((pin) => pinsAreCompatible(dragged, pin));
+  return (pins ?? []).find((pin) => pinsAreCompatible(dragged, pin, rule));
 }
 
 export function filterPaletteForPin(
   nodes: PaletteNode[],
   dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
 ): PaletteNode[] {
-  return nodes.filter((node) => firstCompatiblePin(node.pins, dragged));
+  return nodes.filter((node) => firstCompatiblePin(node.pins, dragged, rule));
 }
 
 export function isNearSourcePin(
@@ -87,6 +100,7 @@ export function collectSafeConnectPins(
   nodes: Array<{ id: string; pins?: SerializedPin[] }>,
   draggedNodeId: string,
   draggedPin: SerializedPin,
+  rule?: PinCompatibilityRule,
 ): SafeConnectPinRef[] {
   const refs: SafeConnectPinRef[] = [
     { nodeId: draggedNodeId, pinId: draggedPin.id },
@@ -94,7 +108,7 @@ export function collectSafeConnectPins(
   for (const node of nodes) {
     for (const pin of node.pins ?? []) {
       if (node.id === draggedNodeId && pin.id === draggedPin.id) continue;
-      if (pinsAreCompatible(draggedPin, pin)) {
+      if (pinsAreCompatible(draggedPin, pin, rule)) {
         refs.push({ nodeId: node.id, pinId: pin.id });
       }
     }

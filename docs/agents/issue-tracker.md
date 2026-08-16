@@ -272,7 +272,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
-| Multi-select gizmo (transform all selected) | later polish | Outline covers all; gizmo attaches to first pickable |
+| Multi-select gizmo (transform all selected) | Done | Outline covers all; gizmo attaches to the first pickable selection root; world-space TRS delta follows onto the other roots; `SetActorsTransformsCommand` is one undo |
 
 ## P7 slice ownership
 
@@ -332,7 +332,7 @@ Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../arch
 
 ### P9 Play-path residuals (do not rebuild P8/P9)
 
-Chrome polish (pin flash, multi-select gizmo) stays parked. Remaining Play/scripting holes were closed by the pre-P11 foundation wave on `cursor/foundation-harden-e9a2` (do not rebuild P8/P9 packages).
+Chrome polish (pin flash) stays parked. Multi-select gizmo group transforms are Done. Remaining Play/scripting holes were closed by the pre-P11 foundation wave on `cursor/foundation-harden-e9a2` (do not rebuild P8/P9 packages).
 
 | Item | Status |
 | --- | --- |
@@ -364,7 +364,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`) |
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 
-Parked with this wave: pin flash, multi-select gizmo, `WidgetComponent` `CreateForMesh`, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
+Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, CustomBlock GLSL IDE, assigning a shader to a live scene mesh. Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
 ### P9 follow-ups / open deferrals
 
@@ -427,7 +427,7 @@ Spec: [engineplan.md](../engineplan.md) §2.5. **Done.** Do not reopen AI packag
 
 ## P11 behaviour trees / navigation
 
-Foundation-hardening is on `main`. Chrome polish (pin flash, multi-select gizmo) is not P11 work. Lighting and cameras (`p-lighting-camera`) are Done. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
+Foundation-hardening is on `main`. Chrome polish (pin flash) is not P11 work. Multi-select gizmo group transforms are Done. Lighting and cameras (`p-lighting-camera`) are Done. Design notes: [behaviour-tree.md](../architecture/behaviour-tree.md), [navigation.md](../architecture/navigation.md).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -480,7 +480,7 @@ Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live 
 
 Follow-up (`cursor/ui-logic-graph-pass-2e3e`): dual DockView surfaces (`layout.json` `{ uiEditorMode, designer, logic }`); leftover `ui-logic` panel closed on restore; FunctionLibrary / EditorFunctionLibrary static Call Function unparked; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive.
 
-Do not start leftover chrome polish (pin flash, multi-select gizmo).
+Do not start leftover chrome polish (pin flash).
 
 ## P13 plugins
 

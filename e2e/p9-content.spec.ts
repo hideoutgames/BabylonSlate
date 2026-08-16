@@ -14,7 +14,12 @@ async function showContentBrowser(
 
 async function createAsset(
   page: import("@playwright/test").Page,
-  type: "UserInterface" | "Sprite" | "AnimationGraph" | "Shader",
+  type:
+    | "UserInterface"
+    | "Sprite"
+    | "AnimationGraph"
+    | "Material"
+    | "MaterialFunction",
   name: string,
 ): Promise<void> {
   await showContentBrowser(page);
@@ -254,7 +259,7 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("play-overlay-close").click();
   });
 
-  test("Sprite, AnimationGraph, and Shader open document workspaces", async ({
+  test("Sprite, AnimationGraph, and Material open document workspaces", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -272,11 +277,74 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("anim-graph-parameters")).toBeVisible();
     await expect(page.getByTestId("anim-graph-add-state")).toBeVisible();
 
-    await createAsset(page, "Shader", "Surface");
-    await page.locator('[data-asset-path="assets/Surface.shader.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-shader")).toBeVisible();
-    await expect(page.getByTestId("shader-graph-editor")).toBeVisible();
-    await expect(page.getByTestId("shader-preview")).toBeVisible();
+    await createAsset(page, "Material", "Surface");
+    await page
+      .locator('[data-asset-path="assets/Surface.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await expect(page.getByTestId("material-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("material-preview-canvas")).toBeVisible();
+  });
+
+  test("Material preview compiles the authored graph and follows the primitive picker", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "Material", "Rock");
+    await page
+      .locator('[data-asset-path="assets/Rock.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+
+    // A cheap surface graph compiles on its own and reports a ready preview.
+    const canvas = page.getByTestId("material-preview-canvas");
+    await expect(canvas).toHaveAttribute("data-status", "ready", {
+      timeout: 15000,
+    });
+    await expect(page.getByTestId("material-render")).toBeDisabled();
+    await expect(page.getByTestId("material-compiler-results")).toContainText(
+      "No Issues",
+    );
+
+    // Every primitive is reachable and keeps the preview compiling.
+    for (const mesh of ["cube", "cylinder", "cone", "plane"]) {
+      await page.getByTestId(`material-preview-mesh-${mesh}`).click();
+      await expect(canvas).toHaveAttribute("data-status", "ready", {
+        timeout: 15000,
+      });
+    }
+  });
+
+  test("Material Windows menu lists the material docks", async ({ page }) => {
+    await openTestProject(page);
+    await createAsset(page, "Material", "Docked");
+    await page
+      .locator('[data-asset-path="assets/Docked.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await page.getByTestId("windows-menu").click();
+    await expect(
+      page.getByTestId("windows-menu-material-preview"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("windows-menu-material-compiler-results"),
+    ).toBeVisible();
+  });
+
+  test("Material Function edits reach every calling material", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "MaterialFunction", "Tint");
+    await page
+      .locator('[data-asset-path="assets/Tint.matfunc.babasset"]')
+      .dblclick();
+    await expect(
+      page.getByTestId("document-workspace-material-function"),
+    ).toBeVisible();
+    await expect(page.getByTestId("material-function-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("material-function-inputs")).toBeVisible();
+    await expect(page.getByTestId("material-function-outputs")).toBeVisible();
   });
 
   test("Play overlay stick is reachable on iPad", {

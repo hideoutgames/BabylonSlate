@@ -21,6 +21,7 @@ import {
   ReparentComponentCommand,
   SetActorFlagsCommand,
   SetActorTransformCommand,
+  SetActorsTransformsCommand,
   SetComponentPropertyCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
@@ -285,5 +286,36 @@ export function diffSceneCommands(
     }
   }
 
-  return commands;
+  return batchActorTransformCommands(commands);
+}
+
+/** One undo step when a gizmo drag (or similar) moves several actors. */
+function batchActorTransformCommands(
+  commands: SceneEditCommand[],
+): SceneEditCommand[] {
+  const transforms = commands.filter(
+    (command): command is SetActorTransformCommand =>
+      command instanceof SetActorTransformCommand,
+  );
+  if (transforms.length < 2) return commands;
+  const batched = new SetActorsTransformsCommand(
+    transforms.map((command) => ({
+      actorId: command.actorId,
+      from: command.from,
+      to: command.to,
+    })),
+  );
+  const result: SceneEditCommand[] = [];
+  let inserted = false;
+  for (const command of commands) {
+    if (!(command instanceof SetActorTransformCommand)) {
+      result.push(command);
+      continue;
+    }
+    if (!inserted) {
+      result.push(batched);
+      inserted = true;
+    }
+  }
+  return result;
 }

@@ -13,7 +13,6 @@ import {
   normalizeFontPayload,
 } from "@babylonslate/assets";
 import { AnimGraphEditor } from "./anim-graph-editor";
-import { ShaderGraphEditor } from "./shader-graph-editor";
 import { BehaviourTreeEditor } from "./behaviour-tree-editor";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
@@ -58,9 +57,6 @@ export function AssetDocumentWorkspace({ documentId }: { documentId: string }) {
   }
   if (doc.ref.kind === "blackboard") {
     return <BlackboardEditor payload={payload} onChange={commit} />;
-  }
-  if (doc.ref.kind === "shader") {
-    return <ShaderGraphEditor payload={payload} onChange={commit} />;
   }
   if (doc.ref.kind === "asset-settings") {
     const indexed = assetRegistry

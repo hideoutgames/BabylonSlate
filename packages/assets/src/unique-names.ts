@@ -32,6 +32,8 @@ export function stripAssetFileSuffix(fileName: string): string {
     .replace(/\.sprite\.babasset$/i, "")
     .replace(/\.anim\.babasset$/i, "")
     .replace(/\.shader\.babasset$/i, "")
+    .replace(/\.material\.babasset$/i, "")
+    .replace(/\.matfunc\.babasset$/i, "")
     .replace(/\.tileset\.babasset$/i, "")
     .replace(/\.tilemap\.babasset$/i, "")
     .replace(/\.plugin\.babasset$/i, "")
@@ -48,6 +50,8 @@ export function assetFileSuffix(fileName: string): string {
   if (/\.sprite\.babasset$/i.test(fileName)) return ".sprite.babasset";
   if (/\.anim\.babasset$/i.test(fileName)) return ".anim.babasset";
   if (/\.shader\.babasset$/i.test(fileName)) return ".shader.babasset";
+  if (/\.material\.babasset$/i.test(fileName)) return ".material.babasset";
+  if (/\.matfunc\.babasset$/i.test(fileName)) return ".matfunc.babasset";
   if (/\.tileset\.babasset$/i.test(fileName)) return ".tileset.babasset";
   if (/\.tilemap\.babasset$/i.test(fileName)) return ".tilemap.babasset";
   if (/\.plugin\.babasset$/i.test(fileName)) return ".plugin.babasset";

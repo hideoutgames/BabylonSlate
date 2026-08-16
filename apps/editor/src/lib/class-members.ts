@@ -470,9 +470,11 @@ function syncFunctionGraphPins(
           ) {
             return node;
           }
+          const nextData: Record<string, unknown> = { ...node.data, pins };
+          delete nextData.__pins;
           return {
             ...node,
-            data: { ...node.data, pins },
+            data: nextData,
           };
         }),
       },

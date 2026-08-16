@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   canMutateContentBrowserRoot,
   classAssetPaths,
   contentBrowserRootForPath,
   contentBrowserRoots,
+  createProjectPluginAndRevealContent,
   filterBabpluginFiles,
   inboundRefsFromOtherRoots,
   isBabpluginFile,
@@ -17,7 +18,6 @@ import {
   pluginDownloadFileName,
   pluginRootId,
   pluginSettingsIdentityFields,
-  pluginContentToggleLabel,
   rootIdForFolderPath,
   uniquePluginFolderName,
 } from "./plugin-ui";
@@ -39,10 +39,24 @@ describe("plugin identity helpers", () => {
   });
 });
 
-describe("plugin content visibility label", () => {
-  it("switches between Show and Hide Plugin Content", () => {
-    expect(pluginContentToggleLabel(false)).toBe("Show Plugin Content");
-    expect(pluginContentToggleLabel(true)).toBe("Hide Plugin Content");
+describe("createProjectPluginAndRevealContent", () => {
+  it("creates the plugin then turns Show Plugin Content on", async () => {
+    const created = {
+      pluginGuid: "new-guid",
+      settings: { displayName: "Pack" },
+    };
+    const create = vi.fn(async () => created);
+    const setShowPluginContent = vi.fn();
+
+    const result = await createProjectPluginAndRevealContent(
+      create,
+      setShowPluginContent,
+      "Pack",
+    );
+
+    expect(create).toHaveBeenCalledWith("Pack");
+    expect(setShowPluginContent).toHaveBeenCalledWith(true);
+    expect(result).toBe(created);
   });
 });
 
