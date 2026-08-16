@@ -102,6 +102,7 @@ describe("Add Component catalog", () => {
       projectionMode: "perspective",
       nearClip: 0.1,
       farClip: 1000,
+      attemptPossessViewTarget: false,
     });
     expect(defaultPropertiesFor("CameraComponent", "2d", "2d")).toMatchObject({
       projectionMode: "orthographic",

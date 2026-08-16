@@ -7,6 +7,7 @@ import { encodeTriangleGlb } from "./model-mesh";
 import { setupDefaultViewport } from "./viewport";
 import {
   applyAssignMesh,
+  applyPossessCamera,
   createPlayMesh,
   createSnapshotSceneBinding,
   applySnapshotToScene,
@@ -199,6 +200,45 @@ describe("createPlayMesh", () => {
     const camera = binding.cameras.get(1) as { position: { x: number; y: number } };
     expect(camera.position.x).toBeCloseTo(0.01, 6);
     expect(camera.position.y).toBeCloseTo(0.03, 6);
+  });
+
+  it("prefers a possessed camera over the Default Camera", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    setupDefaultViewport(scene);
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: true, projectionMode: "perspective" },
+    });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: false, projectionMode: "perspective" },
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 2,
+      actors: [1, 2].map((slotId) => ({
+        slotId,
+        position: { x: slotId, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+        flags: 1,
+      })),
+    });
+    expect(scene.activeCamera?.name).toBe("authoredCamera:1");
+
+    applyPossessCamera(scene, binding, 2);
+    expect(scene.activeCamera?.name).toBe("authoredCamera:2");
   });
 
   it("keeps a visible mesh for every actor slot in one snapshot", () => {
