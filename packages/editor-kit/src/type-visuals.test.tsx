@@ -59,6 +59,14 @@ describe("resolveTypeVisual", () => {
     expect(visual.icon).toBe(PuzzleIcon);
   });
 
+  it("treats Mesh assets as the model family", () => {
+    const mesh = resolveTypeVisual({ assetType: "Mesh" });
+    const model = resolveTypeVisual({ assetType: "Model" });
+    expect(mesh.family).toBe("model");
+    expect(mesh.icon).toBe(model.icon);
+    expect(mesh.colorVar).toBe(model.colorVar);
+  });
+
   it("shares Class color for Object, Actor, and Widget with different icons", () => {
     const objectVisual = resolveTypeVisual({ classId: "BObject" });
     const actorVisual = resolveTypeVisual({ classId: "Actor" });

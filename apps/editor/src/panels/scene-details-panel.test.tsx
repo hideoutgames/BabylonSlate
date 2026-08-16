@@ -126,7 +126,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(button.textContent).toContain("Mesh");
     expect(button.textContent).not.toContain("mesh-1");
     expect(button.querySelector("[data-type-family]")?.getAttribute("data-type-family")).toBe(
-      "mesh",
+      "model",
     );
     fireEvent.click(button);
     expect(await screen.findByTestId("search-item-mesh-1")).toBeTruthy();
