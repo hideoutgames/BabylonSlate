@@ -60,14 +60,16 @@ const LOCAL_VARIABLES_SECTION = {
   local: true,
 } as const;
 
-function sectionsForTree(activeFunctionId?: string | null) {
-  if (!activeFunctionId) return [...BLUEPRINT_SECTIONS];
-  const sections: Array<{
-    id: string;
-    label: string;
-    kind: MyClassMember["kind"];
-    local?: boolean;
-  }> = [...BLUEPRINT_SECTIONS];
+type BlueprintSection = {
+  id: string;
+  label: string;
+  kind: MyClassMember["kind"];
+  local?: boolean;
+};
+
+function sectionsForTree(activeFunctionId?: string | null): BlueprintSection[] {
+  const sections: BlueprintSection[] = [...BLUEPRINT_SECTIONS];
+  if (!activeFunctionId) return sections;
   const variableIndex = sections.findIndex((section) => section.id === "variables");
   sections.splice(variableIndex + 1, 0, LOCAL_VARIABLES_SECTION);
   return sections;
