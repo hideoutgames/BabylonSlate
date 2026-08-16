@@ -233,6 +233,45 @@ export function nodeChangesMutateGraph(
   return changes.some((change) => change.type !== "select");
 }
 
+export type GraphChangeKind = "position" | "graph";
+
+export type GraphChangeMeta = { kind: GraphChangeKind };
+
+type EmitNodeChange = { type: string; dragging?: boolean };
+
+/**
+ * When `commitPositionsOnDragEnd` is set, in-flight XYFlow position frames
+ * stay local. Topology (add/remove) still emits immediately.
+ */
+export function shouldEmitNodeChanges(
+  changes: ReadonlyArray<EmitNodeChange>,
+  options?: { commitPositionsOnDragEnd?: boolean },
+): boolean {
+  if (!nodeChangesMutateGraph(changes)) return false;
+  if (!options?.commitPositionsOnDragEnd) return true;
+  const mutating = changes.filter((change) => change.type !== "select");
+  const hasOtherMutation = mutating.some((change) => change.type !== "position");
+  if (hasOtherMutation) return true;
+  const positions = mutating.filter((change) => change.type === "position");
+  if (positions.length === 0) return true;
+  return positions.some((change) => change.dragging === false);
+}
+
+export function graphChangeKindFromNodeChanges(
+  changes: ReadonlyArray<EmitNodeChange>,
+): GraphChangeKind {
+  const mutating = changes.filter(
+    (change) => change.type !== "select" && change.type !== "dimensions",
+  );
+  if (
+    mutating.length > 0 &&
+    mutating.every((change) => change.type === "position")
+  ) {
+    return "position";
+  }
+  return "graph";
+}
+
 type PositionChange = {
   type: string;
   id?: string;

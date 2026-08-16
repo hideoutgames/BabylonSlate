@@ -113,23 +113,43 @@ function lastCommit(): MaterialDocument {
   return calls[calls.length - 1]![1] as MaterialDocument;
 }
 
+/** Base UI Select ignores a click that did not start on the item. */
+function pickSelectItem(testId: string) {
+  const item = screen.getByTestId(testId);
+  fireEvent.pointerDown(item);
+  fireEvent.click(item);
+}
+
 describe("Material preview panel", () => {
-  it("offers all six preview primitives", () => {
+  it("offers preview primitives from a compact select", async () => {
     render(<MaterialPreviewPanel {...panelProps} />);
+    expect(screen.queryByTestId("material-preview-mesh-cube")).toBeNull();
+    fireEvent.click(screen.getByTestId("material-preview-mesh"));
+    await waitFor(() => {
+      expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
+    });
     for (const mesh of ["cube", "sphere", "cylinder", "cone", "plane", "custom"]) {
       expect(screen.getByTestId(`material-preview-mesh-${mesh}`)).toBeTruthy();
     }
   });
 
-  it("stores the chosen primitive on the document", () => {
+  it("stores the chosen primitive on the document", async () => {
     render(<MaterialPreviewPanel {...panelProps} />);
-    fireEvent.click(screen.getByTestId("material-preview-mesh-cube"));
+    fireEvent.click(screen.getByTestId("material-preview-mesh"));
+    await waitFor(() => {
+      expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
+    });
+    pickSelectItem("material-preview-mesh-cube");
     expect(lastCommit().preview.mesh).toBe("cube");
   });
 
   it("opens the model picker when Custom is chosen with no mesh", async () => {
     render(<MaterialPreviewPanel {...panelProps} />);
-    fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
+    fireEvent.click(screen.getByTestId("material-preview-mesh"));
+    await waitFor(() => {
+      expect(screen.getByTestId("material-preview-mesh-custom")).toBeTruthy();
+    });
+    pickSelectItem("material-preview-mesh-custom");
     await waitFor(() => {
       expect(screen.getByTestId("material-preview-mesh-picker")).toBeTruthy();
     });

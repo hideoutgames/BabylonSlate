@@ -37,6 +37,7 @@ export {
 } from "./document";
 export {
   lowerMaterialDocument,
+  materialCompileKey,
   type MaterialBuildPlan,
   type MaterialCostFeatures,
   type MaterialLowerContext,

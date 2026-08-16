@@ -189,6 +189,35 @@ function fnv1a(input: string): string {
   return hash.toString(16).padStart(8, "0");
 }
 
+function compileFingerprint(document: MaterialDocument): string {
+  return JSON.stringify({
+    domain: document.domain,
+    shadingModel: document.shadingModel,
+    blendMode: document.blendMode,
+    twoSided: document.twoSided,
+    alphaCutoff: document.alphaCutoff,
+    nodes: document.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      properties: node.properties,
+    })),
+    edges: document.edges,
+  });
+}
+
+/**
+ * Preview/compile cache key. Node positions are excluded so layout drags do
+ * not rebuild GPU materials. Invalid graphs still get a stable key.
+ */
+export function materialCompileKey(
+  document: MaterialDocument,
+  context?: MaterialLowerContext,
+): string {
+  const result = lowerMaterialDocument(document, context);
+  if (result.ok) return result.plan.hash;
+  return `invalid:${fnv1a(compileFingerprint(document))}`;
+}
+
 export interface MaterialLowerContext extends MaterialValidationContext {
   functions?: Record<string, MaterialFunctionDocument>;
 }

@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, Scene } from "@babylonjs/core";
+import {
+  ArcRotateCamera,
+  MeshBuilder,
+  NullEngine,
+  Scene,
+  Vector3,
+} from "@babylonjs/core";
 import { MATERIAL_PREVIEW_MESHES } from "@babylonslate/shader-graph";
 import {
   MATERIAL_PREVIEW_MESH_NAME,
+  aimPreviewCameraAtMesh,
   createMaterialPreviewMesh,
   createMaterialPreviewScene,
 } from "./material-preview";
@@ -81,6 +88,45 @@ describe("material preview scene", () => {
     const original = host.mesh;
     host.setMesh("plane");
     expect(original.isDisposed()).toBe(true);
+  });
+
+  it("disables panning so orbit stays on the mesh", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    expect(host.camera.panningSensibility).toBe(0);
+  });
+
+  it("aims the camera at a mesh that is not at the origin", () => {
+    const scene = new Scene(engine());
+    disposers.push(() => scene.dispose());
+    const camera = new ArcRotateCamera(
+      "aim",
+      0,
+      Math.PI / 2,
+      4,
+      Vector3.Zero(),
+      scene,
+    );
+    const mesh = MeshBuilder.CreateBox("offset", { size: 1 }, scene);
+    mesh.position.set(2, 3, 4);
+    mesh.computeWorldMatrix(true);
+    aimPreviewCameraAtMesh(camera, mesh);
+    expect(camera.target.x).toBeCloseTo(2);
+    expect(camera.target.y).toBeCloseTo(3);
+    expect(camera.target.z).toBeCloseTo(4);
+  });
+
+  it("reframes the camera when the preview primitive changes", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    host.mesh.position.set(1.5, 0, 0);
+    host.mesh.computeWorldMatrix(true);
+    const next = host.setMesh("cube");
+    next.computeWorldMatrix(true);
+    const center = next.getBoundingInfo().boundingBox.centerWorld;
+    expect(host.camera.target.x).toBeCloseTo(center.x);
+    expect(host.camera.target.y).toBeCloseTo(center.y);
+    expect(host.camera.target.z).toBeCloseTo(center.z);
   });
 
   it("disposes its scene on close", () => {

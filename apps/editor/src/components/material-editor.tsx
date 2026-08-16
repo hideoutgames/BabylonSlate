@@ -14,7 +14,13 @@ import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
 import { GraphEditor } from "@babylonslate/graph-ui";
 import {
   MATERIAL_PREVIEW_MESHES,
@@ -143,7 +149,13 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           pinCompatibility={materialPinsAreCompatible}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
           focusedNodeId={editing.focusedNodeId ?? undefined}
-          onChange={(next) => commit(serializedToMaterialGraph(next, document))}
+          commitPositionsOnDragEnd
+          onChange={(next, meta) =>
+            commit(
+              serializedToMaterialGraph(next, document),
+              meta?.kind === "position" ? "material-node-move" : undefined,
+            )
+          }
         />
       </div>
     </PanelFrame>
@@ -188,8 +200,12 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           paletteNodes={materialPaletteNodes("surface")}
           pinCompatibility={materialPinsAreCompatible}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
-          onChange={(next) =>
-            commit(serializedToMaterialFunctionGraph(next, document))
+          commitPositionsOnDragEnd
+          onChange={(next, meta) =>
+            commit(
+              serializedToMaterialFunctionGraph(next, document),
+              meta?.kind === "position" ? "material-node-move" : undefined,
+            )
           }
         />
       </div>
@@ -234,13 +250,10 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
       <div className="flex h-full min-h-0 flex-col">
         <ToolbarStrip>
-          <ToggleGroup
-            variant="outline"
-            size="touch"
-            spacing={1}
-            value={[document.preview.mesh]}
+          <Select
+            value={document.preview.mesh}
             onValueChange={(value) => {
-              const next = value[0] as MaterialPreviewMesh | undefined;
+              const next = value as MaterialPreviewMesh | undefined;
               if (!next) return;
               commit({
                 ...document,
@@ -254,20 +267,31 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
                 setMeshPickOpen(true);
               }
             }}
-            aria-label="Preview Mesh"
-            data-testid="material-preview-mesh"
           >
-            {MATERIAL_PREVIEW_MESHES.map((mesh) => (
-              <ToggleGroupItem
-                key={mesh}
-                value={mesh}
-                aria-label={PREVIEW_MESH_LABEL[mesh]}
-                data-testid={`material-preview-mesh-${mesh}`}
-              >
-                {PREVIEW_MESH_LABEL[mesh]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+            <SelectTrigger
+              aria-label="Preview Mesh"
+              className="min-h-[var(--touch-target,44px)] w-[9.5rem]"
+              data-testid="material-preview-mesh"
+            >
+              <SelectValue>
+                {(value: unknown) =>
+                  PREVIEW_MESH_LABEL[value as MaterialPreviewMesh] ??
+                  String(value ?? "")
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {MATERIAL_PREVIEW_MESHES.map((mesh) => (
+                <SelectItem
+                  key={mesh}
+                  value={mesh}
+                  data-testid={`material-preview-mesh-${mesh}`}
+                >
+                  {PREVIEW_MESH_LABEL[mesh]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             type="button"
             variant="outline"

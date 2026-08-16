@@ -4,7 +4,7 @@ import {
   createDefaultMaterialFunctionDocument,
   type MaterialDocument,
 } from "./document";
-import { lowerMaterialDocument } from "./lower";
+import { lowerMaterialDocument, materialCompileKey } from "./lower";
 
 function surfaceWithMultiply(): MaterialDocument {
   const doc = createDefaultMaterialDocument();
@@ -189,6 +189,41 @@ describe("material lowering", () => {
     expect(first.ok && second.ok).toBe(true);
     if (!first.ok || !second.ok) return;
     expect(first.plan.hash).toBe(second.plan.hash);
+  });
+
+  it("keeps the compile key stable when only node positions change", () => {
+    const a = createDefaultMaterialDocument();
+    const b = createDefaultMaterialDocument();
+    b.nodes[0]!.position = { x: 999, y: -42 };
+    expect(materialCompileKey(a)).toBe(materialCompileKey(b));
+  });
+
+  it("changes the compile key when a node property changes", () => {
+    const a = createDefaultMaterialDocument();
+    const b = createDefaultMaterialDocument();
+    const color = b.nodes.find((node) => node.type === "const.color");
+    expect(color).toBeDefined();
+    color!.properties = { value: [1, 0, 0, 1] };
+    expect(materialCompileKey(a)).not.toBe(materialCompileKey(b));
+  });
+
+  it("keeps an invalid compile key stable across position-only edits", () => {
+    const a = createDefaultMaterialDocument();
+    a.nodes.push({
+      id: "bogus",
+      type: "math.doesNotExist",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    const b = createDefaultMaterialDocument();
+    b.nodes.push({
+      id: "bogus",
+      type: "math.doesNotExist",
+      position: { x: 40, y: 80 },
+      properties: {},
+    });
+    expect(materialCompileKey(a)).toBe(materialCompileKey(b));
+    expect(materialCompileKey(a).startsWith("invalid:")).toBe(true);
   });
 
   it("counts texture samples and cost for the preview policy", () => {
