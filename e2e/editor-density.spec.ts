@@ -1,7 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { createContentBrowserAsset, openTestProject } from "./open-test-project";
+import {
+  createContentBrowserAsset,
+  openContentBrowser,
+  openTestProject,
+} from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
 async function paintSelectContentTiles(
@@ -563,5 +567,123 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
       0,
     );
+  });
+
+  test("Material Focus hides Preview and restores it on exit", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "Material", "Rock");
+    await page
+      .locator('[data-asset-path="assets/Rock.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("material-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("material-preview-panel")).toBeVisible();
+
+    const focus = page.getByTestId("focus-layout");
+    await expect(focus).toBeEnabled();
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("material-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("material-preview-panel")).not.toBeVisible();
+
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("material-preview-panel")).toBeVisible();
+  });
+
+  test("UserInterface Designer Focus hides Hierarchy", async ({ page }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-ui")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("ui-design-panel")).toBeVisible();
+    await expect(page.getByTestId("ui-hierarchy-panel")).toBeVisible();
+
+    const focus = page.getByTestId("focus-layout");
+    await expect(focus).toBeEnabled();
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("ui-design-panel")).toBeVisible();
+    await expect(page.getByTestId("ui-hierarchy-panel")).not.toBeVisible();
+
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("ui-hierarchy-panel")).toBeVisible();
+  });
+
+  test("ScriptInterface Focus hides Methods", async ({ page }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "ScriptInterface", "IHit");
+    await page.locator('[data-asset-path="assets/IHit.babasset"]').dblclick();
+    await expect(
+      page.getByTestId("document-workspace-script-interface"),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("interface-preview-panel")).toBeVisible();
+    await expect(page.getByTestId("interface-methods-panel")).toBeVisible();
+
+    const focus = page.getByTestId("focus-layout");
+    await expect(focus).toBeEnabled();
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("interface-preview-panel")).toBeVisible();
+    await expect(page.getByTestId("interface-methods-panel")).not.toBeVisible();
+
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("interface-methods-panel")).toBeVisible();
+  });
+
+  test("Animation Graph Focus hides Details", async ({ page }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "AnimationGraph", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-details-empty")).toBeVisible();
+    await expect(page.getByTestId("windows-menu")).toBeEnabled();
+
+    const focus = page.getByTestId("focus-layout");
+    await expect(focus).toBeEnabled();
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-details-empty")).not.toBeVisible();
+
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("anim-graph-details-empty")).toBeVisible();
+  });
+
+  test("Behaviour Tree Focus hides Details", async ({ page }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "BehaviourTree", "Patrol");
+    await page.locator('[data-asset-path="assets/Patrol.bt.babasset"]').dblclick();
+    await expect(
+      page.getByTestId("document-workspace-behaviour-tree"),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await expect(page.getByTestId("bt-details")).toBeVisible();
+
+    const focus = page.getByTestId("focus-layout");
+    await expect(focus).toBeEnabled();
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await expect(page.getByTestId("bt-details")).not.toBeVisible();
+
+    await focus.click();
+    await expect(focus).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("bt-details")).toBeVisible();
+
+    await openContentBrowser(page);
+    await expect(page.getByTestId("focus-layout")).toBeDisabled();
   });
 });

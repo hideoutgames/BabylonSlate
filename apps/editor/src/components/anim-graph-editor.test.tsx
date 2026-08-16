@@ -1,7 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultAnimGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
-import { AnimGraphEditor } from "./anim-graph-editor";
+import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
+import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
+import {
+  AnimGraphDetailsPanel,
+  AnimGraphGraphPanel,
+  AnimGraphParametersPanel,
+} from "./anim-graph-editor";
 
 if (typeof window !== "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -16,36 +23,100 @@ if (typeof window !== "undefined") {
   });
 }
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: {
-      list: () => [
+const DOC_ID = "anim-graph:assets/Loco.anim.babasset";
+
+const store = vi.hoisted(() => {
+  let content: Record<string, unknown> = {};
+  const listeners = new Set<() => void>();
+  return {
+    applyAssetDocumentChange: vi.fn(
+      async (_id: string, next: Record<string, unknown>) => {
+        content = next;
+        listeners.forEach((listener) => listener());
+        return true;
+      },
+    ),
+    getSnapshot: () => content,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    reset: (next: Record<string, unknown>) => {
+      content = next;
+      listeners.forEach((listener) => listener());
+    },
+  };
+});
+
+vi.mock("../context/document-context", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+  useDocuments: () => {
+    const content = useSyncExternalStore(store.subscribe, store.getSnapshot);
+    return {
+      openDocuments: [
         {
-          header: { guid: "spr-1", name: "Hero", type: "Sprite" },
-          path: "assets/Hero.sprite.babasset",
-        },
-        {
-          header: { guid: "anim-1", name: "Walk", type: "Animation" },
-          path: "assets/Walk.animation.babasset",
-        },
-        {
-          header: { guid: "tex-1", name: "Atlas", type: "Texture" },
-          path: "assets/Atlas.texture.babasset",
+          id: DOC_ID,
+          ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
+          content,
         },
       ],
-      getByGuid: (guid: string) =>
-        guid === "spr-1"
-          ? { header: { guid: "spr-1", name: "Hero", type: "Sprite" } }
-          : guid === "anim-1"
-            ? { header: { guid: "anim-1", name: "Walk", type: "Animation" } }
-            : undefined,
-    },
-  }),
-}));
+      applyAssetDocumentChange: store.applyAssetDocumentChange,
+      assetRegistry: {
+        list: () => [
+          {
+            header: { guid: "spr-1", name: "Hero", type: "Sprite" },
+            path: "assets/Hero.sprite.babasset",
+          },
+          {
+            header: { guid: "anim-1", name: "Walk", type: "Animation" },
+            path: "assets/Walk.animation.babasset",
+          },
+          {
+            header: { guid: "tex-1", name: "Atlas", type: "Texture" },
+            path: "assets/Atlas.texture.babasset",
+          },
+        ],
+        getByGuid: (guid: string) =>
+          guid === "spr-1"
+            ? { header: { guid: "spr-1", name: "Hero", type: "Sprite" } }
+            : guid === "anim-1"
+              ? { header: { guid: "anim-1", name: "Walk", type: "Animation" } }
+              : undefined,
+      },
+    };
+  },
+  };
+});
 
 afterEach(() => {
   cleanup();
 });
+
+beforeEach(() => {
+  store.applyAssetDocumentChange.mockClear();
+  store.reset(createDefaultAnimGraph() as unknown as Record<string, unknown>);
+});
+
+const panelProps = {} as IDockviewPanelProps;
+
+function renderAnimGraph(payload: AnimGraphDocument = createDefaultAnimGraph()) {
+  store.reset(payload as unknown as Record<string, unknown>);
+  return render(
+    <DocumentWorkspaceProvider documentId={DOC_ID}>
+      <AnimGraphEditingProvider>
+        <AnimGraphParametersPanel {...panelProps} />
+        <AnimGraphGraphPanel {...panelProps} />
+        <AnimGraphDetailsPanel {...panelProps} />
+      </AnimGraphEditingProvider>
+    </DocumentWorkspaceProvider>,
+  );
+}
+
+function lastCommit(): AnimGraphDocument {
+  const calls = store.applyAssetDocumentChange.mock.calls;
+  return calls[calls.length - 1]![1] as unknown as AnimGraphDocument;
+}
 
 function locoGraph(): AnimGraphDocument {
   const doc = createDefaultAnimGraph();
@@ -79,12 +150,7 @@ function locoGraph(): AnimGraphDocument {
 
 describe("AnimGraphEditor", () => {
   it("hydrates in/out pins on state nodes", async () => {
-    const { container } = render(
-      <AnimGraphEditor
-        payload={createDefaultAnimGraph() as unknown as Record<string, unknown>}
-        onChange={() => {}}
-      />,
-    );
+    const { container } = renderAnimGraph();
     await waitFor(() => {
       expect(container.querySelector('[data-handleid="in"]')).not.toBeNull();
       expect(container.querySelector('[data-handleid="out"]')).not.toBeNull();
@@ -92,12 +158,7 @@ describe("AnimGraphEditor", () => {
   });
 
   it("lists the state node in Add Node", async () => {
-    const { container } = render(
-      <AnimGraphEditor
-        payload={createDefaultAnimGraph() as unknown as Record<string, unknown>}
-        onChange={() => {}}
-      />,
-    );
+    const { container } = renderAnimGraph();
     await waitFor(() => {
       expect(container.querySelector(".react-flow__pane")).not.toBeNull();
     });
@@ -110,27 +171,16 @@ describe("AnimGraphEditor", () => {
   });
 
   it("lists Parameters and Add State", () => {
-    render(
-      <AnimGraphEditor
-        payload={createDefaultAnimGraph() as unknown as Record<string, unknown>}
-        onChange={() => {}}
-      />,
-    );
+    renderAnimGraph();
     expect(screen.getByTestId("anim-graph-parameters")).toBeTruthy();
     expect(screen.getByTestId("anim-graph-add-state")).toBeTruthy();
     expect(screen.getByTestId("anim-graph-state-idle")).toBeTruthy();
   });
 
   it("adds a state from the States list", () => {
-    const onChange = vi.fn();
-    render(
-      <AnimGraphEditor
-        payload={createDefaultAnimGraph() as unknown as Record<string, unknown>}
-        onChange={onChange}
-      />,
-    );
+    renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-add-state"));
-    expect(onChange).toHaveBeenCalledWith(
+    expect(lastCommit()).toEqual(
       expect.objectContaining({
         states: expect.arrayContaining([
           expect.objectContaining({ id: "idle" }),
@@ -138,43 +188,30 @@ describe("AnimGraphEditor", () => {
         ]),
       }),
     );
-    const next = onChange.mock.calls[0]![0] as AnimGraphDocument;
-    expect(next.states).toHaveLength(2);
-    expect(next.states[1]!.position.x).toBeGreaterThan(next.states[0]!.position.x);
+    expect(lastCommit().states).toHaveLength(2);
+    expect(lastCommit().states[1]!.position.x).toBeGreaterThan(
+      lastCommit().states[0]!.position.x,
+    );
   });
 
   it("shows Details after selecting a state and toggles loop", () => {
-    const onChange = vi.fn();
-    render(
-      <AnimGraphEditor
-        payload={createDefaultAnimGraph() as unknown as Record<string, unknown>}
-        onChange={onChange}
-      />,
-    );
+    renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     expect(screen.getByTestId("property-name")).toBeTruthy();
     expect(screen.getByTestId("property-loop")).toBeTruthy();
     fireEvent.click(screen.getByTestId("property-loop"));
-    expect(onChange).toHaveBeenCalledWith(
+    expect(lastCommit()).toEqual(
       expect.objectContaining({
-        states: [
-          expect.objectContaining({ id: "idle", loop: false }),
-        ],
+        states: [expect.objectContaining({ id: "idle", loop: false })],
       }),
     );
   });
 
   it("edits an outgoing transition without wiping its condition", () => {
-    const onChange = vi.fn();
-    render(
-      <AnimGraphEditor
-        payload={locoGraph() as unknown as Record<string, unknown>}
-        onChange={onChange}
-      />,
-    );
+    renderAnimGraph(locoGraph());
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     fireEvent.click(screen.getByTestId("property-idle-to-run-hasExitTime"));
-    expect(onChange).toHaveBeenCalledWith(
+    expect(lastCommit()).toEqual(
       expect.objectContaining({
         transitions: [
           expect.objectContaining({
@@ -189,13 +226,7 @@ describe("AnimGraphEditor", () => {
   });
 
   it("picks an Animation clip for the selected state", async () => {
-    const onChange = vi.fn();
-    render(
-      <AnimGraphEditor
-        payload={createDefaultAnimGraph() as unknown as Record<string, unknown>}
-        onChange={onChange}
-      />,
-    );
+    renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     fireEvent.click(screen.getByTestId("property-clipAsset"));
     await waitFor(() => {
@@ -203,7 +234,7 @@ describe("AnimGraphEditor", () => {
     });
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-anim-1"));
-    expect(onChange).toHaveBeenCalledWith(
+    expect(lastCommit()).toEqual(
       expect.objectContaining({
         clips: expect.arrayContaining([
           expect.objectContaining({

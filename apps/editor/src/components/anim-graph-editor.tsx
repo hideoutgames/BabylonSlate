@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { IDockviewPanelProps } from "dockview-react";
 import {
   ANIM_STATE_LAYOUT_GAP_X,
   animGraphToSerialized,
@@ -25,6 +26,8 @@ import {
 import { Button } from "@babylonslate/ui/components/button";
 import { GraphEditor } from "@babylonslate/graph-ui";
 import { useDocuments } from "../context/document-context";
+import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
 
 const ALWAYS_CONDITION = "__always__";
 
@@ -132,20 +135,72 @@ function upsertStateClip(
   };
 }
 
-export function AnimGraphEditor({
-  payload,
-  onChange,
-}: {
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}) {
-  const { assetRegistry } = useDocuments();
-  const doc = useMemo(() => asAnimGraph(payload), [payload]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [clipPick, setClipPick] = useState(false);
+function useAnimGraphDocument() {
+  const { documentId } = useDocumentWorkspace();
+  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
+  const entry = openDocuments.find((item) => item.id === documentId);
+  const doc = useMemo(
+    () => asAnimGraph((entry?.content ?? {}) as Record<string, unknown>),
+    [entry?.content],
+  );
   const commit = (next: AnimGraphDocument) => {
-    onChange(next as unknown as Record<string, unknown>);
+    void applyAssetDocumentChange(
+      documentId,
+      next as unknown as Record<string, unknown>,
+    );
   };
+  return { doc, commit, assetRegistry };
+}
+
+export function AnimGraphParametersPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const { doc, commit } = useAnimGraphDocument();
+  const { selectedId, setSelectedId } = useAnimGraphEditing();
+  return (
+    <PanelFrame>
+      <div className="flex flex-col gap-4 p-3">
+        <NamedListEditor
+          title="Parameters"
+          values={doc.parameters}
+          addLabel="Add Parameter"
+          addPlaceholder="Name"
+          onChange={(parameters) => commit({ ...doc, parameters })}
+          data-testid="anim-graph-parameters"
+        />
+        <div className="flex flex-col gap-2">
+          <div className="text-sm font-medium">States</div>
+          {doc.states.map((state) => (
+            <Button
+              key={state.id}
+              type="button"
+              variant={selectedId === state.id ? "outline" : "ghost"}
+              className="min-h-[var(--touch-target,44px)] w-full justify-start"
+              aria-pressed={selectedId === state.id}
+              data-testid={`anim-graph-state-${state.id}`}
+              onClick={() => setSelectedId(state.id)}
+            >
+              {state.name}
+            </Button>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-[var(--touch-target,44px)] w-fit"
+            data-testid="anim-graph-add-state"
+            onClick={() => commit(addAnimState(doc))}
+          >
+            Add State
+          </Button>
+        </div>
+      </div>
+    </PanelFrame>
+  );
+}
+
+export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const { doc, commit } = useAnimGraphDocument();
+  const { selectedId, setSelectedId } = useAnimGraphEditing();
   const initialGraph = useMemo(
     () => hydrateAnimGraphForEditor(animGraphToSerialized(doc)),
     [doc],
@@ -155,6 +210,36 @@ export function AnimGraphEditor({
     severity: row.severity,
     message: row.message,
   }));
+  return (
+    <PanelFrame className="flex-1">
+      <div className="flex h-full min-h-0 flex-col" data-testid="anim-graph-editor">
+        <GraphEditor
+          initialGraph={initialGraph}
+          diagnostics={diagnostics}
+          paletteNodes={animPaletteNodes()}
+          focusedNodeId={selectedId ?? undefined}
+          onSelectionChange={(nodeIds) => setSelectedId(nodeIds[0] ?? null)}
+          onChange={(next) => {
+            const updated = serializedToAnimGraph(next, doc);
+            if (
+              selectedId &&
+              !updated.states.some((state) => state.id === selectedId)
+            ) {
+              setSelectedId(null);
+            }
+            commit(updated);
+          }}
+        />
+      </div>
+    </PanelFrame>
+  );
+}
+
+export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const { doc, commit, assetRegistry } = useAnimGraphDocument();
+  const { selectedId } = useAnimGraphEditing();
+  const [clipPick, setClipPick] = useState(false);
   const selected = doc.states.find((state) => state.id === selectedId) ?? null;
   const clip = selected?.clipId
     ? doc.clips.find((row) => row.id === selected.clipId)
@@ -299,77 +384,19 @@ export function AnimGraphEditor({
   });
 
   return (
-    <div className="flex min-h-0 flex-1" data-testid="anim-graph-editor">
-      <PanelFrame className="w-56 shrink-0 border-r border-border">
-        <div className="flex flex-col gap-4 p-3">
-          <NamedListEditor
-            title="Parameters"
-            values={doc.parameters}
-            addLabel="Add Parameter"
-            addPlaceholder="Name"
-            onChange={(parameters) => commit({ ...doc, parameters })}
-            data-testid="anim-graph-parameters"
-          />
-          <div className="flex flex-col gap-2">
-            <div className="text-sm font-medium">States</div>
-            {doc.states.map((state) => (
-              <Button
-                key={state.id}
-                type="button"
-                variant={selectedId === state.id ? "outline" : "ghost"}
-                className="min-h-[var(--touch-target,44px)] w-full justify-start"
-                aria-pressed={selectedId === state.id}
-                data-testid={`anim-graph-state-${state.id}`}
-                onClick={() => setSelectedId(state.id)}
-              >
-                {state.name}
-              </Button>
-            ))}
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-[var(--touch-target,44px)] w-fit"
-              data-testid="anim-graph-add-state"
-              onClick={() => commit(addAnimState(doc))}
-            >
-              Add State
-            </Button>
-          </div>
+    <PanelFrame>
+      {selected ? (
+        <div data-testid="anim-graph-details">
+          <PropertyGrid rows={[...stateRows, ...transitionRows]} />
         </div>
-      </PanelFrame>
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <GraphEditor
-          initialGraph={initialGraph}
-          diagnostics={diagnostics}
-          paletteNodes={animPaletteNodes()}
-          focusedNodeId={selectedId ?? undefined}
-          onSelectionChange={(nodeIds) => setSelectedId(nodeIds[0] ?? null)}
-          onChange={(next) => {
-            const updated = serializedToAnimGraph(next, doc);
-            if (
-              selectedId &&
-              !updated.states.some((state) => state.id === selectedId)
-            ) {
-              setSelectedId(null);
-            }
-            commit(updated);
-          }}
-        />
-      </div>
-      <PanelFrame className="w-72 shrink-0 border-l border-border" title="Details">
-        {selected ? (
-          <div data-testid="anim-graph-details">
-            <PropertyGrid rows={[...stateRows, ...transitionRows]} />
-          </div>
-        ) : (
-          <p
-            className="px-3 py-2 text-sm text-muted-foreground"
-            data-testid="anim-graph-details-empty"
-          >
-            Select a State
-          </p>
-        )}
-      </PanelFrame>
+      ) : (
+        <p
+          className="px-3 py-2 text-sm text-muted-foreground"
+          data-testid="anim-graph-details-empty"
+        >
+          Select a State
+        </p>
+      )}
       <AssetPicker
         open={clipPick}
         onOpenChange={setClipPick}
@@ -385,6 +412,6 @@ export function AnimGraphEditor({
         }}
         data-testid="anim-graph-clip-picker"
       />
-    </div>
+    </PanelFrame>
   );
 }

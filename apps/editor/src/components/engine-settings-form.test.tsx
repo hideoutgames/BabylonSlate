@@ -19,6 +19,7 @@ if (typeof window !== "undefined") {
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     assetRegistry: { list: () => [] },
+    openDocuments: [],
   }),
 }));
 
@@ -173,6 +174,23 @@ describe("EngineSettingsForm focus", () => {
     expect(getByTestId("focus-keep-graph-graph")).toBeTruthy();
   });
 
+  it("lists default keep tabs for Material, Script Interface, and User Interface", () => {
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={() => {}}
+        categoryId="focus"
+      />,
+    );
+    expect(getByTestId("focus-keep-material-material-graph")).toBeTruthy();
+    expect(getByTestId("focus-keep-material-function-material-function-graph")).toBeTruthy();
+    expect(getByTestId("focus-keep-script-interface-script-interface-preview")).toBeTruthy();
+    expect(getByTestId("focus-keep-ui-ui-design")).toBeTruthy();
+    expect(getByTestId("focus-keep-uiLogic-graph")).toBeTruthy();
+    expect(getByTestId("focus-keep-anim-graph-anim-graph-graph")).toBeTruthy();
+    expect(getByTestId("focus-keep-behaviour-tree-behaviour-tree-graph")).toBeTruthy();
+  });
+
   it("adds a class tab from the keep dropdown", () => {
     const onChange = vi.fn();
     const { getByTestId } = render(
@@ -185,11 +203,40 @@ describe("EngineSettingsForm focus", () => {
     fireEvent.click(getByTestId("focus-keep-graph-add"));
     fireEvent.click(getByTestId("focus-keep-graph-add-inspector"));
     expect(onChange).toHaveBeenCalledWith({
-      focusKeepPanels: {
-        scene: ["viewport"],
+      focusKeepPanels: expect.objectContaining({
         graph: ["graph", "inspector"],
-      },
+      }),
     });
+  });
+
+  it("adds a Material Preview tab from the keep dropdown", () => {
+    const onChange = vi.fn();
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={onChange}
+        categoryId="focus"
+      />,
+    );
+    fireEvent.click(getByTestId("focus-keep-material-add"));
+    fireEvent.click(getByTestId("focus-keep-material-add-material-preview"));
+    expect(onChange).toHaveBeenCalledWith({
+      focusKeepPanels: expect.objectContaining({
+        material: ["material-graph", "material-preview"],
+      }),
+    });
+  });
+
+  it("offers Settings on the User Interface Designer keep list", () => {
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={() => {}}
+        categoryId="focus"
+      />,
+    );
+    fireEvent.click(getByTestId("focus-keep-ui-add"));
+    expect(getByTestId("focus-keep-ui-add-ui-settings")).toBeTruthy();
   });
 
   it("removes a keep tab", () => {
@@ -203,10 +250,9 @@ describe("EngineSettingsForm focus", () => {
     );
     fireEvent.click(getByTestId("focus-keep-graph-remove-graph"));
     expect(onChange).toHaveBeenCalledWith({
-      focusKeepPanels: {
-        scene: ["viewport"],
+      focusKeepPanels: expect.objectContaining({
         graph: [],
-      },
+      }),
     });
   });
 });
