@@ -363,7 +363,7 @@ describe("parameter list conversion", () => {
 });
 
 describe("variableDefaultPropertyRows", () => {
-  it("maps bool, number, and vector defaults onto PropertyGrid rows", () => {
+  it("maps bool, number, text, and vector defaults onto PropertyGrid rows", () => {
     const onChange = vi.fn();
     const boolRows = variableDefaultPropertyRows("bool", true, onChange);
     expect(boolRows).toMatchObject([
@@ -377,6 +377,14 @@ describe("variableDefaultPropertyRows", () => {
     expect(numberRows).toMatchObject([
       { kind: "number", id: "default", label: "Default", value: 8 },
     ]);
+
+    const textRows = variableDefaultPropertyRows("string", "hello", onChange);
+    expect(textRows).toMatchObject([
+      { kind: "text", id: "default", label: "Default", value: "hello" },
+    ]);
+    const textRow = textRows[0];
+    if (textRow?.kind === "text") textRow.onChange("world");
+    expect(onChange).toHaveBeenCalledWith("world");
 
     const vecRows = variableDefaultPropertyRows(
       "vec3",

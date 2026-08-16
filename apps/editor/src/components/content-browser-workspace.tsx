@@ -9,6 +9,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   ListFilterIcon,
+  OctagonAlertIcon,
   PlusIcon,
   UploadIcon,
 } from "lucide-react";
@@ -69,6 +70,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { useDocuments } from "../context/document-context";
@@ -1706,8 +1708,14 @@ export function ContentBrowserWorkspace() {
           if (!open) setDeleteTarget(null);
         }}
       >
-        <AlertDialogContent data-testid="content-browser-delete-dialog">
+        <AlertDialogContent
+          variant="destructive"
+          data-testid="content-browser-delete-dialog"
+        >
           <AlertDialogHeader>
+            <AlertDialogMedia data-testid="content-browser-delete-media">
+              <OctagonAlertIcon />
+            </AlertDialogMedia>
             <AlertDialogTitle>
               {deleteTarget?.kind === "folder"
                 ? "Delete folder?"

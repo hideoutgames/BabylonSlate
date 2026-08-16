@@ -384,13 +384,13 @@ function variableAccessPaletteNodes(
   const setDef = nodeRegistry.get("variables.set");
   if (!getDef || !setDef) return [];
   const localClassId = options?.classId ?? "BObject";
-  const localVars = classVariableRows(options?.graph);
-  const localNames = new Set(localVars.map((entry) => entry.name));
+  const classVars = classVariableRows(options?.graph);
+  const classNames = new Set(classVars.map((entry) => entry.name));
   const rows: Array<{
     classId: string;
     variable: VariableRow;
     implicitSelf: boolean;
-  }> = localVars.map((variable) => ({
+  }> = classVars.map((variable) => ({
     classId: localClassId,
     variable,
     implicitSelf: true,
@@ -399,7 +399,7 @@ function variableAccessPaletteNodes(
     if (classId === localClassId) continue;
     const implicitSelf = callImplicitSelf(classId, options);
     for (const variable of classVariableRows(graph)) {
-      if (implicitSelf && localNames.has(variable.name)) continue;
+      if (implicitSelf && classNames.has(variable.name)) continue;
       rows.push({ classId, variable, implicitSelf });
     }
   }

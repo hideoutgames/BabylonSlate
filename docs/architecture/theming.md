@@ -158,8 +158,10 @@ Editor chrome and panels compose from `@babylonslate/ui` (shadcn) and `@babylons
 
 | Treatment | Use |
 | --- | --- |
-| `Button variant="outline"` | Visible actions (chrome Save All / Undo, panel Add/Remove, catalog primary controls) |
+| `Button variant="outline"` | Visible actions (chrome Save All / Undo, panel Add/Remove, catalog primary controls). Also the **trigger** that opens an irreversible confirm (Content Browser **Delete (N)**, plugin list Delete), and Close Project. |
 | `Button variant="ghost"` | Tabs, menu items, icon-only close |
+| `Button variant="destructive"` | Solid filled `--destructive` confirm on a danger `AlertDialog` — asset, folder, and plugin delete. Not a 10% tint. |
+| `AlertDialogContent variant="destructive"` | Irreversible file-destroying confirms: red ring, red media well, red title, `sm:max-w-md` |
 | `Toggle` / `ToggleGroup` `variant="outline"` | Exclusive tools; selected item uses **accent fill + primary border** + `aria-pressed` (not a near-invisible secondary wash) |
 | Catalog / folder / outliner selected | `variant="secondary"` (where applicable) plus a 2px start-edge **primary** bar (`border-l-2 border-l-primary`) |
 

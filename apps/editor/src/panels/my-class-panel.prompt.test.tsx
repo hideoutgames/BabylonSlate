@@ -53,6 +53,7 @@ vi.mock("../context/document-context", () => ({
           members: [
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
             { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
+            { id: "if-1", kind: "interface", name: "Damageable" },
           ],
           functionGraphs: { "fn-1": { nodes: [], edges: [] } },
         },
@@ -149,6 +150,19 @@ describe("MyClassPanel name prompt", () => {
     );
     expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
     const row = screen.getByTestId("tree-row-var-1");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 10 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 10 });
+    expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
+  });
+
+  it("keeps the function graph open when selecting an interface", () => {
+    render(
+      <GraphEditingProvider initialActiveFunctionId="fn-1">
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
+    const row = screen.getByTestId("tree-row-if-1");
     dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 10 });
     dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 10 });
     expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();

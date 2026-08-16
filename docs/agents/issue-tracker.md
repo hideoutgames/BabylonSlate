@@ -73,6 +73,10 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD did not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes) | Resolved (`cursor/babylon-native-ui-138e` registers `source` bytes on Play + designer ADT) |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; `previewRect` tables cover pin / percent / stretch-padding / safe-area | Accepted |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-system | Standards | Play HUD `borderRadius: 999` (stick) pre-existed; widget style passthrough still uses a numeric fallback | Accepted |
+| 2026-08-16 | cursor/class-variables-review-6916 | class variables | Spec | Bound Get/Set data pins used generic `value` / `out` labels instead of the variable name; canvas showed Value. Pin **ids** stay `value` / `out`; **names** are the variable. Set now assigns the pass-through output slot | Resolved |
+| 2026-08-16 | cursor/class-variables-review-6916 | class variables | Spec | Selecting an interface while a function graph is open was untested; Local Variables must stay visible | Resolved |
+| 2026-08-16 | cursor/class-variables-review-6916 | class variables | Spec | Class Inspector string/text Default row for variables was untested | Resolved |
+| 2026-08-16 | cursor/class-variables-review-6916 | class variables | Standards | Palette injector named class members `localVars` / `localNames` next to real function locals | Resolved |
 | 2026-08-13 | cursor/startup-scene-play-cleanup-ebf7 | p14-export / Play | Spec | Unused `collectPlayStartupScene` still loaded `scenes[0]` / `main.scene.babasset` when no scene tab was open | Resolved |
 
 ## PR checklist

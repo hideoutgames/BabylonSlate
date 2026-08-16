@@ -9,6 +9,11 @@ export type GraphViewport = {
   maxZoom: number;
   defaultViewport: { x: number; y: number; zoom: number };
   fitViewOptions: { maxZoom: number };
+  focusedFitViewOptions: {
+    padding: number;
+    duration: number;
+    maxZoom: number;
+  };
 };
 
 export function resolveGraphViewport(
@@ -21,5 +26,10 @@ export function resolveGraphViewport(
     maxZoom: GRAPH_MAX_ZOOM,
     defaultViewport: { x: 0, y: 0, zoom },
     fitViewOptions: { maxZoom: zoom },
+    focusedFitViewOptions: {
+      padding: 0.35,
+      duration: 250,
+      maxZoom: zoom,
+    },
   };
 }

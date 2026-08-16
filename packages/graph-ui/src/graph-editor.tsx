@@ -76,6 +76,7 @@ import type { PinDisplayLookup } from "./wildcard-display";
 import {
   GRAPH_DEFAULT_ZOOM,
   resolveGraphViewport,
+  type GraphViewport,
 } from "./graph-viewport";
 import { formatGraphNodes } from "./graph-format";
 import {
@@ -198,7 +199,13 @@ function clientPoint(
   return null;
 }
 
-function FocusedNodeSync({ focusedNodeId }: { focusedNodeId?: string }) {
+function FocusedNodeSync({
+  focusedNodeId,
+  fitViewOptions,
+}: {
+  focusedNodeId?: string;
+  fitViewOptions: GraphViewport["focusedFitViewOptions"];
+}) {
   const { fitView, getNode, setNodes } = useReactFlow();
 
   useEffect(() => {
@@ -215,11 +222,9 @@ function FocusedNodeSync({ focusedNodeId }: { focusedNodeId?: string }) {
 
     void fitView({
       nodes: [{ id: focusedNodeId }],
-      padding: 0.35,
-      duration: 250,
-      maxZoom: 1.2,
+      ...fitViewOptions,
     });
-  }, [fitView, focusedNodeId, getNode, setNodes]);
+  }, [fitView, fitViewOptions, focusedNodeId, getNode, setNodes]);
 
   return null;
 }
@@ -1093,8 +1098,14 @@ function GraphEditorCanvas({
             color="var(--border)"
             bgColor="var(--background)"
           />
-          <Controls showInteractive={false} />
-          <FocusedNodeSync focusedNodeId={focusedNodeId} />
+          <Controls
+            showInteractive={false}
+            fitViewOptions={graphViewport.fitViewOptions}
+          />
+          <FocusedNodeSync
+            focusedNodeId={focusedNodeId}
+            fitViewOptions={graphViewport.focusedFitViewOptions}
+          />
         </ReactFlow>
         {readOnly ? null : (
         <NodePalette
