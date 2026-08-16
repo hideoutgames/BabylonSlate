@@ -103,6 +103,9 @@ export {
 export {
   TreeView,
   TREE_ROW_HEIGHT,
+  TREE_SWIPE_ADD_PX,
+  rangeSelectTreeIds,
+  type TreeSelectOptions,
   type TreeViewNode,
   type TreeViewProps,
 } from "./tree-view";

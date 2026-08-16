@@ -47,7 +47,10 @@ vi.mock("../context/document-context", () => ({
     ],
     applySceneChange: harness.applySceneChange,
     projectDocument: {
-      settings: { twoD: { sortingLayers: ["Background", "Default", "UI"] } },
+      settings: {
+        twoD: { sortingLayers: ["Background", "Default", "UI"] },
+        gameInstanceClass: "MyGame",
+      },
     },
     assetRegistry: {
       list: () => [
@@ -179,15 +182,43 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("property-scene-environment-color")).toBeTruthy();
   });
 
-  it("picks Game Instance from ClassPicker instead of a free text field", async () => {
+  it("hides Fog Color Start and End until Fog is enabled", () => {
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("property-scene-fog")).toBeTruthy();
+    expect(screen.queryByTestId("property-scene-fog-color")).toBeNull();
+    expect(screen.queryByTestId("property-scene-fog-start")).toBeNull();
+    expect(screen.queryByTestId("property-scene-fog-end")).toBeNull();
+    scene().settings.fogEnabled = true;
+    cleanup();
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("property-scene-fog-color")).toBeTruthy();
+    expect(screen.getByTestId("property-scene-fog-start")).toBeTruthy();
+    expect(screen.getByTestId("property-scene-fog-end")).toBeTruthy();
+  });
+
+  it("titles Details with the actor count when more than one actor is selected", () => {
+    scene().actors = [
+      createActor("actor-1", "Cube"),
+      createActor("actor-2", "Sphere"),
+    ];
+    harness.selectedActorIds = ["actor-1", "actor-2"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("actor-transform-grid").textContent).toContain(
+      "2 Actors",
+    );
+    expect(screen.getByTestId("actor-transform-grid").textContent).not.toContain(
+      "Cube",
+    );
+  });
+
+  it("shows the project Game Instance as a read-only pointer", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const trigger = screen.getByTestId("property-scene-game-instance-class");
-    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.textContent).toContain("MyGame");
+    expect(trigger).toHaveProperty("disabled", true);
     fireEvent.click(trigger);
-    expect(await screen.findByTestId("search-item-GameInstance")).toBeTruthy();
-    expect(screen.getByTestId("search-item-MyGame")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("search-item-MyGame"));
-    expect(harness.applySceneChange).toHaveBeenCalled();
+    expect(screen.queryByTestId("scene-game-instance-picker")).toBeNull();
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
 
   it("authors an ordered post-process stack of Material assets", async () => {

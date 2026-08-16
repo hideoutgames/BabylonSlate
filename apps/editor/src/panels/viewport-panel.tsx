@@ -208,7 +208,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editor: true,
       viewportMode,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
-      onPickActor: (actorId) => selectActorRef.current(actorId),
+      onPickActor: (actorId, pick) =>
+        selectActorRef.current(actorId, pick?.additive === true),
       onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),
       onMarqueeMove: (rect) => setMarqueeRectRef.current(rect),
       dragSelectActive: () => dragSelectActiveRef.current,

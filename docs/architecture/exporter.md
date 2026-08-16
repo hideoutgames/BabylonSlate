@@ -27,7 +27,7 @@ Not `header.dependencies` alone — scene saves often leave those empty.
 
 1. Apply export-preset `pluginOverrides` (layer 3) **before** the walk so disabled plugin roots are absent.
 2. Seed with `startupSceneGuid` (must be a Scene asset).
-3. Walk `SerializedScene` actors/components (guids in properties, Mesh/Model `assetGuid`, textures, UserInterface, Font, Class ids) plus `gameInstanceClass`.
+3. Walk `SerializedScene` actors/components (guids in properties, Mesh/Model `assetGuid`, textures, UserInterface, Font, Class ids) plus scene `gameInstanceClass` **and** the project `gameInstanceClass` when the scene field is empty.
 4. Load Class/Graph/UI/Sprite/Tilemap documents; pull asset-typed pin values, `header.dependencies`, and payload fields such as sprite `textureGuid`.
 5. Recurse to a fixed point. Drop EditorUtilityObject / EditorUtilityInterface / PluginSettings (`isEditorOnlyAsset`).
 6. Scene library keys in the pack are **asset guids** (overlay Play may keep path-based document ids).
@@ -51,7 +51,7 @@ havok/HavokPhysics.wasm   # 3d only
 ktx2/…              # transcoder files the player needs
 ```
 
-`GameManifest` records `startupSceneGuid`, `render`, `playFrameCap`, project `twoD.pixelsPerUnit` / `pixelPerfect` (defaults 100 / false), `packs`, `physicsWorld`, and `assets[]`. Font index entries include `name` (authored `family`, else the asset name) so the player can `FontFace(family, bytes)`.
+`GameManifest` records `startupSceneGuid`, optional `gameInstanceClass` (project field), `render`, `playFrameCap`, project `twoD.pixelsPerUnit` / `pixelPerfect` (defaults 100 / false), `packs`, `physicsWorld`, and `assets[]`. Font index entries include `name` (authored `family`, else the asset name) so the player can `FontFace(family, bytes)`. The player boot prefers `manifest.gameInstanceClass`, then the startup scene field.
 
 `loose` is an explicit preset option (`packed: false`): tree-shaken `assets/<guid>.bin`, no `.babpack`. Wasm, transcoder, and `coi-serviceworker.js` stay real files in both modes.
 

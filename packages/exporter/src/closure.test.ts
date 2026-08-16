@@ -261,4 +261,28 @@ describe("collectExportClosure", () => {
     if (!result.ok) return;
     expect(result.value).toEqual(["scene-1"]);
   });
+
+  it("includes a project GameInstance class when the scene field is empty", () => {
+    const scene = createDefaultScene();
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      gameInstanceClass: "MyGame",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "class-game",
+          type: "Class",
+          name: "MyGame",
+          parentClass: "GameInstance",
+        }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: (id) => (id === "MyGame" ? "GameInstance" : null),
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(expect.arrayContaining(["scene-1", "class-game"]));
+  });
 });

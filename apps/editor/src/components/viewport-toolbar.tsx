@@ -172,7 +172,16 @@ export function ViewportToolbar({
               data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
             >
               <Icon />
-              {active ? tool.label : null}
+              <span
+                data-testid="gizmo-tool-label"
+                className="grid min-w-0 overflow-hidden transition-[grid-template-columns] duration-200 ease-out"
+                style={{ gridTemplateColumns: active ? "1fr" : "0fr" }}
+                aria-hidden={!active}
+              >
+                <span className="min-w-0 overflow-hidden whitespace-nowrap">
+                  {tool.label}
+                </span>
+              </span>
             </ToggleGroupItem>
           );
         })}

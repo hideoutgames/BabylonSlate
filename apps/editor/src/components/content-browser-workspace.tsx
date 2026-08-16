@@ -76,6 +76,7 @@ import {
   addSelectedFolderPath,
   exclusiveSelectAsset,
   exclusiveSelectFolder,
+  applyContentBrowserTreeSelect,
   buildNewAssetResult,
   classParentLookup,
   collectFolderGuidsFromTrees,
@@ -376,6 +377,16 @@ export function ContentBrowserWorkspace() {
     }
     return selectedFolderPath;
   }, [allAssets, selectedFolderPath, selectedGuids]);
+
+  const treeSelectedIds = useMemo(() => {
+    const ids: string[] = [...selectedFolderPaths];
+    for (const guid of selectedGuids) {
+      const asset = allAssets.find((item) => item.header.guid === guid);
+      if (asset) ids.push(asset.path);
+    }
+    if (ids.length === 0 && treeSelectedId) ids.push(treeSelectedId);
+    return ids;
+  }, [allAssets, selectedFolderPaths, selectedGuids, treeSelectedId]);
 
   const treeNodes = useMemo(
     () =>
@@ -1204,21 +1215,26 @@ export function ContentBrowserWorkspace() {
     [openSelectionMenu],
   );
 
-  const handleTreeSelect = useCallback((id: string) => {
-    const row = browserRows.find((item) => item.id === id);
-    if (!row) return;
-    if (row.kind === "folder") {
-      setSelectedFolderPath(row.path);
-      setSelectedGuids(new Set());
-      setSelectedFolderPaths(new Set());
-      return;
-    }
-    if (row.guid) {
-      setSelectedFolderPath(parentFolderPath(row.path));
-      setSelectedGuids(new Set([row.guid]));
-      setSelectedFolderPaths(new Set());
-    }
-  }, [browserRows]);
+  const handleTreeSelect = useCallback(
+    (id: string, options?: { additive?: boolean; range?: boolean }) => {
+      const next = applyContentBrowserTreeSelect(id, options, browserRows, {
+        selectedGuids,
+        selectedFolderPaths,
+        selectedFolderPath,
+        anchorId: treeSelectedId,
+      });
+      setSelectedGuids(next.selectedGuids);
+      setSelectedFolderPaths(next.selectedFolderPaths);
+      setSelectedFolderPath(next.selectedFolderPath);
+    },
+    [
+      browserRows,
+      selectedFolderPath,
+      selectedFolderPaths,
+      selectedGuids,
+      treeSelectedId,
+    ],
+  );
 
   const handleTreeActivate = useCallback(
     (id: string) => {
@@ -1520,6 +1536,7 @@ export function ContentBrowserWorkspace() {
             <TreeView
               nodes={treeNodes}
               selectedId={treeSelectedId}
+              selectedIds={treeSelectedIds}
               onSelect={handleTreeSelect}
               onToggleExpanded={(id) => {
                 const row = browserRows.find((item) => item.id === id);

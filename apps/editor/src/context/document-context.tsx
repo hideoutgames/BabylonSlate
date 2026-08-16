@@ -1283,6 +1283,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       return collectAndExportGame({
         startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
+        gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
         assets: assetsFromIndexed(list),
         plugins: projectService.plugins.map((plugin) => ({
           pluginGuid: plugin.pluginGuid,

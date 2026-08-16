@@ -84,6 +84,15 @@ vi.mock("../context/document-context", async () => {
             },
             path: "assets/Tools.class.babasset",
           },
+          {
+            header: {
+              guid: "class-game",
+              name: "MyGame",
+              type: "Class",
+              parentClass: "GameInstance",
+            },
+            path: "assets/MyGame.class.babasset",
+          },
         ],
         getByGuid: (guid: string) =>
           guid === "font-1"
@@ -187,6 +196,21 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("search-item-scene-2"));
     expect(updateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({ startupSceneGuid: "scene-2" }),
+    );
+  });
+
+  it("picks Game Instance from a ClassPicker on the Export category", async () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("settings-game-instance"));
+    expect(await screen.findByTestId("search-item-GameInstance")).toBeTruthy();
+    expect(screen.getByTestId("search-item-MyGame")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-Tools")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-MyGame"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ gameInstanceClass: "MyGame" }),
     );
   });
 

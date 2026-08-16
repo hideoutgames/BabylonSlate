@@ -86,6 +86,20 @@ afterEach(() => {
 });
 
 describe("Inspector UserInterface logic members", () => {
+  it("does not show Prefab Origin when a UserInterface has nothing selected", () => {
+    render(
+      <PrefabEditingProvider>
+        <GraphEditingProvider>
+          <InspectorPanel {...({} as IDockviewPanelProps)} />
+        </GraphEditingProvider>
+      </PrefabEditingProvider>,
+    );
+    expect(screen.queryByTestId("inspector-prefab-origin")).toBeNull();
+    expect(screen.getByTestId("inspector-panel").textContent).toMatch(
+      /Select a graph node/i,
+    );
+  });
+
   it("renders function details from payload.logic", () => {
     renderUiMemberInspector();
     expect(screen.getByTestId("inspector-member-function")).toBeTruthy();

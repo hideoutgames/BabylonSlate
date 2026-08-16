@@ -49,6 +49,8 @@ import {
   exclusiveSelectFolder,
   paintSelectTiles,
   resolveContentBrowserPaintHit,
+  applyContentBrowserTreeSelect,
+  type ContentBrowserTreeRow,
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
@@ -1231,5 +1233,66 @@ describe("content-browser-helpers", () => {
         new Set(["s1"]),
       ),
     ).toEqual([]);
+  });
+
+  it("adds a tree row to the Content Browser selection without replacing the grid folder", () => {
+    const rows: ContentBrowserTreeRow[] = [
+      {
+        id: "assets",
+        kind: "folder",
+        label: "assets",
+        depth: 0,
+        hasChildren: true,
+        expanded: true,
+        path: "assets",
+      },
+      {
+        id: "assets/Hero.class.babasset",
+        kind: "asset",
+        label: "Hero",
+        depth: 1,
+        hasChildren: false,
+        expanded: true,
+        path: "assets/Hero.class.babasset",
+        guid: "hero-1",
+      },
+      {
+        id: "assets/fx",
+        kind: "folder",
+        label: "fx",
+        depth: 1,
+        hasChildren: false,
+        expanded: true,
+        path: "assets/fx",
+      },
+    ];
+    const added = applyContentBrowserTreeSelect(
+      "assets/fx",
+      { additive: true },
+      rows,
+      {
+        selectedGuids: new Set(["hero-1"]),
+        selectedFolderPaths: new Set(),
+        selectedFolderPath: "assets",
+        anchorId: "assets/Hero.class.babasset",
+      },
+    );
+    expect([...added.selectedGuids]).toEqual(["hero-1"]);
+    expect([...added.selectedFolderPaths]).toEqual(["assets/fx"]);
+    expect(added.selectedFolderPath).toBe("assets");
+
+    const ranged = applyContentBrowserTreeSelect(
+      "assets/fx",
+      { range: true },
+      rows,
+      {
+        selectedGuids: new Set(["hero-1"]),
+        selectedFolderPaths: new Set(),
+        selectedFolderPath: "assets",
+        anchorId: "assets/Hero.class.babasset",
+      },
+    );
+    expect([...ranged.selectedGuids]).toEqual(["hero-1"]);
+    expect([...ranged.selectedFolderPaths]).toEqual(["assets/fx"]);
   });
 });

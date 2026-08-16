@@ -108,6 +108,15 @@ export function collectExportClosure(
       pending,
       seen,
     );
+    if (asset.guid === startup && input.gameInstanceClass) {
+      enqueueRefs(
+        input.gameInstanceClass,
+        byGuid,
+        byClassName,
+        pending,
+        seen,
+      );
+    }
 
     if (asset.type === "Scene") {
       const scene: SerializedScene | null = input.sceneByGuid(guid);

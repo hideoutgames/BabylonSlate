@@ -137,7 +137,13 @@ export function startPlayer(options: {
     physicsWorld: manifest.physicsWorld,
     gravity: scene.settings.gravity,
     havokWasmUrl: havokWasmUrl(),
-    gameInstanceClass: scene.settings.gameInstanceClass ?? undefined,
+    gameInstanceClass:
+      (typeof manifest.gameInstanceClass === "string" &&
+      manifest.gameInstanceClass.trim()
+        ? manifest.gameInstanceClass.trim()
+        : undefined) ??
+      scene.settings.gameInstanceClass ??
+      undefined,
     scenes,
     includeDebugCommands: manifest.bundleDebugger,
   };

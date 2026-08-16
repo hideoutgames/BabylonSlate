@@ -12,6 +12,7 @@ import {
   createEmptyLayouts,
   createEmptyProject,
   normalizeProjectSettings,
+  migrateGameInstanceClassFromScenes,
   normalizeScene,
   classHeaderMeta,
   documentId,
@@ -531,15 +532,36 @@ export class ProjectService {
     }
 
     const withDocuments = await this.ensureDocuments(document);
+    const scenePayloads: SerializedScene[] = [];
+    if (!withDocuments.settings.gameInstanceClass) {
+      for (const path of withDocuments.scenes) {
+        try {
+          const loaded = await this.loadDocument("scene", path);
+          if (loaded && typeof loaded === "object" && "settings" in loaded) {
+            scenePayloads.push(loaded as SerializedScene);
+          }
+        } catch {
+          /* unreadable scene */
+        }
+      }
+    }
+    const settings = migrateGameInstanceClassFromScenes(
+      withDocuments.settings,
+      scenePayloads,
+    );
+    const migratedDocument =
+      settings === withDocuments.settings
+        ? withDocuments
+        : { ...withDocuments, settings };
     const layouts = await this.loadLayouts(
       documentId({
         kind: "scene",
-        path: withDocuments.scenes[0] ?? MAIN_SCENE_FILE,
+        path: migratedDocument.scenes[0] ?? MAIN_SCENE_FILE,
       }),
     );
 
     return {
-      document: withDocuments,
+      document: migratedDocument,
       layouts,
       migrationPending: this.pendingMigrations,
     };

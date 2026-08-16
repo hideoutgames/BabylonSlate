@@ -128,7 +128,7 @@ type Diagnostic = {
 | --- | --- |
 | Edit (≈300ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
-| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; Play loads the **open scene tab** and the scene `gameInstanceClass`. No scene tab → Play disabled. Enabled plugin Class graphs participate via `registry.list()`; plugin EUOs stay on the editor ScriptHost ([plugins.md](plugins.md)) |
+| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents **and** UserInterface `payload.logic`; Play loads the **open scene tab** and the project `gameInstanceClass` (`resolveGameInstanceClass`, scene field is fallback). No scene tab → Play disabled. Enabled plugin Class graphs participate via `registry.list()`; plugin EUOs stay on the editor ScriptHost ([plugins.md](plugins.md)) |
 | Export | Hard gate + export-only rules (debug-tier commands); Development Only nodes stripped by codegen |
 | CI | Golden fixture projects |
 
@@ -285,7 +285,7 @@ The `ctx` handed to compiled code copies the world's `TickContext`: `self`, `del
 
 `ScriptHost.invokeEvent(classId, event, self?, args?)` (and `RuntimeDriver.invokeScriptEvent`) passes `args` into the compiled entry as `ctx.commandArgs` / `ctx.args`. Cross-instance Call uses the target actor’s class id, not the caller’s.
 
-`RuntimeDriver` constructs the session `GameInstance` from `gameInstanceClass` (scene/project picker), not a hardcoded `"GameInstance"` id, and binds compiled interface handlers onto spawned actors from class-declared interface guids (no hand-passed array required).
+`RuntimeDriver` constructs the session `GameInstance` from `gameInstanceClass` (project picker, scene fallback), not a hardcoded `"GameInstance"` id, and binds compiled interface handlers onto spawned actors from class-declared interface guids (no hand-passed array required).
 
 `compileGraphDocument` copies Class member variables (excluding function locals) and ScriptInterface `assetGuid`s onto `ScriptBundleEntry`, plus optional `parentClassId` from the asset header. Function compiles pass `localPreamble` (`let __lv_*`) into `compileGraph`.
 

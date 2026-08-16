@@ -53,6 +53,7 @@ import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
+import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import {
   EngineSettingsForm,
   type EngineSettingsCategoryId,
@@ -246,6 +247,7 @@ export function SettingsModal({
   const [tokenDraft, setTokenDraft] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
+  const [gameInstancePickerOpen, setGameInstancePickerOpen] = useState(false);
   const [exportGameError, setExportGameError] = useState<string | null>(null);
   const [exportGameBusy, setExportGameBusy] = useState(false);
   const [disableSourceControlOpen, setDisableSourceControlOpen] =
@@ -830,6 +832,26 @@ export function SettingsModal({
               </FieldDescription>
             </Field>
             <Field>
+              <FieldLabel>Game Instance</FieldLabel>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                onClick={() => setGameInstancePickerOpen(true)}
+                data-testid="settings-game-instance"
+              >
+                {gameInstanceClassEntries(assetRegistry?.list() ?? []).find(
+                  (entry) =>
+                    entry.id === projectDocument.settings.gameInstanceClass,
+                )?.name ??
+                  projectDocument.settings.gameInstanceClass ??
+                  "None"}
+              </Button>
+              <FieldDescription>
+                Play, Preview, and export construct this GameInstance subclass.
+              </FieldDescription>
+            </Field>
+            <Field>
               <FieldLabel htmlFor="setting-export-packed">Packed</FieldLabel>
               <Switch
                 id="setting-export-packed"
@@ -1194,6 +1216,21 @@ export function SettingsModal({
             setScenePickerOpen(false);
           }}
           data-testid="settings-startup-scene-picker"
+        />
+      ) : null}
+      {scope === "project" ? (
+        <ClassPicker
+          open={gameInstancePickerOpen}
+          onOpenChange={setGameInstancePickerOpen}
+          classes={gameInstanceClassEntries(assetRegistry?.list() ?? [])}
+          title="Pick Game Instance"
+          allowNone
+          onPick={(classId) => {
+            if (!projectDocument) return;
+            updateProjectSettings({ gameInstanceClass: classId });
+            setGameInstancePickerOpen(false);
+          }}
+          data-testid="settings-game-instance-picker"
         />
       ) : null}
       {scope === "project" ? (

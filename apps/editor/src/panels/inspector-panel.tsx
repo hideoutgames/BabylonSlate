@@ -613,7 +613,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  if (prefabSelectedId === PREFAB_ROOT_ID) {
+  if (prefabSelectedId === PREFAB_ROOT_ID && doc?.ref.kind === "graph") {
     return (
       <PanelFrame data-testid="inspector-panel">
         <p

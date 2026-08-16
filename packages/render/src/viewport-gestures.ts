@@ -4,7 +4,11 @@ import { orthoPanFromCanvasDelta, type CanvasRect } from "./two-d";
 
 export interface ViewportGestureOptions {
   /** Called for a stationary single-finger tap (selection pick). */
-  onTap?: (canvasX: number, canvasY: number) => void;
+  onTap?: (
+    canvasX: number,
+    canvasY: number,
+    options?: { additive?: boolean },
+  ) => void;
   /** Hold ~250ms then drag in 2D mode: marquee select. Immediate drag pans. */
   onMarquee?: (rect: CanvasRect) => void;
   /** Live marquee overlay while dragging; null when the overlay should hide. */
@@ -89,6 +93,7 @@ export function attachViewportGestures(
   let skipLook = false;
   /** Gizmo hit at pointer-down; not set when Drag Select is armed (gizmo does not win). */
   let skipTap = false;
+  let tapAdditive = false;
   let marqueeArmed = false;
   let dragSelectGesture = false;
   let marqueeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -144,6 +149,10 @@ export function attachViewportGestures(
       downPoint = point;
       lastPoint = point;
       moved = false;
+      tapAdditive =
+        event.ctrlKey === true ||
+        event.metaKey === true ||
+        event.shiftKey === true;
       dragSelectGesture = options.dragSelectActive?.() === true;
       skipTap =
         !dragSelectGesture && options.blockLook?.(point.x, point.y) === true;
@@ -261,6 +270,7 @@ export function attachViewportGestures(
         skipTap = false;
         marqueeArmed = false;
         dragSelectGesture = false;
+        tapAdditive = false;
         clearMarqueeTimer();
         clearMarqueeOverlay();
       }
@@ -269,7 +279,7 @@ export function attachViewportGestures(
     clearMarqueeTimer();
     const wasDragSelect = dragSelectGesture;
     if (!moved && !skipTap) {
-      options.onTap?.(point.x, point.y);
+      options.onTap?.(point.x, point.y, { additive: tapAdditive });
     } else if (
       options.onMarquee &&
       (wasDragSelect ||
@@ -289,6 +299,7 @@ export function attachViewportGestures(
     skipTap = false;
     marqueeArmed = false;
     dragSelectGesture = false;
+    tapAdditive = false;
   };
 
   const onWheel = (event: WheelEvent) => {
