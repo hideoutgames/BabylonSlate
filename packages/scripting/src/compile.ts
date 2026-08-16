@@ -221,7 +221,19 @@ export function compileGraph(
         exprCache.set(key, lit);
         return lit;
       }
-      ensurePure(srcNode);
+      const srcDef = options.registry.get(srcNode.typeId);
+      if (srcDef?.pure) {
+        ensurePure(srcNode);
+      } else {
+        const slot = `_n_${jsIdent(srcNode.id)}_${jsIdent(srcPin.name)}`;
+        if (!exprCache.has(`${srcNode.id}:${srcPin.id}`)) {
+          exprCache.set(`${srcNode.id}:${srcPin.id}`, slot);
+          outputDecls.set(
+            slot,
+            `  let ${slot} = ${defaultValueLiteral(srcPin.type)};`,
+          );
+        }
+      }
       const varName = exprCache.get(`${srcNode.id}:${srcPin.id}`);
       if (varName) {
         exprCache.set(key, varName);

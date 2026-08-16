@@ -248,7 +248,9 @@ describe("variables.get / variables.set", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("ctx.getVariableFrom");
+    expect(compiled.source).toMatch(
+      /ctx\.getVariableFrom\([^,]*spawn[^,]*,\s*"Health"/,
+    );
     expect(compiled.source).toContain('"Health"');
   });
 });

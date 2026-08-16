@@ -188,6 +188,7 @@ export function pinDefaultPropertyRows(
           label: entry.name,
           value: pinDefaultAsVec3Tuple(entry.value, ["x", "y", "z"]),
           defaultValue: pinDefaultAsVec3Tuple(typeDefault, ["x", "y", "z"]),
+          axes: ["X", "Y", "Z"],
           onChange: (value) =>
             onPatch({ [key]: vec3TupleToObject(value, ["x", "y", "z"]) }),
         });
