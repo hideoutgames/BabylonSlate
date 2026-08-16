@@ -1,5 +1,4 @@
 import { Badge } from "@babylonslate/ui/components/badge";
-import { BanIcon, PlusIcon } from "lucide-react";
 
 export type GraphDropHintState = {
   clientX: number;
@@ -26,11 +25,9 @@ export function GraphDropHint({
         variant={hint.allowed ? "default" : "secondary"}
         className="flex items-center gap-1 shadow-md"
       >
-        {hint.allowed ? (
-          <PlusIcon className="size-3.5" aria-hidden />
-        ) : (
-          <BanIcon className="size-3.5" aria-hidden />
-        )}
+        <span aria-hidden="true" className="text-sm font-semibold leading-none">
+          {hint.allowed ? "+" : "⊘"}
+        </span>
         {hint.label ?? (hint.allowed ? "Add Node" : "Cannot Drop")}
       </Badge>
     </div>

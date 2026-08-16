@@ -166,10 +166,10 @@ export function instantiatePrefabComponents(
 }
 
 /** Nested flatten: Prefab Root then children by `parentId`. */
-export function childrenOfPrefabParent(
-  components: readonly SerializedComponent[],
+export function childrenOfPrefabParent<T extends SerializedComponent>(
+  components: readonly T[],
   parentId: string | null,
-): SerializedComponent[] {
+): T[] {
   return components.filter(
     (component) => (component.parentId ?? null) === parentId,
   );
