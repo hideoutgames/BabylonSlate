@@ -36,8 +36,13 @@ import {
   createCommandRegistry,
   createUserCommand,
   TraceRecorder,
+  createInfiniteLoopGuard,
+  isInfiniteLoopError,
+  INFINITE_LOOP_DIAGNOSTIC_CODE,
+  DEFAULT_INFINITE_LOOP_COUNT,
   type CommandRegistry,
   type ConsoleCommandHost,
+  type InfiniteLoopGuard,
   type RegisteredCommand,
   type TraceBtState,
   type TracePayload,
@@ -112,6 +117,10 @@ export interface RuntimeDriverOptions {
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
+  /** Editor Play / bundled debugger: abort scripts that exceed `loopCount`. */
+  infiniteLoopDetection?: boolean;
+  /** Iterations in one tick that count as infinite when detection is on. */
+  loopCount?: number;
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
   animGraphs?: Readonly<Record<string, AnimGraphDocument>>;
   /** BehaviourTree documents keyed by asset guid (worker `loadBehaviourTrees`). */
@@ -247,6 +256,7 @@ class InProcessRuntime implements RuntimeDriver {
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
   private readonly commands: CommandRegistry;
+  private readonly loopGuard: InfiniteLoopGuard;
   private readonly trace = new TraceRecorder();
   private lastTrace: TracePayload | null = null;
   private readonly seed: number;
@@ -307,6 +317,12 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.commands = createCommandRegistry({
       includeDebug: options.includeDebugCommands ?? true,
+    });
+    this.loopGuard = createInfiniteLoopGuard({
+      enabled:
+        (options.includeDebugCommands ?? true) &&
+        options.infiniteLoopDetection !== false,
+      loopCount: options.loopCount ?? DEFAULT_INFINITE_LOOP_COUNT,
     });
     if (options.animGraphs) {
       for (const [guid, document] of Object.entries(options.animGraphs)) {
@@ -402,6 +418,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.scriptHost = new ScriptHost({
       interfaceRegistry: this.world.interfaceRegistry,
       classRegistry: registry,
+      checkInfiniteLoop: () => this.loopGuard.check(),
       log: (severity, category, message) => {
         this.logs.push({
           severity,
@@ -662,36 +679,45 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
     this.scriptHost.bindInterfaceHandlers(actor);
-    this.realizeActor(actor);
+    try {
+      this.realizeActor(actor);
+    } catch (error) {
+      if (!isInfiniteLoopError(error)) throw error;
+    }
     return actor;
   }
 
   realizePlayWorld(): void {
     if (this.playWorldRealized) return;
     this.playWorldRealized = true;
-    if (this.playScene) {
-      const actors = createActorsFromSerializedScene(
-        this.world,
-        this.playScene,
-        (classId) => {
-          const hooks = this.scriptHost.hooksFor(classId);
-          if (!hooks) return undefined;
-          return {
-            onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
-            onTick: (self, ctx) =>
-              this.guardScript(() => hooks.onTick?.(self, ctx)),
-          };
-        },
-      );
-      for (const actor of actors) {
-        this.scriptHost.bindInterfaceHandlers(actor);
-        this.realizeActor(actor);
+    this.loopGuard.reset();
+    try {
+      if (this.playScene) {
+        const actors = createActorsFromSerializedScene(
+          this.world,
+          this.playScene,
+          (classId) => {
+            const hooks = this.scriptHost.hooksFor(classId);
+            if (!hooks) return undefined;
+            return {
+              onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+              onTick: (self, ctx) =>
+                this.guardScript(() => hooks.onTick?.(self, ctx)),
+            };
+          },
+        );
+        for (const actor of actors) {
+          this.scriptHost.bindInterfaceHandlers(actor);
+          this.realizeActor(actor);
+        }
       }
+      this.registerNavAgents();
+      this.registerNavObstacles();
+      this.attemptPossessViewTarget();
+      this.world.loadScene(this.playSceneGuid);
+    } catch (error) {
+      if (!isInfiniteLoopError(error)) throw error;
     }
-    this.registerNavAgents();
-    this.registerNavObstacles();
-    this.attemptPossessViewTarget();
-    this.world.loadScene(this.playSceneGuid);
   }
 
   /**
@@ -1537,6 +1563,7 @@ class InProcessRuntime implements RuntimeDriver {
     try {
       run();
     } catch (error) {
+      if (isInfiniteLoopError(error)) throw error;
       this.reportError(error);
     }
   }
@@ -1708,7 +1735,12 @@ class InProcessRuntime implements RuntimeDriver {
     this.currentTimingPhase = null;
     this.phaseMark = nowMs();
 
-    this.world.tick();
+    this.loopGuard.reset();
+    try {
+      this.world.tick();
+    } catch (error) {
+      if (!isInfiniteLoopError(error)) throw error;
+    }
     this.advanceDelays();
     this.tickAnimGraphs();
     this.tickBehaviourTrees();
@@ -1815,7 +1847,9 @@ class InProcessRuntime implements RuntimeDriver {
     const stack = err.stack ?? "";
     const anchor = mapStackToAnchor(stack, this.anchors);
     const diag: RuntimeDiagnostic = {
-      code: "runtime.uncaught",
+      code: isInfiniteLoopError(err)
+        ? INFINITE_LOOP_DIAGNOSTIC_CODE
+        : "runtime.uncaught",
       message: err.message,
       severity: "error",
       assetGuid: hint?.assetGuid ?? this.currentBtAssetGuid ?? anchor?.assetGuid,

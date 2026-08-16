@@ -241,4 +241,17 @@ describe("projectPlaceActors", () => {
       ],
     });
   });
+
+  it("uses the compile class id for a Class asset named main.class", () => {
+    const items = projectPlaceActors([
+      {
+        path: "assets/main.class.babasset",
+        header: { guid: "main-guid", name: "main.class", type: "Class" },
+      },
+    ]);
+    expect(items[0]?.kind).toMatchObject({
+      type: "asset",
+      classId: "main",
+    });
+  });
 });

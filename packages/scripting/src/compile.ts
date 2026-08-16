@@ -4,6 +4,7 @@ import type { NodeRegistry, CodegenContext, HoistBodyAnchor } from "./node-regis
 import { defaultValueLiteral } from "./types";
 import { pinRejectsStoredDefault } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
+import { instrumentJsLoops } from "@babylonslate/debugger";
 
 export type CompileAnchor = {
   line: number;
@@ -77,6 +78,11 @@ export type CompileOptions = {
    * continue exec at `then` / Sequence `then_*`. Editor Play leaves this unset.
    */
   stripDevelopmentOnly?: boolean;
+  /**
+   * Editor / debugger compiles insert `ctx.checkInfiniteLoop()` so Play can
+   * abort runaway scripts. Release export leaves this unset.
+   */
+  instrumentInfiniteLoops?: boolean;
   /** Function-local `let` lines inserted at the start of each export. */
   localPreamble?: string[];
 };
@@ -197,6 +203,8 @@ export function compileGraph(
   const body: BodyLine[] = [];
   const shouldStrip = (node: GraphNode) =>
     options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
+  const instrumentLoops = options.instrumentInfiniteLoops === true;
+  const loopCheck = "ctx.checkInfiniteLoop();";
   const exprCache = new Map<string, string>();
   /**
    * Impure output slots are declared once at the top of the entry point so a
@@ -274,16 +282,21 @@ export function compileGraph(
         return name;
       },
       emit(statement, anchorNodeId) {
-        emitBody(`  ${statement}`, {
+        const anchor = {
           column: 1,
           assetGuid: options.assetGuid,
           graphId: graph.id,
           nodeId: anchorNodeId ?? node.id,
-        });
+        };
+        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        emitBody(`  ${statement}`, anchor);
       },
       hoist(source, bodyAnchors) {
-        if (hoisted.some((chunk) => chunk.source === source)) return;
-        hoisted.push({ source, nodeId: node.id, bodyAnchors });
+        const next = instrumentLoops
+          ? instrumentJsLoops(source, "ctx.checkInfiniteLoop()")
+          : source;
+        if (hoisted.some((chunk) => chunk.source === next)) return;
+        hoisted.push({ source: next, nodeId: node.id, bodyAnchors });
       },
       requestAsync() {
         isAsync = true;
@@ -400,6 +413,7 @@ export function compileGraph(
             `  for (const __pad of (ctx.gamepadConnections ?? []).filter((c) => c.connected === ${connected})) {`,
             anchor,
           );
+          if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
           emitBody(`    ${index} = __pad.gamepadIndex;`, anchor);
           for (const t of execSuccessors(graph, node.id, "then")) {
             emitExecChain(t, new Set(visited));

@@ -1,5 +1,6 @@
 import {
   PropertyGrid,
+  assetRowIdentity,
   colorFromHex,
   colorToHex,
   type PropertyRow,
@@ -315,9 +316,13 @@ function kindRows(
       label: "User Interface",
       value: selected.nestedUiGuid ?? null,
       placeholder: "None",
-      displayLabel: assetLabels.nestedUi,
       onPick: () => onPickAsset("nestedUi"),
       onChange: (value) => onPatchWidget(selected.id, { nestedUiGuid: value }),
+      ...assetRowIdentity(
+        assetLabels.nestedUi
+          ? { name: assetLabels.nestedUi, type: "UserInterface" }
+          : undefined,
+      ),
     });
   }
   if (
@@ -339,8 +344,14 @@ function kindRows(
       label: "Font",
       value: null,
       placeholder: "None",
-      displayLabel: assetLabels.font ?? selected.style.fontFamily,
       onPick: () => onPickAsset("font"),
+      ...assetRowIdentity(
+        assetLabels.font
+          ? { name: assetLabels.font, type: "Font" }
+          : selected.style.fontFamily
+            ? { name: selected.style.fontFamily, type: "Font" }
+            : undefined,
+      ),
       onChange: (value) => {
         if (value === null) {
           onPatchWidget(selected.id, {
@@ -360,12 +371,16 @@ function kindRows(
           ? selected.props.imageGuid
           : (selected.style.imageGuid ?? null),
       placeholder: "None",
-      displayLabel: assetLabels.image,
       onPick: () => onPickAsset("image"),
       onChange: (value) =>
         onPatchWidget(selected.id, {
           props: { ...selected.props, imageGuid: value },
         }),
+      ...assetRowIdentity(
+        assetLabels.image
+          ? { name: assetLabels.image, type: "Texture" }
+          : undefined,
+      ),
     });
   }
   if (
@@ -379,9 +394,13 @@ function kindRows(
       label: "Visual Override",
       value: selected.visualOverrideGuid ?? null,
       placeholder: "None",
-      displayLabel: assetLabels.visualOverride,
       onPick: () => onPickAsset("visualOverride"),
       onChange: (value) => onPatchWidget(selected.id, { visualOverrideGuid: value }),
+      ...assetRowIdentity(
+        assetLabels.visualOverride
+          ? { name: assetLabels.visualOverride, type: "UserInterface" }
+          : undefined,
+      ),
     });
   }
   if (selected.kind === "TouchButton") {

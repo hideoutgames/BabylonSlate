@@ -1,4 +1,4 @@
-import { err, ok, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, type Result } from "@babylonslate/core";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {
@@ -224,6 +224,17 @@ export async function exportGame(
     scriptsFile: SCRIPTS_FILE,
     physicsWorld: options.physicsWorld ?? "3d",
     assets: packed.index,
+    ...(options.bundleDebugger
+      ? {
+          infiniteLoopDetection: options.infiniteLoopDetection !== false,
+          loopCount:
+            typeof options.loopCount === "number" &&
+            Number.isFinite(options.loopCount) &&
+            options.loopCount >= 1
+              ? Math.round(options.loopCount)
+              : DEFAULT_LOOP_COUNT,
+        }
+      : {}),
   };
   files.set(GAME_MANIFEST_FILE, encoder.encode(`${JSON.stringify(manifest)}\n`));
 
@@ -255,12 +266,28 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 
 export function parseGameManifest(source: string): GameManifest {
   const parsed = JSON.parse(source) as GameManifest;
+  const bundleDebugger = parsed.bundleDebugger === true;
   return {
     ...parsed,
+    bundleDebugger,
     pixelsPerUnit:
       typeof parsed.pixelsPerUnit === "number" && parsed.pixelsPerUnit > 0
         ? parsed.pixelsPerUnit
         : 100,
     pixelPerfect: parsed.pixelPerfect === true,
+    ...(bundleDebugger
+      ? {
+          infiniteLoopDetection: parsed.infiniteLoopDetection !== false,
+          loopCount:
+            typeof parsed.loopCount === "number" &&
+            Number.isFinite(parsed.loopCount) &&
+            parsed.loopCount >= 1
+              ? Math.round(parsed.loopCount)
+              : DEFAULT_LOOP_COUNT,
+        }
+      : {
+          infiniteLoopDetection: undefined,
+          loopCount: undefined,
+        }),
   };
 }

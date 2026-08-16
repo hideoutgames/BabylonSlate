@@ -25,6 +25,7 @@ import {
   PanelFrame,
   PropertyGrid,
   ToolbarStrip,
+  assetRowIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -624,13 +625,19 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           label: "Clip Asset",
           value: clip?.assetGuid || null,
           placeholder: "None",
-          displayLabel: clip?.assetGuid
-            ? (assetRegistry?.getByGuid(clip.assetGuid)?.header.name ??
-              clip.assetGuid)
-            : undefined,
           onPick: () => setClipPick(true),
           onChange: (value) =>
             commit(upsertStateClip(doc, selected.id, { assetGuid: value ?? "" })),
+          ...assetRowIdentity(
+            clip?.assetGuid
+              ? (() => {
+                  const asset = assetRegistry?.getByGuid(clip.assetGuid);
+                  return asset
+                    ? { name: asset.header.name, type: asset.header.type }
+                    : { name: clip.assetGuid, type: clipKind === "sprite" ? "Sprite" : "Animation" };
+                })()
+              : undefined,
+          ),
         },
         {
           id: "clipName",

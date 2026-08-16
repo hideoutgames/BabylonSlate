@@ -64,6 +64,7 @@ import { NodePalette } from "./node-palette";
 import { GraphConnectionLine } from "./connection-line";
 import {
   collectSafeConnectPins,
+  edgesAfterConnect,
   edgesTouchingNodes,
   edgeTouchesPin,
   firstCompatiblePin,
@@ -493,18 +494,30 @@ function GraphEditorCanvas({
     ) => {
       const id = createEdgeId(source, sourceHandle, target, targetHandle);
       setEdges((current) => {
-        if (current.some((edge) => edge.id === id)) {
-          return current;
-        }
-        const next: Edge[] = [
-          ...current,
-          { id, source, target, sourceHandle, targetHandle },
-        ];
+        const next = edgesAfterConnect(
+          current,
+          {
+            id,
+            source,
+            target,
+            sourceHandle,
+            targetHandle,
+            ...(defaultEdgeOptions.type
+              ? { type: defaultEdgeOptions.type }
+              : {}),
+          },
+          (nodeId, pinId) =>
+            pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
+        );
+        const unchanged =
+          next.length === current.length &&
+          next.every((edge, index) => edge.id === current[index]?.id);
+        if (unchanged) return current;
         emitChange(graphStateRef.current.nodes, next);
         return next;
       });
     },
-    [emitChange],
+    [defaultEdgeOptions.type, emitChange],
   );
 
   const onPinTap = useCallback(
@@ -701,22 +714,21 @@ function GraphEditorCanvas({
             const target = sourceIsDragged ? id : connect.nodeId;
             const targetHandle = sourceIsDragged ? match.id : connect.pin.id;
             const edgeId = createEdgeId(source, sourceHandle, target, targetHandle);
-            if (!nextEdges.some((edge) => edge.id === edgeId)) {
-              nextEdges = [
-                ...nextEdges,
-                {
-                  id: edgeId,
-                  source,
-                  target,
-                  sourceHandle,
-                  targetHandle,
-                  ...(defaultEdgeOptions.type
-                    ? { type: defaultEdgeOptions.type }
-                    : {}),
-                },
-              ];
-              setEdges(nextEdges);
-            }
+            nextEdges = edgesAfterConnect(
+              nextEdges,
+              {
+                id: edgeId,
+                source,
+                target,
+                sourceHandle,
+                targetHandle,
+                ...(defaultEdgeOptions.type
+                  ? { type: defaultEdgeOptions.type }
+                  : {}),
+              },
+              (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
+            );
+            setEdges(nextEdges);
           }
         }
         emitChange(next, nextEdges);

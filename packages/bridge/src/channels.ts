@@ -64,6 +64,8 @@ export type ControlMessage =
       scenes?: Array<{ guid: string; scene: SerializedScene }>;
       /** When false, debug-tier console commands are stripped in the player. */
       includeDebugCommands?: boolean;
+      infiniteLoopDetection?: boolean;
+      loopCount?: number;
     }
   | {
       type: "loadScripts";

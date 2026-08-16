@@ -145,8 +145,12 @@ closure. Selected Texture Sample nodes expose an `AssetPicker` in Details.
 | Scene Normal | `PrePassTextureBlock.worldNormal` sampled through a `TextureBlock` |
 
 If a device cannot provide a required buffer, `attachPostProcessStack` skips
-**only that pass** and reports a diagnostic. Scene Normal lazily enables a
-shared pre-pass renderer and releases it when the last dependent pass detaches.
+**only that pass** and reports an anchored `material.capability` diagnostic on
+the Scene Depth / Scene Normal node. Runtime probes pre-pass support rather than
+assuming buffers exist. Scene Depth lazily enables a linearized camera depth
+renderer (`useNonLinearDepth = false`, camera near/far from that camera) and
+Scene Normal enables a shared pre-pass renderer; both are released when the
+last dependent pass detaches.
 
 ## Runtime
 
@@ -172,7 +176,11 @@ settings page is applied to the Engine.
 Play and export close over surface materials, stack materials (including
 disabled entries), transitive Material Functions and texture guids. Saving a
 Material writes `domain` onto `header.payload` and `materialDependencies().all`
-onto `header.dependencies[]`.
+onto `header.dependencies[]`. The packaged player hydrates those JSON payloads
+into `createEngine` (`materialDocuments`, `materialFunctions`,
+`postProcessStack`) and forwards `assignMaterial`. Engine Settings
+`postProcessingEnabled` is not applied to exported games — omitted means the
+authored stack runs.
 
 ## Not implemented
 

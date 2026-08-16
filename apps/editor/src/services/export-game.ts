@@ -69,6 +69,8 @@ export type CollectExportGameParams = {
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
   physicsWorld: "2d" | "3d";
+  infiniteLoopDetection?: boolean;
+  loopCount?: number;
   playerFiles: Map<string, Uint8Array>;
   extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
@@ -228,6 +230,8 @@ export async function collectAndExportGame(
     pixelsPerUnit: params.pixelsPerUnit,
     pixelPerfect: params.pixelPerfect,
     physicsWorld: params.physicsWorld,
+    infiniteLoopDetection: params.infiniteLoopDetection,
+    loopCount: params.loopCount,
     scripts,
     assets: exportAssets,
     playerFiles: params.playerFiles,

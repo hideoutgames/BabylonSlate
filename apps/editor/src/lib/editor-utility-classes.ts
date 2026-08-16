@@ -1,9 +1,10 @@
 import { isEditorUtilityObjectClass } from "@babylonslate/core";
 import type { ClassPickerEntry } from "@babylonslate/editor-kit";
-import { classParentLookup } from "./content-browser-helpers";
+import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
 
 export function editorUtilityObjectClassEntries(
   assets: ReadonlyArray<{
+    path?: string;
     header: { type: string; name: string; parentClass?: string | null };
   }>,
 ): ClassPickerEntry[] {
@@ -17,11 +18,12 @@ export function editorUtilityObjectClassEntries(
   ];
   for (const asset of assets) {
     if (asset.header.type !== "Class") continue;
-    if (asset.header.name === "EditorUtilityObject") continue;
-    if (!isEditorUtilityObjectClass(asset.header.name, parentOf)) continue;
+    const id = classIdFromClassAsset(asset);
+    if (id === "EditorUtilityObject") continue;
+    if (!isEditorUtilityObjectClass(id, parentOf)) continue;
     entries.push({
-      id: asset.header.name,
-      name: asset.header.name,
+      id,
+      name: id,
       group: "Project",
     });
   }

@@ -71,6 +71,7 @@ describe("project documents as .babasset", () => {
     );
     expect(classHeader.type).toBe("Class");
     expect(classHeader.parentClass).toBe("Actor");
+    expect(classHeader.name).toBe("main");
   });
 
   it("keeps an asset guid stable across saves", async () => {

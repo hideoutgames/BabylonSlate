@@ -19,6 +19,7 @@ import {
   PanelFrame,
   PropertyGrid,
   SearchDropdown,
+  assetRowIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -160,6 +161,9 @@ export function TilemapDetails({
       placeholder: "None",
       onPick: () => setPickerOpen(true),
       onChange: (value) => commit({ ...tilemap, tilesetGuid: value }),
+      ...assetRowIdentity(
+        assets.find((asset) => asset.guid === tilemap.tilesetGuid),
+      ),
     },
     {
       id: "tileWidth",

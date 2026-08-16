@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { SearchDialog, type SearchDialogItem } from "./search-dialog";
+import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 
 export interface ClassPickerEntry {
@@ -34,9 +35,9 @@ export function ClassPicker({
   const items = useMemo<SearchDialogItem[]>(() => {
     const rows: SearchDialogItem[] = classes.map((entry) => ({
       id: entry.id,
-      label: entry.name,
-      description: entry.description ?? entry.group,
-      group: entry.group,
+      label: displayPickerTitle(entry.name),
+      description: "Class",
+      group: [entry.group, entry.description].filter(Boolean).join(" "),
       leading: (
         <TypeVisualIcon
           visual={resolveTypeVisual({
