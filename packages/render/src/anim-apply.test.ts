@@ -268,6 +268,58 @@ describe("seekGameplayAnimation", () => {
     expect(missing).toEqual([]);
   });
 
+  it("seeks only the Idle group whose Model guid matches when two groups share a name", () => {
+    const aFrames: number[] = [];
+    const bFrames: number[] = [];
+    applyAnimStateToScene(
+      {
+        animationGroups: [
+          {
+            name: "Idle",
+            from: 0,
+            to: 20,
+            clipAssetGuid: "model-a",
+            pause() {},
+            goToFrame(frame) {
+              aFrames.push(frame);
+            },
+          },
+          {
+            name: "Idle",
+            from: 0,
+            to: 20,
+            pause() {},
+            goToFrame() {
+              aFrames.push(-1);
+            },
+          },
+          {
+            name: "Idle",
+            from: 0,
+            to: 20,
+            clipAssetGuid: "model-b",
+            pause() {},
+            goToFrame(frame) {
+              bFrames.push(frame);
+            },
+          },
+        ],
+      },
+      {
+        type: "animState",
+        slotId: 1,
+        stateId: "idle",
+        normalisedTime: 0.5,
+        blendWeights: { idle: 1 },
+        clipName: "Idle",
+        clipKind: "animation",
+        clipAssetGuid: "model-b",
+      },
+    );
+    expect(aFrames).toEqual([]);
+    expect(bFrames).toEqual([10]);
+  });
+
   it("reports a missing animation clip instead of silently skipping it", () => {
     const missing: Array<{
       slotId: number;
@@ -547,5 +599,76 @@ describe("sceneAnimHostFromBinding", () => {
     expect(overlay.isDisposed()).toBe(true);
     scene.dispose();
     engine.dispose();
+  });
+
+  it("seeks Idle only on the slot whose Model guid matches", () => {
+    const aFrames: number[] = [];
+    const bFrames: number[] = [];
+    const binding = createSnapshotSceneBinding();
+    binding.slotAnimationGroups = new Map([
+      [
+        1,
+        [
+          {
+            name: "Idle",
+            from: 0,
+            to: 10,
+            clipAssetGuid: "model-a",
+            pause() {},
+            goToFrame(frame) {
+              aFrames.push(frame);
+            },
+          },
+        ],
+      ],
+      [
+        2,
+        [
+          {
+            name: "Idle",
+            from: 0,
+            to: 10,
+            pause() {},
+            goToFrame() {
+              bFrames.push(-1);
+            },
+          },
+          {
+            name: "Idle",
+            from: 0,
+            to: 10,
+            clipAssetGuid: "model-b",
+            pause() {},
+            goToFrame(frame) {
+              bFrames.push(frame);
+            },
+          },
+        ],
+      ],
+    ]);
+    const host = sceneAnimHostFromBinding(binding, { animationGroups: [] });
+    applyAnimStateToScene(host, {
+      type: "animState",
+      slotId: 2,
+      stateId: "idle",
+      normalisedTime: 0.4,
+      blendWeights: { idle: 1 },
+      clipName: "Idle",
+      clipKind: "animation",
+      clipAssetGuid: "model-b",
+    });
+    applyAnimStateToScene(host, {
+      type: "animState",
+      slotId: 1,
+      stateId: "idle",
+      normalisedTime: 0.8,
+      blendWeights: { idle: 1 },
+      clipName: "Idle",
+      clipKind: "animation",
+      clipAssetGuid: "model-a",
+    });
+    expect(aFrames).toEqual([8]);
+    expect(bFrames).toEqual([4]);
+    disposeSnapshotBinding(binding);
   });
 });
