@@ -77,6 +77,12 @@ describe("asScriptInterfaceAsset", () => {
             pins: [
               { name: "exec", typeId: "exec", direction: "in" },
               { name: "amount", typeId: "float", direction: "out" },
+              {
+                name: "other",
+                typeId: "object",
+                direction: "in",
+                typeClassId: "Actor",
+              },
               { name: "bad" },
             ],
           },
@@ -93,6 +99,12 @@ describe("asScriptInterfaceAsset", () => {
           pins: [
             { name: "exec", typeId: "exec", direction: "in" },
             { name: "amount", typeId: "float", direction: "out" },
+            {
+              name: "other",
+              typeId: "object",
+              direction: "in",
+              typeClassId: "Actor",
+            },
             { name: "bad", typeId: "float", direction: "in" },
           ],
         },

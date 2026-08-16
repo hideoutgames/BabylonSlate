@@ -17,7 +17,7 @@ describe("data-types", () => {
     expect(pinColorVar("string")).toBe("var(--pin-string)");
     expect(pinColorVar("vec3")).toBe("var(--pin-vector)");
     expect(pinColorVar("objectRef")).toBe("var(--pin-object)");
-    expect(pinColorVar("classRef")).toBe("var(--pin-object)");
+    expect(pinColorVar("classRef")).toBe("var(--pin-class)");
     expect(pinColorVar("unknown-kind")).toBe("var(--pin-wildcard)");
   });
 
@@ -30,6 +30,8 @@ describe("data-types", () => {
 
   it("exposes the full pin and asset token lists", () => {
     expect(PIN_COLOR_TOKENS).toContain("--pin-bool");
+    expect(PIN_COLOR_TOKENS).toContain("--pin-class");
+    expect(PIN_COLOR_VAR.class).toBe("var(--pin-class)");
     expect(ASSET_COLOR_TOKENS).toContain("--asset-folder");
     expect(PIN_COLOR_VAR.bool).toBe("var(--pin-bool)");
     expect(ASSET_COLOR_VAR.folder).toBe("var(--asset-folder)");

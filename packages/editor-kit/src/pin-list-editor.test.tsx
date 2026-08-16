@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PinListEditor, type PinListRow } from "./pin-list-editor";
 
 if (typeof window.PointerEvent === "undefined") {
@@ -47,6 +47,37 @@ describe("PinListEditor", () => {
     onChange.mockClear();
     screen.getByRole("button", { name: "Remove amount" }).click();
     expect(onChange).toHaveBeenCalledWith([rows[1]]);
+    expect(screen.queryAllByText("Remove")).toEqual([]);
+  });
+
+  it("keeps typeClassId on object pins and exposes a Class Type picker", async () => {
+    const onChange = vi.fn();
+    render(
+      <PinListEditor
+        rows={[
+          {
+            id: "a",
+            name: "target",
+            type: "object",
+            direction: "in",
+            typeClassId: "Hero",
+          },
+        ]}
+        selectedId="a"
+        classEntries={[{ id: "Hero", name: "Hero" }, { id: "Actor", name: "Actor" }]}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByTestId("pin-a-class-type")).toBeTruthy();
+    expect(screen.getByTestId("pin-a-class-type").textContent).toContain("Hero");
+    screen.getByTestId("pin-a-class-type").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-Actor")).toBeTruthy();
+    });
+    screen.getByTestId("search-item-Actor").click();
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "a", typeClassId: "Actor" }),
+    ]);
   });
 
   it("adds an input or output pin", () => {

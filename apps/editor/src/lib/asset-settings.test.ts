@@ -82,11 +82,13 @@ describe("asset settings payloads", () => {
     ]);
     asset = patchScriptInterfacePin(asset, 0, 0, {
       name: "hit",
-      typeId: "bool",
+      typeId: "object",
+      typeClassId: "Actor",
     });
     expect(asset.methods[0]?.pins[0]).toEqual({
       name: "hit",
-      typeId: "bool",
+      typeId: "object",
+      typeClassId: "Actor",
       direction: "out",
     });
     asset = moveScriptInterfaceMethod(

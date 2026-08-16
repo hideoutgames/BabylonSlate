@@ -10,6 +10,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchScriptInterfaceMethod } from "../lib/asset-settings";
+import { subclassClassEntries } from "../lib/component-property-rows";
 import {
   asScriptInterfaceAsset,
   parseMemberIndex,
@@ -19,7 +20,7 @@ import {
 export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
+  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
   const { selectedMemberId, selectedPinId, setSelectedPinId } =
     useTypeAssetEditing();
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -41,6 +42,7 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
       name: pin.name,
       type: pin.typeId,
       direction: pin.direction,
+      ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
     }));
   }, [method, selectedIndex]);
 
@@ -79,11 +81,18 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
           selectedId={selectedPinId}
           onSelect={setSelectedPinId}
           showDirection
+          classEntries={subclassClassEntries(
+            "BObject",
+            assetRegistry?.list() ?? [],
+          )}
           onChange={(nextRows) => {
             const pins = nextRows.map((row) => ({
               name: row.name,
               typeId: String(row.type),
               direction: row.direction === "out" ? ("out" as const) : ("in" as const),
+              ...(row.typeClassId?.trim()
+                ? { typeClassId: row.typeClassId.trim() }
+                : {}),
             }));
             commit(
               patchScriptInterfaceMethod(asset, selectedIndex, { pins }),

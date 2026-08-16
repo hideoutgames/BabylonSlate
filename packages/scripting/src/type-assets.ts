@@ -26,6 +26,7 @@ export type InterfaceMethodPin = {
   name: string;
   typeId: string;
   direction: "in" | "out";
+  typeClassId?: string;
 };
 
 export type InterfaceMethod = {

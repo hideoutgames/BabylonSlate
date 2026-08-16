@@ -41,6 +41,21 @@ vi.mock("../context/document-context", () => ({
           edges: [],
           members: [
             { id: "var-1", kind: "variable", name: "Health", typeId: "bool" },
+            {
+              id: "var-obj",
+              kind: "variable",
+              name: "Target",
+              typeId: "object",
+              typeClassId: "Hero",
+            },
+            {
+              id: "var-class",
+              kind: "variable",
+              name: "Kind",
+              typeId: "class",
+              typeClassId: "Actor",
+              defaultValue: "Hero",
+            },
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
             {
               id: "if-1",
@@ -113,5 +128,17 @@ describe("Inspector class member details", () => {
   it("shows ScriptInterface AssetPicker for a selected interface", () => {
     renderMemberInspector("if-1");
     expect(screen.getByTestId("inspector-member-interface-pick")).toBeTruthy();
+  });
+
+  it("requires a Class Type for object variables and omits a Default", () => {
+    renderMemberInspector("var-obj");
+    expect(screen.getByTestId("inspector-member-class-type")).toBeTruthy();
+    expect(screen.queryByTestId("property-default")).toBeNull();
+  });
+
+  it("shows Class Type and Default class pickers for class variables", () => {
+    renderMemberInspector("var-class");
+    expect(screen.getByTestId("inspector-member-class-type")).toBeTruthy();
+    expect(screen.getByTestId("inspector-member-class-default")).toBeTruthy();
   });
 });
