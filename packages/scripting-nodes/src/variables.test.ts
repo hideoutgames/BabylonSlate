@@ -41,7 +41,7 @@ describe("variables.get / variables.set", () => {
     expect(registry.get("variables.get")?.pure).toBe(true);
   });
 
-  it("types Get from typeId and omits the name pin", () => {
+  it("types Get from typeId and names the data out after the variable", () => {
     const def = createDefaultNodeRegistry().get("variables.get")!;
     const pins = def.pins({
       variableName: "Health",
@@ -51,10 +51,11 @@ describe("variables.get / variables.set", () => {
     expect(
       pins.map((pin) => ({
         id: pin.id,
+        name: pin.name,
         direction: pin.direction,
         type: pin.type,
       })),
-    ).toEqual([{ id: "value", direction: "out", type: BOOL }]);
+    ).toEqual([{ id: "value", name: "Health", direction: "out", type: BOOL }]);
     expect(pins.some((pin) => pin.id === "name")).toBe(false);
     expect(pins.some((pin) => pin.id === "target")).toBe(false);
   });
@@ -73,7 +74,7 @@ describe("variables.get / variables.set", () => {
     );
   });
 
-  it("types Set from typeId with exec, value in, and pass-through out", () => {
+  it("types Set from typeId with exec and data pins named after the variable", () => {
     const def = createDefaultNodeRegistry().get("variables.set")!;
     const pins = def.pins({
       variableName: "Health",
@@ -83,14 +84,15 @@ describe("variables.get / variables.set", () => {
     expect(
       pins.map((pin) => ({
         id: pin.id,
+        name: pin.name,
         direction: pin.direction,
         type: pin.type,
       })),
     ).toEqual([
-      { id: "execIn", direction: "in", type: EXEC },
-      { id: "execOut", direction: "out", type: EXEC },
-      { id: "value", direction: "in", type: INT },
-      { id: "out", direction: "out", type: INT },
+      { id: "execIn", name: "exec", direction: "in", type: EXEC },
+      { id: "execOut", name: "then", direction: "out", type: EXEC },
+      { id: "value", name: "Health", direction: "in", type: INT },
+      { id: "out", name: "Health", direction: "out", type: INT },
     ]);
     expect(pins.some((pin) => pin.id === "name")).toBe(false);
   });
@@ -106,7 +108,7 @@ describe("variables.get / variables.set", () => {
           variableName: "Health",
           typeId: "float",
           implicitSelf: true,
-          "default:value": 8,
+          "default:Health": 8,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Health",
@@ -141,6 +143,7 @@ describe("variables.get / variables.set", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain('ctx.setVariable("Health"');
+    expect(compiled.source).toContain("ctx.setVariable(\"Health\", 8)");
     expect(compiled.source).toContain('ctx.getVariable("Health")');
     expect(compiled.source).not.toContain("ctx.input(\"name\")");
   });
@@ -158,7 +161,7 @@ describe("variables.get / variables.set", () => {
           typeId: "float",
           scope: "local",
           implicitSelf: true,
-          "default:value": 4,
+          "default:Temp": 4,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Temp",
@@ -194,7 +197,7 @@ describe("variables.get / variables.set", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain("__lv_Temp");
-    expect(compiled.source).toContain("__lv_Temp =");
+    expect(compiled.source).toContain("__lv_Temp = 4");
     expect(compiled.source).not.toContain("ctx.getVariable");
     expect(compiled.source).not.toContain("ctx.setVariable");
   });
@@ -251,5 +254,49 @@ describe("variables.get / variables.set", () => {
       /ctx\.getVariableFrom\([^,]*spawn[^,]*,\s*"Health"/,
     );
     expect(compiled.source).toContain('"Health"');
+  });
+
+  it("compiles Set pass-through onto the named out pin", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "set", "variables.set", {
+          variableName: "Health",
+          typeId: "float",
+          implicitSelf: true,
+          "default:Health": 8,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "set",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "set",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "set",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain("_n_set_Health = 8");
+    expect(compiled.source).toContain("ctx.setVariable(\"Health\", 8)");
   });
 });

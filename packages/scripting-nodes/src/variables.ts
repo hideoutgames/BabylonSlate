@@ -62,23 +62,27 @@ export const variableNodes: NodeDefinition[] = [
     title: "Get Variable",
     category: "variables",
     pure: true,
-    pins: (properties) => [
-      ...targetPins(properties),
-      pin(
-        "value",
-        "value",
-        "out",
-        pinTypeForMember(
-          typeof properties.typeId === "string" ? properties.typeId : "float",
+    pins: (properties) => {
+      const name = variableNameOf(properties);
+      return [
+        ...targetPins(properties),
+        pin(
+          "value",
+          name,
+          "out",
+          pinTypeForMember(
+            typeof properties.typeId === "string" ? properties.typeId : "float",
+          ),
         ),
-      ),
-    ],
+      ];
+    },
     codegen: (ctx) => {
       const name = variableNameOf(ctx.node.properties);
-      if (ctx.node.properties.scope === "local") {
-        return { value: localVariableIdent(name) };
-      }
-      return { value: memberGetExpr(ctx, name) };
+      const expr =
+        ctx.node.properties.scope === "local"
+          ? localVariableIdent(name)
+          : memberGetExpr(ctx, name);
+      return { [name]: expr };
     },
   },
   {
@@ -86,6 +90,7 @@ export const variableNodes: NodeDefinition[] = [
     title: "Set Variable",
     category: "variables",
     pins: (properties) => {
+      const name = variableNameOf(properties);
       const type = pinTypeForMember(
         typeof properties.typeId === "string" ? properties.typeId : "float",
       );
@@ -93,17 +98,19 @@ export const variableNodes: NodeDefinition[] = [
         pin("execIn", "exec", "in", EXEC),
         pin("execOut", "then", "out", EXEC),
         ...targetPins(properties),
-        pin("value", "value", "in", type),
-        pin("out", "out", "out", type),
+        pin("value", name, "in", type),
+        pin("out", name, "out", type),
       ];
     },
     codegen: (ctx) => {
       const name = variableNameOf(ctx.node.properties);
-      const value = ctx.input("value");
+      const value = ctx.input(name);
+      const out = ctx.output(name);
       if (ctx.node.properties.scope === "local") {
         const ident = localVariableIdent(name);
         ctx.emit(`${ident} = ${value};`);
-        return { out: ident };
+        ctx.emit(`${out} = ${ident};`);
+        return;
       }
       const quoted = JSON.stringify(name);
       if (usesImplicitSelf(ctx)) {
@@ -113,7 +120,7 @@ export const variableNodes: NodeDefinition[] = [
           `ctx.setVariableOn(${ctx.input("target")}, ${quoted}, ${value});`,
         );
       }
-      return { out: value };
+      ctx.emit(`${out} = ${value};`);
     },
   },
 ];

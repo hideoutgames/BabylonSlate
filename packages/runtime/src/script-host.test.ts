@@ -1366,7 +1366,7 @@ describe("script host runs compiled graphs", () => {
           variableName: "Health",
           typeId: "float",
           implicitSelf: true,
-          "default:value": 7,
+          "default:Health": 7,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Health",
@@ -1413,7 +1413,7 @@ describe("script host runs compiled graphs", () => {
           typeId: "float",
           classId: "Guard",
           implicitSelf: false,
-          "default:value": 11,
+          "default:Health": 11,
         }),
         node(registry, "get", "variables.get", {
           variableName: "Health",
