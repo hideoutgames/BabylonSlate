@@ -10,6 +10,7 @@ describe("app settings", () => {
   it("provides defaults including undo history length 50", () => {
     const settings = defaultEngineSettings();
     expect(settings.undoHistoryLength).toBe(50);
+    expect(settings.viewportFrameCap).toBe(30);
     expect(settings.thumbnailsEnabled).toBe(true);
     expect(settings.appearance.theme).toBe("system");
     expect(settings.focusKeepPanels).toEqual({
@@ -19,6 +20,13 @@ describe("app settings", () => {
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
     expect(settings.debuggerDefaults.previewBuild).toBe(false);
+  });
+
+  it("fills viewportFrameCap at 30 when saved JSON omits the field", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.viewportFrameCap).toBe(30);
   });
 
   it("fills UserInterface designer presets when saved JSON omits the field", () => {
