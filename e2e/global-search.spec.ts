@@ -26,7 +26,7 @@ test.describe("Global project search", () => {
     await page.locator('[data-testid^="global-search-item-actor:"]').first().click();
     await expect(page.getByTestId("global-search-dialog")).toHaveCount(0);
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
-    await expect(page.getByTestId("tree-row-actor-1")).toHaveAttribute(
+    await expect(page.getByTestId("tree-row-actor:actor-1")).toHaveAttribute(
       "aria-selected",
       "true",
       { timeout: 10_000 },
