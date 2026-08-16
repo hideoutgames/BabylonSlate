@@ -321,4 +321,64 @@ describe("project documents as .babasset", () => {
         .dockKind,
     ).toBe("class");
   });
+
+  it("indexes FunctionLibrary function members on the Class header", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/MathLib.class.babasset";
+    await storage.writeBinary(
+      path,
+      await encodeAssetDocument(
+        {
+          type: "Class",
+          name: "MathLib",
+          guid: "math-lib-guid",
+          version: 1,
+          payload: { nodes: [], edges: [], members: [] },
+        },
+        { parentClass: "FunctionLibrary" },
+      ),
+    );
+    await service.remountRegistry();
+    await service.saveDocument("graph", path, {
+      nodes: [],
+      edges: [],
+      members: [
+        {
+          id: "fn-1",
+          kind: "function",
+          name: "Add",
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "a", typeId: "float", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+          ],
+        },
+        { id: "var-1", kind: "variable", name: "X", typeId: "float" },
+      ],
+    });
+    const header = readAssetDocumentHeader(await storage.readBinary(path));
+    expect(header.payload.functions).toEqual([
+      {
+        name: "Add",
+        pins: [
+          { name: "exec", typeId: "exec", direction: "in" },
+          { name: "a", typeId: "float", direction: "in" },
+          { name: "then", typeId: "exec", direction: "out" },
+        ],
+      },
+    ]);
+  });
+
+  it("does not index functions on an Actor Class header", async () => {
+    const { storage, service } = await scaffolded();
+    await service.saveDocument("graph", MAIN_CLASS_FILE, {
+      nodes: [],
+      edges: [],
+      members: [{ id: "fn-1", kind: "function", name: "Jump" }],
+    });
+    const header = readAssetDocumentHeader(
+      await storage.readBinary(MAIN_CLASS_FILE),
+    );
+    expect(header.payload.functions).toBeUndefined();
+  });
 });

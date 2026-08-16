@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CatalogDialog } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import { Switch } from "@babylonslate/ui/components/switch";
 import { cn } from "@babylonslate/ui/lib/utils";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 import { filterPaletteForPin } from "./graph-connect";
@@ -32,11 +34,20 @@ export function NodePalette({
 }: NodePaletteProps) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [contextSensitive, setContextSensitive] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    setSearch("");
+    setActiveCategory("all");
+  }, [open]);
 
   const allNodes = useMemo(() => {
     const nodes = paletteNodes ?? [];
-    return filterPin ? filterPaletteForPin(nodes, filterPin) : nodes;
-  }, [filterPin, paletteNodes]);
+    return filterPin && contextSensitive
+      ? filterPaletteForPin(nodes, filterPin)
+      : nodes;
+  }, [contextSensitive, filterPin, paletteNodes]);
 
   const categories = useMemo(() => {
     const map = new Map<string, number>();
@@ -85,6 +96,24 @@ export function NodePalette({
       onSearchChange={setSearch}
       searchPlaceholder="Search nodes"
       data-testid="node-palette"
+      footer={
+        <Field
+          orientation="horizontal"
+          className="min-h-[var(--touch-target,44px)] items-center"
+        >
+          <Switch
+            id="node-palette-context-sensitive"
+            checked={contextSensitive}
+            onCheckedChange={(checked) =>
+              setContextSensitive(checked === true)
+            }
+            data-testid="node-palette-context-sensitive"
+          />
+          <FieldLabel htmlFor="node-palette-context-sensitive">
+            Context Sensitive
+          </FieldLabel>
+        </Field>
+      }
     >
       {grouped.length === 0 ? (
         <p className="text-sm text-muted-foreground">No matches</p>

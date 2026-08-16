@@ -29,6 +29,7 @@ export function WindowsMenu() {
     getOpenDockWindowCount,
     assetRegistry,
     sourceControl,
+    uiEditorMode,
   } = useDocuments();
   useDockWindowTick();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -63,6 +64,7 @@ export function WindowsMenu() {
           actorPrefab,
           editorUtilityInterface,
           sourceControl: sourceControl.enabled,
+          uiEditorMode: activeKind === "ui" ? uiEditorMode : undefined,
         })
       : [];
     const editorUtilities = listEditorUtilityWindows({
@@ -110,6 +112,7 @@ export function WindowsMenu() {
     activeKind,
     actorPrefab,
     editorUtilityInterface,
+    uiEditorMode,
     assetRegistry,
     sourceControl.enabled,
     isDockWindowOpen,

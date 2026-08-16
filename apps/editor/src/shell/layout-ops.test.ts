@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyFocusLayout,
+  FOCUS_PRIMARY_PANEL,
   focusKeepCandidates,
   migrateRestoredLayout,
   resolveFocusKeepPanelIds,
@@ -50,6 +51,19 @@ describe("focusKeepCandidates", () => {
     );
   });
 
+  it("lists Designer or Logic UI docks depending on editor mode", () => {
+    expect(
+      focusKeepCandidates("ui").map((panel) => panel.id),
+    ).toEqual(listDockWindows("ui").map((entry) => entry.id));
+    expect(
+      focusKeepCandidates("ui", { uiEditorMode: "logic" }).map(
+        (panel) => panel.id,
+      ),
+    ).toEqual(
+      listDockWindows("ui", { uiEditorMode: "logic" }).map((entry) => entry.id),
+    );
+  });
+
   it("merges EditorUtilityInterface windows into Focus keep candidates", () => {
     const utilities = [{ id: "eui-scene-tools", title: "SceneTools" }];
     expect(
@@ -75,6 +89,10 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("tileset", [])).toEqual(["tileset-preview"]);
     expect(resolveFocusKeepPanelIds("tilemap", [])).toEqual(["tilemap-paint"]);
     expect(resolveFocusKeepPanelIds("ui", [])).toEqual(["ui-design"]);
+    expect(
+      resolveFocusKeepPanelIds("ui", [], { uiEditorMode: "logic" }),
+    ).toEqual(["graph"]);
+    expect(FOCUS_PRIMARY_PANEL.ui).toBe("ui-design");
     expect(resolveFocusKeepPanelIds("plugin-settings", [])).toEqual([
       "plugin-settings-details",
     ]);
@@ -137,6 +155,13 @@ describe("migrateRestoredLayout", () => {
     const api = fakeApi(["viewport", "mini-asset-browser", "scene-details"]);
     migrateRestoredLayout(api);
     expect(api.getPanel("mini-asset-browser")!.api.close).toHaveBeenCalled();
+  });
+
+  it("closes the retired UI Logic dock when restoring a Designer layout", () => {
+    const api = fakeApi(["ui-design", "ui-logic", "ui-details"]);
+    migrateRestoredLayout(api);
+    expect(api.getPanel("ui-logic")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("ui-design")!.api.close).not.toHaveBeenCalled();
   });
 
   it("moves Class below Components when they share a group", () => {

@@ -4,7 +4,6 @@ import {
   UiDesignPanel,
   UiDetailsPanel,
   UiHierarchyPanel,
-  UiLogicPanel,
   UiSettingsPanel,
 } from "../panels/ui-editor-panels";
 
@@ -40,9 +39,6 @@ export function UiDesigner({
           <div className="w-72 shrink-0 border-l border-border">
             <UiDetailsPanel {...STUB_DOCK_PROPS} />
           </div>
-        </div>
-        <div className="h-64 shrink-0 border-t border-border">
-          <UiLogicPanel {...STUB_DOCK_PROPS} />
         </div>
         {editorUtilityInterface ? (
           <div className="h-40 shrink-0 border-t border-border">

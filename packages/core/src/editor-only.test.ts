@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  functionLibraryHeaderMeta,
+  isEditorFunctionLibraryClass,
+  isEditorGraphClass,
+  isEditorGraphHost,
   isEditorOnlyAsset,
   isEditorOnlyAssetType,
   isEditorUtilityObjectClass,
+  isFunctionLibraryClass,
   normalizeEditorUtilityDockKind,
 } from "./editor-only";
 
@@ -11,6 +16,10 @@ describe("editor-only assets", () => {
     if (id === "LevelTools") return "EditorUtilityObject";
     if (id === "EditorUtilityObject") return "BObject";
     if (id === "Hero") return "Actor";
+    if (id === "MathLib") return "FunctionLibrary";
+    if (id === "FunctionLibrary") return "BObject";
+    if (id === "EditorMath") return "EditorFunctionLibrary";
+    if (id === "EditorFunctionLibrary") return "FunctionLibrary";
     return null;
   };
 
@@ -45,5 +54,69 @@ describe("editor-only assets", () => {
     expect(normalizeEditorUtilityDockKind("scene")).toBe("scene");
     expect(normalizeEditorUtilityDockKind(undefined)).toBe("scene");
     expect(normalizeEditorUtilityDockKind("viewport")).toBe("scene");
+  });
+
+  it("does not treat FunctionLibrary ancestry as editor-only", () => {
+    expect(isEditorFunctionLibraryClass("MathLib", parentOf)).toBe(false);
+    expect(
+      isEditorOnlyAsset({ type: "Class", parentClass: "MathLib" }, parentOf),
+    ).toBe(false);
+  });
+
+  it("treats EditorFunctionLibrary ancestry as editor-only on Class and Graph assets", () => {
+    expect(isEditorFunctionLibraryClass("EditorMath", parentOf)).toBe(true);
+    expect(
+      isEditorOnlyAsset({ type: "Class", parentClass: "EditorMath" }, parentOf),
+    ).toBe(true);
+    expect(
+      isEditorOnlyAsset({ type: "Graph", parentClass: "EditorMath" }, parentOf),
+    ).toBe(true);
+  });
+
+  it("detects editor graph hosts from asset type, parent class, and editorGraph", () => {
+    expect(isEditorGraphHost({ assetType: "UserInterface" })).toBe(false);
+    expect(isEditorGraphHost({ assetType: "EditorUtilityInterface" })).toBe(
+      true,
+    );
+    expect(
+      isEditorGraphHost({ parentClass: "EditorUtilityObject", parentOf }),
+    ).toBe(true);
+    expect(isEditorGraphHost({ editorGraph: true })).toBe(true);
+    expect(isEditorGraphClass("LevelTools", parentOf)).toBe(true);
+    expect(isEditorGraphClass("EditorMath", parentOf)).toBe(true);
+    expect(isEditorGraphClass("Hero", parentOf)).toBe(false);
+  });
+
+  it("treats EditorFunctionLibrary as a FunctionLibrary", () => {
+    expect(isFunctionLibraryClass("EditorFunctionLibrary", parentOf)).toBe(
+      true,
+    );
+    expect(isFunctionLibraryClass("MathLib", parentOf)).toBe(true);
+    expect(isFunctionLibraryClass("Hero", parentOf)).toBe(false);
+  });
+
+  it("indexes only function members for a FunctionLibrary header", () => {
+    expect(
+      functionLibraryHeaderMeta({
+        members: [
+          {
+            kind: "function",
+            name: "Add",
+            pins: [{ name: "a", typeId: "float", direction: "in" }],
+          },
+          { kind: "variable", name: "X" },
+          { kind: "event", name: "On Hit" },
+          { kind: "function", name: "Scale" },
+        ],
+      }),
+    ).toEqual({
+      functions: [
+        {
+          name: "Add",
+          pins: [{ name: "a", typeId: "float", direction: "in" }],
+        },
+        { name: "Scale", pins: [] },
+      ],
+    });
   });
 });

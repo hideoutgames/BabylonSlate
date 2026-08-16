@@ -17,7 +17,7 @@ const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
 export function classIdForGraphPath(path: string): string {
   const file = path.split("/").pop() ?? path;
   const base = file
-    .replace(/\.(graph|class|ui)\.(babasset|json)$/, "")
+    .replace(/\.(graph|class|ui|eui)\.(babasset|json)$/, "")
     .replace(/\.babasset$/, "");
   const cleaned = base.replace(/[^A-Za-z0-9_]+/g, "_");
   return cleaned.length > 0 ? cleaned : "Graph";

@@ -92,6 +92,13 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
+    this.register({
+      id: "EditorFunctionLibrary",
+      parentClassId: "FunctionLibrary",
+      kind: "other",
+      variables: [],
+      implementedInterfaces: [],
+    });
     for (const id of ["BTTask", "BTDecorator", "BTService", "BTComposite"] as const) {
       this.register({
         id,

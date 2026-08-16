@@ -26,6 +26,7 @@ import {
   DEFAULT_SORTING_LAYERS,
   eulerDegreesToQuaternion,
   identitySerializedTransform,
+  isEditorGraphHost,
   quaternionToEulerDegrees,
   type GraphClassMember,
   type SerializedComponent,
@@ -68,6 +69,11 @@ import {
 import { defaultJsValue, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { pinTypeForMember } from "@babylonslate/scripting-nodes";
 import { patchClassMember } from "../lib/class-members";
+import { classParentLookup } from "../lib/content-browser-helpers";
+import {
+  commitLogicGraph,
+  serializedGraphFromDocument,
+} from "../lib/logic-graph-document";
 
 function ClassMemberDetails({
   graph,
@@ -383,8 +389,13 @@ function PrefabComponentDetails({
 export function InspectorPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, projectDocument, assetRegistry } =
-    useDocuments();
+  const {
+    openDocuments,
+    applyGraphChange,
+    applyAssetDocumentChange,
+    projectDocument,
+    assetRegistry,
+  } = useDocuments();
   const { focusDiagnostic } = useValidation();
   const { focusedNodeId } = usePlay();
   const { selectedNodeIds, selectedMemberId, activeFunctionId } =
@@ -403,8 +414,29 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   } | null>(null);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
-  const graph =
-    doc?.ref.kind === "graph" ? (doc.content as SerializedGraph) : null;
+  const indexed = (assetRegistry?.list() ?? []).find(
+    (asset) => asset.path === doc?.ref.path,
+  );
+  const parentClass = indexed?.header.parentClass ?? null;
+  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
+  const editorGraph = isEditorGraphHost({
+    parentClass,
+    parentOf,
+    assetType: indexed?.header.type,
+  });
+  const graph = serializedGraphFromDocument(
+    doc?.ref.kind ?? "",
+    doc?.content,
+  );
+  const persistGraph = (next: SerializedGraph) => {
+    if (!doc) return;
+    const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
+    if (commit.kind === "ui") {
+      void applyAssetDocumentChange(documentId, commit.payload);
+      return;
+    }
+    void applyGraphChange(documentId, commit.graph);
+  };
   const inspectGraph = useMemo(() => {
     if (!graph) return null;
     if (!activeFunctionId) return graph;
@@ -492,9 +524,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           graph={graph}
           member={selectedMember}
           interfaceAssets={interfaceAssets}
-          onChange={(next) => {
-            void applyGraphChange(documentId, next);
-          }}
+          onChange={persistGraph}
         />
       </PanelFrame>
     );
@@ -580,7 +610,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         n.id === selectedNode.id ? { ...n, data: { ...n.data, ...patch } } : n,
       ),
     };
-    void applyGraphChange(documentId, next);
+    persistGraph(next);
   };
 
   const inputMappings = normalizeInputMappings(projectDocument?.settings.input);
@@ -598,6 +628,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       classEntries: subclassClassEntries(
         "BObject",
         assetRegistry?.list() ?? [],
+        { editorGraph },
       ),
       onPickClass: (pinId, constraintClassId) => {
         const name =
@@ -734,10 +765,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
                 direction: "out" as const,
               }));
               if (eventMember) {
-                void applyGraphChange(
-                  documentId,
-                  patchClassMember(graph, eventMember.id, { pins }),
-                );
+                persistGraph(patchClassMember(graph, eventMember.id, { pins }));
                 return;
               }
               updateNodeData({ pins });
@@ -755,6 +783,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             ? subclassClassEntries(
                 classPinPick.constraintClassId,
                 assetRegistry?.list() ?? [],
+                { editorGraph },
               )
             : []
         }

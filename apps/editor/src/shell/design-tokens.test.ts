@@ -57,6 +57,8 @@ const NODE_TOKENS = [
   "--node-debug",
   "--node-dev-only-tape",
   "--node-dev-only-stripe",
+  "--node-editor-only-tape",
+  "--node-editor-only-stripe",
 ] as const;
 
 function cssBlock(css: string, selector: string): string {
@@ -198,6 +200,15 @@ describe("Minimal Neutral theme tokens", () => {
     }
   });
 
+  it("keeps Editor Only tape hues identical in both schemes", () => {
+    for (const name of [
+      "--node-editor-only-tape",
+      "--node-editor-only-stripe",
+    ] as const) {
+      expect(tokenValue(dark, name), name).toBe(tokenValue(root, name));
+    }
+  });
+
   it("defines touch-sized graph pin and edge tokens", () => {
     expect(tokenValue(dark, "--graph-pin-size")).toBe("22px");
     expect(tokenValue(dark, "--graph-edge-exec")).toBe("5px");
@@ -264,6 +275,14 @@ describe("dockview theme contrast", () => {
     );
     expect(dockviewCss).not.toMatch(
       /\.dockview-theme-babylonslate\s+\.dv-groupview\s*\{[^}]*outline:/,
+    );
+  });
+});
+
+describe("UI Designer/Logic stacked surfaces", () => {
+  it("disables hit testing on inactive surface descendants", () => {
+    expect(chromeCss).toMatch(
+      /\.ui-dock-surface-inactive\s+\*\s*\{[^}]*pointer-events:\s*none/,
     );
   });
 });

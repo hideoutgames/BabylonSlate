@@ -24,6 +24,20 @@ async function createAsset(
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
 }
 
+async function openWindowsMenu(page: Page): Promise<void> {
+  const content = page.getByTestId("windows-menu-content");
+  if (await content.isVisible()) return;
+  await page.getByTestId("windows-menu").click();
+  await expect(content).toBeVisible();
+}
+
+async function closeWindowsMenu(page: Page): Promise<void> {
+  const content = page.getByTestId("windows-menu-content");
+  if (!(await content.isVisible())) return;
+  await page.keyboard.press("Escape");
+  await expect(content).toHaveCount(0);
+}
+
 test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => {
   test("UserInterface designer paints on Dockview without Preview Unavailable", async ({
     page,
@@ -76,5 +90,84 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
       "aria-pressed",
       "true",
     );
+  });
+
+  test("Designer is the default mode and Logic switches Windows to Class docks", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("ui-editor-mode-bar")).toBeVisible();
+    await expect(page.getByTestId("ui-editor-mode-designer")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("ui-design-panel")).toBeVisible();
+    await expect(page.getByTestId("ui-dock-surface-designer")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await expect(page.getByTestId("ui-dock-surface-logic")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+
+    await openWindowsMenu(page);
+    await expect(page.getByTestId("windows-menu-ui-design")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-graph")).toHaveCount(0);
+    await expect(page.getByTestId("windows-menu-my-class")).toHaveCount(0);
+    await closeWindowsMenu(page);
+
+    await page.getByTestId("ui-editor-mode-logic").click();
+    await expect(page.getByTestId("ui-editor-mode-logic")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("ui-dock-surface-logic")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await expect(page.getByTestId("ui-dock-surface-designer")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await expect(page.getByTestId("my-class-panel")).toBeVisible();
+
+    await openWindowsMenu(page);
+    await expect(page.getByTestId("windows-menu-graph")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-my-class")).toBeVisible();
+    await expect(page.getByTestId("windows-menu-ui-design")).toHaveCount(0);
+    await closeWindowsMenu(page);
+  });
+
+  test("EditorUtilityInterface Settings stay on Designer", async ({ page }) => {
+    test.setTimeout(60_000);
+    await openTestProject(page);
+    await createAsset(page, "EditorUtilityInterface", "SceneTools");
+    await page
+      .locator('[data-asset-path="assets/SceneTools.eui.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("ui-settings-panel")).toBeVisible();
+    await openWindowsMenu(page);
+    await expect(page.getByTestId("windows-menu-ui-settings")).toBeVisible();
+    await closeWindowsMenu(page);
+
+    await page.getByTestId("ui-editor-mode-logic").click();
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await expect(page.getByTestId("ui-dock-surface-designer")).toHaveAttribute(
+      "data-active",
+      "false",
+    );
+    await expect(page.getByTestId("ui-dock-surface-logic")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await openWindowsMenu(page);
+    await expect(page.getByTestId("windows-menu-ui-settings")).toHaveCount(0);
+    await expect(page.getByTestId("windows-menu-graph")).toBeVisible();
+    await closeWindowsMenu(page);
   });
 });

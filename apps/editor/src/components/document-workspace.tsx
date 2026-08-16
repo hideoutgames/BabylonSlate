@@ -27,6 +27,9 @@ import {
   isDockviewDocumentKind,
   type DockviewDocumentKind,
 } from "../shell/window-catalog";
+import { UiEditorModeBar } from "./ui-editor-mode-bar";
+import { parseUiDocumentLayout } from "../shell/ui-document-layout";
+import { cn } from "@babylonslate/ui/lib/utils";
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
@@ -55,19 +58,23 @@ function RegisteredDockviewShell({
   initialLayout,
   actorPrefab,
   editorUtilityInterface,
+  uiEditorMode,
+  surface,
 }: {
   id: string;
   documentKind: DockviewDocumentKind;
   initialLayout: Record<string, unknown> | null;
   actorPrefab?: boolean;
   editorUtilityInterface?: boolean;
+  uiEditorMode?: import("../shell/ui-document-layout").UiEditorMode;
+  surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
   const { registerDockviewApi, sourceControl } = useDocuments();
   const onReady = useCallback(
     (api: DockviewApi) => {
-      registerDockviewApi(id, api);
+      registerDockviewApi(id, api, surface);
     },
-    [id, registerDockviewApi],
+    [id, registerDockviewApi, surface],
   );
 
   return (
@@ -77,6 +84,7 @@ function RegisteredDockviewShell({
       actorPrefab={actorPrefab}
       editorUtilityInterface={editorUtilityInterface}
       sourceControl={sourceControl.enabled}
+      uiEditorMode={uiEditorMode}
       onReady={onReady}
     />
   );
@@ -101,6 +109,69 @@ function DocumentShell({
     >
       <DocumentLockBanner path={path} sourceControl={sourceControl} />
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+    </div>
+  );
+}
+
+function UiDocumentDocks({
+  id,
+  layout,
+  editorUtilityInterface,
+}: {
+  id: string;
+  layout: Record<string, unknown> | null;
+  editorUtilityInterface: boolean;
+}) {
+  const { uiEditorMode, setUiEditorMode, activeDocumentId } = useDocuments();
+  const parsed = parseUiDocumentLayout(layout);
+  const mode = activeDocumentId === id ? uiEditorMode : parsed.uiEditorMode;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <UiEditorModeBar
+        mode={mode}
+        onModeChange={(next) => setUiEditorMode(id, next)}
+      />
+      <div className="relative min-h-0 flex-1">
+        <div
+          className={cn(
+            "absolute inset-0",
+            mode === "designer" ? "ui-dock-surface-active" : "ui-dock-surface-inactive",
+          )}
+          aria-hidden={mode !== "designer"}
+          inert={mode !== "designer" ? true : undefined}
+          data-testid="ui-dock-surface-designer"
+          data-active={mode === "designer" ? "true" : "false"}
+        >
+          <RegisteredDockviewShell
+            id={id}
+            documentKind="ui"
+            initialLayout={parsed.designer}
+            editorUtilityInterface={editorUtilityInterface}
+            uiEditorMode="designer"
+            surface="designer"
+          />
+        </div>
+        <div
+          className={cn(
+            "absolute inset-0",
+            mode === "logic" ? "ui-dock-surface-active" : "ui-dock-surface-inactive",
+          )}
+          aria-hidden={mode !== "logic"}
+          inert={mode !== "logic" ? true : undefined}
+          data-testid="ui-dock-surface-logic"
+          data-active={mode === "logic" ? "true" : "false"}
+        >
+          <RegisteredDockviewShell
+            id={id}
+            documentKind="ui"
+            initialLayout={parsed.logic}
+            actorPrefab={false}
+            uiEditorMode="logic"
+            surface="logic"
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -206,22 +277,25 @@ export function DocumentWorkspace() {
           return (
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
+                <PrefabEditingProvider>
+                <GraphEditingProvider>
                 <UiEditingProvider>
                   <DocumentShell
                     path={doc.ref.path}
                     testId="document-workspace-ui"
                     active={active}
                   >
-                    <RegisteredDockviewShell
+                    <UiDocumentDocks
                       id={id}
-                      documentKind="ui"
-                      initialLayout={doc.layout}
+                      layout={doc.layout}
                       editorUtilityInterface={
                         indexed?.header.type === "EditorUtilityInterface"
                       }
                     />
                   </DocumentShell>
                 </UiEditingProvider>
+                </GraphEditingProvider>
+                </PrefabEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );

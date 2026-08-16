@@ -170,3 +170,20 @@
 .chrome-tab-pinned .chrome-tab-label {
   padding-inline: 0.5rem;
 }
+
+/* Keep inactive UI Designer/Logic DockView measured but not hit-testable.
+   Descendants such as graph-toolbar use pointer-events-auto and would otherwise
+   intercept clicks on the active surface. */
+.ui-dock-surface-active {
+  z-index: 10;
+}
+
+.ui-dock-surface-inactive {
+  z-index: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.ui-dock-surface-inactive * {
+  pointer-events: none !important;
+}

@@ -24,6 +24,13 @@ Do all of these in the same change:
 
 `WindowsMenu` lists `listDockWindows(kind)` automatically. `registerDockviewApi` persists placements in `layout.json`.
 
+## UserInterface / EditorUtilityInterface exception
+
+These documents host a chrome **Designer | Logic** `ToggleGroup` (`UiEditorModeBar`) **outside** DockView. Below the bar, two stacked DockView surfaces persist separately (`layout.json` `{ uiEditorMode, designer, logic }`; raw old snapshots migrate to Designer). The mode bar is **not** a dock tab. **Windows** and Focus follow the **active mode**. Nested shadcn `Tabs` still must not be the document layout.
+
+- **Designer** catalog: Design, Hierarchy, Details (EUI adds Settings for `dockKind`). Not Graph/Class.
+- **Logic** catalog: same as BObject Class — Graph, Class, Inspector, Compiler Results. Graph is `payload.logic`. Primary panel is `graph`. Leftover `ui-logic` panels close on restore.
+
 ## Editor Utilities
 
 Widgets opened from **Windows → Editor Utilities** register in `listEditorUtilityWindows()` (`apps/editor/src/shell/editor-utility-windows.ts`) as `DockWindowDefinition`s. They add into the **active document’s** DockView, not a separate chrome window.

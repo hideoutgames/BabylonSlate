@@ -221,4 +221,44 @@ describe("functions.call", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain('ctx.invokeFunction(ctx.self, "fn"');
   });
+
+  it("compiles a static library Call Function to invokeFunction with the class id", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "functions.call", {
+          functionName: "Add",
+          classId: "MathLib",
+          implicitSelf: true,
+          static: true,
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "a", typeId: "float", direction: "in" },
+            { name: "b", typeId: "float", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+            { name: "result", typeId: "float", direction: "out" },
+          ],
+          "default:a": 1,
+          "default:b": 2,
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "call",
+          targetPinId: "exec",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain(
+      'ctx.invokeFunction("MathLib", "Add"',
+    );
+    expect(compiled.source).not.toContain("ctx.self");
+  });
 });

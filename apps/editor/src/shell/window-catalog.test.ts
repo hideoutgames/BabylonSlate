@@ -3,6 +3,7 @@ import {
   CLASS_PANEL_INITIAL_HEIGHT,
   CLASS_PANEL_TITLE,
   listDockWindows,
+  primaryDockPanel,
 } from "./window-catalog";
 import { listEditorUtilityWindows } from "./editor-utility-windows";
 
@@ -120,7 +121,6 @@ describe("listDockWindows", () => {
       "ui-design",
       "ui-hierarchy",
       "ui-details",
-      "ui-logic",
     ]);
     expect(
       listDockWindows("ui", { editorUtilityInterface: true }).map(
@@ -130,7 +130,6 @@ describe("listDockWindows", () => {
       "ui-design",
       "ui-hierarchy",
       "ui-details",
-      "ui-logic",
       "ui-settings",
     ]);
     expect(listDockWindows("plugin-settings").map((entry) => entry.id)).toEqual([
@@ -139,6 +138,70 @@ describe("listDockWindows", () => {
     expect(listDockWindows("plugin-settings").map((entry) => entry.title)).toEqual([
       "Details",
     ]);
+  });
+
+  it("lists Designer docks without Logic for UserInterface authoring", () => {
+    const windows = listDockWindows("ui", { uiEditorMode: "designer" });
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "ui-design",
+      "ui-hierarchy",
+      "ui-details",
+    ]);
+    expect(windows.some((entry) => entry.id === "ui-logic")).toBe(false);
+    expect(windows.some((entry) => entry.id === "graph")).toBe(false);
+  });
+
+  it("lists BObject Class docks when UserInterface Logic mode is active", () => {
+    const windows = listDockWindows("ui", { uiEditorMode: "logic" });
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "graph",
+      "my-class",
+      "inspector",
+      "compiler-results",
+    ]);
+    expect(windows.map((entry) => entry.title)).toEqual([
+      "Graph",
+      CLASS_PANEL_TITLE,
+      "Inspector",
+      "Compiler Results",
+    ]);
+    expect(windows.some((entry) => entry.id === "ui-design")).toBe(false);
+    expect(windows.some((entry) => entry.id === "prefab-viewport")).toBe(false);
+  });
+
+  it("uses Design as the Designer primary and Graph as the Logic primary", () => {
+    expect(primaryDockPanel("ui")).toBe("ui-design");
+    expect(primaryDockPanel("ui", { uiEditorMode: "designer" })).toBe("ui-design");
+    expect(primaryDockPanel("ui", { uiEditorMode: "logic" })).toBe("graph");
+  });
+
+  it("keeps EUI Settings on Designer and omits it from Logic", () => {
+    expect(
+      listDockWindows("ui", {
+        uiEditorMode: "designer",
+        editorUtilityInterface: true,
+      }).map((entry) => entry.id),
+    ).toEqual(["ui-design", "ui-hierarchy", "ui-details", "ui-settings"]);
+    expect(
+      listDockWindows("ui", {
+        uiEditorMode: "logic",
+        editorUtilityInterface: true,
+      }).map((entry) => entry.id),
+    ).toEqual(["graph", "my-class", "inspector", "compiler-results"]);
+  });
+
+  it("anchors Locks to Graph when UI Logic mode is on", () => {
+    expect(
+      listDockWindows("ui", {
+        uiEditorMode: "logic",
+        sourceControl: true,
+      }).find((entry) => entry.id === "locks")?.defaultPosition?.referencePanelId,
+    ).toBe("graph");
+    expect(
+      listDockWindows("ui", { sourceControl: true }).find(
+        (entry) => entry.id === "locks",
+      )?.defaultPosition?.referencePanelId,
+    ).toBe("ui-design");
   });
 
   it("omits the Locks window when source control is off", () => {

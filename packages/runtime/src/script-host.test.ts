@@ -738,6 +738,77 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("invokes a FunctionLibrary export by class id with no library actor spawned", async () => {
+    const registry = createDefaultNodeRegistry();
+    const addPins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "a", typeId: "float", direction: "in" },
+      { name: "b", typeId: "float", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+      { name: "result", typeId: "float", direction: "out" },
+    ];
+    const addGraph: LogicGraph = {
+      id: "Add",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins: addPins }),
+        node(registry, "out", "flow.function.output", { pins: addPins }),
+      ],
+      edges: [
+        edge("e1", "in", "exec", "out", "then"),
+        edge("e2", "in", "a", "out", "result"),
+      ],
+    };
+    const callerGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "functions.call", {
+          functionName: "Add",
+          classId: "MathLib",
+          implicitSelf: true,
+          static: true,
+          pins: addPins,
+          "default:a": 1,
+          "default:b": 2,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "call", "exec"),
+        edge("e2", "call", "then", "log", "execIn"),
+        edge("e3", "call", "result", "log", "message"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 10,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      withFunctionExport(
+        {
+          assetGuid: "math-asset",
+          classId: "MathLib",
+          source: "//# sourceURL=babylonslate:///math-asset.js\n",
+          anchors: [],
+          entryPoints: [],
+        },
+        addGraph,
+        registry,
+        "Add",
+      ),
+      toScript(callerGraph, registry, "Caller", "caller-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Caller" });
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("1");
+    runtime.stop();
+  });
+
   it("GetAxis2D Move from the resolver moves the actor on Tick", async () => {
     const registry = createDefaultNodeRegistry();
     const jsProps = {

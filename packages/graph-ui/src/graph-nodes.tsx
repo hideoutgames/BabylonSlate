@@ -1,6 +1,7 @@
 import {
   Handle,
   Position,
+  useStore,
   type Node,
   type NodeProps,
 } from "@xyflow/react";
@@ -79,7 +80,13 @@ function zipPinRows(
   return rows;
 }
 
-function PinVisual({ type }: { type: PinTypeRef }) {
+function PinVisual({
+  type,
+  connected,
+}: {
+  type: PinTypeRef;
+  connected: boolean;
+}) {
   const shape = pinVisualShape(type);
   const color = pinCssVar(type);
   const size = "var(--graph-pin-size, 22px)";
@@ -89,6 +96,7 @@ function PinVisual({ type }: { type: PinTypeRef }) {
       <svg
         className="graph-pin-visual block"
         data-pin-shape="list"
+        data-pin-connected={connected ? "true" : "false"}
         viewBox="0 0 22 22"
         aria-hidden="true"
         style={{ width: size, height: size, color }}
@@ -101,8 +109,8 @@ function PinVisual({ type }: { type: PinTypeRef }) {
             width="18"
             height="4"
             rx="1"
-            fill="currentColor"
-            stroke="var(--card)"
+            fill={connected ? "currentColor" : "transparent"}
+            stroke={connected ? "var(--card)" : "currentColor"}
             strokeWidth="2"
           />
         ))}
@@ -113,14 +121,17 @@ function PinVisual({ type }: { type: PinTypeRef }) {
   return (
     <span
       className={cn(
-        "graph-pin-visual block border-2 border-card",
+        "graph-pin-visual block border-2",
+        connected ? "border-card" : "",
         shape === "diamond" ? "rotate-45 rounded-sm" : "rounded-full",
       )}
       data-pin-shape={shape}
+      data-pin-connected={connected ? "true" : "false"}
       style={{
         width: size,
         height: size,
-        background: color,
+        background: connected ? color : "transparent",
+        borderColor: connected ? undefined : color,
       }}
       aria-hidden="true"
     />
@@ -141,6 +152,13 @@ function PinHandle({
   const { onPinTap, pinDisplayType } = useGraphEditorContext();
   const isSource = pin.direction === "out";
   const displayType = pinDisplayType(nodeId, pin.id) ?? pin.type;
+  const connected = useStore((state) =>
+    state.edges.some((edge) =>
+      pin.direction === "out"
+        ? edge.source === nodeId && (edge.sourceHandle ?? "") === pin.id
+        : edge.target === nodeId && (edge.targetHandle ?? "") === pin.id,
+    ),
+  );
 
   return (
     <Handle
@@ -172,7 +190,7 @@ function PinHandle({
         onPinTap(nodeId, pin.id, pin.direction);
       }}
     >
-      <PinVisual type={displayType} />
+      <PinVisual type={displayType} connected={connected} />
     </Handle>
   );
 }
@@ -297,6 +315,7 @@ export function BlueprintNodeShell({
 }) {
   const { nodeErrorCount } = useGraphEditorContext();
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
+  const editorOnly = data?.__editorOnly === true;
 
   return (
     <div className="relative">
@@ -323,6 +342,14 @@ export function BlueprintNodeShell({
             data-testid="development-only-banner"
             role="img"
             aria-label="Development Only"
+          />
+        ) : null}
+        {editorOnly ? (
+          <div
+            className="graph-node-editor-only-tape pointer-events-none h-5 select-none"
+            data-testid="editor-only-banner"
+            role="img"
+            aria-label="Editor Only"
           />
         ) : null}
       </div>

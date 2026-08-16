@@ -41,6 +41,8 @@ export type NodeDefinition = {
   codegen: (ctx: CodegenContext) => void | Record<string, string>;
   pure?: boolean;
   latent?: boolean;
+  /** Hidden from runtime graph palettes unless the host is an editor graph. */
+  editorOnly?: boolean;
 };
 
 export class NodeRegistry {

@@ -86,6 +86,8 @@ Title-bar fills for Blueprint-like nodes:
 | `--node-title-foreground` | title text on those bars |
 | `--node-dev-only-tape` | Development Only hazard-tape yellow (same in light and dark) |
 | `--node-dev-only-stripe` | Development Only hazard-tape black stripe |
+| `--node-editor-only-tape` | Editor Only hazard-tape cyan (same in light and dark) |
+| `--node-editor-only-stripe` | Editor Only hazard-tape black stripe |
 
 ## Asset type colors
 
@@ -101,7 +103,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 | `--asset-audio` | Audio (green) | Audio |
 | `--asset-font` | Font (sky) | Font |
 | `--asset-animation` | Animation, AnimationGraph (blue) | Animation (`Film`), AnimationGraph (`Workflow`) |
-| `--asset-class` | Class assets; Object / Actor / Widget identities (indigo) | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
+| `--asset-class` | Class assets; Object / Actor / Widget identities (indigo) | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `EditorFunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
 | `--asset-script-type` | Enum, Structure, ScriptInterface (teal) | one icon each |
 | `--asset-component` | Engine components in Details / Add Component (purple) | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
 | `--asset-folder` | Content Browser folders (yellow-green) | Folder glyph |

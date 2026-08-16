@@ -3,7 +3,10 @@ import {
   walkAncestry,
   type ClassPickerEntry,
 } from "@babylonslate/editor-kit";
-import type { SerializedComponent } from "@babylonslate/core";
+import {
+  isEditorGraphClass,
+  type SerializedComponent,
+} from "@babylonslate/core";
 import {
   parseColliderProperties,
   type ColliderShape,
@@ -965,6 +968,7 @@ export function subclassClassEntries(
   assets: ReadonlyArray<{
     header: { type: string; name: string; parentClass?: string | null };
   }>,
+  options?: { editorGraph?: boolean },
 ): ClassPickerEntry[] {
   const parentOf = classParentLookup(assets);
   const entries: ClassPickerEntry[] = [];
@@ -972,6 +976,9 @@ export function subclassClassEntries(
   const add = (id: string, name: string, group: string) => {
     if (seen.has(id)) return;
     if (!walkAncestry(id, parentOf).includes(baseClassId)) return;
+    if (options?.editorGraph !== true && isEditorGraphClass(id, parentOf)) {
+      return;
+    }
     seen.add(id);
     entries.push({ id, name, group });
   };

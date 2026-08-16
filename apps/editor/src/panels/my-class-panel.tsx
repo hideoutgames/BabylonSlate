@@ -16,6 +16,8 @@ import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
 import {
   addClassMember,
   addVariableAccessNode,
+  blueprintSectionsForClass,
+  classAllowsMemberKind,
   ensureEventNodeOnGraph,
   memberNamePromptCopy,
   nativeEventStubs,
@@ -32,6 +34,10 @@ import { defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { IconActionButton } from "../components/icon-action-button";
 import { classParentLookup } from "../lib/content-browser-helpers";
+import {
+  commitLogicGraph,
+  serializedGraphFromDocument,
+} from "../lib/logic-graph-document";
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
@@ -46,33 +52,15 @@ export type MyClassMember = {
 
 export type MyClassPanelProps = IDockviewPanelProps;
 
-export const BLUEPRINT_SECTIONS = [
-  { id: "functions", label: "Functions", kind: "function" },
-  { id: "variables", label: "Variables", kind: "variable" },
-  { id: "events", label: "Events", kind: "event" },
-  { id: "interfaces", label: "Interfaces", kind: "interface" },
-] as const;
-
-const LOCAL_VARIABLES_SECTION = {
-  id: "local-variables",
-  label: "Local Variables",
-  kind: "variable",
-  local: true,
-} as const;
-
-type BlueprintSection = {
-  id: string;
-  label: string;
-  kind: MyClassMember["kind"];
-  local?: boolean;
-};
-
-function sectionsForTree(activeFunctionId?: string | null): BlueprintSection[] {
-  const sections: BlueprintSection[] = [...BLUEPRINT_SECTIONS];
-  if (!activeFunctionId) return sections;
-  const variableIndex = sections.findIndex((section) => section.id === "variables");
-  sections.splice(variableIndex + 1, 0, LOCAL_VARIABLES_SECTION);
-  return sections;
+function sectionsForTree(
+  activeFunctionId?: string | null,
+  options?: MembersForGraphOptions,
+) {
+  return blueprintSectionsForClass({
+    parentClass: options?.parentClass,
+    parentOf: options?.parentOf,
+    activeFunctionId,
+  });
 }
 
 export type MembersForGraphOptions = {
@@ -229,10 +217,10 @@ export function membersForSection(
 export function blueprintTreeNodes(
   members: MyClassMember[],
   collapsed: ReadonlySet<string>,
-  options?: { activeFunctionId?: string | null },
+  options?: MembersForGraphOptions & { activeFunctionId?: string | null },
 ): TreeViewNode[] {
   const rows: TreeViewNode[] = [];
-  for (const section of sectionsForTree(options?.activeFunctionId)) {
+  for (const section of sectionsForTree(options?.activeFunctionId, options)) {
     const kids = members.filter((member) => {
       if (section.id === "local-variables") {
         return (
@@ -298,7 +286,7 @@ export function ClassMembersView({
     () => membersForGraph(graph, membersOptions),
     [graph, membersOptions],
   );
-  const treeSections = sectionsForTree(activeFunctionId);
+  const treeSections = sectionsForTree(activeFunctionId, membersOptions);
   const addKind = (kind: GraphClassMemberKind, local = false) => {
     if (kind === "interface") {
       setInterfacePickerOpen(true);
@@ -325,11 +313,24 @@ export function ClassMembersView({
   };
   const nodes = useMemo(
     () =>
-      blueprintTreeNodes(members, collapsed, { activeFunctionId }).map((row) => {
+      blueprintTreeNodes(members, collapsed, {
+        activeFunctionId,
+        parentClass: membersOptions?.parentClass,
+        parentOf: membersOptions?.parentOf,
+      }).map((row) => {
         if (!row.id.startsWith("section-")) return row;
         const sectionId = row.id.replace(/^section-/, "");
         const section = treeSections.find((entry) => entry.id === sectionId);
         if (!section) return row;
+        if (
+          !classAllowsMemberKind(section.kind, {
+            parentClass: membersOptions?.parentClass,
+            parentOf: membersOptions?.parentOf,
+            local: section.local === true,
+          })
+        ) {
+          return row;
+        }
         return {
           ...row,
           trailing: (
@@ -346,7 +347,7 @@ export function ClassMembersView({
           ),
         };
       }),
-    [activeFunctionId, collapsed, members, treeSections],
+    [activeFunctionId, collapsed, members, membersOptions, treeSections],
   );
 
   const { menu, closeMenu, openMenuAt } = useContextMenu({
@@ -543,7 +544,8 @@ export function ClassMembersView({
 export function MyClassPanel(_props: MyClassPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
+  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry } =
+    useDocuments();
   const { setFocusDiagnostic } = useValidation();
   const {
     selectedMemberId,
@@ -557,7 +559,17 @@ export function MyClassPanel(_props: MyClassPanelProps) {
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
-    doc?.ref.kind === "graph" ? (doc.content as SerializedGraph) : null;
+    serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content) ??
+    (doc ? { nodes: [], edges: [] } : null);
+  const persistGraph = (next: SerializedGraph) => {
+    if (!doc) return;
+    const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
+    if (commit.kind === "ui") {
+      void applyAssetDocumentChange(documentId, commit.payload);
+      return;
+    }
+    void applyGraphChange(documentId, commit.graph);
+  };
   const className = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : null;
   const interfaceAssets = (assetRegistry?.list() ?? [])
     .filter((asset) => asset.header.type === "ScriptInterface")
@@ -572,12 +584,17 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const parentGraphs: Record<string, SerializedGraph> = {};
   for (const entry of openDocuments) {
-    if (entry.ref.kind !== "graph") continue;
-    parentGraphs[classIdForGraphPath(entry.ref.path)] =
-      entry.content as SerializedGraph;
+    const parentGraph = serializedGraphFromDocument(
+      entry.ref.kind,
+      entry.content,
+    );
+    if (!parentGraph) continue;
+    parentGraphs[classIdForGraphPath(entry.ref.path)] = parentGraph;
   }
   const membersOptions = {
-    parentClass: indexed?.header.parentClass ?? null,
+    parentClass:
+      indexed?.header.parentClass ??
+      (doc?.ref.kind === "ui" ? "BObject" : null),
     parentOf,
     parentGraphs,
   };
@@ -609,9 +626,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
         classId={className ?? undefined}
         interfaceAssets={interfaceAssets}
         membersOptions={membersOptions}
-        onGraphChange={(next) => {
-          void applyGraphChange(documentId, next);
-        }}
+        onGraphChange={persistGraph}
         onSelectMember={(id, member) => {
           if (!id) {
             setSelectedMemberId(null);
@@ -643,7 +658,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
                   : undefined,
               title: member.name,
             });
-            void applyGraphChange(documentId, next);
+            persistGraph(next);
             const spawned = next.nodes.find((node) => {
               if (node.type !== eventType) return false;
               if (eventType !== "flow.event.custom") return true;

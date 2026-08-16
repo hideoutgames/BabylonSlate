@@ -1,4 +1,9 @@
-import { listDockWindows, type DockviewDocumentKind, type DockWindowOptions } from "./window-catalog";
+import {
+  listDockWindows,
+  primaryDockPanel,
+  type DockviewDocumentKind,
+  type DockWindowOptions,
+} from "./window-catalog";
 
 export type FocusDocumentKind = DockviewDocumentKind;
 
@@ -29,17 +34,18 @@ export const SCENE_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
 export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
   catalogFocusCandidates("graph");
 
+/** Designer default for `ui`; Logic uses `primaryDockPanel("ui", { uiEditorMode: "logic" })`. */
 export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
-  scene: "viewport",
-  graph: "graph",
-  enum: "enum-members",
-  structure: "structure-members",
-  "script-interface": "script-interface-preview",
-  sprite: "sprite-preview",
-  tileset: "tileset-preview",
-  tilemap: "tilemap-paint",
-  ui: "ui-design",
-  "plugin-settings": "plugin-settings-details",
+  scene: primaryDockPanel("scene"),
+  graph: primaryDockPanel("graph"),
+  enum: primaryDockPanel("enum"),
+  structure: primaryDockPanel("structure"),
+  "script-interface": primaryDockPanel("script-interface"),
+  sprite: primaryDockPanel("sprite"),
+  tileset: primaryDockPanel("tileset"),
+  tilemap: primaryDockPanel("tilemap"),
+  ui: primaryDockPanel("ui"),
+  "plugin-settings": primaryDockPanel("plugin-settings"),
 };
 
 /**
@@ -59,9 +65,10 @@ export function focusKeepCandidates(
 export function resolveFocusKeepPanelIds(
   kind: FocusDocumentKind,
   keepPanelIds: readonly string[] | undefined,
+  options?: DockWindowOptions,
 ): string[] {
   if (!keepPanelIds || keepPanelIds.length === 0) {
-    return [FOCUS_PRIMARY_PANEL[kind]];
+    return [primaryDockPanel(kind, options)];
   }
   return [...keepPanelIds];
 }
@@ -84,8 +91,9 @@ export function applyFocusLayout(
   kind: FocusDocumentKind,
   api: FocusableDockApi,
   keepPanelIds?: readonly string[],
+  options?: DockWindowOptions,
 ): void {
-  const keep = new Set(resolveFocusKeepPanelIds(kind, keepPanelIds));
+  const keep = new Set(resolveFocusKeepPanelIds(kind, keepPanelIds, options));
   const openIds = (api.panels ?? []).map((panel) => panel.id);
   for (const id of openIds) {
     if (!keep.has(id)) {
@@ -122,6 +130,7 @@ export function restoreDockviewLayout(
 /** Drop retired panels and restack Class under Components. */
 export function migrateRestoredLayout(api: FocusableDockApi): void {
   api.getPanel("mini-asset-browser")?.api.close();
+  api.getPanel("ui-logic")?.api.close();
   const myClass = api.getPanel("my-class");
   const components = api.getPanel("actor-prefab");
   if (

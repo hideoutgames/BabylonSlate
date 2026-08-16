@@ -32,10 +32,7 @@ import {
   type WidgetKind,
   type WidgetLayout,
 } from "@babylonslate/ui-runtime";
-import {
-  normalizeEditorUtilityDockKind,
-  type SerializedGraph,
-} from "@babylonslate/core";
+import { normalizeEditorUtilityDockKind } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "./document-context";
 import {
@@ -50,7 +47,6 @@ import {
   resolveDesignerCanvasId,
   useEngineUiDesignerPresets,
 } from "../lib/engine-ui-presets";
-import { createDefaultLogicGraphSerialized } from "../services/graph-validation";
 import {
   centeredFitView,
   previewScaleToFit,
@@ -62,7 +58,6 @@ export interface UiEditingContextValue {
   path: string;
   payload: Record<string, unknown>;
   ui: UserInterfaceDocument;
-  logic: SerializedGraph;
   isEditorUtilityInterface: boolean;
   dockKind: ReturnType<typeof normalizeEditorUtilityDockKind>;
   selectedId: string;
@@ -84,9 +79,6 @@ export interface UiEditingContextValue {
   fontEntries: FontAssetEntry[];
   catalogOpen: boolean;
   setCatalogOpen: (open: boolean) => void;
-  logicMemberId: string | null;
-  setLogicMemberId: (id: string | null) => void;
-  interfaceAssets: Array<{ guid: string; name: string; type: string }>;
   actionNames: string[];
   assetLabels: {
     nestedUi?: string;
@@ -143,16 +135,6 @@ export function UiEditingProvider({
     });
 
   const ui = asUiDocument(payload);
-  const logic = (payload.logic ??
-    createDefaultLogicGraphSerialized()) as SerializedGraph;
-  const [logicMemberId, setLogicMemberId] = useState<string | null>(null);
-  const interfaceAssets = (assetRegistry?.list() ?? [])
-    .filter((asset) => asset.header.type === "ScriptInterface")
-    .map((asset) => ({
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-    }));
   const [presetId, setPresetId] = useState<DesignerCanvasId>(DEFAULT_DEVICE_PRESET_ID);
   const extras = useEngineUiDesignerPresets();
   const devicePresets = mergeDevicePresets(extras);
@@ -366,7 +348,6 @@ export function UiEditingProvider({
       path,
       payload,
       ui,
-      logic,
       isEditorUtilityInterface,
       dockKind,
       selectedId,
@@ -388,9 +369,6 @@ export function UiEditingProvider({
       fontEntries,
       catalogOpen,
       setCatalogOpen,
-      logicMemberId,
-      setLogicMemberId,
-      interfaceAssets,
       actionNames,
       assetLabels,
       commit,
@@ -412,11 +390,8 @@ export function UiEditingProvider({
       dockKind,
       fitView,
       fontEntries,
-      interfaceAssets,
       isEditorUtilityInterface,
       layout,
-      logic,
-      logicMemberId,
       patchLayout,
       patchWidget,
       payload,
