@@ -29,11 +29,46 @@ export type ConnectEndBreakDecision = ConnectEndDecision & {
 };
 
 type PinEdgeRef = {
+  id?: string;
   source: string;
   target: string;
   sourceHandle?: string | null;
   targetHandle?: string | null;
 };
+
+export type ConnectPinLookup = (
+  nodeId: string,
+  pinId: string,
+) => SerializedPin | undefined;
+
+/** Exec pins fan-in and fan-out. Data inputs are exclusive. Missing pins do not strip. */
+export function pinAllowsMultipleIncoming(
+  pin: SerializedPin | undefined,
+): boolean {
+  if (!pin) return true;
+  return pin.kind === "exec";
+}
+
+export function edgesAfterConnect<T extends PinEdgeRef>(
+  edges: readonly T[],
+  next: T,
+  pinFor: ConnectPinLookup,
+): T[] {
+  if (next.id && edges.some((edge) => edge.id === next.id)) {
+    return [...edges];
+  }
+  const targetPin = pinFor(next.target, next.targetHandle ?? "");
+  const kept = pinAllowsMultipleIncoming(targetPin)
+    ? [...edges]
+    : edges.filter(
+        (edge) =>
+          !(
+            edge.target === next.target &&
+            edge.targetHandle === next.targetHandle
+          ),
+      );
+  return [...kept, next];
+}
 
 export function displayNodeTitle(nodeType: string, title?: string): string {
   if (nodeType.startsWith("flow.event.")) {
