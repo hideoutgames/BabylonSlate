@@ -33,6 +33,24 @@ describe("runtimeOptionsFromLoadControl", () => {
       sceneLibrary: undefined,
       sceneGuidByKey: undefined,
       includeDebugCommands: undefined,
+      infiniteLoopDetection: undefined,
+      loopCount: undefined,
+    });
+  });
+
+  it("forwards infinite loop detection settings onto the runtime", () => {
+    expect(
+      runtimeOptionsFromLoadControl({
+        type: "load",
+        sceneAssetGuid: "play-scene",
+        includeDebugCommands: true,
+        infiniteLoopDetection: false,
+        loopCount: 42,
+      }),
+    ).toMatchObject({
+      includeDebugCommands: true,
+      infiniteLoopDetection: false,
+      loopCount: 42,
     });
   });
 
@@ -84,6 +102,8 @@ describe("runtimeOptionsFromLoadControl", () => {
       sceneLibrary: undefined,
       sceneGuidByKey: undefined,
       includeDebugCommands: undefined,
+      infiniteLoopDetection: undefined,
+      loopCount: undefined,
     });
   });
 });

@@ -37,7 +37,10 @@ import {
   playLoadControl,
   type PlayPhysicsSettings,
 } from "./play-physics";
-import type { TracePayload } from "@babylonslate/debugger";
+import {
+  INFINITE_LOOP_DIAGNOSTIC_CODE,
+  type TracePayload,
+} from "@babylonslate/debugger";
 
 /**
  * Extract a `RuntimeDiagnostic` from a worker `diagnostic` command so it can
@@ -62,6 +65,10 @@ export function diagnosticFromCommand(
     stack: command.stack,
     frameId: command.frameId,
   };
+}
+
+export function isFatalPlayDiagnostic(code: string | undefined): boolean {
+  return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
 }
 
 export interface PlaySessionResult {
@@ -229,6 +236,10 @@ export function startPlaySession(options: {
   pixelPerfect?: boolean;
   /** Baked Scene navmesh bytes; Play imports and never generates. */
   navmeshBytes?: Uint8Array | null;
+  infiniteLoopDetection?: boolean;
+  loopCount?: number;
+  /** Called when a session-fatal diagnostic (infinite loop) arrives. */
+  onFatalDiagnostic?: () => void;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -360,6 +371,9 @@ export function startPlaySession(options: {
       options.onLog?.(command.message, command.severity ?? "error");
       const diagnostic = diagnosticFromCommand(command);
       if (diagnostic) workerDiagnostics.push(diagnostic);
+      if (isFatalPlayDiagnostic(command.code)) {
+        queueMicrotask(() => options.onFatalDiagnostic?.());
+      }
     }
     if (command.type === "consoleResult") {
       const waiter = consoleWaiters.shift();
@@ -411,6 +425,8 @@ export function startPlaySession(options: {
     gravity: physics.gravity,
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    infiniteLoopDetection: options.infiniteLoopDetection,
+    loopCount: options.loopCount,
   });
 
   try {
@@ -540,8 +556,11 @@ export function startPlaySession(options: {
   let sessionDiagnostics: SessionReportEntry[] = [];
   let droppedDiagnostics = 0;
   let lastObservedMoveX: number | null = null;
+  let stopped = false;
+  let stopResult: PlaySessionResult | null = null;
 
   const pump = () => {
+    if (stopped) return;
     const now = performance.now();
     const elapsed = (now - last) / 1000;
     last = now;
@@ -657,6 +676,8 @@ export function startPlaySession(options: {
       return Math.round(bridgeRate);
     },
     stop: () => {
+      if (stopped && stopResult) return stopResult;
+      stopped = true;
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", unlock);
       input.dispose();
@@ -679,7 +700,7 @@ export function startPlaySession(options: {
           `[play] texture cache grew ${textureCountBefore} → ${textureCountAfter}`,
         );
       }
-      return {
+      stopResult = {
         diagnostics: sessionDiagnostics,
         droppedDiagnostics,
         textureCountBefore,
@@ -688,6 +709,7 @@ export function startPlaySession(options: {
         runtimeMode,
         liveObjectCounts: liveAfter,
       };
+      return stopResult;
     },
   };
 }

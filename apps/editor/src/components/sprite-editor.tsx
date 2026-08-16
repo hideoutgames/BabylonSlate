@@ -4,6 +4,7 @@ import {
   AssetPicker,
   PanelFrame,
   PropertyGrid,
+  assetRowIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
@@ -12,7 +13,6 @@ import {
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { displayAssetTitle } from "../lib/content-browser-helpers";
 
 export function SpritePreviewPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -158,10 +158,12 @@ export function SpriteEditor({
       kind: "asset",
       label: "Texture",
       value: sprite.textureGuid,
-      displayLabel: textureName ? displayAssetTitle(textureName) : undefined,
       placeholder: "None",
       onPick: () => setPickerOpen(true),
       onChange: (value) => onChange({ ...sprite, textureGuid: value }),
+      ...assetRowIdentity(
+        textureName ? { name: textureName, type: "Texture" } : undefined,
+      ),
     },
     {
       id: "ppu",

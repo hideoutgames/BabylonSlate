@@ -31,6 +31,22 @@ function rowsFor(
                 : guid === "tile-1"
                   ? "Overworld"
                   : undefined,
+      assetType: (guid) =>
+        guid === "mesh-1"
+          ? "Mesh"
+          : guid === "sprite-1"
+            ? "Sprite"
+            : guid === "ui-1"
+              ? "UserInterface"
+              : guid === "graph-1"
+                ? "AnimationGraph"
+                : guid === "tile-1"
+                  ? "Tilemap"
+                  : guid === "tree-1"
+                    ? "BehaviourTree"
+                    : guid === "bb-1"
+                      ? "Blackboard"
+                      : undefined,
       physicsWorld: "3d",
       onPickAsset,
       ...context,
@@ -51,6 +67,8 @@ describe("componentPropertyRows", () => {
       kind: "asset",
       value: "mesh-1",
       displayLabel: "Rock",
+      displayType: "Mesh",
+      visual: { assetType: "Mesh" },
     });
     expect(rows.find((row) => row.id.endsWith("-meshKind"))).toMatchObject({
       kind: "enum",
@@ -448,6 +466,16 @@ describe("gameInstanceClassEntries", () => {
     ]);
     expect(entries.map((entry) => entry.id)).toEqual(["GameInstance", "MyGame"]);
   });
+
+  it("omits the default Actor class asset from the Game Instance picker", () => {
+    const entries = gameInstanceClassEntries([
+      {
+        path: "assets/main.class.babasset",
+        header: { type: "Class", name: "main.class", parentClass: "Actor" },
+      },
+    ]);
+    expect(entries.map((entry) => entry.id)).toEqual(["GameInstance"]);
+  });
 });
 
 describe("subclassClassEntries", () => {
@@ -516,5 +544,18 @@ describe("subclassClassEntries", () => {
     expect(ids).toContain("LevelTools");
     expect(ids).toContain("EditorFunctionLibrary");
     expect(ids).toContain("EditorMath");
+  });
+
+  it("uses the compile class id for a Class asset named main.class", () => {
+    const assets = [
+      {
+        path: "assets/main.class.babasset",
+        header: { type: "Class", name: "main.class", parentClass: "Actor" },
+      },
+    ];
+    const entries = subclassClassEntries("BObject", assets);
+    const main = entries.find((entry) => entry.id === "main");
+    expect(main).toMatchObject({ id: "main", name: "main", group: "Project" });
+    expect(entries.map((entry) => entry.id)).not.toContain("main.class");
   });
 });

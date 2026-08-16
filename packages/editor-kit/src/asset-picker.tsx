@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { SearchDialog, type SearchDialogItem } from "./search-dialog";
+import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 
 export interface AssetPickerEntry {
@@ -42,9 +43,9 @@ export function AssetPicker({
         : assets;
     const rows: SearchDialogItem[] = filtered.map((asset) => ({
       id: asset.guid,
-      label: asset.name,
-      description: asset.path ?? asset.type,
-      group: asset.type,
+      label: displayPickerTitle(asset.name),
+      description: asset.type,
+      group: asset.path,
       leading: (
         <TypeVisualIcon visual={resolveTypeVisual({ assetType: asset.type })} />
       ),

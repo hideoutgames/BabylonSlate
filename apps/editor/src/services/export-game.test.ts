@@ -328,11 +328,15 @@ describe("collectAndExportGame", () => {
       customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
+      infiniteLoopDetection: false,
+      loopCount: 25,
       playerFiles,
     });
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
     expect(result.value.manifest.bundleDebugger).toBe(true);
+    expect(result.value.manifest.infiniteLoopDetection).toBe(false);
+    expect(result.value.manifest.loopCount).toBe(25);
   });
 
   it("records pixelsPerUnit and Font family names from payloads", async () => {

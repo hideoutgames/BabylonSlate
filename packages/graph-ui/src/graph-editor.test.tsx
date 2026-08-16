@@ -351,6 +351,133 @@ describe("GraphEditor", () => {
     expect(lastGraph.edges).toHaveLength(2);
   });
 
+  it("keeps a second exec wire into the same exec input", () => {
+    const onChange = vi.fn();
+    const graph: GraphDocument = {
+      nodes: [
+        ...graphWithPins().nodes,
+        {
+          id: "log-c",
+          type: "debug.log",
+          position: { x: 560, y: 0 },
+          data: { message: "C", __pins: debugLogPins },
+        },
+      ],
+      edges: [
+        {
+          id: "e:log-a:execOut:log-c:execIn",
+          source: "log-a",
+          target: "log-c",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    const { container } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+
+    const source = container.querySelector(
+      '[data-id="log-b"] [data-handleid="execOut"][data-handlepos="right"]',
+    );
+    const target = container.querySelector(
+      '[data-id="log-c"] [data-handleid="execIn"][data-handlepos="left"]',
+    );
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    fireEvent.click(source!);
+    fireEvent.click(target!);
+
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.edges).toHaveLength(2);
+    expect(lastGraph.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "log-a",
+          target: "log-c",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        }),
+        expect.objectContaining({
+          source: "log-b",
+          target: "log-c",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        }),
+      ]),
+    );
+  });
+
+  it("replaces an existing data wire when connecting a second source to the same input", () => {
+    const onChange = vi.fn();
+    const stringOutPins = [
+      {
+        id: "value",
+        name: "value",
+        kind: "data" as const,
+        direction: "out" as const,
+        type: { kind: "string" },
+      },
+    ];
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "get-a",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: { __pins: stringOutPins },
+        },
+        {
+          id: "get-b",
+          type: "variables.get",
+          position: { x: 0, y: 120 },
+          data: { __pins: stringOutPins },
+        },
+        {
+          id: "log-b",
+          type: "debug.log",
+          position: { x: 280, y: 0 },
+          data: { message: "B", __pins: debugLogPins },
+        },
+      ],
+      edges: [
+        {
+          id: "e:get-a:value:log-b:message",
+          source: "get-a",
+          target: "log-b",
+          sourceHandle: "value",
+          targetHandle: "message",
+        },
+      ],
+    };
+    const { container } = render(
+      <GraphEditor initialGraph={graph} onChange={onChange} />,
+    );
+
+    const source = container.querySelector(
+      '[data-id="get-b"] [data-handleid="value"][data-handlepos="right"]',
+    );
+    const target = container.querySelector(
+      '[data-id="log-b"] [data-handleid="message"][data-handlepos="left"]',
+    );
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    fireEvent.click(source!);
+    fireEvent.click(target!);
+
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.edges).toEqual([
+      expect.objectContaining({
+        source: "get-b",
+        target: "log-b",
+        sourceHandle: "value",
+        targetHandle: "message",
+      }),
+    ]);
+  });
+
   it("breaks all wires on a pin when a drag is released without connecting", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

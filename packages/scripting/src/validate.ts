@@ -250,6 +250,29 @@ function validatePinTyping(
     }
   }
 
+  const seenDataTargets = new Set<string>();
+  for (const edge of graph.edges) {
+    const target = findNode(graph, edge.targetNodeId);
+    if (!target) continue;
+    const tp = pinById(target, edge.targetPinId);
+    if (!tp || tp.kind !== "data" || tp.direction !== "in") continue;
+    const key = `${edge.targetNodeId}:${edge.targetPinId}`;
+    if (seenDataTargets.has(key)) {
+      out.push(
+        diagnostic({
+          code: "pin.duplicate_connection",
+          message: `Input "${tp.name}" already has a connection`,
+          assetGuid: ctx.assetGuid,
+          graphId: graph.id,
+          nodeId: target.id,
+          pinId: tp.id,
+          relatedNodeId: edge.sourceNodeId,
+        }),
+      );
+    }
+    seenDataTargets.add(key);
+  }
+
   for (const node of graph.nodes) {
     for (const pin of node.pins) {
       if (pin.direction !== "in" || pin.kind !== "data" || pin.optional) {

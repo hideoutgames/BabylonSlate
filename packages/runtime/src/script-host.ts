@@ -20,6 +20,7 @@ import type {
 } from "@babylonslate/physics";
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
+import { isInfiniteLoopError } from "@babylonslate/debugger";
 
 export type ScriptColor = { x: number; y: number; z: number; w: number };
 
@@ -50,6 +51,8 @@ export interface ScriptHostServices {
   delay(seconds: number): Promise<void>;
   reportError(error: unknown): void;
   reportCommand?(success: boolean, output: string): void;
+  /** Debugger loop guard; omitted in release players. */
+  checkInfiniteLoop?(): void;
   lineTrace?(start: Vec3, end: Vec3): HitResult;
   sphereOverlap?(center: Vec3, radius: number): OverlapResult;
   shapeSweep?(
@@ -94,6 +97,7 @@ export interface ScriptContext {
   deltaSeconds: number;
   tickIndex: number;
   formatValue(value: unknown): string;
+  checkInfiniteLoop(): void;
   log(severity: LogSeverity, category: string, message: string): void;
   print(
     message: string,
@@ -372,6 +376,7 @@ export class ScriptHost {
           }
         } catch (error) {
           this.services.reportError(error);
+          if (isInfiniteLoopError(error)) throw error;
         }
       }
     }
@@ -411,6 +416,9 @@ export class ScriptHost {
         services.reportCommand?.(Boolean(success), String(output));
       },
       formatValue: (value) => formatValue(value),
+      checkInfiniteLoop: () => {
+        services.checkInfiniteLoop?.();
+      },
       log: (severity, category, message) =>
         services.log(severity, category, message),
       print: (message, key, duration, color) =>
@@ -507,6 +515,7 @@ export class ScriptHost {
             }
             result = value ?? {};
           } catch (error) {
+            if (isInfiniteLoopError(error)) throw error;
             this.services.reportError(error);
           }
         }

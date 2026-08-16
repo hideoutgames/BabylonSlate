@@ -32,6 +32,24 @@ describe("preview pack protocol", () => {
     ).toBe(true);
   });
 
+  it("round-trips diagnostic code on Preview Build posts", () => {
+    const message = {
+      type: PREVIEW_DIAGNOSTICS_MESSAGE,
+      diagnostics: [
+        {
+          message: "Infinite loop detected",
+          severity: "error",
+          code: "runtime.infinite_loop",
+          nodeId: "js",
+          bodyLine: 1,
+        },
+      ],
+    };
+    expect(isPreviewDiagnosticsMessage(message)).toBe(true);
+    expect(message.diagnostics[0]?.code).toBe("runtime.infinite_loop");
+    expect(message.diagnostics[0]?.bodyLine).toBe(1);
+  });
+
   it("recognises the player asking for the pack once its listener is live", () => {
     expect(
       isPreviewRequestPackMessage({ type: PREVIEW_REQUEST_PACK_MESSAGE }),

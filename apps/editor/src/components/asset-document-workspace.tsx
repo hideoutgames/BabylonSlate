@@ -5,6 +5,8 @@ import {
   PanelFrame,
   PropertyGrid,
   SelectableText,
+  assetRowIdentity,
+  selectedPickerIdentity,
 } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -202,11 +204,21 @@ function FontEditor({
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
                 data-testid={`font-fallback-${index}`}
                 onClick={() => setFallbackPick(index)}
               >
-                {assetRegistry?.getByGuid(value)?.header.name ?? value}
+                {selectedPickerIdentity(
+                  assetRowIdentity(
+                    (() => {
+                      const asset = assetRegistry?.getByGuid(value);
+                      return asset
+                        ? { name: asset.header.name, type: asset.header.type }
+                        : undefined;
+                    })(),
+                  ),
+                  value,
+                )}
               </Button>
             )}
           />

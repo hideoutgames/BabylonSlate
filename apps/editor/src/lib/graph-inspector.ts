@@ -3,6 +3,7 @@ import type {
   ParameterValueType,
   PropertyRow,
 } from "@babylonslate/editor-kit";
+import { classRowIdentity } from "@babylonslate/editor-kit";
 import type { GraphPin, LiteralPinDefault, PinType } from "@babylonslate/scripting";
 import {
   BOOL,
@@ -259,13 +260,20 @@ export function pinDefaultPropertyRows(
         const display =
           mappingNames?.classEntries?.find((item) => item.id === current)
             ?.name ?? current;
+        const identity = classRowIdentity(
+          current
+            ? { id: current, name: display || current }
+            : undefined,
+        );
         rows.push({
           kind: "asset",
           id: entry.pinId,
           label: entry.name,
           value: current || null,
           defaultValue: pinDefaultAsString(typeDefault) || null,
-          displayLabel: display || undefined,
+          displayLabel: identity.displayLabel,
+          displayType: identity.displayType,
+          visual: identity.visual,
           placeholder: classId,
           onPick: () => mappingNames?.onPickClass?.(entry.pinId, classId),
           onChange: (value) => onPatch({ [key]: value }),

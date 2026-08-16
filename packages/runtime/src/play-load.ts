@@ -27,6 +27,8 @@ export function runtimeOptionsFromLoadControl(
   | "sceneLibrary"
   | "sceneGuidByKey"
   | "includeDebugCommands"
+  | "infiniteLoopDetection"
+  | "loopCount"
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
   const sceneGuidByKey: Record<string, string> = {};
@@ -51,6 +53,8 @@ export function runtimeOptionsFromLoadControl(
     sceneGuidByKey:
       Object.keys(sceneGuidByKey).length > 0 ? sceneGuidByKey : undefined,
     includeDebugCommands: msg.includeDebugCommands,
+    infiniteLoopDetection: msg.infiniteLoopDetection,
+    loopCount: msg.loopCount,
   };
 }
 
