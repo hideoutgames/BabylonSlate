@@ -324,6 +324,7 @@ export function compileAnimGraphScripts(
   for (const entry of documents) {
     try {
       const doc = parseAnimGraphDocument(entry.document);
+      if (!doc) continue;
       const objectScript = compileGraphDocument(doc.animationObject, {
         path: entry.path,
         graphId: "animation-object",

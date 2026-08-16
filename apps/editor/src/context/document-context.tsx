@@ -83,6 +83,7 @@ import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
 import {
+  compileAnimGraphScripts,
   compileGraphDocuments,
   classIdForGraphPath,
   graphCompileSignature,
@@ -165,6 +166,7 @@ import {
   mergePlayAnimGraphs,
   mergePlayBehaviourTrees,
   mergePlayBlackboards,
+  collectAnimGraphCompileDocuments,
   playAnimGraphsFromGuids,
   playAnimGraphsFromOpenDocuments,
   playBehaviourTreesFromGuids,
@@ -1735,6 +1737,38 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return collectPlayScriptDocuments(documents, uiPayloads, headers, parentOf);
   }, [documentService, loadClassGraphDocuments, projectService]);
 
+  const loadProjectAnimGraphDocuments = useCallback(async () => {
+    const assets = (projectService.registry?.list() ?? []).filter(
+      (asset) => asset.header.type === "AnimationGraph",
+    );
+    const open = documentService.getState().openDocuments;
+    const entries: PlayAnimGraphEntry[] = [];
+    for (const asset of assets) {
+      const openDoc = open.get(
+        documentId({ kind: "anim-graph", path: asset.path }),
+      );
+      if (openDoc?.content) {
+        entries.push({ guid: asset.header.guid, document: openDoc.content });
+        continue;
+      }
+      try {
+        entries.push({
+          guid: asset.header.guid,
+          document: await projectService.loadDocument("anim-graph", asset.path),
+        });
+      } catch (error) {
+        console.error(
+          `[play] failed to load AnimationGraph ${asset.path}`,
+          error,
+        );
+      }
+    }
+    return collectAnimGraphCompileDocuments(
+      entries,
+      (guid) => assets.find((asset) => asset.header.guid === guid)?.path ?? null,
+    );
+  }, [documentService, projectService]);
+
   const collectEditorUtilityScripts = useCallback(async (): Promise<
     ScriptBundleEntry[]
   > => {
@@ -1794,16 +1828,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ScriptBundleEntry[]
   > => {
     const documents = await loadProjectGraphDocuments();
-    const bundles = compileGraphDocuments(documents);
+    const animDocuments = await loadProjectAnimGraphDocuments();
+    const bundles = [
+      ...compileGraphDocuments(documents),
+      ...compileAnimGraphScripts(animDocuments),
+    ];
     markScriptsCurrent();
     return bundles;
-  }, [loadProjectGraphDocuments, markScriptsCurrent]);
+  }, [
+    loadProjectAnimGraphDocuments,
+    loadProjectGraphDocuments,
+    markScriptsCurrent,
+  ]);
 
   const collectPlayPreviewScripts = useCallback(async (): Promise<{
     bundles: ScriptBundleEntry[];
     diagnostics: Diagnostic[];
   }> => {
     const documents = await loadProjectGraphDocuments();
+    const animDocuments = await loadProjectAnimGraphDocuments();
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
     const classGraphs = collectClassGraphsForPalette({
       assets: projectService.registry?.list() ?? [],
@@ -1823,10 +1866,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
       }),
     );
-    const bundles = compileGraphDocuments(documents);
+    const bundles = [
+      ...compileGraphDocuments(documents),
+      ...compileAnimGraphScripts(animDocuments),
+    ];
     markScriptsCurrent();
     return { bundles, diagnostics };
-  }, [documentService, loadProjectGraphDocuments, markScriptsCurrent, projectService]);
+  }, [
+    documentService,
+    loadProjectAnimGraphDocuments,
+    loadProjectGraphDocuments,
+    markScriptsCurrent,
+    projectService,
+  ]);
 
   const collectPlayUiLibrary = useCallback(async (): Promise<
     Record<string, UserInterfaceDocument>

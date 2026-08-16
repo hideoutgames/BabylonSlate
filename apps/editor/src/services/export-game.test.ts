@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
   createActor,
   createDefaultScene,
@@ -7,7 +8,7 @@ import {
   isErr,
   isOk,
 } from "@babylonslate/core";
-import { MISSING_STARTUP_SCENE_MESSAGE } from "@babylonslate/exporter";
+import { MISSING_STARTUP_SCENE_MESSAGE, parseScriptRegistry } from "@babylonslate/exporter";
 import { collectAndExportGame } from "./export-game";
 import type { ExportIndexedAsset } from "@babylonslate/exporter";
 
@@ -283,6 +284,86 @@ describe("collectAndExportGame", () => {
     const scripts = new TextDecoder().decode(result.value.files.get("scripts.js"));
     expect(scripts).toContain("HUD");
     expect(scripts).toContain("onBeginPlay");
+  });
+
+  it("compiles AnimationGraph lifecycle and transition rules into packed scripts", async () => {
+    const scene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [
+            {
+              id: "anim",
+              classId: "AnimationGraphComponent",
+              properties: { graphGuid: "graph-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const doc = createDefaultAnimGraph();
+    doc.transitions.push({
+      id: "idle-to-idle",
+      fromStateId: "idle",
+      toStateId: "idle",
+      blendSeconds: 0,
+      priority: 0,
+      ruleGraph: {
+        nodes: [
+          {
+            id: "enter-state",
+            type: "anim.rule.enterState",
+            position: { x: 0, y: 0 },
+            data: { __protected: true },
+          },
+          {
+            id: "exit-state",
+            type: "anim.rule.exitState",
+            position: { x: 0, y: 80 },
+            data: { __protected: true },
+          },
+        ],
+        edges: [],
+      },
+    });
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "graph-1",
+          type: "AnimationGraph",
+          name: "Loco",
+          path: "assets/Loco.anim.babasset",
+        }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) => (guid === "graph-1" ? doc : null),
+      bytesByGuid: (guid) =>
+        guid === "scene-1"
+          ? new TextEncoder().encode(JSON.stringify(scene))
+          : new TextEncoder().encode(JSON.stringify(doc)),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    const scripts = new TextDecoder().decode(result.value.files.get("scripts.js"));
+    const registry = parseScriptRegistry(scripts);
+    expect(registry.map((entry) => entry.classId)).toEqual(
+      expect.arrayContaining([
+        "AnimGraph:graph-1",
+        "AnimRule:graph-1:idle-to-idle",
+      ]),
+    );
+    expect(scripts).toContain("onInitializeAnimation");
+    expect(scripts).toContain("export function evaluate(ctx)");
   });
 
   it("packs a scene navmesh chunk under a sidecar guid", async () => {
