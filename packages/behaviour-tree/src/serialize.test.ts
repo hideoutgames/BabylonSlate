@@ -8,6 +8,8 @@ import {
   BT_CHILDREN_HANDLE,
   BT_NODE_TYPE,
   BT_PARENT_HANDLE,
+  applyNodePositions,
+  arrangeBehaviourTree,
   behaviourTreeToSerialized,
   hydrateBehaviourTreeForEditor,
   layoutBehaviourTree,
@@ -132,6 +134,129 @@ describe("behaviour tree serialize", () => {
       "b",
       "a",
     ]);
+  });
+
+  it("keeps equal-x siblings in their original order", () => {
+    const tree: BehaviourTreeDocument = {
+      name: "Ties",
+      rootId: "root",
+      blackboardGuid: null,
+      nodes: [
+        node("root", "selector", "bt.composite.selector", ["a", "b", "c"]),
+        node("a", "task", "bt.task.succeed"),
+        node("b", "task", "bt.task.fail"),
+        node("c", "task", "bt.task.wait"),
+      ],
+    };
+    const reordered = reorderSiblingsByPosition(tree, {
+      a: { x: 10 },
+      b: { x: 10 },
+      c: { x: 10 },
+    });
+    expect(reordered.nodes.find((entry) => entry.id === "root")?.children).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("uses persisted editor positions instead of recomputing layout", () => {
+    const tree = createDefaultBehaviourTree();
+    tree.editorPositions = {
+      root: { x: 12, y: 8 },
+      sequence: { x: 400, y: 8 },
+      task: { x: 400, y: 300 },
+    };
+    const graph = behaviourTreeToSerialized(tree);
+    expect(graph.nodes.find((entry) => entry.id === "sequence")?.position).toEqual({
+      x: 400,
+      y: 8,
+    });
+    expect(graph.nodes.find((entry) => entry.id === "root")?.position).toEqual({
+      x: 12,
+      y: 8,
+    });
+  });
+
+  it("fills missing persisted positions from computed layout without writing them", () => {
+    const tree = createDefaultBehaviourTree();
+    tree.editorPositions = { root: { x: 80, y: 16 } };
+    const graph = behaviourTreeToSerialized(tree);
+    expect(graph.nodes.find((entry) => entry.id === "root")?.position).toEqual({
+      x: 80,
+      y: 16,
+    });
+    const sequence = graph.nodes.find((entry) => entry.id === "sequence")?.position;
+    const task = graph.nodes.find((entry) => entry.id === "task")?.position;
+    expect(sequence).toEqual(layoutBehaviourTree(tree).get("sequence"));
+    expect(task).toEqual(layoutBehaviourTree(tree).get("task"));
+    expect(tree.editorPositions).toEqual({ root: { x: 80, y: 16 } });
+  });
+
+  it("captures canvas positions when converting a graph back to a tree", () => {
+    const tree = createDefaultBehaviourTree();
+    const graph = behaviourTreeToSerialized(tree);
+    graph.nodes = graph.nodes.map((entry) =>
+      entry.id === "task"
+        ? { ...entry, position: { x: 333, y: 444 } }
+        : entry,
+    );
+    const restored = serializedToBehaviourTree(graph, tree);
+    expect(restored.editorPositions?.task).toEqual({ x: 333, y: 444 });
+    expect(restored.nodes.find((entry) => entry.id === "sequence")?.children).toEqual([
+      "task",
+    ]);
+  });
+
+  it("arranges nodes without changing sibling order", () => {
+    const tree: BehaviourTreeDocument = {
+      name: "Arrange",
+      rootId: "root",
+      blackboardGuid: null,
+      editorPositions: {
+        root: { x: 900, y: 10 },
+        a: { x: 10, y: 400 },
+        b: { x: 800, y: 20 },
+      },
+      nodes: [
+        node("root", "selector", "bt.composite.selector", ["a", "b"]),
+        node("a", "task", "bt.task.succeed"),
+        node("b", "task", "bt.task.fail"),
+      ],
+    };
+    const arranged = arrangeBehaviourTree(tree);
+    expect(arranged.nodes.find((entry) => entry.id === "root")?.children).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(arranged.editorPositions?.a?.x).toBeLessThan(arranged.editorPositions?.b?.x ?? 0);
+    expect(arranged.editorPositions?.root?.y).toBeLessThan(
+      arranged.editorPositions?.a?.y ?? 0,
+    );
+  });
+
+  it("persists moved positions and reorders siblings in one document", () => {
+    const tree: BehaviourTreeDocument = {
+      name: "Move",
+      rootId: "root",
+      blackboardGuid: null,
+      nodes: [
+        node("root", "selector", "bt.composite.selector", ["a", "b"]),
+        node("a", "task", "bt.task.succeed"),
+        node("b", "task", "bt.task.fail"),
+      ],
+    };
+    const next = applyNodePositions(tree, {
+      root: { x: 40, y: 10 },
+      a: { x: 400, y: 200 },
+      b: { x: 10, y: 200 },
+    });
+    expect(next.nodes.find((entry) => entry.id === "root")?.children).toEqual(["b", "a"]);
+    expect(next.editorPositions).toEqual({
+      root: { x: 40, y: 10 },
+      a: { x: 400, y: 200 },
+      b: { x: 10, y: 200 },
+    });
   });
 
   it("hydrates parent/children pins for the editor", () => {

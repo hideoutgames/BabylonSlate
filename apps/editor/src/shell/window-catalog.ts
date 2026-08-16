@@ -528,6 +528,16 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
     title: "Graph",
   },
   {
+    id: "behaviour-tree-blackboard",
+    component: "behaviour-tree-blackboard",
+    title: "Blackboard",
+    defaultPosition: {
+      referencePanelId: "behaviour-tree-graph",
+      direction: "left",
+      initialWidth: 224,
+    },
+  },
+  {
     id: "behaviour-tree-details",
     component: "behaviour-tree-details",
     title: "Details",
@@ -535,6 +545,16 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "behaviour-tree-graph",
       direction: "right",
       initialWidth: 288,
+    },
+  },
+  {
+    id: "behaviour-tree-compiler-results",
+    component: "behaviour-tree-compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "behaviour-tree-graph",
+      direction: "below",
+      initialHeight: 160,
     },
   },
 ];

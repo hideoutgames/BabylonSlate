@@ -20,11 +20,13 @@ export interface BehaviourTreeEditingContextValue {
   selectedId: string | null;
   attachmentId: string | null;
   attachmentCatalog: BehaviourTreeAttachmentCatalog | null;
+  focusedNodeId: string | null;
   setSelectedId: Dispatch<SetStateAction<string | null>>;
   setAttachmentId: Dispatch<SetStateAction<string | null>>;
   setAttachmentCatalog: Dispatch<
     SetStateAction<BehaviourTreeAttachmentCatalog | null>
   >;
+  focusNode: (nodeId: string) => void;
 }
 
 const BehaviourTreeEditingContext =
@@ -51,17 +53,24 @@ export function BehaviourTreeEditingProvider({
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const [attachmentCatalog, setAttachmentCatalog] =
     useState<BehaviourTreeAttachmentCatalog | null>(null);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
   const value = useMemo<BehaviourTreeEditingContextValue>(
     () => ({
       selectedId,
       attachmentId,
       attachmentCatalog,
+      focusedNodeId,
       setSelectedId,
       setAttachmentId,
       setAttachmentCatalog,
+      focusNode: (nodeId: string) => {
+        setSelectedId(nodeId);
+        setAttachmentId(null);
+        setFocusedNodeId(nodeId);
+      },
     }),
-    [attachmentCatalog, attachmentId, selectedId],
+    [attachmentCatalog, attachmentId, focusedNodeId, selectedId],
   );
 
   return (

@@ -60,6 +60,11 @@ const NODE_TOKENS = [
   "--node-dev-only-stripe",
   "--node-editor-only-tape",
   "--node-editor-only-stripe",
+  "--node-bt-root",
+  "--node-bt-composite",
+  "--node-bt-task",
+  "--node-bt-decorator",
+  "--node-bt-service",
 ] as const;
 
 function cssBlock(css: string, selector: string): string {

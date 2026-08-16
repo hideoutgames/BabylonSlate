@@ -1992,6 +1992,34 @@ describe("GraphEditor", () => {
     expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
   });
 
+  it("stamps XYFlow node.dragHandle from nodeDragHandle", async () => {
+    function ProbeNode({ dragHandle }: { dragHandle?: string }) {
+      return <div data-testid="xyflow-drag-handle">{dragHandle ?? ""}</div>;
+    }
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "m1",
+              type: "marker",
+              position: { x: 0, y: 0 },
+              data: { title: "M" },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={{ marker: ProbeNode }}
+        nodeDragHandle=".bt-node-drag-handle"
+      />,
+    );
+    await waitFor(() => {
+      expect(getByTestId("xyflow-drag-handle").textContent).toBe(
+        ".bt-node-drag-handle",
+      );
+    });
+  });
+
   it("renders a host-provided node type", async () => {
     function MarkerNode() {
       return <div data-testid="custom-marker-node">Marker</div>;
@@ -2075,6 +2103,246 @@ describe("GraphEditor", () => {
     });
   });
 
+  it("shows tree pin glyphs, drag handle, priority badge, and attachment roles", async () => {
+    const { getByTestId, container } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "root",
+              type: "bt.node",
+              position: { x: 0, y: 0 },
+              data: {
+                title: "Selector",
+                kind: "selector",
+                classId: "bt.composite.selector",
+                sortIndex: 0,
+                __protected: true,
+                running: true,
+                lastResult: "running",
+                decorators: [
+                  {
+                    id: "dec-1",
+                    classId: "bt.decorator.loop",
+                    title: "Loop",
+                  },
+                ],
+                services: [
+                  {
+                    id: "svc-1",
+                    classId: "bt.service.tick",
+                    title: "Tick",
+                  },
+                ],
+              },
+            },
+            {
+              id: "task",
+              type: "bt.node",
+              position: { x: 0, y: 180 },
+              data: {
+                title: "Wait",
+                kind: "task",
+                classId: "bt.task.wait",
+                sortIndex: 1,
+                lastResult: "success",
+              },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={treeNodeTypes}
+        nodeDragHandle=".bt-node-drag-handle"
+      />,
+    );
+    await waitFor(() => {
+      expect(getByTestId("bt-node-root")).toBeTruthy();
+    });
+    expect(container.querySelector('[data-id="root"] [data-node-role="bt-root"]')).not.toBeNull();
+    expect(container.querySelector('[data-id="task"] [data-node-role="bt-task"]')).not.toBeNull();
+    expect(getByTestId("bt-node-root").className).toContain("bt-node-drag-handle");
+    expect(getByTestId("bt-decorator-dec-1").className).toContain("nodrag");
+    expect(getByTestId("bt-service-svc-1").className).toContain("nodrag");
+    expect(getByTestId("bt-decorator-dec-1").textContent).toMatch(/Decorator/);
+    expect(getByTestId("bt-service-svc-1").textContent).toMatch(/Service/);
+    expect(getByTestId("bt-sort-root").textContent).toBe("0");
+    expect(getByTestId("bt-node-root").getAttribute("data-bt-state")).toBe("running");
+    expect(getByTestId("bt-node-task").getAttribute("data-bt-state")).toBe("success");
+    expect(
+      container.querySelector(
+        '[data-id="root"] [data-handleid="children"][data-pin-type="exec"] [data-pin-connected]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-id="task"] [data-handleid="parent"][data-pin-type="exec"] [data-pin-connected]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("tap-connects behaviour tree parent and children handles", async () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "root",
+              type: "bt.node",
+              position: { x: 0, y: 0 },
+              data: {
+                title: "Selector",
+                kind: "selector",
+                classId: "bt.composite.selector",
+                __pins: [
+                  {
+                    id: "parent",
+                    name: "parent",
+                    kind: "exec",
+                    direction: "in",
+                    type: { kind: "exec" },
+                  },
+                  {
+                    id: "children",
+                    name: "children",
+                    kind: "exec",
+                    direction: "out",
+                    type: { kind: "exec" },
+                  },
+                ],
+              },
+            },
+            {
+              id: "task",
+              type: "bt.node",
+              position: { x: 0, y: 180 },
+              data: {
+                title: "Wait",
+                kind: "task",
+                classId: "bt.task.wait",
+                __pins: [
+                  {
+                    id: "parent",
+                    name: "parent",
+                    kind: "exec",
+                    direction: "in",
+                    type: { kind: "exec" },
+                  },
+                ],
+              },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={treeNodeTypes}
+        onChange={onChange}
+        replaceIncomingOnConnect
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-id="root"] [data-handleid="children"]'),
+      ).not.toBeNull();
+    });
+    fireEvent.click(
+      container.querySelector('[data-id="root"] [data-handleid="children"]')!,
+    );
+    fireEvent.click(
+      container.querySelector('[data-id="task"] [data-handleid="parent"]')!,
+    );
+    expect(onChange).toHaveBeenCalled();
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(lastGraph.edges[0]).toMatchObject({
+      source: "root",
+      target: "task",
+      sourceHandle: "children",
+      targetHandle: "parent",
+    });
+  });
+
+  it("opens Add Node from a pin tap plus empty pane in add-node mode", async () => {
+    const { container, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "root",
+              type: "bt.node",
+              position: { x: 0, y: 0 },
+              data: {
+                title: "Selector",
+                kind: "selector",
+                classId: "bt.composite.selector",
+                __pins: [
+                  {
+                    id: "children",
+                    name: "children",
+                    kind: "exec",
+                    direction: "out",
+                    type: { kind: "exec" },
+                  },
+                ],
+              },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={treeNodeTypes}
+        connectEndMode="add-node"
+        paletteNodes={[
+          {
+            id: "bt.task.wait",
+            title: "Wait",
+            category: "Tasks",
+            nodeType: "bt.node",
+          },
+        ]}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-id="root"] [data-handleid="children"]'),
+      ).not.toBeNull();
+    });
+    fireEvent.click(
+      container.querySelector('[data-id="root"] [data-handleid="children"]')!,
+    );
+    fireEvent.click(container.querySelector(".react-flow__pane")!);
+    expect(getByTestId("node-palette")).toBeTruthy();
+  });
+
+  it("does not open Add Node from a pin tap plus empty pane in default mode", async () => {
+    const { container, queryByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-handleid="execOut"]'),
+      ).not.toBeNull();
+    });
+    fireEvent.click(container.querySelector('[data-handleid="execOut"]')!);
+    fireEvent.click(container.querySelector(".react-flow__pane")!);
+    expect(queryByTestId("node-palette")).toBeNull();
+  });
+
+  it("skips empty-pane double-tap when emptyPaneDoubleTapAddsNode is false", () => {
+    const { container, queryByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        emptyPaneDoubleTapAddsNode={false}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+      />,
+    );
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    fireEvent.click(pane!);
+    fireEvent.click(pane!);
+    expect(queryByTestId("node-palette")).toBeNull();
+  });
+
   it("hides Break Links and Format when listed in hiddenToolbarActions", () => {
     const { queryByTestId, getByTestId } = render(
       <GraphEditor
@@ -2085,6 +2353,17 @@ describe("GraphEditor", () => {
     expect(queryByTestId("graph-break-links")).toBeNull();
     expect(queryByTestId("graph-format")).toBeNull();
     expect(getByTestId("graph-delete")).toBeTruthy();
+  });
+
+  it("hides Copy and Paste when listed in hiddenToolbarActions", () => {
+    const { queryByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        hiddenToolbarActions={["copy", "paste"]}
+      />,
+    );
+    expect(queryByTestId("graph-copy")).toBeNull();
+    expect(queryByTestId("graph-paste")).toBeNull();
   });
 
   it("opens a long-press menu on a behaviour-tree node", async () => {
