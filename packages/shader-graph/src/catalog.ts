@@ -13,6 +13,7 @@ export type MaterialCapability =
   | "derivatives"
   | "textureLod"
   | "sceneDepth"
+  | "sceneNormal"
   | "vertexTexture"
   | "customGlsl";
 
@@ -265,6 +266,18 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     samples: 1,
     inputs: [{ id: "uv", name: "UV", type: VEC2 }],
     outputs: [{ id: "depth", name: "Depth", type: FLOAT }],
+  },
+  {
+    type: "input.sceneNormal",
+    title: "Scene Normal",
+    category: "Input",
+    domains: ["postProcess"],
+    stages: ["fragment"],
+    requires: ["sceneNormal"],
+    cost: 2,
+    samples: 1,
+    inputs: [{ id: "uv", name: "UV", type: VEC2 }],
+    outputs: [{ id: "normal", name: "Normal", type: VEC3 }],
   },
   {
     type: "input.screenSize",

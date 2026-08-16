@@ -13,7 +13,6 @@ import {
   DistanceBlock,
   DivideBlock,
   DotBlock,
-  FragCoordBlock,
   FresnelBlock,
   GradientBlock,
   InputBlock,
@@ -50,6 +49,8 @@ import {
   type NodeMaterialConnectionPoint,
 } from "@babylonjs/core";
 import { CustomBlock } from "@babylonjs/core/Materials/Node/Blocks/customBlock";
+import { SceneDepthBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/sceneDepthBlock";
+import { PrePassTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/prePassTextureBlock";
 import type {
   MaterialOperation,
   MaterialValueType,
@@ -667,8 +668,21 @@ ADAPTERS["input.viewDirection"] = ({ name, plumbing }) => {
 };
 
 ADAPTERS["input.sceneDepth"] = ({ name }) => {
-  const block = new FragCoordBlock(name);
-  return single(block, {}, { depth: block.z });
+  const block = new SceneDepthBlock(name);
+  block.useNonLinearDepth = false;
+  block.storeCameraSpaceZ = false;
+  return single(block, { uv: block.uv }, { depth: block.depth });
+};
+
+ADAPTERS["input.sceneNormal"] = ({ name }) => {
+  const prepass = new PrePassTextureBlock(name);
+  const sample = new TextureBlock(`${name}_sample`, true);
+  prepass.worldNormal.connectTo(sample.source);
+  return {
+    blocks: [prepass, sample],
+    inputs: { uv: sample.uv },
+    outputs: { normal: sample.rgb },
+  };
 };
 
 ADAPTERS["custom.glsl"] = ({ name, operation }) => {

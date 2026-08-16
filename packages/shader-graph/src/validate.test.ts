@@ -199,6 +199,30 @@ describe("material validation", () => {
     expect(codes(doc)).toContain("material.domainMismatch");
   });
 
+  it("flags Scene Normal inside a surface material", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "n",
+      type: "input.sceneNormal",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    expect(codes(doc)).toContain("material.domainMismatch");
+  });
+
+  it("flags Scene Normal when the device has no sceneNormal capability", () => {
+    const doc = createDefaultMaterialDocument("Fog", "postProcess");
+    doc.nodes.push({
+      id: "n",
+      type: "input.sceneNormal",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    expect(codes(doc, { capabilities: { sceneNormal: false } })).toContain(
+      "material.capability",
+    );
+  });
+
   it("flags more than one terminal", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({

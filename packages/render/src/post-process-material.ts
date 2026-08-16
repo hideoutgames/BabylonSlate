@@ -1,5 +1,8 @@
 import type { Camera, NodeMaterial, PostProcess, Scene } from "@babylonjs/core";
-import type { MaterialDocument } from "@babylonslate/shader-graph";
+import {
+  lowerMaterialDocument,
+  type MaterialDocument,
+} from "@babylonslate/shader-graph";
 import { materialUnavailable, type MaterialLibrary } from "./material-library";
 
 /** One authored entry of a scene's ordered post-process chain. */
@@ -38,6 +41,11 @@ export interface AttachedPostProcessStack {
   dispose: () => void;
 }
 
+export interface PostProcessDeviceBuffers {
+  sceneDepth: boolean;
+  sceneNormal: boolean;
+}
+
 export interface AttachPostProcessStackOptions {
   scene: Scene;
   camera: Camera;
@@ -45,6 +53,8 @@ export interface AttachPostProcessStackOptions {
   stack: readonly PostProcessStackEntry[];
   documentFor: (materialGuid: string) => MaterialDocument | null;
   onDiagnostic?: (message: string) => void;
+  /** When a buffer is explicitly false, skip passes that sample it. */
+  deviceBuffers?: PostProcessDeviceBuffers;
 }
 
 /**
@@ -57,6 +67,7 @@ export function attachPostProcessStack(
 ): AttachedPostProcessStack {
   const passes: PostProcess[] = [];
   const acquired: string[] = [];
+  let prePassHeld = false;
 
   for (const entry of [...options.stack].sort((a, b) => a.order - b.order)) {
     if (!entry.enabled) continue;
@@ -72,6 +83,45 @@ export function attachPostProcessStack(
         `Material "${document.name}" is a surface material and cannot run as a post-process pass`,
       );
       continue;
+    }
+    const lowered = lowerMaterialDocument(document);
+    if (
+      lowered.ok &&
+      bufferDenied(
+        lowered.plan.bufferRequirements.sceneDepth,
+        options.deviceBuffers?.sceneDepth,
+      )
+    ) {
+      options.onDiagnostic?.(
+        `Post-process material "${document.name}" needs Scene Depth, which this device cannot provide`,
+      );
+      continue;
+    }
+    if (
+      lowered.ok &&
+      bufferDenied(
+        lowered.plan.bufferRequirements.sceneNormal,
+        options.deviceBuffers?.sceneNormal,
+      )
+    ) {
+      options.onDiagnostic?.(
+        `Post-process material "${document.name}" needs Scene Normal, which this device cannot provide`,
+      );
+      continue;
+    }
+    if (
+      lowered.ok &&
+      lowered.plan.bufferRequirements.sceneNormal &&
+      options.deviceBuffers?.sceneNormal !== false
+    ) {
+      const renderer = options.scene.enablePrePassRenderer();
+      if (!renderer) {
+        options.onDiagnostic?.(
+          `Post-process material "${document.name}" needs Scene Normal, which this device cannot provide`,
+        );
+        continue;
+      }
+      prePassHeld = true;
     }
     const compiled = options.library.acquire(
       options.scene,
@@ -99,9 +149,14 @@ export function attachPostProcessStack(
       disposed = true;
       for (const pass of passes) pass.dispose(options.camera);
       for (const guid of acquired) options.library.release(options.scene, guid);
+      if (prePassHeld) options.scene.disablePrePassRenderer();
       passes.length = 0;
     },
   };
+}
+
+function bufferDenied(needed: boolean, available: boolean | undefined): boolean {
+  return needed && available === false;
 }
 
 function createPostProcessPass(

@@ -48,6 +48,7 @@ const DEFAULT_CAPABILITIES: Required<MaterialCapabilities> = {
   derivatives: true,
   textureLod: true,
   sceneDepth: true,
+  sceneNormal: true,
   vertexTexture: false,
   customGlsl: true,
 };

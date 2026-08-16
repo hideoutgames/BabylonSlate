@@ -39,6 +39,7 @@ export {
   lowerMaterialDocument,
   materialCompileKey,
   type MaterialBuildPlan,
+  type MaterialBufferRequirements,
   type MaterialCostFeatures,
   type MaterialLowerContext,
   type MaterialLowerResult,

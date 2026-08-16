@@ -126,6 +126,10 @@ describe("material node catalog", () => {
   it("scopes screen and scene inputs to post-process graphs", () => {
     expect(nodeIsLegalInDomain("input.sceneColor", "postProcess")).toBe(true);
     expect(nodeIsLegalInDomain("input.sceneColor", "surface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.sceneDepth", "postProcess")).toBe(true);
+    expect(nodeIsLegalInDomain("input.sceneDepth", "surface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.sceneNormal", "postProcess")).toBe(true);
+    expect(nodeIsLegalInDomain("input.sceneNormal", "surface")).toBe(false);
     expect(nodeIsLegalInDomain("output.surface", "postProcess")).toBe(false);
     expect(nodeIsLegalInDomain("output.postProcess", "surface")).toBe(false);
   });
@@ -159,6 +163,7 @@ describe("material node catalog", () => {
     expect(surface).toContain("output.surface");
     expect(surface).not.toContain("output.postProcess");
     expect(surface).not.toContain("input.sceneColor");
+    expect(surface).not.toContain("input.sceneNormal");
   });
 
   it("costs a texture sample above a scalar multiply", () => {

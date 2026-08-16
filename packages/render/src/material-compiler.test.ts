@@ -174,6 +174,134 @@ describe("material compiler", () => {
     ).toBe(true);
   });
 
+  it("samples linearized scene depth instead of fragment coordinates", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument("Depth", "postProcess");
+    doc.nodes.push({
+      id: "depth",
+      type: "input.sceneDepth",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    doc.edges.push({
+      id: "e-uv-depth",
+      sourceNodeId: "screenUv",
+      sourcePinId: "uv",
+      targetNodeId: "depth",
+      targetPinId: "uv",
+    });
+    doc.nodes.push({
+      id: "mul",
+      type: "math.multiply",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    doc.edges = doc.edges.map((edge) =>
+      edge.id === "e-scene-output"
+        ? { ...edge, sourceNodeId: "mul", sourcePinId: "out" }
+        : edge,
+    );
+    doc.edges.push(
+      {
+        id: "e-color-mul",
+        sourceNodeId: "sceneColor",
+        sourcePinId: "color",
+        targetNodeId: "mul",
+        targetPinId: "a",
+      },
+      {
+        id: "e-depth-mul",
+        sourceNodeId: "depth",
+        sourcePinId: "depth",
+        targetNodeId: "mul",
+        targetPinId: "b",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "depth" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    expect(
+      result.material.attachedBlocks.some(
+        (block) => block.getClassName() === "SceneDepthBlock",
+      ),
+    ).toBe(true);
+    expect(
+      result.material.attachedBlocks.some(
+        (block) => block.getClassName() === "FragCoordBlock",
+      ),
+    ).toBe(false);
+  });
+
+  it("samples scene normals from a pre-pass texture", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument("Normals", "postProcess");
+    doc.nodes.push(
+      {
+        id: "normal",
+        type: "input.sceneNormal",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "len",
+        type: "vector.length",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "mul",
+        type: "math.multiply",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges.push({
+      id: "e-uv-normal",
+      sourceNodeId: "screenUv",
+      sourcePinId: "uv",
+      targetNodeId: "normal",
+      targetPinId: "uv",
+    });
+    doc.edges = doc.edges.map((edge) =>
+      edge.id === "e-scene-output"
+        ? { ...edge, sourceNodeId: "mul", sourcePinId: "out" }
+        : edge,
+    );
+    doc.edges.push(
+      {
+        id: "e-color-mul",
+        sourceNodeId: "sceneColor",
+        sourcePinId: "color",
+        targetNodeId: "mul",
+        targetPinId: "a",
+      },
+      {
+        id: "e-normal-len",
+        sourceNodeId: "normal",
+        sourcePinId: "normal",
+        targetNodeId: "len",
+        targetPinId: "value",
+      },
+      {
+        id: "e-len-mul",
+        sourceNodeId: "len",
+        sourcePinId: "out",
+        targetNodeId: "mul",
+        targetPinId: "b",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "normals" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    expect(
+      result.material.attachedBlocks.some(
+        (block) => block.getClassName() === "PrePassTextureBlock",
+      ),
+    ).toBe(true);
+  });
+
   it("emits a vertex output so a surface material can build", () => {
     const scene = host();
     const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {

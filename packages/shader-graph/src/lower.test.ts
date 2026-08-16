@@ -470,4 +470,90 @@ describe("material lowering", () => {
     expect(inlined?.source.callPath).toEqual(["call"]);
     expect(inlined?.source.functionGuid).toBe("fn-tint");
   });
+
+  it("records scene color, depth, and normal buffer requirements", () => {
+    const color = lowerMaterialDocument(
+      createDefaultMaterialDocument("Blur", "postProcess"),
+    );
+    expect(color.ok).toBe(true);
+    if (!color.ok) return;
+    expect(color.plan.bufferRequirements).toEqual({
+      sceneColor: true,
+      sceneDepth: false,
+      sceneNormal: false,
+    });
+    expect(color.plan.cost.usesSceneDepth).toBe(false);
+    expect(color.plan.cost.usesSceneNormal).toBe(false);
+
+    const depth = lowerMaterialDocument(postProcessSampling("input.sceneDepth"));
+    expect(depth.ok).toBe(true);
+    if (!depth.ok) return;
+    expect(depth.plan.bufferRequirements.sceneDepth).toBe(true);
+    expect(depth.plan.cost.usesSceneDepth).toBe(true);
+
+    const normal = lowerMaterialDocument(postProcessSampling("input.sceneNormal"));
+    expect(normal.ok).toBe(true);
+    if (!normal.ok) return;
+    expect(normal.plan.bufferRequirements.sceneNormal).toBe(true);
+    expect(normal.plan.cost.usesSceneNormal).toBe(true);
+  });
 });
+
+function postProcessSampling(
+  type: "input.sceneDepth" | "input.sceneNormal",
+): MaterialDocument {
+  const doc = createDefaultMaterialDocument("Fx", "postProcess");
+  const outputPin = type === "input.sceneDepth" ? "depth" : "normal";
+  const scaleFrom = type === "input.sceneNormal" ? "len" : "extra";
+  const scalePin = type === "input.sceneNormal" ? "out" : outputPin;
+  doc.nodes.push(
+    { id: "extra", type, position: { x: 0, y: 0 }, properties: {} },
+    { id: "mul", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+  );
+  if (type === "input.sceneNormal") {
+    doc.nodes.push({
+      id: "len",
+      type: "vector.length",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+  }
+  doc.edges.push(
+    {
+      id: "e-uv-extra",
+      sourceNodeId: "screenUv",
+      sourcePinId: "uv",
+      targetNodeId: "extra",
+      targetPinId: "uv",
+    },
+    {
+      id: "e-color-mul",
+      sourceNodeId: "sceneColor",
+      sourcePinId: "color",
+      targetNodeId: "mul",
+      targetPinId: "a",
+    },
+    {
+      id: "e-extra-mul",
+      sourceNodeId: scaleFrom,
+      sourcePinId: scalePin,
+      targetNodeId: "mul",
+      targetPinId: "b",
+    },
+  );
+  if (type === "input.sceneNormal") {
+    doc.edges.push({
+      id: "e-normal-len",
+      sourceNodeId: "extra",
+      sourcePinId: "normal",
+      targetNodeId: "len",
+      targetPinId: "value",
+    });
+  }
+  doc.edges = doc.edges.map((edge) =>
+    edge.id === "e-scene-output"
+      ? { ...edge, sourceNodeId: "mul", sourcePinId: "out" }
+      : edge,
+  );
+  return doc;
+}
