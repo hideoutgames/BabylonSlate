@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  createActor,
   createDefaultScene,
+  createMeshComponent,
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import {
+  createDefaultMaterialDocument,
+  createDefaultMaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import {
   createDefaultBehaviourTree,
   createDefaultBlackboard,
@@ -135,5 +141,68 @@ describe("packedContentFromGame", () => {
     expect(controls.some((entry) => entry.type === "loadNavMesh")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadAnimGraphs")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadBehaviourTrees")).toBe(true);
+  });
+
+  it("hydrates Material and Material Function documents from the packed game", async () => {
+    const surface = createDefaultMaterialDocument("Rock");
+    const postProcess = createDefaultMaterialDocument("Bloom", "postProcess");
+    const fn = createDefaultMaterialFunctionDocument("Tint");
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const scene = {
+      ...createDefaultScene(),
+      name: "Arena",
+      settings: {
+        ...createDefaultScene().settings,
+        postProcessStack: [{ materialGuid: "mat-bloom", enabled: true }],
+      },
+      actors: [
+        createActor("hero", "Hero", {
+          components: [mesh],
+        }),
+      ],
+    };
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(scene)),
+        },
+        {
+          guid: "mat-rock",
+          type: "Material",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(surface)),
+        },
+        {
+          guid: "mat-bloom",
+          type: "Material",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(postProcess)),
+        },
+        {
+          guid: "fn-tint",
+          type: "MaterialFunction",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(fn)),
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    const content = packedContentFromGame(game);
+    expect(content.materialDocuments.get("mat-rock")?.name).toBe("Rock");
+    expect(content.materialDocuments.get("mat-bloom")?.domain).toBe("postProcess");
+    expect(content.materialFunctions.get("fn-tint")?.name).toBe("Tint");
+    expect(content.postProcessStack.map((entry) => entry.materialGuid)).toEqual([
+      "mat-bloom",
+    ]);
   });
 });
