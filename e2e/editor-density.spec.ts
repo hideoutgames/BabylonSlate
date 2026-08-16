@@ -339,10 +339,73 @@ test.describe("Editor density and IA", () => {
       "overflow-y",
       "auto",
     );
-    await expect(page.getByTestId("content-browser-folder-tree")).toHaveCSS(
-      "overflow-y",
-      "auto",
-    );
+    const tree = page.getByTestId("content-browser-folder-tree");
+    await expect(tree).toHaveCSS("overflow-y", "auto");
+
+    await page.setViewportSize({ width: 1280, height: 360 });
+    for (let index = 0; index < 8; index += 1) {
+      await page.getByTestId("content-browser-new-folder").click();
+      await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
+      await page
+        .getByTestId("content-browser-name-input")
+        .fill(`ScrollFolder${index}`);
+      await page.getByTestId("content-browser-name-confirm").click();
+      await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
+    }
+
+    const before = await tree.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      overflowY: getComputedStyle(el).overflowY,
+    }));
+    expect(before.overflowY).toBe("auto");
+    expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+
+    await tree.hover();
+    await page.mouse.wheel(0, 120);
+    expect(await tree.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  });
+
+  test("Content Browser folder tree pans vertically on touch before reparent hold", {
+    tag: IPAD_TEST_TAG,
+  }, async ({ page }) => {
+    await openTestProject(page);
+    await page.setViewportSize({ width: 1194, height: 400 });
+    for (let index = 0; index < 8; index += 1) {
+      await page.getByTestId("content-browser-new-folder").click();
+      await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
+      await page
+        .getByTestId("content-browser-name-input")
+        .fill(`TouchFolder${index}`);
+      await page.getByTestId("content-browser-name-confirm").click();
+      await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
+    }
+
+    const tree = page.getByTestId("content-browser-folder-tree");
+    await expect(tree).toBeVisible();
+    const box = await tree.boundingBox();
+    expect(box).not.toBeNull();
+    expect(
+      await tree.evaluate((el) => el.scrollHeight > el.clientHeight),
+    ).toBe(true);
+
+    const session = await page.context().newCDPSession(page);
+    const startX = box!.x + box!.width / 2;
+    const startY = box!.y + Math.min(80, box!.height - 8);
+    const endY = box!.y + 16;
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: startX, y: startY }],
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: startX, y: endY }],
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    expect(await tree.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   });
 
   test("New Asset refuses a name that already exists; Duplicate uses stem_N", async ({

@@ -89,6 +89,7 @@ describe("Playwright iPad project filter", () => {
         "Touch shell UX › opens context menu after long press in viewport panel",
         "Windows menu › restores Outliner and Output Log to their default dock positions",
         "Editor density and IA › chrome is compact, has no Add tab, and Focus is disabled on Content Browser",
+        "Editor density and IA › Content Browser folder tree pans vertically on touch before reparent hold",
         "Editor density and IA › Focus hides the Outliner; Place Actors catalog does not focus search",
         "Editor density and IA › gizmo tools look pressed and the joystick toggle is in viewport settings",
         "gallery composites meet the minimum touch target size",
