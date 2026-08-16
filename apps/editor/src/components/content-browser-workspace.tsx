@@ -123,7 +123,6 @@ import {
   contentBrowserFolderOps,
   contentBrowserRoots,
   filterBabpluginFiles,
-  pluginContentToggleLabel,
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
@@ -169,7 +168,6 @@ export function ContentBrowserWorkspace() {
     thumbnailsEnabled,
     pluginDescriptors,
     showPluginContent,
-    setShowPluginContent,
     sourceControl,
     activeDocumentId,
   } = useDocuments();
@@ -1502,16 +1500,6 @@ export function ContentBrowserWorkspace() {
               data-testid="content-browser-folder-tree"
             />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-1 w-full min-h-[var(--touch-target,44px)] justify-center"
-            data-testid="content-browser-show-plugin-content"
-            aria-label={pluginContentToggleLabel(showPluginContent)}
-            onClick={() => setShowPluginContent(!showPluginContent)}
-          >
-            {pluginContentToggleLabel(showPluginContent)}
-          </Button>
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">

@@ -68,7 +68,10 @@ test.describe("P13 plugins", () => {
     ).toHaveCount(0);
     await expect(
       page.getByTestId("content-browser-show-plugin-content"),
-    ).toHaveText("Show Plugin Content");
+    ).toHaveCount(0);
+    await expect(
+      page.getByTestId("settings-show-plugin-content"),
+    ).toHaveAttribute("aria-checked", "false");
     await expect(
       page.getByTestId(`settings-plugin-source-${STARTER_CONTENT_PLUGIN_GUID}`),
     ).toHaveText("Project");
@@ -79,21 +82,23 @@ test.describe("P13 plugins", () => {
     await expect(
       page.getByTestId(`settings-plugin-enable-${STARTER_CONTENT_PLUGIN_GUID}`),
     ).toHaveAttribute("aria-checked", "true");
+    await page.getByTestId("settings-show-plugin-content").click();
+    await expect(
+      page.getByTestId("settings-show-plugin-content"),
+    ).toHaveAttribute("aria-checked", "true");
     await closeSettings(page);
 
-    await page.getByTestId("content-browser-show-plugin-content").click();
-    await expect(
-      page.getByTestId("content-browser-show-plugin-content"),
-    ).toHaveText("Hide Plugin Content");
     await page.getByTestId("tree-row-plugins/starter-content/assets").click();
     await expect(
       page.locator(`[data-asset-path="${STARTER_ACTOR_PATH}"]`),
     ).toBeVisible();
 
-    await page.getByTestId("content-browser-show-plugin-content").click();
+    await openPluginsSettings(page);
+    await page.getByTestId("settings-show-plugin-content").click();
     await expect(
-      page.getByTestId("content-browser-show-plugin-content"),
-    ).toHaveText("Show Plugin Content");
+      page.getByTestId("settings-show-plugin-content"),
+    ).toHaveAttribute("aria-checked", "false");
+    await closeSettings(page);
     await expect(
       page.getByTestId("tree-row-plugins/starter-content/assets"),
     ).toHaveCount(0);
@@ -128,6 +133,9 @@ test.describe("P13 plugins", () => {
     const rowTestId = await packRow.getAttribute("data-testid");
     const pluginGuid = rowTestId?.replace("settings-plugin-row-", "") ?? "";
     expect(pluginGuid).toMatch(/^[0-9a-f-]+$/i);
+    await expect(
+      page.getByTestId("settings-show-plugin-content"),
+    ).toHaveAttribute("aria-checked", "true");
 
     await page.getByTestId(`settings-plugin-enable-${pluginGuid}`).click();
     await expect(
@@ -135,10 +143,6 @@ test.describe("P13 plugins", () => {
     ).toHaveAttribute("aria-checked", "true");
     await closeSettings(page);
 
-    await page.getByTestId("content-browser-show-plugin-content").click();
-    await expect(
-      page.getByTestId("content-browser-show-plugin-content"),
-    ).toHaveText("Hide Plugin Content");
     await page.getByTestId("tree-row-plugins/shared-pack/assets").click();
     await page.getByTestId("content-browser-new-asset").click();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();

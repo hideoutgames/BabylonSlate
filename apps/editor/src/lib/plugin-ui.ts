@@ -6,8 +6,15 @@ export function pluginDownloadFileName(displayName: string): string {
   return `${pluginFolderSlug(displayName)}.babplugin`;
 }
 
-export function pluginContentToggleLabel(showPluginContent: boolean): string {
-  return showPluginContent ? "Hide Plugin Content" : "Show Plugin Content";
+/** New Plugin always reveals plugin roots in the Content Browser. */
+export async function createProjectPluginAndRevealContent<T>(
+  create: (displayName: string) => Promise<T>,
+  setShowPluginContent: (show: boolean) => void,
+  displayName: string,
+): Promise<T> {
+  const created = await create(displayName);
+  setShowPluginContent(true);
+  return created;
 }
 
 export const PROJECT_CONTENT_ROOT_ID = "project";

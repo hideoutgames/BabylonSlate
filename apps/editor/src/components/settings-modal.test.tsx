@@ -11,16 +11,18 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const { updateProjectSettings, sourceControl, host } = vi.hoisted(() => ({
-  updateProjectSettings: vi.fn(),
-  sourceControl: {
-    hasToken: false,
-    saveToken: vi.fn(async () => undefined),
-    clearToken: vi.fn(async () => undefined),
-    readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
-  },
-  host: { platform: "electron", testMode: true },
-}));
+const { updateProjectSettings, setShowPluginContent, sourceControl, host } =
+  vi.hoisted(() => ({
+    updateProjectSettings: vi.fn(),
+    setShowPluginContent: vi.fn(),
+    sourceControl: {
+      hasToken: false,
+      saveToken: vi.fn(async () => undefined),
+      clearToken: vi.fn(async () => undefined),
+      readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
+    },
+    host: { platform: "electron", testMode: true },
+  }));
 
 vi.mock("@babylonslate/vfs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
@@ -78,6 +80,8 @@ vi.mock("../context/document-context", async () => {
       openDocuments: [],
       pluginDescriptors: [],
       pluginDiagnostics: [],
+      showPluginContent: false,
+      setShowPluginContent,
       applyPluginOverrides: vi.fn(),
       createProjectPlugin: vi.fn(),
       deleteProjectPlugin: vi.fn(),
@@ -91,6 +95,7 @@ vi.mock("../context/document-context", async () => {
 afterEach(() => {
   cleanup();
   updateProjectSettings.mockClear();
+  setShowPluginContent.mockClear();
   sourceControl.saveToken.mockClear();
   sourceControl.clearToken.mockClear();
   sourceControl.hasToken = false;
@@ -221,6 +226,16 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-plugin-new")).toBeTruthy();
     expect(screen.getByTestId("settings-plugin-import")).toBeTruthy();
     expect(screen.getByTestId("import-plugin-input")).toBeTruthy();
+    expect(screen.getByTestId("settings-show-plugin-content")).toBeTruthy();
+  });
+
+  it("toggles Show Plugin Content from the Plugins category", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-plugins"));
+    fireEvent.click(screen.getByTestId("settings-show-plugin-content"));
+    expect(setShowPluginContent).toHaveBeenCalledWith(true);
   });
 
   it("hides Source Control on production web", () => {

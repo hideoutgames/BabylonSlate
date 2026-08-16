@@ -774,7 +774,7 @@ Exporting a plugin produces a self-contained `.babplugin`. This is the **same co
 
 Importing a `.babplugin` unpacks it into `plugins/` and dedupes by plugin guid and version, prompting on a version conflict. The `.babplugin` archive is a build artifact and never appears in the Content Browser as an asset.
 
-Plugin *content* is browsable, but under its own root behind a **Show Plugin Content** / **Hide Plugin Content** button at the bottom of the Content Browser folder pane that is off by default, the way Unreal handles it. Engine plugin content is read-only; project plugin content is editable in place. New projects copy bundled engine plugins into `plugins/` with the same guids so those copies can be edited without writing the engine originals.
+Plugin *content* is browsable, but under its own root behind a **Show Plugin Content** Switch in Project Settings → Plugins that is off by default (`layout.json`; **New Plugin** turns it on), the way Unreal handles it. Engine plugin content is read-only; project plugin content is editable in place. New projects copy bundled engine plugins into `plugins/` with the same guids so those copies can be edited without writing the engine originals.
 
 ### 10.6 Export interaction
 
@@ -1303,7 +1303,7 @@ Named slice, not a P-number. Spec: section 2.5. **Done.**
 ### P13
 
 - [x] **p13-plugin-model** — P13: PluginSettings asset type (guid identity, semver, description, author, icon, experimental and beta flags, editor-startup EditorUtilityObjects, export-default enabled state, engine and plugin dependency ranges) with its own document tab; plugin discovery and mounting from project plugins/ and repo engine-plugins/ as content roots; topological load order with cycle and unsatisfiable-range diagnostics; unresolved-reference placeholders when a plugin is absent
-- [x] **p13-plugin-settings-ui** — P13: Project Settings plugin list showing source, version, maturity badge, dependency status and enable toggle, with three-layer precedence (plugin default, project override keyed by guid in project.json, per-export-preset override) and a warning listing dependent references before disabling; Show Plugin Content toggle in the Content Browser, default off, engine plugin content read-only
+- [x] **p13-plugin-settings-ui** — P13: Project Settings plugin list showing source, version, maturity badge, dependency status and enable toggle, with three-layer precedence (plugin default, project override keyed by guid in project.json, per-export-preset override) and a warning listing dependent references before disabling; Show Plugin Content Switch in Project Settings → Plugins, default off (**New Plugin** turns it on), engine plugin content read-only
 - [x] **p13-babplugin** — P13: .babplugin export and import reusing the .babproject codec with a different manifest kind (shared zip and directory backends and shared round-trip goldens); import unpacks into plugins/ and dedupes by plugin guid and version with a conflict prompt; archives never listed as assets. Packed-export tree-shake of enabled plugin content is P14 (`collectEnabledPluginAssets`).
 - [x] **p13-engine-plugin** — P13: first plugin under engine-plugins/ as the dogfood case, mounted read-only and shipped with the editor build, with an e2e that enables it from Project Settings and sees its content appear
 
