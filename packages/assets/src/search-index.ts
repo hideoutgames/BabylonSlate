@@ -284,7 +284,8 @@ export class ProjectSearchIndex {
       });
 
       if (!VARIABLE_NODE_TYPES.has(typeId)) continue;
-      const variableName = stringField(data.name);
+      const variableName =
+        stringField(data.variableName) || stringField(data.name);
       if (!variableName) continue;
       this.entries.push({
         id: `variable:${asset.header.guid}:${nodeId}:${variableName}`,

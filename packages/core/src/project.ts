@@ -220,6 +220,8 @@ export interface GraphClassMember {
   pins?: GraphClassMemberPin[];
   /** ScriptInterface asset guid. */
   assetGuid?: string;
+  /** When set, this variable is local to that function member. */
+  functionId?: string;
 }
 
 export interface SerializedGraph {
@@ -693,6 +695,9 @@ export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
           ? row.typeId.trim()
           : "float";
       if ("defaultValue" in row) member.defaultValue = row.defaultValue;
+      if (typeof row.functionId === "string" && row.functionId.trim()) {
+        member.functionId = row.functionId.trim();
+      }
     } else if (kind === "function") {
       member.pins = normalizeMemberPins(row.pins);
     } else if (kind === "interface") {

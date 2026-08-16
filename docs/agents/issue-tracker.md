@@ -19,6 +19,13 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | Git LFS create mapped every HTTP 409 as theirs (`parseLock(..., false)`), so a lock we already held flipped to unlocked until the next poll. Create now verifies and treats the path as held when it is in `ours` | Resolved |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-ux | Spec | Asset rename and folder rename/move skipped lock refuse/transfer; folder delete now also unions contained asset paths. Content Browser uses `source-control-file-ops` for all path-keyed ops | Resolved |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | `BabylonSlateSecretsPlugin.swift` existed but was not in the iOS App Sources phase or Capacitor `packageClassList`, so Keychain never registered | Resolved |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-ux | Standards | Token status and Locks empty copy were sentence case; external-change path lists were not `SelectableText` | Resolved |
+| 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | Electron `secrets:set` stores the PAT unencrypted when `safeStorage.isEncryptionAvailable()` is false (Linux without a keyring) | Accepted |
+| 2026-08-16 | cursor/p15-source-control-gaps-44b6 | p15-lock-ux | Spec | Auto-lock still called create after a restart verify already listed the path as ours; skip create when held locally | Resolved |
+| 2026-08-16 | cursor/p15-source-control-gaps-44b6 | p15-lock-ux | Spec | Deleting an asset we held did not unlock the old LFS path | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-export / p14-platforms | Spec | Packaged player booted an empty Engine: no sprite/tilemap/navmesh hydrate, no UI-logic compile, no in-process rAF `advance` or canvas input | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-packed-mode | Spec | `game.json` omitted `pixelsPerUnit` / `pixelPerfect`; Font index entries had no authored family `name` | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-platforms | Spec | Packaged player compiles UserInterface logic and packs UI JSON; Babylon GUI widget mount stays overlay Play (`PlayHudOverlay`) | Accepted |
@@ -68,6 +75,10 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-fonts / p9-ui-system | Spec | Play HUD did not `FontRegistry.registerAll` project Font assets; Font e2e uses New Asset (no `source` bytes) | Resolved (`cursor/babylon-native-ui-138e` registers `source` bytes on Play + designer ADT) |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-anchoring | Spec | Play e2e asserts `data-preset` / `data-safe-top` per project viewport, not widget inset deltas; `previewRect` tables cover pin / percent / stretch-padding / safe-area | Accepted |
 | 2026-08-13 | cursor/p9-acceptance-gaps-8c7a | p9-ui-system | Standards | Play HUD `borderRadius: 999` (stick) pre-existed; widget style passthrough still uses a numeric fallback | Accepted |
+| 2026-08-16 | cursor/class-variables-review-6916 | class variables | Spec | Bound Get/Set data pins used generic `value` / `out` labels instead of the variable name; canvas showed Value. Pin **ids** stay `value` / `out`; **names** are the variable. Set now assigns the pass-through output slot | Resolved |
+| 2026-08-16 | cursor/class-variables-review-6916 | class variables | Spec | Selecting an interface while a function graph is open was untested; Local Variables must stay visible | Resolved |
+| 2026-08-16 | cursor/class-variables-review-6916 | class variables | Spec | Class Inspector string/text Default row for variables was untested | Resolved |
+| 2026-08-16 | cursor/class-variables-review-6916 | class variables | Standards | Palette injector named class members `localVars` / `localNames` next to real function locals | Resolved |
 | 2026-08-13 | cursor/startup-scene-play-cleanup-ebf7 | p14-export / Play | Spec | Unused `collectPlayStartupScene` still loaded `scenes[0]` / `main.scene.babasset` when no scene tab was open | Resolved |
 
 ## PR checklist
@@ -490,7 +501,9 @@ Spec: [engineplan.md](../engineplan.md) §12, Appendix A `p15-*`. Design note: [
 | Settings, auto-lock, advisory open, CB decoration, Locks panel | Done (`p15-lock-ux`) | `apps/editor`, `source-control` | lock provider |
 | Foreground mtime rescan + reload prompts | Done (`p15-external-change`) | `assets` (`IndexedAsset.mtime`), `apps/editor` | lock UX |
 
-**P15 is Done** in CI (FakeLockProvider + Playwright). Two-device GitHub lock visibility and Working Copy branch-switch on a real iPad remain **manual** native acceptance. Out of scope: git clone/commit/pull/push UI, `lockable` in `.gitattributes`, git status badges, CORS proxy, web production source control.
+**P15 is Done** in CI (FakeLockProvider + Playwright). Two-device GitHub lock visibility and Working Copy branch-switch on a real iPad remain **manual** native acceptance. Out of scope: git clone/commit/pull/push UI, `lockable` in `.gitattributes`, git status badges, CORS proxy, web production source control. Review follow-up (`cursor/p15-review-fixes-419b`): 409 already-ours via verify, rename/folder lock ops, iOS Keychain plugin compile wiring.
+
+Hardening on `cursor/p15-source-control-gaps-44b6`: Git LFS create 409 now consults verify so a lock we already hold is not treated as theirs after restart; auto-lock skips create when verify already lists the path as ours; deleting an asset we hold unlocks that path; the iOS Keychain plugin is in the App target and `packageClassList` (it was an uncompiled Swift file).
 
 
 

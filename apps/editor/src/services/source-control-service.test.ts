@@ -100,6 +100,47 @@ describe("SourceControlService", () => {
     expect(service.bannerFor("assets/a.babasset")?.kind).toBe("unlocked");
   });
 
+  it("keeps a Git LFS 409 already-ours lock as held", async () => {
+    const secrets = new MemorySecretStore();
+    await secrets.set("source-control:proj", "token");
+    const lock = {
+      id: "lock-1",
+      path: "assets/a.babasset",
+      locked_at: "2026-08-15T12:00:00Z",
+      owner: { name: "Ada" },
+    };
+    const service = new SourceControlService();
+    await service.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: false,
+      secretStore: secrets,
+      nativeHttp: async (request) => {
+        if (request.method === "POST" && request.url.endsWith("/locks")) {
+          return {
+            status: 409,
+            bodyText: JSON.stringify({
+              lock,
+              message: "already created lock",
+            }),
+          };
+        }
+        if (request.url.endsWith("/locks/verify")) {
+          return {
+            status: 200,
+            bodyText: JSON.stringify({ ours: [lock], theirs: [] }),
+          };
+        }
+        return { status: 500, bodyText: "{}" };
+      },
+    });
+    await service.autoLock("assets/a.babasset");
+    expect(service.lockForPath("assets/a.babasset")?.ours).toBe(true);
+    expect(service.bannerFor("assets/a.babasset")).toBeNull();
+    service.dispose();
+  });
+
   it("refuses moving someone else's lock and transfers ours", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
@@ -169,6 +210,59 @@ describe("SourceControlService", () => {
     });
     expect(service.lockForPath("assets/a.babasset")?.ours).toBe(true);
     expect(service.autoLockOnEdit).toBe(false);
+  });
+
+  it("skips create when verify already holds the path as ours", async () => {
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    const first = new SourceControlService();
+    await first.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    await first.autoLock("assets/a.babasset");
+    fake.createCount = 0;
+
+    const second = new SourceControlService();
+    await second.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    await second.refresh();
+    await second.autoLock("assets/a.babasset");
+    expect(fake.createCount).toBe(0);
+    expect(second.lockForPath("assets/a.babasset")?.ours).toBe(true);
+    expect(second.bannerFor("assets/a.babasset")).toBeNull();
+  });
+
+  it("releases our lock for a deleted path and keeps theirs", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    fake.addTheirs("assets/theirs.babasset", "Bob");
+    await service.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    await service.autoLock("assets/mine.babasset");
+    await service.refresh();
+    await service.releasePath("assets/mine.babasset");
+    await service.releasePath("assets/theirs.babasset");
+    expect(service.lockForPath("assets/mine.babasset")).toBeUndefined();
+    expect(service.lockForPath("assets/theirs.babasset")?.ours).toBe(false);
   });
 
   it("releases all of our locks", async () => {

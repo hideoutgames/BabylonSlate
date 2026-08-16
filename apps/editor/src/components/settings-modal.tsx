@@ -1061,7 +1061,7 @@ export function SettingsModal({
                 data-testid="settings-source-control-token"
               />
               <FieldDescription>
-                {sourceControl.hasToken ? "Token Saved" : "Not saved"}
+                {sourceControl.hasToken ? "Token Saved" : "Not Saved"}
               </FieldDescription>
             </Field>
             <div className="flex flex-wrap gap-2">
@@ -1109,7 +1109,7 @@ export function SettingsModal({
               </FieldDescription>
             </Field>
             <Button
-              variant="destructive"
+              variant="outline"
               data-testid="close-project"
               className="min-h-[var(--touch-target,44px)] w-fit"
               onClick={() => {

@@ -256,6 +256,8 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.function.output")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.call")).toBe(false);
     expect(nodes.some((node) => node.id === "functions.call")).toBe(false);
+    expect(nodes.some((node) => node.id === "variables.get")).toBe(false);
+    expect(nodes.some((node) => node.id === "variables.set")).toBe(false);
     expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
     const print = nodes.find((node) => node.id === "debug.print");
     expect(print?.defaultData).toMatchObject({ developmentOnly: true });
@@ -471,5 +473,135 @@ describe("scriptPaletteNodes", () => {
       implicitSelf: true,
     });
     expect(inherited?.pins?.some((pin) => pin.id === "target")).toBe(false);
+  });
+
+  it("injects Get/Set nodes for class variables and other open classes", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [
+          { id: "var-1", kind: "variable", name: "Health", typeId: "bool" },
+          {
+            id: "loc-1",
+            kind: "variable",
+            name: "Temp",
+            typeId: "float",
+            functionId: "fn-1",
+          },
+        ],
+      },
+      otherClassGraphs: {
+        Guard: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "g-1", kind: "variable", name: "Alert", typeId: "float" }],
+        },
+      },
+    });
+    const localGet = nodes.find(
+      (node) => node.id === "variables.get:Hero:Health",
+    );
+    expect(localGet?.title).toBe("Get Health");
+    expect(localGet?.nodeType).toBe("variables.get");
+    expect(localGet?.defaultData).toMatchObject({
+      variableName: "Health",
+      variableId: "var-1",
+      typeId: "bool",
+      classId: "Hero",
+      implicitSelf: true,
+      scope: "member",
+    });
+    expect(localGet?.pins?.some((pin) => pin.id === "target")).toBe(false);
+    expect(localGet?.pins?.some((pin) => pin.id === "name")).toBe(false);
+    const localSet = nodes.find(
+      (node) => node.id === "variables.set:Hero:Health",
+    );
+    expect(localSet?.title).toBe("Set Health");
+    expect(localSet?.nodeType).toBe("variables.set");
+    const other = nodes.find(
+      (node) => node.id === "variables.get:Guard:Alert",
+    );
+    expect(other?.defaultData).toMatchObject({
+      variableName: "Alert",
+      classId: "Guard",
+      implicitSelf: false,
+    });
+    expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
+    expect(nodes.some((node) => node.id.includes("Temp"))).toBe(false);
+  });
+
+  it("injects function-local Get/Set only when that function graph is open", () => {
+    const graph = {
+      nodes: [],
+      edges: [],
+      members: [
+        { id: "fn-1", kind: "function" as const, name: "Jump" },
+        {
+          id: "loc-1",
+          kind: "variable" as const,
+          name: "Temp",
+          typeId: "int",
+          functionId: "fn-1",
+        },
+      ],
+    };
+    const eventNodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph,
+    });
+    expect(
+      eventNodes.some((node) => node.id === "variables.get:Hero:Temp"),
+    ).toBe(false);
+    const functionNodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph,
+      activeFunctionId: "fn-1",
+    });
+    const localGet = functionNodes.find(
+      (node) => node.id === "variables.get:Hero:Temp",
+    );
+    expect(localGet?.title).toBe("Get Temp");
+    expect(localGet?.defaultData).toMatchObject({
+      scope: "local",
+      functionId: "fn-1",
+      typeId: "int",
+      implicitSelf: true,
+    });
+  });
+
+  it("regenerates Get Variable pins so type and Target stay in sync", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "get",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: {
+            variableName: "Health",
+            typeId: "bool",
+            implicitSelf: true,
+            __pins: [
+              {
+                id: "name",
+                name: "name",
+                kind: "data",
+                direction: "in",
+                type: { kind: "string" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins?.some((pin) => pin.id === "name")).toBe(false);
+    expect(pins?.some((pin) => pin.id === "value")).toBe(true);
   });
 });

@@ -15,6 +15,7 @@ import {
 import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
 import {
   addClassMember,
+  addVariableAccessNode,
   ensureEventNodeOnGraph,
   memberNamePromptCopy,
   nativeEventStubs,
@@ -40,6 +41,7 @@ export type MyClassMember = {
   hasError?: boolean;
   typeId?: string;
   eventType?: string;
+  functionId?: string;
 };
 
 export type MyClassPanelProps = IDockviewPanelProps;
@@ -50,6 +52,28 @@ export const BLUEPRINT_SECTIONS = [
   { id: "events", label: "Events", kind: "event" },
   { id: "interfaces", label: "Interfaces", kind: "interface" },
 ] as const;
+
+const LOCAL_VARIABLES_SECTION = {
+  id: "local-variables",
+  label: "Local Variables",
+  kind: "variable",
+  local: true,
+} as const;
+
+type BlueprintSection = {
+  id: string;
+  label: string;
+  kind: MyClassMember["kind"];
+  local?: boolean;
+};
+
+function sectionsForTree(activeFunctionId?: string | null): BlueprintSection[] {
+  const sections: BlueprintSection[] = [...BLUEPRINT_SECTIONS];
+  if (!activeFunctionId) return sections;
+  const variableIndex = sections.findIndex((section) => section.id === "variables");
+  sections.splice(variableIndex + 1, 0, LOCAL_VARIABLES_SECTION);
+  return sections;
+}
 
 export type MembersForGraphOptions = {
   parentClass?: string | null;
@@ -156,6 +180,7 @@ export function membersForGraph(
       name: member.name,
       detail: member.id,
       ...(member.typeId ? { typeId: member.typeId } : {}),
+      ...(member.functionId ? { functionId: member.functionId } : {}),
     }));
   const stubs = nativeEventStubs({
     parentClass: options?.parentClass,
@@ -204,10 +229,22 @@ export function membersForSection(
 export function blueprintTreeNodes(
   members: MyClassMember[],
   collapsed: ReadonlySet<string>,
+  options?: { activeFunctionId?: string | null },
 ): TreeViewNode[] {
   const rows: TreeViewNode[] = [];
-  for (const section of BLUEPRINT_SECTIONS) {
-    const kids = membersForSection(members, section.kind);
+  for (const section of sectionsForTree(options?.activeFunctionId)) {
+    const kids = members.filter((member) => {
+      if (section.id === "local-variables") {
+        return (
+          member.kind === "variable" &&
+          member.functionId === options?.activeFunctionId
+        );
+      }
+      if (section.kind === "variable") {
+        return member.kind === "variable" && !member.functionId;
+      }
+      return member.kind === section.kind;
+    });
     const expanded = !collapsed.has(section.id);
     rows.push({
       id: `section-${section.id}`,
@@ -239,6 +276,8 @@ export function ClassMembersView({
   onSelectMember,
   interfaceAssets,
   membersOptions,
+  activeFunctionId,
+  classId,
 }: {
   graph: SerializedGraph | null;
   onGraphChange: (next: SerializedGraph) => void;
@@ -246,39 +285,60 @@ export function ClassMembersView({
   onSelectMember?: (id: string, member: MyClassMember | undefined) => void;
   interfaceAssets?: Array<{ guid: string; name: string; type: string }>;
   membersOptions?: MembersForGraphOptions;
+  activeFunctionId?: string | null;
+  classId?: string;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [memberPromptKind, setMemberPromptKind] =
     useState<GraphClassMemberKind | null>(null);
+  const [memberPromptLocal, setMemberPromptLocal] = useState(false);
   const [renameMemberId, setRenameMemberId] = useState<string | null>(null);
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
   const members = useMemo(
     () => membersForGraph(graph, membersOptions),
     [graph, membersOptions],
   );
-  const addKind = (kind: GraphClassMemberKind) => {
+  const treeSections = sectionsForTree(activeFunctionId);
+  const addKind = (kind: GraphClassMemberKind, local = false) => {
     if (kind === "interface") {
       setInterfacePickerOpen(true);
       return;
     }
+    setMemberPromptLocal(local);
     setMemberPromptKind(kind);
+  };
+  const spawnAccess = (
+    access: "get" | "set",
+    memberId: string | null | undefined = selectedId,
+  ) => {
+    if (!graph || !memberId) return;
+    const declared = (graph.members ?? []).find(
+      (entry) => entry.id === memberId && entry.kind === "variable",
+    );
+    if (!declared) return;
+    onGraphChange(
+      addVariableAccessNode(graph, declared, access, {
+        functionId: activeFunctionId,
+        classId,
+      }),
+    );
   };
   const nodes = useMemo(
     () =>
-      blueprintTreeNodes(members, collapsed).map((row) => {
+      blueprintTreeNodes(members, collapsed, { activeFunctionId }).map((row) => {
         if (!row.id.startsWith("section-")) return row;
         const sectionId = row.id.replace(/^section-/, "");
-        const section = BLUEPRINT_SECTIONS.find((entry) => entry.id === sectionId);
+        const section = treeSections.find((entry) => entry.id === sectionId);
         if (!section) return row;
         return {
           ...row,
           trailing: (
             <IconActionButton
-              label={`Add ${section.label.slice(0, -1)}`}
+              label={`Add ${section.label.replace(/s$/, "")}`}
               data-testid={`class-add-${section.id}`}
               onClick={(event) => {
                 event.stopPropagation();
-                addKind(section.kind);
+                addKind(section.kind, section.local === true);
               }}
             >
               <PlusIcon />
@@ -286,7 +346,7 @@ export function ClassMembersView({
           ),
         };
       }),
-    [collapsed, members],
+    [activeFunctionId, collapsed, members, treeSections],
   );
 
   const { menu, closeMenu, openMenuAt } = useContextMenu({
@@ -299,7 +359,7 @@ export function ClassMembersView({
           const member = members.find(
             (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === selectedId,
           );
-          if (!member || member.kind === "event") return;
+          if (!member || member.kind === "event" || member.inherited) return;
           setRenameMemberId(selectedId);
         },
       },
@@ -341,7 +401,39 @@ export function ClassMembersView({
             (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === id,
           );
           onSelectMember?.(id, member);
-          openMenuAt(x, y);
+          const items = [
+            ...(member?.kind === "variable" && !member.inherited
+              ? [
+                  {
+                    id: "get",
+                    label: "Get",
+                    onSelect: () => spawnAccess("get", id),
+                  },
+                  {
+                    id: "set",
+                    label: "Set",
+                    onSelect: () => spawnAccess("set", id),
+                  },
+                ]
+              : []),
+            {
+              id: "rename",
+              label: "Rename",
+              onSelect: () => {
+                if (!member || member.kind === "event" || member.inherited) return;
+                setRenameMemberId(id);
+              },
+            },
+            {
+              id: "delete",
+              label: "Delete",
+              onSelect: () => {
+                if (!graph) return;
+                onGraphChange(removeClassMember(graph, id));
+              },
+            },
+          ];
+          openMenuAt(x, y, items);
         }}
         emptyLabel="No class members"
         data-testid="my-blueprint-tree"
@@ -354,17 +446,31 @@ export function ClassMembersView({
         }}
         title={
           memberPromptKind
-            ? memberNamePromptCopy(memberPromptKind).title
+            ? memberNamePromptCopy(memberPromptKind, {
+                local: memberPromptLocal,
+              }).title
             : "Add Member"
         }
         label={
           memberPromptKind
-            ? memberNamePromptCopy(memberPromptKind).label
+            ? memberNamePromptCopy(memberPromptKind, {
+                local: memberPromptLocal,
+              }).label
             : "Name"
         }
         onSubmit={(name) => {
           if (!graph || !memberPromptKind) return;
-          const next = addClassMember(graph, memberPromptKind, name);
+          const extras =
+            memberPromptLocal && activeFunctionId
+              ? { functionId: activeFunctionId }
+              : undefined;
+          const next = addClassMember(
+            graph,
+            memberPromptKind,
+            name,
+            undefined,
+            extras,
+          );
           onGraphChange(next);
           if (memberPromptKind === "event") {
             const node = next.nodes[next.nodes.length - 1];
@@ -444,6 +550,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     selectedNodeIds,
     setSelectedMemberId,
     setSelectedNodeIds,
+    activeFunctionId,
     setActiveFunctionId,
   } = useGraphEditing();
   const selectedId = selectedMemberId ?? selectedNodeIds[0] ?? null;
@@ -498,6 +605,8 @@ export function MyClassPanel(_props: MyClassPanelProps) {
       <ClassMembersView
         graph={graph}
         selectedId={selectedId}
+        activeFunctionId={activeFunctionId}
+        classId={className ?? undefined}
         interfaceAssets={interfaceAssets}
         membersOptions={membersOptions}
         onGraphChange={(next) => {
@@ -506,7 +615,6 @@ export function MyClassPanel(_props: MyClassPanelProps) {
         onSelectMember={(id, member) => {
           if (!id) {
             setSelectedMemberId(null);
-            setActiveFunctionId(null);
             return;
           }
           if (member?.kind === "function") {
@@ -514,7 +622,6 @@ export function MyClassPanel(_props: MyClassPanelProps) {
             setActiveFunctionId(id);
             return;
           }
-          setActiveFunctionId(null);
           if (member?.kind === "event") {
             const eventType = member.eventType ?? "flow.event.custom";
             const existing =

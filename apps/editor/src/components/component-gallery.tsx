@@ -1,4 +1,4 @@
-import { SaveIcon } from "lucide-react";
+import { OctagonAlertIcon, SaveIcon } from "lucide-react";
 import { useState } from "react";
 import {
   AssetPicker,
@@ -36,6 +36,18 @@ import {
 import { createDefaultInputMappings } from "@babylonslate/input";
 import { ASSET_COLOR_VAR, PIN_COLOR_VAR } from "@babylonslate/ui/lib/data-types";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@babylonslate/ui/components/alert-dialog";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -583,6 +595,45 @@ function GalleryForms() {
   );
 }
 
+function GalleryDangerDialog() {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button variant="outline" data-testid="gallery-danger-dialog-open" />
+        }
+      >
+        Open Danger Dialog
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        variant="destructive"
+        data-testid="gallery-danger-dialog"
+      >
+        <AlertDialogHeader>
+          <AlertDialogMedia data-testid="gallery-danger-dialog-media">
+            <OctagonAlertIcon />
+          </AlertDialogMedia>
+          <AlertDialogTitle>Delete Items?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This action is not undoable. The selected assets will be removed
+            permanently.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel size="touch">Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            size="touch"
+            data-testid="gallery-danger-dialog-confirm"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export function ComponentGallery() {
   return (
     <div
@@ -611,6 +662,7 @@ export function ComponentGallery() {
               <Button variant="ghost">Ghost</Button>
               <Button variant="destructive">Destructive</Button>
             </div>
+            <GalleryDangerDialog />
           </section>
 
           <GalleryTouchControls />

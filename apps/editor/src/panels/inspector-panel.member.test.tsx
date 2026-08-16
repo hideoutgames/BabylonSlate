@@ -95,6 +95,10 @@ describe("Inspector class member details", () => {
     expect(screen.getByTestId("class-var-type-var-1")).toBeTruthy();
     expect(screen.getByTestId("inspector-member-type")).toBeTruthy();
     expect(screen.getByTestId("inspector-member-variable")).toBeTruthy();
+    expect(screen.getByTestId("property-default")).toBeTruthy();
+    expect(screen.queryByTestId("property-default")?.getAttribute("type")).not.toBe(
+      "text",
+    );
   });
 
   it("shows separate Inputs and Outputs editors for a selected function", () => {

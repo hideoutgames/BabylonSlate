@@ -48,6 +48,8 @@ export class GitLfsLockProvider implements LockProvider {
     if (!isOk(response)) return response;
     const { status, json } = response.value;
     if (status === 409) {
+      const ours = await this.oursLockForPath(path);
+      if (ours) return ok(ours);
       const lock = parseLock(json.lock, false);
       return err({
         kind: "conflict",
@@ -127,6 +129,12 @@ export class GitLfsLockProvider implements LockProvider {
     const { status, json } = response.value;
     if (status === 200 || status === 201) return ok(undefined);
     return this.httpError(status, json);
+  }
+
+  private async oursLockForPath(path: string): Promise<FileLock | null> {
+    const verified = await this.verify();
+    if (!isOk(verified)) return null;
+    return verified.value.ours.find((lock) => lock.path === path) ?? null;
   }
 
   private listUrl(cursor?: string): string {

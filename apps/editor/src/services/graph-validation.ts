@@ -35,7 +35,12 @@ function catalogTypeId(node: {
 }
 
 function shouldRegeneratePins(typeId: string): boolean {
-  return typeId === "flow.event.call" || typeId === "functions.call";
+  return (
+    typeId === "flow.event.call" ||
+    typeId === "functions.call" ||
+    typeId === "variables.get" ||
+    typeId === "variables.set"
+  );
 }
 
 function withVisualMeta(
@@ -172,6 +177,7 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   classId?: string;
   graph?: SerializedGraph;
   otherClassGraphs?: Record<string, SerializedGraph>;
+  activeFunctionId?: string | null;
 };
 
 type CustomEventRow = {
@@ -321,6 +327,123 @@ function callFunctionPaletteNodes(
   });
 }
 
+type VariableRow = {
+  id: string;
+  name: string;
+  typeId: string;
+  scope: "member" | "local";
+  functionId?: string;
+};
+
+function classVariableRows(graph?: SerializedGraph): VariableRow[] {
+  const byName = new Map<string, VariableRow>();
+  for (const member of graph?.members ?? []) {
+    if (member.kind !== "variable" || !member.name || member.functionId) {
+      continue;
+    }
+    byName.set(member.name, {
+      id: member.id,
+      name: member.name,
+      typeId: member.typeId ?? "float",
+      scope: "member",
+    });
+  }
+  return [...byName.values()];
+}
+
+function localVariableRows(
+  graph: SerializedGraph | undefined,
+  functionId: string | null | undefined,
+): VariableRow[] {
+  if (!functionId) return [];
+  const byName = new Map<string, VariableRow>();
+  for (const member of graph?.members ?? []) {
+    if (
+      member.kind !== "variable" ||
+      !member.name ||
+      member.functionId !== functionId
+    ) {
+      continue;
+    }
+    byName.set(member.name, {
+      id: member.id,
+      name: member.name,
+      typeId: member.typeId ?? "float",
+      scope: "local",
+      functionId,
+    });
+  }
+  return [...byName.values()];
+}
+
+function variableAccessPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const getDef = nodeRegistry.get("variables.get");
+  const setDef = nodeRegistry.get("variables.set");
+  if (!getDef || !setDef) return [];
+  const localClassId = options?.classId ?? "BObject";
+  const classVars = classVariableRows(options?.graph);
+  const classNames = new Set(classVars.map((entry) => entry.name));
+  const rows: Array<{
+    classId: string;
+    variable: VariableRow;
+    implicitSelf: boolean;
+  }> = classVars.map((variable) => ({
+    classId: localClassId,
+    variable,
+    implicitSelf: true,
+  }));
+  for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
+    if (classId === localClassId) continue;
+    const implicitSelf = callImplicitSelf(classId, options);
+    for (const variable of classVariableRows(graph)) {
+      if (implicitSelf && classNames.has(variable.name)) continue;
+      rows.push({ classId, variable, implicitSelf });
+    }
+  }
+  for (const variable of localVariableRows(
+    options?.graph,
+    options?.activeFunctionId,
+  )) {
+    rows.push({
+      classId: localClassId,
+      variable,
+      implicitSelf: true,
+    });
+  }
+  const injected: PaletteNode[] = [];
+  for (const { classId, variable, implicitSelf } of rows) {
+    for (const [access, def] of [
+      ["get", getDef],
+      ["set", setDef],
+    ] as const) {
+      const defaultData: Record<string, unknown> = {
+        variableName: variable.name,
+        variableId: variable.id,
+        typeId: variable.typeId,
+        classId,
+        implicitSelf,
+        scope: variable.scope,
+        title: `${access === "get" ? "Get" : "Set"} ${variable.name}`,
+      };
+      if (variable.functionId) defaultData.functionId = variable.functionId;
+      injected.push({
+        id: `variables.${access}:${classId}:${variable.name}`,
+        nodeType: `variables.${access}`,
+        title: `${access === "get" ? "Get" : "Set"} ${variable.name}`,
+        category: def.category,
+        pins: def.pins(defaultData),
+        pure: def.pure,
+        latent: def.latent,
+        defaultData,
+      });
+    }
+  }
+  return injected;
+}
+
 /** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
 export function scriptPaletteNodes(
   nodeRegistry: NodeRegistry = registry,
@@ -354,6 +477,7 @@ export function scriptPaletteNodes(
     ...catalog,
     ...callCustomEventPaletteNodes(nodeRegistry, options),
     ...callFunctionPaletteNodes(nodeRegistry, options),
+    ...variableAccessPaletteNodes(nodeRegistry, options),
   ];
 }
 

@@ -27,7 +27,7 @@ interface LockProvider {
 }
 ```
 
-`LockError.kind` is `conflict` (HTTP 409 with the existing lock), `offline`, `unauthorized`, or `http`. Create **is** the race-free check: 201 holds the lock; 409 carries the holder.
+`LockError.kind` is `conflict` (HTTP 409 with the existing lock), `offline`, `unauthorized`, or `http`. Create **is** the race-free check: 201 holds the lock. HTTP 409 does not include ours/theirs, so `GitLfsLockProvider.create` then `POST /locks/verify`: if the path is in `ours`, create returns that lock as held (already-ours); otherwise the 409 payload is a theirs conflict.
 
 Implementations: `GitLfsLockProvider` (injected `lfsFetch` + `getToken` — the package never imports Capacitor or Electron) and `FakeLockProvider` (in-memory map, 409 on double-create, force-unlock flag).
 
@@ -60,8 +60,8 @@ Token is **never** a `project.json` field. Key: `source-control:{projectGuid}`.
 
 | Host | SecretStore | nativeHttp |
 | --- | --- | --- |
-| iOS / Android | Keychain / Keystore via first-party `BabylonSlateSecrets` Capacitor plugin (not Preferences) | `CapacitorHttp` (bypasses CORS) |
-| Electron | IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage` | IPC `lfs:fetch` → `net.fetch` |
+| iOS / Android | Keychain / Keystore via first-party `BabylonSlateSecrets` Capacitor plugin (not Preferences). iOS: `BabylonSlateSecretsPlugin.swift` is in the App Xcode target and `packageClassList`. | `CapacitorHttp` (bypasses CORS) |
+| Electron | IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage` when encryption is available. If `safeStorage.isEncryptionAvailable()` is false (typical Linux without a keyring), the host stores the packed value unencrypted in `source-control-secrets.json` rather than refusing Save Token. | IPC `lfs:fetch` → `net.fetch` |
 | Web | unavailable — Source Control UI hidden | unused |
 
 ## Settings (`project.json`)
@@ -76,18 +76,18 @@ sourceControl: {
 }
 ```
 
-Missing settings normalize to disabled. Project Settings → **Source Control** (hidden on production web): Enable, Repository URL, Branch, Auto-Lock On First Edit, Poll Interval (seconds), Token (password field + Save / Clear). UI shows “Token Saved”, never the secret.
+Missing settings normalize to disabled. Project Settings → **Source Control** (hidden on production web): Enable, Repository URL, Branch, Auto-Lock On First Edit, Poll Interval (seconds), Token (password field + Save / Clear). UI shows **Token Saved** / **Not Saved**, never the secret.
 
 ## Editor UX
 
 `SourceControlService` constructs Git LFS (native) or Fake (test mode) only when `enabled` **and** the host is ios/android/electron (or test mode). Dispose on Close Project.
 
-- **Auto-lock** on the first mutating `applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange` (after the plugin read-only check). Once per path per session. 201 / already-ours: held. 409 theirs or network failure: edit still applies; persistent unlocked banner. Failure never blocks.
+- **Auto-lock** on the first mutating `applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange` (after the plugin read-only check). Once per path per session. If verify already lists the path as ours, create is skipped. 201 / already-ours (409 then verify lists the path as ours): held. 409 theirs or network failure: edit still applies; persistent unlocked banner. Failure never blocks.
 - **Advisory open**: always succeeds. Theirs starts `lockEditMode: "readonly"` with holder + age banner and **Edit Anyway**. Ours / unlocked: normal edit.
 - **Release is explicit only.** **Release All My Locks** (confirm: unpushed work becomes editable by others) plus per-asset Release. Nothing on timer, close, or heuristic. **Force Unlock** is for stale / others’ locks.
-- **Moves / deletes:** ours → unlock old + lock new; theirs → refuse with holder name.
+- **Moves / renames / deletes:** path-keyed. Asset rename, asset move, folder rename, folder move, and folder delete walk contained asset paths. Ours → unlock old + lock new (`transferLock`). Delete of ours unlocks the old path (`releasePath`) and does not create a new lock. Theirs → refuse with the holder name before mutating. Copy does not transfer locks.
 - **Content Browser:** reserved `data-lock-slot` — ours `data-lock-state="mine"`; theirs `data-lock-state="theirs"` plus owner name; unlocked empty. No git modified/untracked badges.
-- **Locks** DockView window (`id: "locks"`) is listed for every `DockviewDocumentKind` only when `sourceControl: true` is passed into `listDockWindows`. Off: zero Windows-menu difference.
+- **Locks** DockView window (`id: "locks"`) is listed for every `DockviewDocumentKind` only when `sourceControl: true` is passed into `listDockWindows`. Off: zero Windows-menu difference. Empty list copy is **No Locks.**
 
 ### Poll (`LockPollScheduler`)
 
@@ -109,4 +109,4 @@ Two-device GitHub lock visibility is **manual** native acceptance, not CI.
 
 ## Tests
 
-Node: endpoint mapping, SSH→HTTPS, 201/409 create, verify ours/theirs, unlock/force, pagination, fake, poll pause, settings normalize, mtime classify. jsdom: settings hidden on web, token not in `project.json`, auto-lock, 409 banner, CB `data-lock-state`, Locks Release All copy, readonly + Edit Anyway, move refused when theirs, foreground dirty warning. Playwright `e2e/p15-source-control.spec.ts`: Fake enable → edit → mine decoration → Locks count → Edit Anyway → Release All confirm → mtime reload dialog. Desktop source-read: IPC channel names `secrets:*` and `lfs:fetch`.
+Node: endpoint mapping, SSH→HTTPS, 201/409 create, 409 already-ours via verify, verify ours/theirs, unlock/force, pagination, fake, poll pause, settings normalize, mtime classify. jsdom: settings hidden on web, token not in `project.json`, auto-lock, skip create when already ours, 409 banner, CB `data-lock-state`, Locks **No Locks.** / Release All copy, readonly + Edit Anyway, rename/folder/move refused when theirs, lock transfer pairs, delete unlocks ours, iOS `BabylonSlateSecretsPlugin` in pbxproj + `packageClassList`, foreground dirty warning (`SelectableText` paths). Playwright `e2e/p15-source-control.spec.ts`: Fake enable → edit → mine decoration → Locks count → Edit Anyway → Release All confirm → mtime reload dialog. Desktop source-read: IPC channel names `secrets:*` and `lfs:fetch`; iOS App-target Keychain plugin in `project.pbxproj` / `packageClassList`. Two-device GitHub lock visibility is manual, not CI.

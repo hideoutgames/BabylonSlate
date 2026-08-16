@@ -1354,4 +1354,105 @@ describe("script host runs compiled graphs", () => {
     ).toEqual([expect.objectContaining({ type: "possessCamera", slotId: 0 })]);
     runtime.stop();
   });
+
+  it("Get/Set Variable on self reads and writes instance variables", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "set", "variables.set", {
+          variableName: "Health",
+          typeId: "float",
+          implicitSelf: true,
+          "default:Health": 7,
+        }),
+        node(registry, "get", "variables.get", {
+          variableName: "Health",
+          typeId: "float",
+          implicitSelf: true,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "set", "execIn"),
+        edge("e2", "set", "execOut", "log", "execIn"),
+        edge("e3", "get", "value", "log", "message"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        ...toScript(graph, registry, "Hero", "hero-vars"),
+        variables: [{ name: "Health", type: "float", defaultValue: 0 }],
+      },
+    ]);
+    const actor = runtime.spawnScriptedActor({ classId: "Hero" });
+    expect(actor?.getVariable("Health")).toBe(7);
+    const logs = commands.filter((c) => c.type === "log");
+    expect(String((logs[0] as { message: string }).message)).toContain("7");
+    runtime.stop();
+  });
+
+  it("Get/Set Variable on a Target instance uses getVariableFrom / setVariableOn", async () => {
+    const registry = createDefaultNodeRegistry();
+    const caller: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "spawn", "actor.spawn", { classId: "Guard" }),
+        node(registry, "set", "variables.set", {
+          variableName: "Health",
+          typeId: "float",
+          classId: "Guard",
+          implicitSelf: false,
+          "default:Health": 11,
+        }),
+        node(registry, "get", "variables.get", {
+          variableName: "Health",
+          typeId: "float",
+          classId: "Guard",
+          implicitSelf: false,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "spawn", "execIn"),
+        edge("e2", "spawn", "execOut", "set", "execIn"),
+        edge("e3", "set", "execOut", "log", "execIn"),
+        edge("e4", "spawn", "out", "set", "target"),
+        edge("e5", "spawn", "out", "get", "target"),
+        edge("e6", "get", "value", "log", "message"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "guard-asset",
+        classId: "Guard",
+        source:
+          "//# sourceURL=babylonslate:///guard-asset.js\nexport function onBeginPlay(ctx) {}\n",
+        anchors: [],
+        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+        variables: [{ name: "Health", type: "float", defaultValue: 0 }],
+      },
+      toScript(caller, registry, "Caller", "caller-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Caller" });
+    const logs = commands.filter((c) => c.type === "log");
+    expect(String((logs[0] as { message: string }).message)).toContain("11");
+    runtime.stop();
+  });
 });
