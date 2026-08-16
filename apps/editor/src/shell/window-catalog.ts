@@ -41,7 +41,46 @@ export type DockWindowOptions = {
   actorPrefab?: boolean;
   /** EditorUtilityInterface authoring adds a Settings dock for `dockKind`. */
   editorUtilityInterface?: boolean;
+  /** Opt-in Git LFS locking; hides the Locks window entirely when off. */
+  sourceControl?: boolean;
 };
+
+export const LOCKS_WINDOW_ID = "locks";
+
+const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
+  scene: "viewport",
+  graph: "graph",
+  enum: "enum-members",
+  structure: "structure-members",
+  "script-interface": "script-interface-preview",
+  sprite: "sprite-preview",
+  tileset: "tileset-preview",
+  tilemap: "tilemap-paint",
+  ui: "ui-design",
+  "plugin-settings": "plugin-settings-details",
+};
+
+function locksWindow(kind: DockviewDocumentKind): DockWindowDefinition {
+  return {
+    id: LOCKS_WINDOW_ID,
+    component: "locks",
+    title: "Locks",
+    defaultPosition: {
+      referencePanelId: DOCK_PRIMARY_PANEL[kind],
+      direction: "below",
+      initialHeight: 180,
+    },
+  };
+}
+
+function withOptionalLocks(
+  kind: DockviewDocumentKind,
+  windows: DockWindowDefinition[],
+  options?: DockWindowOptions,
+): DockWindowDefinition[] {
+  if (!options?.sourceControl) return windows;
+  return [...windows, locksWindow(kind)];
+}
 
 export interface DockWindowDefaultPosition {
   referencePanelId: string;
@@ -333,21 +372,34 @@ export function listDockWindows(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
 ): DockWindowDefinition[] {
-  if (kind === "scene") return SCENE_WINDOWS;
-  if (kind === "enum") return ENUM_WINDOWS;
-  if (kind === "structure") return STRUCTURE_WINDOWS;
-  if (kind === "script-interface") return SCRIPT_INTERFACE_WINDOWS;
-  if (kind === "sprite") return SPRITE_WINDOWS;
-  if (kind === "tileset") return TILESET_WINDOWS;
-  if (kind === "tilemap") return TILEMAP_WINDOWS;
+  if (kind === "scene") return withOptionalLocks(kind, SCENE_WINDOWS, options);
+  if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
+  if (kind === "structure") {
+    return withOptionalLocks(kind, STRUCTURE_WINDOWS, options);
+  }
+  if (kind === "script-interface") {
+    return withOptionalLocks(kind, SCRIPT_INTERFACE_WINDOWS, options);
+  }
+  if (kind === "sprite") return withOptionalLocks(kind, SPRITE_WINDOWS, options);
+  if (kind === "tileset") {
+    return withOptionalLocks(kind, TILESET_WINDOWS, options);
+  }
+  if (kind === "tilemap") {
+    return withOptionalLocks(kind, TILEMAP_WINDOWS, options);
+  }
   if (kind === "ui") {
-    return options?.editorUtilityInterface
+    const windows = options?.editorUtilityInterface
       ? [...UI_WINDOWS, UI_SETTINGS_WINDOW]
       : UI_WINDOWS;
+    return withOptionalLocks(kind, windows, options);
   }
-  if (kind === "plugin-settings") return PLUGIN_SETTINGS_WINDOWS;
-  if (options?.actorPrefab === false) return OBJECT_GRAPH_WINDOWS;
-  return GRAPH_WINDOWS;
+  if (kind === "plugin-settings") {
+    return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);
+  }
+  if (options?.actorPrefab === false) {
+    return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);
+  }
+  return withOptionalLocks(kind, GRAPH_WINDOWS, options);
 }
 
 export function findDockWindow(

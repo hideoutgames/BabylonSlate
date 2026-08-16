@@ -30,6 +30,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Components](components.md) | Reusable Editor UI primitives and composites |
 | [Editor extensions](editor-extensions.md) | EditorUtilityObject / Interface, live Dockview GUI tabs |
 | [Exporter](exporter.md) | Itch zip, `.babpack`, Preview Build, standalone player |
+| [Source control](source-control.md) | Git LFS locking, SecretStore, advisory UX, mtime rescan |
 | [Testing](testing.md) | Vitest projects, coverage gates, Playwright |
 
 `docs/` markdown is the source of truth for GitHub and the VitePress site.

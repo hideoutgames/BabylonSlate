@@ -363,6 +363,13 @@ export class DocumentService {
     }
   }
 
+  replaceLoadedContent(id: string, content: DocumentContent): void {
+    const doc = this.state.openDocuments.get(id);
+    if (!doc || doc.ref.kind === "content-browser") return;
+    doc.content = content;
+    doc.dirty = false;
+  }
+
   buildLayouts(): ProjectLayouts {
     const documents: Record<string, Record<string, unknown>> = {};
     for (const [id, doc] of this.state.openDocuments) {

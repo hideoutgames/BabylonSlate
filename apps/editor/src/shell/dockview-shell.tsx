@@ -18,6 +18,7 @@ export interface DockviewShellProps {
   initialLayout?: Record<string, unknown> | null;
   actorPrefab?: boolean;
   editorUtilityInterface?: boolean;
+  sourceControl?: boolean;
 }
 
 export function DockviewShell({
@@ -26,6 +27,7 @@ export function DockviewShell({
   initialLayout,
   actorPrefab = true,
   editorUtilityInterface = false,
+  sourceControl = false,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const onReadyRef = useRef(onReady);
@@ -42,6 +44,7 @@ export function DockviewShell({
         createDefaultLayoutForKind(event.api, documentKind, {
           actorPrefab,
           editorUtilityInterface,
+          sourceControl,
         });
       });
       migrateRestoredLayout(event.api);
@@ -52,6 +55,9 @@ export function DockviewShell({
       if (!editorUtilityInterface) {
         event.api.getPanel("ui-settings")?.api.close();
       }
+      if (!sourceControl) {
+        event.api.getPanel("locks")?.api.close();
+      }
 
       if (platformOptions.disableFloatingGroups) {
         event.api.onDidAddPanel(() => {
@@ -61,7 +67,7 @@ export function DockviewShell({
 
       onReadyRef.current?.(event.api);
     },
-    [documentKind, actorPrefab, editorUtilityInterface, platformOptions.disableFloatingGroups],
+    [documentKind, actorPrefab, editorUtilityInterface, sourceControl, platformOptions.disableFloatingGroups],
   );
 
   return (

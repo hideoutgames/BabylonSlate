@@ -16,6 +16,21 @@ export interface ElectronUserDataBridge {
   writeSettings(json: string): Promise<void>;
 }
 
+export interface ElectronSecretsBridge {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
+export interface ElectronHttpBridge {
+  fetch(request: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body?: string;
+  }): Promise<{ status: number; bodyText: string }>;
+}
+
 export interface ElectronProjectBridge {
   pickProjectFolder(): Promise<ProjectFolderHandle>;
   openDocumentsProject(name: string): Promise<ProjectFolderHandle>;
@@ -44,6 +59,20 @@ export function getElectronProjectBridge(): ElectronProjectBridge | null {
     babylonslate?: { project?: ElectronProjectBridge };
   };
   return host.babylonslate?.project ?? null;
+}
+
+export function getElectronSecretsBridge(): ElectronSecretsBridge | null {
+  const host = globalThis as {
+    babylonslate?: { secrets?: ElectronSecretsBridge };
+  };
+  return host.babylonslate?.secrets ?? null;
+}
+
+export function getElectronHttpBridge(): ElectronHttpBridge | null {
+  const host = globalThis as {
+    babylonslate?: { http?: ElectronHttpBridge };
+  };
+  return host.babylonslate?.http ?? null;
 }
 
 export function isElectronHost(): boolean {

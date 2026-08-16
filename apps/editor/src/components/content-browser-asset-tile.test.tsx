@@ -200,4 +200,31 @@ describe("ContentBrowserAssetTile", () => {
     expect(well.className).toContain("overflow-hidden");
     expect(well.className).toContain("p-0.5");
   });
+
+  it("keeps the lock slot hidden when source control is off", () => {
+    renderTile();
+    const slot = document.querySelector("[data-lock-slot]");
+    expect(slot).not.toBeNull();
+    expect(slot?.classList.contains("hidden")).toBe(true);
+    expect(slot?.getAttribute("data-lock-state")).toBeNull();
+  });
+
+  it("marks our lock with data-lock-state mine", () => {
+    renderTile({ sourceControlEnabled: true, lockState: "mine" });
+    const slot = document.querySelector("[data-lock-slot]");
+    expect(slot?.classList.contains("hidden")).toBe(false);
+    expect(slot?.getAttribute("data-lock-state")).toBe("mine");
+    expect(slot?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("shows the holder name for someone else's lock", () => {
+    renderTile({
+      sourceControlEnabled: true,
+      lockState: "theirs",
+      lockOwnerName: "Bob",
+    });
+    const slot = document.querySelector("[data-lock-slot]");
+    expect(slot?.getAttribute("data-lock-state")).toBe("theirs");
+    expect(slot?.textContent).toContain("Bob");
+  });
 });

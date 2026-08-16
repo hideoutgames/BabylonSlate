@@ -20,6 +20,8 @@ Shared surface for P2 undo, dirty saves, and crash recovery (engineplan §§7.3,
 
 Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT_EDIT_BYTE_BUDGET` plus Engine Settings `undoHistoryLength`; graph panels call `applyGraphChange`, scene panels call `applySceneChange`, asset tabs call `applyAssetDocumentChange`; chrome **Undo** / **Redo** (and desktop Mod+Z / Mod+Shift+Z / Mod+Y) act on the active document only. `GraphEditor` reconciles that restored graph onto the canvas. `SetNodeDataCommand` and subtree-capturing scene commands (e.g. `RemoveActorCommand`) record `byteSize` so snapshot-style edits count toward the budget. Tilemap paint strokes pass `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`) so one undo restores the whole gesture.
 
+**First-edit auto-lock (P15):** after the plugin read-only check and a successful apply, `afterMutatingApply` calls `SourceControlService.autoLock(path)` once per document path this session. Source Control off, `autoLockOnEdit` false, or a plugin-read-only document skips it. HTTP 409 / offline never blocks the edit — see [source-control.md](source-control.md). Advisory theirs-locks use the same early-return shape as `isPluginDocumentReadOnly` (`isMutatingApplyBlocked`).
+
 ## Ownership
 
 | Concern                                          | Owner                                                                 |

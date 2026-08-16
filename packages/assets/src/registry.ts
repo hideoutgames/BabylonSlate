@@ -41,6 +41,8 @@ export interface IndexedAsset {
   header: BabassetHeader;
   /** Missing plugin/dependency guid kept so references do not drop. */
   placeholder?: boolean;
+  /** Filesystem mtime in ms, from `DirEntry` / `stat` when known. */
+  mtime?: number | null;
 }
 
 export type ThumbnailWriter = (
@@ -273,7 +275,8 @@ export class AssetRegistry {
     });
     await storage.writeBinary(path, bytes);
     const header = readBabassetHeader(bytes);
-    return this.indexHeader(rootId, path, header);
+    const mtime = await this.statMtime(storage, path);
+    return this.indexHeader(rootId, path, header, false, mtime);
   }
 
   /** Re-read a .babasset header after an in-place save so catalog fields stay current. */
@@ -288,7 +291,8 @@ export class AssetRegistry {
     const storage = this.storageFor(rootId);
     if (!(await storage.exists(path))) return null;
     const header = readBabassetHeader(await storage.readBinary(path));
-    return this.indexHeader(rootId, path, header);
+    const mtime = await this.statMtime(storage, path);
+    return this.indexHeader(rootId, path, header, false, mtime);
   }
 
   async deleteAsset(guid: string): Promise<void> {
@@ -981,6 +985,17 @@ export class AssetRegistry {
     return this.blobsFor(asset.rootId);
   }
 
+  private async statMtime(
+    storage: ProjectStorage,
+    path: string,
+  ): Promise<number | null> {
+    try {
+      return (await storage.stat(path)).mtime;
+    } catch {
+      return null;
+    }
+  }
+
   private getRootOrThrow(rootId: string): ContentRoot {
     const root = this.roots.get(rootId);
     if (!root) {
@@ -1012,7 +1027,7 @@ export class AssetRegistry {
       if (!path.endsWith(".babasset")) continue;
       const bytes = await storage.readBinary(path);
       const header = readBabassetHeader(bytes);
-      this.indexHeader(root.id, path, header);
+      this.indexHeader(root.id, path, header, false, entry.mtime ?? null);
     }
   }
 
@@ -1021,13 +1036,14 @@ export class AssetRegistry {
     path: string,
     header: BabassetHeader,
     placeholder = false,
+    mtime: number | null = null,
   ): IndexedAsset {
     const existingAtPath = this.byPath.get(path);
     if (existingAtPath) this.removeFromIndex(existingAtPath);
     const existingByGuid = this.byGuid.get(header.guid);
     if (existingByGuid) this.removeFromIndex(existingByGuid);
 
-    const indexed: IndexedAsset = { rootId, path, header, placeholder };
+    const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime };
     this.byGuid.set(header.guid, indexed);
     this.byPath.set(path, indexed);
     for (const dep of header.dependencies) {

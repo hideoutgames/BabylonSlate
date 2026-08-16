@@ -16,6 +16,7 @@ import { TypeAssetEditingProvider } from "../context/type-asset-editing-context"
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
+import { DocumentLockBanner } from "./document-lock-banner";
 import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
 import { DockviewShell } from "../shell/dockview-shell";
 import {
@@ -61,7 +62,7 @@ function RegisteredDockviewShell({
   actorPrefab?: boolean;
   editorUtilityInterface?: boolean;
 }) {
-  const { registerDockviewApi } = useDocuments();
+  const { registerDockviewApi, sourceControl } = useDocuments();
   const onReady = useCallback(
     (api: DockviewApi) => {
       registerDockviewApi(id, api);
@@ -75,8 +76,32 @@ function RegisteredDockviewShell({
       initialLayout={initialLayout}
       actorPrefab={actorPrefab}
       editorUtilityInterface={editorUtilityInterface}
+      sourceControl={sourceControl.enabled}
       onReady={onReady}
     />
+  );
+}
+
+function DocumentShell({
+  path,
+  testId,
+  active,
+  children,
+}: {
+  path: string;
+  testId: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  const { sourceControl } = useDocuments();
+  return (
+    <div
+      className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+      data-testid={testId}
+    >
+      <DocumentLockBanner path={path} sourceControl={sourceControl} />
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+    </div>
   );
 }
 
@@ -157,12 +182,13 @@ export function DocumentWorkspace() {
           if (!shouldMount) return null;
           return (
             <WorkspaceErrorBoundary key={id}>
-              <div
-                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                data-testid={`document-workspace-${doc.ref.kind}`}
+              <DocumentShell
+                path={doc.ref.path}
+                testId={`document-workspace-${doc.ref.kind}`}
+                active={active}
               >
                 <AssetDocumentWorkspace documentId={id} />
-              </div>
+              </DocumentShell>
             </WorkspaceErrorBoundary>
           );
         }
@@ -181,9 +207,10 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
                 <UiEditingProvider>
-                  <div
-                    className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                    data-testid="document-workspace-ui"
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-ui"
+                    active={active}
                   >
                     <RegisteredDockviewShell
                       id={id}
@@ -193,7 +220,7 @@ export function DocumentWorkspace() {
                         indexed?.header.type === "EditorUtilityInterface"
                       }
                     />
-                  </div>
+                  </DocumentShell>
                 </UiEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
@@ -210,16 +237,17 @@ export function DocumentWorkspace() {
           return (
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
-                <div
-                  className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                  data-testid={`document-workspace-${doc.ref.kind}`}
+                <DocumentShell
+                  path={doc.ref.path}
+                  testId={`document-workspace-${doc.ref.kind}`}
+                  active={active}
                 >
                   <RegisteredDockviewShell
                     id={id}
                     documentKind={doc.ref.kind}
                     initialLayout={doc.layout}
                   />
-                </div>
+                </DocumentShell>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );
@@ -231,16 +259,17 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TypeAssetEditingProvider>
-                  <div
-                    className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                    data-testid={`document-workspace-${doc.ref.kind}`}
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId={`document-workspace-${doc.ref.kind}`}
+                    active={active}
                   >
                     <RegisteredDockviewShell
                       id={id}
                       documentKind={doc.ref.kind}
                       initialLayout={doc.layout}
                     />
-                  </div>
+                  </DocumentShell>
                 </TypeAssetEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
@@ -280,9 +309,10 @@ export function DocumentWorkspace() {
               {doc.ref.kind === "scene" ? (
                 <PendingSceneSearchFocus scenePath={doc.ref.path} />
               ) : null}
-              <div
-                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
-                data-testid={`document-workspace-${doc.ref.kind}`}
+              <DocumentShell
+                path={doc.ref.path}
+                testId={`document-workspace-${doc.ref.kind}`}
+                active={active}
               >
                 {shouldMount ? (
                   <RegisteredDockviewShell
@@ -294,7 +324,7 @@ export function DocumentWorkspace() {
                     actorPrefab={actorPrefab}
                   />
                 ) : null}
-              </div>
+              </DocumentShell>
               </GraphEditingProvider>
               </PrefabEditingProvider>
               </NavBakeProvider>

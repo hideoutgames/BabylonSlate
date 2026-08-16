@@ -162,6 +162,9 @@ importers:
       '@babylonslate/shader-graph':
         specifier: workspace:*
         version: link:../../packages/shader-graph
+      '@babylonslate/source-control':
+        specifier: workspace:*
+        version: link:../../packages/source-control
       '@babylonslate/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -617,6 +620,16 @@ importers:
         version: 5.8.3
 
   packages/shader-graph:
+    dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ~5.8.2
+        version: 5.8.3
+
+  packages/source-control:
     dependencies:
       '@babylonslate/core':
         specifier: workspace:*

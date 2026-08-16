@@ -31,6 +31,7 @@
     "@babylonslate/scripting": "workspace:*",
     "@babylonslate/scripting-nodes": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
+    "@babylonslate/source-control": "workspace:*",
     "@babylonslate/ui": "workspace:*",
     "@babylonslate/ui-runtime": "workspace:*",
     "@babylonslate/vfs": "workspace:*",

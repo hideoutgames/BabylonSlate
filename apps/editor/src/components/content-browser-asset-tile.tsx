@@ -20,6 +20,7 @@ import {
   displayAssetTitle,
   textureCompressionState,
 } from "../lib/content-browser-helpers";
+import { LockIcon } from "lucide-react";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 
 export interface ContentBrowserAssetTileProps {
@@ -31,6 +32,9 @@ export interface ContentBrowserAssetTileProps {
   thumbnailUrl: string | null;
   hasCompileError?: boolean;
   typeVisual: TypeVisual;
+  sourceControlEnabled?: boolean;
+  lockState?: "mine" | "theirs" | null;
+  lockOwnerName?: string;
 }
 
 export function ContentBrowserAssetTile({
@@ -42,6 +46,9 @@ export function ContentBrowserAssetTile({
   thumbnailUrl,
   hasCompileError = false,
   typeVisual,
+  sourceControlEnabled = false,
+  lockState = null,
+  lockOwnerName,
 }: ContentBrowserAssetTileProps) {
   const compression = textureCompressionState(asset);
   const thumbAccent = typeColorThumbAccent(typeVisual.colorVar);
@@ -122,7 +129,20 @@ export function ContentBrowserAssetTile({
               Compile error
             </Badge>
           ) : null}
-          <span data-lock-slot className="hidden" aria-hidden />
+          {sourceControlEnabled ? (
+            <span
+              data-lock-slot
+              data-lock-state={lockState ?? undefined}
+              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
+            >
+              {lockState ? <LockIcon className="size-3" aria-hidden /> : null}
+              {lockState === "theirs" && lockOwnerName ? (
+                <SelectableText>{lockOwnerName}</SelectableText>
+              ) : null}
+            </span>
+          ) : (
+            <span data-lock-slot className="hidden" aria-hidden />
+          )}
         </CardContent>
       </button>
     </Card>

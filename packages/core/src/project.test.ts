@@ -297,6 +297,46 @@ describe("project schema", () => {
     expect(createEmptyProject("Demo").settings.exportPresets).toEqual([]);
   });
 
+  it("defaults source control to disabled with a 60s poll and auto-lock", () => {
+    expect(normalizeProjectSettings(undefined).sourceControl).toEqual({
+      enabled: false,
+      repositoryUrl: "",
+      branch: "main",
+      autoLockOnEdit: true,
+      pollIntervalMs: 60_000,
+    });
+    expect(createEmptyProject("Demo").settings.sourceControl.enabled).toBe(
+      false,
+    );
+    expect(
+      normalizeProjectSettings({
+        sourceControl: {
+          enabled: true,
+          repositoryUrl: "  git@github.com:org/repo.git  ",
+          branch: "  develop  ",
+          autoLockOnEdit: false,
+          pollIntervalMs: 15_000,
+        },
+      }).sourceControl,
+    ).toEqual({
+      enabled: true,
+      repositoryUrl: "git@github.com:org/repo.git",
+      branch: "develop",
+      autoLockOnEdit: false,
+      pollIntervalMs: 15_000,
+    });
+    expect(
+      normalizeProjectSettings({
+        sourceControl: { enabled: true, pollIntervalMs: 0, branch: "" },
+      } as unknown as Partial<ProjectSettings>).sourceControl,
+    ).toMatchObject({
+      enabled: true,
+      branch: "main",
+      autoLockOnEdit: true,
+      pollIntervalMs: 60_000,
+    });
+  });
+
   it("normalizes pluginOverrides keyed by guid", () => {
     expect(
       normalizeProjectSettings({

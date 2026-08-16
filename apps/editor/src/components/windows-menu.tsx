@@ -28,6 +28,7 @@ export function WindowsMenu() {
     isDockWindowOpen,
     getOpenDockWindowCount,
     assetRegistry,
+    sourceControl,
   } = useDocuments();
   useDockWindowTick();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -58,7 +59,11 @@ export function WindowsMenu() {
 
   const items = useMemo((): NestedMenuItem[] => {
     const windows = isDockviewDocumentKind(activeKind)
-      ? listDockWindows(activeKind, { actorPrefab, editorUtilityInterface })
+      ? listDockWindows(activeKind, {
+          actorPrefab,
+          editorUtilityInterface,
+          sourceControl: sourceControl.enabled,
+        })
       : [];
     const editorUtilities = listEditorUtilityWindows({
       kind: activeKind,
@@ -106,6 +111,7 @@ export function WindowsMenu() {
     actorPrefab,
     editorUtilityInterface,
     assetRegistry,
+    sourceControl.enabled,
     isDockWindowOpen,
     openDockWindowCount,
     toggleDockWindow,

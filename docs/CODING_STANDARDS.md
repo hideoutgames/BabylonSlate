@@ -4,7 +4,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 
 ## Packages and boundaries
 
-- `core`, `edit`, `assets`, `vfs`, `object-model`, `scripting`, `scripting-nodes`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `shader-graph`, `input`, `behaviour-tree`, `exporter` — no React or Babylon imports (Capacitor banned too except `vfs` adapters).
+- `core`, `edit`, `assets`, `vfs`, `object-model`, `scripting`, `scripting-nodes`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `shader-graph`, `input`, `behaviour-tree`, `exporter`, `source-control` — no React or Babylon imports (Capacitor banned too except `vfs` adapters).
 - `navigation` — Recast wasm (`@recast-navigation/core` / `generators`) is allowed; no React, Babylon, Capacitor, or `@recast-navigation/babylon`.
 - `physics` — Babylon Physics V2 (`HavokPlugin` / `PhysicsAggregate`) on a worker-local `NullEngine` Scene; no React, Capacitor, or editor Babylon packages (gui/loaders/inspector). `runtime` still must not import Babylon.
 - `render` — Babylon only; no React.

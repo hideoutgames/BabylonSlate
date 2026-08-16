@@ -113,7 +113,8 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 - File ops: `moveAsset` / `renameAsset` / `duplicateAsset` / `copyAsset` / `moveFolder` / `duplicateFolder` / `copyFolder` keep guids stable on move/rename; duplicate/copy assign a new guid and a unique `stem_N` name. Open document tabs are retargeted via `DocumentService.repathDocument`; `refreshAssetRegistry` rewrites `project.json` scene/graph path lists. `listDocumentPaths` treats Class and legacy Graph as compile/script documents. New projects scaffold `assets/main.class.babasset` with `parentClass: "Actor"`.
 - `AlertDialog` lists removed asset names and inbound refs from `showReferences` (names are `SelectableText`). Toolbar Delete only opens this dialog; confirming is the destructive step.
 - Texture tiles show `payload.compressionState` badges (`pending`, `encoding`, `fallback_uncompressed`, `encode_failed`). Badges refresh when encode `onState` / `onComplete` / `onError` bump the registry generation.
-- Empty `data-lock-slot` on tiles reserved for P15 lock decoration.
+- Walk records `IndexedAsset.mtime` from `DirEntry` / `stat` (null when the adapter has none). Foreground rescan diffs mtimes — see [source-control.md](source-control.md).
+- Content Browser `data-lock-slot` shows Git LFS lock state when Source Control is enabled (`data-lock-state="mine"` / `"theirs"` plus owner name). Hidden and empty when Source Control is off.
 - Grid tiles expose stable `data-testid="content-item-{path}"` plus `data-asset-path` / `data-asset-guid` for Playwright.
 - Thumbnails: `generateThumbnailBytes` at import → `writeThumbnail` in derived data; CB grid lazy-decodes visible Texture cells via `ThumbnailDecodeLru` / `loadAssetThumbnail`.
 
