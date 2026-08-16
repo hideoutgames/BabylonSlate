@@ -347,7 +347,13 @@ describe("post-process stack", () => {
     const { preview, library } = host();
     vi.spyOn(library, "acquire").mockReturnValue({
       ok: false,
-      diagnostics: [{ message: "failed to compile: boom" }],
+      diagnostics: [
+        {
+          code: "material.compile",
+          severity: "error",
+          message: "failed to compile: boom",
+        },
+      ],
     });
     const enable = vi.spyOn(preview.scene, "enableDepthRenderer");
     const attached = attachPostProcessStack({
