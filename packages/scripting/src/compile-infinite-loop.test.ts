@@ -35,12 +35,12 @@ function registry(): NodeRegistry {
       pin("execOut", "then", "out", EXEC),
     ],
     codegen: (ctx) => {
-      ctx.hoist(`function execJs_n() {
+      ctx.hoist(`function execJs_n(ctx) {
   while (true) {
     x++;
   }
 }`);
-      ctx.emit(`execJs_n();`);
+      ctx.emit(`execJs_n(ctx);`);
     },
   });
   return nodes;

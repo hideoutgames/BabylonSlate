@@ -388,5 +388,7 @@ describe("compiler emits runnable JavaScript", () => {
     expect(
       instrumented.source.indexOf("ctx.checkInfiniteLoop();", whileAt),
     ).toBeGreaterThan(whileAt);
+    expect(instrumented.source).toContain("function execJs_js(ctx");
+    expect(instrumented.source).toMatch(/execJs_js\(ctx/);
   });
 });
