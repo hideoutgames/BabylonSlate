@@ -134,7 +134,11 @@ export interface GraphEditorProps {
   hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "format">;
   /** Lock node drag to one axis (optional host constraint). */
   lockNodeDragAxis?: "x" | "y";
-  /** CSS selector for the node drag surface. Attachments can use `nodrag`. */
+  /**
+   * CSS selector stamped onto each XYFlow node as `dragHandle`.
+   * XYFlow 12 has no canvas-level `nodeDragHandle` prop. Attachments can use
+   * `nodrag`.
+   */
   nodeDragHandle?: string;
   /**
    * Connect-end policy. Default keeps the 96px cancel zone and wire-break
@@ -198,16 +202,33 @@ function styleFlowEdges(
   });
 }
 
+function withDragHandle(node: CanvasNode, handle?: string): CanvasNode {
+  if (!handle) {
+    if (node.dragHandle === undefined) return node;
+    const rest = { ...node };
+    delete rest.dragHandle;
+    return rest;
+  }
+  if (node.dragHandle === handle) return node;
+  return { ...node, dragHandle: handle };
+}
+
 function toCanvasNodes(
   nodes: GraphDocument["nodes"],
   knownTypes: NodeTypes,
+  dragHandle?: string,
 ): CanvasNode[] {
-  return nodes.map((node) => ({
-    id: node.id,
-    type: resolveNodeType(node.type, node.data, knownTypes),
-    position: node.position,
-    data: { ...node.data, __nodeType: node.type },
-  }));
+  return nodes.map((node) =>
+    withDragHandle(
+      {
+        id: node.id,
+        type: resolveNodeType(node.type, node.data, knownTypes),
+        position: node.position,
+        data: { ...node.data, __nodeType: node.type },
+      },
+      dragHandle,
+    ),
+  );
 }
 
 function pinOnNode(
@@ -308,7 +329,7 @@ function GraphEditorCanvas({
     [defaultZoom],
   );
   const [nodes, setNodes] = useState<CanvasNode[]>(() =>
-    toCanvasNodes(initialGraph.nodes, knownTypes),
+    toCanvasNodes(initialGraph.nodes, knownTypes, nodeDragHandle),
   );
   const [edges, setEdges] = useState<Edge[]>(() =>
     toFlowEdges(initialGraph.edges),
@@ -426,16 +447,19 @@ function GraphEditorCanvas({
           typeof data.__nodeType === "string"
             ? data.__nodeType
             : (node.type ?? "logMessage");
-        return {
-          id: node.id,
-          type: resolveNodeType(typeId, data, knownTypes),
-          position: node.position,
-          data,
-          selected: node.selected,
-          measured: node.measured,
-          width: node.width,
-          height: node.height,
-        };
+        return withDragHandle(
+          {
+            id: node.id,
+            type: resolveNodeType(typeId, data, knownTypes),
+            position: node.position,
+            data,
+            selected: node.selected,
+            measured: node.measured,
+            width: node.width,
+            height: node.height,
+          },
+          nodeDragHandle,
+        );
       }),
     );
     setEdges(
@@ -449,7 +473,16 @@ function GraphEditorCanvas({
         })),
       ),
     );
-  }, [initialGraph, knownTypes]);
+  }, [initialGraph, knownTypes, nodeDragHandle]);
+
+  useEffect(() => {
+    setNodes((current) => {
+      const next = current.map((node) => withDragHandle(node, nodeDragHandle));
+      return next.every((node, index) => node === current[index])
+        ? current
+        : next;
+    });
+  }, [nodeDragHandle]);
 
   const hiddenToolbar = useMemo(
     () => new Set(hiddenToolbarActions),
@@ -686,17 +719,20 @@ function GraphEditorCanvas({
       if (paletteNode.pins && paletteNode.pins.length > 0) {
         data.__pins = paletteNode.pins;
       }
-      const nextNode: CanvasNode = {
-        id,
-        type: resolveNodeType(
-          paletteNode.nodeType ?? paletteNode.id,
+      const nextNode: CanvasNode = withDragHandle(
+        {
+          id,
+          type: resolveNodeType(
+            paletteNode.nodeType ?? paletteNode.id,
+            data,
+            knownTypes,
+          ),
+          position,
+          selected: true,
           data,
-          knownTypes,
-        ),
-        position,
-        selected: true,
-        data,
-      };
+        },
+        nodeDragHandle,
+      );
 
       setNodes((current) => {
         const next = [
@@ -741,6 +777,7 @@ function GraphEditorCanvas({
     [
       emitChange,
       knownTypes,
+      nodeDragHandle,
       pendingConnect,
       pinCompatibility,
       screenToFlowPosition,
@@ -794,16 +831,19 @@ function GraphEditorCanvas({
     const nextNodes = pasteable.map((node, index) => {
       const id = `${node.id}-copy-${stamp}-${index}`;
       idMap.set(node.id, id);
-      return {
-        ...node,
-        id,
-        selected: true,
-        position: {
-          x: node.position.x + PASTE_OFFSET,
-          y: node.position.y + PASTE_OFFSET,
+      return withDragHandle(
+        {
+          ...node,
+          id,
+          selected: true,
+          position: {
+            x: node.position.x + PASTE_OFFSET,
+            y: node.position.y + PASTE_OFFSET,
+          },
+          data: { ...node.data },
         },
-        data: { ...node.data },
-      };
+        nodeDragHandle,
+      );
     });
     const nextEdges = clip.edges.flatMap((edge) => {
       const source = idMap.get(edge.source);
@@ -830,7 +870,7 @@ function GraphEditorCanvas({
       });
       return next;
     });
-  }, [emitChange]);
+  }, [emitChange, nodeDragHandle]);
 
   const deleteSelection = useCallback(() => {
     const selected = new Set(
@@ -1190,7 +1230,6 @@ function GraphEditorCanvas({
           nodeTypes={knownTypes}
           edgeTypes={edgeTypes}
           nodesDraggable={nodesDraggable}
-          nodeDragHandle={nodeDragHandle}
           nodesConnectable={!readOnly}
           elementsSelectable
           edgesReconnectable={false}

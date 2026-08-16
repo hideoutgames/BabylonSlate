@@ -1449,6 +1449,34 @@ describe("GraphEditor", () => {
     expect(container.querySelector('[data-id="in-1"]')).not.toBeNull();
   });
 
+  it("stamps XYFlow node.dragHandle from nodeDragHandle", async () => {
+    function ProbeNode({ dragHandle }: { dragHandle?: string }) {
+      return <div data-testid="xyflow-drag-handle">{dragHandle ?? ""}</div>;
+    }
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "m1",
+              type: "marker",
+              position: { x: 0, y: 0 },
+              data: { title: "M" },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={{ marker: ProbeNode }}
+        nodeDragHandle=".bt-node-drag-handle"
+      />,
+    );
+    await waitFor(() => {
+      expect(getByTestId("xyflow-drag-handle").textContent).toBe(
+        ".bt-node-drag-handle",
+      );
+    });
+  });
+
   it("renders a host-provided node type", async () => {
     function MarkerNode() {
       return <div data-testid="custom-marker-node">Marker</div>;
