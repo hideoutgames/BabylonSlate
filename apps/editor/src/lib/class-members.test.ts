@@ -214,6 +214,25 @@ describe("addClassMember", () => {
     });
   });
 
+  it("copies typeClassId onto spawned Get nodes and synced access nodes", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Target", () => "var-1", {
+      typeId: "object",
+      typeClassId: "Hero",
+    });
+    graph = addVariableAccessNode(graph, graph.members![0]!, "get", {
+      idFactory: () => "n-get",
+    });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      typeId: "object",
+      typeClassId: "Hero",
+    });
+    graph = patchClassMember(graph, "var-1", { typeClassId: "Actor" });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      typeId: "object",
+      typeClassId: "Actor",
+    });
+  });
+
   it("spawns Get onto the active function graph for a local variable", () => {
     let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
     graph = addClassMember(graph, "variable", "Temp", () => "loc-1", {

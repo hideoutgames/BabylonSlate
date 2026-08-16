@@ -81,8 +81,59 @@ export function isEditorOnlyAsset(
 
 export type FunctionLibraryHeaderFunction = {
   name: string;
-  pins: Array<{ name: string; typeId?: string; direction?: "in" | "out" }>;
+  pins: Array<{
+    name: string;
+    typeId?: string;
+    direction?: "in" | "out";
+    typeClassId?: string;
+  }>;
 };
+
+export type ClassHeaderPin = {
+  name: string;
+  typeId?: string;
+  direction?: "in" | "out";
+  typeClassId?: string;
+};
+
+export type ClassHeaderFunction = {
+  id: string;
+  name: string;
+  pins: ClassHeaderPin[];
+};
+
+export type ClassHeaderVariable = {
+  id: string;
+  name: string;
+  typeId?: string;
+  typeClassId?: string;
+};
+
+export type ClassHeaderEvent = {
+  id: string;
+  name: string;
+  pins: ClassHeaderPin[];
+};
+
+export type ClassHeaderMeta = {
+  functions: ClassHeaderFunction[];
+  variables: ClassHeaderVariable[];
+  events: ClassHeaderEvent[];
+};
+
+function headerPinsFromMember(
+  pins: FunctionLibraryHeaderFunction["pins"] | undefined,
+): ClassHeaderPin[] {
+  return (pins ?? []).map((pin) => {
+    const next: ClassHeaderPin = {
+      name: pin.name,
+      typeId: pin.typeId,
+      direction: pin.direction,
+    };
+    if (pin.typeClassId) next.typeClassId = pin.typeClassId;
+    return next;
+  });
+}
 
 export function functionLibraryHeaderMeta(graph: {
   members?: Array<{
@@ -96,7 +147,53 @@ export function functionLibraryHeaderMeta(graph: {
       .filter((member) => member.kind === "function")
       .map((member) => ({
         name: member.name,
-        pins: member.pins ?? [],
+        pins: headerPinsFromMember(member.pins),
       })),
   };
+}
+
+export function classHeaderMeta(graph: {
+  members?: Array<{
+    id?: string;
+    kind: string;
+    name: string;
+    typeId?: string;
+    typeClassId?: string;
+    functionId?: string;
+    pins?: ClassHeaderPin[];
+  }>;
+}): ClassHeaderMeta {
+  const functions: ClassHeaderFunction[] = [];
+  const variables: ClassHeaderVariable[] = [];
+  const events: ClassHeaderEvent[] = [];
+  for (const member of graph.members ?? []) {
+    if (!member.id || !member.name) continue;
+    if (member.kind === "function") {
+      functions.push({
+        id: member.id,
+        name: member.name,
+        pins: headerPinsFromMember(member.pins),
+      });
+      continue;
+    }
+    if (member.kind === "variable") {
+      if (member.functionId) continue;
+      const variable: ClassHeaderVariable = {
+        id: member.id,
+        name: member.name,
+        typeId: member.typeId,
+      };
+      if (member.typeClassId) variable.typeClassId = member.typeClassId;
+      variables.push(variable);
+      continue;
+    }
+    if (member.kind === "event") {
+      events.push({
+        id: member.id,
+        name: member.name,
+        pins: headerPinsFromMember(member.pins),
+      });
+    }
+  }
+  return { functions, variables, events };
 }

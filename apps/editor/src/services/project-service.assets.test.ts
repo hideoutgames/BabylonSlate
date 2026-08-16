@@ -359,6 +359,7 @@ describe("project documents as .babasset", () => {
     const header = readAssetDocumentHeader(await storage.readBinary(path));
     expect(header.payload.functions).toEqual([
       {
+        id: "fn-1",
         name: "Add",
         pins: [
           { name: "exec", typeId: "exec", direction: "in" },
@@ -367,18 +368,91 @@ describe("project documents as .babasset", () => {
         ],
       },
     ]);
+    expect(header.payload.variables).toEqual([
+      { id: "var-1", name: "X", typeId: "float" },
+    ]);
+    expect(header.payload.events).toEqual([]);
   });
 
-  it("does not index functions on an Actor Class header", async () => {
+  it("indexes Actor Class members including typeClassId on the header", async () => {
     const { storage, service } = await scaffolded();
     await service.saveDocument("graph", MAIN_CLASS_FILE, {
       nodes: [],
       edges: [],
-      members: [{ id: "fn-1", kind: "function", name: "Jump" }],
+      members: [
+        {
+          id: "fn-1",
+          kind: "function",
+          name: "Jump",
+          pins: [
+            {
+              name: "pawn",
+              typeId: "object",
+              direction: "in",
+              typeClassId: "Pawn",
+            },
+          ],
+        },
+        {
+          id: "var-1",
+          kind: "variable",
+          name: "Target",
+          typeId: "object",
+          typeClassId: "Hero",
+        },
+        {
+          id: "ev-1",
+          kind: "event",
+          name: "On Hit",
+          pins: [
+            {
+              name: "other",
+              typeId: "object",
+              direction: "out",
+              typeClassId: "Actor",
+            },
+          ],
+        },
+      ],
     });
     const header = readAssetDocumentHeader(
       await storage.readBinary(MAIN_CLASS_FILE),
     );
-    expect(header.payload.functions).toBeUndefined();
+    expect(header.payload.functions).toEqual([
+      {
+        id: "fn-1",
+        name: "Jump",
+        pins: [
+          {
+            name: "pawn",
+            typeId: "object",
+            direction: "in",
+            typeClassId: "Pawn",
+          },
+        ],
+      },
+    ]);
+    expect(header.payload.variables).toEqual([
+      {
+        id: "var-1",
+        name: "Target",
+        typeId: "object",
+        typeClassId: "Hero",
+      },
+    ]);
+    expect(header.payload.events).toEqual([
+      {
+        id: "ev-1",
+        name: "On Hit",
+        pins: [
+          {
+            name: "other",
+            typeId: "object",
+            direction: "out",
+            typeClassId: "Actor",
+          },
+        ],
+      },
+    ]);
   });
 });

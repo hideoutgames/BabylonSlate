@@ -50,7 +50,12 @@ export const functionCallNodes: NodeDefinition[] = [
           const rowDir = row.direction === "out" ? "out" : "in";
           if (rowDir !== direction) return [];
           return [
-            pin(row.name, row.name, direction, pinTypeForMember(row.typeId)),
+            pin(
+              row.name,
+              row.name,
+              direction,
+              pinTypeForMember(row.typeId, row.typeClassId),
+            ),
           ];
         }),
       );

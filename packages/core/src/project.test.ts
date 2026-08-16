@@ -204,6 +204,88 @@ describe("project schema", () => {
     ]);
   });
 
+  it("persists typeClassId on object and class variables without inventing one", () => {
+    expect(
+      normalizeGraphMembers([
+        {
+          id: "var-obj",
+          kind: "variable",
+          name: "Target",
+          typeId: "object",
+          typeClassId: " Hero ",
+        },
+        {
+          id: "var-class",
+          kind: "variable",
+          name: "Kind",
+          typeId: "class",
+          typeClassId: "Actor",
+          defaultValue: "Hero",
+        },
+        { id: "var-plain", kind: "variable", name: "Health", typeId: "object" },
+      ]),
+    ).toEqual([
+      {
+        id: "var-obj",
+        kind: "variable",
+        name: "Target",
+        typeId: "object",
+        typeClassId: "Hero",
+      },
+      {
+        id: "var-class",
+        kind: "variable",
+        name: "Kind",
+        typeId: "class",
+        typeClassId: "Actor",
+        defaultValue: "Hero",
+      },
+      { id: "var-plain", kind: "variable", name: "Health", typeId: "object" },
+    ]);
+  });
+
+  it("persists typeClassId on function and event pins and keeps event pins", () => {
+    expect(
+      normalizeGraphMembers([
+        {
+          id: "fn-1",
+          kind: "function",
+          name: "Possess",
+          pins: [
+            { name: "pawn", typeId: "object", direction: "in", typeClassId: " Pawn " },
+            { name: "kind", typeId: "class", direction: "in" },
+          ],
+        },
+        {
+          id: "ev-1",
+          kind: "event",
+          name: "On Hit",
+          pins: [
+            { name: "other", typeId: "object", direction: "out", typeClassId: "Actor" },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "fn-1",
+        kind: "function",
+        name: "Possess",
+        pins: [
+          { name: "pawn", typeId: "object", direction: "in", typeClassId: "Pawn" },
+          { name: "kind", typeId: "class", direction: "in" },
+        ],
+      },
+      {
+        id: "ev-1",
+        kind: "event",
+        name: "On Hit",
+        pins: [
+          { name: "other", typeId: "object", direction: "out", typeClassId: "Actor" },
+        ],
+      },
+    ]);
+  });
+
   it("normalizes missing 2D settings and drops duplicate sorting layers", () => {
     const settings = normalizeProjectSettings({
       touchMinTargetPx: 48,

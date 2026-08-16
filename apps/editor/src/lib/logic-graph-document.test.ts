@@ -79,7 +79,15 @@ describe("collectFunctionLibrariesForPalette", () => {
               functions: [
                 {
                   name: "Add",
-                  pins: [{ name: "a", typeId: "float", direction: "in" }],
+                  pins: [
+                    { name: "a", typeId: "float", direction: "in" },
+                    {
+                      name: "pawn",
+                      typeId: "object",
+                      direction: "in",
+                      typeClassId: "Pawn",
+                    },
+                  ],
                 },
               ],
             },
@@ -129,7 +137,15 @@ describe("collectFunctionLibrariesForPalette", () => {
         functions: [
           {
             name: "Add",
-            pins: [{ name: "a", typeId: "float", direction: "in" }],
+            pins: [
+              { name: "a", typeId: "float", direction: "in" },
+              {
+                name: "pawn",
+                typeId: "object",
+                direction: "in",
+                typeClassId: "Pawn",
+              },
+            ],
           },
         ],
       },

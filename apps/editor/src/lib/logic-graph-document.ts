@@ -82,7 +82,8 @@ function normalizeHeaderPins(value: unknown): GraphClassMemberPin[] {
     if (!row || typeof row !== "object") continue;
     const name = (row as { name?: unknown }).name;
     if (typeof name !== "string" || !name) continue;
-    pins.push({
+    const typeClassId = (row as { typeClassId?: unknown }).typeClassId;
+    const pin: GraphClassMemberPin = {
       name,
       typeId:
         typeof (row as { typeId?: unknown }).typeId === "string"
@@ -90,7 +91,11 @@ function normalizeHeaderPins(value: unknown): GraphClassMemberPin[] {
           : "float",
       direction:
         (row as { direction?: unknown }).direction === "out" ? "out" : "in",
-    });
+    };
+    if (typeof typeClassId === "string" && typeClassId.trim()) {
+      pin.typeClassId = typeClassId.trim();
+    }
+    pins.push(pin);
   }
   return pins;
 }

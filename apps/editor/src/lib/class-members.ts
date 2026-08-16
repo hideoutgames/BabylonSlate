@@ -325,6 +325,7 @@ function memberDefaults(
   if (kind === "variable") {
     return {
       typeId: extras?.typeId ?? "float",
+      ...(extras?.typeClassId ? { typeClassId: extras.typeClassId } : {}),
       ...(extras?.defaultValue !== undefined
         ? { defaultValue: extras.defaultValue }
         : {}),
@@ -510,10 +511,12 @@ function patchVariableAccessNode(
     ...node.data,
     variableId: member.id,
     variableName: member.name,
-    typeId: member.typeId ?? node.data.typeId ?? "float",
+        typeId: member.typeId ?? node.data.typeId ?? "float",
     title: `${access} ${member.name}`,
     scope: member.functionId ? "local" : (node.data.scope ?? "member"),
   };
+  if (member.typeClassId) nextData.typeClassId = member.typeClassId;
+  else delete nextData.typeClassId;
   if (member.functionId) nextData.functionId = member.functionId;
   delete nextData.__pins;
   return { ...node, data: nextData };
@@ -574,6 +577,7 @@ export function addVariableAccessNode(
     implicitSelf: true,
     __nodeType: type,
   };
+  if (member.typeClassId) data.typeClassId = member.typeClassId;
   if (options?.classId) data.classId = options.classId;
   if (member.functionId) data.functionId = member.functionId;
   const node = {
