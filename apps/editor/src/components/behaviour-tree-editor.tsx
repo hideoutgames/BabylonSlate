@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
   addService,
@@ -50,6 +51,8 @@ import { GraphEditor, treeNodeTypes, type PaletteNode } from "@babylonslate/grap
 import { Button } from "@babylonslate/ui/components/button";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { useDocuments } from "../context/document-context";
+import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
 
 function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
@@ -87,41 +90,22 @@ function propertyValue(field: BtPropertyField, properties: Record<string, unknow
   return properties[field.key];
 }
 
-export function BehaviourTreeEditor({
-  payload,
-  onChange,
-}: {
-  payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}) {
-  const { assetRegistry, openDocument, openDocuments } = useDocuments();
+function useBehaviourTreeDocument() {
+  const { documentId } = useDocumentWorkspace();
+  const { assetRegistry, openDocument, openDocuments, applyAssetDocumentChange } =
+    useDocuments();
   const play = usePlay();
-  const doc = useMemo(() => asTree(payload), [payload]);
-  const [selectedId, setSelectedId] = useState<string | null>(doc.rootId);
-  const [attachmentId, setAttachmentId] = useState<string | null>(null);
-  const [blackboardPick, setBlackboardPick] = useState(false);
-  const [attachmentCatalog, setAttachmentCatalog] = useState<
-    "decorator" | "service" | null
-  >(null);
-  const catalogSearch = useCatalogSearchState();
+  const entry = openDocuments.find((item) => item.id === documentId);
+  const doc = useMemo(
+    () => asTree((entry?.content ?? {}) as Record<string, unknown>),
+    [entry?.content],
+  );
   const commit = (next: BehaviourTreeDocument) => {
-    onChange(next as unknown as Record<string, unknown>);
+    void applyAssetDocumentChange(
+      documentId,
+      next as unknown as Record<string, unknown>,
+    );
   };
-  const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
-  const knownNodeIds = useRef<Set<string> | null>(null);
-  const nodeIdKey = doc.nodes.map((node) => node.id).join("\0");
-  useEffect(() => {
-    const current = new Set(doc.nodes.map((node) => node.id));
-    if (knownNodeIds.current === null) {
-      knownNodeIds.current = current;
-      return;
-    }
-    const added = [...current].filter((id) => !knownNodeIds.current!.has(id));
-    knownNodeIds.current = current;
-    if (added.length === 0) return;
-    setSelectedId(added[added.length - 1]!);
-    setAttachmentId(null);
-  }, [doc.nodes, nodeIdKey]);
   const overlay: BtGraphOverlay | undefined =
     play.playing && play.liveBtState
       ? {
@@ -135,10 +119,7 @@ export function BehaviourTreeEditor({
         }
       : undefined;
   const initialGraph = useMemo(
-    () =>
-      hydrateBehaviourTreeForEditor(
-        behaviourTreeToSerialized(doc, overlay),
-      ),
+    () => hydrateBehaviourTreeForEditor(behaviourTreeToSerialized(doc, overlay)),
     [doc, overlay],
   );
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
@@ -149,7 +130,9 @@ export function BehaviourTreeEditor({
     parentClass: asset.header.parentClass,
   }));
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-  const customEntries = (kind: "BTTask" | "BTDecorator" | "BTService" | "BTComposite") =>
+  const customEntries = (
+    kind: "BTTask" | "BTDecorator" | "BTService" | "BTComposite",
+  ) =>
     assets.filter((asset) => {
       if (asset.type !== "Class") return false;
       const chain = walkAncestry(asset.parentClass ?? asset.name, parentOf);
@@ -210,20 +193,13 @@ export function BehaviourTreeEditor({
   const blackboardKeys = useMemo(() => {
     if (!blackboardAsset) return [];
     const open = (openDocuments ?? []).find(
-      (entry) => entry.ref.path === blackboardAsset.path,
+      (item) => item.ref.path === blackboardAsset.path,
     );
     const parsed = open?.content
       ? parseBlackboardDocument(open.content as Record<string, unknown>)
       : null;
     return parsed?.keys.map((key) => key.name) ?? [];
   }, [blackboardAsset, openDocuments]);
-  const attachment =
-    selected?.decorators.find((row) => row.id === attachmentId) ??
-    selected?.services.find((row) => row.id === attachmentId) ??
-    null;
-  const isDecorator = Boolean(
-    selected?.decorators.some((row) => row.id === attachmentId),
-  );
   const diagnostics = validateBehaviourTree(doc, {
     assetGuid: blackboardAsset?.header.guid ?? "tree",
     blackboardKeys: blackboardKeys.length > 0 ? blackboardKeys : undefined,
@@ -232,7 +208,249 @@ export function BehaviourTreeEditor({
     severity: row.severity,
     message: row.message,
   }));
+  const openClass = (classId: string) => {
+    const asset = (assetRegistry?.list() ?? []).find(
+      (item) =>
+        item.header.type === "Class" &&
+        (item.header.name === classId || item.header.guid === classId),
+    );
+    if (!asset) return;
+    void openDocument({
+      kind: "graph",
+      path: asset.path,
+      label: asset.header.name,
+    });
+  };
+  return {
+    doc,
+    commit,
+    play,
+    initialGraph,
+    paletteNodes,
+    decoratorCatalog,
+    serviceCatalog,
+    assets,
+    parentOf,
+    blackboardAsset,
+    blackboardKeys,
+    diagnostics,
+    openClass,
+  };
+}
 
+export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const {
+    doc,
+    commit,
+    play,
+    initialGraph,
+    paletteNodes,
+    diagnostics,
+    openClass,
+  } = useBehaviourTreeDocument();
+  const {
+    selectedId,
+    attachmentId,
+    setSelectedId,
+    setAttachmentId,
+    setAttachmentCatalog,
+  } = useBehaviourTreeEditing();
+  const knownNodeIds = useRef<Set<string> | null>(null);
+  const nodeIdKey = doc.nodes.map((node) => node.id).join("\0");
+  useEffect(() => {
+    const current = new Set(doc.nodes.map((node) => node.id));
+    if (knownNodeIds.current === null) {
+      knownNodeIds.current = current;
+      return;
+    }
+    const added = [...current].filter((id) => !knownNodeIds.current!.has(id));
+    knownNodeIds.current = current;
+    if (added.length === 0) return;
+    setSelectedId(added[added.length - 1]!);
+    setAttachmentId(null);
+  }, [doc.nodes, nodeIdKey, setAttachmentId, setSelectedId]);
+
+  const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
+
+  const nodeMenu = (nodeId: string): NestedMenuItem[] => [
+    {
+      id: "add-decorator",
+      label: "Add Decorator",
+      testId: "bt-menu-add-decorator",
+      onSelect: () => {
+        setSelectedId(nodeId);
+        setAttachmentCatalog("decorator");
+      },
+    },
+    {
+      id: "wrap",
+      label: "Wrap In Sequence",
+      testId: "bt-menu-wrap",
+      onSelect: () => commit(wrapInSequence(doc, nodeId)),
+    },
+    {
+      id: "duplicate",
+      label: "Duplicate",
+      testId: "bt-menu-duplicate",
+      disabled: nodeId === doc.rootId,
+      onSelect: () => commit(duplicateSubtree(doc, nodeId)),
+    },
+    {
+      id: "delete",
+      label: "Delete",
+      testId: "bt-menu-delete",
+      variant: "destructive",
+      disabled: nodeId === doc.rootId,
+      onSelect: () => {
+        commit(deleteSubtree(doc, nodeId));
+        if (selectedId === nodeId) setSelectedId(doc.rootId);
+      },
+    },
+  ];
+
+  const attachmentMenu = (nodeId: string, id: string): NestedMenuItem[] => [
+    {
+      id: "open-class",
+      label: "Open Class",
+      onSelect: () => {
+        const node = doc.nodes.find((item) => item.id === nodeId);
+        const row =
+          node?.decorators.find((item) => item.id === id) ??
+          node?.services.find((item) => item.id === id);
+        if (row) openClass(row.classId);
+      },
+    },
+    {
+      id: "remove",
+      label: "Remove",
+      variant: "destructive",
+      testId: "bt-menu-remove-attachment",
+      onSelect: () => {
+        commit(removeAttachment(doc, nodeId, id));
+        setAttachmentId(null);
+      },
+    },
+  ];
+
+  return (
+    <PanelFrame className="flex-1">
+      <div
+        className="flex h-full min-h-0 flex-col"
+        data-testid="behaviour-tree-editor"
+      >
+        <GraphEditor
+          initialGraph={initialGraph}
+          nodeTypes={treeNodeTypes}
+          nodesDraggable={!play.playing}
+          lockNodeDragAxis="x"
+          readOnly={play.playing}
+          paletteNodes={paletteNodes}
+          diagnostics={diagnostics}
+          focusedNodeId={play.focusedNodeId ?? undefined}
+          selectedAttachmentId={attachmentId}
+          onAttachmentSelect={(id) => {
+            setAttachmentId(id);
+            if (!id) return;
+            const owner = doc.nodes.find(
+              (node) =>
+                node.decorators.some((row) => row.id === id) ||
+                node.services.some((row) => row.id === id),
+            );
+            if (owner) setSelectedId(owner.id);
+          }}
+          onAttachmentDoubleClick={(nodeId, id) => {
+            const node = doc.nodes.find((item) => item.id === nodeId);
+            const row =
+              node?.decorators.find((item) => item.id === id) ??
+              node?.services.find((item) => item.id === id);
+            if (row) openClass(row.classId);
+          }}
+          onNodeDoubleClick={(nodeId) => {
+            const node = doc.nodes.find((item) => item.id === nodeId);
+            if (node) openClass(node.classId);
+          }}
+          onNavigateRequest={(request) => {
+            if (request.nodeId) {
+              const node = doc.nodes.find((item) => item.id === request.nodeId);
+              if (node) openClass(node.classId);
+            }
+          }}
+          contextMenuItemsForNode={nodeMenu}
+          contextMenuItemsForAttachment={attachmentMenu}
+          hiddenToolbarActions={["breakLinks", "format"]}
+          onSelectionChange={(nodeIds) => {
+            const nextId = nodeIds[0];
+            if (!nextId) return;
+            setSelectedId(nextId);
+            setAttachmentId((current) => {
+              if (!current) return null;
+              const owner = doc.nodes.find((node) => node.id === nextId);
+              if (!owner) return null;
+              const onNode =
+                owner.decorators.some((row) => row.id === current) ||
+                owner.services.some((row) => row.id === current);
+              return onNode ? current : null;
+            });
+          }}
+          toolbarExtra={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="bt-relayout"
+              onClick={() => commit({ ...doc })}
+            >
+              Re-layout
+            </Button>
+          }
+          onChange={(graph) => {
+            const positions: Record<string, { x: number; y: number }> = {};
+            for (const node of graph.nodes) {
+              positions[node.id] = node.position;
+            }
+            const restored = serializedToBehaviourTree(graph, doc);
+            const parentId =
+              selected && selected.kind !== "task" ? selected.id : doc.rootId;
+            const adopted = adoptOrphans(restored, doc, parentId);
+            commit(pruneUnreachable(reorderSiblingsByPosition(adopted, positions)));
+          }}
+        />
+      </div>
+    </PanelFrame>
+  );
+}
+
+export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const {
+    doc,
+    commit,
+    play,
+    decoratorCatalog,
+    serviceCatalog,
+    assets,
+    parentOf,
+    blackboardAsset,
+    blackboardKeys,
+  } = useBehaviourTreeDocument();
+  const {
+    selectedId,
+    attachmentId,
+    attachmentCatalog,
+    setAttachmentId,
+    setAttachmentCatalog,
+  } = useBehaviourTreeEditing();
+  const [blackboardPick, setBlackboardPick] = useState(false);
+  const catalogSearch = useCatalogSearchState();
+  const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
+  const attachment =
+    selected?.decorators.find((row) => row.id === attachmentId) ??
+    selected?.services.find((row) => row.id === attachmentId) ??
+    null;
+  const isDecorator = Boolean(
+    selected?.decorators.some((row) => row.id === attachmentId),
+  );
   const keyOptions = [
     { value: "", label: "None" },
     ...blackboardKeys.map((key) => ({ value: key, label: key })),
@@ -475,80 +693,6 @@ export function BehaviourTreeEditor({
     );
   }
 
-  const openClass = (classId: string) => {
-    const asset = (assetRegistry?.list() ?? []).find(
-      (entry) =>
-        entry.header.type === "Class" &&
-        (entry.header.name === classId || entry.header.guid === classId),
-    );
-    if (!asset) return;
-    void openDocument({
-      kind: "graph",
-      path: asset.path,
-      label: asset.header.name,
-    });
-  };
-
-  const nodeMenu = (nodeId: string): NestedMenuItem[] => [
-    {
-      id: "add-decorator",
-      label: "Add Decorator",
-      testId: "bt-menu-add-decorator",
-      onSelect: () => {
-        setSelectedId(nodeId);
-        setAttachmentCatalog("decorator");
-      },
-    },
-    {
-      id: "wrap",
-      label: "Wrap In Sequence",
-      testId: "bt-menu-wrap",
-      onSelect: () => commit(wrapInSequence(doc, nodeId)),
-    },
-    {
-      id: "duplicate",
-      label: "Duplicate",
-      testId: "bt-menu-duplicate",
-      disabled: nodeId === doc.rootId,
-      onSelect: () => commit(duplicateSubtree(doc, nodeId)),
-    },
-    {
-      id: "delete",
-      label: "Delete",
-      testId: "bt-menu-delete",
-      variant: "destructive",
-      disabled: nodeId === doc.rootId,
-      onSelect: () => {
-        commit(deleteSubtree(doc, nodeId));
-        if (selectedId === nodeId) setSelectedId(doc.rootId);
-      },
-    },
-  ];
-
-  const attachmentMenu = (nodeId: string, id: string): NestedMenuItem[] => [
-    {
-      id: "open-class",
-      label: "Open Class",
-      onSelect: () => {
-        const node = doc.nodes.find((entry) => entry.id === nodeId);
-        const row =
-          node?.decorators.find((entry) => entry.id === id) ??
-          node?.services.find((entry) => entry.id === id);
-        if (row) openClass(row.classId);
-      },
-    },
-    {
-      id: "remove",
-      label: "Remove",
-      variant: "destructive",
-      testId: "bt-menu-remove-attachment",
-      onSelect: () => {
-        commit(removeAttachment(doc, nodeId, id));
-        setAttachmentId(null);
-      },
-    },
-  ];
-
   const blackboardWatch = play.liveBtState?.blackboard ?? null;
   const catalogEntries =
     attachmentCatalog === "service" ? serviceCatalog : decoratorCatalog;
@@ -559,175 +703,94 @@ export function BehaviourTreeEditor({
   });
 
   return (
-    <div className="flex min-h-0 flex-1" data-testid="behaviour-tree-editor">
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <GraphEditor
-          initialGraph={initialGraph}
-          nodeTypes={treeNodeTypes}
-          nodesDraggable={!play.playing}
-          lockNodeDragAxis="x"
-          readOnly={play.playing}
-          paletteNodes={paletteNodes}
-          diagnostics={diagnostics}
-          focusedNodeId={play.focusedNodeId ?? undefined}
-          selectedAttachmentId={attachmentId}
-          onAttachmentSelect={(id) => {
-            setAttachmentId(id);
-            if (!id) return;
-            const owner = doc.nodes.find(
-              (node) =>
-                node.decorators.some((row) => row.id === id) ||
-                node.services.some((row) => row.id === id),
-            );
-            if (owner) setSelectedId(owner.id);
-          }}
-          onAttachmentDoubleClick={(nodeId, id) => {
-            const node = doc.nodes.find((entry) => entry.id === nodeId);
-            const row =
-              node?.decorators.find((entry) => entry.id === id) ??
-              node?.services.find((entry) => entry.id === id);
-            if (row) openClass(row.classId);
-          }}
-          onNodeDoubleClick={(nodeId) => {
-            const node = doc.nodes.find((entry) => entry.id === nodeId);
-            if (node) openClass(node.classId);
-          }}
-          onNavigateRequest={(request) => {
-            if (request.nodeId) {
-              const node = doc.nodes.find((entry) => entry.id === request.nodeId);
-              if (node) openClass(node.classId);
+    <PanelFrame>
+      <div data-testid="bt-details" className="flex flex-col gap-2 p-2">
+        <PropertyGrid rows={rows} />
+        {selected && attachment && "observedKeys" in attachment ? (
+          <NamedListEditor
+            title="Observed Keys"
+            values={attachment.observedKeys}
+            addLabel="Add Key"
+            data-testid="bt-observed-keys"
+            onChange={(observedKeys) =>
+              commit(
+                patchNode(doc, selected.id, {
+                  decorators: selected.decorators.map((row) =>
+                    row.id === attachment.id ? { ...row, observedKeys } : row,
+                  ),
+                }),
+              )
             }
-          }}
-          contextMenuItemsForNode={nodeMenu}
-          contextMenuItemsForAttachment={attachmentMenu}
-          hiddenToolbarActions={["breakLinks", "format"]}
-          onSelectionChange={(nodeIds) => {
-            const nextId = nodeIds[0];
-            if (!nextId) return;
-            setSelectedId(nextId);
-            setAttachmentId((current) => {
-              if (!current) return null;
-              const owner = doc.nodes.find((node) => node.id === nextId);
-              if (!owner) return null;
-              const onNode =
-                owner.decorators.some((row) => row.id === current) ||
-                owner.services.some((row) => row.id === current);
-              return onNode ? current : null;
-            });
-          }}
-          toolbarExtra={
+          />
+        ) : null}
+        {selected ? (
+          <div className="flex flex-col gap-1">
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              data-testid="bt-relayout"
-              onClick={() => commit({ ...doc })}
+              className="min-h-11"
+              data-testid="bt-add-decorator"
+              onClick={() => setAttachmentCatalog("decorator")}
             >
-              Re-layout
+              Add Decorator
             </Button>
-          }
-          onChange={(graph) => {
-            const positions: Record<string, { x: number; y: number }> = {};
-            for (const node of graph.nodes) {
-              positions[node.id] = node.position;
-            }
-            const restored = serializedToBehaviourTree(graph, doc);
-            const parentId =
-              selected && selected.kind !== "task" ? selected.id : doc.rootId;
-            const adopted = adoptOrphans(restored, doc, parentId);
-            commit(pruneUnreachable(reorderSiblingsByPosition(adopted, positions)));
-          }}
-        />
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              data-testid="bt-add-service"
+              onClick={() => setAttachmentCatalog("service")}
+            >
+              Add Service
+            </Button>
+            {attachment ? (
+              <div className="flex flex-wrap gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  data-testid="bt-attachment-up"
+                  onClick={() => commit(moveAttachment(doc, selected.id, attachment.id, -1))}
+                >
+                  Move Up
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  data-testid="bt-attachment-down"
+                  onClick={() => commit(moveAttachment(doc, selected.id, attachment.id, 1))}
+                >
+                  Move Down
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  data-testid="bt-remove-attachment"
+                  onClick={() => {
+                    commit(removeAttachment(doc, selected.id, attachment.id));
+                    setAttachmentId(null);
+                  }}
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Select a node</p>
+        )}
+        {blackboardWatch ? (
+          <div data-testid="bt-blackboard-watch" className="text-xs">
+            {Object.entries(blackboardWatch).map(([key, value]) => (
+              <div key={key}>
+                {key}: {String(value)}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
-      <PanelFrame className="w-72 shrink-0 border-l border-border" title="Details">
-        <div data-testid="bt-details" className="flex flex-col gap-2 p-2">
-          <PropertyGrid rows={rows} />
-          {selected && attachment && "observedKeys" in attachment ? (
-            <NamedListEditor
-              title="Observed Keys"
-              values={attachment.observedKeys}
-              addLabel="Add Key"
-              data-testid="bt-observed-keys"
-              onChange={(observedKeys) =>
-                commit(
-                  patchNode(doc, selected.id, {
-                    decorators: selected.decorators.map((row) =>
-                      row.id === attachment.id ? { ...row, observedKeys } : row,
-                    ),
-                  }),
-                )
-              }
-            />
-          ) : null}
-          {selected ? (
-            <div className="flex flex-col gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-11"
-                data-testid="bt-add-decorator"
-                onClick={() => setAttachmentCatalog("decorator")}
-              >
-                Add Decorator
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-11"
-                data-testid="bt-add-service"
-                onClick={() => setAttachmentCatalog("service")}
-              >
-                Add Service
-              </Button>
-              {attachment ? (
-                <div className="flex flex-wrap gap-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="min-h-11"
-                    data-testid="bt-attachment-up"
-                    onClick={() => commit(moveAttachment(doc, selected.id, attachment.id, -1))}
-                  >
-                    Move Up
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="min-h-11"
-                    data-testid="bt-attachment-down"
-                    onClick={() => commit(moveAttachment(doc, selected.id, attachment.id, 1))}
-                  >
-                    Move Down
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="min-h-11"
-                    data-testid="bt-remove-attachment"
-                    onClick={() => {
-                      commit(removeAttachment(doc, selected.id, attachment.id));
-                      setAttachmentId(null);
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Select a node</p>
-          )}
-          {blackboardWatch ? (
-            <div data-testid="bt-blackboard-watch" className="text-xs">
-              {Object.entries(blackboardWatch).map(([key, value]) => (
-                <div key={key}>
-                  {key}: {String(value)}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </PanelFrame>
       <AssetPicker
         open={blackboardPick}
         onOpenChange={setBlackboardPick}
@@ -780,7 +843,7 @@ export function BehaviourTreeEditor({
           ))}
         </div>
       </CatalogDialog>
-    </div>
+    </PanelFrame>
   );
 }
 

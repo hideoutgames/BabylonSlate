@@ -216,6 +216,8 @@ describe("listDockWindows", () => {
       "tilemap",
       "ui",
       "plugin-settings",
+      "anim-graph",
+      "behaviour-tree",
     ] as const) {
       expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
         false,
@@ -295,6 +297,43 @@ describe("material dock catalog", () => {
         (entry) => entry.id === "locks",
       )?.defaultPosition?.referencePanelId,
     ).toBe("material-graph");
+  });
+});
+
+describe("animation graph and behaviour tree dock catalogs", () => {
+  it("lists Parameters, Graph, and Details for an Animation Graph", () => {
+    const windows = listDockWindows("anim-graph");
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "anim-graph-graph",
+      "anim-graph-parameters",
+      "anim-graph-details",
+    ]);
+    expect(windows.map((entry) => entry.title)).toEqual([
+      "Graph",
+      "Parameters",
+      "Details",
+    ]);
+  });
+
+  it("anchors Animation Graph side docks to the graph", () => {
+    for (const entry of listDockWindows("anim-graph")) {
+      if (!entry.defaultPosition) continue;
+      expect(entry.defaultPosition.referencePanelId).toBe("anim-graph-graph");
+    }
+  });
+
+  it("lists Graph and Details for a Behaviour Tree", () => {
+    const windows = listDockWindows("behaviour-tree");
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "behaviour-tree-graph",
+      "behaviour-tree-details",
+    ]);
+    expect(windows.map((entry) => entry.title)).toEqual(["Graph", "Details"]);
+  });
+
+  it("focuses the graph as the primary panel", () => {
+    expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
+    expect(primaryDockPanel("behaviour-tree")).toBe("behaviour-tree-graph");
   });
 });
 

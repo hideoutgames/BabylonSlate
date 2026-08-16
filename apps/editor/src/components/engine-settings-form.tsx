@@ -76,6 +76,12 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "User Interface Logic",
     options: { uiEditorMode: "logic" },
   },
+  { kind: "anim-graph", keepKey: "anim-graph", label: "Animation Graph" },
+  {
+    kind: "behaviour-tree",
+    keepKey: "behaviour-tree",
+    label: "Behaviour Tree",
+  },
 ];
 
 export type EngineSettingsCategoryId =

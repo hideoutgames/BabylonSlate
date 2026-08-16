@@ -155,6 +155,8 @@ describe("EngineSettingsForm focus", () => {
     expect(getByTestId("focus-keep-script-interface-script-interface-preview")).toBeTruthy();
     expect(getByTestId("focus-keep-ui-ui-design")).toBeTruthy();
     expect(getByTestId("focus-keep-uiLogic-graph")).toBeTruthy();
+    expect(getByTestId("focus-keep-anim-graph-anim-graph-graph")).toBeTruthy();
+    expect(getByTestId("focus-keep-behaviour-tree-behaviour-tree-graph")).toBeTruthy();
   });
 
   it("adds a class tab from the keep dropdown", () => {

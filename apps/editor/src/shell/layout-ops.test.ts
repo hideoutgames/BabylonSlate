@@ -43,6 +43,8 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("script-interface")).toBe(true);
     expect(canFocusLayout("enum")).toBe(true);
     expect(canFocusLayout("sprite")).toBe(true);
+    expect(canFocusLayout("anim-graph")).toBe(true);
+    expect(canFocusLayout("behaviour-tree")).toBe(true);
   });
 
   it("is disabled on Content Browser and compact asset tabs", () => {
@@ -145,8 +147,16 @@ describe("resolveFocusKeepPanelIds", () => {
       resolveFocusKeepPanelIds("ui", [], { uiEditorMode: "logic" }),
     ).toEqual(["graph"]);
     expect(FOCUS_PRIMARY_PANEL.ui).toBe("ui-design");
+    expect(FOCUS_PRIMARY_PANEL["anim-graph"]).toBe("anim-graph-graph");
+    expect(FOCUS_PRIMARY_PANEL["behaviour-tree"]).toBe("behaviour-tree-graph");
     expect(resolveFocusKeepPanelIds("plugin-settings", [])).toEqual([
       "plugin-settings-details",
+    ]);
+    expect(resolveFocusKeepPanelIds("anim-graph", [])).toEqual([
+      "anim-graph-graph",
+    ]);
+    expect(resolveFocusKeepPanelIds("behaviour-tree", [])).toEqual([
+      "behaviour-tree-graph",
     ]);
   });
 

@@ -71,6 +71,8 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   "material-function": primaryDockPanel("material-function"),
   ui: primaryDockPanel("ui"),
   "plugin-settings": primaryDockPanel("plugin-settings"),
+  "anim-graph": primaryDockPanel("anim-graph"),
+  "behaviour-tree": primaryDockPanel("behaviour-tree"),
 };
 
 /**
