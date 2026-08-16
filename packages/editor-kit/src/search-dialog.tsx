@@ -9,6 +9,7 @@ import {
 } from "@babylonslate/ui/components/dialog";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { SearchInput } from "./search-input";
+import { PickerIdentity } from "./picker-identity";
 
 export interface SearchDialogItem {
   id: string;
@@ -102,17 +103,11 @@ export function SearchDialog({
                   }}
                   data-testid={`search-item-${item.id}`}
                 >
-                  <span className="flex min-w-0 items-center gap-2">
-                    {item.leading}
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate">{item.label}</span>
-                      {item.description ? (
-                        <span className="truncate text-xs text-muted-foreground">
-                          {item.description}
-                        </span>
-                      ) : null}
-                    </span>
-                  </span>
+                  <PickerIdentity
+                    label={item.label}
+                    description={item.description}
+                    leading={item.leading}
+                  />
                   {item.trailing}
                 </Button>
               ))}

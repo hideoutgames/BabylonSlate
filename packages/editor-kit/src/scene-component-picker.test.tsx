@@ -49,7 +49,10 @@ describe("SceneComponentPicker", () => {
       "Hero",
     );
     expect(screen.getByTestId("search-item-hero:hero-cam").textContent).toContain(
-      "Camera",
+      "CameraComponent",
+    );
+    expect(screen.getByTestId("search-item-hero:hero-cam").textContent).not.toContain(
+      "Engine",
     );
     screen.getByTestId("search-item-__none__").click();
     expect(onPick).toHaveBeenCalledWith(null);

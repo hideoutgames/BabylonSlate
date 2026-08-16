@@ -83,6 +83,59 @@ describe("exportGame", () => {
     expect(result.value.manifest.bundleDebugger).toBe(true);
   });
 
+  it("omits infinite loop fields from a release manifest", async () => {
+    const result = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+      infiniteLoopDetection: true,
+      loopCount: 50,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.infiniteLoopDetection).toBeUndefined();
+    expect(result.value.manifest.loopCount).toBeUndefined();
+    const json = JSON.parse(
+      new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)),
+    ) as Record<string, unknown>;
+    expect(json).not.toHaveProperty("infiniteLoopDetection");
+    expect(json).not.toHaveProperty("loopCount");
+  });
+
+  it("records infinite loop settings when the debugger is bundled", async () => {
+    const result = await exportGame({
+      bundleDebugger: true,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+      infiniteLoopDetection: false,
+      loopCount: 50,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.infiniteLoopDetection).toBe(false);
+    expect(result.value.manifest.loopCount).toBe(50);
+  });
+
   it("groups reached scenes into separate packs", async () => {
     const result = await exportGame({
       bundleDebugger: false,
@@ -393,6 +446,26 @@ describe("exportGame", () => {
     );
     expect(manifest.pixelsPerUnit).toBe(100);
     expect(manifest.pixelPerfect).toBe(false);
+    expect(manifest.infiniteLoopDetection).toBeUndefined();
+    expect(manifest.loopCount).toBeUndefined();
+  });
+
+  it("defaults bundled debugger loop settings when game.json omits them", () => {
+    const manifest = parseGameManifest(
+      JSON.stringify({
+        startupSceneGuid: "scene-1",
+        bundleDebugger: true,
+        mode: "packed",
+        render: DEFAULT_RENDER_PROJECT_SETTINGS,
+        playFrameCap: 60,
+        packs: [],
+        scriptsFile: "scripts.js",
+        physicsWorld: "3d",
+        assets: [],
+      }),
+    );
+    expect(manifest.infiniteLoopDetection).toBe(true);
+    expect(manifest.loopCount).toBe(1_000_000);
   });
 
   it("records Font names on loose-mode index entries", async () => {

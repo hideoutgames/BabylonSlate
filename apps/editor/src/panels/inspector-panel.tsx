@@ -10,7 +10,10 @@ import {
   PinTypePicker,
   PropertyGrid,
   TypeVisualIcon,
+  assetRowIdentity,
+  classRowIdentity,
   resolveTypeVisual,
+  selectedPickerIdentity,
   type ClassPickerEntry,
   type PinListRow,
   type PropertyRow,
@@ -135,6 +138,11 @@ function ClassMemberDetails({
     const typeId = member.typeId ?? "float";
     const isObject = typeId === "object";
     const isClass = typeId === "class";
+    const typeClassId = member.typeClassId?.trim() || "BObject";
+    const defaultClassId =
+      typeof member.defaultValue === "string" && member.defaultValue.trim()
+        ? member.defaultValue.trim()
+        : typeClassId;
     return (
       <div
         className="flex flex-col gap-3 p-3"
@@ -185,10 +193,16 @@ function ClassMemberDetails({
             <Button
               type="button"
               variant="outline"
+              className="h-auto w-full justify-start"
               data-testid="inspector-member-class-type"
               onClick={() => setClassPickKind("type")}
             >
-              {member.typeClassId?.trim() || "BObject"}
+              {selectedPickerIdentity(
+                classRowIdentity(
+                  classEntries.find((entry) => entry.id === typeClassId),
+                  typeClassId,
+                ),
+              )}
             </Button>
           </div>
         ) : null}
@@ -198,12 +212,16 @@ function ClassMemberDetails({
             <Button
               type="button"
               variant="outline"
+              className="h-auto w-full justify-start"
               data-testid="inspector-member-class-default"
               onClick={() => setClassPickKind("default")}
             >
-              {typeof member.defaultValue === "string" && member.defaultValue.trim()
-                ? member.defaultValue.trim()
-                : member.typeClassId?.trim() || "BObject"}
+              {selectedPickerIdentity(
+                classRowIdentity(
+                  classEntries.find((entry) => entry.id === defaultClassId),
+                  defaultClassId,
+                ),
+              )}
             </Button>
           </div>
         ) : null}
@@ -304,10 +322,16 @@ function ClassMemberDetails({
         <Button
           type="button"
           variant="outline"
+          className="h-auto w-full justify-start"
           data-testid="inspector-member-interface-pick"
           onClick={() => setInterfacePickerOpen(true)}
         >
-          {picked || "Pick Script Interface"}
+          {selectedPickerIdentity(
+            assetRowIdentity(
+              interfaceAssets.find((asset) => asset.guid === member.assetGuid),
+            ),
+            picked || "Pick Script Interface",
+          )}
         </Button>
         <AssetPicker
           open={interfacePickerOpen}
@@ -393,6 +417,7 @@ function PrefabComponentDetails({
   viewportMode,
   pickerAssets,
   assetLabel,
+  assetType,
   onUpdate,
   onUpdateTransform,
 }: {
@@ -407,6 +432,7 @@ function PrefabComponentDetails({
     path?: string;
   }>;
   assetLabel: (guid: string | null | undefined) => string | undefined;
+  assetType: (guid: string | null | undefined) => string | undefined;
   onUpdate: (property: string, value: unknown) => void;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
@@ -439,6 +465,7 @@ function PrefabComponentDetails({
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
             sortingLayers,
             assetLabel,
+            assetType,
             physicsWorld,
             onPickAsset: setAssetPick,
           })}
@@ -568,6 +595,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       pickerAssets.find((asset) => asset.guid === guid)?.name
     );
   };
+  const assetType = (guid: string | null | undefined) => {
+    if (!guid) return undefined;
+    return (
+      assetRegistry?.getByGuid?.(guid)?.header.type ??
+      pickerAssets.find((asset) => asset.guid === guid)?.type
+    );
+  };
 
   const selectedPrefabComponent =
     prefabSelectedId && prefabSelectedId !== PREFAB_ROOT_ID
@@ -584,6 +618,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           viewportMode={viewportMode}
           pickerAssets={pickerAssets}
           assetLabel={assetLabel}
+          assetType={assetType}
           onUpdate={(property, value) =>
             updateComponent(selectedPrefabComponent.id, property, value)
           }

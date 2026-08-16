@@ -143,4 +143,48 @@ describe("AssetPicker", () => {
     screen.getByTestId("search-item-g1").click();
     expect(onPick).toHaveBeenCalledWith("g1");
   });
+
+  it("shows icon, asset name, and asset type instead of the path", () => {
+    render(
+      <AssetPicker
+        open
+        onOpenChange={() => {}}
+        assets={[
+          {
+            guid: "g1",
+            name: "main.scene",
+            type: "Scene",
+            path: "assets/main.scene.babasset",
+          },
+        ]}
+        allowNone={false}
+        onPick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId("search-item-g1");
+    expect(row.textContent).toContain("main");
+    expect(row.textContent).not.toContain("main.scene");
+    expect(row.textContent).toContain("Scene");
+    expect(row.textContent).not.toContain("assets/main.scene.babasset");
+    expect(row.querySelector("[data-type-family]")?.getAttribute("data-type-family")).toBe(
+      "scene",
+    );
+  });
+
+  it("still matches a search query against the asset path", () => {
+    render(
+      <AssetPicker
+        open
+        onOpenChange={() => {}}
+        assets={assets}
+        allowNone={false}
+        onPick={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("asset-picker-query"), {
+      target: { value: "assets/rock" },
+    });
+    expect(screen.getByTestId("search-item-g1")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-g2")).toBeNull();
+  });
 });

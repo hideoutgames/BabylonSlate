@@ -56,6 +56,10 @@ export type GameManifest = {
   scriptsFile: string;
   physicsWorld: "2d" | "3d";
   assets: GameAssetIndexEntry[];
+  /** Present only when `bundleDebugger` is true. */
+  infiniteLoopDetection?: boolean;
+  /** Present only when `bundleDebugger` is true. */
+  loopCount?: number;
 };
 
 export type ExportGameOptions = {
@@ -67,6 +71,8 @@ export type ExportGameOptions = {
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
   physicsWorld?: "2d" | "3d";
+  infiniteLoopDetection?: boolean;
+  loopCount?: number;
   scripts: readonly ScriptBundleEntry[];
   assets: readonly ExportAssetBytes[];
   playerFiles?: ReadonlyMap<string, Uint8Array>;

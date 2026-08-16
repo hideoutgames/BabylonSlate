@@ -70,6 +70,13 @@ describe("PinListEditor", () => {
     );
     expect(screen.getByTestId("pin-a-class-type")).toBeTruthy();
     expect(screen.getByTestId("pin-a-class-type").textContent).toContain("Hero");
+    expect(screen.getByTestId("pin-a-class-type").textContent).toContain("Class");
+    expect(
+      screen
+        .getByTestId("pin-a-class-type")
+        .querySelector("[data-type-family]")
+        ?.getAttribute("data-type-family"),
+    ).toBe("class");
     screen.getByTestId("pin-a-class-type").click();
     await waitFor(() => {
       expect(screen.getByTestId("search-item-Actor")).toBeTruthy();

@@ -7,6 +7,8 @@ import {
   PropertyGrid,
   SelectableText,
   ToolbarStrip,
+  assetRowIdentity,
+  selectedPickerIdentity,
   type PinListRow,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
@@ -315,12 +317,23 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
             <Button
               type="button"
               variant="outline"
-              className="min-h-[var(--touch-target,44px)] w-full justify-start"
+              className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
               onClick={() => setMeshPickOpen(true)}
               data-testid="material-preview-custom-mesh"
             >
-              {assetRegistry?.getByGuid(document.preview.customMeshGuid ?? "")
-                ?.header.name ?? "Pick Mesh"}
+              {selectedPickerIdentity(
+                assetRowIdentity(
+                  (() => {
+                    const asset = assetRegistry?.getByGuid(
+                      document.preview.customMeshGuid ?? "",
+                    );
+                    return asset
+                      ? { name: asset.header.name, type: asset.header.type }
+                      : undefined;
+                  })(),
+                ),
+                "Pick Mesh",
+              )}
             </Button>
           </div>
         ) : null}
@@ -599,15 +612,25 @@ function MaterialNodeDetails({
           <Button
             type="button"
             variant="outline"
-            className="min-h-[var(--touch-target,44px)] w-full justify-start"
+            className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
             onClick={() => setPickOpen(true)}
             data-testid="material-node-texture"
           >
-            {assetRegistry?.getByGuid(
-              typeof node.properties.textureGuid === "string"
-                ? node.properties.textureGuid
-                : "",
-            )?.header.name ?? "Pick Texture"}
+            {selectedPickerIdentity(
+              assetRowIdentity(
+                (() => {
+                  const guid =
+                    typeof node.properties.textureGuid === "string"
+                      ? node.properties.textureGuid
+                      : "";
+                  const asset = assetRegistry?.getByGuid(guid);
+                  return asset
+                    ? { name: asset.header.name, type: asset.header.type }
+                    : undefined;
+                })(),
+              ),
+              "Pick Texture",
+            )}
           </Button>
           <AssetPicker
             open={pickOpen}
@@ -660,11 +683,21 @@ function MaterialFunctionPicker({
       <Button
         type="button"
         variant="outline"
-        className="min-h-[var(--touch-target,44px)] w-full justify-start"
+        className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
         onClick={() => setOpen(true)}
         data-testid="material-node-function"
       >
-        {assetRegistry?.getByGuid(guid)?.header.name ?? "Pick Material Function"}
+        {selectedPickerIdentity(
+          assetRowIdentity(
+            (() => {
+              const asset = assetRegistry?.getByGuid(guid);
+              return asset
+                ? { name: asset.header.name, type: asset.header.type }
+                : undefined;
+            })(),
+          ),
+          "Pick Material Function",
+        )}
       </Button>
       <AssetPicker
         open={open}

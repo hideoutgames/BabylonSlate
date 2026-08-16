@@ -42,6 +42,7 @@ import {
   NamedListEditor,
   PanelFrame,
   PropertyGrid,
+  assetRowIdentity,
   useCatalogSearchState,
   walkAncestry,
   type NestedMenuItem,
@@ -518,9 +519,13 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
       label: "Blackboard",
       value: doc.blackboardGuid,
       placeholder: "None",
-      displayLabel: blackboardAsset?.header.name,
       onPick: () => setBlackboardPick(true),
       onChange: (value) => commit({ ...doc, blackboardGuid: value }),
+      ...assetRowIdentity(
+        blackboardAsset
+          ? { name: blackboardAsset.header.name, type: blackboardAsset.header.type }
+          : undefined,
+      ),
     },
   ];
   if (selected && !attachment) {

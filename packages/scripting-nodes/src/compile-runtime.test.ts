@@ -357,4 +357,38 @@ describe("compiler emits runnable JavaScript", () => {
     const lines = compiled.source.split("\n");
     expect(lines[throwAnchor!.line - 1]).toContain("throw new Error");
   });
+
+  it("instruments ExecuteJavaScript while loops only when asked", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(
+          registry,
+          "js",
+          "debug.executeJavaScript",
+          jsProps("while (true) {\n  out += 1;\n}", "out"),
+        ),
+      ],
+      edges: [edge("e1", "entry", "execOut", "js", "execIn")],
+    };
+    const plain = compileGraph(graph, { assetGuid: "a", registry });
+    expect(plain.source).toContain("while (true)");
+    expect(plain.source).not.toContain("checkInfiniteLoop");
+
+    const instrumented = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      instrumentInfiniteLoops: true,
+    });
+    const whileAt = instrumented.source.indexOf("while (true)");
+    expect(whileAt).toBeGreaterThanOrEqual(0);
+    expect(
+      instrumented.source.indexOf("ctx.checkInfiniteLoop();", whileAt),
+    ).toBeGreaterThan(whileAt);
+    expect(instrumented.source).toContain("function execJs_js(ctx");
+    expect(instrumented.source).toMatch(/execJs_js\(ctx/);
+  });
 });

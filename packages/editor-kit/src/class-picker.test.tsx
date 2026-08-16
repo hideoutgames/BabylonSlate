@@ -42,4 +42,30 @@ describe("ClassPicker", () => {
     screen.getByTestId("search-item-MyGame").click();
     expect(onPick).toHaveBeenCalledWith("MyGame");
   });
+
+  it("shows Class as the type line instead of Engine or Project", () => {
+    render(
+      <ClassPicker
+        open
+        onOpenChange={() => {}}
+        classes={[
+          { id: "main", name: "main.class", group: "Project" },
+          { id: "Actor", name: "Actor", group: "Engine" },
+        ]}
+        allowNone={false}
+        onPick={() => {}}
+      />,
+    );
+    const projectRow = screen.getByTestId("search-item-main");
+    expect(projectRow.textContent).toContain("main");
+    expect(projectRow.textContent).not.toContain("main.class");
+    expect(projectRow.textContent).toContain("Class");
+    expect(projectRow.textContent).not.toContain("Project");
+    const engineRow = screen.getByTestId("search-item-Actor");
+    expect(engineRow.textContent).toContain("Class");
+    expect(engineRow.textContent).not.toContain("Engine");
+    expect(projectRow.querySelector("[data-type-family]")?.getAttribute("data-type-family")).toBe(
+      "class",
+    );
+  });
 });
