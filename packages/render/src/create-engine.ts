@@ -42,6 +42,7 @@ import { HardwareScalingController } from "./hardware-scaling";
 import { SnapshotInterpolator } from "./snapshot-sync";
 import {
   applySnapshotToScene,
+  applyAssignMaterial,
   applyAssignMesh,
   applyPossessCamera,
   applyShadowQuality,
@@ -599,6 +600,10 @@ export function createEngine(
       if (command.type === "assignMesh") {
         applyAssignMesh(scene, binding, command);
         scheduler.invalidate("snapshot");
+      }
+      if (command.type === "assignMaterial") {
+        applyAssignMaterial(scene, binding, command);
+        scheduler.invalidate("asset");
       }
       if (command.type === "possessCamera") {
         applyPossessCamera(scene, binding, command.slotId);

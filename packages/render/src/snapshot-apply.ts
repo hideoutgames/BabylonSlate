@@ -8,8 +8,10 @@ import {
   SpotLight,
   UniversalCamera,
   Vector3,
+  type AbstractMesh,
   type Camera,
   type Light,
+  type Material,
   type ShadowGenerator,
 } from "@babylonjs/core";
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
@@ -67,6 +69,12 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   shadow: ShadowGenerator | null;
   shadowOwnerSlot: number | null;
   shadowQuality: string;
+  /** Material asset guid per slot (whole actor), keyed by slotId. */
+  materialAssetGuids: Map<number, string | null>;
+  /** Material asset guid per component, keyed by `slotId|componentId`. */
+  componentMaterialGuids: Map<string, string | null>;
+  /** Resolves an assigned Material guid to a scene-local compiled material. */
+  resolveMaterial?: (assetGuid: string) => Material | null;
 }
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
@@ -85,7 +93,71 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     shadow: null,
     shadowOwnerSlot: null,
     shadowQuality: "1024",
+    materialAssetGuids: new Map(),
+    componentMaterialGuids: new Map(),
   };
+}
+
+/**
+ * Apply an assigned Material to a spawned actor.
+ *
+ * Multipart actors keep one mesh per visual component, so a whole-actor
+ * assignment walks the descendants while a component assignment targets the
+ * one named mesh.
+ */
+export function applyAssignMaterial(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+  command: Extract<CommandMessage, { type: "assignMaterial" }>,
+): void {
+  void scene;
+  const componentId = command.componentId ?? null;
+  if (componentId) {
+    binding.componentMaterialGuids.set(
+      `${command.slotId}|${componentId}`,
+      command.materialAssetGuid,
+    );
+  } else {
+    binding.materialAssetGuids.set(command.slotId, command.materialAssetGuid);
+  }
+  const root = binding.meshes.get(command.slotId);
+  if (!root) return;
+  applyMaterialToActorMeshes(binding, command.slotId, root);
+}
+
+/** Re-apply the recorded assignment after a mesh is created or rebuilt. */
+export function applyMaterialToActorMeshes(
+  binding: SnapshotSceneBinding,
+  slotId: number,
+  root: Mesh,
+): void {
+  const actorGuid = binding.materialAssetGuids.get(slotId) ?? null;
+  const targets: Mesh[] = [root, ...root.getChildMeshes().filter(isMesh)];
+  for (const target of targets) {
+    const componentId = componentIdOfPlayMesh(target.name, slotId);
+    const componentGuid = componentId
+      ? (binding.componentMaterialGuids.get(`${slotId}|${componentId}`) ?? null)
+      : null;
+    const guid = componentGuid ?? actorGuid;
+    if (!guid) continue;
+    const material = binding.resolveMaterial?.(guid) ?? null;
+    if (material) target.material = material;
+  }
+}
+
+function isMesh(value: AbstractMesh): value is Mesh {
+  return value instanceof Mesh;
+}
+
+/** `actor-<slot>|<componentId>` identifies one visual component's mesh. */
+function componentIdOfPlayMesh(
+  meshName: string,
+  slotId: number,
+): string | null {
+  const prefix = `actor-${slotId}|`;
+  if (!meshName.startsWith(prefix)) return null;
+  const rest = meshName.slice(prefix.length);
+  return rest.includes(":") ? rest.slice(0, rest.indexOf(":")) : rest;
 }
 
 export function playComponentMeshName(
@@ -206,10 +278,10 @@ export function applyAssignMesh(
   const existing = binding.meshes.get(command.slotId);
   if (!existing) return;
   disposeSlotVisuals(scene, binding, command.slotId);
-  binding.meshes.set(
-    command.slotId,
-    createPlayVisual(scene, command.slotId, binding),
-  );
+  const rebuilt = createPlayVisual(scene, command.slotId, binding);
+  binding.meshes.set(command.slotId, rebuilt);
+  // A rebuilt mesh loses its material, so re-apply the recorded assignment.
+  applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   refreshPlayActiveCamera(scene, binding);
 }
 
@@ -406,6 +478,7 @@ export function applySnapshotToScene(
       if (!mesh) {
         mesh = createPlayVisual(scene, actor.slotId, binding);
         binding.meshes.set(actor.slotId, mesh);
+        applyMaterialToActorMeshes(binding, actor.slotId, mesh);
       }
       writeActorTransform(mesh, actor);
       const origin = Boolean(
@@ -441,6 +514,12 @@ export function applySnapshotToScene(
         binding.meshKinds.delete(slotId);
         binding.meshAssetGuids.delete(slotId);
         binding.meshParts.delete(slotId);
+        binding.materialAssetGuids.delete(slotId);
+        for (const key of [...binding.componentMaterialGuids.keys()]) {
+          if (key.startsWith(`${slotId}|`)) {
+            binding.componentMaterialGuids.delete(key);
+          }
+        }
         binding.lightProps.delete(slotId);
         binding.cameraProps.delete(slotId);
         binding.lights.get(slotId)?.dispose();

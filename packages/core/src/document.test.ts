@@ -19,7 +19,35 @@ import {
 } from "./document";
 
 describe("P9 document kinds", () => {
-  it("maps UserInterface / Sprite / AnimationGraph / Shader kinds", () => {
+  it("opens legacy Shader assets and imported Material assets as Material documents", () => {
+    expect(documentKindForAssetType("Material")).toBe("material");
+    expect(documentKindForAssetType("Shader")).toBe("material");
+    expect(documentKindForAssetType("ShaderGraph")).toBe("material");
+    expect(documentKindForAssetType("MaterialFunction")).toBe(
+      "material-function",
+    );
+  });
+
+  it("saves a Material document under the canonical header type", () => {
+    expect(assetTypeForDocumentKind("material")).toBe("Material");
+    expect(assetTypeForDocumentSave("material", "Shader")).toBe("Material");
+    expect(assetTypeForDocumentKind("material-function")).toBe(
+      "MaterialFunction",
+    );
+  });
+
+  it("labels material documents in Title Case", () => {
+    expect(documentKindLabel("material")).toBe("Material");
+    expect(documentKindLabel("material-function")).toBe("Material Function");
+  });
+
+  it("strips material file suffixes from tab labels", () => {
+    expect(labelFromPath("assets/Rock.material.babasset")).toBe("Rock");
+    expect(labelFromPath("assets/Tint.matfunc.babasset")).toBe("Tint");
+    expect(labelFromPath("assets/Legacy.shader.babasset")).toBe("Legacy");
+  });
+
+  it("maps UserInterface / Sprite / AnimationGraph kinds", () => {
     expect(documentKindForAssetType("UserInterface")).toBe("ui");
     expect(documentKindForAssetType("EditorUtilityInterface")).toBe("ui");
     expect(assetTypeForDocumentKind("ui")).toBe("UserInterface");
@@ -84,7 +112,7 @@ describe("Class and settings documents", () => {
   });
 
   it("opens import assets as settings tabs", () => {
-    for (const type of ["Texture", "Material", "Model", "Audio", "Animation"]) {
+    for (const type of ["Texture", "Model", "Audio", "Animation"]) {
       expect(documentKindForAssetType(type)).toBe("asset-settings");
     }
     expect(assetTypeForDocumentKind("asset-settings")).toBe("Texture");

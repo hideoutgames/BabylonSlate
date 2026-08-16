@@ -13,6 +13,11 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
+import {
+  materialDependencies,
+  normalizeMaterialDocument,
+  normalizeMaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import type { UserInterfaceDocument, WidgetNode } from "@babylonslate/ui-runtime";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import {
@@ -446,6 +451,61 @@ export function textureGuidsFromPlayPayloads(
     for (const tileset of tilesets.values()) add(tileset.textureGuid);
   }
   return guids;
+}
+
+/** Material asset guids referenced by scene MeshComponents. */
+export function materialAssetGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "MeshComponent", ["materialGuid"]);
+}
+
+/** Post-process Material guids authored on the scene, in order. */
+export function postProcessMaterialGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return (scene?.settings.postProcessStack ?? [])
+    .filter((entry) => entry.enabled)
+    .map((entry) => entry.materialGuid);
+}
+
+/**
+ * Materials plus every Material Function they call, transitively.
+ * Play and export both need the closure, not just the directly referenced set.
+ */
+export function materialClosureFromGuids(
+  guids: readonly string[],
+  documentForGuid: (guid: string) => unknown | null,
+): { materials: string[]; functions: string[]; textures: string[] } {
+  const materials: string[] = [];
+  const functions: string[] = [];
+  const textures = new Set<string>();
+  const seen = new Set<string>();
+
+  const visitFunction = (guid: string) => {
+    if (seen.has(guid)) return;
+    seen.add(guid);
+    const content = documentForGuid(guid);
+    if (!content) return;
+    functions.push(guid);
+    const deps = materialDependencies(
+      normalizeMaterialFunctionDocument(content),
+    );
+    for (const texture of deps.textures) textures.add(texture);
+    for (const nested of deps.functions) visitFunction(nested);
+  };
+
+  for (const guid of guids) {
+    if (seen.has(guid)) continue;
+    seen.add(guid);
+    const content = documentForGuid(guid);
+    if (!content) continue;
+    materials.push(guid);
+    const deps = materialDependencies(normalizeMaterialDocument(content));
+    for (const texture of deps.textures) textures.add(texture);
+    for (const fn of deps.functions) visitFunction(fn);
+  }
+  return { materials, functions, textures: [...textures].sort() };
 }
 
 /** Model asset guids on MeshComponent.assetGuid (imported GLB). */

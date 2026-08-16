@@ -249,6 +249,55 @@ describe("listDockWindows", () => {
   });
 });
 
+describe("material dock catalog", () => {
+  it("lists Graph, Preview, Details and Compiler Results for a Material", () => {
+    const windows = listDockWindows("material");
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "material-graph",
+      "material-preview",
+      "material-details",
+      "material-compiler-results",
+    ]);
+  });
+
+  it("anchors every Material dock to the graph", () => {
+    for (const entry of listDockWindows("material")) {
+      if (!entry.defaultPosition) continue;
+      expect(entry.defaultPosition.referencePanelId).toBe("material-graph");
+    }
+  });
+
+  it("titles Material docks in Title Case", () => {
+    expect(listDockWindows("material").map((entry) => entry.title)).toEqual([
+      "Graph",
+      "Preview",
+      "Details",
+      "Compiler Results",
+    ]);
+  });
+
+  it("swaps Preview for Interface on a Material Function", () => {
+    const ids = listDockWindows("material-function").map((entry) => entry.id);
+    expect(ids).toContain("material-function-interface");
+    expect(ids).not.toContain("material-preview");
+  });
+
+  it("focuses the graph as the primary panel for both material kinds", () => {
+    expect(primaryDockPanel("material")).toBe("material-graph");
+    expect(primaryDockPanel("material-function")).toBe(
+      "material-function-graph",
+    );
+  });
+
+  it("anchors Locks under the material graph when source control is on", () => {
+    expect(
+      listDockWindows("material", { sourceControl: true }).find(
+        (entry) => entry.id === "locks",
+      )?.defaultPosition?.referencePanelId,
+    ).toBe("material-graph");
+  });
+});
+
 describe("listEditorUtilityWindows", () => {
   it("returns no editor utility tabs when no assets are supplied", () => {
     expect(listEditorUtilityWindows()).toEqual([]);

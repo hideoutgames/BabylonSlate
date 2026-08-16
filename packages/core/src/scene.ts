@@ -95,6 +95,17 @@ export interface SceneSettings {
   cameraBounds2D: SceneCameraBounds2D;
   /** Editor viewport on-screen stick for flying/panning the camera. */
   editorJoystickEnabled: boolean;
+  /**
+   * Ordered post-process Material passes for the active camera. Empty by
+   * default: a full-screen pass is the classic mobile fill-rate cost.
+   */
+  postProcessStack: ScenePostProcessEntry[];
+}
+
+/** One entry of the scene's ordered post-process chain. */
+export interface ScenePostProcessEntry {
+  materialGuid: string;
+  enabled: boolean;
 }
 
 export interface SerializedScene {
@@ -142,6 +153,7 @@ export function createDefaultSceneSettings(
     },
     cameraBounds2D: { width: 16, height: 9 },
     editorJoystickEnabled: false,
+    postProcessStack: [],
   };
 }
 
@@ -152,7 +164,9 @@ export function createMeshComponent(
   return {
     id,
     classId: "MeshComponent",
-    properties: { meshKind, assetGuid: null },
+    // `materialGuid` overrides the whole mesh; imported models can additionally
+    // override one slot at a time through `materialSlots`.
+    properties: { meshKind, assetGuid: null, materialGuid: null },
     parentId: null,
     transform: identitySerializedTransform(),
   };
@@ -327,7 +341,22 @@ export function normalizeSceneSettings(
           : defaults.cameraBounds2D.height,
     },
     editorJoystickEnabled: source.editorJoystickEnabled === true,
+    postProcessStack: normalizeScenePostProcessStack(source.postProcessStack),
   };
+}
+
+/** Authored order is the array order; entries default to enabled. */
+export function normalizeScenePostProcessStack(
+  value: unknown,
+): ScenePostProcessEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const materialGuid = record.materialGuid;
+    if (typeof materialGuid !== "string" || materialGuid === "") return [];
+    return [{ materialGuid, enabled: record.enabled !== false }];
+  });
 }
 
 /** Coerce an unknown payload into a structurally valid scene document. */

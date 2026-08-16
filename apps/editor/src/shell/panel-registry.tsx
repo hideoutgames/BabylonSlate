@@ -30,6 +30,14 @@ import {
   UiHierarchyPanel,
   UiSettingsPanel,
 } from "../panels/ui-editor-panels";
+import {
+  MaterialCompilerResultsPanel,
+  MaterialDetailsPanel,
+  MaterialFunctionGraphPanel,
+  MaterialFunctionInterfacePanel,
+  MaterialGraphPanel,
+  MaterialPreviewPanel,
+} from "../components/material-editor";
 import { EditorUtilityPanel } from "../panels/editor-utility-panel";
 import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
 import { LocksPanel } from "../panels/locks-panel";
@@ -93,6 +101,24 @@ export const panelComponents = {
   ),
   "ui-details": (props: IDockviewPanelProps) => <UiDetailsPanel {...props} />,
   "ui-settings": (props: IDockviewPanelProps) => <UiSettingsPanel {...props} />,
+  "material-graph": (props: IDockviewPanelProps) => (
+    <MaterialGraphPanel {...props} />
+  ),
+  "material-preview": (props: IDockviewPanelProps) => (
+    <MaterialPreviewPanel {...props} />
+  ),
+  "material-details": (props: IDockviewPanelProps) => (
+    <MaterialDetailsPanel {...props} />
+  ),
+  "material-compiler-results": (props: IDockviewPanelProps) => (
+    <MaterialCompilerResultsPanel {...props} />
+  ),
+  "material-function-graph": (props: IDockviewPanelProps) => (
+    <MaterialFunctionGraphPanel {...props} />
+  ),
+  "material-function-interface": (props: IDockviewPanelProps) => (
+    <MaterialFunctionInterfacePanel {...props} />
+  ),
   "editor-utility": (props: IDockviewPanelProps) => (
     <EditorUtilityPanel {...props} />
   ),
