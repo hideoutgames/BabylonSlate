@@ -29,6 +29,8 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "bt.event.tick": "onBtTick",
   "bt.event.abort": "onAbort",
   "bt.event.evaluate": "onEvaluate",
+  "anim.event.initialize": "onInitializeAnimation",
+  "anim.event.update": "onUpdateAnimation",
   // Input event entries gate internally; they run on the tick like Event Tick.
   "input.onAction": "onTick",
   "input.onGamepadConnected": "onTick",
@@ -548,4 +550,179 @@ function uniqueName(base: string, used: Set<string>): string {
 
 function entryExportName(entry: GraphNode, fallback: string): string {
   return eventNameForEntry(entry) ?? fallback;
+}
+
+const ANIM_RULE_SINKS = [
+  {
+    typeId: "anim.rule.enterState",
+    key: "enter",
+    pinName: "value",
+  },
+  {
+    typeId: "anim.rule.exitState",
+    key: "exit",
+    pinName: "value",
+  },
+] as const;
+
+/**
+ * Compile a pure animation transition graph into `evaluate(ctx) => { enter, exit }`.
+ * Disconnected Enter State / Exit State inputs default to true.
+ */
+export function compileTransitionRuleGraph(
+  graph: LogicGraph,
+  options: CompileOptions,
+): CompileResult {
+  const exprCache = new Map<string, string>();
+  const shouldStrip = (node: GraphNode) =>
+    options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
+
+  function pinExpr(
+    node: GraphNode,
+    dataPin: GraphPin,
+    disconnectedLiteral?: string,
+  ): string {
+    const key = `${node.id}:${dataPin.id}`;
+    const cached = exprCache.get(key);
+    if (cached) return cached;
+    const incoming = edgeToInput(graph, node.id, dataPin.id);
+    if (incoming) {
+      const srcNode = findNode(graph, incoming.sourceNodeId);
+      const srcPin = srcNode && findPin(srcNode, incoming.sourcePinId);
+      if (!srcNode || !srcPin || shouldStrip(srcNode)) {
+        const lit = disconnectedLiteral ?? defaultValueLiteral(dataPin.type);
+        exprCache.set(key, lit);
+        return lit;
+      }
+      const srcDef = options.registry.get(srcNode.typeId);
+      if (srcDef?.pure) {
+        ensurePure(srcNode);
+      }
+      const varName = exprCache.get(`${srcNode.id}:${srcPin.id}`);
+      if (varName) {
+        exprCache.set(key, varName);
+        return varName;
+      }
+    }
+    const prop =
+      node.properties[`default:${dataPin.name}`] ??
+      node.properties[dataPin.name];
+    const lit =
+      prop !== undefined && !pinRejectsStoredDefault(dataPin.type)
+        ? JSON.stringify(prop)
+        : (disconnectedLiteral ?? defaultValueLiteral(dataPin.type));
+    exprCache.set(key, lit);
+    return lit;
+  }
+
+  function makeCtx(node: GraphNode): CodegenContext {
+    return {
+      graph,
+      node,
+      indent: "  ",
+      input(pinName) {
+        const p = node.pins.find(
+          (x) => x.name === pinName && x.direction === "in",
+        );
+        if (!p) return "undefined";
+        return pinExpr(node, p);
+      },
+      output(pinName) {
+        const p = node.pins.find(
+          (x) => x.name === pinName && x.direction === "out",
+        );
+        const name = `_n_${jsIdent(node.id)}_${jsIdent(pinName)}`;
+        if (p) exprCache.set(`${node.id}:${p.id}`, name);
+        return name;
+      },
+      emit() {
+        /* pure transition rules do not emit statements */
+      },
+      hoist() {
+        /* unused */
+      },
+      requestAsync() {
+        /* unused */
+      },
+    };
+  }
+
+  function ensurePure(node: GraphNode) {
+    if (shouldStrip(node)) return;
+    const def = options.registry.get(node.typeId);
+    if (!def?.pure) return;
+    if (
+      node.pins.some(
+        (p) =>
+          p.direction === "out" &&
+          p.kind === "data" &&
+          exprCache.has(`${node.id}:${p.id}`),
+      )
+    ) {
+      return;
+    }
+    const result = def.codegen(makeCtx(node));
+    if (result && typeof result === "object") {
+      for (const [name, expr] of Object.entries(result)) {
+        const outPin = node.pins.find(
+          (p) => p.name === name && p.direction === "out",
+        );
+        if (outPin) exprCache.set(`${node.id}:${outPin.id}`, `(${expr})`);
+      }
+    }
+  }
+
+  for (const node of graph.nodes) {
+    if (options.registry.get(node.typeId)?.pure) ensurePure(node);
+  }
+
+  const results: Record<string, string> = {};
+  for (const sink of ANIM_RULE_SINKS) {
+    const node = graph.nodes.find((entry) => entry.typeId === sink.typeId);
+    if (!node) {
+      results[sink.key] = "true";
+      continue;
+    }
+    const pin = node.pins.find(
+      (entry) => entry.name === sink.pinName && entry.direction === "in",
+    );
+    results[sink.key] = pin ? pinExpr(node, pin, "true") : "true";
+  }
+
+  const source = [
+    `//# sourceURL=babylonslate:///${options.assetGuid}.js`,
+    `export function evaluate(ctx) {`,
+    `  return { enter: (${results.enter}), exit: (${results.exit}) };`,
+    `}`,
+    "",
+  ].join("\n");
+
+  return {
+    source,
+    anchors: [
+      {
+        line: 2,
+        column: 1,
+        assetGuid: options.assetGuid,
+        graphId: graph.id,
+        nodeId:
+          graph.nodes.find((entry) => entry.typeId === "anim.rule.exitState")
+            ?.id ??
+          graph.nodes.find((entry) => entry.typeId === "anim.rule.enterState")
+            ?.id ??
+          graph.id,
+      },
+    ],
+    exportName: "evaluate",
+    isAsync: false,
+    entryPoints: [
+      {
+        name: "evaluate",
+        event: "onAnimRule",
+        isAsync: false,
+        nodeId: graph.nodes.find((entry) => entry.typeId === "anim.rule.exitState")
+          ?.id,
+      },
+    ],
+  };
 }

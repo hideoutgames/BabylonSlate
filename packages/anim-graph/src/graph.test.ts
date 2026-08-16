@@ -521,4 +521,47 @@ describe("anim graph v2 evaluator", () => {
     expect(next.facts.remainingRatio).toBeCloseTo(0.75, 5);
     expect(next.facts.looping).toBe(true);
   });
+
+  it("asks decideTransition with post-advance facts including Just Finished", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states[0]!.loop = false;
+    doc.states.push({
+      id: "done",
+      name: "Done",
+      clipId: null,
+      speed: 1,
+      loop: false,
+      position: { x: 300, y: 80 },
+    });
+    doc.transitions.push({
+      id: "idle-to-done",
+      fromStateId: "idle",
+      toStateId: "done",
+      blendSeconds: 0,
+      priority: 0,
+      ruleGraph: createDefaultTransitionRuleGraph(),
+    });
+    const seen: Array<{ normalisedTime: number; justFinished: boolean }> = [];
+    const decide = (
+      _transition: (typeof doc.transitions)[number],
+      facts: { normalisedTime: number; justFinished: boolean },
+    ) => {
+      seen.push({
+        normalisedTime: facts.normalisedTime,
+        justFinished: facts.justFinished,
+      });
+      return facts.justFinished
+        ? { enter: true, exit: true }
+        : { enter: false, exit: false };
+    };
+    const blocked = evaluateAnimGraph(doc, null, 0.5, { decideTransition: decide });
+    expect(blocked.stateId).toBe("idle");
+    expect(seen[0]?.normalisedTime).toBeCloseTo(0.5, 5);
+    expect(seen[0]?.justFinished).toBe(false);
+    const finished = evaluateAnimGraph(doc, blocked, 0.5, {
+      decideTransition: decide,
+    });
+    expect(seen[1]?.justFinished).toBe(true);
+    expect(finished.stateId).toBe("done");
+  });
 });

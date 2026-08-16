@@ -81,6 +81,10 @@ export interface AnimGraphInputs {
   /** @deprecated Prefer `variables`; bool conditions still map into the store. */
   conditions?: Record<string, boolean>;
   transitionRules?: Record<string, AnimTransitionDecision>;
+  decideTransition?: (
+    transition: AnimTransition,
+    facts: AnimStateFacts,
+  ) => AnimTransitionDecision | undefined;
 }
 
 export interface AnimStateFacts {
@@ -122,6 +126,17 @@ export interface AnimDiagnostic {
   message: string;
   nodeId?: string;
   severity: "error" | "warning";
+}
+
+export function animGraphScriptClassId(guid: string): string {
+  return `AnimGraph:${guid}`;
+}
+
+export function animRuleScriptClassId(
+  guid: string,
+  transitionId: string,
+): string {
+  return `AnimRule:${guid}:${transitionId}`;
 }
 
 export const ANIM_STATE_LAYOUT_ORIGIN = { x: 80, y: 80 };
@@ -524,15 +539,16 @@ function readBool(
 
 function transitionPasses(
   transition: AnimTransition,
-  normalised: number,
+  facts: AnimStateFacts,
   inputs: AnimGraphInputs,
 ): boolean {
-  const rule = inputs.transitionRules?.[transition.id];
+  const decided = inputs.decideTransition?.(transition, facts);
+  const rule = decided ?? inputs.transitionRules?.[transition.id];
   if (rule) return rule.enter === true && rule.exit === true;
   const conditionOk =
     !transition.condition || readBool(inputs, transition.condition);
   const exitOk =
-    !transition.hasExitTime || normalised >= (transition.exitTime ?? 0);
+    !transition.hasExitTime || facts.normalisedTime >= (transition.exitTime ?? 0);
   return conditionOk && exitOk;
 }
 
@@ -557,6 +573,8 @@ export function evaluateAnimGraph(
     current.loop,
   );
 
+  const currentFacts = factsFor(current, duration, clock);
+
   const outgoing = doc.transitions
     .map((row, index) => ({ row, index }))
     .filter((entry) => entry.row.fromStateId === stateId)
@@ -577,7 +595,7 @@ export function evaluateAnimGraph(
   let startedBlend: AnimTransition | null = null;
 
   for (const { row } of outgoing) {
-    if (!transitionPasses(row, clock.normalised, inputs)) continue;
+    if (!transitionPasses(row, currentFacts, inputs)) continue;
     nextId = row.toStateId;
     nextTimeMs = 0;
     nextNormalised = 0;
