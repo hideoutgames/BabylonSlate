@@ -44,13 +44,24 @@ async function closeWindowsMenu(page: Page): Promise<void> {
   const content = page.getByTestId("windows-menu-content");
   if (!(await content.isVisible())) return;
   await page.keyboard.press("Escape");
+  if (await content.isVisible()) {
+    await page.keyboard.press("Escape");
+  }
+  if (await content.isVisible()) {
+    await page.getByTestId("windows-menu").click();
+  }
   await expect(content).toHaveCount(0);
 }
 
+function visibleUiWorkspace(page: Page) {
+  return page.locator('[data-testid="document-workspace-ui"]:visible');
+}
+
 async function expectDesignerReady(page: Page): Promise<void> {
-  await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
-  await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
-  await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+  const workspace = visibleUiWorkspace(page);
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByTestId("ui-design-canvas")).toBeVisible();
+  await expect(workspace.getByTestId("ui-gui-preview-error")).toHaveCount(0);
 }
 
 async function expectDesignerHostStats(page: Page): Promise<void> {
@@ -66,11 +77,25 @@ async function expectDesignerHostStats(page: Page): Promise<void> {
 }
 
 async function selectCanvasRoot(page: Page): Promise<void> {
-  await page.getByTestId("ui-widget-canvas").click({ position: { x: 8, y: 8 } });
+  await visibleUiWorkspace(page)
+    .getByTestId("ui-widget-canvas")
+    .click({ position: { x: 8, y: 8 } });
+}
+
+async function setUiEditorMode(
+  page: Page,
+  mode: "designer" | "logic",
+): Promise<void> {
+  await visibleUiWorkspace(page)
+    .getByTestId(`ui-editor-mode-${mode}`)
+    .click();
 }
 
 async function addWidget(page: Page, kind: AddableWidgetKind): Promise<void> {
-  await page.getByTestId("ui-add-widget").click();
+  const workspace = page.locator(
+    '[data-testid="document-workspace-ui"]:visible',
+  );
+  await workspace.getByTestId("ui-add-widget").click();
   await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
   const search = page.getByTestId("ui-widget-catalog-search");
   if ((await search.count()) > 0) {
@@ -79,7 +104,7 @@ async function addWidget(page: Page, kind: AddableWidgetKind): Promise<void> {
   await page.getByTestId(`ui-add-widget-${kind}`).click();
   await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
   await expect(
-    page.locator(`[data-testid^="ui-widget-${kind.toLowerCase()}-"]`),
+    workspace.locator(`[data-testid^="ui-widget-${kind.toLowerCase()}-"]`),
   ).toBeVisible();
 }
 
@@ -261,40 +286,42 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
     await addWidget(page, "Button");
     await expectDesignerHostStats(page);
 
-    await page.getByTestId("ui-editor-mode-logic").click();
-    await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await setUiEditorMode(page, "logic");
+    await expect(visibleUiWorkspace(page).getByTestId("graph-panel")).toBeVisible();
 
     await switchToAsset(page, "assets/HUD2.ui.babasset", "HUD2");
     await expectDesignerReady(page);
     await addWidget(page, "Slider");
-    await page.getByTestId("ui-editor-mode-logic").click();
-    await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await setUiEditorMode(page, "logic");
+    await expect(visibleUiWorkspace(page).getByTestId("graph-panel")).toBeVisible();
 
     await switchToAsset(page, "assets/SceneTools.eui.babasset", "SceneTools");
     await expectDesignerReady(page);
-    await expect(page.getByTestId("ui-settings-panel")).toBeVisible();
+    await expect(
+      visibleUiWorkspace(page).getByTestId("ui-settings-panel"),
+    ).toBeVisible();
     await addWidget(page, "CheckBox");
-    await page.getByTestId("ui-editor-mode-logic").click();
-    await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await setUiEditorMode(page, "logic");
+    await expect(visibleUiWorkspace(page).getByTestId("graph-panel")).toBeVisible();
 
     await switchToAsset(page, "assets/ClassTools.eui.babasset", "ClassTools");
     await expectDesignerReady(page);
     await addWidget(page, "TextInput");
 
     await switchToAsset(page, "assets/HUD.ui.babasset", "HUD");
-    await expect(page.getByTestId("ui-editor-mode-designer")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(
+      visibleUiWorkspace(page).getByTestId("ui-editor-mode-designer"),
+    ).toHaveAttribute("aria-pressed", "true");
     await expectDesignerReady(page);
-    await expect(page.locator('[data-testid^="ui-widget-button-"]')).toBeVisible();
+    await expect(
+      visibleUiWorkspace(page).locator('[data-testid^="ui-widget-button-"]'),
+    ).toBeVisible();
 
     await switchToAsset(page, "assets/HUD2.ui.babasset", "HUD2");
-    await expect(page.getByTestId("ui-editor-mode-logic")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await page.getByTestId("ui-editor-mode-designer").click();
+    await expect(
+      visibleUiWorkspace(page).getByTestId("ui-editor-mode-logic"),
+    ).toHaveAttribute("aria-pressed", "true");
+    await setUiEditorMode(page, "designer");
     await expectDesignerReady(page);
 
     await assertNoPageFailures(collector);

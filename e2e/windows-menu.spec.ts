@@ -31,6 +31,12 @@ async function closeWindowsMenu(page: Page) {
   const content = page.getByTestId("windows-menu-content");
   if (!(await content.isVisible())) return;
   await page.keyboard.press("Escape");
+  if (await content.isVisible()) {
+    await page.keyboard.press("Escape");
+  }
+  if (await content.isVisible()) {
+    await page.getByTestId("windows-menu").click();
+  }
   await expect(content).toHaveCount(0);
 }
 
