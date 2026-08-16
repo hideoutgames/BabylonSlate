@@ -35,4 +35,21 @@ describe("resolveGraphViewport", () => {
     expect(viewport.defaultViewport.zoom).toBe(1.5);
     expect(viewport.fitViewOptions.maxZoom).toBe(1.5);
   });
+
+  it("caps focused-node fitView at the default zoom, not 1.2", () => {
+    const viewport = resolveGraphViewport();
+    expect(viewport.focusedFitViewOptions).toEqual({
+      padding: 0.35,
+      duration: 250,
+      maxZoom: 0.5,
+    });
+    expect(viewport.focusedFitViewOptions.maxZoom).not.toBe(1.2);
+  });
+
+  it("uses a provided default zoom for focused-node fitView", () => {
+    const viewport = resolveGraphViewport(0.8);
+    expect(viewport.focusedFitViewOptions.maxZoom).toBe(0.8);
+    expect(viewport.focusedFitViewOptions.padding).toBe(0.35);
+    expect(viewport.focusedFitViewOptions.duration).toBe(250);
+  });
 });
