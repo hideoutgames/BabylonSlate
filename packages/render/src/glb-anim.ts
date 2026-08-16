@@ -1,6 +1,5 @@
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import type { AbstractMesh, Scene } from "@babylonjs/core";
-import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import {
   applyAnimStateToScene,
@@ -93,29 +92,14 @@ function wrapGroup(
 }
 
 function adoptLoadedMeshes(
-  binding: SnapshotSceneBinding,
-  slotId: number,
   placeholder: AbstractMesh,
   loaded: AbstractMesh[],
 ): void {
-  const wasSlotRoot = binding.meshes.get(slotId) === placeholder;
-  const roots = loaded.filter((mesh) => !mesh.parent);
-  const replacement =
-    roots.find((mesh): mesh is Mesh => mesh instanceof Mesh) ??
-    loaded.find((mesh): mesh is Mesh => mesh instanceof Mesh);
-  if (wasSlotRoot && replacement) {
-    replacement.name = placeholder.name;
-    replacement.metadata = placeholder.metadata;
-    if (!replacement.parent) {
-      replacement.parent = placeholder.parent;
-    }
-    binding.meshes.set(slotId, replacement);
-    placeholder.dispose();
-    return;
-  }
+  const roots = loaded.filter((mesh) => !mesh.parent && mesh !== placeholder);
   for (const root of roots) {
     root.parent = placeholder;
   }
+  placeholder.visibility = 0;
 }
 
 /**
@@ -148,7 +132,7 @@ export function beginSlotModelAnimLoad(
         return;
       }
       container.addAllToScene();
-      adoptLoadedMeshes(binding, slotId, placeholder, container.meshes);
+      adoptLoadedMeshes(placeholder, container.meshes);
       if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
       const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
         (group) => group.clipAssetGuid !== clipAssetGuid,
