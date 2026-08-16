@@ -11,6 +11,30 @@ async function showContentBrowser(page: Page): Promise<void> {
   await expect(page.getByTestId("document-workspace-content-browser")).toBeVisible();
 }
 
+async function paintSelectContentTiles(
+  page: Page,
+  first: ReturnType<Page["locator"]>,
+  second: ReturnType<Page["locator"]>,
+): Promise<void> {
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  const fromBox = await first.boundingBox();
+  const toBox = await second.boundingBox();
+  expect(fromBox).not.toBeNull();
+  expect(toBox).not.toBeNull();
+  await page.mouse.move(
+    fromBox!.x + fromBox!.width / 2,
+    fromBox!.y + fromBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    toBox!.x + toBox!.width / 2,
+    toBox!.y + toBox!.height / 2,
+    { steps: 16 },
+  );
+  await page.mouse.up();
+}
+
 async function createContentBrowserAsset(
   page: Page,
   type: "Enum" | "Scene",
@@ -263,7 +287,7 @@ test.describe("Editor density and IA", () => {
     );
   });
 
-  test("Content Browser click adds to the selection and Deselect All clears it", async ({
+  test("Content Browser click replaces the selection and Deselect All clears it", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -275,10 +299,10 @@ test.describe("Editor density and IA", () => {
     );
     await sceneTile.click();
     await classTile.click();
-    await expect(sceneTile).toHaveAttribute("data-selected", "true");
+    await expect(sceneTile).toHaveAttribute("data-selected", "false");
     await expect(classTile).toHaveAttribute("data-selected", "true");
     await expect(page.getByTestId("content-browser-delete-selected")).toHaveText(
-      /Delete \(2\)/,
+      /Delete \(1\)/,
     );
     await expect(page.getByTestId("content-browser-deselect-all")).toBeVisible();
     await expect(page.getByTestId("content-browser-delete-selected")).not.toHaveClass(
@@ -304,8 +328,7 @@ test.describe("Editor density and IA", () => {
     const classTile = page.locator(
       '[data-asset-path="assets/main.class.babasset"]',
     );
-    await sceneTile.click();
-    await classTile.click();
+    await paintSelectContentTiles(page, sceneTile, classTile);
 
     const deleteSelected = page.getByTestId("content-browser-delete-selected");
     await expect(deleteSelected).toHaveText(/Delete \(2\)/);
@@ -435,8 +458,11 @@ test.describe("Editor density and IA", () => {
       page.locator('[data-asset-path="assets/Beta.babasset"]'),
     ).toBeVisible();
 
-    await page.locator('[data-asset-path="assets/Alpha.babasset"]').click();
-    await page.locator('[data-asset-path="assets/Beta.babasset"]').click();
+    await paintSelectContentTiles(
+      page,
+      page.locator('[data-asset-path="assets/Alpha.babasset"]'),
+      page.locator('[data-asset-path="assets/Beta.babasset"]'),
+    );
     await page
       .locator('[data-asset-path="assets/Beta.babasset"]')
       .click({ button: "right" });
@@ -460,8 +486,9 @@ test.describe("Editor density and IA", () => {
       timeout: 15_000,
     });
     await page.getByTestId("content-folder-assets/fx").click();
-    await page.locator('[data-asset-path="assets/Alpha.babasset"]').click();
-    await page.getByTestId("content-folder-assets/fx").click({ button: "right" });
+    await page
+      .locator('[data-asset-path="assets/Alpha.babasset"]')
+      .click({ button: "right" });
     await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
     await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
       0,

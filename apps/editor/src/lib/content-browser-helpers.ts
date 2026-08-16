@@ -27,6 +27,15 @@ import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../servi
 
 export const ASSETS_ROOT = "assets";
 
+export type ContentBrowserPaintHit =
+  | { kind: "asset"; guid: string }
+  | { kind: "folder"; path: string };
+
+export type ContentBrowserSelection = {
+  guids: Set<string>;
+  folderPaths: Set<string>;
+};
+
 export type TextureCompressionState =
   | "pending"
   | "encoding"
@@ -88,7 +97,7 @@ export function displayAssetTitle(name: string): string {
   return name.replace(/\.[A-Za-z][A-Za-z0-9]*$/, "");
 }
 
-/** Additive Content Browser tile selection. Click never replaces. */
+/** Additive Content Browser tile selection. Long-press / context menu never replaces. */
 export function addSelectedAssetGuid(
   selected: ReadonlySet<string>,
   guid: string,
@@ -98,7 +107,7 @@ export function addSelectedAssetGuid(
   return next;
 }
 
-/** Additive Content Browser folder-tile selection. Click never replaces. */
+/** Additive Content Browser folder-tile selection. Long-press / context menu never replaces. */
 export function addSelectedFolderPath(
   selected: ReadonlySet<string>,
   path: string,
@@ -106,6 +115,42 @@ export function addSelectedFolderPath(
   const next = new Set(selected);
   next.add(path);
   return next;
+}
+
+/** Single tap / click replaces the whole Content Browser selection with one asset. */
+export function exclusiveSelectAsset(guid: string): ContentBrowserSelection {
+  return { guids: new Set([guid]), folderPaths: new Set() };
+}
+
+/** Single tap / click replaces the whole Content Browser selection with one folder. */
+export function exclusiveSelectFolder(path: string): ContentBrowserSelection {
+  return { guids: new Set(), folderPaths: new Set([path]) };
+}
+
+/** Paint-select: union of cards dragged over; does not keep a prior selection. */
+export function paintSelectTiles(
+  hits: readonly ContentBrowserPaintHit[],
+): ContentBrowserSelection {
+  const guids = new Set<string>();
+  const folderPaths = new Set<string>();
+  for (const hit of hits) {
+    if (hit.kind === "asset") guids.add(hit.guid);
+    else folderPaths.add(hit.path);
+  }
+  return { guids, folderPaths };
+}
+
+export function resolveContentBrowserPaintHit(
+  element: Element | null,
+): ContentBrowserPaintHit | null {
+  if (!element) return null;
+  const tile = element.closest("[data-asset-guid], [data-folder-path]");
+  if (!(tile instanceof Element)) return null;
+  const guid = tile.getAttribute("data-asset-guid");
+  if (guid) return { kind: "asset", guid };
+  const path = tile.getAttribute("data-folder-path");
+  if (path) return { kind: "folder", path };
+  return null;
 }
 
 export { typeColorThumbAccent as assetTypeThumbAccent };

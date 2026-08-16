@@ -104,14 +104,16 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 | Gesture | Action |
 | --- | --- |
-| Tap / click a tile | Add to selection (does not replace) |
+| Tap / click a tile | Replace selection with that tile |
+| Tap+drag across cards | Paint-select every card the pointer crosses (replaces the previous set) |
 | Tap / click empty grid (padding, gaps — not a tile) | Clear asset and folder selection |
 | Toolbar **Deselect All** | Clear asset and folder selection |
 | Toolbar **Delete (N)** | Open the delete confirm. Counted outline control; does not delete on the first tap. |
 | Double-tap / double-click an asset tile | Open the document (`openOrFocusDocument`) |
 | Double-tap / double-click a folder tile | Navigate into that folder |
-| Move before ~500ms on the grid | Scroll (do not open the menu) |
-| Hold still ≥500ms or right-click on a **tile** | Asset or folder context menu. Tile pointer events do not bubble to the empty-grid menu. |
+| Move past ~8px on a **tile** | Paint-select (do not open the menu; do not scroll the grid for that gesture) |
+| Move before ~500ms on **empty grid** | Scroll (do not open the menu) |
+| Hold still ≥500ms or right-click on a **tile** | Add that tile if needed, then open the asset or folder context menu. Tile pointer events do not bubble to the empty-grid menu. |
 | Hold still ≥500ms or right-click on **empty grid** | New Folder, New Asset, Import |
 | Left tree: tap folder | Set the grid’s current folder |
 | Left tree: tap asset | Set the grid to that asset’s parent and select the guid |

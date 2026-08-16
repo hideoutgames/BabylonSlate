@@ -29,6 +29,7 @@ export interface ContentBrowserAssetTileProps {
   onOpen: () => void;
   onSelect: () => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
+  consumeSelectClick?: () => boolean;
   thumbnailUrl: string | null;
   hasCompileError?: boolean;
   typeVisual: TypeVisual;
@@ -43,6 +44,7 @@ export function ContentBrowserAssetTile({
   onOpen,
   onSelect,
   onLongPressMenu,
+  consumeSelectClick,
   thumbnailUrl,
   hasCompileError = false,
   typeVisual,
@@ -54,7 +56,6 @@ export function ContentBrowserAssetTile({
   const thumbAccent = typeColorThumbAccent(typeVisual.colorVar);
   const bind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
-      onSelect();
       onLongPressMenu(clientX, clientY);
     },
   });
@@ -76,6 +77,7 @@ export function ContentBrowserAssetTile({
         className="flex w-full flex-col text-left hover:bg-accent/50"
         onClick={(event) => {
           event.stopPropagation();
+          if (consumeSelectClick?.()) return;
           onSelect();
         }}
         onDoubleClick={onOpen}

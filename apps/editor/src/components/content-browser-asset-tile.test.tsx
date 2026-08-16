@@ -120,8 +120,22 @@ describe("ContentBrowserAssetTile", () => {
       clientY: 18,
     });
     expect(notPrevented).toBe(false);
-    expect(onSelect).toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
     expect(onLongPressMenu).toHaveBeenCalledWith(12, 18);
+  });
+
+  it("selects on click", () => {
+    const { tile, onSelect } = renderTile();
+    fireEvent.click(tile);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the tap select when consumeSelectClick reports a paint or menu", () => {
+    const { tile, onSelect } = renderTile({
+      consumeSelectClick: () => true,
+    });
+    fireEvent.click(tile);
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("is not an HTML5 drag source", () => {

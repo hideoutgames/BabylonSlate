@@ -20,6 +20,7 @@ export interface ContentBrowserFolderTileProps {
   onOpen: () => void;
   onSelect: () => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
+  consumeSelectClick?: () => boolean;
 }
 
 export function ContentBrowserFolderTile({
@@ -29,10 +30,10 @@ export function ContentBrowserFolderTile({
   onOpen,
   onSelect,
   onLongPressMenu,
+  consumeSelectClick,
 }: ContentBrowserFolderTileProps) {
   const bind = useLongPressMenu({
     onMenu: (clientX, clientY) => {
-      onSelect();
       onLongPressMenu(clientX, clientY);
     },
   });
@@ -53,6 +54,7 @@ export function ContentBrowserFolderTile({
         className="flex w-full flex-col text-left hover:bg-accent/50"
         onClick={(event) => {
           event.stopPropagation();
+          if (consumeSelectClick?.()) return;
           onSelect();
         }}
         onDoubleClick={onOpen}
