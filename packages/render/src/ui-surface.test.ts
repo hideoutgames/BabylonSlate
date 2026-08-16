@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
-import { isHardUiPresentFailure, presentAdtToCanvas, blitIfUnfrozen } from "./ui-surface";
+import {
+  attachAdtCanvasPointers,
+  isHardUiPresentFailure,
+  presentAdtToCanvas,
+  blitIfUnfrozen,
+} from "./ui-surface";
 
 function fakeAdt(
   source: { canvas: unknown } | null,
@@ -98,5 +103,100 @@ describe("isHardUiPresentFailure", () => {
     expect(isHardUiPresentFailure(new Error("standalone ADT failed"))).toBe(true);
     expect(isHardUiPresentFailure(new Error("ADT blit size is 0"))).toBe(true);
     expect(isHardUiPresentFailure(null)).toBe(false);
+  });
+});
+
+describe("attachAdtCanvasPointers", () => {
+  function fakeCanvas() {
+    const listeners: Record<string, EventListener> = {};
+    const canvas = {
+      width: 100,
+      height: 100,
+      tabIndex: -1,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+      addEventListener: (type: string, handler: EventListener) => {
+        listeners[type] = handler;
+      },
+      removeEventListener: vi.fn(),
+      setPointerCapture: vi.fn(),
+      releasePointerCapture: vi.fn(),
+      focus: vi.fn(),
+    } as unknown as HTMLCanvasElement & { tabIndex: number };
+    return { canvas, listeners };
+  }
+
+  it("captures the primary pointer on down and releases on up", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    const detach = attachAdtCanvasPointers(canvas, adt);
+    listeners.pointerdown?.(
+      {
+        type: "pointerdown",
+        pointerId: 7,
+        clientX: 50,
+        clientY: 25,
+        preventDefault: vi.fn(),
+      } as unknown as Event,
+    );
+    expect(canvas.setPointerCapture).toHaveBeenCalledWith(7);
+    expect(canvas.focus).toHaveBeenCalled();
+    expect(pick).toHaveBeenCalled();
+    listeners.pointerup?.(
+      {
+        type: "pointerup",
+        pointerId: 7,
+        clientX: 50,
+        clientY: 25,
+        preventDefault: vi.fn(),
+      } as unknown as Event,
+    );
+    expect(canvas.releasePointerCapture).toHaveBeenCalledWith(7);
+    detach();
+  });
+
+  it("isolates pick errors instead of throwing into the pointer handler", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const onPickError = vi.fn();
+    const adt = {
+      pick: () => {
+        throw new Error("control is disposed");
+      },
+    } as unknown as AdvancedDynamicTexture;
+    attachAdtCanvasPointers(canvas, adt, undefined, { onPickError });
+    expect(() =>
+      listeners.pointerdown?.({
+        type: "pointerdown",
+        pointerId: 1,
+        clientX: 10,
+        clientY: 10,
+        preventDefault: vi.fn(),
+      } as unknown as Event),
+    ).not.toThrow();
+    expect(onPickError).toHaveBeenCalled();
+  });
+
+  it("forwards wheel and keyboard events to the ADT", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const processKeyboard = vi.fn();
+    const adt = { pick, processKeyboard } as unknown as AdvancedDynamicTexture;
+    attachAdtCanvasPointers(canvas, adt);
+    const preventDefault = vi.fn();
+    listeners.wheel?.({
+      type: "wheel",
+      clientX: 10,
+      clientY: 10,
+      deltaY: 40,
+      preventDefault,
+    } as unknown as Event);
+    expect(preventDefault).toHaveBeenCalled();
+    expect(pick).toHaveBeenCalled();
+    listeners.keydown?.({
+      type: "keydown",
+      key: "a",
+      preventDefault: vi.fn(),
+    } as unknown as Event);
+    expect(processKeyboard).toHaveBeenCalled();
   });
 });

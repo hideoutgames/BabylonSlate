@@ -8,10 +8,13 @@ import {
 } from "@babylonslate/ui-runtime";
 import {
   applyUiControls,
+  applyUiControlsIfUnfrozen,
   applyWidgetVisible,
   joystickAxesFromLocal,
   joystickAxisValue,
   RecordingUiHost,
+  resetUiHostStats,
+  uiHostStats,
 } from "./ui-apply";
 
 describe("UI apply", () => {
@@ -46,5 +49,26 @@ describe("UI apply", () => {
     const right = joystickAxesFromLocal(160, 80, 160, 160, 0.15);
     expect(right.x).toBeCloseTo(1, 5);
     expect(right.y).toBe(0);
+  });
+
+  it("skips apply work while the surface is frozen", () => {
+    const host = new RecordingUiHost();
+    const doc = createDefaultUserInterface();
+    const layout = layoutUserInterface(doc, { width: 400, height: 300 });
+    const controls = describeUiControls(doc, layout);
+    applyUiControlsIfUnfrozen(true, host, controls);
+    expect(host.controls).toEqual([]);
+    expect(host.dirtyCount).toBe(0);
+    applyUiControlsIfUnfrozen(false, host, controls);
+    expect(host.controls.length).toBeGreaterThan(0);
+  });
+
+  it("counts applies for regression fixtures", () => {
+    resetUiHostStats();
+    const host = new RecordingUiHost();
+    const doc = createDefaultUserInterface();
+    const layout = layoutUserInterface(doc, { width: 400, height: 300 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    expect(uiHostStats.apply).toBe(1);
   });
 });

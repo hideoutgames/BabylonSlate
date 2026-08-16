@@ -1,10 +1,23 @@
 import type { UiControlDescriptor } from "@babylonslate/ui-runtime";
 
+export const uiHostStats = {
+  apply: 0,
+  create: 0,
+  present: 0,
+};
+
+export function resetUiHostStats(): void {
+  uiHostStats.apply = 0;
+  uiHostStats.create = 0;
+  uiHostStats.present = 0;
+}
+
 export interface UiApplyHost {
   clear(): void;
   addControl(descriptor: UiControlDescriptor): void;
   setVisible(widgetId: string, visible: boolean): void;
   markAsDirty(): void;
+  reconcile?(controls: readonly UiControlDescriptor[]): void;
 }
 
 export interface TouchAxisSample {
@@ -20,11 +33,25 @@ export function applyUiControls(
   host: UiApplyHost,
   controls: readonly UiControlDescriptor[],
 ): void {
-  host.clear();
-  for (const control of controls) {
-    host.addControl(control);
+  uiHostStats.apply += 1;
+  if (host.reconcile) {
+    host.reconcile(controls);
+  } else {
+    host.clear();
+    for (const control of controls) {
+      host.addControl(control);
+    }
   }
   host.markAsDirty();
+}
+
+export function applyUiControlsIfUnfrozen(
+  frozen: boolean,
+  host: UiApplyHost,
+  controls: readonly UiControlDescriptor[],
+): void {
+  if (frozen) return;
+  applyUiControls(host, controls);
 }
 
 export function applyWidgetVisible(

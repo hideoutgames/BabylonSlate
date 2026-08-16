@@ -170,4 +170,41 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
     await expect(page.getByTestId("windows-menu-graph")).toBeVisible();
     await closeWindowsMenu(page);
   });
+
+  test("two UserInterface documents switch Designer and Logic without page errors", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => {
+      pageErrors.push(error.message);
+    });
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await createAsset(page, "UserInterface", "HUD2");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
+    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+    await page.getByTestId("ui-add-widget").click();
+    await page.getByTestId("ui-add-widget-Button").click();
+    await expect(page.locator('[data-testid^="ui-widget-button-"]')).toBeVisible();
+
+    await page.locator('[data-asset-path="assets/HUD2.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
+    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
+    await page.getByTestId("ui-editor-mode-logic").click();
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
+
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
+      .click();
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("ui-editor-mode-designer")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
+    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+    expect(pageErrors.filter((message) => /undefined/i.test(message))).toEqual([]);
+  });
 });

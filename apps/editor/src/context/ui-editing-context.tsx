@@ -134,7 +134,7 @@ export function UiEditingProvider({
       void applyAssetDocumentChange(workspace.documentId, next, mergeKey);
     });
 
-  const ui = asUiDocument(payload);
+  const ui = useMemo(() => asUiDocument(payload), [payload]);
   const [presetId, setPresetId] = useState<DesignerCanvasId>(DEFAULT_DEVICE_PRESET_ID);
   const extras = useEngineUiDesignerPresets();
   const devicePresets = mergeDevicePresets(extras);
@@ -192,7 +192,7 @@ export function UiEditingProvider({
     return () => {
       cancelled = true;
     };
-  }, [collectPlayUiLibrary, openDocuments]);
+  }, [collectPlayUiLibrary]);
 
   const resolveNested = useCallback(
     (guid: string) => {
@@ -207,30 +207,46 @@ export function UiEditingProvider({
     [assetRegistry, openDocuments, selfGuid, ui, uiLibrary],
   );
 
-  const viewport = designerViewport(
-    presetId,
-    contentDesiredSize(ui, { resolveNested }),
-    extras,
+  const viewport = useMemo(
+    () =>
+      designerViewport(
+        presetId,
+        contentDesiredSize(ui, { resolveNested }),
+        extras,
+      ),
+    [extras, presetId, resolveNested, ui],
   );
-  const layout = layoutUserInterface(
-    ui,
-    { width: viewport.width, height: viewport.height },
-    { safeArea: viewport.safeArea, resolveNested, designSpace: true },
+  const layout = useMemo(
+    () =>
+      layoutUserInterface(
+        ui,
+        { width: viewport.width, height: viewport.height },
+        { safeArea: viewport.safeArea, resolveNested, designSpace: true },
+      ),
+    [resolveNested, ui, viewport.height, viewport.safeArea.bottom, viewport.safeArea.left, viewport.safeArea.right, viewport.safeArea.top, viewport.width],
   );
-  const bitmapScale = designScale(
-    { width: viewport.width, height: viewport.height },
-    ui.designResolution,
-    ui.scaleRule,
+  const bitmapScale = useMemo(
+    () =>
+      designScale(
+        { width: viewport.width, height: viewport.height },
+        ui.designResolution,
+        ui.scaleRule,
+      ),
+    [ui.designResolution, ui.scaleRule, viewport.height, viewport.width],
   );
-  const controls = describeUiControls(ui, layout);
-  const previewScale = previewScaleToFit(viewportSize, {
-    width: viewport.width,
-    height: viewport.height,
-  });
+  const controls = useMemo(() => describeUiControls(ui, layout), [layout, ui]);
+  const previewScale = useMemo(
+    () =>
+      previewScaleToFit(viewportSize, {
+        width: viewport.width,
+        height: viewport.height,
+      }),
+    [viewport.height, viewport.width, viewportSize],
+  );
 
   useEffect(() => {
     setSharedEngine(play?.ensureSharedEngine() ?? null);
-  }, [play]);
+  }, [play, play?.sharedEngineGeneration]);
 
   useEffect(() => {
     if (viewportSize.width < 2 || viewportSize.height < 2) return;
@@ -242,7 +258,8 @@ export function UiEditingProvider({
     );
   }, [presetId, viewport.width, viewport.height, viewportSize]);
 
-  const selected = ui.widgets[selectedId] ?? ui.widgets[ui.rootId]!;
+  const selected =
+    ui.widgets[selectedId] ?? ui.widgets[ui.rootId] ?? createWidget(ui.rootId, "Canvas");
   const candidateGuids = (assetRegistry?.list() ?? [])
     .filter((asset) => asset.header.type === "UserInterface")
     .map((asset) => asset.header.guid);
@@ -270,10 +287,12 @@ export function UiEditingProvider({
   const patchWidget = useCallback(
     (id: string, patch: Partial<UserInterfaceDocument["widgets"][string]>) => {
       const current = asUiDocument(latestPayloadRef.current);
+      const widget = current.widgets[id];
+      if (!widget) return;
       commit({
         ...latestPayloadRef.current,
         ...current,
-        widgets: { ...current.widgets, [id]: { ...current.widgets[id]!, ...patch } },
+        widgets: { ...current.widgets, [id]: { ...widget, ...patch } },
       });
     },
     [commit],
@@ -303,7 +322,8 @@ export function UiEditingProvider({
     (kind: WidgetKind) => {
       const id = `${kind.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`;
       const current = asUiDocument(latestPayloadRef.current);
-      const parent = current.widgets[selectedId] ?? current.widgets[current.rootId]!;
+      const parent = current.widgets[selectedId] ?? current.widgets[current.rootId];
+      if (!parent) return;
       const widget = parentOwnsChildLayout(parent.kind)
         ? createWidget(id, kind, humanizePropertyLabel(kind))
         : createWidget(id, kind, humanizePropertyLabel(kind), defaultAddLayout(kind));

@@ -69,7 +69,10 @@ export function WindowsMenu() {
       : [];
     const editorUtilities = listEditorUtilityWindows({
       kind: activeKind,
-      assets: editorUtilityAssetsFromIndexed(assetRegistry?.list() ?? []),
+      assets: editorUtilityAssetsFromIndexed(
+        assetRegistry?.list() ?? [],
+        openDocuments,
+      ),
     });
     const checkbox = (entry: { id: string; title: string }): NestedMenuItem => {
       const open = isDockWindowOpen(entry.id);
@@ -114,6 +117,7 @@ export function WindowsMenu() {
     editorUtilityInterface,
     uiEditorMode,
     assetRegistry,
+    openDocuments,
     sourceControl.enabled,
     isDockWindowOpen,
     openDockWindowCount,

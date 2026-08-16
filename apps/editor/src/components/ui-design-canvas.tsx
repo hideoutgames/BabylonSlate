@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent,
@@ -8,7 +9,7 @@ import {
 import type { Engine } from "@babylonjs/core";
 import {
   applyFontRegistryToHost,
-  applyUiControls,
+  applyUiControlsIfUnfrozen,
   createUiSurface,
   FontRegistry,
   isHardUiPresentFailure,
@@ -23,7 +24,9 @@ import {
 } from "@babylonslate/ui/components/empty";
 import {
   applyWidgetResize,
+  describeUiControls,
   laidOutParentRect,
+  layoutUserInterface,
   widgetAllowsDesignerTransform,
   type LayoutResult,
   type UiControlDescriptor,
@@ -43,7 +46,6 @@ import {
   pointerCentroid,
   pointerSpan,
   resizeHandleRects,
-  uiDesignStrokeMergeKey,
   zoomAtPoint,
   type DesignView,
   type HandleEdge,
@@ -89,7 +91,7 @@ export function UiDesignCanvas({
   fontEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
   onSelect: (id: string) => void;
   onViewChange: (view: DesignView) => void;
-  onLayoutChange: (id: string, next: WidgetLayout, mergeKey: string) => void;
+  onLayoutChange: (id: string, next: WidgetLayout, mergeKey?: string) => void;
   panelVisible?: boolean;
   documentActive?: boolean;
 }) {
@@ -121,10 +123,40 @@ export function UiDesignCanvas({
     lastY: number;
     armed: boolean;
     strokeId: string;
+    previewLayout?: WidgetLayout;
   } | null>(null);
+  const [previewLayouts, setPreviewLayouts] = useState<Record<string, WidgetLayout>>(
+    {},
+  );
+  const previewLayoutsRef = useRef(previewLayouts);
+  previewLayoutsRef.current = previewLayouts;
   latestUiRef.current = ui;
   viewRef.current = view;
   const viewScale = previewScale * view.zoom * bitmapScale;
+  const previewUi = useMemo(() => {
+    const ids = Object.keys(previewLayouts);
+    if (ids.length === 0) return ui;
+    const widgets = { ...ui.widgets };
+    for (const id of ids) {
+      const widget = widgets[id];
+      const layout = previewLayouts[id];
+      if (!widget || !layout) continue;
+      widgets[id] = { ...widget, layout };
+    }
+    return { ...ui, widgets };
+  }, [previewLayouts, ui]);
+  const displayLayout = useMemo(() => {
+    if (Object.keys(previewLayouts).length === 0) return layout;
+    return layoutUserInterface(
+      previewUi,
+      { width: viewport.width, height: viewport.height },
+      { safeArea: viewport.safeArea, designSpace: true },
+    );
+  }, [layout, previewLayouts, previewUi, viewport.height, viewport.safeArea, viewport.width]);
+  const displayControls = useMemo(() => {
+    if (Object.keys(previewLayouts).length === 0) return controls;
+    return describeUiControls(previewUi, displayLayout);
+  }, [controls, displayLayout, previewLayouts, previewUi]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -162,7 +194,18 @@ export function UiDesignCanvas({
     // panelVisible / documentActive: freezeLiveUiSurface on the new surface this
     // frame; the next effect updates freeze when those flags change.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
-  }, [sharedEngine, ui.designResolution, ui.scaleRule, viewport.height, viewport.safeArea, viewport.width]);
+  }, [
+    sharedEngine,
+    ui.designResolution.height,
+    ui.designResolution.width,
+    ui.scaleRule,
+    viewport.height,
+    viewport.safeArea.bottom,
+    viewport.safeArea.left,
+    viewport.safeArea.right,
+    viewport.safeArea.top,
+    viewport.width,
+  ]);
 
   useEffect(() => {
     freezeLiveUiSurface(surfaceRef.current, { panelVisible, documentActive });
@@ -194,8 +237,9 @@ export function UiDesignCanvas({
     const surface = surfaceRef.current;
     if (!surface) return;
     try {
+      const frozen = !panelVisible || !documentActive;
       surface.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
-      applyUiControls(surface.host, controls);
+      applyUiControlsIfUnfrozen(frozen, surface.host, displayControls);
       presentLiveUiIfVisible({
         panelVisible,
         documentActive,
@@ -214,7 +258,7 @@ export function UiDesignCanvas({
       setGuiLive(false);
     }
   }, [
-    controls,
+    displayControls,
     documentActive,
     guiLive,
     panelVisible,
@@ -223,8 +267,8 @@ export function UiDesignCanvas({
     viewport.width,
   ]);
 
-  const selected = ui.widgets[selectedId];
-  const selectedControl = controls.find((row) => row.id === selectedId);
+  const selected = previewUi.widgets[selectedId];
+  const selectedControl = displayControls.find((row) => row.id === selectedId);
   const canTransform = selected
     ? widgetAllowsDesignerTransform(ui, selected.id)
     : false;
@@ -454,21 +498,36 @@ export function UiDesignCanvas({
     };
     if (screenDelta.x === 0 && screenDelta.y === 0) return;
     const current = latestUiRef.current;
-    const widget = current.widgets[drag.id];
-    if (!widget) return;
+    const baseLayout =
+      previewLayoutsRef.current[drag.id] ?? current.widgets[drag.id]?.layout;
+    if (!baseLayout) return;
     const delta = canvasDeltaToLayoutDelta(screenDelta, viewScale);
-    const parentRect = laidOutParentRect(layout, drag.id);
+    const parentRect = laidOutParentRect(displayLayout, drag.id);
     const nextLayout =
       drag.mode === "resize" && drag.handle
-        ? applyWidgetResize(widget.layout, parentRect, delta, handleEdges(drag.handle))
-        : applyWidgetDragOffset(widget.layout, delta);
+        ? applyWidgetResize(baseLayout, parentRect, delta, handleEdges(drag.handle))
+        : applyWidgetDragOffset(baseLayout, delta);
     drag.lastX = event.clientX;
     drag.lastY = event.clientY;
-    onLayoutChange(drag.id, nextLayout, uiDesignStrokeMergeKey(drag.strokeId));
+    drag.previewLayout = nextLayout;
+    previewLayoutsRef.current = {
+      ...previewLayoutsRef.current,
+      [drag.id]: nextLayout,
+    };
+    setPreviewLayouts(previewLayoutsRef.current);
   };
 
   const onViewportPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     pointersRef.current.delete(eventPointerId(event));
+    const drag = dragRef.current;
+    if (pointersRef.current.size < 2 && drag?.armed && (drag.mode === "move" || drag.mode === "resize")) {
+      const nextLayout = drag.previewLayout ?? previewLayoutsRef.current[drag.id];
+      if (nextLayout) {
+        onLayoutChange(drag.id, nextLayout);
+      }
+      previewLayoutsRef.current = {};
+      setPreviewLayouts({});
+    }
     if (pointersRef.current.size < 2) {
       dragRef.current = null;
     }
@@ -524,7 +583,7 @@ export function UiDesignCanvas({
           width={viewport.width}
           height={viewport.height}
         />
-        {controls.map((control) => {
+        {displayControls.map((control) => {
           const hit =
             liveRects[control.id] ??
             designRectToBitmap(control.guiRect, bitmapScale);

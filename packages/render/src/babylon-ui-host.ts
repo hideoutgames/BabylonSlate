@@ -27,7 +27,7 @@ import {
   SAFE_AREA_CONTROL_ID,
   ZERO_INSETS,
 } from "@babylonslate/ui-runtime";
-import { joystickAxesFromLocal, type UiApplyHost } from "./ui-apply";
+import { joystickAxesFromLocal, type UiApplyHost, uiHostStats } from "./ui-apply";
 
 export interface GuiControlHandle {
   id: string;
@@ -40,12 +40,21 @@ export interface GuiControlHandle {
 export interface GuiControlFactory {
   create(spec: GuiControlSpec): GuiControlHandle;
   clear(): void;
+  update?(spec: GuiControlSpec, previous?: GuiControlSpec): boolean;
+  remove?(id: string): void;
 }
+
+export type UiWidgetEvent =
+  | { kind: "click"; widgetId: string }
+  | { kind: "value"; widgetId: string; value: number }
+  | { kind: "checked"; widgetId: string; value: boolean }
+  | { kind: "text"; widgetId: string; value: string };
 
 export interface BabylonUiHostOptions {
   interactive: boolean;
   resolveImageUrl?: (guid: string) => string | null;
   onTouchAxis?: (controlId: string, value: number) => void;
+  onWidgetEvent?: (event: UiWidgetEvent) => void;
   markDirty?: () => void;
 }
 
@@ -61,10 +70,49 @@ export class BabylonUiApplyHost implements UiApplyHost {
   }
 
   clear(): void {
-    for (const handle of this.handles) handle.dispose();
     this.handles = [];
     this.visibility.clear();
     this.factory.clear();
+  }
+
+  reconcile(descriptors: readonly UiControlDescriptor[]): void {
+    const next = descriptors.map((descriptor) => ({
+      descriptor,
+      spec: guiSpecFromDescriptor(descriptor, {
+        interactive: this.options.interactive,
+      }),
+    }));
+    const nextIds = new Set(next.map((row) => row.spec.id));
+    for (const handle of this.handles) {
+      if (!nextIds.has(handle.id)) {
+        this.factory.remove?.(handle.id) ?? handle.dispose();
+      }
+    }
+    const remaining = new Map(
+      this.handles.filter((handle) => nextIds.has(handle.id)).map((handle) => [handle.id, handle]),
+    );
+    this.handles = [];
+    this.visibility.clear();
+    for (const { descriptor, spec } of next) {
+      if (this.visibility.get(descriptor.id) === false) {
+        spec.hitTestVisible = false;
+      }
+      const previous = remaining.get(spec.id);
+      if (
+        previous &&
+        canUpdateInPlace(previous.spec, spec) &&
+        this.factory.update?.(spec, previous.spec)
+      ) {
+        previous.spec = spec;
+        this.handles.push(previous);
+      } else {
+        if (previous) this.factory.remove?.(previous.id) ?? previous.dispose();
+        const handle = this.factory.create(spec);
+        this.handles.push(handle);
+        this.bindInteractive(handle, descriptor);
+      }
+      this.visibility.set(descriptor.id, descriptor.visible);
+    }
   }
 
   addControl(descriptor: UiControlDescriptor): void {
@@ -77,13 +125,16 @@ export class BabylonUiApplyHost implements UiApplyHost {
     const handle = this.factory.create(spec);
     this.handles.push(handle);
     this.visibility.set(descriptor.id, descriptor.visible);
-    if (
-      this.options.interactive &&
-      this.options.onTouchAxis &&
-      handle.control &&
-      descriptor.visible
-    ) {
+    this.bindInteractive(handle, descriptor);
+  }
+
+  private bindInteractive(handle: GuiControlHandle, descriptor: UiControlDescriptor): void {
+    if (!this.options.interactive || !handle.control || !descriptor.visible) return;
+    if (this.options.onTouchAxis) {
       bindDescriptorTouchInput(handle.control, descriptor, this.options.onTouchAxis);
+    }
+    if (this.options.onWidgetEvent) {
+      bindWidgetEvents(handle.control, descriptor, this.options.onWidgetEvent);
     }
   }
 
@@ -152,6 +203,104 @@ function applyCommon(control: Control, spec: GuiControlSpec): void {
   if (spec.fontFamily) control.fontFamily = spec.fontFamily;
   if (typeof spec.fontSize === "number") control.fontSize = spec.fontSize;
   if (spec.color) control.color = spec.color;
+}
+
+function canUpdateInPlace(previous: GuiControlSpec, next: GuiControlSpec): boolean {
+  return (
+    previous.type === next.type &&
+    previous.parentId === next.parentId &&
+    previous.kind === next.kind &&
+    previous.layoutMode === next.layoutMode &&
+    previous.gridColumns === next.gridColumns &&
+    previous.gridRows === next.gridRows &&
+    previous.gridColumn === next.gridColumn &&
+    previous.gridRow === next.gridRow
+  );
+}
+
+function applyTypeSpecific(control: Control, spec: GuiControlSpec, previous?: GuiControlSpec): void {
+  switch (spec.type) {
+    case "Button": {
+      if (control instanceof Button && control.textBlock) {
+        control.textBlock.text = spec.text ?? "";
+      }
+      if (control instanceof Rectangle) {
+        control.thickness = spec.thickness ?? 0;
+        if (spec.background) control.background = spec.background;
+        if (typeof spec.cornerRadius === "number") control.cornerRadius = spec.cornerRadius;
+      }
+      return;
+    }
+    case "TextBlock": {
+      if (control instanceof TextBlock) control.text = spec.text ?? "";
+      return;
+    }
+    case "InputText": {
+      if (control instanceof InputText) {
+        if (!previous || previous.text !== spec.text) control.text = spec.text ?? "";
+        if (spec.background) control.background = spec.background;
+      }
+      return;
+    }
+    case "Slider": {
+      if (control instanceof Slider) {
+        control.minimum = spec.sliderMin ?? 0;
+        control.maximum = spec.sliderMax ?? 1;
+        if (!previous || previous.sliderValue !== spec.sliderValue) {
+          control.value = spec.sliderValue ?? 0;
+        }
+      }
+      return;
+    }
+    case "Checkbox": {
+      if (control instanceof Checkbox && (!previous || previous.checked !== spec.checked)) {
+        control.isChecked = spec.checked ?? false;
+      }
+      return;
+    }
+    case "StackPanel": {
+      if (control instanceof StackPanel) {
+        control.isVertical = spec.isVertical ?? true;
+        control.spacing = spec.spacing ?? 0;
+        if (spec.background) control.background = spec.background;
+      }
+      return;
+    }
+    default: {
+      if (control instanceof Rectangle) {
+        control.thickness = spec.thickness ?? 0;
+        if (spec.background) control.background = spec.background;
+        if (typeof spec.cornerRadius === "number") control.cornerRadius = spec.cornerRadius;
+      }
+    }
+  }
+}
+
+function bindWidgetEvents(
+  control: Control,
+  descriptor: UiControlDescriptor,
+  onWidgetEvent: (event: UiWidgetEvent) => void,
+): void {
+  if (descriptor.kind === "Button") {
+    control.onPointerClickObservable.add(() => {
+      onWidgetEvent({ kind: "click", widgetId: descriptor.id });
+    });
+  }
+  if (control instanceof Slider) {
+    control.onValueChangedObservable.add((value) => {
+      onWidgetEvent({ kind: "value", widgetId: descriptor.id, value });
+    });
+  }
+  if (control instanceof Checkbox) {
+    control.onIsCheckedChangedObservable.add((checked) => {
+      onWidgetEvent({ kind: "checked", widgetId: descriptor.id, value: checked });
+    });
+  }
+  if (control instanceof InputText) {
+    control.onTextChangedObservable.add((input) => {
+      onWidgetEvent({ kind: "text", widgetId: descriptor.id, value: input.text });
+    });
+  }
 }
 
 function createProgressBar(spec: GuiControlSpec): Control {
@@ -384,6 +533,7 @@ export function createAdtControlFactory(
 
   return {
     create(spec) {
+      uiHostStats.create += 1;
       const control = createBabylonControl(spec, options);
       byId.set(spec.id, control);
       handles.push(control);
@@ -413,26 +563,24 @@ export function createAdtControlFactory(
         type: spec.type,
         spec,
         control,
-        dispose: () => {
-          const parent = control.parent;
-          if (parent instanceof Container) {
-            parent.removeControl(control);
-          } else {
-            adt.removeControl(control);
-          }
-          control.dispose();
-        },
+        dispose: () => disposeControl(control),
       };
+    },
+    update(spec, previous) {
+      const control = byId.get(spec.id);
+      if (!control) return false;
+      applyCommon(control, spec);
+      applyTypeSpecific(control, spec, previous);
+      return true;
+    },
+    remove(id) {
+      const control = byId.get(id);
+      if (!control || id === SAFE_AREA_CONTROL_ID) return;
+      disposeControl(control);
     },
     clear() {
       for (const control of handles) {
-        const parent = control.parent;
-        if (parent instanceof Container) {
-          parent.removeControl(control);
-        } else {
-          adt.removeControl(control);
-        }
-        control.dispose();
+        disposeAttached(control);
       }
       handles.length = 0;
       byId.clear();
@@ -440,6 +588,23 @@ export function createAdtControlFactory(
       rootCanvas = null;
     },
   };
+
+  function disposeControl(control: Control): void {
+    disposeAttached(control);
+    const index = handles.indexOf(control);
+    if (index >= 0) handles.splice(index, 1);
+    byId.delete(control.name);
+  }
+
+  function disposeAttached(control: Control): void {
+    const parent = control.parent;
+    if (parent instanceof Container) {
+      parent.removeControl(control);
+    } else {
+      adt.removeControl(control);
+    }
+    control.dispose();
+  }
 }
 
 export interface AdtIdealTarget {

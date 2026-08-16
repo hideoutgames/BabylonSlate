@@ -14,6 +14,7 @@ import {
   type BabylonUiHostOptions,
   type DesignerGizmoState,
 } from "./babylon-ui-host";
+import { uiHostStats } from "./ui-apply";
 
 export interface UiSurfaceOptions extends BabylonUiHostOptions {
   name: string;
@@ -100,13 +101,18 @@ export function createUiSurface(
     interactive: options.interactive,
     resolveImageUrl: options.resolveImageUrl,
     onTouchAxis: options.onTouchAxis,
+    onWidgetEvent: options.onWidgetEvent,
     markDirty: () => {
       designAdt.markAsDirty();
       blitDesign();
     },
   });
   const detachPointers = options.interactive
-    ? attachAdtCanvasPointers(canvas, designAdt, blitDesign)
+    ? attachAdtCanvasPointers(canvas, designAdt, blitDesign, {
+        onPickError: (error) => {
+          console.error("ADT pick failed", error);
+        },
+      })
     : null;
 
   return {
@@ -159,6 +165,7 @@ export function attachFullscreenGui(
     interactive: options.interactive,
     resolveImageUrl: options.resolveImageUrl,
     onTouchAxis: options.onTouchAxis,
+    onWidgetEvent: options.onWidgetEvent,
     markDirty: () => adt.markAsDirty(),
   });
   return {
@@ -204,28 +211,98 @@ export function attachAdtCanvasPointers(
   canvas: HTMLCanvasElement,
   adt: AdvancedDynamicTexture,
   afterPick?: () => void,
+  options?: { onPickError?: (error: unknown) => void },
 ): () => void {
-  const handle = (event: PointerEvent) => {
+  canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
+  let capturedId: number | null = null;
+
+  const coords = (event: { clientX: number; clientY: number }) => {
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, rect.width);
     const height = Math.max(1, rect.height);
-    const x = ((event.clientX - rect.left) / width) * canvas.width;
-    const y = ((event.clientY - rect.top) / height) * canvas.height;
-    const info = new PointerInfoPre(pointerTypeFor(event.type), event, x, y);
-    adt.pick(x, y, info);
-    afterPick?.();
+    return {
+      x: ((event.clientX - rect.left) / width) * canvas.width,
+      y: ((event.clientY - rect.top) / height) * canvas.height,
+    };
   };
-  canvas.addEventListener("pointerdown", handle);
-  canvas.addEventListener("pointermove", handle);
-  canvas.addEventListener("pointerup", handle);
-  canvas.addEventListener("pointerleave", handle);
-  canvas.addEventListener("pointercancel", handle);
+
+  const pickAt = (event: Event, type: string) => {
+    try {
+      const pointer = event as PointerEvent;
+      const { x, y } = coords(pointer);
+      const info = new PointerInfoPre(pointerTypeFor(type), event, x, y);
+      adt.pick(x, y, info);
+      afterPick?.();
+    } catch (error) {
+      options?.onPickError?.(error);
+    }
+  };
+
+  const onPointer = (event: PointerEvent) => {
+    event.stopPropagation?.();
+    if (event.type === "pointerdown") {
+      try {
+        canvas.setPointerCapture?.(event.pointerId);
+      } catch {
+        /* jsdom / already captured */
+      }
+      capturedId = event.pointerId;
+      canvas.focus?.();
+    }
+    if (
+      event.type === "pointerup" ||
+      event.type === "pointercancel" ||
+      event.type === "pointerleave"
+    ) {
+      if (capturedId === event.pointerId) {
+        try {
+          canvas.releasePointerCapture?.(event.pointerId);
+        } catch {
+          /* jsdom */
+        }
+        capturedId = null;
+      }
+    }
+    pickAt(event, event.type);
+  };
+
+  const onWheel = (event: WheelEvent) => {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    pickAt(event, "wheel");
+  };
+
+  const onKey = (event: KeyboardEvent) => {
+    try {
+      const process = (
+        adt as AdvancedDynamicTexture & {
+          processKeyboard?: (evt: KeyboardEvent) => void;
+        }
+      ).processKeyboard;
+      process?.call(adt, event);
+      adt.focusedControl?.processKeyboard?.(event);
+    } catch (error) {
+      options?.onPickError?.(error);
+    }
+  };
+
+  canvas.addEventListener("pointerdown", onPointer);
+  canvas.addEventListener("pointermove", onPointer);
+  canvas.addEventListener("pointerup", onPointer);
+  canvas.addEventListener("pointerleave", onPointer);
+  canvas.addEventListener("pointercancel", onPointer);
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  canvas.addEventListener("keydown", onKey);
+  canvas.addEventListener("keyup", onKey);
   return () => {
-    canvas.removeEventListener("pointerdown", handle);
-    canvas.removeEventListener("pointermove", handle);
-    canvas.removeEventListener("pointerup", handle);
-    canvas.removeEventListener("pointerleave", handle);
-    canvas.removeEventListener("pointercancel", handle);
+    canvas.removeEventListener("pointerdown", onPointer);
+    canvas.removeEventListener("pointermove", onPointer);
+    canvas.removeEventListener("pointerup", onPointer);
+    canvas.removeEventListener("pointerleave", onPointer);
+    canvas.removeEventListener("pointercancel", onPointer);
+    canvas.removeEventListener("wheel", onWheel);
+    canvas.removeEventListener("keydown", onKey);
+    canvas.removeEventListener("keyup", onKey);
   };
 }
 
@@ -247,6 +324,7 @@ export function presentAdtToCanvas(
   if (!source) {
     throw new Error("ADT backing store is missing");
   }
+  uiHostStats.present += 1;
   const size = adt.getSize();
   if (!(size.width > 0) || !(size.height > 0)) {
     return;

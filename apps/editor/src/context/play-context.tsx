@@ -71,6 +71,10 @@ import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { collectFontAssetEntries } from "../lib/play-fonts";
+import {
+  isUsableEngine,
+  nextSharedEngineGeneration,
+} from "../lib/shared-engine-generation";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -97,6 +101,7 @@ interface PlayContextValue {
   stopPlay: () => void;
   registerSharedEngine: (engine: Engine | null) => void;
   ensureSharedEngine: () => Engine | null;
+  sharedEngineGeneration: number;
   registerScheduler: (scheduler: EditorLoopHandle) => () => void;
   focusedNodeId: string | null;
   clearFocusedNode: () => void;
@@ -137,6 +142,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [liveBtState, setLiveBtState] = useState<LiveBtState | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
   const [alwaysRender, setAlwaysRenderState] = useState(true);
+  const [sharedEngineGeneration, setSharedEngineGeneration] = useState(0);
   const [renderStats, setRenderStats] = useState<{
     renderedFps: number;
     invalidationsPerSecond: number;
@@ -255,12 +261,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const registerSharedEngine = useCallback((engine: Engine | null) => {
-    // Prefer viewport-owned engine; keep fallback owned engine if viewport gone.
-    if (engine) {
-      engineRef.current = engine;
-      return;
-    }
-    engineRef.current = ownedEngineRef.current;
+    const previous = engineRef.current;
+    const next = isUsableEngine(engine) ? engine : ownedEngineRef.current;
+    engineRef.current = isUsableEngine(next) ? next : null;
+    setSharedEngineGeneration((current) =>
+      nextSharedEngineGeneration(current, engineRef.current, previous),
+    );
   }, []);
 
   const registerScheduler = useCallback((scheduler: EditorLoopHandle) => {
@@ -300,7 +306,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   }, [projectDocument]);
 
   const ensureEngine = useCallback((): Engine | null => {
-    if (engineRef.current) return engineRef.current;
+    if (isUsableEngine(engineRef.current)) return engineRef.current;
+    if (isUsableEngine(ownedEngineRef.current)) {
+      engineRef.current = ownedEngineRef.current;
+      return ownedEngineRef.current;
+    }
     const canvas = document.createElement("canvas");
     canvas.width = 8;
     canvas.height = 8;
@@ -309,7 +319,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     const engine = createAppEngine(canvas);
     ownedCanvasRef.current = canvas;
     ownedEngineRef.current = engine;
+    const previous = engineRef.current;
     engineRef.current = engine;
+    setSharedEngineGeneration((current) =>
+      nextSharedEngineGeneration(current, engine, previous),
+    );
     return engine;
   }, []);
 
@@ -721,6 +735,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       },
       registerSharedEngine,
       ensureSharedEngine: ensureEngine,
+      sharedEngineGeneration,
       registerScheduler,
       focusedNodeId,
       clearFocusedNode: () => setFocusedNodeId(null),
@@ -745,6 +760,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       cancelPlayMigration,
       registerSharedEngine,
       ensureEngine,
+      sharedEngineGeneration,
       registerScheduler,
       focusedNodeId,
       appendLog,
