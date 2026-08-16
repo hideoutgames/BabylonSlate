@@ -20,6 +20,8 @@ import {
   type NodeVisualRole,
   type PinTypeRef,
 } from "./node-theme";
+import { pinDefaultPreview } from "./pin-default-preview";
+import { PinDefaultPreviewWidget } from "./pin-default-widget";
 
 type LogNodeData = {
   message: string;
@@ -156,27 +158,39 @@ function PinVisual({
   );
 }
 
+function isPinWired(
+  edges: ReadonlyArray<{
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  }>,
+  nodeId: string,
+  pin: SerializedPin,
+): boolean {
+  return edges.some((edge) =>
+    pin.direction === "out"
+      ? edge.source === nodeId && (edge.sourceHandle ?? "") === pin.id
+      : edge.target === nodeId && (edge.targetHandle ?? "") === pin.id,
+  );
+}
+
 function PinHandle({
   nodeId,
   pin,
   pending,
   hasError,
+  connected,
 }: {
   nodeId: string;
   pin: SerializedPin;
   pending: boolean;
   hasError: boolean;
+  connected: boolean;
 }) {
   const { onPinTap, pinDisplayType } = useGraphEditorContext();
   const isSource = pin.direction === "out";
   const displayType = pinDisplayType(nodeId, pin.id) ?? pin.type;
-  const connected = useStore((state) =>
-    state.edges.some((edge) =>
-      pin.direction === "out"
-        ? edge.source === nodeId && (edge.sourceHandle ?? "") === pin.id
-        : edge.target === nodeId && (edge.targetHandle ?? "") === pin.id,
-    ),
-  );
 
   return (
     <Handle
@@ -215,14 +229,25 @@ function PinHandle({
 
 function PinRow({
   nodeId,
+  data,
   incoming,
   outgoing,
 }: {
   nodeId: string;
+  data: Record<string, unknown>;
   incoming?: SerializedPin;
   outgoing?: SerializedPin;
 }) {
   const { pendingPin, pinHasError } = useGraphEditorContext();
+  const incomingConnected = useStore((state) =>
+    incoming ? isPinWired(state.edges, nodeId, incoming) : false,
+  );
+  const outgoingConnected = useStore((state) =>
+    outgoing ? isPinWired(state.edges, nodeId, outgoing) : false,
+  );
+  const preview = incoming
+    ? pinDefaultPreview(incoming, data, incomingConnected)
+    : null;
 
   const isPending = (pin: SerializedPin | undefined) =>
     Boolean(
@@ -231,7 +256,7 @@ function PinRow({
 
   return (
     <div className="flex min-h-[var(--touch-target,44px)] items-center justify-between gap-2">
-      <div className="flex min-w-0 flex-1 items-center">
+      <div className="flex min-w-0 flex-1 items-center gap-1">
         {incoming ? (
           <>
             <PinHandle
@@ -239,8 +264,13 @@ function PinRow({
               pin={incoming}
               pending={isPending(incoming)}
               hasError={pinHasError(nodeId, incoming.id)}
+              connected={incomingConnected}
             />
-            <span className="max-w-[9rem] text-sm leading-snug break-words text-foreground">
+            {preview ? <PinDefaultPreviewWidget preview={preview} /> : null}
+            <span
+              data-pin-label={incoming.name}
+              className="max-w-[9rem] text-base leading-snug break-words text-foreground"
+            >
               {humanizePropertyLabel(incoming.name)}
             </span>
           </>
@@ -248,10 +278,13 @@ function PinRow({
           <span className="size-11 shrink-0" />
         )}
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-end">
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
         {outgoing ? (
           <>
-            <span className="max-w-[9rem] text-right text-sm leading-snug break-words text-foreground">
+            <span
+              data-pin-label={outgoing.name}
+              className="max-w-[9rem] text-right text-base leading-snug break-words text-foreground"
+            >
               {humanizePropertyLabel(outgoing.name)}
             </span>
             <PinHandle
@@ -259,6 +292,7 @@ function PinRow({
               pin={outgoing}
               pending={isPending(outgoing)}
               hasError={pinHasError(nodeId, outgoing.id)}
+              connected={outgoingConnected}
             />
           </>
         ) : (
@@ -396,6 +430,7 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
           <PinRow
             key={row.in?.id ?? row.out?.id ?? `row-${index}`}
             nodeId={id}
+            data={data}
             incoming={row.in}
             outgoing={row.out}
           />
