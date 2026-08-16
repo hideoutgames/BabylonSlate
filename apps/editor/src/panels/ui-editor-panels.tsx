@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { PanelFrame } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -19,7 +19,6 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
-import { GraphEditor } from "@babylonslate/graph-ui";
 import {
   DESIRED_CANVAS_ID,
   type DesignerCanvasId,
@@ -32,11 +31,6 @@ import { useUiEditing } from "../context/ui-editing-context";
 import { UiDesignCanvas } from "../components/ui-design-canvas";
 import { UiDesignHierarchy } from "../components/ui-design-hierarchy";
 import { UiDesignDetails } from "../components/ui-design-details";
-import { ClassMembersView } from "./my-class-panel";
-import {
-  hydrateSerializedGraphForEditor,
-  scriptPaletteNodes,
-} from "../services/graph-validation";
 
 const SCALE_RULES: Array<{ value: ScaleRule; label: string }> = [
   { value: "shortestSide", label: "Shortest Side" },
@@ -230,57 +224,6 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
         onPatchLayout={(id, nextLayout) => patchLayout(id, nextLayout)}
         onPickAsset={setAssetPick}
       />
-    </PanelFrame>
-  );
-}
-
-export function UiLogicPanel(_props: IDockviewPanelProps) {
-  void _props;
-  const {
-    payload,
-    logic,
-    logicMemberId,
-    setLogicMemberId,
-    interfaceAssets,
-    commit,
-    isEditorUtilityInterface,
-  } = useUiEditing();
-  const paletteNodes = useMemo(
-    () =>
-      scriptPaletteNodes(undefined, {
-        graph: logic,
-        assetType: isEditorUtilityInterface
-          ? "EditorUtilityInterface"
-          : "UserInterface",
-      }),
-    [isEditorUtilityInterface, logic],
-  );
-  return (
-    <PanelFrame data-testid="ui-logic-panel">
-      <div className="flex h-full min-h-0">
-        <div className="w-56 shrink-0 border-r border-border" data-testid="ui-logic-members">
-          <ClassMembersView
-            graph={logic}
-            selectedId={logicMemberId}
-            interfaceAssets={interfaceAssets}
-            onGraphChange={(next) => commit({ ...payload, logic: next })}
-            onSelectMember={(id) => setLogicMemberId(id || null)}
-          />
-        </div>
-        <GraphEditor
-          initialGraph={hydrateSerializedGraphForEditor(logic)}
-          paletteNodes={paletteNodes}
-          onChange={(graph) =>
-            commit({
-              ...payload,
-              logic: {
-                ...graph,
-                members: graph.members ?? logic.members,
-              },
-            })
-          }
-        />
-      </div>
     </PanelFrame>
   );
 }

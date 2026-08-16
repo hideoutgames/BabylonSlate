@@ -19,6 +19,8 @@ import {
   MAIN_CLASS_FILE,
   MAIN_GRAPH_FILE,
   MAIN_SCENE_FILE,
+  functionLibraryHeaderMeta,
+  isFunctionLibraryClass,
   migrateLegacyLayout,
   PROJECT_FILE,
   type ProjectDocument,
@@ -72,12 +74,48 @@ import {
 } from "@babylonslate/assets";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
+import { classParentLookup } from "../lib/content-browser-helpers";
 import {
   SEARCH_CATALOG_CLASS_IDS,
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
 import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
 import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
+
+function headerMetaForSave(
+  type: string,
+  parentClass: string | null,
+  content: SerializedScene | SerializedGraph | Record<string, unknown>,
+  parentOf: () => (id: string) => string | null,
+): Record<string, unknown> | undefined {
+  if (type === "EditorUtilityInterface") {
+    return {
+      dockKind:
+        typeof (content as { dockKind?: unknown }).dockKind === "string"
+          ? (content as { dockKind: string }).dockKind
+          : "scene",
+    };
+  }
+  if (
+    (type === "Class" || type === "Graph") &&
+    isFunctionLibraryClass(parentClass, parentOf())
+  ) {
+    return functionLibraryHeaderMeta(
+      content as {
+        members?: Array<{
+          kind: string;
+          name: string;
+          pins?: Array<{
+            name: string;
+            typeId?: string;
+            direction?: "in" | "out";
+          }>;
+        }>;
+      },
+    );
+  }
+  return undefined;
+}
 
 export interface ProjectLoadResult {
   document: ProjectDocument;
@@ -1013,16 +1051,9 @@ export class ProjectService {
           headerPayload: storeInHeader
             ? (content as unknown as Record<string, unknown>)
             : undefined,
-          headerMeta:
-            type === "EditorUtilityInterface"
-              ? {
-                  dockKind:
-                    typeof (content as { dockKind?: unknown }).dockKind ===
-                    "string"
-                      ? (content as { dockKind: string }).dockKind
-                      : "scene",
-                }
-              : undefined,
+          headerMeta: headerMetaForSave(type, parentClass, content, () =>
+            classParentLookup(this.assetRegistry?.list() ?? []),
+          ),
         },
       );
       await storage.writeBinary(path, bytes);

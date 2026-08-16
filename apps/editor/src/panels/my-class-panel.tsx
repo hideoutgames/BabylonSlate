@@ -34,6 +34,10 @@ import { defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { IconActionButton } from "../components/icon-action-button";
 import { classParentLookup } from "../lib/content-browser-helpers";
+import {
+  commitLogicGraph,
+  serializedGraphFromDocument,
+} from "../lib/logic-graph-document";
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
@@ -547,7 +551,8 @@ export function ClassMembersView({
 export function MyClassPanel(_props: MyClassPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
+  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry } =
+    useDocuments();
   const { setFocusDiagnostic } = useValidation();
   const {
     selectedMemberId,
@@ -561,7 +566,17 @@ export function MyClassPanel(_props: MyClassPanelProps) {
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const graph =
-    doc?.ref.kind === "graph" ? (doc.content as SerializedGraph) : null;
+    serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content) ??
+    (doc ? { nodes: [], edges: [] } : null);
+  const persistGraph = (next: SerializedGraph) => {
+    if (!doc) return;
+    const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
+    if (commit.kind === "ui") {
+      void applyAssetDocumentChange(documentId, commit.payload);
+      return;
+    }
+    void applyGraphChange(documentId, commit.graph);
+  };
   const className = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : null;
   const interfaceAssets = (assetRegistry?.list() ?? [])
     .filter((asset) => asset.header.type === "ScriptInterface")
@@ -576,12 +591,17 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const parentGraphs: Record<string, SerializedGraph> = {};
   for (const entry of openDocuments) {
-    if (entry.ref.kind !== "graph") continue;
-    parentGraphs[classIdForGraphPath(entry.ref.path)] =
-      entry.content as SerializedGraph;
+    const parentGraph = serializedGraphFromDocument(
+      entry.ref.kind,
+      entry.content,
+    );
+    if (!parentGraph) continue;
+    parentGraphs[classIdForGraphPath(entry.ref.path)] = parentGraph;
   }
   const membersOptions = {
-    parentClass: indexed?.header.parentClass ?? null,
+    parentClass:
+      indexed?.header.parentClass ??
+      (doc?.ref.kind === "ui" ? "BObject" : null),
     parentOf,
     parentGraphs,
   };
@@ -613,9 +633,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
         classId={className ?? undefined}
         interfaceAssets={interfaceAssets}
         membersOptions={membersOptions}
-        onGraphChange={(next) => {
-          void applyGraphChange(documentId, next);
-        }}
+        onGraphChange={persistGraph}
         onSelectMember={(id, member) => {
           if (!id) {
             setSelectedMemberId(null);
@@ -647,7 +665,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
                   : undefined,
               title: member.name,
             });
-            void applyGraphChange(documentId, next);
+            persistGraph(next);
             const spawned = next.nodes.find((node) => {
               if (node.type !== eventType) return false;
               if (eventType !== "flow.event.custom") return true;

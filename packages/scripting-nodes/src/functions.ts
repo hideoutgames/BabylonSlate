@@ -72,11 +72,18 @@ export const functionCallNodes: NodeDefinition[] = [
             edge.targetNodeId === ctx.node.id &&
             edge.targetPinId === targetPin.id,
         );
+      const classId =
+        typeof ctx.node.properties.classId === "string" &&
+        ctx.node.properties.classId.trim()
+          ? ctx.node.properties.classId.trim()
+          : "BObject";
       const targetExpr =
-        !targetPin ||
-        (!targetConnected && ctx.node.properties.implicitSelf === true)
-          ? "ctx.self"
-          : ctx.input("target");
+        ctx.node.properties.static === true
+          ? JSON.stringify(classId)
+          : !targetPin ||
+              (!targetConnected && ctx.node.properties.implicitSelf === true)
+            ? "ctx.self"
+            : ctx.input("target");
       const args: string[] = [];
       for (const pinDef of ctx.node.pins) {
         if (

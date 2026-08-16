@@ -28,7 +28,6 @@ import {
   UiDesignPanel,
   UiDetailsPanel,
   UiHierarchyPanel,
-  UiLogicPanel,
   UiSettingsPanel,
 } from "../panels/ui-editor-panels";
 import { EditorUtilityPanel } from "../panels/editor-utility-panel";
@@ -93,7 +92,6 @@ export const panelComponents = {
     <UiHierarchyPanel {...props} />
   ),
   "ui-details": (props: IDockviewPanelProps) => <UiDetailsPanel {...props} />,
-  "ui-logic": (props: IDockviewPanelProps) => <UiLogicPanel {...props} />,
   "ui-settings": (props: IDockviewPanelProps) => <UiSettingsPanel {...props} />,
   "editor-utility": (props: IDockviewPanelProps) => (
     <EditorUtilityPanel {...props} />

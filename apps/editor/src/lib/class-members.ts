@@ -114,6 +114,14 @@ function isFunctionLibraryHost(options?: ClassEventOptions): boolean {
   return isFunctionLibraryClass(options?.parentClass, parentLookup(options));
 }
 
+/** Function libraries have no Event Graph; show Empty until a function is selected. */
+export function functionLibraryShowsEventGraphEmpty(
+  options?: ClassEventOptions & { activeFunctionId?: string | null },
+): boolean {
+  if (options?.activeFunctionId) return false;
+  return isFunctionLibraryHost(options);
+}
+
 export function blueprintSectionsForClass(
   options?: ClassEventOptions & { activeFunctionId?: string | null },
 ): BlueprintSection[] {
@@ -223,6 +231,19 @@ export function isScriptCatalogNodeAllowed(
   const isBlackboard = (BT_BLACKBOARD_NODE_IDS as readonly string[]).includes(
     nodeId,
   );
+  if (
+    chain.includes("FunctionLibrary") ||
+    chain.includes("EditorFunctionLibrary")
+  ) {
+    return (
+      !isActorEvent &&
+      !isEditorEvent &&
+      !isBtLeafEvent &&
+      !isFinish &&
+      !isReturn &&
+      !isBlackboard
+    );
+  }
   if (chain.includes("EditorUtilityObject")) {
     return !isActorEvent && !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
   }

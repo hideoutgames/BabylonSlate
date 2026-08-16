@@ -5,6 +5,7 @@ import {
   addVariableAccessNode,
   blueprintSectionsForClass,
   classAllowsMemberKind,
+  functionLibraryShowsEventGraphEmpty,
   memberNamePromptCopy,
   patchClassMember,
   removeClassMember,
@@ -429,6 +430,30 @@ describe("classAllowsMemberKind", () => {
         parentOf: (id) =>
           id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
       }),
+    ).toBe(false);
+  });
+});
+
+describe("functionLibraryShowsEventGraphEmpty", () => {
+  it("shows the empty Event Graph only for FunctionLibrary hosts without a function open", () => {
+    expect(
+      functionLibraryShowsEventGraphEmpty({ parentClass: "FunctionLibrary" }),
+    ).toBe(true);
+    expect(
+      functionLibraryShowsEventGraphEmpty({
+        parentClass: "EditorFunctionLibrary",
+        parentOf: (id) =>
+          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
+      }),
+    ).toBe(true);
+    expect(
+      functionLibraryShowsEventGraphEmpty({
+        parentClass: "FunctionLibrary",
+        activeFunctionId: "fn-1",
+      }),
+    ).toBe(false);
+    expect(
+      functionLibraryShowsEventGraphEmpty({ parentClass: "Actor" }),
     ).toBe(false);
   });
 });

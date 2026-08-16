@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createDefaultPlayHud, createWidget } from "@babylonslate/ui-runtime";
 import { UiDesigner } from "./ui-designer";
 
@@ -286,26 +286,14 @@ describe("UiDesigner", () => {
     expect(screen.queryByTestId("ui-desired-height")).toBeNull();
   });
 
-  it("hosts a script palette and class members on the Logic tab", async () => {
-    const { container } = render(
-      <UiDesigner
-        path="assets/HUD.ui.babasset"
-        payload={createDefaultPlayHud("HUD") as unknown as Record<string, unknown>}
-        onChange={() => {}}
-      />,
-    );
-    expect(screen.getByTestId("ui-logic-members")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("class-add-variables"));
-    expect(screen.getByTestId("class-add-events")).toBeTruthy();
-    await waitFor(() => {
-      expect(container.querySelector(".react-flow__pane")).not.toBeNull();
-    });
-    const pane = container.querySelector(".react-flow__pane");
-    fireEvent.click(pane!);
-    fireEvent.click(pane!);
-    await waitFor(() => {
-      expect(screen.getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
-    });
+  it("hosts Designer Hierarchy, Design, and Details without a Logic strip", () => {
+    renderHud();
+    expect(screen.getByTestId("ui-hierarchy-panel")).toBeTruthy();
+    expect(screen.getByTestId("ui-design-panel")).toBeTruthy();
+    expect(screen.getByTestId("ui-details-panel")).toBeTruthy();
+    expect(screen.queryByTestId("ui-logic-members")).toBeNull();
+    expect(screen.queryByTestId("ui-logic-panel")).toBeNull();
+    expect(screen.queryByTestId("class-add-functions")).toBeNull();
   });
 
   it("pans the design canvas with two pointers", () => {
@@ -386,31 +374,6 @@ describe("UiDesigner", () => {
     fireEvent.click(screen.getByTestId("ui-widget-jump"));
     expect(screen.getByTestId("property-action").tagName).not.toBe("INPUT");
     expect(screen.getByTestId("property-visual-override")).toBeTruthy();
-  });
-
-  it("prompts for class member names with NamePromptDialog", async () => {
-    const onChange = vi.fn();
-    render(
-      <UiDesigner
-        path="assets/HUD.ui.babasset"
-        payload={createDefaultPlayHud("HUD") as unknown as Record<string, unknown>}
-        onChange={onChange}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("class-add-functions"));
-    fireEvent.change(screen.getByTestId("name-prompt-input"), {
-      target: { value: "Jump" },
-    });
-    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        logic: expect.objectContaining({
-          members: expect.arrayContaining([
-            expect.objectContaining({ kind: "function", name: "Jump" }),
-          ]),
-        }),
-      }),
-    );
   });
 
   it("round-trips EditorUtilityInterface dockKind in Settings", () => {

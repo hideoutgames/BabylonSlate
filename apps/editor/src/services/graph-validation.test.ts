@@ -168,6 +168,29 @@ describe("hydrateSerializedGraphForEditor", () => {
     const hydrated = hydrateSerializedGraphForEditor(graph, registry);
     expect(hydrated.nodes[0]?.data.title).toBe("Event On Hit");
   });
+
+  it("stamps __editorOnly from the registry on saved editor lifecycle nodes", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "startup",
+          type: "flow.event.editorStartup",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 80 },
+          data: {},
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.__editorOnly).toBe(true);
+    expect(hydrated.nodes[1]?.data.__editorOnly).toBeUndefined();
+  });
 });
 
 describe("createDefaultLogicGraphSerialized", () => {
@@ -685,5 +708,205 @@ describe("scriptPaletteNodes", () => {
     const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
     expect(pins?.some((pin) => pin.id === "name")).toBe(false);
     expect(pins?.some((pin) => pin.id === "value")).toBe(true);
+  });
+
+  const libraryParentOf = (id: string) => {
+    if (id === "MathLib") return "FunctionLibrary";
+    if (id === "FunctionLibrary") return "BObject";
+    if (id === "EditorMath") return "EditorFunctionLibrary";
+    if (id === "EditorFunctionLibrary") return "FunctionLibrary";
+    if (id === "EditorUtilityObject") return "BObject";
+    if (id === "Actor") return "BObject";
+    return null;
+  };
+
+  const addPins = [
+    { name: "exec", typeId: "exec", direction: "in" as const },
+    { name: "a", typeId: "float", direction: "in" as const },
+    { name: "b", typeId: "float", direction: "in" as const },
+    { name: "then", typeId: "exec", direction: "out" as const },
+    { name: "result", typeId: "float", direction: "out" as const },
+  ];
+
+  it("injects static Call Function rows from functionLibraries on an Actor host", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      parentOf: libraryParentOf,
+      classId: "Hero",
+      functionLibraries: [
+        {
+          classId: "MathLib",
+          parentClass: "FunctionLibrary",
+          functions: [{ name: "Add", pins: addPins }],
+        },
+      ],
+    });
+    const call = nodes.find((node) => node.id === "functions.call:MathLib:Add");
+    expect(call?.title).toBe("Call Add");
+    expect(call?.defaultData).toMatchObject({
+      functionName: "Add",
+      classId: "MathLib",
+      implicitSelf: true,
+      static: true,
+    });
+    expect(call?.pins?.some((pin) => pin.id === "target")).toBe(false);
+    expect(
+      call?.pins?.some((pin) => pin.id === "a" && pin.direction === "in"),
+    ).toBe(true);
+  });
+
+  it("shows FunctionLibrary calls on EditorUtilityObject and EditorUtilityInterface hosts", () => {
+    const libraries = [
+      {
+        classId: "MathLib",
+        parentClass: "FunctionLibrary",
+        functions: [{ name: "Add", pins: addPins }],
+      },
+    ];
+    const utility = scriptPaletteNodes(registry, {
+      parentClass: "EditorUtilityObject",
+      parentOf: libraryParentOf,
+      functionLibraries: libraries,
+    });
+    const eui = scriptPaletteNodes(registry, {
+      assetType: "EditorUtilityInterface",
+      parentOf: libraryParentOf,
+      functionLibraries: libraries,
+    });
+    expect(
+      utility.some((node) => node.id === "functions.call:MathLib:Add"),
+    ).toBe(true);
+    expect(eui.some((node) => node.id === "functions.call:MathLib:Add")).toBe(
+      true,
+    );
+  });
+
+  it("hides EditorFunctionLibrary calls on Actor and UserInterface hosts", () => {
+    const libraries = [
+      {
+        classId: "EditorMath",
+        parentClass: "EditorFunctionLibrary",
+        functions: [{ name: "Snap", pins: addPins }],
+      },
+    ];
+    const actor = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      parentOf: libraryParentOf,
+      functionLibraries: libraries,
+    });
+    const ui = scriptPaletteNodes(registry, {
+      assetType: "UserInterface",
+      parentOf: libraryParentOf,
+      functionLibraries: libraries,
+    });
+    expect(
+      actor.some((node) => node.id === "functions.call:EditorMath:Snap"),
+    ).toBe(false);
+    expect(ui.some((node) => node.id === "functions.call:EditorMath:Snap")).toBe(
+      false,
+    );
+  });
+
+  it("shows EditorFunctionLibrary calls on editor graph hosts", () => {
+    const libraries = [
+      {
+        classId: "EditorMath",
+        parentClass: "EditorFunctionLibrary",
+        functions: [{ name: "Snap", pins: addPins }],
+      },
+    ];
+    const hosts = [
+      scriptPaletteNodes(registry, {
+        parentClass: "EditorUtilityObject",
+        parentOf: libraryParentOf,
+        functionLibraries: libraries,
+      }),
+      scriptPaletteNodes(registry, {
+        assetType: "EditorUtilityInterface",
+        parentOf: libraryParentOf,
+        functionLibraries: libraries,
+      }),
+      scriptPaletteNodes(registry, {
+        parentClass: "EditorFunctionLibrary",
+        parentOf: libraryParentOf,
+        functionLibraries: libraries,
+      }),
+    ];
+    for (const nodes of hosts) {
+      expect(
+        nodes.some((node) => node.id === "functions.call:EditorMath:Snap"),
+      ).toBe(true);
+    }
+  });
+
+  it("emits a static Call (no Target) for otherClassGraphs FunctionLibrary ancestry", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      parentOf: libraryParentOf,
+      classId: "Hero",
+      otherClassGraphs: {
+        MathLib: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "fn-1", kind: "function", name: "Add", pins: addPins }],
+        },
+      },
+    });
+    const call = nodes.find((node) => node.id === "functions.call:MathLib:Add");
+    expect(call?.defaultData).toMatchObject({
+      functionName: "Add",
+      classId: "MathLib",
+      implicitSelf: true,
+      static: true,
+    });
+    expect(call?.pins?.some((pin) => pin.id === "target")).toBe(false);
+  });
+
+  it("does not duplicate a library function already added from otherClassGraphs", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      parentOf: libraryParentOf,
+      classId: "Hero",
+      otherClassGraphs: {
+        MathLib: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "fn-1", kind: "function", name: "Add", pins: addPins }],
+        },
+      },
+      functionLibraries: [
+        {
+          classId: "MathLib",
+          parentClass: "FunctionLibrary",
+          functions: [{ name: "Add", pins: addPins }],
+        },
+      ],
+    });
+    expect(
+      nodes.filter((node) => node.id === "functions.call:MathLib:Add"),
+    ).toHaveLength(1);
+  });
+
+  it("hides native and editor lifecycle events on FunctionLibrary palettes", () => {
+    const library = scriptPaletteNodes(registry, {
+      parentClass: "FunctionLibrary",
+    });
+    const editorLibrary = scriptPaletteNodes(registry, {
+      parentClass: "EditorFunctionLibrary",
+      parentOf: libraryParentOf,
+    });
+    for (const nodes of [library, editorLibrary]) {
+      expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(
+        false,
+      );
+      expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
+      expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+        false,
+      );
+      expect(nodes.some((node) => node.id === "flow.event.sceneOpen")).toBe(
+        false,
+      );
+      expect(nodes.some((node) => node.id === "debug.log")).toBe(true);
+    }
   });
 });

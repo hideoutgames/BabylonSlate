@@ -131,7 +131,7 @@ export interface ScriptContext {
     args?: Record<string, unknown>,
   ): void;
   invokeFunction(
-    target: Actor | null | undefined,
+    target: Actor | string | null | undefined,
     functionName: string,
     args?: Record<string, unknown>,
   ): Record<string, unknown>;
@@ -461,18 +461,26 @@ export class ScriptHost {
         );
       },
       invokeFunction: (target, functionName, fnArgs) => {
-        const actor = (target ?? self) as Actor | null;
-        if (!actor || typeof functionName !== "string" || !functionName) {
+        if (typeof functionName !== "string" || !functionName) {
           return {};
         }
-        const loaded = this.byClassId.get(actor.classId);
+        let loaded: LoadedScript[] | undefined;
+        let receiver: Actor | null = null;
+        if (typeof target === "string") {
+          loaded = this.byClassId.get(target);
+        } else {
+          const actor = (target ?? self) as Actor | null;
+          if (!actor) return {};
+          receiver = actor;
+          loaded = this.byClassId.get(actor.classId);
+        }
         if (!loaded || loaded.length === 0) return {};
         let result: unknown = {};
         for (const entry of loaded) {
           const fn = entry.exports[functionName];
           if (typeof fn !== "function") continue;
           const nested = this.createContext(
-            actor,
+            receiver,
             deltaSeconds,
             tickIndex,
             fnArgs ?? {},

@@ -7,6 +7,12 @@ import {
 } from "@babylonslate/graph-ui";
 import { PanelFrame } from "@babylonslate/editor-kit";
 import type { SerializedGraph } from "@babylonslate/core";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import { createAppSettingsStore } from "@babylonslate/vfs";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -15,6 +21,7 @@ import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import { classParentLookup } from "../lib/content-browser-helpers";
+import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
 import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
@@ -24,7 +31,8 @@ import {
 } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
-  replaceSerializedGraphInDocument,
+  collectFunctionLibrariesForPalette,
+  commitLogicGraph,
   serializedGraphFromDocument,
 } from "../lib/logic-graph-document";
 
@@ -87,6 +95,16 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     }
     return graphs;
   }, [classId, openDocuments]);
+  const functionLibraries = useMemo(
+    () =>
+      collectFunctionLibrariesForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+        parentOf,
+        classIdForPath: classIdForGraphPath,
+      }),
+    [assetRegistry, openDocuments, parentOf],
+  );
   const graph = useMemo(() => {
     const slice =
       activeFunctionId && graphContent?.functionGraphs?.[activeFunctionId]
@@ -136,10 +154,12 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         otherClassGraphs,
         activeFunctionId,
         assetType: indexed?.header.type,
+        functionLibraries,
       }),
     [
       activeFunctionId,
       classId,
+      functionLibraries,
       graphContent,
       indexed?.header.type,
       otherClassGraphs,
@@ -160,55 +180,63 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     [diagnostics],
   );
 
+  const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
+    parentClass,
+    parentOf,
+    activeFunctionId,
+  });
+
   return (
     <PanelFrame data-testid="graph-panel">
-      <GraphEditor
-        key={`${documentId}:${activeFunctionId ?? "event"}`}
-        initialGraph={graph}
-        colorMode="dark"
-        defaultZoom={defaultZoom}
-        focusedNodeId={focusId}
-        diagnostics={graphDiagnostics}
-        paletteNodes={paletteNodes}
-        onNavigateRequest={() => setFocusDiagnostic(null)}
-        onSelectionChange={setSelectedNodeIds}
-        onChange={(next) => {
-          const current = graphContent;
-          if (!current || !doc) return;
-          const merged: SerializedGraph = activeFunctionId
-            ? {
-                ...current,
-                functionGraphs: {
-                  ...current.functionGraphs,
-                  [activeFunctionId]: {
-                    nodes: next.nodes,
-                    edges: next.edges,
+      {showLibraryEmpty ? (
+        <Empty data-testid="function-library-event-graph-empty">
+          <EmptyHeader>
+            <EmptyTitle>No Event Graph</EmptyTitle>
+            <EmptyDescription>
+              Function libraries only have functions. Add one in the Class panel.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <GraphEditor
+          key={`${documentId}:${activeFunctionId ?? "event"}`}
+          initialGraph={graph}
+          colorMode="dark"
+          defaultZoom={defaultZoom}
+          focusedNodeId={focusId}
+          diagnostics={graphDiagnostics}
+          paletteNodes={paletteNodes}
+          onNavigateRequest={() => setFocusDiagnostic(null)}
+          onSelectionChange={setSelectedNodeIds}
+          onChange={(next) => {
+            if (!doc) return;
+            const current = graphContent ?? { nodes: [], edges: [] };
+            const merged: SerializedGraph = activeFunctionId
+              ? {
+                  ...current,
+                  functionGraphs: {
+                    ...current.functionGraphs,
+                    [activeFunctionId]: {
+                      nodes: next.nodes,
+                      edges: next.edges,
+                    },
                   },
-                },
-              }
-            : {
-                ...next,
-                members: next.members ?? current.members,
-                components: next.components ?? current.components,
-                functionGraphs: current.functionGraphs,
-              };
-          if (doc.ref.kind === "ui") {
-            const payload = replaceSerializedGraphInDocument(
-              "ui",
-              doc.content,
-              merged,
-            );
-            if (payload && typeof payload === "object") {
-              void applyAssetDocumentChange(
-                documentId,
-                payload as Record<string, unknown>,
-              );
+                }
+              : {
+                  ...next,
+                  members: next.members ?? current.members,
+                  components: next.components ?? current.components,
+                  functionGraphs: current.functionGraphs,
+                };
+            const commit = commitLogicGraph(doc.ref.kind, doc.content, merged);
+            if (commit.kind === "ui") {
+              void applyAssetDocumentChange(documentId, commit.payload);
+              return;
             }
-            return;
-          }
-          void applyGraphChange(documentId, merged);
-        }}
-      />
+            void applyGraphChange(documentId, commit.graph);
+          }}
+        />
+      )}
     </PanelFrame>
   );
 }
