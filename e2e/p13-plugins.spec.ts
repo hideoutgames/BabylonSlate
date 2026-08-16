@@ -143,6 +143,9 @@ test.describe("P13 plugins", () => {
     ).toHaveAttribute("aria-checked", "true");
     await closeSettings(page);
 
+    await expect(
+      page.getByTestId("tree-row-plugins/shared-pack/assets"),
+    ).toBeVisible();
     await page.getByTestId("tree-row-plugins/shared-pack/assets").click();
     await page.getByTestId("content-browser-new-asset").click();
     await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();

@@ -95,8 +95,10 @@ export function ProjectPluginsSettings() {
       ...overrides,
       [plugin.pluginGuid]: { enabled },
     };
-    updateProjectSettings({ pluginOverrides: next });
+    // Mount/unmount before flipping project settings so Content Browser roots
+    // never resolve as enabled while the registry root is still missing.
     await applyPluginOverrides(next);
+    updateProjectSettings({ pluginOverrides: next });
   };
 
   const requestEnableChange = (plugin: PluginDescriptor, enabled: boolean) => {

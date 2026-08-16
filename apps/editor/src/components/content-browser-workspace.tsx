@@ -285,25 +285,29 @@ export function ContentBrowserWorkspace() {
 
   const folderTrees = useMemo(() => {
     if (!assetRegistry) return [];
-    return browserRoots.map((root) => {
+    return browserRoots.flatMap((root) => {
+      if (!assetRegistry.getRoot(root.id)) return [];
       const tree = assetRegistry.folderTree(root.id);
-      return {
-        ...tree,
-        name:
-          root.id === PROJECT_ROOT_ID
-            ? tree.name
-            : root.readOnly
-              ? `${root.label} (Read Only)`
-              : root.label,
-      };
+      return [
+        {
+          ...tree,
+          name:
+            root.id === PROJECT_ROOT_ID
+              ? tree.name
+              : root.readOnly
+                ? `${root.label} (Read Only)`
+                : root.label,
+        },
+      ];
     });
   }, [assetRegistry, browserRoots, registryVersion]);
 
   const allAssets = useMemo(() => {
     if (!assetRegistry) return [];
-    return browserRoots.flatMap((root) =>
-      assetRegistry.list({ rootId: root.id }),
-    );
+    return browserRoots.flatMap((root) => {
+      if (!assetRegistry.getRoot(root.id)) return [];
+      return assetRegistry.list({ rootId: root.id });
+    });
   }, [assetRegistry, browserRoots, registryVersion]);
 
   const refuseTheirsAssetPaths = useCallback(
