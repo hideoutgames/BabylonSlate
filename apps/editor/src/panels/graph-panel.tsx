@@ -32,6 +32,7 @@ import {
 import { classIdForGraphPath } from "../services/script-compiler";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
+  collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
   commitLogicGraph,
   serializedGraphFromDocument,
@@ -92,16 +93,15 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     doc?.ref.kind ?? "",
     doc?.content,
   );
-  const otherClassGraphs = useMemo(() => {
-    const graphs: Record<string, SerializedGraph> = {};
-    for (const entry of openDocuments) {
-      if (entry.ref.kind !== "graph" || !entry.content) continue;
-      const id = classIdForGraphPath(entry.ref.path);
-      if (!id || id === classId) continue;
-      graphs[id] = entry.content as SerializedGraph;
-    }
-    return graphs;
-  }, [classId, openDocuments]);
+  const otherClassGraphs = useMemo(
+    () =>
+      collectClassGraphsForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+        classIdForPath: classIdForGraphPath,
+      }),
+    [assetRegistry, openDocuments],
+  );
   const functionLibraries = useMemo(
     () =>
       collectFunctionLibrariesForPalette({

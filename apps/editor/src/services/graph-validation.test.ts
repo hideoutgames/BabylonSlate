@@ -251,6 +251,13 @@ describe("createDefaultLogicGraphSerialized", () => {
     });
     expect(graph.nodes).toEqual([]);
   });
+
+  it("seeds no event nodes for a BObject class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "BObject",
+    });
+    expect(graph.nodes).toEqual([]);
+  });
 });
 
 describe("validateSerializedGraph", () => {
@@ -300,6 +307,12 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(false);
     expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+  });
+
+  it("hides Begin Play and Tick on BObject class graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "BObject" });
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
   });
 
   it("shows On Evaluate and hides Begin Play on BTDecorator class graphs", () => {

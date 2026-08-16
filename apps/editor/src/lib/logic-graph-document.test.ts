@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
 import {
+  classGraphFromHeaderPayload,
+  collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
   commitLogicGraph,
   replaceSerializedGraphInDocument,
@@ -154,6 +156,108 @@ describe("collectFunctionLibrariesForPalette", () => {
         parentClass: "EditorFunctionLibrary",
         functions: [{ name: "Snap", pins: [] }],
       },
+    ]);
+  });
+});
+
+describe("collectClassGraphsForPalette", () => {
+  it("rebuilds members from a closed Class header and prefers open documents", () => {
+    expect(
+      classGraphFromHeaderPayload({
+        functions: [
+          {
+            id: "fn-1",
+            name: "Alert",
+            pins: [
+              { name: "exec", typeId: "exec", direction: "in" },
+              {
+                name: "target",
+                typeId: "object",
+                direction: "in",
+                typeClassId: "Hero",
+              },
+            ],
+          },
+        ],
+        variables: [
+          { id: "var-1", name: "Health", typeId: "float" },
+          { id: "var-2", name: "Pawn", typeId: "object", typeClassId: "Actor" },
+        ],
+        events: [{ id: "evt-1", name: "On Hit", pins: [] }],
+      }).members,
+    ).toEqual([
+      {
+        id: "fn-1",
+        kind: "function",
+        name: "Alert",
+        pins: [
+          { name: "exec", typeId: "exec", direction: "in" },
+          {
+            name: "target",
+            typeId: "object",
+            direction: "in",
+            typeClassId: "Hero",
+          },
+        ],
+      },
+      { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
+      {
+        id: "var-2",
+        kind: "variable",
+        name: "Pawn",
+        typeId: "object",
+        typeClassId: "Actor",
+      },
+      { id: "evt-1", kind: "event", name: "On Hit", pins: [] },
+    ]);
+
+    const graphs = collectClassGraphsForPalette({
+      assets: [
+        {
+          path: "assets/Guard.class.babasset",
+          header: {
+            type: "Class",
+            name: "Guard",
+            parentClass: "Actor",
+            payload: {
+              functions: [{ id: "fn-1", name: "Alert", pins: [] }],
+              variables: [{ id: "var-1", name: "Health", typeId: "float" }],
+              events: [{ id: "evt-1", name: "On Alert", pins: [] }],
+            },
+          },
+        },
+        {
+          path: "assets/Hero.class.babasset",
+          header: {
+            type: "Class",
+            name: "Hero",
+            parentClass: "Actor",
+            payload: {
+              functions: [{ id: "stale", name: "Stale", pins: [] }],
+            },
+          },
+        },
+      ],
+      openDocuments: [
+        {
+          ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+          content: {
+            nodes: [],
+            edges: [],
+            members: [{ id: "fn-live", kind: "function", name: "Jump", pins: [] }],
+          },
+        },
+      ],
+      classIdForPath: (path) =>
+        path.includes("Guard") ? "Guard" : "Hero",
+    });
+    expect(graphs.Guard?.members).toEqual([
+      { id: "fn-1", kind: "function", name: "Alert", pins: [] },
+      { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
+      { id: "evt-1", kind: "event", name: "On Alert", pins: [] },
+    ]);
+    expect(graphs.Hero?.members).toEqual([
+      { id: "fn-live", kind: "function", name: "Jump", pins: [] },
     ]);
   });
 });

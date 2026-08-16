@@ -11,6 +11,19 @@ describe("nativeEventStubs", () => {
     ]);
   });
 
+  it("defaults to Actor events when no parent class is given", () => {
+    expect(nativeEventStubs().map((stub) => stub.eventType)).toEqual([
+      "flow.event.beginPlay",
+      "flow.event.tick",
+    ]);
+  });
+
+  it("lists no Begin Play or Tick on BObject, GameInstance, or ActorComponent", () => {
+    expect(nativeEventStubs({ parentClass: "BObject" })).toEqual([]);
+    expect(nativeEventStubs({ parentClass: "GameInstance" })).toEqual([]);
+    expect(nativeEventStubs({ parentClass: "ActorComponent" })).toEqual([]);
+  });
+
   it("adds On Command Run when ancestry includes BDebugCommand", () => {
     const stubs = nativeEventStubs({
       parentClass: "BDebugCommand",
@@ -18,6 +31,9 @@ describe("nativeEventStubs", () => {
     });
     expect(stubs.some((stub) => stub.eventType === "flow.event.commandRun")).toBe(
       true,
+    );
+    expect(stubs.some((stub) => stub.eventType === "flow.event.beginPlay")).toBe(
+      false,
     );
   });
 

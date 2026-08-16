@@ -38,6 +38,7 @@ import { classIdForGraphPath } from "../services/script-compiler";
 import { IconActionButton } from "../components/icon-action-button";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import {
+  collectClassGraphsForPalette,
   commitLogicGraph,
   serializedGraphFromDocument,
 } from "../lib/logic-graph-document";
@@ -639,15 +640,11 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     (asset) => asset.path === doc?.ref.path,
   );
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-  const parentGraphs: Record<string, SerializedGraph> = {};
-  for (const entry of openDocuments) {
-    const parentGraph = serializedGraphFromDocument(
-      entry.ref.kind,
-      entry.content,
-    );
-    if (!parentGraph) continue;
-    parentGraphs[classIdForGraphPath(entry.ref.path)] = parentGraph;
-  }
+  const parentGraphs = collectClassGraphsForPalette({
+    assets: assetRegistry?.list() ?? [],
+    openDocuments,
+    classIdForPath: classIdForGraphPath,
+  });
   const membersOptions = {
     parentClass:
       indexed?.header.parentClass ??

@@ -184,7 +184,10 @@ export function nativeEventStubs(
   ) {
     return [];
   }
-  const types: string[] = [...NATIVE_CLASS_EVENT_TYPES];
+  const types: string[] = [];
+  if (chain.includes("Actor")) {
+    types.push(...NATIVE_CLASS_EVENT_TYPES);
+  }
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
   }
@@ -285,6 +288,12 @@ export function isScriptCatalogNodeAllowed(
       !isReturn &&
       !isBlackboard
     );
+  }
+  if (nodeId === "flow.event.beginPlay" || nodeId === "flow.event.tick") {
+    return chain.includes("Actor");
+  }
+  if (nodeId === "flow.event.commandRun") {
+    return chain.includes("Actor") || chain.includes("BDebugCommand");
   }
   return !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
 }
