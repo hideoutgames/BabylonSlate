@@ -10,6 +10,8 @@ import {
 } from "react";
 import type { Engine } from "@babylonjs/core";
 import {
+  DEFAULT_INFINITE_LOOP_DETECTION,
+  DEFAULT_LOOP_COUNT,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   isErr,
@@ -941,6 +943,13 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
             frameCap={
               projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP
+            }
+            infiniteLoopDetection={
+              projectDocument?.settings.infiniteLoopDetection ??
+              DEFAULT_INFINITE_LOOP_DETECTION
+            }
+            loopCount={
+              projectDocument?.settings.loopCount ?? DEFAULT_LOOP_COUNT
             }
             playPreview={
               projectDocument?.settings.playPreview ??

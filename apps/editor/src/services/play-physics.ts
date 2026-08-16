@@ -127,6 +127,8 @@ export function playLoadControl(options: {
   gravity?: [number, number, number];
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
+  infiniteLoopDetection?: boolean;
+  loopCount?: number;
 }): Extract<ControlMessage, { type: "load" }> {
   const physics = playPhysicsFromSceneSettings({
     physicsWorld: options.physicsWorld,
@@ -142,6 +144,8 @@ export function playLoadControl(options: {
     havokWasmUrl: editorHavokWasmUrl(),
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    infiniteLoopDetection: options.infiniteLoopDetection,
+    loopCount: options.loopCount,
   };
 }
 

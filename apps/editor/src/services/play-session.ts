@@ -229,6 +229,8 @@ export function startPlaySession(options: {
   pixelPerfect?: boolean;
   /** Baked Scene navmesh bytes; Play imports and never generates. */
   navmeshBytes?: Uint8Array | null;
+  infiniteLoopDetection?: boolean;
+  loopCount?: number;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -397,6 +399,8 @@ export function startPlaySession(options: {
     gravity: physics.gravity,
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    infiniteLoopDetection: options.infiniteLoopDetection,
+    loopCount: options.loopCount,
   });
 
   try {

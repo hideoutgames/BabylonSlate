@@ -58,6 +58,8 @@ export interface PlayOverlayProps {
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
+  infiniteLoopDetection?: boolean;
+  loopCount?: number;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
   /** Project render size; snapshotted when the session starts. */
@@ -103,6 +105,8 @@ export function PlayOverlay({
   gameInstanceClass,
   scenes,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
+  infiniteLoopDetection,
+  loopCount,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   uiLibrary = {},
@@ -195,6 +199,8 @@ export function PlayOverlay({
   });
   sceneRef.current = { sceneAssetGuid, scene, gameInstanceClass, scenes };
   const initialFrameCapRef = useRef(frameCap);
+  const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
+  const initialLoopCountRef = useRef(loopCount);
   const initialPlayPreviewRef = useRef(playPreview);
   const initialRenderRef = useRef(render);
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
@@ -244,6 +250,8 @@ export function PlayOverlay({
       gameInstanceClass: sceneRef.current.gameInstanceClass,
       scenes: sceneRef.current.scenes,
       frameCap: initialFrameCapRef.current,
+      infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
+      loopCount: initialLoopCountRef.current,
       animGraphs: animGraphsRef.current,
       behaviourTrees: behaviourTreesRef.current,
       blackboards: blackboardsRef.current,
