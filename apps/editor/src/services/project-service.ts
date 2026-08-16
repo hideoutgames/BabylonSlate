@@ -113,6 +113,10 @@ function headerMetaForSave(
           typeId?: string;
           typeClassId?: string;
           functionId?: string;
+          assetGuid?: string;
+          overridable?: boolean;
+          implementsInterface?: { assetGuid: string; methodName: string };
+          overrides?: { classId: string; name: string };
           pins?: Array<{
             name: string;
             typeId?: string;
@@ -122,6 +126,26 @@ function headerMetaForSave(
         }>;
       },
     );
+  }
+  if (type === "ScriptInterface") {
+    const payload = content as {
+      guid?: string;
+      name?: string;
+      methods?: Array<{
+        name: string;
+        pins: Array<{
+          name: string;
+          typeId: string;
+          direction: "in" | "out";
+          typeClassId?: string;
+        }>;
+      }>;
+    };
+    return {
+      guid: typeof payload.guid === "string" ? payload.guid : "",
+      name: typeof payload.name === "string" ? payload.name : "Interface",
+      methods: Array.isArray(payload.methods) ? payload.methods : [],
+    };
   }
   return undefined;
 }

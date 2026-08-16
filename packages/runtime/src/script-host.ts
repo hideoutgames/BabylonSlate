@@ -132,6 +132,7 @@ export interface ScriptContext {
     target: Actor | null | undefined,
     interfaceGuid: string,
     method: string,
+    args?: Record<string, unknown>,
   ): unknown;
   getComponent(actor: Actor | null | undefined, classId: string): unknown;
   addComponent(actor: Actor | null | undefined, classId: string): unknown;
@@ -368,22 +369,37 @@ export class ScriptHost {
   }
 
   /**
-   * Register compiled custom events as interface handlers on `actor`.
+   * Register compiled function implementations as interface handlers on `actor`.
    * Keys match `interfaceHandlerKey` (`guid:method`).
    */
   bindInterfaceHandlers(actor: Actor): void {
     const loaded = this.byClassId.get(actor.classId);
     if (!loaded || loaded.length === 0) return;
-    const lifecycle = new Set(["onBeginPlay", "onTick", "onCommandRun"]);
     for (const iface of actor.implementedInterfaces) {
       for (const entry of loaded) {
-        for (const point of entry.script.entryPoints) {
-          const event = point.event;
-          if (!event || lifecycle.has(event)) continue;
-          const key = interfaceHandlerKey(iface, event);
+        for (const impl of entry.script.interfaceImplementations ?? []) {
+          if (impl.interfaceGuid !== iface) continue;
+          const exportName = impl.exportName;
+          const key = interfaceHandlerKey(iface, impl.method);
           actor.interfaceHandlers.set(key, (args) => {
-            this.dispatchEvent(loaded, event, actor, 0, 0, args);
-            return {};
+            const fn = entry.exports[exportName];
+            if (typeof fn !== "function") return {};
+            const ctx = this.createContext(actor, 0, 0, args);
+            try {
+              const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
+              if (result instanceof Promise) {
+                void result.catch((error) => this.services.reportError(error));
+                return {};
+              }
+              return (
+                result && typeof result === "object" && !Array.isArray(result)
+                  ? result
+                  : {}
+              ) as Record<string, unknown>;
+            } catch (error) {
+              this.services.reportError(error);
+              return {};
+            }
           });
         }
       }
@@ -496,7 +512,7 @@ export class ScriptHost {
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
       delay: (seconds) => services.delay(seconds),
-      callInterface: (target, interfaceGuid, method) => {
+      callInterface: (target, interfaceGuid, method, args) => {
         const receiver = (target ?? self) as InterfaceDispatchTarget | null;
         const registry = services.interfaceRegistry;
         if (!registry || !receiver) return {};
@@ -505,7 +521,7 @@ export class ScriptHost {
           receiver,
           String(interfaceGuid),
           String(method),
-          {},
+          args ?? {},
         );
       },
       getComponent: (actor, classId) =>

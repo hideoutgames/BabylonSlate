@@ -10,6 +10,39 @@ export type ClassMemberSymbol = {
   functionId?: string;
   typeId?: string;
   typeClassId?: string;
+  pins?: Array<{
+    name: string;
+    typeId: string;
+    direction: "in" | "out";
+    typeClassId?: string;
+  }>;
+  implementsInterface?: { assetGuid: string; methodName: string };
+  overrides?: { classId: string; name: string };
+};
+
+export type InterfaceMethodContext = {
+  guid: string;
+  name: string;
+  methods: Array<{
+    name: string;
+    pins: Array<{
+      name: string;
+      typeId: string;
+      direction: "in" | "out";
+      typeClassId?: string;
+    }>;
+  }>;
+};
+
+export type ParentFunctionSignature = {
+  classId: string;
+  name: string;
+  pins: Array<{
+    name: string;
+    typeId: string;
+    direction: "in" | "out";
+    typeClassId?: string;
+  }>;
 };
 
 export type TypeContext = {
@@ -24,6 +57,10 @@ export type TypeContext = {
   classId?: string;
   activeFunctionId?: string | null;
   members?: readonly ClassMemberSymbol[];
+  implementedInterfaces?: readonly InterfaceMethodContext[];
+  parentFunctionSignatures?: readonly ParentFunctionSignature[];
+  /** True when the graph being validated is an interface method implementation. */
+  interfaceImplementation?: boolean;
 };
 
 export type ValidationRule = {

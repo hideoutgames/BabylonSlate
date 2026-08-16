@@ -207,6 +207,46 @@ describe("project schema", () => {
     ]);
   });
 
+  it("persists overridable, implementsInterface, and overrides on functions", () => {
+    expect(
+      normalizeGraphMembers([
+        {
+          id: "fn-3",
+          kind: "function",
+          name: "Apply Damage",
+          pins: [],
+          overridable: true,
+          implementsInterface: {
+            assetGuid: " iface-1 ",
+            methodName: " Apply Damage ",
+          },
+          overrides: { classId: " Actor ", name: " Apply Damage " },
+        },
+        {
+          id: "fn-4",
+          kind: "function",
+          name: "Jump",
+          pins: [],
+          overridable: false,
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "fn-3",
+        kind: "function",
+        name: "Apply Damage",
+        pins: [],
+        overridable: true,
+        implementsInterface: {
+          assetGuid: "iface-1",
+          methodName: "Apply Damage",
+        },
+        overrides: { classId: "Actor", name: "Apply Damage" },
+      },
+      { id: "fn-4", kind: "function", name: "Jump", pins: [] },
+    ]);
+  });
+
   it("persists typeClassId on object and class variables without inventing one", () => {
     expect(
       normalizeGraphMembers([

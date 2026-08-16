@@ -185,7 +185,10 @@ function classMetadataFromGraph(
   parentClassId?: string | null,
 ): Pick<
   ScriptBundleEntry,
-  "parentClassId" | "implementedInterfaces" | "variables"
+  | "parentClassId"
+  | "implementedInterfaces"
+  | "variables"
+  | "interfaceImplementations"
 > {
   const members: GraphClassMember[] = isLogicGraphPayload(content)
     ? []
@@ -195,6 +198,16 @@ function classMetadataFromGraph(
       ? [member.assetGuid]
       : [],
   );
+  const interfaceImplementations = members.flatMap((member) => {
+    if (member.kind !== "function" || !member.implementsInterface) return [];
+    return [
+      {
+        interfaceGuid: member.implementsInterface.assetGuid,
+        method: member.implementsInterface.methodName,
+        exportName: jsIdent(member.name),
+      },
+    ];
+  });
   const variables = members.flatMap((member) => {
     if (member.kind !== "variable" || member.functionId) return [];
     return [
@@ -211,6 +224,9 @@ function classMetadataFromGraph(
   return {
     ...(parent ? { parentClassId: parent } : {}),
     ...(implementedInterfaces.length > 0 ? { implementedInterfaces } : {}),
+    ...(interfaceImplementations.length > 0
+      ? { interfaceImplementations }
+      : {}),
     ...(variables.length > 0 ? { variables } : {}),
   };
 }

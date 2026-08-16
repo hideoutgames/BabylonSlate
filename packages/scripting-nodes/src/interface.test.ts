@@ -5,7 +5,11 @@ import {
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry, interfaceNodes } from "./index";
+import {
+  callInterfaceTitle,
+  createDefaultNodeRegistry,
+  interfaceNodes,
+} from "./index";
 
 function node(
   registry: NodeRegistry,
@@ -32,12 +36,19 @@ function loadModule(source: string): Record<string, unknown> {
   >;
 }
 
+describe("callInterfaceTitle", () => {
+  it("prefixes the method name with Call I", () => {
+    expect(callInterfaceTitle("Apply Damage")).toBe("Call I Apply Damage");
+  });
+});
+
 describe("interface nodes", () => {
-  it("registers Call Interface", () => {
+  it("registers interface.call without a Call Interface title", () => {
     expect(interfaceNodes.map((n) => n.id)).toContain("interface.call");
+    expect(interfaceNodes[0]?.title).toBe("Call");
   });
 
-  it("compiled Call Interface calls ctx.callInterface", () => {
+  it("compiled legacy Call Interface calls ctx.callInterface", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -80,5 +91,60 @@ describe("interface nodes", () => {
       },
     });
     expect(calls).toEqual([[self, "iface-damageable", "ApplyDamage"]]);
+  });
+
+  it("compiled Call I nodes pass args and destructure outputs", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "interface.call", {
+          interfaceGuid: "iface-damageable",
+          method: "Apply Damage",
+          implicitSelf: true,
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+            { name: "amount", typeId: "float", direction: "in" },
+            { name: "remaining", typeId: "float", direction: "out" },
+          ],
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "call",
+          targetPinId: "exec",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain("ctx.callInterface(ctx.self");
+    expect(compiled.source).toContain('"iface-damageable"');
+    expect(compiled.source).toContain('"Apply Damage"');
+    expect(compiled.source).toMatch(/amount:/);
+    expect(compiled.source).toMatch(/remaining:/);
+    const calls: Array<[unknown, string, string, Record<string, unknown>]> = [];
+    const mod = loadModule(compiled.source);
+    (mod.onBeginPlay as (ctx: unknown) => void)({
+      self: { classId: "Enemy" },
+      callInterface: (
+        target: unknown,
+        guid: string,
+        method: string,
+        args: Record<string, unknown>,
+      ) => {
+        calls.push([target, guid, method, args]);
+        return { remaining: 7 };
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toBe("iface-damageable");
+    expect(calls[0]?.[2]).toBe("Apply Damage");
+    expect(calls[0]?.[3]).toMatchObject({ amount: expect.anything() });
   });
 });

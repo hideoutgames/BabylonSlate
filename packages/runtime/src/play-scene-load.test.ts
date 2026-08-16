@@ -715,27 +715,66 @@ describe("p7-play-scene-load", () => {
 
   it("scene-spawned actors inherit ScriptInterface guids registered from loadScripts", async () => {
     const registry = createDefaultNodeRegistry();
-    const implGraph: LogicGraph = {
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+    ];
+    const dummy: LogicGraph = {
       id: "event-graph",
       kind: "event",
       nodes: [
-        node(registry, "hit", "flow.event.custom", { name: "ApplyDamage" }),
-        node(registry, "log", "debug.log", { message: "damaged" }),
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: registry.get("flow.event.beginPlay")!.pins({}),
+          properties: {},
+        },
+      ],
+      edges: [],
+    };
+    const implFn: LogicGraph = {
+      id: "ApplyDamage",
+      kind: "function",
+      nodes: [
+        {
+          id: "in",
+          typeId: "flow.function.input",
+          position: { x: 0, y: 0 },
+          pins: registry.get("flow.function.input")!.pins({ pins }),
+          properties: { pins },
+        },
+        {
+          id: "out",
+          typeId: "flow.function.output",
+          position: { x: 200, y: 0 },
+          pins: registry.get("flow.function.output")!.pins({ pins }),
+          properties: { pins },
+        },
       ],
       edges: [
         {
           id: "e1",
-          sourceNodeId: "hit",
-          sourcePinId: "execOut",
-          targetNodeId: "log",
-          targetPinId: "execIn",
+          sourceNodeId: "in",
+          sourcePinId: "exec",
+          targetNodeId: "out",
+          targetPinId: "then",
         },
       ],
     };
-    const compiled = compileGraph(implGraph, {
+    const compiled = compileGraph(dummy, {
       assetGuid: "bruiser-asset",
       registry,
     });
+    const fnCompiled = compileGraph(implFn, {
+      assetGuid: "bruiser-asset",
+      registry,
+      exportName: "ApplyDamage",
+    });
+    const extraBody = fnCompiled.source
+      .split("\n")
+      .filter((line) => !line.startsWith("//# sourceURL"))
+      .join("\n");
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
@@ -752,10 +791,17 @@ describe("p7-play-scene-load", () => {
       {
         assetGuid: "bruiser-asset",
         classId: "Bruiser",
-        source: compiled.source,
+        source: `${compiled.source.replace(/\n$/, "")}\n${extraBody}`,
         anchors: compiled.anchors,
         entryPoints: compiled.entryPoints,
         implementedInterfaces: ["iface-damageable"],
+        interfaceImplementations: [
+          {
+            interfaceGuid: "iface-damageable",
+            method: "ApplyDamage",
+            exportName: "ApplyDamage",
+          },
+        ],
       },
     ]);
     runtime.realizePlayWorld();
