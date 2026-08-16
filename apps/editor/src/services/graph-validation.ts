@@ -1,4 +1,9 @@
-import type { GraphClassMemberPin, SerializedGraph } from "@babylonslate/core";
+import {
+  isEditorGraphClass,
+  isEditorGraphHost,
+  type GraphClassMemberPin,
+  type SerializedGraph,
+} from "@babylonslate/core";
 import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
   fromSerializedGraph,
@@ -178,7 +183,22 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   graph?: SerializedGraph;
   otherClassGraphs?: Record<string, SerializedGraph>;
   activeFunctionId?: string | null;
+  functionLibraries?: Array<{
+    classId: string;
+    parentClass?: string | null;
+    functions: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
+  }>;
 };
+
+function otherClassAllowedOnHost(
+  classId: string,
+  options?: ScriptPaletteOptions,
+): boolean {
+  if (isEditorGraphHost(options ?? {})) return true;
+  const parentOf =
+    options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  return !isEditorGraphClass(classId, parentOf);
+}
 
 type CustomEventRow = {
   name: string;
@@ -238,6 +258,7 @@ function callCustomEventPaletteNodes(
   }));
   for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
     if (classId === localClassId) continue;
+    if (!otherClassAllowedOnHost(classId, options)) continue;
     const implicitSelf = callImplicitSelf(classId, options);
     for (const event of customEventRows(graph)) {
       if (implicitSelf && localNames.has(event.name)) continue;
@@ -301,6 +322,7 @@ function callFunctionPaletteNodes(
   }));
   for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
     if (classId === localClassId) continue;
+    if (!otherClassAllowedOnHost(classId, options)) continue;
     const implicitSelf = callImplicitSelf(classId, options);
     for (const fn of functionRows(graph)) {
       if (implicitSelf && localNames.has(fn.name)) continue;
@@ -397,6 +419,7 @@ function variableAccessPaletteNodes(
   }));
   for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
     if (classId === localClassId) continue;
+    if (!otherClassAllowedOnHost(classId, options)) continue;
     const implicitSelf = callImplicitSelf(classId, options);
     for (const variable of classVariableRows(graph)) {
       if (implicitSelf && classNames.has(variable.name)) continue;
@@ -451,7 +474,15 @@ export function scriptPaletteNodes(
 ): PaletteNode[] {
   const catalog = nodeRegistry
     .list()
-    .filter((def) => isScriptCatalogNodeAllowed(def.id, options))
+    .filter((def) => {
+      if (
+        def.editorOnly &&
+        !isEditorGraphHost(options ?? {})
+      ) {
+        return false;
+      }
+      return isScriptCatalogNodeAllowed(def.id, options);
+    })
     .map((def) => {
     const defaultData: Record<string, unknown> = {};
     if (def.id === "debug.log") {
@@ -462,13 +493,16 @@ export function scriptPaletteNodes(
     if (def.id === "debug.print") {
       defaultData.developmentOnly = true;
     }
+    const pins = def.pins(defaultData);
+    if (def.editorOnly) defaultData.__editorOnly = true;
     return {
       id: def.id,
       title: def.title,
       category: def.category,
-      pins: def.pins(defaultData),
+      pins,
       pure: def.pure,
       latent: def.latent,
+      editorOnly: def.editorOnly,
       defaultData:
         Object.keys(defaultData).length > 0 ? defaultData : undefined,
     };

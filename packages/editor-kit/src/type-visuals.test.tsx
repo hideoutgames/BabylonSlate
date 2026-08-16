@@ -89,8 +89,12 @@ describe("resolveTypeVisual", () => {
     expect(resolveTypeVisual({ classId: "EditorUtilityObject" }).icon).toBe(
       objectIcon,
     );
+    expect(resolveTypeVisual({ classId: "EditorFunctionLibrary" }).icon).toBe(
+      objectIcon,
+    );
     expect(engineParentOf("BDebugCommand")).toBe("BObject");
     expect(engineParentOf("EditorUtilityObject")).toBe("BObject");
+    expect(engineParentOf("EditorFunctionLibrary")).toBe("FunctionLibrary");
   });
 
   it("uses Class color and the parent icon for Class assets", () => {

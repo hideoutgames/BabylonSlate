@@ -450,4 +450,55 @@ describe("subclassClassEntries", () => {
     expect(componentEntries.map((entry) => entry.id)).toContain("MeshComponent");
     expect(componentEntries.map((entry) => entry.id)).not.toContain("Actor");
   });
+
+  it("hides editor graph classes from a runtime class picker", () => {
+    const entries = subclassClassEntries("BObject", [
+      { header: { type: "Class", name: "Hero", parentClass: "Actor" } },
+      { header: { type: "Class", name: "LevelTools", parentClass: "EditorUtilityObject" } },
+      {
+        header: {
+          type: "Class",
+          name: "EditorMath",
+          parentClass: "EditorFunctionLibrary",
+        },
+      },
+      { header: { type: "Class", name: "MathLib", parentClass: "FunctionLibrary" } },
+    ]);
+    const ids = entries.map((entry) => entry.id);
+    expect(ids).toContain("Hero");
+    expect(ids).toContain("FunctionLibrary");
+    expect(ids).toContain("MathLib");
+    expect(ids).not.toContain("EditorUtilityObject");
+    expect(ids).not.toContain("LevelTools");
+    expect(ids).not.toContain("EditorFunctionLibrary");
+    expect(ids).not.toContain("EditorMath");
+  });
+
+  it("includes editor graph classes when the host is an editor graph", () => {
+    const entries = subclassClassEntries(
+      "BObject",
+      [
+        {
+          header: {
+            type: "Class",
+            name: "LevelTools",
+            parentClass: "EditorUtilityObject",
+          },
+        },
+        {
+          header: {
+            type: "Class",
+            name: "EditorMath",
+            parentClass: "EditorFunctionLibrary",
+          },
+        },
+      ],
+      { editorGraph: true },
+    );
+    const ids = entries.map((entry) => entry.id);
+    expect(ids).toContain("EditorUtilityObject");
+    expect(ids).toContain("LevelTools");
+    expect(ids).toContain("EditorFunctionLibrary");
+    expect(ids).toContain("EditorMath");
+  });
 });

@@ -56,6 +56,17 @@ describe("nativeEventStubs", () => {
     expect(nativeEventStubs({ parentClass: "BTComposite" })).toEqual([]);
   });
 
+  it("lists no native events for FunctionLibrary and EditorFunctionLibrary", () => {
+    expect(nativeEventStubs({ parentClass: "FunctionLibrary" })).toEqual([]);
+    expect(
+      nativeEventStubs({
+        parentClass: "EditorFunctionLibrary",
+        parentOf: (id) =>
+          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
+      }),
+    ).toEqual([]);
+  });
+
   it("uses BT ancestry for a project subclass of BTTask", () => {
     const stubs = nativeEventStubs({
       parentClass: "BTTask_Patrol",

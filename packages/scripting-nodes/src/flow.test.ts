@@ -62,6 +62,16 @@ describe("flow nodes", () => {
     ).toBe("Event On Editor Startup");
   });
 
+  it("marks editor lifecycle events as editorOnly and leaves Begin Play and Tick runtime", () => {
+    const byId = Object.fromEntries(flowNodes.map((node) => [node.id, node]));
+    expect(byId["flow.event.editorStartup"]?.editorOnly).toBe(true);
+    expect(byId["flow.event.sceneOpen"]?.editorOnly).toBe(true);
+    expect(byId["flow.event.sceneSaved"]?.editorOnly).toBe(true);
+    expect(byId["flow.event.editorShutdown"]?.editorOnly).toBe(true);
+    expect(byId["flow.event.beginPlay"]?.editorOnly).toBeFalsy();
+    expect(byId["flow.event.tick"]?.editorOnly).toBeFalsy();
+  });
+
   it("maps function Input pins from member inputs as outputs", () => {
     const input = flowNodes.find((node) => node.id === "flow.function.input");
     expect(input?.title).toBe("Input");

@@ -1,8 +1,10 @@
-import type {
-  GraphClassMember,
-  GraphClassMemberKind,
-  GraphClassMemberPin,
-  SerializedGraph,
+import {
+  isEditorGraphHost,
+  isFunctionLibraryClass,
+  type GraphClassMember,
+  type GraphClassMemberKind,
+  type GraphClassMemberPin,
+  type SerializedGraph,
 } from "@babylonslate/core";
 import {
   engineParentOf,
@@ -73,7 +75,69 @@ const BT_BLACKBOARD_NODE_IDS = ["bt.blackboard.get", "bt.blackboard.set"] as con
 export type ClassEventOptions = {
   parentClass?: string | null;
   parentOf?: (id: string) => string | null | undefined;
+  assetType?: string | null;
+  editorGraph?: boolean;
 };
+
+export type BlueprintSection = {
+  id: string;
+  label: string;
+  kind: GraphClassMemberKind;
+  local?: boolean;
+};
+
+const CLASS_BLUEPRINT_SECTIONS: BlueprintSection[] = [
+  { id: "functions", label: "Functions", kind: "function" },
+  { id: "variables", label: "Variables", kind: "variable" },
+  { id: "events", label: "Events", kind: "event" },
+  { id: "interfaces", label: "Interfaces", kind: "interface" },
+];
+
+const FUNCTION_LIBRARY_SECTIONS: BlueprintSection[] = [
+  { id: "functions", label: "Functions", kind: "function" },
+];
+
+const LOCAL_VARIABLES_SECTION: BlueprintSection = {
+  id: "local-variables",
+  label: "Local Variables",
+  kind: "variable",
+  local: true,
+};
+
+function parentLookup(
+  options?: ClassEventOptions,
+): (id: string) => string | null | undefined {
+  return options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+}
+
+function isFunctionLibraryHost(options?: ClassEventOptions): boolean {
+  return isFunctionLibraryClass(options?.parentClass, parentLookup(options));
+}
+
+export function blueprintSectionsForClass(
+  options?: ClassEventOptions & { activeFunctionId?: string | null },
+): BlueprintSection[] {
+  const sections = isFunctionLibraryHost(options)
+    ? [...FUNCTION_LIBRARY_SECTIONS]
+    : [...CLASS_BLUEPRINT_SECTIONS];
+  if (!options?.activeFunctionId) return sections;
+  if (isFunctionLibraryHost(options)) {
+    return [...sections, LOCAL_VARIABLES_SECTION];
+  }
+  const variableIndex = sections.findIndex((section) => section.id === "variables");
+  sections.splice(variableIndex + 1, 0, LOCAL_VARIABLES_SECTION);
+  return sections;
+}
+
+export function classAllowsMemberKind(
+  kind: GraphClassMemberKind,
+  options?: ClassEventOptions & { local?: boolean },
+): boolean {
+  if (!isFunctionLibraryHost(options)) return true;
+  if (kind === "function") return true;
+  if (kind === "variable" && options?.local) return true;
+  return false;
+}
 
 function ancestryChain(options?: ClassEventOptions): string[] {
   const parentOf =
@@ -106,6 +170,12 @@ export function nativeEventStubs(
     return eventStubsForTypes(BT_SERVICE_EVENT_TYPE_IDS);
   }
   if (chain.includes("BTComposite")) return [];
+  if (
+    chain.includes("FunctionLibrary") ||
+    chain.includes("EditorFunctionLibrary")
+  ) {
+    return [];
+  }
   const types: string[] = [...NATIVE_CLASS_EVENT_TYPES];
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
@@ -127,6 +197,20 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "variables.get" || nodeId === "variables.set") {
     return false;
   }
+  const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
+    nodeId,
+  );
+  if (
+    isEditorEvent &&
+    !isEditorGraphHost({
+      parentClass: options?.parentClass,
+      parentOf: options?.parentOf,
+      assetType: options?.assetType,
+      editorGraph: options?.editorGraph,
+    })
+  ) {
+    return false;
+  }
   const chain = ancestryChain(options);
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
   const isBtLeafEvent = (BT_LEAF_EVENT_TYPE_IDS as readonly string[]).includes(
@@ -137,9 +221,6 @@ export function isScriptCatalogNodeAllowed(
     nodeId,
   );
   const isBlackboard = (BT_BLACKBOARD_NODE_IDS as readonly string[]).includes(
-    nodeId,
-  );
-  const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
     nodeId,
   );
   if (chain.includes("EditorUtilityObject")) {
@@ -184,9 +265,7 @@ export function isScriptCatalogNodeAllowed(
       !isBlackboard
     );
   }
-  return (
-    !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard && !isEditorEvent
-  );
+  return !isBtLeafEvent && !isFinish && !isReturn && !isBlackboard;
 }
 
 export function nativeStubId(eventType: string): string {

@@ -3,6 +3,8 @@ import type { SerializedGraph } from "@babylonslate/core";
 import {
   addClassMember,
   addVariableAccessNode,
+  blueprintSectionsForClass,
+  classAllowsMemberKind,
   memberNamePromptCopy,
   patchClassMember,
   removeClassMember,
@@ -343,5 +345,90 @@ describe("memberNamePromptCopy", () => {
     );
     expect(memberNamePromptCopy("event").label).toBe("Event Name");
     expect(memberNamePromptCopy("interface").title).toBe("Add Interface");
+  });
+});
+
+describe("blueprintSectionsForClass", () => {
+  it("lists Functions, Variables, Events, and Interfaces for Actor and BObject", () => {
+    expect(blueprintSectionsForClass({ parentClass: "Actor" }).map((s) => s.id)).toEqual([
+      "functions",
+      "variables",
+      "events",
+      "interfaces",
+    ]);
+    expect(
+      blueprintSectionsForClass({ parentClass: "BObject" }).map((s) => s.id),
+    ).toEqual(["functions", "variables", "events", "interfaces"]);
+    expect(
+      blueprintSectionsForClass({
+        parentClass: "Actor",
+        activeFunctionId: "fn-1",
+      }).map((s) => s.id),
+    ).toEqual([
+      "functions",
+      "variables",
+      "local-variables",
+      "events",
+      "interfaces",
+    ]);
+  });
+
+  it("lists Functions only for FunctionLibrary, plus Local Variables when a function is open", () => {
+    expect(
+      blueprintSectionsForClass({ parentClass: "FunctionLibrary" }).map(
+        (s) => s.id,
+      ),
+    ).toEqual(["functions"]);
+    expect(
+      blueprintSectionsForClass({
+        parentClass: "EditorFunctionLibrary",
+        parentOf: (id) =>
+          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
+        activeFunctionId: "fn-1",
+      }).map((s) => s.id),
+    ).toEqual(["functions", "local-variables"]);
+  });
+});
+
+describe("classAllowsMemberKind", () => {
+  it("allows every member kind on Actor", () => {
+    expect(classAllowsMemberKind("function", { parentClass: "Actor" })).toBe(
+      true,
+    );
+    expect(classAllowsMemberKind("variable", { parentClass: "Actor" })).toBe(
+      true,
+    );
+    expect(classAllowsMemberKind("event", { parentClass: "Actor" })).toBe(true);
+    expect(classAllowsMemberKind("interface", { parentClass: "Actor" })).toBe(
+      true,
+    );
+  });
+
+  it("blocks event, variable, and interface members on FunctionLibrary hosts", () => {
+    expect(
+      classAllowsMemberKind("function", { parentClass: "FunctionLibrary" }),
+    ).toBe(true);
+    expect(
+      classAllowsMemberKind("variable", { parentClass: "FunctionLibrary" }),
+    ).toBe(false);
+    expect(
+      classAllowsMemberKind("event", { parentClass: "FunctionLibrary" }),
+    ).toBe(false);
+    expect(
+      classAllowsMemberKind("interface", { parentClass: "FunctionLibrary" }),
+    ).toBe(false);
+    expect(
+      classAllowsMemberKind("variable", {
+        parentClass: "FunctionLibrary",
+        local: true,
+      }),
+    ).toBe(true);
+    expect(
+      classAllowsMemberKind("event", {
+        parentClass: "EditorFunctionLibrary",
+        parentOf: (id) =>
+          id === "EditorFunctionLibrary" ? "FunctionLibrary" : "BObject",
+      }),
+    ).toBe(false);
   });
 });

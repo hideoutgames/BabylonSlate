@@ -7,6 +7,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   "FunctionLibrary",
   "BDebugCommand",
   "EditorUtilityObject",
+  "EditorFunctionLibrary",
   "BTTask",
   "BTDecorator",
   "BTService",

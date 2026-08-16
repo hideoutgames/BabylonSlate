@@ -59,6 +59,7 @@ export const ENGINE_BASE_CLASSES = [
   "FunctionLibrary",
   "BDebugCommand",
   "EditorUtilityObject",
+  "EditorFunctionLibrary",
   "BTTask",
   "BTDecorator",
   "BTService",

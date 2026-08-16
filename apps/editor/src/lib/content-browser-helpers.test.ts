@@ -642,6 +642,10 @@ describe("content-browser-helpers", () => {
     expect(ENGINE_BASE_CLASSES).toContain("EditorUtilityObject");
   });
 
+  it("offers EditorFunctionLibrary as a Class parent", () => {
+    expect(ENGINE_BASE_CLASSES).toContain("EditorFunctionLibrary");
+  });
+
   it("offers behaviour-tree bases as Class parents", () => {
     expect(ENGINE_BASE_CLASSES).toContain("BTTask");
     expect(ENGINE_BASE_CLASSES).toContain("BTDecorator");

@@ -221,6 +221,13 @@ describe("createDefaultLogicGraphSerialized", () => {
       false,
     );
   });
+
+  it("seeds no event nodes for a FunctionLibrary class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "FunctionLibrary",
+    });
+    expect(graph.nodes).toEqual([]);
+  });
 });
 
 describe("validateSerializedGraph", () => {
@@ -313,6 +320,81 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.event.editorShutdown")).toBe(
       false,
     );
+  });
+
+  it("does not inject editor-only class functions into a runtime Actor palette", () => {
+    const parentOf = (id: string) => {
+      if (id === "LevelTools") return "EditorUtilityObject";
+      if (id === "EditorUtilityObject") return "BObject";
+      if (id === "Actor") return "BObject";
+      return null;
+    };
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      parentOf,
+      otherClassGraphs: {
+        LevelTools: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "f1", kind: "function", name: "RebuildNav" }],
+        },
+      },
+    });
+    expect(
+      nodes.some((node) => node.id === "functions.call:LevelTools:RebuildNav"),
+    ).toBe(false);
+  });
+
+  it("injects editor-only class functions into an EditorUtilityObject palette", () => {
+    const parentOf = (id: string) => {
+      if (id === "LevelTools") return "EditorUtilityObject";
+      if (id === "EditorUtilityObject") return "BObject";
+      return null;
+    };
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "EditorUtilityObject",
+      parentOf,
+      otherClassGraphs: {
+        LevelTools: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "f1", kind: "function", name: "RebuildNav" }],
+        },
+      },
+    });
+    expect(
+      nodes.some((node) => node.id === "functions.call:LevelTools:RebuildNav"),
+    ).toBe(true);
+  });
+
+  it("hides editor lifecycle events on a UserInterface logic host", () => {
+    const nodes = scriptPaletteNodes(registry, { assetType: "UserInterface" });
+    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+  });
+
+  it("shows editor lifecycle events and Begin Play on an EditorUtilityInterface logic host", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      assetType: "EditorUtilityInterface",
+    });
+    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+      true,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+  });
+
+  it("stamps editorOnly on palette rows for editor-only catalog defs", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      assetType: "EditorUtilityInterface",
+    });
+    const startup = nodes.find((node) => node.id === "flow.event.editorStartup");
+    expect(startup?.editorOnly).toBe(true);
+    expect(startup?.defaultData?.__editorOnly).toBe(true);
+    const begin = nodes.find((node) => node.id === "flow.event.beginPlay");
+    expect(begin?.editorOnly).toBeFalsy();
+    expect(begin?.defaultData?.__editorOnly).toBeUndefined();
   });
 
   it("injects Call nodes for the class custom events and other open classes", () => {

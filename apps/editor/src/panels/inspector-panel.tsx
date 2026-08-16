@@ -26,6 +26,7 @@ import {
   DEFAULT_SORTING_LAYERS,
   eulerDegreesToQuaternion,
   identitySerializedTransform,
+  isEditorGraphHost,
   quaternionToEulerDegrees,
   type GraphClassMember,
   type SerializedComponent,
@@ -68,6 +69,7 @@ import {
 import { defaultJsValue, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { pinTypeForMember } from "@babylonslate/scripting-nodes";
 import { patchClassMember } from "../lib/class-members";
+import { classParentLookup } from "../lib/content-browser-helpers";
 
 function ClassMemberDetails({
   graph,
@@ -403,6 +405,16 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   } | null>(null);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
+  const indexed = (assetRegistry?.list() ?? []).find(
+    (asset) => asset.path === doc?.ref.path,
+  );
+  const parentClass = indexed?.header.parentClass ?? null;
+  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
+  const editorGraph = isEditorGraphHost({
+    parentClass,
+    parentOf,
+    assetType: indexed?.header.type,
+  });
   const graph =
     doc?.ref.kind === "graph" ? (doc.content as SerializedGraph) : null;
   const inspectGraph = useMemo(() => {
@@ -598,6 +610,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       classEntries: subclassClassEntries(
         "BObject",
         assetRegistry?.list() ?? [],
+        { editorGraph },
       ),
       onPickClass: (pinId, constraintClassId) => {
         const name =
@@ -755,6 +768,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             ? subclassClassEntries(
                 classPinPick.constraintClassId,
                 assetRegistry?.list() ?? [],
+                { editorGraph },
               )
             : []
         }
