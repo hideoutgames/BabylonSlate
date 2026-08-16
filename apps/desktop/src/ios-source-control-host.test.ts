@@ -3,8 +3,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const editorRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const iosApp = join(editorRoot, "ios/App");
+const iosApp = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../editor/ios/App",
+);
 
 describe("iOS source-control host", () => {
   it("compiles BabylonSlateSecretsPlugin into the App target", () => {
