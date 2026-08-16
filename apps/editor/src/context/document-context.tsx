@@ -192,6 +192,8 @@ import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
   clearDocumentDirtyTrace,
   documentDirtyTrace,
+  recordSaveAllTrace,
+  saveAllTrace,
 } from "../lib/dirty-trace";
 import {
   normalizeMaterialDocument,
@@ -1098,9 +1100,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const saveProject = useCallback(async (): Promise<boolean> => {
     const document = projectDocumentRef.current;
-    if (!document) return false;
+    const dirtyBefore = documentService.getDirtyDocuments().length;
+    if (!document) {
+      recordSaveAllTrace({
+        ok: false,
+        reason: "no-document",
+        dirtyBefore,
+        dirtyAfter: dirtyBefore,
+      });
+      return false;
+    }
     if (projectService.pendingMigrations.length > 0) {
       setMigrationPending(projectService.pendingMigrations);
+      recordSaveAllTrace({
+        ok: false,
+        reason: "migrations",
+        dirtyBefore,
+        dirtyAfter: dirtyBefore,
+      });
       // Caller must use approveMigrationsAndSave — never silently rewrite.
       return false;
     }
@@ -1108,44 +1125,61 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = null;
     }
-    captureAllLayouts();
-    const dirtyDocs = documentService.getDirtyDocuments();
-    const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
-    for (const doc of dirtyDocs) {
-      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
-        await projectService.saveDocument(
-          doc.ref.kind,
-          doc.ref.path,
-          doc.content as SerializedScene | SerializedGraph | Record<string, unknown>,
-        );
+    try {
+      captureAllLayouts();
+      const dirtyDocs = documentService.getDirtyDocuments();
+      const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
+      for (const doc of dirtyDocs) {
+        if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+          await projectService.saveDocument(
+            doc.ref.kind,
+            doc.ref.path,
+            doc.content as SerializedScene | SerializedGraph | Record<string, unknown>,
+          );
+        }
       }
+      if (document.settings.compileOnSave) {
+        const graphs = documentService
+          .getOpenDocumentsOrdered()
+          .filter((doc) => doc.ref.kind === "graph" && doc.content)
+          .map((doc) => ({
+            path: doc.ref.path,
+            content: doc.content as SerializedGraph,
+          }));
+        compileGraphDocuments(graphs);
+        setLastCompiledSignature(graphCompileSignature(graphs));
+      }
+      const layouts = documentService.buildLayouts();
+      await projectService.saveProject(document, layouts);
+      documentService.markAllClean();
+      setMigrationPending([]);
+      const guid = projectService.guid;
+      if (guid) {
+        const derived = await ensureDerived();
+        await truncateJournal(derived, guid);
+        setRecoveryAvailable(false);
+      }
+      bump();
+      if (savedScene) {
+        emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
+      }
+      recordSaveAllTrace({
+        ok: true,
+        reason: "saved",
+        dirtyBefore,
+        dirtyAfter: documentService.getDirtyDocuments().length,
+      });
+      return true;
+    } catch (error) {
+      recordSaveAllTrace({
+        ok: false,
+        reason: "error",
+        dirtyBefore,
+        dirtyAfter: documentService.getDirtyDocuments().length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-    if (document.settings.compileOnSave) {
-      const graphs = documentService
-        .getOpenDocumentsOrdered()
-        .filter((doc) => doc.ref.kind === "graph" && doc.content)
-        .map((doc) => ({
-          path: doc.ref.path,
-          content: doc.content as SerializedGraph,
-        }));
-      compileGraphDocuments(graphs);
-      setLastCompiledSignature(graphCompileSignature(graphs));
-    }
-    const layouts = documentService.buildLayouts();
-    await projectService.saveProject(document, layouts);
-    documentService.markAllClean();
-    setMigrationPending([]);
-    const guid = projectService.guid;
-    if (guid) {
-      const derived = await ensureDerived();
-      await truncateJournal(derived, guid);
-      setRecoveryAvailable(false);
-    }
-    bump();
-    if (savedScene) {
-      emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
-    }
-    return true;
   }, [bump, captureAllLayouts, documentService, ensureDerived, projectService]);
 
   const scheduleDebouncedSave = useCallback(() => {
@@ -2279,8 +2313,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         touchAssetOnDisk: (path: string) => Promise<void>;
         runForegroundRescan: () => Promise<void>;
         materialPreviewCameraRadius: () => number | null;
-        documentDirtyTrace: () => { kind: string; id: string }[];
+        documentDirtyTrace: () => { kind: string; id: string; via?: string }[];
         clearDocumentDirtyTrace: () => void;
+        saveAllTrace: () => {
+          ok: boolean;
+          reason: string;
+          dirtyBefore: number;
+          dirtyAfter: number;
+          error?: string;
+        } | null;
+        dirtyDocuments: () => { kind: string; id: string }[];
       };
       __babylonslateSourceControl?: SourceControlService;
     };
@@ -2490,6 +2532,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       materialPreviewCameraRadius,
       documentDirtyTrace,
       clearDocumentDirtyTrace,
+      saveAllTrace,
+      dirtyDocuments: () =>
+        documentService.getDirtyDocuments().map((doc) => ({
+          kind: doc.ref.kind,
+          id: doc.id,
+        })),
     };
     return () => {
       delete host.__babylonslateTest;

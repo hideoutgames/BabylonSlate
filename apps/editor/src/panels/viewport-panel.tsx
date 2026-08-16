@@ -306,6 +306,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing]);
 
+  // Key on the scene payload, not `openDocuments` array identity. Save All
+  // calls bump() after markAllClean; a new array would reload the viewport
+  // and can race the write or re-dirty the scene.
   useEffect(() => {
     const handle = engineRef.current;
     if (!scene || !handle) return;
@@ -342,7 +345,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [
     scene,
-    openDocuments,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
