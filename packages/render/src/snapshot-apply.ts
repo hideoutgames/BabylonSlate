@@ -539,6 +539,7 @@ export function applySnapshotToScene(
         }
       }
     }
+    refreshPlayActiveCamera(scene, binding);
   } finally {
     scene.blockMaterialDirtyMechanism = false;
     scene.blockfreeActiveMeshesAndRenderingGroups = prevBlock;

@@ -377,6 +377,13 @@ export function createEngine(
     });
   };
 
+  const rebuildIfActiveCameraChanged = (
+    previous: typeof scene.activeCamera,
+  ) => {
+    if (scene.activeCamera === previous) return;
+    rebuildPostProcessStack();
+  };
+
   const editorSync = options.editor ? new EditorSceneSync(scene, scheduler) : null;
 
   const loadScene = (sceneData: SerializedScene) => {
@@ -611,7 +618,9 @@ export function createEngine(
     }
     const sampled = interpolator.sample(interpAlpha);
     if (sampled) {
+      const previousCamera = scene.activeCamera;
       applySnapshotToScene(scene, binding, sampled);
+      rebuildIfActiveCameraChanged(previousCamera);
       lastPositions = positionsFromSample(sampled);
     }
     // Measure render cost only, not wall-clock gap since the previous
@@ -708,7 +717,9 @@ export function createEngine(
     },
     applyCommand: (command: CommandMessage) => {
       if (command.type === "assignMesh") {
+        const previousCamera = scene.activeCamera;
         applyAssignMesh(scene, binding, command);
+        rebuildIfActiveCameraChanged(previousCamera);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "assignMaterial") {
@@ -716,8 +727,9 @@ export function createEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "possessCamera") {
+        const previousCamera = scene.activeCamera;
         applyPossessCamera(scene, binding, command.slotId);
-        rebuildPostProcessStack();
+        rebuildIfActiveCameraChanged(previousCamera);
         scheduler.invalidate("camera");
       }
       if (command.type === "setShadowQuality") {
