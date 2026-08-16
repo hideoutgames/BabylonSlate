@@ -293,6 +293,28 @@ describe("addClassMember", () => {
 
   it("syncs function Input/Output node pin lists when the signature changes", () => {
     let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    const stalePins = [
+      {
+        id: "exec",
+        name: "exec",
+        kind: "exec" as const,
+        direction: "out" as const,
+        type: { kind: "exec" as const },
+      },
+    ];
+    const seeded = graph.functionGraphs?.["fn-1"];
+    graph = {
+      ...graph,
+      functionGraphs: {
+        "fn-1": {
+          nodes: (seeded?.nodes ?? []).map((node) => ({
+            ...node,
+            data: { ...node.data, __pins: stalePins },
+          })),
+          edges: seeded?.edges ?? [],
+        },
+      },
+    };
     const pins = [
       { name: "exec", typeId: "exec", direction: "in" as const },
       { name: "height", typeId: "float", direction: "in" as const },
@@ -302,6 +324,10 @@ describe("addClassMember", () => {
     expect(graph.members?.[0]?.pins).toEqual(pins);
     const slice = graph.functionGraphs?.["fn-1"];
     expect(slice?.nodes.map((node) => node.data.pins)).toEqual([pins, pins]);
+    expect(slice?.nodes.map((node) => node.data.__pins)).toEqual([
+      undefined,
+      undefined,
+    ]);
   });
 
   it("syncs function signature pins onto matching Call nodes", () => {
