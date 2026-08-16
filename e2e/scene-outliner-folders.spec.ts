@@ -48,6 +48,33 @@ test.describe("Scene Outliner folders", () => {
     await expect(page.getByTestId("tree-row-actor:actor-1")).toBeVisible();
   });
 
+  test("a placed camera exposes Attempt Possess View Target, off by default", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+    await expect(page.getByTestId("scene-outliner-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.getByTestId("outliner-add-actor").click();
+    await page.getByTestId("place-actors-item-camera").click();
+    await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
+
+    // Placed actors must not stack on the default Cube at the origin.
+    await expect(page.getByTestId("property-actor-position-x")).not.toHaveValue("0");
+
+    const toggle = page.getByTestId(
+      "property-actor-2-actor-2-camera-attemptPossessViewTarget",
+    );
+    await toggle.scrollIntoViewIfNeeded();
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+  });
+
   test("undo restores a deleted folder without losing its actor", async ({
     page,
   }) => {
