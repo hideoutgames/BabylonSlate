@@ -15,6 +15,7 @@ import { NamedListEditor } from "./named-list-editor";
 import { TypeColorMark } from "./type-color-mark";
 import { PinTypePicker } from "./pin-type-picker";
 import { ClassPicker, type ClassPickerEntry } from "./class-picker";
+import { PickerIdentity, classRowIdentity } from "./picker-identity";
 import {
   pinPickerColorVar,
   type PinPickerType,
@@ -125,6 +126,11 @@ export function PinListEditor({
       {title ? <div className="text-sm font-medium">{title}</div> : null}
       {rows.map((row, index) => {
         const selected = selectedId === row.id;
+        const classId = row.typeClassId?.trim() || "BObject";
+        const classIdentity = classRowIdentity(
+          classEntries.find((entry) => entry.id === classId),
+          classId,
+        );
         return (
           <div key={row.id} className="flex flex-col gap-1">
             <div
@@ -216,11 +222,15 @@ export function PinListEditor({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-7 min-h-7"
+                      className="h-auto min-h-7 justify-start"
                       data-testid={`${testIdPrefix}-${row.id}-class-type`}
                       onClick={() => setClassPickRowId(row.id)}
                     >
-                      {row.typeClassId?.trim() || "BObject"}
+                      <PickerIdentity
+                        label={classIdentity.displayLabel ?? classId}
+                        description={classIdentity.displayType}
+                        visual={classIdentity.visual}
+                      />
                     </Button>
                   </Field>
                 ) : (
