@@ -126,7 +126,11 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const button = screen.getByTestId("property-actor-1-component-1-assetGuid");
     expect(button.textContent).toContain("Rock");
+    expect(button.textContent).toContain("Mesh");
     expect(button.textContent).not.toContain("mesh-1");
+    expect(button.querySelector("[data-type-family]")?.getAttribute("data-type-family")).toBe(
+      "model",
+    );
     fireEvent.click(button);
     expect(await screen.findByTestId("search-item-mesh-1")).toBeTruthy();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
@@ -215,6 +219,7 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const trigger = screen.getByTestId("property-scene-game-instance-class");
     expect(trigger.textContent).toContain("MyGame");
+    expect(trigger.textContent).toContain("Class");
     expect(trigger).toHaveProperty("disabled", true);
     fireEvent.click(trigger);
     expect(screen.queryByTestId("scene-game-instance-picker")).toBeNull();

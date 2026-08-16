@@ -6,6 +6,9 @@ import {
   InputMappingEditor,
   NamedListEditor,
   NumberField,
+  assetRowIdentity,
+  classRowIdentity,
+  selectedPickerIdentity,
   type CatalogCategory,
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
@@ -495,11 +498,11 @@ export function SettingsModal({
                   <Button
                     type="button"
                     variant="outline"
-                    className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                    className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
                     data-testid={`settings-editor-utility-objects-${index}`}
                     onClick={() => setUtilityPick(index)}
                   >
-                    {value}
+                    {selectedPickerIdentity(classRowIdentity({ id: value, name: value }))}
                   </Button>
                 )}
               />
@@ -628,17 +631,29 @@ export function SettingsModal({
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
                 onClick={() => setFontPickerOpen(true)}
                 data-testid="settings-default-font"
               >
-                {assetRegistry
-                  ?.list()
-                  .find(
-                    (asset) =>
-                      asset.header.guid ===
-                      projectDocument.settings.fonts.defaultFontGuid,
-                  )?.header.name ?? "None"}
+                {selectedPickerIdentity(
+                  assetRowIdentity(
+                    (() => {
+                      const asset = assetRegistry
+                        ?.list()
+                        .find(
+                          (entry) =>
+                            entry.header.guid ===
+                            projectDocument.settings.fonts.defaultFontGuid,
+                        );
+                      return asset
+                        ? {
+                            name: asset.header.name,
+                            type: asset.header.type,
+                          }
+                        : undefined;
+                    })(),
+                  ),
+                )}
               </Button>
               <FieldDescription>
                 Font asset used when a widget omits a family. Empty means the
@@ -849,17 +864,29 @@ export function SettingsModal({
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
                 onClick={() => setScenePickerOpen(true)}
                 data-testid="settings-startup-scene"
               >
-                {assetRegistry
-                  ?.list()
-                  .find(
-                    (asset) =>
-                      asset.header.guid ===
-                      projectDocument.settings.startupSceneGuid,
-                  )?.header.name ?? "None"}
+                {selectedPickerIdentity(
+                  assetRowIdentity(
+                    (() => {
+                      const asset = assetRegistry
+                        ?.list()
+                        .find(
+                          (entry) =>
+                            entry.header.guid ===
+                            projectDocument.settings.startupSceneGuid,
+                        );
+                      return asset
+                        ? {
+                            name: asset.header.name,
+                            type: asset.header.type,
+                          }
+                        : undefined;
+                    })(),
+                  ),
+                )}
               </Button>
               <FieldDescription>
                 Packaged builds boot this scene. Editor Play uses the open scene
@@ -871,16 +898,20 @@ export function SettingsModal({
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
                 onClick={() => setGameInstancePickerOpen(true)}
                 data-testid="settings-game-instance"
               >
-                {gameInstanceClassEntries(assetRegistry?.list() ?? []).find(
-                  (entry) =>
-                    entry.id === projectDocument.settings.gameInstanceClass,
-                )?.name ??
-                  projectDocument.settings.gameInstanceClass ??
-                  "None"}
+                {selectedPickerIdentity(
+                  classRowIdentity(
+                    gameInstanceClassEntries(assetRegistry?.list() ?? []).find(
+                      (entry) =>
+                        entry.id ===
+                        projectDocument.settings.gameInstanceClass,
+                    ),
+                    projectDocument.settings.gameInstanceClass,
+                  ),
+                )}
               </Button>
               <FieldDescription>
                 Play, Preview, and export construct this GameInstance subclass.

@@ -110,6 +110,14 @@ export {
   type TreeViewProps,
 } from "./tree-view";
 export {
+  PickerIdentity,
+  displayPickerTitle,
+  assetRowIdentity,
+  classRowIdentity,
+  selectedPickerIdentity,
+  type PickerIdentityProps,
+} from "./picker-identity";
+export {
   SearchDialog,
   filterSearchItems,
   type SearchDialogItem,

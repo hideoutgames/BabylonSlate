@@ -205,8 +205,11 @@ describe("SettingsModal project authoring", () => {
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-export"));
     fireEvent.click(screen.getByTestId("settings-game-instance"));
-    expect(await screen.findByTestId("search-item-GameInstance")).toBeTruthy();
-    expect(screen.getByTestId("search-item-MyGame")).toBeTruthy();
+    const gameInstance = await screen.findByTestId("search-item-GameInstance");
+    const myGame = screen.getByTestId("search-item-MyGame");
+    expect(gameInstance.textContent).toContain("Class");
+    expect(myGame.textContent).toContain("Class");
+    expect(myGame.textContent).not.toContain("Project");
     expect(screen.queryByTestId("search-item-Tools")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-MyGame"));
     expect(updateProjectSettings).toHaveBeenCalledWith(

@@ -68,6 +68,7 @@ import {
   resolvePluginEnabled,
   resolvePluginGraph,
   shadowEnginePlugins,
+  stripAssetFileSuffix,
   writeProjectPlugin,
   type InspectedBabplugin,
   type PluginImportPlan,
@@ -148,7 +149,8 @@ function newGuid(): string {
 }
 
 function assetName(path: string): string {
-  return (path.split("/").pop() ?? path).replace(/\.babasset$/, "");
+  const file = path.split("/").pop() ?? path;
+  return stripAssetFileSuffix(file) || file.replace(/\.babasset$/, "");
 }
 
 function parentDir(path: string): string {

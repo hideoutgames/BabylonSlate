@@ -32,6 +32,7 @@ import {
 } from "@babylonslate/editor-kit";
 import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
+import { classIdForGraphPath } from "../services/script-compiler";
 
 export const ASSETS_ROOT = "assets";
 
@@ -195,6 +196,17 @@ export function isFolderTreeRoot(
 
 export function displayAssetTitle(name: string): string {
   return name.replace(/\.[A-Za-z][A-Za-z0-9]*$/, "");
+}
+
+export type ClassAssetRef = {
+  path?: string;
+  header: { type: string; name: string; parentClass?: string | null };
+};
+
+/** Compile class id for a Class asset (`main.class` header → `main`). */
+export function classIdFromClassAsset(asset: ClassAssetRef): string {
+  if (asset.path) return classIdForGraphPath(asset.path);
+  return displayAssetTitle(asset.header.name) || asset.header.name;
 }
 
 /** Additive Content Browser tile selection. Long-press / context menu never replaces. */
@@ -825,15 +837,15 @@ export function uniqueAssetTypes(assets: IndexedAsset[]): string[] {
 }
 
 export function classParentLookup(
-  assets: ReadonlyArray<{
-    header: { type: string; name: string; parentClass?: string | null };
-  }>,
+  assets: ReadonlyArray<ClassAssetRef>,
 ): (id: string) => string | null {
   const map = new Map<string, string | null>();
   for (const asset of assets) {
-    if (asset.header.type === "Class") {
-      map.set(asset.header.name, asset.header.parentClass ?? "BObject");
-    }
+    if (asset.header.type !== "Class") continue;
+    const parent = asset.header.parentClass ?? "BObject";
+    const id = classIdFromClassAsset(asset);
+    map.set(id, parent);
+    if (asset.header.name !== id) map.set(asset.header.name, parent);
   }
   return (id) => map.get(id) ?? engineParentOf(id) ?? null;
 }

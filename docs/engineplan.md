@@ -287,7 +287,7 @@ Authored lights and cameras already exist. The foundation wave created Babylon `
 - `mainCamera` CameraComponent pick (`SceneComponentPicker`, `allowedClassIds={["CameraComponent"]}`)
 - gravity, fixed timestep, GameInstance (already present)
 
-**`SceneComponentPicker` is kit, not a one-off Details row.** Same pattern as `AssetPicker` / `ClassPicker`: SearchDialog, optional None, button shows the current name. Call sites pass `allowedClassIds` in source (e.g. `["CameraComponent"]`) — there is no user-facing type dropdown. The list is the open scene’s components of those class ids (actor name + component title). First use is Default Camera; later scene settings reuse it (a light, an audio listener) without a new catalog primitive. Lives in `@babylonslate/editor-kit`; gallery row is present.
+**`SceneComponentPicker` is kit, not a one-off Details row.** Same pattern as `AssetPicker` / `ClassPicker`: SearchDialog, optional None, button shows icon, current name, and class id. Call sites pass `allowedClassIds` in source (e.g. `["CameraComponent"]`) — there is no user-facing type dropdown. The list is the open scene’s components of those class ids (actor name + component title). First use is Default Camera; later scene settings reuse it (a light, an audio listener) without a new catalog primitive. Lives in `@babylonslate/editor-kit`; gallery row is present.
 
 **Schema is additive.** New keys on `SceneSettings` and on the two components normalize to defaults the way `editorJoystickEnabled` does. Bump `SCENE_SCHEMA_VERSION` only if existing documents would mis-parse; they should not.
 

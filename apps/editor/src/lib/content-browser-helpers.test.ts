@@ -42,6 +42,7 @@ import {
   materialHeaderMeta,
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
+  classIdFromClassAsset,
   classParentLookup,
   addSelectedAssetGuid,
   addSelectedFolderPath,
@@ -646,6 +647,31 @@ describe("content-browser-helpers", () => {
     expect(visual.colorVar).toBe("var(--asset-class)");
     expect(visual.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
     expect(visual.icon).not.toBe(resolveTypeVisual({ classId: "BObject" }).icon);
+  });
+
+  it("looks up Class parents by compile id when the header name still has a type suffix", () => {
+    const parentOf = classParentLookup([
+      {
+        path: "assets/main.class.babasset",
+        header: { type: "Class", name: "main.class", parentClass: "Actor" },
+      },
+    ]);
+    expect(parentOf("main")).toBe("Actor");
+    expect(parentOf("main.class")).toBe("Actor");
+  });
+
+  it("uses the compile class id for a Class asset named main.class", () => {
+    expect(
+      classIdFromClassAsset({
+        path: "assets/main.class.babasset",
+        header: { type: "Class", name: "main.class", parentClass: "Actor" },
+      }),
+    ).toBe("main");
+    expect(
+      classIdFromClassAsset({
+        header: { type: "Class", name: "main.class", parentClass: "Actor" },
+      }),
+    ).toBe("main");
   });
 
   it("offers BDebugCommand as a Class parent", () => {
