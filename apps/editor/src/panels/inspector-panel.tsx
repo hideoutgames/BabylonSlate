@@ -259,12 +259,22 @@ function ClassMemberDetails({
     ) => {
       commit({ pins: memberPinsFromRows(nextInputs, nextOutputs) });
     };
+    const interfaceImpl = member.implementsInterface;
+    const lockSignature = Boolean(interfaceImpl);
     return (
       <div
         className="flex flex-col gap-3 p-3"
         data-testid="inspector-member-function"
       >
         <div className="text-sm font-medium">{member.name}</div>
+        {interfaceImpl ? (
+          <div
+            className="text-xs text-muted-foreground"
+            data-testid="inspector-member-interface-impl"
+          >
+            Interface Implementation
+          </div>
+        ) : null}
         <PropertyGrid
           rows={[
             {
@@ -272,8 +282,21 @@ function ClassMemberDetails({
               kind: "text",
               label: "Name",
               value: member.name,
+              disabled: lockSignature,
               onChange: (name) => commit({ name }),
             },
+            ...(lockSignature
+              ? []
+              : [
+                  {
+                    id: "overridable",
+                    kind: "boolean" as const,
+                    label: "Overridable",
+                    value: member.overridable === true,
+                    onChange: (overridable: boolean) =>
+                      commit({ overridable: overridable ? true : undefined }),
+                  },
+                ]),
           ]}
         />
         <PinListEditor
@@ -283,6 +306,7 @@ function ClassMemberDetails({
           classEntries={classEntries}
           testIdPrefix="class-fn-in"
           data-testid="inspector-member-inputs"
+          readOnly={lockSignature}
           onChange={(nextRows) => commitPins(nextRows, outputRows)}
         />
         <PinListEditor
@@ -292,6 +316,7 @@ function ClassMemberDetails({
           classEntries={classEntries}
           testIdPrefix="class-fn-out"
           data-testid="inspector-member-outputs"
+          readOnly={lockSignature}
           onChange={(nextRows) => commitPins(inputRows, nextRows)}
         />
       </div>

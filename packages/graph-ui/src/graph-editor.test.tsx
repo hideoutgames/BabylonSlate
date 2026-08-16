@@ -1021,6 +1021,162 @@ describe("GraphEditor", () => {
     expect(execOutB?.getAttribute("data-pin-connected")).toBe("false");
   });
 
+  it("shows a read-only bool default between an empty pin and its name", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "branch",
+          type: "flow.branch",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Branch",
+            __nodeType: "flow.branch",
+            "default:condition": true,
+            __pins: [
+              {
+                id: "execIn",
+                name: "exec",
+                kind: "exec",
+                direction: "in",
+                type: { kind: "exec" },
+              },
+              {
+                id: "condition",
+                name: "condition",
+                kind: "data",
+                direction: "in",
+                type: { kind: "bool" },
+              },
+              {
+                id: "true",
+                name: "true",
+                kind: "exec",
+                direction: "out",
+                type: { kind: "exec" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const handle = container.querySelector(
+      '[data-id="branch"] [data-handleid="condition"]',
+    );
+    const preview = container.querySelector(
+      '[data-id="branch"] [data-pin-default="bool"]',
+    );
+    const label = container.querySelector(
+      '[data-id="branch"] [data-pin-label="condition"]',
+    );
+    expect(preview).not.toBeNull();
+    expect(preview?.getAttribute("data-checked")).toBe("true");
+    expect(label?.className).toMatch(/text-base/);
+    expect(handle?.nextElementSibling).toBe(preview);
+    expect(preview?.nextElementSibling).toBe(label);
+  });
+
+  it("hides the bool default when that pin is wired", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "src",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: {
+            __pins: [
+              {
+                id: "value",
+                name: "value",
+                kind: "data",
+                direction: "out",
+                type: { kind: "bool" },
+              },
+            ],
+          },
+        },
+        {
+          id: "branch",
+          type: "flow.branch",
+          position: { x: 280, y: 0 },
+          data: {
+            "default:condition": true,
+            __pins: [
+              {
+                id: "condition",
+                name: "condition",
+                kind: "data",
+                direction: "in",
+                type: { kind: "bool" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e:src:value:branch:condition",
+          source: "src",
+          target: "branch",
+          sourceHandle: "value",
+          targetHandle: "condition",
+        },
+      ],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    expect(
+      container.querySelector('[data-id="branch"] [data-pin-default="bool"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-id="branch"] [data-pin-label="condition"]'),
+    ).not.toBeNull();
+  });
+
+  it("shows a tiny capped string field for an unconnected string default", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 0, y: 0 },
+          data: {
+            "default:message": "Hello World",
+            __pins: debugLogPins,
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const preview = container.querySelector(
+      '[data-id="log"] [data-pin-default="string"]',
+    );
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toBe("Hello World");
+    expect(preview?.className).toMatch(/--graph-pin-default-max-width/);
+    expect(
+      container.querySelector('[data-id="log"] [data-pin-default]'),
+    ).not.toBe(
+      container.querySelector('[data-id="log"] [data-handleid="execIn"]'),
+    );
+    expect(
+      container.querySelector('[data-id="log"] [data-handleid="execIn"]')
+        ?.parentElement?.querySelector("[data-pin-default]"),
+    ).toBeNull();
+  });
+
+  it("sizes outgoing pin names at text-base too", () => {
+    const { container } = render(<GraphEditor initialGraph={graphWithPins()} />);
+    const thenLabel = container.querySelector(
+      '[data-id="log-a"] [data-pin-label="then"]',
+    );
+    expect(thenLabel?.className).toMatch(/text-base/);
+  });
+
   it("shows a Development Only tape on Print by default", () => {
     const graph: GraphDocument = {
       nodes: [

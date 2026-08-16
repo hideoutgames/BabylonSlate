@@ -207,12 +207,43 @@ export function classGraphFromHeaderPayload(
       if (!entry || typeof entry !== "object") continue;
       const name = (entry as { name?: unknown }).name;
       if (typeof name !== "string" || !name) continue;
-      members.push({
+      const fn: GraphClassMember = {
         id: headerMemberId({ ...(entry as { id?: unknown }), name }),
         kind: "function",
         name,
         pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
-      });
+      };
+      if ((entry as { overridable?: unknown }).overridable === true) {
+        fn.overridable = true;
+      }
+      const implementsInterface = (entry as { implementsInterface?: unknown })
+        .implementsInterface;
+      if (
+        implementsInterface &&
+        typeof implementsInterface === "object" &&
+        typeof (implementsInterface as { assetGuid?: unknown }).assetGuid ===
+          "string" &&
+        typeof (implementsInterface as { methodName?: unknown }).methodName ===
+          "string"
+      ) {
+        fn.implementsInterface = {
+          assetGuid: (implementsInterface as { assetGuid: string }).assetGuid,
+          methodName: (implementsInterface as { methodName: string }).methodName,
+        };
+      }
+      const overrides = (entry as { overrides?: unknown }).overrides;
+      if (
+        overrides &&
+        typeof overrides === "object" &&
+        typeof (overrides as { classId?: unknown }).classId === "string" &&
+        typeof (overrides as { name?: unknown }).name === "string"
+      ) {
+        fn.overrides = {
+          classId: (overrides as { classId: string }).classId,
+          name: (overrides as { name: string }).name,
+        };
+      }
+      members.push(fn);
     }
   }
   const variables = payload?.variables;
@@ -249,7 +280,98 @@ export function classGraphFromHeaderPayload(
       });
     }
   }
+  const interfaces = payload?.interfaces;
+  if (Array.isArray(interfaces)) {
+    for (const entry of interfaces) {
+      if (!entry || typeof entry !== "object") continue;
+      const name = (entry as { name?: unknown }).name;
+      if (typeof name !== "string" || !name) continue;
+      const assetGuid = (entry as { assetGuid?: unknown }).assetGuid;
+      members.push({
+        id: headerMemberId({ ...(entry as { id?: unknown }), name }),
+        kind: "interface",
+        name,
+        assetGuid: typeof assetGuid === "string" ? assetGuid : "",
+      });
+    }
+  }
   return { nodes: [], edges: [], members };
+}
+
+export type ScriptInterfacePaletteEntry = {
+  guid: string;
+  name: string;
+  methods: Array<{
+    name: string;
+    pins?: GraphClassMemberPin[];
+  }>;
+};
+
+function methodsFromPayload(payload?: Record<string, unknown>): ScriptInterfacePaletteEntry["methods"] {
+  const raw = payload?.methods;
+  if (!Array.isArray(raw)) return [];
+  const methods: ScriptInterfacePaletteEntry["methods"] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const name = (entry as { name?: unknown }).name;
+    if (typeof name !== "string" || !name) continue;
+    methods.push({
+      name,
+      pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
+    });
+  }
+  return methods;
+}
+
+/** Closed ScriptInterface headers plus open documents. */
+export function collectScriptInterfacesForPalette(options: {
+  assets: ReadonlyArray<{
+    header: {
+      type: string;
+      guid?: string;
+      name: string;
+      payload?: Record<string, unknown>;
+    };
+  }>;
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string };
+    content: unknown;
+  }>;
+}): ScriptInterfacePaletteEntry[] {
+  const byGuid = new Map<string, ScriptInterfacePaletteEntry>();
+  for (const asset of options.assets) {
+    if (asset.header.type !== "ScriptInterface") continue;
+    const guid =
+      (typeof asset.header.payload?.guid === "string" &&
+        asset.header.payload.guid) ||
+      asset.header.guid ||
+      "";
+    if (!guid) continue;
+    byGuid.set(guid, {
+      guid,
+      name:
+        (typeof asset.header.payload?.name === "string" &&
+          asset.header.payload.name) ||
+        asset.header.name,
+      methods: methodsFromPayload(asset.header.payload),
+    });
+  }
+  for (const doc of options.openDocuments) {
+    if (doc.ref.kind !== "script-interface") continue;
+    if (!isRecord(doc.content)) continue;
+    const guid = typeof doc.content.guid === "string" ? doc.content.guid : "";
+    if (!guid) continue;
+    const name =
+      typeof doc.content.name === "string" && doc.content.name
+        ? doc.content.name
+        : "Interface";
+    byGuid.set(guid, {
+      guid,
+      name,
+      methods: methodsFromPayload(doc.content),
+    });
+  }
+  return [...byGuid.values()];
 }
 
 /** Closed Class headers plus open documents, keyed by class id. */

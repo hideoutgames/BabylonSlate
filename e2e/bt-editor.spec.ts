@@ -89,7 +89,7 @@ test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
     ).toBeVisible();
   });
 
-  test("free-moves a node, coalesces undo, and restores after save/reopen", async ({
+  test("free-moves a node, undoes each completed move, and restores after save/reopen", async ({
     page,
   }) => {
     test.setTimeout(E2E_TIMEOUT_MS);
@@ -111,9 +111,14 @@ test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
 
     await expect(page.getByTestId("undo-document")).toBeEnabled();
     await page.getByTestId("undo-document").click();
-    const afterUndo = parseTranslate(await flowNodeTransform(page, "task"));
-    expect(Math.abs(afterUndo.x - before.x)).toBeLessThan(8);
-    expect(Math.abs(afterUndo.y - before.y)).toBeLessThan(8);
+    const afterFirstUndo = parseTranslate(await flowNodeTransform(page, "task"));
+    expect(Math.abs(afterFirstUndo.x - afterFirst.x)).toBeLessThan(8);
+    expect(Math.abs(afterFirstUndo.y - afterFirst.y)).toBeLessThan(8);
+
+    await page.getByTestId("undo-document").click();
+    const afterSecondUndo = parseTranslate(await flowNodeTransform(page, "task"));
+    expect(Math.abs(afterSecondUndo.x - before.x)).toBeLessThan(8);
+    expect(Math.abs(afterSecondUndo.y - before.y)).toBeLessThan(8);
 
     await dragTreeNode(page, "bt-node-task", 80, 40);
     const saved = parseTranslate(await flowNodeTransform(page, "task"));
@@ -184,6 +189,13 @@ test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
     await expect(page.getByTestId("property-durationMs")).toBeVisible({
       timeout: 10_000,
     });
+    const wait = page.locator('.react-flow__node[data-id^="bt.task.wait-"]');
+    await expect(wait).toBeVisible();
+    const waitId = await wait.getAttribute("data-id");
+    expect(waitId).toBeTruthy();
+    await expect(
+      page.locator(`.react-flow__edge[data-id="bt-sequence-${waitId}"]`),
+    ).toBeVisible();
   });
 
   test("script graph still uses the 96px connect-end cancel", async ({ page }) => {

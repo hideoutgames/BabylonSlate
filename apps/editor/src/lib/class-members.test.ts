@@ -43,6 +43,25 @@ describe("addClassMember", () => {
     expect(graph.nodes).toEqual([]);
   });
 
+  it("seeds interface implementation pins and metadata", () => {
+    const graph = addClassMember(emptyGraph(), "function", "Apply Damage", () => "fn-1", {
+      pins: [
+        { name: "exec", typeId: "exec", direction: "in" },
+        { name: "amount", typeId: "float", direction: "in" },
+      ],
+      implementsInterface: { assetGuid: "iface-1", methodName: "Apply Damage" },
+    });
+    expect(graph.members?.[0]).toMatchObject({
+      name: "Apply Damage",
+      implementsInterface: { assetGuid: "iface-1", methodName: "Apply Damage" },
+    });
+    expect(graph.functionGraphs?.["fn-1"]?.nodes[0]?.data.pins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "amount", typeId: "float" }),
+      ]),
+    );
+  });
+
   it("seeds a protected Input/Output function graph when adding a function", () => {
     const graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
     const slice = graph.functionGraphs?.["fn-1"];

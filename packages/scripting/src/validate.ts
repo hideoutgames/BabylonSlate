@@ -307,9 +307,18 @@ function validatePinTyping(
         if (!defaultClearsMissing && !implicitSelfTarget) {
           const liveRef =
             pin.type.kind === "objectRef" || pin.type.kind === "actorRef";
+          const owner = ctx.members?.find(
+            (member) =>
+              member.kind === "function" &&
+              (member.id === graph.id || member.name === graph.id),
+          );
+          const interfaceOutput =
+            node.typeId === "flow.function.output" &&
+            (ctx.interfaceImplementation === true ||
+              Boolean(owner?.implementsInterface));
           out.push(
             diagnostic({
-              severity: liveRef ? "error" : "warning",
+              severity: liveRef || interfaceOutput ? "error" : "warning",
               code: "pin.missing_input",
               message: `Required input "${pin.name}" is not connected`,
               assetGuid: ctx.assetGuid,
@@ -546,6 +555,96 @@ function validateMemberBindings(
   return out;
 }
 
+type SignaturePin = {
+  name: string;
+  typeId: string;
+  direction: "in" | "out";
+  typeClassId?: string;
+};
+
+function signaturePinKey(pin: SignaturePin): string {
+  return `${pin.direction}:${pin.name}:${pin.typeId}:${pin.typeClassId ?? ""}`;
+}
+
+function pinsMatch(
+  actual: readonly SignaturePin[] | undefined,
+  expected: readonly SignaturePin[] | undefined,
+): boolean {
+  const left = [...(actual ?? [])]
+    .map(signaturePinKey)
+    .sort((a, b) => a.localeCompare(b));
+  const right = [...(expected ?? [])]
+    .map(signaturePinKey)
+    .sort((a, b) => a.localeCompare(b));
+  if (left.length !== right.length) return false;
+  return left.every((key, index) => key === right[index]);
+}
+
+function validateInterfaceAndOverrides(
+  graphs: readonly LogicGraph[],
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const graphId = graphs[0]?.id ?? "";
+  const functions = (ctx.members ?? []).filter(
+    (member) =>
+      member.kind === "function" &&
+      (!ctx.classId || member.classId === ctx.classId),
+  );
+  for (const iface of ctx.implementedInterfaces ?? []) {
+    for (const method of iface.methods) {
+      const impl = functions.find(
+        (member) =>
+          member.implementsInterface?.assetGuid === iface.guid &&
+          member.implementsInterface.methodName === method.name,
+      );
+      if (!impl) {
+        out.push(
+          diagnostic({
+            code: "interface.unimplemented",
+            message: `Interface method "${method.name}" on ${iface.name} is not implemented`,
+            assetGuid: ctx.assetGuid,
+            graphId,
+          }),
+        );
+        continue;
+      }
+      const implData = (impl.pins ?? []).filter((pin) => pin.typeId !== "exec");
+      const methodData = method.pins.filter((pin) => pin.typeId !== "exec");
+      if (!pinsMatch(implData, methodData)) {
+        out.push(
+          diagnostic({
+            code: "interface.signature_mismatch",
+            message: `Interface implementation "${method.name}" does not match ${iface.name}`,
+            assetGuid: ctx.assetGuid,
+            graphId,
+          }),
+        );
+      }
+    }
+  }
+  for (const member of functions) {
+    if (!member.overrides) continue;
+    const parent = (ctx.parentFunctionSignatures ?? []).find(
+      (entry) =>
+        entry.classId === member.overrides?.classId &&
+        entry.name === member.overrides.name,
+    );
+    if (!parent) continue;
+    if (!pinsMatch(member.pins, parent.pins)) {
+      out.push(
+        diagnostic({
+          code: "member.override_signature",
+          message: `Override "${member.name}" does not match ${member.overrides.classId}.${member.overrides.name}`,
+          assetGuid: ctx.assetGuid,
+          graphId,
+        }),
+      );
+    }
+  }
+  return out;
+}
+
 export function validateGraphs(
   graphs: readonly LogicGraph[],
   ctx: TypeContext,
@@ -558,6 +657,7 @@ export function validateGraphs(
     diagnostics.push(...validateExecuteJavaScript(graph, ctx));
     diagnostics.push(...validateMemberBindings(graph, ctx));
   }
+  diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   for (const rule of listValidationRules()) {
     diagnostics.push(...rule.run(graphs, ctx));
   }

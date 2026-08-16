@@ -42,14 +42,14 @@ Protocol: extra command-channel `animState` (not a snapshot stride bump). See [b
 
 Drives:
 
-- glTF `Animation` assets already imported by the model importer (seek registered `AnimationGroup`s).
+- glTF `Animation` clips via `@babylonjs/loaders` `LoadAssetContainerAsync` (Play `modelBytes` → paused per-slot `AnimationGroup`s).
 - Sprite named clips from [sprites.md](sprites.md).
 
 ## Render
 
-`applyAnimStateToScene` applies **all** weighted `layers[]` (or synthesizes one from `clipName`). Lookup is per-slot: `getAnimationGroup(slotId, clipName, clipAssetGuid)`, then `scene.animationGroups`. Missing clip → `onMissingClip` (create-engine skips the warn when no groups are registered yet). Sprite two-layer blend: base mesh + overlay; visibilities = weights. Overlay is created in `createPlayMesh` when a sprite frame exists and disposed with the slot. Pending `animState` is replayed after `assignMesh`.
+`applyAnimStateToScene` applies **all** weighted `layers[]` (or synthesizes one from `clipName`). Lookup is per-slot: `getAnimationGroup(slotId, clipName, clipAssetGuid)`, then `scene.animationGroups`. Missing clip → `onMissingClip` (create-engine skips the warn when no groups are registered yet). Sprite two-layer blend: base mesh + overlay; visibilities = weights. Overlay is created in `createPlayMesh` when a sprite frame exists and disposed with the slot. Pending `animState` is replayed after `assignMesh` and after GLB groups land.
 
-GLB `createMeshFromModelBytes` still builds the first primitive synchronously; skeletal `AnimationGroup`s play when they are on `scene.animationGroups` or `slotAnimationGroups`. Async AssetContainer extract is not wired.
+GLB `createMeshFromModelBytes` still builds the first primitive synchronously so the actor appears immediately. When the GLB lists animations, `beginSlotModelAnimLoad` extracts `AnimationGroup`s with `LoadAssetContainerAsync`, parents them onto the slot, pauses them (Babylon must not auto-advance gameplay clips), stamps `clipAssetGuid`, and replays the last `animState`.
 
 ## Compile / Play / export
 
