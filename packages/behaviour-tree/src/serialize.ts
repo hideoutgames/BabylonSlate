@@ -313,10 +313,13 @@ export function serializedToBehaviourTree(
     childrenByParent.set(edge.source, list);
   }
   for (const [parentId, childIds] of childrenByParent) {
+    const previousChildren = previousById.get(parentId)?.children ?? [];
     const ordered = [...childIds].sort((left, right) => {
       const leftNode = graph.nodes.find((entry) => entry.id === left);
       const rightNode = graph.nodes.find((entry) => entry.id === right);
-      return (leftNode?.position.x ?? 0) - (rightNode?.position.x ?? 0);
+      const dx = (leftNode?.position.x ?? 0) - (rightNode?.position.x ?? 0);
+      if (dx !== 0) return dx;
+      return previousChildren.indexOf(left) - previousChildren.indexOf(right);
     });
     childrenByParent.set(parentId, ordered);
   }
