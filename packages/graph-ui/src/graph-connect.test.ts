@@ -21,6 +21,8 @@ import {
   connectEndAction,
   shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
+  connectEventPointerId,
+  shouldOpenAddNodeOnSecondaryPointer,
 } from "./graph-connect";
 
 const execOut: SerializedPin = {
@@ -596,8 +598,8 @@ describe("connectEndAction", () => {
     pointer: { x: 40, y: 0 },
   };
 
-  it("keeps the default 96px cancel zone and wire-break fallback", () => {
-    expect(connectEndAction(far)).toBe("add-node");
+  it("does not open Add Node on default connect-end; near drags break wires", () => {
+    expect(connectEndAction(far)).toBe("none");
     expect(connectEndAction(near)).toBe("break");
   });
 
@@ -615,6 +617,75 @@ describe("connectEndAction", () => {
   it("disables connect-end side effects", () => {
     expect(connectEndAction(far, "disabled")).toBe("none");
     expect(connectEndAction(near, "disabled")).toBe("none");
+  });
+});
+
+describe("connectEventPointerId", () => {
+  it("reads pointerId from a pointer event", () => {
+    const event = new MouseEvent("pointerdown");
+    Object.defineProperty(event, "pointerId", { value: 7 });
+    expect(connectEventPointerId(event)).toBe(7);
+  });
+
+  it("reads the changed touch identifier", () => {
+    const event = {
+      changedTouches: [{ identifier: 3, clientX: 10, clientY: 20 }],
+    };
+    expect(connectEventPointerId(event)).toBe(3);
+  });
+
+  it("falls back to 1 when the event has no pointer identity", () => {
+    expect(connectEventPointerId({})).toBe(1);
+    expect(connectEventPointerId({ pointerId: 0 })).toBe(1);
+  });
+});
+
+describe("shouldOpenAddNodeOnSecondaryPointer", () => {
+  const inZone = {
+    connectionActive: true,
+    dragPointerId: 1,
+    eventPointerId: 2,
+    inAddNodeZone: true,
+  };
+
+  it("opens when a different pointer arrives in the Add Node zone", () => {
+    expect(shouldOpenAddNodeOnSecondaryPointer(inZone)).toBe(true);
+  });
+
+  it("ignores the drag pointer itself", () => {
+    expect(
+      shouldOpenAddNodeOnSecondaryPointer({
+        ...inZone,
+        eventPointerId: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a second pointer outside the Add Node zone", () => {
+    expect(
+      shouldOpenAddNodeOnSecondaryPointer({
+        ...inZone,
+        inAddNodeZone: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a second pointer when no connection drag is active", () => {
+    expect(
+      shouldOpenAddNodeOnSecondaryPointer({
+        ...inZone,
+        connectionActive: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a second pointer when the drag pointer id is unknown", () => {
+    expect(
+      shouldOpenAddNodeOnSecondaryPointer({
+        ...inZone,
+        dragPointerId: null,
+      }),
+    ).toBe(false);
   });
 });
 
