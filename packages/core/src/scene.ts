@@ -245,6 +245,29 @@ function asNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+/**
+ * Later actors that reuse an id are renamed, keeping the first owner addressable.
+ * A repeated id otherwise collapses the pair into one editor mesh and one Play
+ * slot, so the duplicate silently disappears from the viewport.
+ */
+function withUniqueActorIds(actors: SerializedActor[]): SerializedActor[] {
+  const taken = new Set<string>();
+  return actors.map((actor) => {
+    if (!taken.has(actor.id)) {
+      taken.add(actor.id);
+      return actor;
+    }
+    let suffix = 2;
+    let candidate = `${actor.id}-${suffix}`;
+    while (taken.has(candidate)) {
+      suffix += 1;
+      candidate = `${actor.id}-${suffix}`;
+    }
+    taken.add(candidate);
+    return { ...actor, id: candidate };
+  });
+}
+
 function normalizeMainCamera(
   actorId: unknown,
   componentId: unknown,
@@ -340,7 +363,7 @@ export function normalizeScene(value: unknown): SerializedScene {
     viewportMode,
     settings: normalizeSceneSettings(source.settings, viewportMode),
     actors: Array.isArray(source.actors)
-      ? source.actors.map(normalizeActor)
+      ? withUniqueActorIds(source.actors.map(normalizeActor))
       : [],
   };
 }

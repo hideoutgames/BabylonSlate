@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
+  readActorSlot,
+  readSnapshotHeader,
+  snapshotFloatCount,
+} from "@babylonslate/bridge";
+import {
   createActor,
   createDefaultSceneSettings,
   createMeshComponent,
@@ -123,6 +128,62 @@ describe("p7-play-scene-load", () => {
         meshAssetGuid: null,
         meshKind: "sphere",
       },
+    ]);
+    runtime.stop();
+  });
+
+  it("gives every mesh actor its own slot and snapshot row", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "TwoMeshes",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        actors: [
+          createActor("box-actor", "Box", {
+            transform: {
+              position: [-3, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [createMeshComponent("box-mesh", "box")],
+          }),
+          createActor("sphere-actor", "Sphere", {
+            transform: {
+              position: [3, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [createMeshComponent("sphere-mesh", "sphere")],
+          }),
+        ],
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+
+    const assigned = commands.filter((c) => c.type === "assignMesh");
+    expect(assigned.map((c) => (c as { meshKind: string }).meshKind)).toEqual([
+      "box",
+      "sphere",
+    ]);
+    const slotIds = assigned.map((c) => (c as { slotId: number }).slotId);
+    expect(new Set(slotIds).size).toBe(2);
+
+    runtime.start();
+    runtime.tick();
+    const buf = new Float32Array(snapshotFloatCount(8));
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    expect(readSnapshotHeader(buf).actorCount).toBe(2);
+    const first = readActorSlot(buf, 0);
+    const second = readActorSlot(buf, 1);
+    expect(new Set([first.slotId, second.slotId]).size).toBe(2);
+    expect([first.position.x, second.position.x].sort((a, b) => a - b)).toEqual([
+      -3, 3,
     ]);
     runtime.stop();
   });

@@ -146,6 +146,53 @@ describe("spawnPlacedActor", () => {
   });
 });
 
+describe("spawnPlacedActor placement", () => {
+  const sphere = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-sphere")!;
+  const box = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-box")!;
+
+  it("uses the origin when the scene has no actors", () => {
+    const empty = { ...createDefaultScene(), actors: [] };
+    expect(spawnPlacedActor(empty, sphere, "actor-1").transform.position).toEqual([
+      0, 0, 0,
+    ]);
+  });
+
+  it("does not bury a new actor inside the default Cube at the origin", () => {
+    const scene = createDefaultScene();
+    const actor = spawnPlacedActor(scene, sphere, "actor-2");
+    expect(actor.transform.position).not.toEqual([0, 0, 0]);
+  });
+
+  it("keeps successive placements clear of each other", () => {
+    let scene = { ...createDefaultScene(), actors: [] };
+    const positions: number[] = [];
+    for (const [index, item] of [sphere, box, sphere].entries()) {
+      const actor = spawnPlacedActor(scene, item, `actor-${index + 1}`);
+      positions.push(actor.transform.position[0]);
+      scene = { ...scene, actors: [...scene.actors, actor] };
+    }
+    expect(new Set(positions).size).toBe(3);
+    const sorted = [...positions].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i += 1) {
+      expect(sorted[i]! - sorted[i - 1]!).toBeGreaterThanOrEqual(1.5);
+    }
+  });
+
+  it("reuses a gap left by a deleted actor instead of drifting outward", () => {
+    const scene = {
+      ...createDefaultScene(),
+      actors: [] as ReturnType<typeof spawnPlacedActor>[],
+    };
+    const first = spawnPlacedActor(scene, box, "actor-1");
+    const withFirst = { ...scene, actors: [first] };
+    const second = spawnPlacedActor(withFirst, box, "actor-2");
+    const onlySecond = { ...scene, actors: [second] };
+    expect(spawnPlacedActor(onlySecond, box, "actor-3").transform.position).toEqual(
+      first.transform.position,
+    );
+  });
+});
+
 describe("projectPlaceActors", () => {
   it("lists Class and Model assets, not sounds or textures", () => {
     const items = projectPlaceActors([

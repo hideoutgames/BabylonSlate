@@ -201,6 +201,92 @@ describe("createPlayMesh", () => {
     expect(camera.position.y).toBeCloseTo(0.03, 6);
   });
 
+  it("keeps a visible mesh for every actor slot in one snapshot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "box",
+    });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshAssetGuid: null,
+      meshKind: "sphere",
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 2,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: -3, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+        {
+          slotId: 1,
+          position: { x: 3, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+
+    expect(binding.meshes.size).toBe(2);
+    const first = binding.meshes.get(0);
+    const second = binding.meshes.get(1);
+    expect(first?.isVisible).toBe(true);
+    expect(second?.isVisible).toBe(true);
+    expect(first?.position.x).toBeCloseTo(-3);
+    expect(second?.position.x).toBeCloseTo(3);
+    expect(first).not.toBe(second);
+  });
+
+  it("rebuilds a slot visual when assignMesh arrives after the first snapshot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const snapshot = {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 7,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    };
+    applySnapshotToScene(scene, binding, snapshot);
+    const placeholderVertices = binding.meshes.get(7)!.getTotalVertices();
+
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 7,
+      meshAssetGuid: null,
+      meshKind: "sphere",
+    });
+    applySnapshotToScene(scene, binding, snapshot);
+
+    const rebuilt = binding.meshes.get(7);
+    expect(rebuilt?.isVisible).toBe(true);
+    expect(rebuilt!.getTotalVertices()).not.toBe(placeholderVertices);
+  });
+
   it("parents assignMesh parts under the snapshot-driven actor origin", () => {
     const handle = createTestEngine();
     handles.push(handle);
