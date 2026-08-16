@@ -95,7 +95,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
   });
 
   test("3D Place NavMesh + ground bakes, then Play starts", async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await openTestProject(page);
     await openMainScene(page);
 

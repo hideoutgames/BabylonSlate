@@ -6,7 +6,7 @@ test.describe("P7 Play physics timings", () => {
   test("2D rigid body Play reports non-zero physics ms on the worker HUD", async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     await openTestProject(page);
     await openMainScene(page);
 

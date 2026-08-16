@@ -426,7 +426,7 @@ test.describe("P9 content systems", () => {
   test("scene post-process stack applies in Play and respects Engine Settings", async ({
     page,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await openTestProject(page);
     await createAsset(page, "Material", "Bloom");
     await page

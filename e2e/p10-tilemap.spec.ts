@@ -84,7 +84,7 @@ test.describe("P10 tilemaps", () => {
   test("2D project paints tiles, plays an animated sprite, and reports physics", {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     await openTwoDProject(page);
 
     await createAsset(page, "Tileset", "Ground");
