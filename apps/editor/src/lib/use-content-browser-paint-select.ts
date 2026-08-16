@@ -80,6 +80,7 @@ export function useContentBrowserPaintSelect(options: {
 
   const onPointerDownCapture = useCallback((event: ReactPointerEvent) => {
     if (sessionRef.current) return;
+    suppressClickRef.current = false;
     const hit = resolveContentBrowserPaintHit(event.target as Element | null);
     if (!hit) return;
     sessionRef.current = {

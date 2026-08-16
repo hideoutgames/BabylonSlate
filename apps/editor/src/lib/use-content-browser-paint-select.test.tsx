@@ -186,4 +186,18 @@ describe("useContentBrowserPaintSelect", () => {
     fireEvent.click(tileA);
     expect(onExclusiveClick).toHaveBeenCalledWith("a");
   });
+
+  it("does not let a prior menu suppress a later tap on another card", () => {
+    const onPaint = vi.fn();
+    const onExclusiveClick = vi.fn();
+    const { getByTestId } = render(
+      <PaintHost onPaint={onPaint} onExclusiveClick={onExclusiveClick} />,
+    );
+    fireEvent.click(getByTestId("mark-menu"));
+    const tileB = getByTestId("tile-b");
+    dispatchPointerEvent(tileB, "pointerdown", { clientX: 40, clientY: 10 });
+    dispatchPointerEvent(tileB, "pointerup", { clientX: 40, clientY: 10 });
+    fireEvent.click(tileB);
+    expect(onExclusiveClick).toHaveBeenCalledWith("b");
+  });
 });
