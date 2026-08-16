@@ -109,6 +109,16 @@ function animStateLayers(command: AnimStateCommand): AnimClipLayer[] {
   ];
 }
 
+function groupMatchesClip(
+  entry: Pick<NamedSeekableGroup, "name" | "clipAssetGuid">,
+  clipName: string,
+  clipAssetGuid?: string,
+): boolean {
+  if (entry.name !== clipName) return false;
+  if (!clipAssetGuid) return true;
+  return entry.clipAssetGuid === clipAssetGuid;
+}
+
 function resolveAnimationGroup(
   scene: SceneAnimHost,
   slotId: number,
@@ -120,13 +130,9 @@ function resolveAnimationGroup(
     layer.clipAssetGuid,
   );
   if (fromHost) return fromHost;
-  return scene.animationGroups.find((entry) => {
-    if (entry.name !== layer.clipName) return false;
-    if (layer.clipAssetGuid && entry.clipAssetGuid) {
-      return entry.clipAssetGuid === layer.clipAssetGuid;
-    }
-    return true;
-  });
+  return scene.animationGroups.find((entry) =>
+    groupMatchesClip(entry, layer.clipName, layer.clipAssetGuid),
+  );
 }
 
 function applySpriteLayers(
@@ -215,13 +221,9 @@ export function sceneAnimHostFromBinding(
     animationGroups: options.animationGroups,
     getAnimationGroup: (slotId, clipName, clipAssetGuid) => {
       const groups = binding.slotAnimationGroups?.get(slotId) ?? [];
-      return groups.find((group) => {
-        if (group.name !== clipName) return false;
-        if (clipAssetGuid && group.clipAssetGuid) {
-          return group.clipAssetGuid === clipAssetGuid;
-        }
-        return true;
-      });
+      return groups.find((group) =>
+        groupMatchesClip(group, clipName, clipAssetGuid),
+      );
     },
     getSpriteSlot: (slotId) =>
       resolvePlaySpriteSlot(binding, options.spritePayloads, slotId),
