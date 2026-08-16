@@ -78,7 +78,7 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 - **Three fingers** pan (move the camera). In 2D this is the same 1:1 frustum / CSS-pixel mapping as one-finger pan; in 3D it uses a fixed world-units-per-pixel scale.
 - **WASD** flies in 3D (look-relative) and pans on XY in 2D. Ignored while typing, while Play is open, or when the canvas is hidden.
 - **Editor camera joystick** (`settings.editorJoystickEnabled`) is an optional on-screen stick that drives the same fly/pan path. Scene and Prefab **Viewport Settings** menus expose Snap, Show Grid, and Joystick; Scene persists those settings, Prefab uses live context. Not the P9 game `TouchJoystick`.
-- **Gizmo drag** coalesces to one undo step via `mergeKey` on `SetActorTransformCommand` (`transform:{actorId}`).
+- **Gizmo drag** coalesces to one undo step: `SetActorTransformCommand` (`transform:{actorId}`) for one actor, `SetActorsTransformsCommand` (`transforms:{sortedIds}`) when several selection roots move together.
 - Canvas uses `touch-none` plus non-passive touch `preventDefault` so UI chrome and iOS system gestures do not steal look / pinch / pan.
 - Selection on explicit tap pick, not hover.
 
