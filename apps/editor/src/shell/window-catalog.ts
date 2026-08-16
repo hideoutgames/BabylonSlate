@@ -1,7 +1,9 @@
 import type { DockWindowDirection } from "@babylonslate/core";
 import type { UiEditorMode } from "./ui-document-layout";
+import type { AnimEditorMode } from "./anim-document-layout";
 
 export type { UiEditorMode };
+export type { AnimEditorMode };
 export type DockviewDocumentKind =
   | "scene"
   | "graph"
@@ -55,6 +57,8 @@ export type DockWindowOptions = {
   sourceControl?: boolean;
   /** UserInterface / EditorUtilityInterface Designer vs Logic surface. */
   uiEditorMode?: UiEditorMode;
+  /** Animation Graph State Machine vs Animation Object surface. */
+  animEditorMode?: AnimEditorMode;
 };
 
 export const LOCKS_WINDOW_ID = "locks";
@@ -81,6 +85,9 @@ export function primaryDockPanel(
   options?: DockWindowOptions,
 ): string {
   if (kind === "ui" && options?.uiEditorMode === "logic") return "graph";
+  if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
+    return "anim-object-graph";
+  }
   return DOCK_PRIMARY_PANEL[kind];
 }
 
@@ -446,12 +453,12 @@ const PLUGIN_SETTINGS_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-const ANIM_GRAPH_WINDOWS: DockWindowDefinition[] = [
+const ANIM_GRAPH_STATE_WINDOWS: DockWindowDefinition[] = [
   { id: "anim-graph-graph", component: "anim-graph-graph", title: "Graph" },
   {
-    id: "anim-graph-parameters",
-    component: "anim-graph-parameters",
-    title: "Parameters",
+    id: "anim-graph-variables",
+    component: "anim-graph-variables",
+    title: "Variables",
     defaultPosition: {
       referencePanelId: "anim-graph-graph",
       direction: "left",
@@ -466,6 +473,50 @@ const ANIM_GRAPH_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "anim-graph-graph",
       direction: "right",
       initialWidth: 288,
+    },
+  },
+  {
+    id: "anim-graph-compiler-results",
+    component: "anim-graph-compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "anim-graph-graph",
+      direction: "below",
+      initialHeight: 160,
+    },
+  },
+];
+
+const ANIM_GRAPH_OBJECT_WINDOWS: DockWindowDefinition[] = [
+  { id: "anim-object-graph", component: "anim-object-graph", title: "Graph" },
+  {
+    id: "anim-object-variables",
+    component: "anim-object-variables",
+    title: "Variables",
+    defaultPosition: {
+      referencePanelId: "anim-object-graph",
+      direction: "left",
+      initialWidth: 224,
+    },
+  },
+  {
+    id: "anim-object-inspector",
+    component: "anim-object-inspector",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "anim-object-graph",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+  {
+    id: "anim-graph-compiler-results",
+    component: "anim-graph-compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "anim-object-graph",
+      direction: "below",
+      initialHeight: 160,
     },
   },
 ];
@@ -537,7 +588,11 @@ export function listDockWindows(
     return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);
   }
   if (kind === "anim-graph") {
-    return withOptionalLocks(kind, ANIM_GRAPH_WINDOWS, options);
+    const windows =
+      options?.animEditorMode === "animationObject"
+        ? ANIM_GRAPH_OBJECT_WINDOWS
+        : ANIM_GRAPH_STATE_WINDOWS;
+    return withOptionalLocks(kind, windows, options);
   }
   if (kind === "behaviour-tree") {
     return withOptionalLocks(kind, BEHAVIOUR_TREE_WINDOWS, options);

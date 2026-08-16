@@ -248,6 +248,7 @@ export interface SerializedGraph {
     target: string;
     sourceHandle?: string;
     targetHandle?: string;
+    type?: string;
   }>;
   members?: GraphClassMember[];
   /** Actor prefab components authored on Class documents. */

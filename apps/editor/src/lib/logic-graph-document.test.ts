@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
+import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
   classGraphFromHeaderPayload,
   collectClassGraphsForPalette,
@@ -29,6 +30,26 @@ describe("serializedGraphFromDocument", () => {
   it("returns null when UI payload has no logic graph", () => {
     expect(serializedGraphFromDocument("ui", { rootId: "canvas" })).toBeNull();
     expect(serializedGraphFromDocument("scene", { actors: [] })).toBeNull();
+  });
+
+  it("reads Animation Object graphs and injects variable members", () => {
+    const doc = createDefaultAnimGraph();
+    doc.variables = [
+      { id: "var-moving", name: "moving", typeId: "bool", defaultValue: false },
+    ];
+    const graph = serializedGraphFromDocument("anim-graph", doc);
+    expect(graph?.nodes.some((node) => node.type === "anim.event.initialize")).toBe(
+      true,
+    );
+    expect(graph?.members).toEqual([
+      {
+        id: "var-moving",
+        kind: "variable",
+        name: "moving",
+        typeId: "bool",
+        defaultValue: false,
+      },
+    ]);
   });
 });
 
@@ -260,6 +281,20 @@ describe("collectClassGraphsForPalette", () => {
       { id: "fn-live", kind: "function", name: "Jump", pins: [] },
     ]);
   });
+
+  it("does not treat an open Animation Graph as a Class palette graph", () => {
+    const graphs = collectClassGraphsForPalette({
+      assets: [],
+      openDocuments: [
+        {
+          ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
+          content: createDefaultAnimGraph(),
+        },
+      ],
+      classIdForPath: () => "Loco_anim",
+    });
+    expect(graphs).toEqual({});
+  });
 });
 
 describe("commitLogicGraph", () => {
@@ -304,6 +339,30 @@ describe("commitLogicGraph", () => {
     ).toEqual({
       kind: "ui",
       payload: { rootId: "canvas", widgets: {}, logic: next },
+    });
+  });
+
+  it("writes Animation Object graphs without dropping states", () => {
+    const doc = createDefaultAnimGraph();
+    const next: SerializedGraph = {
+      nodes: [
+        {
+          id: "event-initialize",
+          type: "anim.event.initialize",
+          position: { x: 40, y: 40 },
+          data: { title: "Event Initialize Animation" },
+        },
+      ],
+      edges: [],
+      members: [{ id: "var-speed", kind: "variable", name: "speed", typeId: "float" }],
+    };
+    const commit = commitLogicGraph("anim-graph", doc, next);
+    expect(commit.kind).toBe("anim-graph");
+    if (commit.kind !== "anim-graph") return;
+    expect(commit.payload.states).toEqual(doc.states);
+    expect(commit.payload.animationObject).toEqual({
+      nodes: next.nodes,
+      edges: next.edges,
     });
   });
 });

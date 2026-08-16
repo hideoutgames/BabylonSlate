@@ -25,11 +25,13 @@ describe("dockviewApiKey", () => {
 });
 
 describe("dockviewApiKeysForDocument", () => {
-  it("lists default plus UI surfaces so close disposes every shell", () => {
+  it("lists default plus UI and Animation Graph surfaces so close disposes every shell", () => {
     expect(dockviewApiKeysForDocument("ui:hud")).toEqual([
       "ui:hud",
       "ui:hud::designer",
       "ui:hud::logic",
+      "ui:hud::stateMachine",
+      "ui:hud::animationObject",
     ]);
   });
 });

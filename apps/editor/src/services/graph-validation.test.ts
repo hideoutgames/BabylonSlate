@@ -453,6 +453,49 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "bt.returnCondition")).toBe(false);
     expect(nodes.some((node) => node.id === "bt.blackboard.get")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+    expect(nodes.some((node) => node.id === "anim.event.initialize")).toBe(false);
+    expect(nodes.some((node) => node.id === "anim.state.justFinished")).toBe(
+      false,
+    );
+  });
+
+  it("shows Animation Object events and hides rule queries", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "BObject",
+      animationGraphHost: "object",
+    });
+    expect(nodes.some((node) => node.id === "anim.event.initialize")).toBe(true);
+    expect(nodes.some((node) => node.id === "anim.event.update")).toBe(true);
+    expect(nodes.some((node) => node.id === "anim.rule.enterState")).toBe(false);
+    expect(nodes.some((node) => node.id === "anim.state.justFinished")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "bt.finish")).toBe(false);
+    expect(nodes.some((node) => node.id === "math.add")).toBe(true);
+  });
+
+  it("shows transition-rule state queries and hides lifecycle events", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "BObject",
+      animationGraphHost: "rule",
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [
+          { id: "var-moving", kind: "variable", name: "moving", typeId: "bool" },
+        ],
+      },
+    });
+    expect(nodes.some((node) => node.id === "anim.state.justFinished")).toBe(
+      true,
+    );
+    expect(nodes.some((node) => node.id === "math.greaterEqual")).toBe(true);
+    expect(nodes.some((node) => node.id === "anim.event.initialize")).toBe(false);
+    expect(nodes.some((node) => node.id === "anim.rule.exitState")).toBe(false);
+    expect(nodes.some((node) => node.id === "debug.log")).toBe(false);
+    expect(nodes.some((node) => node.title === "Get moving")).toBe(true);
+    expect(nodes.some((node) => node.title === "Set moving")).toBe(false);
   });
 
   it("hides Begin Play and Tick on BObject class graphs", () => {

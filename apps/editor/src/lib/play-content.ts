@@ -261,6 +261,18 @@ export function mergePlayAnimGraphs(
   return [...byGuid.values()];
 }
 
+/** Compile inputs for Animation Object + transition-rule scripts. */
+export function collectAnimGraphCompileDocuments(
+  entries: readonly PlayAnimGraphEntry[],
+  pathForGuid: (guid: string) => string | null,
+): Array<{ guid: string; path: string; document: unknown }> {
+  return entries.map((entry) => ({
+    guid: entry.guid,
+    path: pathForGuid(entry.guid) ?? entry.guid,
+    document: entry.document,
+  }));
+}
+
 export function playBehaviourTreesFromOpenDocuments(
   documents: readonly PlayContentDocument[],
   guidForPath: (path: string) => string | null,

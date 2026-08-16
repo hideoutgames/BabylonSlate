@@ -18,6 +18,7 @@ import {
   filterPlayScriptDocuments,
   collectPlayScriptDocuments,
   mergePlayAnimGraphs,
+  collectAnimGraphCompileDocuments,
   playAnimGraphsFromOpenDocuments,
   playAnimGraphsFromGuids,
   playLoadTilemapsControl,
@@ -178,6 +179,23 @@ describe("playAnimGraphsFromOpenDocuments", () => {
       (path) => (path.endsWith("Loco.anim.babasset") ? "graph-guid" : null),
     );
     expect(entries).toEqual([{ guid: "graph-guid", document: graph }]);
+  });
+
+  it("maps Play AnimationGraph entries onto compile documents", () => {
+    const graph = createDefaultAnimGraph("Loco");
+    expect(
+      collectAnimGraphCompileDocuments(
+        [{ guid: "graph-guid", document: graph }],
+        (guid) =>
+          guid === "graph-guid" ? "assets/Loco.anim.babasset" : null,
+      ),
+    ).toEqual([
+      {
+        guid: "graph-guid",
+        path: "assets/Loco.anim.babasset",
+        document: graph,
+      },
+    ]);
   });
 
   it("skips unparsable documents", () => {

@@ -9,6 +9,7 @@ import {
   useReactFlow,
   useStoreApi,
   type Connection,
+  type DefaultEdgeOptions,
   type Edge,
   type EdgeChange,
   type EdgeTypes,
@@ -49,6 +50,7 @@ import {
   graphChangeKindFromNodeChanges,
   isProtectedNode,
   lockNodeDragAxis,
+  nodeChangesMutateGraph,
   reconcileCanvasGraph,
   shouldEmitNodeChanges,
   toSerializedGraph,
@@ -123,6 +125,10 @@ export interface GraphEditorProps {
   onNavigateRequest?: (request: NavigateRequest) => void;
   /** Double-tap / double-click a node (task class navigation). */
   onNodeDoubleClick?: (nodeId: string) => void;
+  /** Double-click an edge (Animation Graph transition rules). */
+  onEdgeDoubleClick?: (edgeId: string) => void;
+  /** Selected canvas edge ids; not part of the serialized graph. */
+  onEdgeSelectionChange?: (edgeIds: string[]) => void;
   paletteNodes?: PaletteNode[];
   colorMode?: "light" | "dark";
   defaultZoom?: number;
@@ -131,6 +137,7 @@ export interface GraphEditorProps {
   /** Override or extend the default pin/log node components. */
   nodeTypes?: NodeTypes;
   edgeTypes?: EdgeTypes;
+  defaultEdgeOptions?: DefaultEdgeOptions;
   /** Defaults to `!readOnly`. Behaviour trees pass false except sibling reorder. */
   nodesDraggable?: boolean;
   toolbarExtra?: ReactNode;
@@ -161,6 +168,7 @@ function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
     target: edge.target,
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
+    ...(edge.type ? { type: edge.type } : {}),
   }));
 }
 
@@ -276,6 +284,8 @@ function GraphEditorCanvas({
   diagnostics,
   onNavigateRequest,
   onNodeDoubleClick,
+  onEdgeDoubleClick,
+  onEdgeSelectionChange,
   paletteNodes,
   colorMode = "dark",
   defaultZoom = GRAPH_DEFAULT_ZOOM,
@@ -283,6 +293,7 @@ function GraphEditorCanvas({
   onPinSelect,
   nodeTypes: nodeTypesProp,
   edgeTypes,
+  defaultEdgeOptions = { type: "default" },
   nodesDraggable: nodesDraggableProp,
   toolbarExtra,
   selectedAttachmentId = null,
@@ -396,6 +407,7 @@ function GraphEditorCanvas({
           target: edge.target,
           sourceHandle: edge.sourceHandle ?? undefined,
           targetHandle: edge.targetHandle ?? undefined,
+          ...(typeof edge.type === "string" ? { type: edge.type } : {}),
         })),
         { members: membersRef.current, components: componentsRef.current },
       );
@@ -453,6 +465,7 @@ function GraphEditorCanvas({
           target: edge.target,
           ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
           ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+          ...(edge.type ? { type: edge.type } : {}),
         })),
       ),
     );
@@ -494,7 +507,9 @@ function GraphEditorCanvas({
       if (readOnly) return;
       setEdges((current) => {
         const next = applyEdgeChanges(changes, current);
-        emitChange(graphStateRef.current.nodes, next);
+        if (nodeChangesMutateGraph(changes)) {
+          emitChange(graphStateRef.current.nodes, next);
+        }
         return next;
       });
     },
@@ -512,7 +527,16 @@ function GraphEditorCanvas({
       setEdges((current) => {
         const next = edgesAfterConnect(
           current,
-          { id, source, target, sourceHandle, targetHandle },
+          {
+            id,
+            source,
+            target,
+            sourceHandle,
+            targetHandle,
+            ...(defaultEdgeOptions.type
+              ? { type: defaultEdgeOptions.type }
+              : {}),
+          },
           (nodeId, pinId) =>
             pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
         );
@@ -524,7 +548,7 @@ function GraphEditorCanvas({
         return next;
       });
     },
-    [emitChange],
+    [defaultEdgeOptions.type, emitChange],
   );
 
   const onPinTap = useCallback(
@@ -743,6 +767,9 @@ function GraphEditorCanvas({
                 target,
                 sourceHandle,
                 targetHandle,
+                ...(defaultEdgeOptions.type
+                  ? { type: defaultEdgeOptions.type }
+                  : {}),
               },
               (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
             );
@@ -755,6 +782,7 @@ function GraphEditorCanvas({
       setPendingConnect(null);
     },
     [
+      defaultEdgeOptions.type,
       emitChange,
       knownTypes,
       pendingConnect,
@@ -783,6 +811,19 @@ function GraphEditorCanvas({
       selectionKey === "" ? [] : selectionKey.split("\0"),
     );
   }, [selectionKey]);
+
+  const onEdgeSelectionChangeRef = useRef(onEdgeSelectionChange);
+  onEdgeSelectionChangeRef.current = onEdgeSelectionChange;
+  const selectedEdges = useMemo(
+    () => edges.filter((edge) => edge.selected),
+    [edges],
+  );
+  const edgeSelectionKey = selectedEdges.map((edge) => edge.id).join("\0");
+  useEffect(() => {
+    onEdgeSelectionChangeRef.current?.(
+      edgeSelectionKey === "" ? [] : edgeSelectionKey.split("\0"),
+    );
+  }, [edgeSelectionKey]);
 
   const copySelection = useCallback(() => {
     const selected = selectedNodes.filter((node) => !isProtectedNode(node));
@@ -1181,6 +1222,7 @@ function GraphEditorCanvas({
       onAttachmentDoubleClick,
       contextMenuItemsForNode,
       contextMenuItemsForAttachment,
+      onEdgeDoubleClick,
     }),
     [
       nodeErrorCount,
@@ -1194,6 +1236,7 @@ function GraphEditorCanvas({
       onAttachmentDoubleClick,
       contextMenuItemsForNode,
       contextMenuItemsForAttachment,
+      onEdgeDoubleClick,
     ],
   );
 
@@ -1303,13 +1346,14 @@ function GraphEditorCanvas({
           onConnectStart={handleConnectStart}
           onConnectEnd={handleConnectEnd}
           onNodeDoubleClick={(_, node) => onNodeDoubleClick?.(node.id)}
+          onEdgeDoubleClick={(_, edge) => onEdgeDoubleClick?.(edge.id)}
           isValidConnection={readOnly ? () => false : isValidConnection}
           onPaneClick={handlePaneClick}
           onPaneContextMenu={handlePaneContextMenu}
           panOnDrag={!marqueeArmed}
           connectionLineStyle={connectionLineStyle}
           connectionLineComponent={GraphConnectionLine}
-          defaultEdgeOptions={{ type: "default" }}
+          defaultEdgeOptions={defaultEdgeOptions}
           fitView
           fitViewOptions={graphViewport.fitViewOptions}
           defaultViewport={graphViewport.defaultViewport}
