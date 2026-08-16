@@ -134,6 +134,95 @@ describe("script compiler service", () => {
     ]);
   });
 
+  it("excludes function-local variables from the bundle and emits lets in the function export", () => {
+    const script = compileGraphDocument(
+      {
+        nodes: [
+          {
+            id: "begin",
+            type: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+        ],
+        edges: [],
+        members: [
+          { id: "fn-1", kind: "function", name: "Jump" },
+          {
+            id: "var-1",
+            kind: "variable",
+            name: "Health",
+            typeId: "float",
+            defaultValue: 80,
+          },
+          {
+            id: "loc-1",
+            kind: "variable",
+            name: "Temp",
+            typeId: "float",
+            defaultValue: 3,
+            functionId: "fn-1",
+          },
+        ],
+        functionGraphs: {
+          "fn-1": {
+            nodes: [
+              {
+                id: "in",
+                type: "flow.function.input",
+                position: { x: 0, y: 0 },
+                data: {
+                  __protected: true,
+                  pins: [
+                    { name: "exec", typeId: "exec", direction: "in" },
+                    { name: "then", typeId: "exec", direction: "out" },
+                  ],
+                },
+              },
+              {
+                id: "out",
+                type: "flow.function.output",
+                position: { x: 200, y: 0 },
+                data: {
+                  __protected: true,
+                  pins: [
+                    { name: "exec", typeId: "exec", direction: "in" },
+                    { name: "then", typeId: "exec", direction: "out" },
+                  ],
+                },
+              },
+            ],
+            edges: [
+              {
+                id: "e1",
+                source: "in",
+                target: "out",
+                sourceHandle: "exec",
+                targetHandle: "then",
+              },
+            ],
+          },
+        },
+      },
+      { path: "assets/Hero.class.babasset" },
+    );
+    expect(script?.variables).toEqual([
+      { name: "Health", type: "float", defaultValue: 80 },
+    ]);
+    expect(script?.source).toContain("export function Jump(ctx) {");
+    expect(script?.source).toContain("let __lv_Temp = 3;");
+    const jumpIndex = script?.source.indexOf("export function Jump") ?? -1;
+    const beginIndex = script?.source.indexOf("export function onBeginPlay") ?? -1;
+    expect(jumpIndex).toBeGreaterThan(-1);
+    expect(beginIndex).toBeGreaterThan(-1);
+    expect(
+      script?.source.slice(jumpIndex).includes("let __lv_Temp = 3;"),
+    ).toBe(true);
+    expect(
+      script?.source.slice(beginIndex, jumpIndex).includes("let __lv_Temp"),
+    ).toBe(false);
+  });
+
   it("returns null for an empty graph", () => {
     expect(
       compileGraphDocument({ nodes: [], edges: [] }, { path: "a.graph.babasset" }),

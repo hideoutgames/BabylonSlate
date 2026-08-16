@@ -75,6 +75,8 @@ export type CompileOptions = {
    * continue exec at `then` / Sequence `then_*`. Editor Play leaves this unset.
    */
   stripDevelopmentOnly?: boolean;
+  /** Function-local `let` lines inserted at the start of each export. */
+  localPreamble?: string[];
 };
 
 function jsIdent(name: string): string {
@@ -502,6 +504,9 @@ export function compileGraph(
     finalLines.push(
       `export ${compiled.entry.isAsync ? "async " : ""}function ${compiled.entry.name}(ctx) {`,
     );
+    if (options.localPreamble?.length) {
+      finalLines.push(...options.localPreamble);
+    }
     finalLines.push(...compiled.declLines);
     for (const line of compiled.bodyLines) {
       finalLines.push(line.text);

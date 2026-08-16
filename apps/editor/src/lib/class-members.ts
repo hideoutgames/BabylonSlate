@@ -124,6 +124,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "flow.event.call" || nodeId === "functions.call") {
     return false;
   }
+  if (nodeId === "variables.get" || nodeId === "variables.set") {
+    return false;
+  }
   const chain = ancestryChain(options);
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
   const isBtLeafEvent = (BT_LEAF_EVENT_TYPE_IDS as readonly string[]).includes(
@@ -190,7 +193,10 @@ export function nativeStubId(eventType: string): string {
   return `native:${eventType}`;
 }
 
-export function memberNamePromptCopy(kind: GraphClassMemberKind): {
+export function memberNamePromptCopy(
+  kind: GraphClassMemberKind,
+  options?: { local?: boolean },
+): {
   title: string;
   label: string;
 } {
@@ -198,7 +204,9 @@ export function memberNamePromptCopy(kind: GraphClassMemberKind): {
     case "function":
       return { title: "Add Function", label: "Function Name" };
     case "variable":
-      return { title: "Add Variable", label: "Variable Name" };
+      return options?.local
+        ? { title: "Add Local Variable", label: "Variable Name" }
+        : { title: "Add Variable", label: "Variable Name" };
     case "event":
       return { title: "Add Event", label: "Event Name" };
     default:
@@ -215,7 +223,13 @@ function memberDefaults(
   extras?: Partial<GraphClassMember>,
 ): Partial<GraphClassMember> {
   if (kind === "variable") {
-    return { typeId: extras?.typeId ?? "float", defaultValue: extras?.defaultValue };
+    return {
+      typeId: extras?.typeId ?? "float",
+      ...(extras?.defaultValue !== undefined
+        ? { defaultValue: extras.defaultValue }
+        : {}),
+      ...(extras?.functionId ? { functionId: extras.functionId } : {}),
+    };
   }
   if (kind === "function") {
     return { pins: extras?.pins ?? DEFAULT_FUNCTION_PINS };
@@ -366,6 +380,136 @@ function syncFunctionGraphPins(
   };
 }
 
+function isVariableAccessNode(
+  node: SerializedGraph["nodes"][number],
+  member: GraphClassMember,
+  previous?: GraphClassMember,
+): boolean {
+  if (node.type !== "variables.get" && node.type !== "variables.set") {
+    return false;
+  }
+  const variableId = node.data.variableId;
+  if (typeof variableId === "string" && variableId) {
+    return variableId === member.id;
+  }
+  const variableName = node.data.variableName;
+  return (
+    variableName === member.name ||
+    (typeof previous?.name === "string" && variableName === previous.name)
+  );
+}
+
+function patchVariableAccessNode(
+  node: SerializedGraph["nodes"][number],
+  member: GraphClassMember,
+): SerializedGraph["nodes"][number] {
+  const access = node.type === "variables.set" ? "Set" : "Get";
+  const nextData: Record<string, unknown> = {
+    ...node.data,
+    variableId: member.id,
+    variableName: member.name,
+    typeId: member.typeId ?? node.data.typeId ?? "float",
+    title: `${access} ${member.name}`,
+    scope: member.functionId ? "local" : (node.data.scope ?? "member"),
+  };
+  if (member.functionId) nextData.functionId = member.functionId;
+  delete nextData.__pins;
+  return { ...node, data: nextData };
+}
+
+function mapGraphNodes(
+  graph: SerializedGraph,
+  mapNode: (
+    node: SerializedGraph["nodes"][number],
+  ) => SerializedGraph["nodes"][number],
+): SerializedGraph {
+  const functionGraphs = graph.functionGraphs
+    ? Object.fromEntries(
+        Object.entries(graph.functionGraphs).map(([id, slice]) => [
+          id,
+          { ...slice, nodes: slice.nodes.map(mapNode) },
+        ]),
+      )
+    : graph.functionGraphs;
+  return {
+    ...graph,
+    nodes: graph.nodes.map(mapNode),
+    ...(functionGraphs ? { functionGraphs } : {}),
+  };
+}
+
+function syncVariableAccessNodes(
+  graph: SerializedGraph,
+  member: GraphClassMember,
+  previous?: GraphClassMember,
+): SerializedGraph {
+  return mapGraphNodes(graph, (node) =>
+    isVariableAccessNode(node, member, previous)
+      ? patchVariableAccessNode(node, member)
+      : node,
+  );
+}
+
+/** Spawn a bound Get/Set node onto the event graph or a function slice. */
+export function addVariableAccessNode(
+  graph: SerializedGraph,
+  member: GraphClassMember,
+  access: "get" | "set",
+  options?: {
+    functionId?: string | null;
+    classId?: string;
+    idFactory?: () => string;
+  },
+): SerializedGraph {
+  const type = access === "set" ? "variables.set" : "variables.get";
+  const title = `${access === "set" ? "Set" : "Get"} ${member.name}`;
+  const data: Record<string, unknown> = {
+    title,
+    variableName: member.name,
+    variableId: member.id,
+    typeId: member.typeId ?? "float",
+    scope: member.functionId ? "local" : "member",
+    implicitSelf: true,
+    __nodeType: type,
+  };
+  if (options?.classId) data.classId = options.classId;
+  if (member.functionId) data.functionId = member.functionId;
+  const node = {
+    id: nextId(options?.idFactory),
+    type,
+    position: { x: 80, y: 80 },
+    data,
+  };
+  const sliceId = options?.functionId;
+  if (sliceId) {
+    const slice = graph.functionGraphs?.[sliceId];
+    if (!slice) return graph;
+    return {
+      ...graph,
+      functionGraphs: {
+        ...graph.functionGraphs,
+        [sliceId]: {
+          ...slice,
+          nodes: [
+            ...slice.nodes,
+            {
+              ...node,
+              position: { x: 80, y: 80 + slice.nodes.length * 80 },
+            },
+          ],
+        },
+      },
+    };
+  }
+  return {
+    ...graph,
+    nodes: [
+      ...graph.nodes,
+      { ...node, position: { x: 80, y: 80 + graph.nodes.length * 80 } },
+    ],
+  };
+}
+
 /** Append a named class member. Events insert a custom event node; functions seed a graph. */
 export function addClassMember(
   graph: SerializedGraph,
@@ -427,12 +571,16 @@ export function patchClassMember(
   memberId: string,
   patch: Partial<GraphClassMember>,
 ): SerializedGraph {
+  const previous = (graph.members ?? []).find((member) => member.id === memberId);
   const members = (graph.members ?? []).map((member) =>
     member.id === memberId ? { ...member, ...patch } : member,
   );
   const next = { ...graph, members };
-  if (!patch.pins) return next;
   const declared = next.members?.find((member) => member.id === memberId);
+  if (declared?.kind === "variable") {
+    return syncVariableAccessNodes(next, declared, previous);
+  }
+  if (!patch.pins) return next;
   if (declared?.kind === "event") {
     return syncEventPins(next, declared, patch.pins);
   }
@@ -443,8 +591,14 @@ export function removeClassMember(
   graph: SerializedGraph,
   memberId: string,
 ): SerializedGraph {
-  const members = (graph.members ?? []).filter((member) => member.id !== memberId);
   const declared = (graph.members ?? []).find((member) => member.id === memberId);
+  const members = (graph.members ?? []).filter((member) => {
+    if (member.id === memberId) return false;
+    if (declared?.kind === "function" && member.functionId === memberId) {
+      return false;
+    }
+    return true;
+  });
   if (declared?.kind === "function") {
     const functionGraphs = { ...graph.functionGraphs };
     delete functionGraphs[memberId];

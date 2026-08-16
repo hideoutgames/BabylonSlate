@@ -4,6 +4,7 @@ import type {
   ScriptConsoleCommand,
 } from "@babylonslate/bridge";
 import { compileGraph, type LogicGraph, isLogicGraphPayload } from "@babylonslate/scripting";
+import { localVariablePreamble } from "@babylonslate/scripting-nodes";
 import { defaultNodeRegistry, materializeLogicGraph } from "./graph-validation";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
@@ -120,12 +121,16 @@ export function compileGraphDocument(
         "function",
       );
       if (fnLogic.nodes.length === 0) continue;
+      const locals = (serialized.members ?? []).filter(
+        (entry) => entry.kind === "variable" && entry.functionId === memberId,
+      );
       compiledPieces.push(
         compileGraph(fnLogic, {
           assetGuid: options.path,
           registry: defaultNodeRegistry,
           exportName,
           stripDevelopmentOnly: options.stripDevelopmentOnly,
+          localPreamble: localVariablePreamble(locals),
         }),
       );
     }
@@ -175,7 +180,7 @@ function classMetadataFromGraph(
       : [],
   );
   const variables = members.flatMap((member) => {
-    if (member.kind !== "variable") return [];
+    if (member.kind !== "variable" || member.functionId) return [];
     return [
       {
         name: member.name,

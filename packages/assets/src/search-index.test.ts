@@ -168,7 +168,7 @@ describe("ProjectSearchIndex", () => {
           {
             id: "var-1",
             type: "variables.get",
-            data: { name: "health" },
+            data: { variableName: "health" },
           },
           {
             id: "js-1",

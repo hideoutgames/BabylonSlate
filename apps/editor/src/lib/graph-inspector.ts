@@ -23,6 +23,7 @@ import {
   vec3TupleToObject,
   vec4TupleToObject,
 } from "@babylonslate/scripting";
+import { pinTypeForMember } from "@babylonslate/scripting-nodes";
 
 export function connectedInputPinIds(
   edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
@@ -275,6 +276,21 @@ export function pinDefaultPropertyRows(
     }
   }
   return rows;
+}
+
+export function variableDefaultPropertyRows(
+  typeId: string,
+  value: unknown,
+  onChange: (value: unknown) => void,
+): PropertyRow[] {
+  const type = pinTypeForMember(typeId);
+  const resolved = value === undefined ? defaultJsValue(type) : value;
+  return pinDefaultPropertyRows(
+    [{ pinId: "default", name: "Default", type, value: resolved }],
+    (patch) => {
+      if ("default:Default" in patch) onChange(patch["default:Default"]);
+    },
+  );
 }
 
 export function logNodePropertyRows(

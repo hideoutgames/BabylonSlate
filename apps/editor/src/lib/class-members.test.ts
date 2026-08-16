@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
-import { addClassMember, memberNamePromptCopy, patchClassMember, removeClassMember } from "./class-members";
+import {
+  addClassMember,
+  addVariableAccessNode,
+  memberNamePromptCopy,
+  patchClassMember,
+  removeClassMember,
+} from "./class-members";
 
 function emptyGraph(): SerializedGraph {
   return { nodes: [], edges: [] };
@@ -143,6 +149,134 @@ describe("addClassMember", () => {
     expect(graph.nodes).toEqual([]);
   });
 
+  it("records a function-local variable with functionId and does not spawn a Get node", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "variable", "Temp", () => "loc-1", {
+      functionId: "fn-1",
+    });
+    expect(graph.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "loc-1",
+          kind: "variable",
+          name: "Temp",
+          typeId: "float",
+          functionId: "fn-1",
+        }),
+      ]),
+    );
+    expect(graph.nodes).toEqual([]);
+  });
+
+  it("drops function-local variables when the function member is removed", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "variable", "Health", () => "var-1");
+    graph = addClassMember(graph, "variable", "Temp", () => "loc-1", {
+      functionId: "fn-1",
+    });
+    graph = removeClassMember(graph, "fn-1");
+    expect(graph.members).toEqual([
+      { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
+    ]);
+  });
+
+  it("spawns Get and Set nodes onto the event graph for a class variable", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Health", () => "var-1");
+    const member = graph.members![0]!;
+    graph = addVariableAccessNode(graph, member, "get", {
+      classId: "Hero",
+      idFactory: () => "n-get",
+    });
+    graph = addVariableAccessNode(graph, member, "set", {
+      classId: "Hero",
+      idFactory: () => "n-set",
+    });
+    expect(graph.nodes.map((node) => node.type)).toEqual([
+      "variables.get",
+      "variables.set",
+    ]);
+    expect(graph.nodes[0]?.data).toMatchObject({
+      title: "Get Health",
+      variableName: "Health",
+      variableId: "var-1",
+      typeId: "float",
+      scope: "member",
+      implicitSelf: true,
+      classId: "Hero",
+    });
+    expect(graph.nodes[1]?.data).toMatchObject({
+      title: "Set Health",
+      variableName: "Health",
+      scope: "member",
+    });
+  });
+
+  it("spawns Get onto the active function graph for a local variable", () => {
+    let graph = addClassMember(emptyGraph(), "function", "Jump", () => "fn-1");
+    graph = addClassMember(graph, "variable", "Temp", () => "loc-1", {
+      functionId: "fn-1",
+    });
+    const member = graph.members!.find((entry) => entry.id === "loc-1")!;
+    graph = addVariableAccessNode(graph, member, "get", {
+      functionId: "fn-1",
+      idFactory: () => "n-get",
+    });
+    expect(graph.nodes).toEqual([]);
+    expect(
+      graph.functionGraphs?.["fn-1"]?.nodes.some(
+        (node) => node.id === "n-get" && node.type === "variables.get",
+      ),
+    ).toBe(true);
+    expect(
+      graph.functionGraphs?.["fn-1"]?.nodes.find((node) => node.id === "n-get")
+        ?.data,
+    ).toMatchObject({
+      scope: "local",
+      functionId: "fn-1",
+      variableName: "Temp",
+    });
+  });
+
+  it("syncs Get and Set nodes when a variable is renamed or retyped", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Health", () => "var-1");
+    const member = graph.members![0]!;
+    graph = addVariableAccessNode(graph, member, "get", {
+      idFactory: () => "n-get",
+    });
+    graph = {
+      ...graph,
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "fn-get",
+              type: "variables.get",
+              position: { x: 0, y: 0 },
+              data: {
+                variableId: "var-1",
+                variableName: "Health",
+                typeId: "float",
+                title: "Get Health",
+              },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    graph = patchClassMember(graph, "var-1", { name: "Armor", typeId: "int" });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      variableName: "Armor",
+      typeId: "int",
+      title: "Get Armor",
+    });
+    expect(graph.functionGraphs?.["fn-1"]?.nodes[0]?.data).toMatchObject({
+      variableName: "Armor",
+      typeId: "int",
+      title: "Get Armor",
+    });
+  });
+
   it("patches and removes a declared member", () => {
     let graph = addClassMember(emptyGraph(), "variable", "Health", () => "var-1");
     graph = patchClassMember(graph, "var-1", { typeId: "bool", defaultValue: "true" });
@@ -204,6 +338,9 @@ describe("memberNamePromptCopy", () => {
       label: "Function Name",
     });
     expect(memberNamePromptCopy("variable").title).toBe("Add Variable");
+    expect(memberNamePromptCopy("variable", { local: true }).title).toBe(
+      "Add Local Variable",
+    );
     expect(memberNamePromptCopy("event").label).toBe("Event Name");
     expect(memberNamePromptCopy("interface").title).toBe("Add Interface");
   });
