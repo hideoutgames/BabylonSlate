@@ -256,6 +256,7 @@ Authored lights and cameras already exist. The foundation wave created Babylon `
 - `projectionMode`: `perspective` | `orthographic` — explicit; orthographic is not implied by `orthographicSize > 0`
 - `fieldOfView`: degrees; perspective
 - `orthographicSize`: half-height in world units; orthographic
+- `attemptPossessViewTarget`: bool, **default false**. Play-only. When true the runtime possesses that camera after `realizePlayWorld`, reusing the same `possessCamera` command as the graph node — no new bridge message. A Begin Play **Possess Camera** wins (an explicit script choice outranks the authored default), a stale or unspawned camera is a no-op, and `changescene` re-evaluates for the new scene. Additive on `SceneSettings`-style normalize rules; no `SCENE_SCHEMA_VERSION` bump.
 - `nearClip` / `farClip`: numbers with sane defaults (0.1 / 1000)
 
 **Sync is incremental.** Lights and cameras are named `authoredLight:<actorId>` and `authoredCamera:<actorId>`. Update the existing Babylon object in place when properties or transform change; dispose only the actor that left the document. Dispose-and-recreate of the whole set on every Details edit thrashes GPU state.
