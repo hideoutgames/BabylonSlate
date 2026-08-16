@@ -403,7 +403,7 @@ test.describe("P9 content systems", () => {
     );
     await expect(page.getByTestId("graph-panel")).toBeVisible();
     await expect(page.getByTestId("inspector-panel")).toBeVisible();
-    await expect(page.getByTestId("anim-graph-add-state")).not.toBeVisible();
+    await expect(animObject(page).getByTestId("anim-graph-variable-var-1")).toBeVisible();
 
     await openWindowsMenu(page);
     await expect(page.getByTestId("windows-menu-anim-object-graph")).toBeVisible();
