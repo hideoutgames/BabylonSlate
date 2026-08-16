@@ -139,9 +139,14 @@ export type CommandMessage =
   | { type: "possessCamera"; slotId: number }
   | { type: "setShadowQuality"; level: string }
   | {
+      /**
+       * Bind a Material asset to a spawned actor. `componentId` targets one
+       * visual component; omitting it overrides the whole actor.
+       */
       type: "assignMaterial";
       slotId: number;
       materialAssetGuid: string | null;
+      componentId?: string | null;
     }
   | {
       type: "log";
