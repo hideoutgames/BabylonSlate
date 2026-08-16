@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createDefaultScene } from "@babylonslate/core";
 import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
 
 describe("applyPlayerEngineCommand", () => {
@@ -42,9 +43,8 @@ describe("applyPlayerActiveScene", () => {
         loaded.push(`env:${scene.name}`);
       },
     };
-    const scenes = new Map([
-      ["scene-2", { name: "Level 2" }],
-    ]);
+    const scene = { ...createDefaultScene(), name: "Level 2" };
+    const scenes = new Map([["scene-2", scene]]);
     expect(
       applyPlayerActiveScene(handle, scenes, {
         type: "activeScene",
