@@ -291,18 +291,140 @@ describe("post-process stack", () => {
       library,
       stack: [{ materialGuid: "pp", enabled: true, order: 0 }],
       documentFor: () => createDefaultMaterialDocument("Blur", "postProcess"),
+      deviceBuffers: { sceneDepth: true, sceneNormal: false },
     });
     disposers.push(() => attached.dispose());
     expect(enable).not.toHaveBeenCalled();
   });
 
+  it("does not leave a probe depth renderer after a color-only attach", () => {
+    const { preview, library } = host();
+    const attached = attachPostProcessStack({
+      scene: preview.scene,
+      camera: preview.camera,
+      library,
+      stack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      documentFor: () => createDefaultMaterialDocument("Blur", "postProcess"),
+    });
+    disposers.push(() => attached.dispose());
+    const depthMap = (
+      preview.scene as { _depthRenderer?: Record<number, unknown> }
+    )._depthRenderer;
+    expect(depthMap?.[preview.camera.uniqueId]).toBeUndefined();
+  });
+
   it("probes the scene when deviceBuffers are omitted", () => {
     const { preview } = host();
     preview.scene.enablePrePassRenderer = () => null;
-    expect(probePostProcessDeviceBuffers(preview.scene, preview.camera)).toEqual({
-      sceneDepth: true,
-      sceneNormal: false,
+    const probed = probePostProcessDeviceBuffers(preview.scene, preview.camera);
+    expect(probed.sceneNormal).toBe(false);
+    expect(typeof probed.sceneDepth).toBe("boolean");
+  });
+
+  it("does not dispose a pre-existing pre-pass while probing", () => {
+    const { preview } = host();
+    const existing = { isSupported: true, dispose: vi.fn() };
+    preview.scene.prePassRenderer = existing as never;
+    const disable = vi.spyOn(preview.scene, "disablePrePassRenderer");
+    const probed = probePostProcessDeviceBuffers(preview.scene, preview.camera);
+    expect(probed.sceneNormal).toBe(true);
+    expect(disable).not.toHaveBeenCalled();
+    expect(preview.scene.prePassRenderer).toBe(existing);
+    expect(existing.dispose).not.toHaveBeenCalled();
+  });
+
+  it("reports Scene Depth unavailable when the depth renderer cannot be created", () => {
+    const { preview } = host();
+    vi.spyOn(preview.scene, "enableDepthRenderer").mockImplementation(() => {
+      throw new Error("No camera available to enable depth renderer");
     });
+    expect(
+      probePostProcessDeviceBuffers(preview.scene, preview.camera).sceneDepth,
+    ).toBe(false);
+  });
+
+  it("does not allocate a depth renderer when the depth pass fails to compile", () => {
+    const { preview, library } = host();
+    vi.spyOn(library, "acquire").mockReturnValue({
+      ok: false,
+      diagnostics: [{ message: "failed to compile: boom" }],
+    });
+    const enable = vi.spyOn(preview.scene, "enableDepthRenderer");
+    const attached = attachPostProcessStack({
+      scene: preview.scene,
+      camera: preview.camera,
+      library,
+      stack: [
+        { materialGuid: "color", enabled: true, order: 0 },
+        { materialGuid: "depth", enabled: true, order: 1 },
+      ],
+      documentFor: (guid) =>
+        guid === "depth"
+          ? depthSamplingDocument()
+          : createDefaultMaterialDocument("Blur", "postProcess"),
+      deviceBuffers: { sceneDepth: true, sceneNormal: false },
+    });
+    disposers.push(() => attached.dispose());
+    expect(attached.passes).toHaveLength(0);
+    expect(enable).not.toHaveBeenCalled();
+  });
+
+  it("acquires Scene Depth only after a pass compiles", () => {
+    const { preview, library } = host();
+    const order: string[] = [];
+    const acquire = library.acquire.bind(library);
+    vi.spyOn(library, "acquire").mockImplementation((...args) => {
+      order.push("acquire");
+      return acquire(...args);
+    });
+    const enableDepth = preview.scene.enableDepthRenderer.bind(preview.scene);
+    vi.spyOn(preview.scene, "enableDepthRenderer").mockImplementation(
+      (...args) => {
+        order.push("depth");
+        return enableDepth(...args);
+      },
+    );
+    const attached = attachPostProcessStack({
+      scene: preview.scene,
+      camera: preview.camera,
+      library,
+      stack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      documentFor: () => depthSamplingDocument(),
+      deviceBuffers: { sceneDepth: true, sceneNormal: false },
+    });
+    disposers.push(() => attached.dispose());
+    expect(attached.passes.length).toBeGreaterThan(0);
+    expect(order).toEqual(["acquire", "depth"]);
+  });
+
+  it("does not disable a pre-existing pre-pass when the stack detaches", () => {
+    const { preview, library } = host();
+    const existing = {
+      isSupported: true,
+      dispose: vi.fn(),
+      markAsDirty: vi.fn(),
+    };
+    preview.scene.prePassRenderer = existing as never;
+    const disable = vi.spyOn(preview.scene, "disablePrePassRenderer");
+    vi.spyOn(library, "acquire").mockReturnValue({
+      ok: true,
+      hash: "stub",
+      material: {
+        createPostProcess: () => ({ dispose: vi.fn() }),
+      },
+    } as never);
+    const attached = attachPostProcessStack({
+      scene: preview.scene,
+      camera: preview.camera,
+      library,
+      stack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      documentFor: () => normalSamplingDocument(),
+      deviceBuffers: { sceneDepth: false, sceneNormal: true },
+    });
+    attached.dispose();
+    expect(disable).not.toHaveBeenCalled();
+    expect(preview.scene.prePassRenderer).toBe(existing);
+    expect(existing.dispose).not.toHaveBeenCalled();
   });
 
   it("anchors a Scene Normal skip to the sampling node", () => {

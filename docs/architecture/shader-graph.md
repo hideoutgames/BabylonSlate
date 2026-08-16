@@ -146,11 +146,12 @@ closure. Selected Texture Sample nodes expose an `AssetPicker` in Details.
 
 If a device cannot provide a required buffer, `attachPostProcessStack` skips
 **only that pass** and reports an anchored `material.capability` diagnostic on
-the Scene Depth / Scene Normal node. Runtime probes pre-pass support rather than
-assuming buffers exist. Scene Depth lazily enables a linearized camera depth
-renderer (`useNonLinearDepth = false`, camera near/far from that camera) and
-Scene Normal enables a shared pre-pass renderer; both are released when the
-last dependent pass detaches.
+the Scene Depth / Scene Normal node. Runtime probes depth with a try/catch
+`enableDepthRenderer` and pre-pass support without disposing a renderer another
+subsystem already owns. Compilation runs first; only successful passes lease a
+linearized camera depth renderer (`useNonLinearDepth = false`,
+`storeCameraSpaceZ = false`) or a shared pre-pass renderer. The stack releases
+only buffers it created.
 
 ## Runtime
 
