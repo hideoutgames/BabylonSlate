@@ -113,10 +113,14 @@ export function MaterialEditingProvider({
     return map;
   }, [assetRegistry, openDocuments]);
 
+  // Keyed on `content`, not on the open-document entry: the store can replace
+  // a document's content while keeping the entry identity, and memoizing on
+  // the entry would leave the preview compiling a stale graph.
+  const content = doc?.content;
   const document = useMemo<MaterialDocument | null>(() => {
-    if (isFunctionDocument || !doc) return null;
-    return normalizeMaterialDocument(doc.content ?? {});
-  }, [doc, isFunctionDocument]);
+    if (isFunctionDocument || content === undefined) return null;
+    return normalizeMaterialDocument(content ?? {});
+  }, [content, isFunctionDocument]);
 
   useEffect(() => {
     setSharedEngine(play?.ensureSharedEngine() ?? null);
@@ -180,13 +184,15 @@ export function MaterialEditingProvider({
     // the policy as the session goes on.
   }, [document, frameBudgetMs, functions, previewState.compileSamplesMs]);
 
-  // Every document change is a new generation.
+  // Every document change is a new generation. `costClass` is derived from the
+  // same document, so reading it through a ref keeps the document as the only
+  // trigger and avoids re-running when only the cost estimate changes.
+  const costClassRef = useRef(costClass);
+  costClassRef.current = costClass;
   useEffect(() => {
     if (!document) return;
     generationRef.current += 1;
-    dispatch({ type: "edit", cost: costClass });
-    // `costClass` is derived from the document, so the document is the trigger.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    dispatch({ type: "edit", cost: costClassRef.current });
   }, [document]);
 
   // Trailing debounce so the final edit still compiles.

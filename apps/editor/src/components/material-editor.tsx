@@ -29,6 +29,7 @@ import {
   renderActionEnabled,
   serializedToMaterialFunctionGraph,
   serializedToMaterialGraph,
+  setMaterialDomain,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
   type MaterialDocument,
@@ -357,10 +358,12 @@ function MaterialDocumentDetails() {
         { value: "postProcess", label: "Post Process" },
       ],
       onChange: (value) =>
-        commit({
-          ...document,
-          domain: value === "postProcess" ? "postProcess" : "surface",
-        }),
+        commit(
+          setMaterialDomain(
+            document,
+            value === "postProcess" ? "postProcess" : "surface",
+          ),
+        ),
     },
     {
       id: "shadingModel",

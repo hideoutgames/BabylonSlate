@@ -22,6 +22,7 @@ export {
   migrateLegacyShaderPayload,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  setMaterialDomain,
   type LegacyShaderMigrationContext,
   type MaterialBlendMode,
   type MaterialDependencies,

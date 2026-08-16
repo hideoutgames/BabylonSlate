@@ -258,6 +258,34 @@ export function createDefaultMaterialDocument(
   };
 }
 
+/**
+ * Change a material's domain, dropping the old terminal and any node the new
+ * domain does not allow. Switching would otherwise leave, say, a Scene Color
+ * node in a surface material, which only surfaces later as a validation error.
+ */
+export function setMaterialDomain(
+  doc: MaterialDocument,
+  domain: MaterialDomain,
+): MaterialDocument {
+  if (doc.domain === domain) return doc;
+  const kept = doc.nodes.filter((node) => {
+    const definition = materialNodeDefinition(node.type);
+    if (!definition) return true;
+    if (definition.terminal) return false;
+    return definition.domains ? definition.domains.includes(domain) : true;
+  });
+  const keptIds = new Set(kept.map((node) => node.id));
+  return normalizeMaterialDocument({
+    ...doc,
+    domain,
+    nodes: kept,
+    edges: doc.edges.filter(
+      (edge) =>
+        keptIds.has(edge.sourceNodeId) && keptIds.has(edge.targetNodeId),
+    ),
+  });
+}
+
 export function normalizeMaterialDocument(
   value: unknown,
   fallbackName = "Material",

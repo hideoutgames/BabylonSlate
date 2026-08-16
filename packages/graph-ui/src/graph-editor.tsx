@@ -603,7 +603,7 @@ function GraphEditorCanvas({
       pendingPinRef.current = null;
       setPendingPin(null);
     },
-    [emitChange, readOnly, screenToFlowPosition],
+    [emitChange, pinCompatibility, readOnly, screenToFlowPosition],
   );
 
   const handleAddPaletteNode = useCallback(
@@ -680,7 +680,13 @@ function GraphEditorCanvas({
       });
       setPendingConnect(null);
     },
-    [emitChange, pendingConnect, screenToFlowPosition, knownTypes],
+    [
+      emitChange,
+      knownTypes,
+      pendingConnect,
+      pinCompatibility,
+      screenToFlowPosition,
+    ],
   );
 
   const selectedNodes = useMemo(

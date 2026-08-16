@@ -8,6 +8,7 @@ import {
   migrateLegacyShaderPayload,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  setMaterialDomain,
 } from "./document";
 
 describe("material document", () => {
@@ -192,5 +193,55 @@ describe("material document", () => {
     expect(fn.inputs[0]?.id).toBe("in_color");
     expect(fn.inputs[0]?.name).toBe("Renamed Color");
     expect(fn.outputs[0]?.id).toBe("out_value");
+  });
+});
+
+describe("switching material domain", () => {
+  it("replaces the surface terminal with the post-process terminal", () => {
+    const doc = setMaterialDomain(
+      createDefaultMaterialDocument("Rock"),
+      "postProcess",
+    );
+    expect(doc.domain).toBe("postProcess");
+    expect(doc.nodes.some((node) => node.type === "output.surface")).toBe(false);
+    expect(doc.nodes.some((node) => node.type === "output.postProcess")).toBe(
+      true,
+    );
+  });
+
+  it("drops edges into the terminal it removed", () => {
+    const doc = setMaterialDomain(
+      createDefaultMaterialDocument("Rock"),
+      "postProcess",
+    );
+    expect(doc.edges).toEqual([]);
+  });
+
+  it("removes nodes that are illegal in the new domain", () => {
+    const post = createDefaultMaterialDocument("Blur", "postProcess");
+    const surface = setMaterialDomain(post, "surface");
+    expect(
+      surface.nodes.some((node) => node.type === "input.sceneColor"),
+    ).toBe(false);
+    expect(
+      surface.nodes.some((node) => node.type === "input.screenUv"),
+    ).toBe(false);
+  });
+
+  it("keeps nodes that are legal in both domains", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({
+      id: "wave",
+      type: "math.sin",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    const post = setMaterialDomain(doc, "postProcess");
+    expect(post.nodes.some((node) => node.id === "wave")).toBe(true);
+  });
+
+  it("is a no-op when the domain is unchanged", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    expect(setMaterialDomain(doc, "surface")).toBe(doc);
   });
 });
