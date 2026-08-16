@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { ResourceCache } from "./resource-cache";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeAnimatedTriangleGlb, encodeTriangleGlb, glbClipNames } from "./model-mesh";
 import { setupDefaultViewport } from "./viewport";
 import {
   applyAssignMesh,
@@ -23,6 +23,11 @@ describe("createPlayMesh", () => {
       handle?.scene.dispose();
       handle?.engine.dispose();
     }
+  });
+
+  it("lists named clips from an animated GLB and none from a static triangle", () => {
+    expect(glbClipNames(encodeAnimatedTriangleGlb("Walk"))).toEqual(["Walk"]);
+    expect(glbClipNames(encodeTriangleGlb())).toEqual([]);
   });
 
   it("binds a sprite texture and loads a GLB assetGuid instead of a box", () => {
@@ -47,6 +52,32 @@ describe("createPlayMesh", () => {
     const positions = model.getVerticesData(VertexBuffer.PositionKind);
     expect(positions).not.toBeNull();
     expect(positions!.length).toBe(9);
+  });
+
+  it("registers paused AnimationGroups from an animated GLB onto the slot", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["hero-model", encodeAnimatedTriangleGlb()]]);
+    createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
+      return entry.name === "Idle" && entry.clipAssetGuid === "hero-model";
+    });
+    expect(group).toBeDefined();
+    expect(group?.from).toBeLessThan(group?.to ?? 0);
+  });
+
+  it("does not start an AnimationGroup load for a GLB with no clips", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    createPlayMesh(scene, 2, "box", "model-1", binding);
+    expect(binding.slotAnimLoads?.get(2)).toBeUndefined();
+    expect(binding.slotAnimationGroups?.get(2)).toBeUndefined();
   });
 
   it("creates a PointLight for light:point mesh kinds", () => {

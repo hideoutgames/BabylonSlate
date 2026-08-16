@@ -49,6 +49,17 @@ function splitGlb(bytes: Uint8Array): {
   return json ? { json, bin } : null;
 }
 
+/** Named glTF animation clips in a GLB, if the file is readable. */
+export function glbClipNames(bytes: Uint8Array): string[] {
+  const glb = splitGlb(bytes);
+  if (!glb) return [];
+  const animations = Array.isArray(glb.json.animations) ? glb.json.animations : [];
+  return animations.map((row, index) => {
+    const name = (row as { name?: unknown }).name;
+    return typeof name === "string" && name.length > 0 ? name : `animation${index}`;
+  });
+}
+
 function accessorFloats(
   json: Record<string, unknown>,
   bin: Uint8Array,
@@ -143,33 +154,12 @@ export function createMeshFromModelBytes(
   return mesh;
 }
 
-/** Minimal one-triangle GLB for NullEngine tests (3 vertices, no indices). */
-export function encodeTriangleGlb(): Uint8Array {
-  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
-  const json = JSON.stringify({
-    asset: { version: "2.0" },
-    scene: 0,
-    scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0 }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
-    accessors: [
-      {
-        bufferView: 0,
-        componentType: FLOAT,
-        count: 3,
-        type: "VEC3",
-        min: [0, 0, 0],
-        max: [1, 1, 0],
-      },
-    ],
-    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
-    buffers: [{ byteLength: 36 }],
-  });
-  const jsonBytes = new TextEncoder().encode(json);
+function encodeGlb(json: unknown, bin: Uint8Array): Uint8Array {
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(json));
   const jsonPad = pad4(jsonBytes.length);
   const jsonChunkLen = jsonBytes.length + jsonPad;
-  const binPad = pad4(positions.byteLength);
-  const binChunkLen = positions.byteLength + binPad;
+  const binPad = pad4(bin.byteLength);
+  const binChunkLen = bin.byteLength + binPad;
   const total = 12 + 8 + jsonChunkLen + 8 + binChunkLen;
   const out = new Uint8Array(total);
   const view = new DataView(out.buffer);
@@ -183,6 +173,91 @@ export function encodeTriangleGlb(): Uint8Array {
   const binHeader = 20 + jsonChunkLen;
   view.setUint32(binHeader, binChunkLen, true);
   view.setUint32(binHeader + 4, CHUNK_BIN, true);
-  out.set(new Uint8Array(positions.buffer), binHeader + 8);
+  out.set(bin, binHeader + 8);
   return out;
+}
+
+/** Minimal one-triangle GLB for NullEngine tests (3 vertices, no indices). */
+export function encodeTriangleGlb(): Uint8Array {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  return encodeGlb(
+    {
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: FLOAT,
+          count: 3,
+          type: "VEC3",
+          min: [0, 0, 0],
+          max: [1, 1, 0],
+        },
+      ],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+      buffers: [{ byteLength: 36 }],
+    },
+    new Uint8Array(positions.buffer),
+  );
+}
+
+/** Triangle GLB with a named translation clip for AnimationGroup tests. */
+export function encodeAnimatedTriangleGlb(clipName = "Idle"): Uint8Array {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const times = new Float32Array([0, 1]);
+  const translations = new Float32Array([0, 0, 0, 0, 1, 0]);
+  const bin = new Uint8Array(68);
+  bin.set(new Uint8Array(positions.buffer), 0);
+  bin.set(new Uint8Array(times.buffer), 36);
+  bin.set(new Uint8Array(translations.buffer), 44);
+  return encodeGlb(
+    {
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: FLOAT,
+          count: 3,
+          type: "VEC3",
+          min: [0, 0, 0],
+          max: [1, 1, 0],
+        },
+        {
+          bufferView: 1,
+          componentType: FLOAT,
+          count: 2,
+          type: "SCALAR",
+          min: [0],
+          max: [1],
+        },
+        {
+          bufferView: 2,
+          componentType: FLOAT,
+          count: 2,
+          type: "VEC3",
+        },
+      ],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: 36 },
+        { buffer: 0, byteOffset: 36, byteLength: 8 },
+        { buffer: 0, byteOffset: 44, byteLength: 24 },
+      ],
+      buffers: [{ byteLength: 68 }],
+      animations: [
+        {
+          name: clipName,
+          channels: [{ sampler: 0, target: { node: 0, path: "translation" } }],
+          samplers: [{ input: 1, output: 2, interpolation: "LINEAR" }],
+        },
+      ],
+    },
+    bin,
+  );
 }
