@@ -322,13 +322,36 @@ describe("animation graph and behaviour tree dock catalogs", () => {
     }
   });
 
-  it("lists Graph and Details for a Behaviour Tree", () => {
+  it("lists Blackboard, Graph, Details, and Compiler Results for a Behaviour Tree", () => {
     const windows = listDockWindows("behaviour-tree");
     expect(windows.map((entry) => entry.id)).toEqual([
+      "behaviour-tree-blackboard",
       "behaviour-tree-graph",
       "behaviour-tree-details",
+      "behaviour-tree-compiler-results",
     ]);
-    expect(windows.map((entry) => entry.title)).toEqual(["Graph", "Details"]);
+    expect(windows.map((entry) => entry.title)).toEqual([
+      "Blackboard",
+      "Graph",
+      "Details",
+      "Compiler Results",
+    ]);
+    expect(
+      windows.find((entry) => entry.id === "behaviour-tree-blackboard")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "behaviour-tree-graph",
+      direction: "left",
+      initialWidth: 224,
+    });
+    expect(
+      windows.find((entry) => entry.id === "behaviour-tree-compiler-results")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "behaviour-tree-graph",
+      direction: "below",
+      initialHeight: 160,
+    });
   });
 
   it("focuses the graph as the primary panel", () => {

@@ -3,12 +3,16 @@ import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
   addService,
+  arrangeBehaviourTree,
   behaviourTreeToSerialized,
+  BT_CHILDREN_HANDLE,
   BT_COMPOSITE_CATALOG,
   BT_DECORATOR_CATALOG,
   BT_NODE_TYPE,
+  BT_PARENT_HANDLE,
   BT_SERVICE_CATALOG,
   BT_TASK_CATALOG,
+  canReparentNode,
   createDefaultBehaviourTree,
   defaultPropertiesForClassId,
   deleteSubtree,
@@ -20,14 +24,13 @@ import {
   parseBlackboardDocument,
   pinsForBtKind,
   propertyFieldsForClassId,
-  pruneUnreachable,
   removeAttachment,
-  reorderSiblingsByPosition,
   serializedToBehaviourTree,
   titleForBtClassId,
   validateBehaviourTree,
   wrapInSequence,
   type BehaviourTreeDocument,
+  type BlackboardDocument,
   type BtAbortMode,
   type BtCatalogEntry,
   type BtGraphOverlay,
@@ -35,6 +38,7 @@ import {
   type BtPropertyField,
   type BtResult,
 } from "@babylonslate/behaviour-tree";
+import { documentId } from "@babylonslate/core";
 import {
   AssetPicker,
   CatalogDialog,
@@ -42,18 +46,23 @@ import {
   NamedListEditor,
   PanelFrame,
   PropertyGrid,
+  SelectableText,
   useCatalogSearchState,
   walkAncestry,
   type NestedMenuItem,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { GraphEditor, treeNodeTypes, type PaletteNode } from "@babylonslate/graph-ui";
+import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
+import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
+import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
+import { BlackboardEditor } from "./blackboard-editor";
 
 function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
   return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
@@ -91,19 +100,25 @@ function propertyValue(field: BtPropertyField, properties: Record<string, unknow
 }
 
 function useBehaviourTreeDocument() {
-  const { documentId } = useDocumentWorkspace();
-  const { assetRegistry, openDocument, openDocuments, applyAssetDocumentChange } =
-    useDocuments();
+  const { documentId: workspaceDocumentId } = useDocumentWorkspace();
+  const {
+    assetRegistry,
+    openDocument,
+    openDocuments,
+    applyAssetDocumentChange,
+    loadAssetDocument,
+  } = useDocuments();
   const play = usePlay();
-  const entry = openDocuments.find((item) => item.id === documentId);
+  const entry = openDocuments.find((item) => item.id === workspaceDocumentId);
   const doc = useMemo(
     () => asTree((entry?.content ?? {}) as Record<string, unknown>),
     [entry?.content],
   );
-  const commit = (next: BehaviourTreeDocument) => {
+  const commit = (next: BehaviourTreeDocument, mergeKey?: string) => {
     void applyAssetDocumentChange(
-      documentId,
+      workspaceDocumentId,
       next as unknown as Record<string, unknown>,
+      mergeKey,
     );
   };
   const overlay: BtGraphOverlay | undefined =
@@ -190,24 +205,48 @@ function useBehaviourTreeDocument() {
   const blackboardAsset = doc.blackboardGuid
     ? assetRegistry?.getByGuid(doc.blackboardGuid)
     : undefined;
-  const blackboardKeys = useMemo(() => {
-    if (!blackboardAsset) return [];
-    const open = (openDocuments ?? []).find(
-      (item) => item.ref.path === blackboardAsset.path,
-    );
-    const parsed = open?.content
-      ? parseBlackboardDocument(open.content as Record<string, unknown>)
-      : null;
-    return parsed?.keys.map((key) => key.name) ?? [];
-  }, [blackboardAsset, openDocuments]);
+  const blackboardPath = blackboardAsset?.path;
+  const linkedBlackboardContent = blackboardPath
+    ? openDocuments.find(
+        (item) =>
+          item.ref.kind === "blackboard" && item.ref.path === blackboardPath,
+      )?.content
+    : undefined;
+  const [loadedBlackboard, setLoadedBlackboard] = useState<BlackboardDocument | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!blackboardPath) {
+      setLoadedBlackboard(null);
+      return;
+    }
+    if (linkedBlackboardContent && typeof linkedBlackboardContent === "object") {
+      return;
+    }
+    let cancelled = false;
+    void loadAssetDocument("blackboard", blackboardPath).then((payload) => {
+      if (cancelled || !payload || typeof payload !== "object") return;
+      setLoadedBlackboard(
+        parseBlackboardDocument(payload as Record<string, unknown>),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [blackboardPath, linkedBlackboardContent, loadAssetDocument]);
+  const blackboardDocument = useMemo(() => {
+    if (linkedBlackboardContent && typeof linkedBlackboardContent === "object") {
+      return parseBlackboardDocument(
+        linkedBlackboardContent as Record<string, unknown>,
+      );
+    }
+    return loadedBlackboard;
+  }, [linkedBlackboardContent, loadedBlackboard]);
+  const blackboardKeys = blackboardDocument?.keys.map((key) => key.name) ?? [];
   const diagnostics = validateBehaviourTree(doc, {
     assetGuid: blackboardAsset?.header.guid ?? "tree",
     blackboardKeys: blackboardKeys.length > 0 ? blackboardKeys : undefined,
-  }).map((row) => ({
-    nodeId: row.nodeId,
-    severity: row.severity,
-    message: row.message,
-  }));
+  });
   const openClass = (classId: string) => {
     const asset = (assetRegistry?.list() ?? []).find(
       (item) =>
@@ -232,9 +271,13 @@ function useBehaviourTreeDocument() {
     assets,
     parentOf,
     blackboardAsset,
+    blackboardDocument,
     blackboardKeys,
     diagnostics,
     openClass,
+    openDocument,
+    openDocuments,
+    applyAssetDocumentChange,
   };
 }
 
@@ -252,6 +295,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
   const {
     selectedId,
     attachmentId,
+    focusedNodeId,
     setSelectedId,
     setAttachmentId,
     setAttachmentCatalog,
@@ -343,11 +387,19 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           initialGraph={initialGraph}
           nodeTypes={treeNodeTypes}
           nodesDraggable={!play.playing}
-          lockNodeDragAxis="x"
+          nodeDragHandle=".bt-node-drag-handle"
+          connectEndMode="add-node"
+          replaceIncomingOnConnect
+          canConnect={(connection) => {
+            if (connection.sourceHandle !== BT_CHILDREN_HANDLE) return false;
+            if (connection.targetHandle !== BT_PARENT_HANDLE) return false;
+            return canReparentNode(doc, connection.target, connection.source);
+          }}
+          commitPositionsOnDragEnd
           readOnly={play.playing}
           paletteNodes={paletteNodes}
           diagnostics={diagnostics}
-          focusedNodeId={play.focusedNodeId ?? undefined}
+          focusedNodeId={play.focusedNodeId ?? focusedNodeId ?? undefined}
           selectedAttachmentId={attachmentId}
           onAttachmentSelect={(id) => {
             setAttachmentId(id);
@@ -378,7 +430,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           }}
           contextMenuItemsForNode={nodeMenu}
           contextMenuItemsForAttachment={attachmentMenu}
-          hiddenToolbarActions={["breakLinks", "format"]}
+          hiddenToolbarActions={["copy", "paste", "breakLinks", "format"]}
           onSelectionChange={(nodeIds) => {
             const nextId = nodeIds[0];
             if (!nextId) return;
@@ -398,25 +450,158 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
               type="button"
               variant="outline"
               size="sm"
-              data-testid="bt-relayout"
-              onClick={() => commit({ ...doc })}
+              data-testid="bt-auto-arrange"
+              onClick={() => commit(arrangeBehaviourTree(doc))}
             >
-              Re-layout
+              Auto Arrange
             </Button>
           }
-          onChange={(graph) => {
-            const positions: Record<string, { x: number; y: number }> = {};
-            for (const node of graph.nodes) {
-              positions[node.id] = node.position;
-            }
+          onChange={(graph, meta) => {
             const restored = serializedToBehaviourTree(graph, doc);
             const parentId =
               selected && selected.kind !== "task" ? selected.id : doc.rootId;
-            const adopted = adoptOrphans(restored, doc, parentId);
-            commit(pruneUnreachable(reorderSiblingsByPosition(adopted, positions)));
+            const next = attachNewNodes(restored, doc, parentId);
+            commit(next, meta?.kind === "position" ? "bt-node-move" : undefined);
           }}
         />
       </div>
+    </PanelFrame>
+  );
+}
+
+export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const {
+    doc,
+    commit,
+    play,
+    assets,
+    blackboardAsset,
+    blackboardDocument,
+    openDocument,
+    openDocuments,
+    applyAssetDocumentChange,
+  } = useBehaviourTreeDocument();
+  const [blackboardPick, setBlackboardPick] = useState(false);
+  const blackboardWatch = play.liveBtState?.blackboard ?? null;
+  const linked = blackboardAsset
+    ? openDocuments.find(
+        (item) =>
+          item.ref.kind === "blackboard" && item.ref.path === blackboardAsset.path,
+      )
+    : undefined;
+  const payload =
+    (linked?.content as Record<string, unknown> | undefined) ??
+    (blackboardDocument as unknown as Record<string, unknown> | null);
+  const commitBlackboard = (next: Record<string, unknown>) => {
+    if (!blackboardAsset) return;
+    const id = documentId({ kind: "blackboard", path: blackboardAsset.path });
+    if (linked) {
+      void applyAssetDocumentChange(linked.id, next);
+      return;
+    }
+    void openDocument({
+      kind: "blackboard",
+      path: blackboardAsset.path,
+      label: blackboardAsset.header.name,
+    }).then(() => applyAssetDocumentChange(id, next));
+  };
+
+  return (
+    <PanelFrame className="flex-1" data-testid="behaviour-tree-blackboard">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 p-2">
+        <PropertyGrid
+          rows={[
+            {
+              id: "blackboard",
+              kind: "asset",
+              label: "Blackboard",
+              value: doc.blackboardGuid,
+              placeholder: "None",
+              displayLabel: blackboardAsset?.header.name,
+              onPick: () => setBlackboardPick(true),
+              onChange: (value) => commit({ ...doc, blackboardGuid: value }),
+            },
+          ]}
+        />
+        {doc.blackboardGuid && payload ? (
+          <BlackboardEditor payload={payload} onChange={commitBlackboard} />
+        ) : (
+          <Empty>
+            <EmptyTitle>No Blackboard</EmptyTitle>
+            <EmptyDescription>
+              Link a Blackboard asset to edit keys.
+            </EmptyDescription>
+          </Empty>
+        )}
+        {blackboardWatch ? (
+          <div data-testid="bt-blackboard-watch" className="text-xs">
+            {Object.entries(blackboardWatch).map(([key, value]) => (
+              <div key={key}>
+                <SelectableText>
+                  {key}: {String(value)}
+                </SelectableText>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <AssetPicker
+        open={blackboardPick}
+        onOpenChange={setBlackboardPick}
+        assets={assets}
+        allowedTypes={["Blackboard"]}
+        title="Pick Blackboard"
+        allowNone
+        onPick={(guid) => {
+          commit({ ...doc, blackboardGuid: guid });
+          setBlackboardPick(false);
+        }}
+        data-testid="bt-blackboard-picker"
+      />
+    </PanelFrame>
+  );
+}
+
+export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const { diagnostics } = useBehaviourTreeDocument();
+  const { focusNode } = useBehaviourTreeEditing();
+
+  return (
+    <PanelFrame className="flex-1" data-testid="behaviour-tree-compiler-results">
+      {diagnostics.length === 0 ? (
+        <Empty>
+          <EmptyTitle>No Issues</EmptyTitle>
+          <EmptyDescription>
+            This behaviour tree compiles cleanly.
+          </EmptyDescription>
+        </Empty>
+      ) : (
+        <ScrollArea className="h-full">
+          <ul className="flex flex-col gap-1 p-2">
+            {diagnostics.map((row, index) => (
+              <li key={`${row.code}-${index}`}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="min-h-[var(--touch-target,44px)] w-full justify-start text-left"
+                  onClick={() => {
+                    if (row.nodeId) focusNode(row.nodeId);
+                  }}
+                  data-testid={`behaviour-tree-diagnostic-${row.code}`}
+                  data-severity={row.severity}
+                >
+                  <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
+                    {row.severity}
+                  </Badge>
+                  <SelectableText>{row.message}</SelectableText>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </ScrollArea>
+      )}
     </PanelFrame>
   );
 }
@@ -426,12 +611,9 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
   const {
     doc,
     commit,
-    play,
     decoratorCatalog,
     serviceCatalog,
-    assets,
     parentOf,
-    blackboardAsset,
     blackboardKeys,
   } = useBehaviourTreeDocument();
   const {
@@ -441,7 +623,6 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
     setAttachmentId,
     setAttachmentCatalog,
   } = useBehaviourTreeEditing();
-  const [blackboardPick, setBlackboardPick] = useState(false);
   const catalogSearch = useCatalogSearchState();
   const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
   const attachment =
@@ -511,18 +692,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
       };
     });
 
-  const rows: PropertyRow[] = [
-    {
-      id: "blackboard",
-      kind: "asset",
-      label: "Blackboard",
-      value: doc.blackboardGuid,
-      placeholder: "None",
-      displayLabel: blackboardAsset?.header.name,
-      onPick: () => setBlackboardPick(true),
-      onChange: (value) => commit({ ...doc, blackboardGuid: value }),
-    },
-  ];
+  const rows: PropertyRow[] = [];
   if (selected && !attachment) {
     const classOptions = (
       selected.kind === "task" ? BT_TASK_CATALOG : BT_COMPOSITE_CATALOG
@@ -693,7 +863,6 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  const blackboardWatch = play.liveBtState?.blackboard ?? null;
   const catalogEntries =
     attachmentCatalog === "service" ? serviceCatalog : decoratorCatalog;
   const filteredCatalog = catalogEntries.filter((entry) => {
@@ -781,29 +950,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
         ) : (
           <p className="text-sm text-muted-foreground">Select a node</p>
         )}
-        {blackboardWatch ? (
-          <div data-testid="bt-blackboard-watch" className="text-xs">
-            {Object.entries(blackboardWatch).map(([key, value]) => (
-              <div key={key}>
-                {key}: {String(value)}
-              </div>
-            ))}
-          </div>
-        ) : null}
       </div>
-      <AssetPicker
-        open={blackboardPick}
-        onOpenChange={setBlackboardPick}
-        assets={assets}
-        allowedTypes={["Blackboard"]}
-        title="Pick Blackboard"
-        allowNone
-        onPick={(guid) => {
-          commit({ ...doc, blackboardGuid: guid });
-          setBlackboardPick(false);
-        }}
-        data-testid="bt-blackboard-picker"
-      />
       <CatalogDialog
         open={attachmentCatalog !== null}
         onOpenChange={(open) => {
@@ -860,7 +1007,7 @@ function patchNode(
   };
 }
 
-function adoptOrphans(
+function attachNewNodes(
   next: BehaviourTreeDocument,
   previous: BehaviourTreeDocument,
   parentId: string | null,

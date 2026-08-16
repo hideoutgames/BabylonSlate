@@ -142,7 +142,7 @@ export interface GraphEditorProps {
    * opens Add Node and never breaks structural edges.
    */
   connectEndMode?: ConnectEndMode;
-  /** Double-tap empty pane opens Add Node. Behaviour trees turn this off. */
+  /** Double-tap empty pane opens Add Node. Default true. */
   emptyPaneDoubleTapAddsNode?: boolean;
   /** Replace existing edges into the same target handle (tree parent pin). */
   replaceIncomingOnConnect?: boolean;

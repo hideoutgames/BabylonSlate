@@ -1689,6 +1689,89 @@ describe("GraphEditor", () => {
     });
   });
 
+  it("opens Add Node from a pin tap plus empty pane in add-node mode", async () => {
+    const { container, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{
+          nodes: [
+            {
+              id: "root",
+              type: "bt.node",
+              position: { x: 0, y: 0 },
+              data: {
+                title: "Selector",
+                kind: "selector",
+                classId: "bt.composite.selector",
+                __pins: [
+                  {
+                    id: "children",
+                    name: "children",
+                    kind: "exec",
+                    direction: "out",
+                    type: { kind: "exec" },
+                  },
+                ],
+              },
+            },
+          ],
+          edges: [],
+        }}
+        nodeTypes={treeNodeTypes}
+        connectEndMode="add-node"
+        paletteNodes={[
+          {
+            id: "bt.task.wait",
+            title: "Wait",
+            category: "Tasks",
+            nodeType: "bt.node",
+          },
+        ]}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-id="root"] [data-handleid="children"]'),
+      ).not.toBeNull();
+    });
+    fireEvent.click(
+      container.querySelector('[data-id="root"] [data-handleid="children"]')!,
+    );
+    fireEvent.click(container.querySelector(".react-flow__pane")!);
+    expect(getByTestId("node-palette")).toBeTruthy();
+  });
+
+  it("does not open Add Node from a pin tap plus empty pane in default mode", async () => {
+    const { container, queryByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-handleid="execOut"]'),
+      ).not.toBeNull();
+    });
+    fireEvent.click(container.querySelector('[data-handleid="execOut"]')!);
+    fireEvent.click(container.querySelector(".react-flow__pane")!);
+    expect(queryByTestId("node-palette")).toBeNull();
+  });
+
+  it("skips empty-pane double-tap when emptyPaneDoubleTapAddsNode is false", () => {
+    const { container, queryByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        emptyPaneDoubleTapAddsNode={false}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+      />,
+    );
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    fireEvent.click(pane!);
+    fireEvent.click(pane!);
+    expect(queryByTestId("node-palette")).toBeNull();
+  });
+
   it("hides Break Links and Format when listed in hiddenToolbarActions", () => {
     const { queryByTestId, getByTestId } = render(
       <GraphEditor
