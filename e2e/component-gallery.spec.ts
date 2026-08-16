@@ -102,51 +102,33 @@ test("gallery body scrolls on touch", { tag: IPAD_TEST_TAG }, async ({ page }) =
     const touchTarget = viewport.querySelector("h2") ?? viewport;
 
     const makeTouch = (clientY: number) =>
-      ({
+      new Touch({
         identifier: 1,
         target: touchTarget,
         clientX: x,
         clientY,
-        pageX: x,
-        pageY: clientY,
-        screenX: x,
-        screenY: clientY,
-        radiusX: 1,
-        radiusY: 1,
-        rotationAngle: 0,
-        force: 1,
-      }) as Touch;
-
-    const touchList = (touch: Touch) =>
-      ({
-        length: 1,
-        item: (index: number) => (index === 0 ? touch : null),
-        0: touch,
-        [Symbol.iterator]: function* () {
-          yield touch;
-        },
-      }) as unknown as TouchList;
+      });
 
     const startTouch = makeTouch(startY);
     const moveTouch = makeTouch(endY);
 
-    document.dispatchEvent(
+    touchTarget.dispatchEvent(
       new TouchEvent("touchstart", {
         bubbles: true,
         cancelable: true,
-        touches: touchList(startTouch),
-        targetTouches: touchList(startTouch),
-        changedTouches: touchList(startTouch),
+        touches: [startTouch],
+        targetTouches: [startTouch],
+        changedTouches: [startTouch],
       }),
     );
     const moveEvent = new TouchEvent("touchmove", {
       bubbles: true,
       cancelable: true,
-      touches: touchList(moveTouch),
-      targetTouches: touchList(moveTouch),
-      changedTouches: touchList(moveTouch),
+      touches: [moveTouch],
+      targetTouches: [moveTouch],
+      changedTouches: [moveTouch],
     });
-    const prevented = !document.dispatchEvent(moveEvent);
+    const prevented = !touchTarget.dispatchEvent(moveEvent);
 
     return { ok: !prevented, prevented, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight };
   });
