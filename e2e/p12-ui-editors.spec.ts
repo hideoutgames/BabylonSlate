@@ -310,8 +310,9 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
 
     await switchToAsset(page, "assets/HUD.ui.babasset", "HUD");
     await expect(
-      visibleUiWorkspace(page).getByTestId("ui-editor-mode-designer"),
+      visibleUiWorkspace(page).getByTestId("ui-editor-mode-logic"),
     ).toHaveAttribute("aria-pressed", "true");
+    await setUiEditorMode(page, "designer");
     await expectDesignerReady(page);
     await expect(
       visibleUiWorkspace(page).locator('[data-testid^="ui-widget-button-"]'),

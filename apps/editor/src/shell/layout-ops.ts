@@ -71,10 +71,14 @@ export function resolveFocusKeepPanelIds(
   options?: FocusKeepOptions,
 ): string[] {
   const openUtilities = (options?.openUtilityIds ?? []).filter(Boolean);
-  if (!keepPanelIds || keepPanelIds.length === 0) {
-    return [primaryDockPanel(kind, options), ...openUtilities];
+  const keep =
+    !keepPanelIds || keepPanelIds.length === 0
+      ? [primaryDockPanel(kind, options)]
+      : [...keepPanelIds];
+  for (const id of openUtilities) {
+    if (!keep.includes(id)) keep.push(id);
   }
-  return [...keepPanelIds];
+  return keep;
 }
 
 export interface FocusablePanelApi {

@@ -106,6 +106,14 @@ describe("resolveFocusKeepPanelIds", () => {
     ).toEqual(["viewport", "eui-scene-tools"]);
   });
 
+  it("unions already-open Editor Utility tabs into a non-empty keep list", () => {
+    expect(
+      resolveFocusKeepPanelIds("scene", ["viewport"], {
+        openUtilityIds: ["eui-scene-tools"],
+      }),
+    ).toEqual(["viewport", "eui-scene-tools"]);
+  });
+
   it("keeps an explicit list as-is", () => {
     expect(
       resolveFocusKeepPanelIds("graph", ["graph", "inspector"]),
