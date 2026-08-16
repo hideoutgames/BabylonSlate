@@ -68,6 +68,7 @@ import {
   nodePinLists,
   pinsAreCompatible,
   screenCentersForSafePins,
+  type PinCompatibilityRule,
   shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
 } from "./graph-connect";
@@ -127,6 +128,8 @@ export interface GraphEditorProps {
     attachmentId: string,
   ) => NestedMenuItem[];
   onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
+  /** Host connection rule (material Float splat). Defaults to exact kinds. */
+  pinCompatibility?: PinCompatibilityRule;
 }
 
 const DOUBLE_TAP_MS = 350;
@@ -253,6 +256,7 @@ function GraphEditorCanvas({
   contextMenuItemsForNode,
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
+  pinCompatibility,
 }: GraphEditorProps) {
   const knownTypes = useMemo(
     () => ({ ...graphNodeTypes, ...nodeTypesProp }),
@@ -533,9 +537,9 @@ function GraphEditorCanvas({
         connection.targetHandle,
       );
       if (!sourcePin || !targetPin) return true;
-      return pinsAreCompatible(sourcePin, targetPin);
+      return pinsAreCompatible(sourcePin, targetPin, pinCompatibility);
     },
-    [],
+    [pinCompatibility],
   );
 
   const handleConnectEnd = useCallback(
@@ -565,6 +569,7 @@ function GraphEditorCanvas({
             nodePinLists(graphStateRef.current.nodes),
             fromNode.id,
             pin,
+            pinCompatibility,
           ),
         ),
       };
@@ -643,7 +648,11 @@ function GraphEditorCanvas({
         const connect = pendingConnect;
         let nextEdges = graphStateRef.current.edges;
         if (connect?.pin && connect.nodeId) {
-          const match = firstCompatiblePin(paletteNode.pins, connect.pin);
+          const match = firstCompatiblePin(
+            paletteNode.pins,
+            connect.pin,
+            pinCompatibility,
+          );
           if (match) {
             const sourceIsDragged = connect.pin.direction === "out";
             const source = sourceIsDragged ? connect.nodeId : id;
@@ -1119,6 +1128,7 @@ function GraphEditorCanvas({
           }}
           paletteNodes={paletteNodes}
           filterPin={pendingConnect?.pin ?? null}
+          pinCompatibility={pinCompatibility}
           onAddNode={handleAddPaletteNode}
         />
         )}

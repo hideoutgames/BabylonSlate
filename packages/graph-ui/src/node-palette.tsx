@@ -5,7 +5,10 @@ import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Switch } from "@babylonslate/ui/components/switch";
 import { cn } from "@babylonslate/ui/lib/utils";
 import type { PaletteNode, SerializedPin } from "./graph-types";
-import { filterPaletteForPin } from "./graph-connect";
+import {
+  filterPaletteForPin,
+  type PinCompatibilityRule,
+} from "./graph-connect";
 import { nodeRoleClass, nodeVisualRole } from "./node-theme";
 
 export interface NodePaletteProps {
@@ -15,6 +18,8 @@ export interface NodePaletteProps {
   onAddNode: (node: PaletteNode) => void;
   /** When set, only nodes with a compatible opposite pin are listed. */
   filterPin?: SerializedPin | null;
+  /** Host connection rule (material Float splat). Defaults to exact kinds. */
+  pinCompatibility?: PinCompatibilityRule;
 }
 
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
@@ -31,6 +36,7 @@ export function NodePalette({
   paletteNodes,
   onAddNode,
   filterPin = null,
+  pinCompatibility,
 }: NodePaletteProps) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -45,9 +51,9 @@ export function NodePalette({
   const allNodes = useMemo(() => {
     const nodes = paletteNodes ?? [];
     return filterPin && contextSensitive
-      ? filterPaletteForPin(nodes, filterPin)
+      ? filterPaletteForPin(nodes, filterPin, pinCompatibility)
       : nodes;
-  }, [contextSensitive, filterPin, paletteNodes]);
+  }, [contextSensitive, filterPin, paletteNodes, pinCompatibility]);
 
   const categories = useMemo(() => {
     const map = new Map<string, number>();
