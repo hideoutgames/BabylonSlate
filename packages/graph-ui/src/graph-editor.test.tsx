@@ -2381,5 +2381,59 @@ describe("GraphEditor", () => {
       expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
     );
   });
+
+  it("renders GraphEdge.type through custom edgeTypes", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      function BadgeEdge() {
+        return <div data-testid="custom-anim-edge" />;
+      }
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransition",
+      }));
+      const { findAllByTestId } = render(
+        <GraphEditor
+          initialGraph={graph}
+          edgeTypes={{ animTransition: BadgeEdge }}
+          defaultEdgeOptions={{ type: "animTransition" }}
+        />,
+      );
+      expect((await findAllByTestId("custom-anim-edge")).length).toBeGreaterThan(
+        0,
+      );
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("reports edge double-clicks and selected edge ids", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onEdgeDoubleClick = vi.fn();
+      const onEdgeSelectionChange = vi.fn();
+      const { container } = render(
+        <GraphEditor
+          initialGraph={graphWithWiredPins()}
+          onEdgeDoubleClick={onEdgeDoubleClick}
+          onEdgeSelectionChange={onEdgeSelectionChange}
+        />,
+      );
+      const edge = await waitFor(() => {
+        const found = container.querySelector(".react-flow__edge");
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      fireEvent.click(edge);
+      await waitFor(() => {
+        expect(onEdgeSelectionChange).toHaveBeenCalled();
+      });
+      fireEvent.doubleClick(edge);
+      expect(onEdgeDoubleClick).toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
 });
 

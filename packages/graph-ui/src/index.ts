@@ -11,6 +11,12 @@ export * from "./graph-marquee";
 export * from "./node-theme";
 export { BlueprintNodeShell, graphNodeTypes, resolveNodeType, zipPinRows } from "./graph-nodes";
 export type { CanvasNode } from "./graph-nodes";
+export {
+  AnimStateNode,
+  AnimTransitionEdge,
+  animGraphEdgeTypes,
+  animGraphNodeTypes,
+} from "./anim-graph-nodes";
 export { TreeNode, treeNodeTypes } from "./tree-node";
 export {
   GraphEditorProvider,

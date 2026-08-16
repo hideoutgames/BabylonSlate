@@ -70,7 +70,12 @@ export function nodeVisualRole(input: {
   const title = input.title ?? "";
   const category = (input.category ?? "").toLowerCase();
 
-  if (nodeType.startsWith("flow.event") || /^event\b/i.test(title)) {
+  if (
+    nodeType.startsWith("flow.event") ||
+    nodeType.startsWith("anim.event") ||
+    nodeType.startsWith("anim.rule") ||
+    /^event\b/i.test(title)
+  ) {
     return "event";
   }
   if (input.latent || category === "timers") {

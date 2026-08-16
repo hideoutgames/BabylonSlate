@@ -4,8 +4,12 @@ import { panelComponents } from "./panel-registry";
 describe("panelComponents", () => {
   it("registers Animation Graph dock panels", () => {
     expect(panelComponents["anim-graph-graph"]).toBeTypeOf("function");
-    expect(panelComponents["anim-graph-parameters"]).toBeTypeOf("function");
+    expect(panelComponents["anim-graph-variables"]).toBeTypeOf("function");
     expect(panelComponents["anim-graph-details"]).toBeTypeOf("function");
+    expect(panelComponents["anim-graph-compiler-results"]).toBeTypeOf("function");
+    expect(panelComponents["anim-object-graph"]).toBeTypeOf("function");
+    expect(panelComponents["anim-object-variables"]).toBeTypeOf("function");
+    expect(panelComponents["anim-object-inspector"]).toBeTypeOf("function");
   });
 
   it("registers Behaviour Tree dock panels", () => {

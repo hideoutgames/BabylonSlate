@@ -46,6 +46,9 @@ export function focusKeepPanelIds(
   if (kind === "ui" && options?.uiEditorMode === "logic") {
     return panels.uiLogic;
   }
+  if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
+    return panels.animGraphObject;
+  }
   return panels[kind];
 }
 

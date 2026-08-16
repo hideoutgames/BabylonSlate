@@ -33,6 +33,9 @@ describe("node catalog", () => {
     expect(registry.get("bt.returnCondition")).toBeDefined();
     expect(registry.get("bt.blackboard.get")).toBeDefined();
     expect(registry.get("bt.blackboard.set")).toBeDefined();
+    expect(registry.get("anim.event.initialize")).toBeDefined();
+    expect(registry.get("anim.rule.exitState")).toBeDefined();
+    expect(registry.get("anim.state.justFinished")).toBeDefined();
     expect(registry.get("navigation.findPathTo")).toBeDefined();
     expect(registry.get("navigation.moveTo")).toBeDefined();
   });
