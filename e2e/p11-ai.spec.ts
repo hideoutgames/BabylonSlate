@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openMainScene, openTestProject } from "./open-test-project";
+import { openMainScene, openTestProject, submitCreateOrOpenListed } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 
 async function showContentBrowser(page: Page): Promise<void> {
@@ -81,7 +81,7 @@ async function openTwoDProject(page: Page): Promise<void> {
   await page.getByTestId("create-project").click();
   await expect(page.getByTestId("create-project-dialog")).toBeVisible();
   await page.getByTestId("create-project-2d").click();
-  await page.getByTestId("create-project-submit").click();
+  await submitCreateOrOpenListed(page);
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
 

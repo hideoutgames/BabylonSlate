@@ -46,6 +46,7 @@ import {
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
@@ -57,6 +58,7 @@ import {
   type ListedProject,
 } from "../lib/listed-projects";
 import {
+  createProjectNameIssue,
   defaultCreateProjectDisplayName,
   normalizeProjectFolderName,
   type CreateProjectOptions,
@@ -127,6 +129,10 @@ export function Homepage({
   const [createBlackBars, setCreateBlackBars] = useState(false);
   const [pickFolder, setPickFolder] = useState(false);
   const hostPlatform = getHostPlatform();
+  const nameIssue = createProjectNameIssue(
+    createName,
+    projects.map((project) => project.name),
+  );
 
   const run = async (fn: () => Promise<void>) => {
     setError(null);
@@ -351,19 +357,25 @@ export function Homepage({
           <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
             <DialogDescription>
-              Name the project, pick Empty, 2D, or a template, then create.
+              Name the project, pick Empty or 2D, then create.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
-            <Field>
+            <Field data-invalid={Boolean(nameIssue) || undefined}>
               <FieldLabel htmlFor="create-project-name">Name</FieldLabel>
               <Input
                 id="create-project-name"
                 data-testid="create-project-name"
                 autoFocus
+                aria-invalid={Boolean(nameIssue) || undefined}
                 value={createName}
                 onChange={(event) => setCreateName(event.target.value)}
               />
+              {nameIssue ? (
+                <FieldError data-testid="create-project-name-issue">
+                  {nameIssue}
+                </FieldError>
+              ) : null}
             </Field>
             <Field>
               <FieldLabel>Template</FieldLabel>
@@ -458,7 +470,7 @@ export function Homepage({
                 data-testid="create-project-location"
               >
                 {hostPlatform === "web"
-                  ? "This browser (OPFS)"
+                  ? "On this device."
                   : pickFolder
                     ? "Choose a folder when you create"
                     : "App Documents"}
@@ -518,6 +530,10 @@ export function Homepage({
                 Black Bars
               </FieldLabel>
             </Field>
+            <FieldDescription>
+              Off stretches the framebuffer to fill Play. On letterboxes with
+              unused overlay space black.
+            </FieldDescription>
           </FieldGroup>
           <DialogFooter>
             <Button
@@ -530,8 +546,9 @@ export function Homepage({
             <Button
               type="button"
               data-testid="create-project-submit"
-              disabled={busy || !createName.trim()}
+              disabled={busy || Boolean(nameIssue)}
               onClick={() => {
+                if (nameIssue) return;
                 const folderName = normalizeProjectFolderName(createName);
                 if (!folderName) return;
                 const options: CreateProjectOptions = {

@@ -404,7 +404,7 @@ export class ProjectService {
     }
     await this.storage.openDocumentsProject(projectName);
     if (await this.storage.exists(PROJECT_FILE)) {
-      return this.loadCurrentProject();
+      throw new Error("Name already exists.");
     }
     return this.scaffoldNewProject(projectName, options?.kind, options);
   }
