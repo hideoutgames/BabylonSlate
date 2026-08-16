@@ -266,6 +266,8 @@ export function SettingsModal({
         theme: next.appearance.theme,
         graphDefaultZoom: next.graphDefaultZoom,
         uiDesignerPresets: next.uiDesignerPresets,
+        hardwareScalingLevel: next.hardwareScalingLevel,
+        postProcessingEnabled: next.postProcessingEnabled,
       });
       await onEngineSaved?.();
     },

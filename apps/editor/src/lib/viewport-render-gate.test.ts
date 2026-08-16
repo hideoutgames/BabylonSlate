@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RenderScheduler } from "@babylonslate/render";
 import {
   attachViewportRenderGate,
+  applyLiveEngineSettings,
   canvasIsEditorVisible,
   dispatchEngineSettingsChanged,
   isBlockingEditorOverlayOpen,
@@ -158,5 +159,24 @@ describe("attachViewportRenderGate", () => {
     expect(scheduler.shouldRender(50)).toBe(false);
     expect(scheduler.shouldRender(100)).toBe(true);
     detach();
+  });
+});
+
+describe("applyLiveEngineSettings", () => {
+  it("applies hardware scaling and the post-processing gate without mutating a scene", () => {
+    const scaling = { setLevel: vi.fn() };
+    const handle = {
+      scaling,
+      scheduler: { setFrameCap: vi.fn() },
+      setPostProcessingEnabled: vi.fn(),
+    };
+    applyLiveEngineSettings(handle, {
+      viewportFrameCap: 30,
+      hardwareScalingLevel: 1.5,
+      postProcessingEnabled: false,
+    });
+    expect(handle.scheduler.setFrameCap).toHaveBeenCalledWith(30);
+    expect(scaling.setLevel).toHaveBeenCalledWith(1.5);
+    expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
 });

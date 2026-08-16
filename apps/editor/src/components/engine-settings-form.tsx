@@ -194,6 +194,25 @@ export function EngineSettingsForm({
               render at a lower internal resolution.
             </FieldDescription>
           </Field>
+          <Field orientation="horizontal">
+            <FieldLabel htmlFor="setting-post-processing">
+              Post-processing
+            </FieldLabel>
+            <Switch
+              id="setting-post-processing"
+              data-testid="setting-post-processing"
+              className="min-h-[var(--touch-target,44px)]"
+              checked={settings.postProcessingEnabled}
+              onCheckedChange={(checked) =>
+                void onChange({ postProcessingEnabled: checked === true })
+              }
+            />
+            <FieldDescription>
+              Applies authored scene stacks in the editor viewport and Play
+              preview. Off does not change the scene document or exported
+              games.
+            </FieldDescription>
+          </Field>
         </FieldSet>
       ) : null}
 

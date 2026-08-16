@@ -28,6 +28,7 @@ export const engineSettingsSchema = z.object({
   undoHistoryLength: z.number().int().positive().default(50),
   viewportFrameCap: z.number().positive().default(60),
   hardwareScalingLevel: z.number().positive().default(1),
+  postProcessingEnabled: z.boolean().default(true),
   thumbnailsEnabled: z.boolean().default(true),
   graphDefaultZoom: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;

@@ -5,6 +5,7 @@ export interface HardwareScalingOptions {
   maxLevel?: number;
   targetFrameMs?: number;
   cooldownFrames?: number;
+  initialLevel?: number;
 }
 
 /**
@@ -28,7 +29,7 @@ export class HardwareScalingController {
     this.targetFrameMs = options.targetFrameMs ?? 1000 / 60;
     this.cooldownFrames = options.cooldownFrames ?? 30;
     this.level = 1;
-    this.engine.setHardwareScalingLevel(this.level);
+    this.setLevel(options.initialLevel ?? 1);
   }
 
   getLevel(): number {
