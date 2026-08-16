@@ -161,6 +161,11 @@ export function TreeView({
               const drag = dragRef.current;
               if (!drag || drag.moved) return;
               drag.canDrag = true;
+              try {
+                containerRef.current?.setPointerCapture?.(drag.pointerId);
+              } catch {
+                /* jsdom and detached nodes */
+              }
             }, DRAG_ARM_MS)
           : null;
       dragRef.current = {
@@ -174,10 +179,12 @@ export function TreeView({
         dragArmTimer,
         longPressTimer,
       };
-      try {
-        containerRef.current?.setPointerCapture?.(event.pointerId);
-      } catch {
-        /* jsdom and detached nodes */
+      if (reparentArm !== "hold") {
+        try {
+          containerRef.current?.setPointerCapture?.(event.pointerId);
+        } catch {
+          /* jsdom and detached nodes */
+        }
       }
     },
     [onContextMenu, onReparent, reparentArm],
@@ -243,7 +250,7 @@ export function TreeView({
   return (
     <div
       ref={measure}
-      className="h-full min-h-0 overflow-auto"
+      className="h-full min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
       data-testid={testId}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       onPointerMove={onPointerMove}
@@ -267,7 +274,7 @@ export function TreeView({
                 data-depth={node.depth}
                 data-drop-target={dropTargetId === node.id ? "true" : undefined}
                 className={cn(
-                  "absolute right-0 left-0 flex touch-none items-center gap-1 border-l-2 px-1 text-sm",
+                  "absolute right-0 left-0 flex items-center gap-1 border-l-2 px-1 text-sm",
                   selected
                     ? "border-l-primary bg-primary/20 font-medium"
                     : "border-l-transparent hover:bg-accent/50",
