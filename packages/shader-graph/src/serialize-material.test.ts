@@ -53,6 +53,26 @@ describe("material graph serialization", () => {
     );
   });
 
+  it("hydrates catalog defaultValue and colorHint onto editor pins", () => {
+    const hydrated = hydrateMaterialGraphForEditor(
+      materialGraphToSerialized(createDefaultMaterialDocument()),
+    );
+    const output = hydrated.nodes.find(
+      (node) => node.type === "output.surface",
+    );
+    const pins = output?.data.__pins as Array<{
+      id: string;
+      defaultValue?: number[];
+      colorHint?: boolean;
+    }>;
+    const roughness = pins.find((pin) => pin.id === "roughness");
+    const baseColor = pins.find((pin) => pin.id === "baseColor");
+    expect(roughness?.defaultValue).toEqual([0.5]);
+    expect(baseColor?.colorHint).toBe(true);
+    expect(baseColor?.defaultValue).toEqual([0.8, 0.8, 0.8]);
+    expect(output?.data["default:roughness"]).toBeUndefined();
+  });
+
   it("strips editor-only keys when converting back to the document", () => {
     const hydrated = hydrateMaterialGraphForEditor(
       materialGraphToSerialized(createDefaultMaterialDocument()),

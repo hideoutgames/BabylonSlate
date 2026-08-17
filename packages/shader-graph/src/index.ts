@@ -63,6 +63,15 @@ export {
   type MaterialPinContext,
 } from "./serialize-material";
 export {
+  asNumberArray,
+  listUnconnectedMaterialPinDefaults,
+  materialPinDefaultPropertyKey,
+  readMaterialPinDefault,
+  resolveMaterialPinDefault,
+  type MaterialPinDefault,
+  type MaterialPinDefaultContext,
+} from "./pin-defaults";
+export {
   componentCount,
   conversionFor,
   isNumericType,

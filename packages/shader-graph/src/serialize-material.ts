@@ -19,6 +19,8 @@ export interface MaterialGraphPin {
   kind: "data";
   direction: "in" | "out";
   type: { kind: string };
+  defaultValue?: number[];
+  colorHint?: boolean;
 }
 
 export interface MaterialPinContext {
@@ -39,6 +41,8 @@ function toPin(
     kind: "data",
     direction,
     type: { kind: pin.type.kind },
+    ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
+    ...(pin.colorHint ? { colorHint: true } : {}),
   };
 }
 
@@ -54,7 +58,12 @@ export function pinsForMaterialNode(
     return [
       ...fn.inputs.map((pin) =>
         toPin(
-          { id: pin.id, name: pin.name, type: { kind: pin.type } },
+          {
+            id: pin.id,
+            name: pin.name,
+            type: { kind: pin.type },
+            ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
+          },
           "in",
         ),
       ),
@@ -69,7 +78,15 @@ export function pinsForMaterialNode(
     const pins = type === "function.input" ? fn.inputs : fn.outputs;
     const direction = type === "function.input" ? "out" : "in";
     return pins.map((pin) =>
-      toPin({ id: pin.id, name: pin.name, type: { kind: pin.type } }, direction),
+      toPin(
+        {
+          id: pin.id,
+          name: pin.name,
+          type: { kind: pin.type },
+          ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
+        },
+        direction,
+      ),
     );
   }
   const definition = materialNodeDefinition(type);

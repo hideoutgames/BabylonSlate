@@ -7,6 +7,7 @@ import {
   pinDefaultAsVec3Tuple,
   pinDefaultAsVec4Tuple,
   pinDefaultColorRgb,
+  pinDefaultPropertyKey,
   readPinDefault,
   type PinType,
 } from "@babylonslate/scripting";
@@ -29,9 +30,13 @@ export type PinDefaultPreview =
       text: string;
     };
 
-function asLiteralPinType(type: SerializedPin["type"]): PinType | null {
-  if (!pinAcceptsLiteralDefault(type as PinType)) return null;
-  return type as PinType;
+function asLiteralPinType(
+  pin: SerializedPin,
+): PinType | null {
+  if (pin.colorHint) return { kind: "color" };
+  if (pin.type.kind === "generic") return { kind: "float" };
+  if (!pinAcceptsLiteralDefault(pin.type as PinType)) return null;
+  return pin.type as PinType;
 }
 
 function compactNumber(value: number): string {
@@ -51,6 +56,49 @@ function rgbCss(value: unknown): string {
   return `rgb(${toByte(x)}, ${toByte(y)}, ${toByte(z)})`;
 }
 
+function asNumberArray(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.map((component) =>
+    typeof component === "number" && Number.isFinite(component) ? component : 0,
+  );
+}
+
+function coerceLiteralValue(type: PinType, value: unknown): unknown {
+  const numbers = asNumberArray(value);
+  if (!numbers) return value;
+  switch (type.kind) {
+    case "int":
+    case "float":
+      return numbers[0] ?? 0;
+    case "vec2":
+      return { x: numbers[0] ?? 0, y: numbers[1] ?? 0 };
+    case "vec3":
+      return { x: numbers[0] ?? 0, y: numbers[1] ?? 0, z: numbers[2] ?? 0 };
+    case "color":
+    case "vec4":
+      return {
+        x: numbers[0] ?? 0,
+        y: numbers[1] ?? 0,
+        z: numbers[2] ?? 0,
+        w: numbers[3] ?? 0,
+      };
+    default:
+      return value;
+  }
+}
+
+function readPreviewValue(
+  pin: SerializedPin,
+  properties: Record<string, unknown>,
+): unknown {
+  const byId = properties[pinDefaultPropertyKey(pin.id)];
+  if (byId !== undefined) return byId;
+  const stored = readPinDefault(properties, pin.name);
+  if (stored !== undefined) return stored;
+  if (pin.defaultValue !== undefined) return pin.defaultValue;
+  return undefined;
+}
+
 export function pinDefaultPreview(
   pin: SerializedPin,
   properties: Record<string, unknown>,
@@ -58,10 +106,13 @@ export function pinDefaultPreview(
 ): PinDefaultPreview | null {
   if (connected) return null;
   if (pin.direction !== "in" || pin.kind !== "data") return null;
-  const type = asLiteralPinType(pin.type);
+  const type = asLiteralPinType(pin);
   if (!type) return null;
-  const stored = readPinDefault(properties, pin.name);
-  const value = stored !== undefined ? stored : defaultJsValue(type);
+  const stored = readPreviewValue(pin, properties);
+  const value = coerceLiteralValue(
+    type,
+    stored !== undefined ? stored : defaultJsValue(type),
+  );
   switch (type.kind) {
     case "bool":
       return { kind: "bool", checked: pinDefaultAsBoolean(value) };

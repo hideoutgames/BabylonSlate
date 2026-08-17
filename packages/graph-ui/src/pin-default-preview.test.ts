@@ -206,4 +206,95 @@ describe("pinDefaultPreview", () => {
     expect(pinDefaultPreview(resultOut, { "default:result": 4 }, false)).toBeNull();
     expect(pinDefaultPreview(target, { "default:target": "Hero" }, false)).toBeNull();
   });
+
+  it("previews a generic input as a float field", () => {
+    const generic = pin({
+      id: "a",
+      name: "A",
+      kind: "data",
+      direction: "in",
+      type: { kind: "generic" },
+    });
+    expect(pinDefaultPreview(generic, {}, false)).toEqual({
+      kind: "float",
+      text: "0",
+    });
+    expect(
+      pinDefaultPreview(generic, { "default:a": [1.5] }, false),
+    ).toEqual({ kind: "float", text: "1.5" });
+  });
+
+  it("uses catalog defaultValue number arrays when nothing is authored", () => {
+    const roughness: SerializedPin = {
+      id: "roughness",
+      name: "Roughness",
+      kind: "data",
+      direction: "in",
+      type: { kind: "float" },
+      defaultValue: [0.5],
+    };
+    expect(pinDefaultPreview(roughness, {}, false)).toEqual({
+      kind: "float",
+      text: "0.5",
+    });
+  });
+
+  it("reads default:pinId when the display name differs", () => {
+    const metallic: SerializedPin = {
+      id: "metallic",
+      name: "Metallic",
+      kind: "data",
+      direction: "in",
+      type: { kind: "float" },
+      defaultValue: [0],
+    };
+    expect(
+      pinDefaultPreview(metallic, { "default:metallic": [0.8] }, false),
+    ).toEqual({ kind: "float", text: "0.8" });
+  });
+
+  it("renders a color swatch for colorHint vector pins from number arrays", () => {
+    const baseColor: SerializedPin = {
+      id: "baseColor",
+      name: "Base Color",
+      kind: "data",
+      direction: "in",
+      type: { kind: "vec3" },
+      colorHint: true,
+      defaultValue: [0.8, 0.8, 0.8],
+    };
+    expect(pinDefaultPreview(baseColor, {}, false)).toEqual({
+      kind: "color",
+      rgb: "rgb(204, 204, 204)",
+    });
+    expect(
+      pinDefaultPreview(baseColor, {}, true),
+    ).toBeNull();
+  });
+
+  it("joins vec2 number-array defaults", () => {
+    const tiling: SerializedPin = {
+      id: "tiling",
+      name: "Tiling",
+      kind: "data",
+      direction: "in",
+      type: { kind: "vec2" },
+      defaultValue: [1, 1],
+    };
+    expect(pinDefaultPreview(tiling, {}, false)).toEqual({
+      kind: "vec2",
+      text: "1, 1",
+    });
+  });
+
+  it("returns null for texture pins", () => {
+    const texture = pin({
+      id: "texture",
+      name: "Texture",
+      kind: "data",
+      direction: "in",
+      type: { kind: "texture" },
+    });
+    expect(pinDefaultPreview(texture, {}, false)).toBeNull();
+  });
 });
