@@ -49,6 +49,7 @@ const ASSET_TOKENS = [
 
 const NODE_TOKENS = [
   "--node-event",
+  "--node-call-parent",
   "--node-function",
   "--node-pure",
   "--node-flow",
