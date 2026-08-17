@@ -80,6 +80,40 @@ describe("hydrateSerializedGraphForEditor", () => {
     );
   });
 
+  it("titles Call Parent from eventType and the name fallback", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "cp-begin",
+          type: "flow.event.callParent",
+          position: { x: 0, y: 0 },
+          data: {
+            eventType: "flow.event.beginPlay",
+            parentClassId: "Actor",
+          },
+        },
+        {
+          id: "cp-custom",
+          type: "flow.event.callParent",
+          position: { x: 0, y: 80 },
+          data: {
+            eventType: "flow.event.custom",
+            name: "on hit",
+            parentClassId: "Actor",
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.title).toBe("Call Begin Play Parent");
+    expect(hydrated.nodes[1]?.data).toMatchObject({
+      title: "Call On Hit Parent",
+      eventName: "On Hit",
+      name: "On Hit",
+    });
+  });
+
   it("titles an unconnected Cast node from the default class", () => {
     const graph: SerializedGraph = {
       nodes: [
