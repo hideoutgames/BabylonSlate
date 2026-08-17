@@ -269,7 +269,7 @@ function PinRow({
             {preview ? <PinDefaultPreviewWidget preview={preview} /> : null}
             <span
               data-pin-label={incoming.name}
-              className="max-w-[9rem] text-base leading-snug break-words text-foreground"
+              className="max-w-[11rem] text-base leading-snug break-words text-foreground"
             >
               {humanizePropertyLabel(incoming.name)}
             </span>
@@ -283,7 +283,7 @@ function PinRow({
           <>
             <span
               data-pin-label={outgoing.name}
-              className="max-w-[9rem] text-right text-base leading-snug break-words text-foreground"
+              className="max-w-[11rem] text-right text-base leading-snug break-words text-foreground"
             >
               {humanizePropertyLabel(outgoing.name)}
             </span>
@@ -378,13 +378,13 @@ export function BlueprintNodeShell({
         data-node-role={role}
         className={cn(
           "overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
-          compact ? "min-w-48" : "min-w-72",
+          compact ? "min-w-56" : "min-w-80",
           selected && "ring-2 ring-primary",
         )}
       >
         <div
           className={cn(
-            "rounded-t-lg px-3 py-2 text-sm font-semibold leading-snug break-words text-node-title",
+            "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug break-words text-node-title",
             nodeRoleClass(role),
           )}
         >
