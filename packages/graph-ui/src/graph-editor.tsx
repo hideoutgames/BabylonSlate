@@ -1258,9 +1258,7 @@ function GraphEditorCanvas({
       ) {
         return;
       }
-      const position = connection.inProgress
-        ? connection.to
-        : screenToFlowPositionRef.current(pointer);
+      const position = screenToFlowPositionRef.current(pointer);
       session.openedAddNode = true;
       suppressPaletteDismissRef.current = true;
       paletteDismissHoldIdsRef.current = new Set([
