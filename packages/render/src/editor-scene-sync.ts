@@ -1,5 +1,9 @@
-import type { Camera, Mesh, Scene } from "@babylonjs/core";
-import type { SerializedActor, SerializedScene } from "@babylonslate/core";
+import { Mesh, type Camera, type Material, type Scene } from "@babylonjs/core";
+import type {
+  SerializedActor,
+  SerializedComponent,
+  SerializedScene,
+} from "@babylonslate/core";
 import type { RenderScheduler } from "./render-scheduler";
 import {
   meshAssetFingerprint,
@@ -11,6 +15,8 @@ import {
   applyActorTransform,
   applyComponentChildTransforms,
   createActorMesh,
+  editorComponentMeshName,
+  isEditorActorOrigin,
   visualMeshesOfActorRoot,
 } from "./scene-loader";
 import { syncAuthoredIllumination } from "./scene-illumination";
@@ -18,6 +24,10 @@ import { applyEditorBillboardFromActor } from "./editor-billboard";
 import { applySortingToMesh, resolveSortingLayer } from "./sorting";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
+
+export type EditorSceneSyncOptions = {
+  resolveMaterial?: (guid: string) => Material | null;
+};
 
 function spriteSortingOf(
   actor: SerializedActor,
@@ -48,6 +58,8 @@ export class EditorSceneSync {
 
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
+  private readonly resolveMaterial?: (guid: string) => Material | null;
+  private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
   private lastAssetFingerprint: string | null = null;
@@ -56,9 +68,14 @@ export class EditorSceneSync {
   private restoreCamera: Camera | null = null;
   private shadowQuality = "1024";
 
-  constructor(scene: Scene, scheduler?: Pick<RenderScheduler, "invalidate">) {
+  constructor(
+    scene: Scene,
+    scheduler?: Pick<RenderScheduler, "invalidate">,
+    options?: EditorSceneSyncOptions,
+  ) {
     this.scene = scene;
     this.scheduler = scheduler;
+    this.resolveMaterial = options?.resolveMaterial;
   }
 
   /** Ordered sorting layers from project settings, back to front. */
@@ -131,6 +148,7 @@ export class EditorSceneSync {
           applySortingToMesh(target, layer);
         }
       }
+      this.bindActorMeshMaterials(actor, mesh);
     }
 
     for (const [actorId, mesh] of this.meshes) {
@@ -185,6 +203,44 @@ export class EditorSceneSync {
     return this.meshes.size;
   }
 
+  /**
+   * Bind `MeshComponent.materialGuid` onto editor visuals every apply so a
+   * Details edit or a late Material-document load does not need a mesh rebuild.
+   * Pivot markers and non-mesh visuals stay on their construction materials.
+   */
+  private bindActorMeshMaterials(actor: SerializedActor, root: Mesh): void {
+    for (const component of actor.components) {
+      if (component.classId !== "MeshComponent") continue;
+      if (meshKindOf(component) === "pivot") continue;
+      const visual = visualForMeshComponent(root, actor.id, component.id);
+      if (!visual) continue;
+      this.bindMaterialOverride(
+        visual,
+        authoredMaterialGuid(component.properties.materialGuid),
+      );
+    }
+  }
+
+  private bindMaterialOverride(visual: Mesh, guid: string | null): void {
+    const targets = meshAndDescendantMeshes(visual);
+    for (const target of targets) {
+      if (!this.constructionMaterials.has(target)) {
+        this.constructionMaterials.set(target, target.material);
+      }
+    }
+    if (!guid) {
+      for (const target of targets) {
+        target.material = this.constructionMaterials.get(target) ?? null;
+      }
+      return;
+    }
+    const material = this.resolveMaterial?.(guid) ?? null;
+    if (!material) return;
+    for (const target of targets) {
+      target.material = material;
+    }
+  }
+
   dispose(): void {
     for (const mesh of this.meshes.values()) {
       mesh.dispose();
@@ -193,4 +249,33 @@ export class EditorSceneSync {
     this.meshKinds.clear();
     this.liveIds.clear();
   }
+}
+
+function meshKindOf(component: SerializedComponent): string | null {
+  return typeof component.properties.meshKind === "string"
+    ? component.properties.meshKind
+    : null;
+}
+
+function authoredMaterialGuid(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const guid = value.trim();
+  return guid.length > 0 ? guid : null;
+}
+
+function visualForMeshComponent(
+  root: Mesh,
+  actorId: string,
+  componentId: string,
+): Mesh | null {
+  if (!isEditorActorOrigin(root)) return root;
+  const name = editorComponentMeshName(actorId, componentId);
+  return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? null;
+}
+
+function meshAndDescendantMeshes(root: Mesh): Mesh[] {
+  const children = root
+    .getChildMeshes()
+    .filter((child): child is Mesh => child instanceof Mesh);
+  return [root, ...children];
 }

@@ -694,6 +694,99 @@ describe("EditorSceneSync", () => {
     expect(after).not.toBe(before);
     expect(before!.isDisposed()).toBe(true);
   });
+
+  it("binds MeshComponent.materialGuid onto the visual mesh", () => {
+    const { scene } = createHandle();
+    const assigned = new StandardMaterial("mat-rock", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-rock" ? assigned : null),
+    });
+    sync.apply(
+      sceneWith([createActor("a", "A", { components: [mesh] })]),
+    );
+    const visual = sync.visualMeshesForActor("a")[0];
+    expect(visual).toBeDefined();
+    expect(visual?.material).toBe(assigned);
+    expect(sync.meshForActor("a")?.material).toBe(assigned);
+  });
+
+  it("binds MeshComponent.materialGuid on a Prefab-shaped one-component actor", () => {
+    const { scene } = createHandle();
+    const assigned = new StandardMaterial("mat-rock", scene);
+    const mesh = createMeshComponent("prefab-mesh", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-rock" ? assigned : null),
+    });
+    sync.apply(
+      sceneWith([
+        createActor("prefab-root", "Prefab Root", {
+          components: [
+            {
+              id: "prefab-root-marker",
+              classId: "MeshComponent",
+              properties: { meshKind: "pivot", assetGuid: null },
+            },
+          ],
+        }),
+        createActor("prefab-mesh", "MeshComponent", {
+          components: [mesh],
+        }),
+      ]),
+    );
+    expect(sync.visualMeshesForActor("prefab-mesh")[0]?.material).toBe(assigned);
+  });
+
+  it("rebinds a reused mesh when resolveMaterial starts succeeding", () => {
+    const { scene } = createHandle();
+    const assigned = new StandardMaterial("mat-rock", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const actor = createActor("a", "A", { components: [mesh] });
+    let resolved: StandardMaterial | null = null;
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-rock" ? resolved : null),
+    });
+    sync.apply(sceneWith([actor]));
+    const visual = sync.meshForActor("a");
+    expect(visual?.material).not.toBe(assigned);
+    resolved = assigned;
+    sync.apply(sceneWith([actor]));
+    expect(sync.meshForActor("a")).toBe(visual);
+    expect(visual?.material).toBe(assigned);
+  });
+
+  it("clears a bound material when materialGuid is emptied and skips pivot markers", () => {
+    const { scene } = createHandle();
+    const assigned = new StandardMaterial("mat-rock", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-rock" ? assigned : null),
+    });
+    sync.apply(
+      sceneWith([createActor("a", "A", { components: [mesh] })]),
+    );
+    expect(sync.meshForActor("a")?.material).toBe(assigned);
+    mesh.properties.materialGuid = null;
+    sync.apply(
+      sceneWith([createActor("a", "A", { components: [mesh] })]),
+    );
+    expect(sync.meshForActor("a")?.material).not.toBe(assigned);
+
+    const pivot = createMeshComponent("marker", "pivot");
+    pivot.properties.materialGuid = "mat-rock";
+    sync.apply(
+      sceneWith([
+        createActor("prefab-root", "Prefab Root", { components: [pivot] }),
+      ]),
+    );
+    const pivotMesh = sync.meshForActor("prefab-root");
+    expect(pivotMesh?.material).not.toBe(assigned);
+    expect((pivotMesh?.material as StandardMaterial).disableLighting).toBe(true);
+  });
 });
 
 describe("editor grid", () => {
