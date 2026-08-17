@@ -3,10 +3,13 @@ export const GRAPH_MIN_ZOOM = 0.1;
 /** React Flow zoom-in ceiling. */
 export const GRAPH_MAX_ZOOM = 1.5;
 export const GRAPH_DEFAULT_ZOOM = 0.5;
+/** XYFlow defaults this on; empty-pane double-tap opens Add Node instead. */
+export const GRAPH_ZOOM_ON_DOUBLE_CLICK = false;
 
 export type GraphViewport = {
   minZoom: number;
   maxZoom: number;
+  zoomOnDoubleClick: boolean;
   defaultViewport: { x: number; y: number; zoom: number };
   fitViewOptions: { maxZoom: number; padding: number };
   focusedFitViewOptions: {
@@ -24,6 +27,7 @@ export function resolveGraphViewport(
   return {
     minZoom: GRAPH_MIN_ZOOM,
     maxZoom: GRAPH_MAX_ZOOM,
+    zoomOnDoubleClick: GRAPH_ZOOM_ON_DOUBLE_CLICK,
     defaultViewport: { x: 0, y: 0, zoom },
     fitViewOptions: { maxZoom: zoom, padding: 0.2 },
     focusedFitViewOptions: {
