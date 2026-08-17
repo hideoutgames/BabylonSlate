@@ -12,8 +12,8 @@ const config: CapacitorConfig = {
     // Capacitor copies editor `dist/` (including `/havok`, `/ktx2`,
     // `coi-serviceworker.js`, and `/player/`) into the iOS public folder.
     // WKWebView needs a first-gesture audio unlock (Play overlay + player).
-    // Local Keychain plugin: keep `BabylonSlateSecretsPlugin` in
-    // ios/App/App/capacitor.config.json `packageClassList` after `npx cap sync`.
+    // Local Keychain and folder plugins are registered by MainViewController,
+    // because `npx cap sync` rewrites generated packageClassList metadata.
   },
 };
 
