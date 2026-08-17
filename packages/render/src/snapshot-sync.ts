@@ -32,11 +32,13 @@ export class SnapshotInterpolator {
   private next: Float32Array | null = null;
   private readonly maxActors: number;
   private readonly scratch: ActorSlot[];
+  private readonly prevIndexBySlot: Int32Array;
   private readonly sampled: SampledSnapshot;
 
   constructor(maxActors: number) {
     this.maxActors = maxActors;
     this.scratch = Array.from({ length: maxActors }, () => emptySlot());
+    this.prevIndexBySlot = new Int32Array(maxActors);
     this.sampled = {
       frameId: 0,
       tickIndex: 0,
@@ -72,23 +74,32 @@ export class SnapshotInterpolator {
       return this.sampled;
     }
     const prevHeader = readSnapshotHeader(this.prev);
-    const count = Math.min(
-      prevHeader.actorCount,
-      nextHeader.actorCount,
-      this.maxActors,
-    );
+    const prevCount = Math.min(prevHeader.actorCount, this.maxActors);
+    const count = Math.min(nextHeader.actorCount, this.maxActors);
+    this.prevIndexBySlot.fill(-1);
+    for (let i = 0; i < prevCount; i++) {
+      const slotId = readActorSlot(this.prev, i).slotId;
+      if (slotId >= 0 && slotId < this.maxActors) {
+        this.prevIndexBySlot[slotId] = i;
+      }
+    }
     for (let i = 0; i < count; i++) {
-      const a = readActorSlot(this.prev, i);
       const b = readActorSlot(this.next, i);
       const out = this.scratch[i]!;
+      const prevIndex =
+        b.slotId >= 0 && b.slotId < this.maxActors
+          ? this.prevIndexBySlot[b.slotId]
+          : -1;
+      if (prevIndex === undefined || prevIndex < 0) {
+        copySlot(b, out);
+        continue;
+      }
+      const a = readActorSlot(this.prev, prevIndex);
       out.slotId = b.slotId;
       out.position.x = a.position.x + (b.position.x - a.position.x) * t;
       out.position.y = a.position.y + (b.position.y - a.position.y) * t;
       out.position.z = a.position.z + (b.position.z - a.position.z) * t;
-      out.rotation.x = a.rotation.x + (b.rotation.x - a.rotation.x) * t;
-      out.rotation.y = a.rotation.y + (b.rotation.y - a.rotation.y) * t;
-      out.rotation.z = a.rotation.z + (b.rotation.z - a.rotation.z) * t;
-      out.rotation.w = a.rotation.w + (b.rotation.w - a.rotation.w) * t;
+      interpolateQuaternion(a, b, t, out);
       out.scale.x = a.scale.x + (b.scale.x - a.scale.x) * t;
       out.scale.y = a.scale.y + (b.scale.y - a.scale.y) * t;
       out.scale.z = a.scale.z + (b.scale.z - a.scale.z) * t;
@@ -100,6 +111,36 @@ export class SnapshotInterpolator {
     this.sampled.actorCount = count;
     return this.sampled;
   }
+}
+
+function interpolateQuaternion(
+  a: ActorSlot,
+  b: ActorSlot,
+  t: number,
+  out: ActorSlot,
+): void {
+  const dot =
+    a.rotation.x * b.rotation.x +
+    a.rotation.y * b.rotation.y +
+    a.rotation.z * b.rotation.z +
+    a.rotation.w * b.rotation.w;
+  const sign = dot < 0 ? -1 : 1;
+  const x = a.rotation.x + (b.rotation.x * sign - a.rotation.x) * t;
+  const y = a.rotation.y + (b.rotation.y * sign - a.rotation.y) * t;
+  const z = a.rotation.z + (b.rotation.z * sign - a.rotation.z) * t;
+  const w = a.rotation.w + (b.rotation.w * sign - a.rotation.w) * t;
+  const length = Math.hypot(x, y, z, w);
+  if (length <= Number.EPSILON) {
+    out.rotation.x = 0;
+    out.rotation.y = 0;
+    out.rotation.z = 0;
+    out.rotation.w = 1;
+    return;
+  }
+  out.rotation.x = x / length;
+  out.rotation.y = y / length;
+  out.rotation.z = z / length;
+  out.rotation.w = w / length;
 }
 
 function copySlot(src: ActorSlot, dst: ActorSlot): void {

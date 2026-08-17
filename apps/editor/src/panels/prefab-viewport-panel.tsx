@@ -6,6 +6,7 @@ import {
   syncEditorPlayState,
   type EngineHandle,
 } from "@babylonslate/render";
+import { isTestModeEnabled } from "@babylonslate/vfs";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
@@ -218,6 +219,39 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         selectedId && selectedId !== PREFAB_ROOT_ID ? [selectedId] : undefined,
     });
   }, [components, selectedId]);
+
+  useEffect(() => {
+    if (!isTestModeEnabled()) return;
+    const host = globalThis as {
+      __babylonslatePrefabViewportTest?: {
+        visuals: () => Array<{
+          actorId: string;
+          position: [number, number, number];
+          materialName: string | null;
+        }>;
+      };
+    };
+    host.__babylonslatePrefabViewportTest = {
+      visuals: () => {
+        const sync = engineRef.current?.editor?.sync;
+        if (!sync) return [];
+        return previewSceneFor(componentsRef.current).actors.flatMap((actor) => {
+          const visual = sync.visualMeshesForActor(actor.id)[0];
+          if (!visual) return [];
+          visual.computeWorldMatrix(true);
+          const position = visual.getAbsolutePosition();
+          return [{
+            actorId: actor.id,
+            position: [position.x, position.y, position.z],
+            materialName: visual.material?.name ?? null,
+          }];
+        });
+      },
+    };
+    return () => {
+      delete host.__babylonslatePrefabViewportTest;
+    };
+  }, []);
 
   return (
     <div

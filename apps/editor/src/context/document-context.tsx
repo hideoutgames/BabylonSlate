@@ -2393,7 +2393,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       try {
         const content =
           openDoc?.content ?? (await projectService.loadDocument("scene", path));
-        scenes.push({ guid: id, scene: normalizeScene(content) });
+        scenes.push({
+          guid: projectService.guidForPath(path) ?? id,
+          scene: normalizeScene(content),
+        });
       } catch (error) {
         console.error(`[play] failed to load scene ${path}`, error);
       }
@@ -2435,6 +2438,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         } | null) => void;
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
+        setMainGraphComponents: (
+          components: SerializedGraph["components"],
+        ) => Promise<boolean>;
+        setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
         guidForPath: (path: string) => string | null;
         projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
@@ -2625,6 +2632,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documentService.updateGraph(id, graph);
         bump();
         return true;
+      },
+      setMainGraphComponents: async (components) => {
+        const openGraph = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "graph" && entry.content,
+        );
+        if (!openGraph?.content) return false;
+        const graph = structuredClone(openGraph.content as SerializedGraph);
+        graph.components = structuredClone(components);
+        return applyGraphChange(openGraph.id, graph);
+      },
+      setActiveSceneContent: async (scene) => {
+        const openScene = [...documentService.getState().openDocuments.values()].find(
+          (entry) => entry.ref.kind === "scene",
+        );
+        if (!openScene) return false;
+        return applySceneChange(openScene.id, structuredClone(scene));
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
       projectStartupSceneGuid: () =>
