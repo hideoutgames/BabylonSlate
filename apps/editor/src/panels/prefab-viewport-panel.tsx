@@ -20,15 +20,7 @@ import {
   prefabSelectedIdFromPick,
 } from "../lib/prefab-preview";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
-
-function resizeCanvasIfSized(
-  canvas: HTMLCanvasElement,
-  handle: EngineHandle,
-): void {
-  if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-    handle.resize();
-  }
-}
+import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 
 /**
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
@@ -118,9 +110,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       setPostProcessingEnabled: (enabled) =>
         handle.setPostProcessingEnabled(enabled),
     });
-    const resizeIfSized = () => resizeCanvasIfSized(canvas, handle);
-    resizeIfSized();
-    const resizeObserver = new ResizeObserver(() => resizeIfSized());
+    const resizeIfSized = createCanvasResizeGuard(() => handle.resize());
+    resizeIfSized(canvas);
+    const resizeObserver = new ResizeObserver(() => resizeIfSized(canvas));
     resizeObserver.observe(canvas);
     return () => {
       resizeObserver.disconnect();
@@ -149,7 +141,6 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     if (!handle) return;
     const scene = previewSceneFor(components);
     handle.loadScene(scene);
-    handle.resize();
     let cancelled = false;
     void (async () => {
       try {

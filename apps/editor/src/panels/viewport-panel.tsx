@@ -31,15 +31,7 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
-
-function resizeCanvasIfSized(
-  canvas: HTMLCanvasElement,
-  handle: EngineHandle,
-): void {
-  if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-    handle.resize();
-  }
-}
+import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -243,8 +235,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         handle.setPostProcessingEnabled(enabled),
     });
 
-    const resizeIfSized = () => resizeCanvasIfSized(canvas, handle);
-    resizeIfSized();
+    const resizeIfSized = createCanvasResizeGuard(() => handle.resize());
+    resizeIfSized(canvas);
 
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") {
@@ -253,21 +245,21 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     });
 
     const resizeObserver = new ResizeObserver(() => {
-      resizeIfSized();
+      resizeIfSized(canvas);
     });
     resizeObserver.observe(canvas);
 
     const intersectionObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
-          resizeIfSized();
+          resizeIfSized(canvas);
         }
       }
     });
     intersectionObserver.observe(canvas);
 
     handle.engine.onContextRestoredObservable.add(() => {
-      resizeIfSized();
+      resizeIfSized(canvas);
       const currentScene = sceneRef.current;
       if (currentScene) {
         handle.loadScene(currentScene);

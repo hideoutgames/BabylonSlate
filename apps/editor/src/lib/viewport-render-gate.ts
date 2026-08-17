@@ -43,8 +43,10 @@ export type LiveEngineSettings = {
 export function applyLiveEngineSettings(
   target: LiveEngineSettingsTarget,
   settings: LiveEngineSettings,
+  options?: { applyFrameCap?: boolean },
 ): void {
   if (
+    options?.applyFrameCap !== false &&
     typeof settings.viewportFrameCap === "number" &&
     Number.isFinite(settings.viewportFrameCap) &&
     settings.viewportFrameCap > 0

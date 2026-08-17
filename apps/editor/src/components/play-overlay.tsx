@@ -22,6 +22,7 @@ import {
   ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
 } from "../lib/viewport-render-gate";
+import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
 import { DebugConsole } from "./debug-console";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
@@ -238,6 +239,9 @@ export function PlayOverlay({
         height: overlay.clientHeight || 720,
       });
     };
+    const resizeIfSized = createCanvasResizeGuard(() => {
+      sessionRef.current?.handle.resize();
+    });
     const syncFramebuffer = (sessionHandle: { setSize: (w: number, h: number) => void; resize: () => void }) => {
       const framebuffer = playFramebufferSize(
         initialRenderRef.current,
@@ -247,9 +251,7 @@ export function PlayOverlay({
         sessionHandle.setSize(framebuffer.width, framebuffer.height);
         return;
       }
-      if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-        sessionHandle.resize();
-      }
+      resizeIfSized(canvas);
     };
     layoutPlay();
     userPausedRef.current = false;
@@ -357,7 +359,7 @@ export function PlayOverlay({
     const onSettings = (event: Event) => {
       const detail = (event as CustomEvent<LiveEngineSettings>).detail;
       if (!detail) return;
-      applyLiveEngineSettings(session.handle, detail);
+      applyLiveEngineSettings(session.handle, detail, { applyFrameCap: false });
       setPostProcessPasses(session.handle.postProcessPassCount());
     };
     window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);

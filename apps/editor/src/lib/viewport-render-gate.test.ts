@@ -203,4 +203,25 @@ describe("applyLiveEngineSettings", () => {
     expect(scaling.setLevel).toHaveBeenCalledWith(1.5);
     expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
+
+  it("does not apply viewportFrameCap onto a Play scheduler", () => {
+    const scaling = { setLevel: vi.fn() };
+    const handle = {
+      scaling,
+      scheduler: { setFrameCap: vi.fn() },
+      setPostProcessingEnabled: vi.fn(),
+    };
+    applyLiveEngineSettings(
+      handle,
+      {
+        viewportFrameCap: 30,
+        hardwareScalingLevel: 1.5,
+        postProcessingEnabled: false,
+      },
+      { applyFrameCap: false },
+    );
+    expect(handle.scheduler.setFrameCap).not.toHaveBeenCalled();
+    expect(scaling.setLevel).toHaveBeenCalledWith(1.5);
+    expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
+  });
 });
