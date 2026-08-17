@@ -365,6 +365,45 @@ describe("script compiler service", () => {
     expect(spawnListForScripts([script!])).toEqual([]);
   });
 
+  it("compiles UI onWidgetClick default:message into the log literal", () => {
+    const script = compileGraphDocument(
+      {
+        nodes: [
+          {
+            id: "click",
+            type: "flow.event.custom",
+            position: { x: 40, y: 80 },
+            data: { name: "onWidgetClick" },
+          },
+          {
+            id: "log",
+            type: "debug.log",
+            position: { x: 320, y: 80 },
+            data: { "default:message": "hud-clicked" },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "click",
+            target: "log",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+        ],
+      },
+      {
+        path: "assets/HUD.ui.babasset",
+        classId: "UserInterface:hud-guid",
+        parentClassId: "UserInterface",
+      },
+    );
+    expect(script?.entryPoints.some((entry) => entry.event === "onWidgetClick")).toBe(
+      true,
+    );
+    expect(script?.source).toContain("hud-clicked");
+  });
+
   it("binds a UserInterface script to an explicit guid class id", () => {
     const classId = userInterfaceClassId("hud-guid");
     const script = compileGraphDocument(tickToLog, {

@@ -172,6 +172,12 @@ describe("ui-design-gestures", () => {
     ).toBe("se");
   });
 
+  it("treats a preview-scaled widget smaller than the visual inset as move", () => {
+    const screen = { x: 100, y: 100, width: 10, height: 10 };
+    expect(designerGestureAt({ x: 105, y: 105 }, screen)).toBe("move");
+    expect(designerGestureAt({ x: 90, y: 90 }, screen)).toBe("nw");
+  });
+
   it("arms a drag only after the movement threshold", () => {
     expect(passedDragThreshold({ x: 0, y: 0 }, { x: 2, y: 0 })).toBe(false);
     expect(passedDragThreshold({ x: 0, y: 0 }, { x: 4, y: 0 })).toBe(true);

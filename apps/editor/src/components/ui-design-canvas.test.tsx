@@ -286,6 +286,66 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(uiHostStats.commit).toBe(1);
   });
 
+  it("moves the widget under the pointer when selected handles overlap it", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const ui = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("left", "top", 160, 36, 40, 40),
+    );
+    const checkbox = createWidget(
+      "box",
+      "CheckBox",
+      "On",
+      pinLayout("left", "top", 28, 28, 400, 400),
+    );
+    ui.widgets.canvas!.children = ["btn", "box"];
+    ui.widgets.btn = button;
+    ui.widgets.box = checkbox;
+    const viewport = {
+      id: "desktop-16-9",
+      width: 800,
+      height: 600,
+      safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+    };
+    const layout = layoutUserInterface(ui, viewport, {
+      designSpace: true,
+      safeArea: viewport.safeArea,
+    });
+    const onLayoutChange = vi.fn();
+    render(
+      <UiDesignCanvas
+        ui={ui}
+        viewport={viewport}
+        layout={layout}
+        controls={describeUiControls(ui, layout)}
+        selectedId="box"
+        view={{ zoom: 1, panX: 0, panY: 0 }}
+        previewScale={1}
+        bitmapScale={1}
+        sharedEngine={{} as Engine}
+        onSelect={() => {}}
+        onViewChange={() => {}}
+        onLayoutChange={onLayoutChange}
+      />,
+    );
+    const host = screen.getByTestId("ui-design-viewport");
+    dispatchPointerEvent(host, "pointerdown", { clientX: 120, clientY: 58 });
+    dispatchPointerEvent(host, "pointermove", { clientX: 200, clientY: 58 });
+    dispatchPointerEvent(host, "pointerup", { clientX: 200, clientY: 58 });
+    expect(onLayoutChange).toHaveBeenCalledTimes(1);
+    const [id, next] = onLayoutChange.mock.calls[0] as [
+      string,
+      { left: number; width: number; height: number },
+    ];
+    expect(id).toBe("btn");
+    expect(next.left).toBeGreaterThan(button.layout.left);
+    expect(next.width).toBe(160);
+    expect(next.height).toBe(36);
+  });
+
   it("moves a small selected widget from the center instead of resizing", () => {
     createUiSurfaceMock.mockReturnValue(mockSurface());
     const ui = createDefaultUserInterface();

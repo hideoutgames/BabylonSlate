@@ -246,7 +246,9 @@ export function designerGestureAt(
     width: screen.width - inset * 2,
     height: screen.height - inset * 2,
   };
-  if (inner.width > 0 && inner.height > 0 && rectContains(inner, point)) {
+  if (inner.width <= 0 || inner.height <= 0) {
+    if (rectContains(screen, point)) return "move";
+  } else if (rectContains(inner, point)) {
     return "move";
   }
   const handles = resizeHandleRects(screen, hit);

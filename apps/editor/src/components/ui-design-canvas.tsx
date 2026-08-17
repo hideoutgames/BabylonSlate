@@ -431,12 +431,41 @@ export function UiDesignCanvas({
       beginTwoFinger();
       return;
     }
-    if (selected && canTransform && selectedScreen) {
-      const bounds = viewportRef.current?.getBoundingClientRect();
-      const point = {
-        x: event.clientX - (bounds?.left ?? 0),
-        y: event.clientY - (bounds?.top ?? 0),
+    const hitBounds = viewportRef.current?.getBoundingClientRect();
+    const point = {
+      x: event.clientX - (hitBounds?.left ?? 0),
+      y: event.clientY - (hitBounds?.top ?? 0),
+    };
+    const interior = [...displayControls].reverse().find((control) => {
+      if (control.id === ui.rootId) return false;
+      if (!widgetAllowsDesignerTransform(ui, control.id)) return false;
+      const hit = designerControlHitRect(
+        control,
+        liveRects[control.id],
+        viewport,
+        bitmapScale,
+        ui.rootId,
+      );
+      return (
+        designerGestureAt(point, designRectToScreen(hit, view, previewScale)) ===
+        "move"
+      );
+    });
+    if (interior) {
+      onSelect(interior.id);
+      dragRef.current = {
+        mode: "move",
+        id: interior.id,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        armed: false,
+        strokeId: newStrokeId(),
       };
+      return;
+    }
+    if (selected && canTransform && selectedScreen) {
       const gesture = designerGestureAt(point, selectedScreen);
       if (gesture && gesture !== "move") {
         dragRef.current = {
@@ -448,19 +477,6 @@ export function UiDesignCanvas({
           lastX: event.clientX,
           lastY: event.clientY,
           armed: true,
-          strokeId: newStrokeId(),
-        };
-        return;
-      }
-      if (gesture === "move") {
-        dragRef.current = {
-          mode: "move",
-          id: selected.id,
-          startX: event.clientX,
-          startY: event.clientY,
-          lastX: event.clientX,
-          lastY: event.clientY,
-          armed: false,
           strokeId: newStrokeId(),
         };
         return;

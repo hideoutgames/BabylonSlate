@@ -392,7 +392,12 @@ export function UiEditingProvider({
       if (!parent) return;
       const widget = parentOwnsChildLayout(parent.kind)
         ? createWidget(id, kind, humanizePropertyLabel(kind))
-        : createWidget(id, kind, humanizePropertyLabel(kind), defaultAddLayout(kind));
+        : createWidget(
+            id,
+            kind,
+            humanizePropertyLabel(kind),
+            defaultAddLayout(kind, parent.children.length),
+          );
       const next = insertWidget(current, widget, parent.id);
       commit({ ...latestPayloadRef.current, ...next });
       setSelectedId(widget.id);
