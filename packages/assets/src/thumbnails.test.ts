@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   generateThumbnailBytes,
@@ -20,6 +20,27 @@ describe("thumbnails I/O", () => {
       bytes,
     );
     await expect(readThumbnail(storage, "proj-1", "missing")).resolves.toBeNull();
+  });
+
+  it("passes the source MIME type into the thumbnail Blob", async () => {
+    const createImageBitmap = vi.fn(async () => {
+      throw new Error("stop-after-blob");
+    });
+    vi.stubGlobal("createImageBitmap", createImageBitmap);
+    try {
+      await expect(
+        generateThumbnailBytes(
+          new Uint8Array([0x52, 0x49, 0x46, 0x46]),
+          128,
+          "image/webp",
+        ),
+      ).resolves.toBeNull();
+      expect(createImageBitmap).toHaveBeenCalledTimes(1);
+      const blob = createImageBitmap.mock.calls[0]![0] as Blob;
+      expect(blob.type).toBe("image/webp");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("returns null from generateThumbnailBytes without createImageBitmap", async () => {
