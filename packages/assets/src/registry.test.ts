@@ -194,7 +194,7 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     registry.setThumbnailWriter(async () => undefined);
-    const createImageBitmap = vi.fn(async () => {
+    const createImageBitmap = vi.fn(async (_image: Blob) => {
       throw new Error("stop-after-blob");
     });
     vi.stubGlobal("createImageBitmap", createImageBitmap);
@@ -206,7 +206,10 @@ describe("AssetRegistry", () => {
         new Uint8Array([0xff, 0xd8, 0xff]),
       );
       expect(createImageBitmap).toHaveBeenCalled();
-      const blob = createImageBitmap.mock.calls[0]![0] as Blob;
+      const firstCall = createImageBitmap.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const [blob] = firstCall;
       expect(blob.type).toBe("image/jpeg");
     } finally {
       vi.unstubAllGlobals();

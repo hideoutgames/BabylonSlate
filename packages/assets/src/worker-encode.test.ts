@@ -1,21 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  isRgbaEncodeRequest,
+  isSourceEncodeRequest,
+  type EncodeWorkerHostMessage,
+} from "./encode-worker-protocol";
 import { canUseWorkerEncode, createWorkerEncodeFn } from "./worker-encode";
-
-function isSourceEncodeRequest(message: {
-  type?: string;
-  source?: unknown;
-  rgba?: unknown;
-}): boolean {
-  return message.type === "encode" && message.source instanceof ArrayBuffer;
-}
-
-function isRgbaEncodeRequest(message: {
-  type?: string;
-  source?: unknown;
-  rgba?: unknown;
-}): boolean {
-  return message.type === "encode" && message.rgba instanceof ArrayBuffer;
-}
 
 const decodeSourceToRgba = vi.hoisted(() =>
   vi.fn(async () => ({
@@ -31,15 +20,17 @@ vi.mock("./decode-source-rgba", () => ({
 }));
 
 class FakeWorker extends EventTarget {
-  postMessage = vi.fn((msg: { type: string; id?: number }) => {
-    if (msg.type === "init") {
-      queueMicrotask(() => {
-        this.dispatchEvent(
-          new MessageEvent("message", { data: { type: "loaded" } }),
-        );
-      });
-    }
-  });
+  postMessage = vi.fn(
+    (_msg: EncodeWorkerHostMessage, _transfer?: Transferable[]) => {
+      if (_msg.type === "init") {
+        queueMicrotask(() => {
+          this.dispatchEvent(
+            new MessageEvent("message", { data: { type: "loaded" } }),
+          );
+        });
+      }
+    },
+  );
   terminate = vi.fn();
 }
 
@@ -58,7 +49,7 @@ describe("createWorkerEncodeFn", () => {
           constructed += 1;
           const worker = new FakeWorker();
           if (constructed === 1) {
-            worker.postMessage = vi.fn((msg: { type: string }) => {
+            worker.postMessage = vi.fn((msg: EncodeWorkerHostMessage) => {
               if (msg.type === "init") {
                 queueMicrotask(() => {
                   worker.dispatchEvent(
@@ -153,15 +144,18 @@ describe("createWorkerEncodeFn", () => {
       ).toBe(true);
     });
     const encodeCall = worker!.postMessage.mock.calls.find(
-      (call) => call[0]?.type === "encode",
+      (call) => call[0].type === "encode",
     );
-    const message = encodeCall![0];
+    expect(encodeCall).toBeDefined();
+    if (!encodeCall) return;
+    const [message, transfer] = encodeCall;
     expect(isSourceEncodeRequest(message)).toBe(true);
     expect(isRgbaEncodeRequest(message)).toBe(false);
+    if (!isSourceEncodeRequest(message)) return;
     expect(message.mime).toBe("image/png");
     expect(message.source).toBeInstanceOf(ArrayBuffer);
-    expect(new Uint8Array(message.source as ArrayBuffer)).toEqual(source);
-    expect(encodeCall![1]).toEqual([message.source]);
+    expect(new Uint8Array(message.source)).toEqual(source);
+    expect(transfer).toEqual([message.source]);
     expect(decodeSourceToRgba).not.toHaveBeenCalled();
     encode.dispose();
     await pending.catch(() => undefined);
@@ -174,7 +168,7 @@ describe("createWorkerEncodeFn", () => {
       class {
         constructor() {
           worker = new FakeWorker();
-          worker.postMessage = vi.fn((msg: { type: string; id?: number }) => {
+          worker.postMessage = vi.fn((msg: EncodeWorkerHostMessage) => {
             if (msg.type === "init") {
               queueMicrotask(() => {
                 worker!.dispatchEvent(
@@ -261,9 +255,12 @@ describe("createWorkerEncodeFn", () => {
           .length,
       ).toBeGreaterThanOrEqual(1);
     });
-    const firstId = worker!.postMessage.mock.calls.find(
-      (call) => call[0]?.type === "encode",
-    )![0].id as number;
+    const firstEncode = worker!.postMessage.mock.calls.find(
+      (call) => call[0].type === "encode",
+    )?.[0];
+    expect(firstEncode?.type).toBe("encode");
+    if (firstEncode?.type !== "encode") return;
+    const firstId = firstEncode.id;
     worker!.dispatchEvent(
       new MessageEvent("message", {
         data: {
@@ -289,7 +286,6 @@ describe("createWorkerEncodeFn", () => {
   it("can use a Worker even when OffscreenCanvas is missing on the main thread", () => {
     vi.stubGlobal("Worker", class {});
     vi.stubGlobal("createImageBitmap", undefined);
-    // @ts-expect-error deliberate unset for Safari / WKWebView host checks
     delete (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas;
     expect(canUseWorkerEncode()).toBe(true);
   });

@@ -23,7 +23,7 @@ describe("thumbnails I/O", () => {
   });
 
   it("passes the source MIME type into the thumbnail Blob", async () => {
-    const createImageBitmap = vi.fn(async () => {
+    const createImageBitmap = vi.fn(async (_image: Blob) => {
       throw new Error("stop-after-blob");
     });
     vi.stubGlobal("createImageBitmap", createImageBitmap);
@@ -36,7 +36,10 @@ describe("thumbnails I/O", () => {
         ),
       ).resolves.toBeNull();
       expect(createImageBitmap).toHaveBeenCalledTimes(1);
-      const blob = createImageBitmap.mock.calls[0]![0] as Blob;
+      const firstCall = createImageBitmap.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const [blob] = firstCall;
       expect(blob.type).toBe("image/webp");
     } finally {
       vi.unstubAllGlobals();
