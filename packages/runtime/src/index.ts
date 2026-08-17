@@ -7,6 +7,7 @@ export {
 export {
   createRuntimeFromLoad,
   runtimeOptionsFromLoadControl,
+  shouldSpawnScriptedActor,
   unmatchedScriptSpawns,
 } from "./play-load";
 export {
@@ -36,3 +37,7 @@ export {
   type ScriptContext,
   type ScriptHostServices,
 } from "./script-host";
+export {
+  applyUiRuntimeControl,
+  type UiRuntimeControlTarget,
+} from "./worker-control";

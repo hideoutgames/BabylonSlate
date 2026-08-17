@@ -193,4 +193,17 @@ describe("unmatchedScriptSpawns", () => {
       ),
     ).toEqual([{ classId: "Extra" }]);
   });
+
+  it("drops UserInterface class ids so they do not auto-spawn as Actors", () => {
+    expect(
+      unmatchedScriptSpawns(
+        [
+          { classId: "Mover" },
+          { classId: "UserInterface:hud-guid" },
+          { classId: "UserInterface" },
+        ],
+        new Set(),
+      ),
+    ).toEqual([{ classId: "Mover" }]);
+  });
 });

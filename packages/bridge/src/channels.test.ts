@@ -1,0 +1,94 @@
+import { describe, expect, it } from "vitest";
+import type { CommandMessage, ControlMessage } from "./channels";
+
+function commandType(command: CommandMessage): CommandMessage["type"] {
+  return command.type;
+}
+
+function controlType(control: ControlMessage): ControlMessage["type"] {
+  return control.type;
+}
+
+describe("UserInterface command and control contracts", () => {
+  it("uiApply carries instanceId, classId, and assetGuid", () => {
+    const command = {
+      type: "uiApply",
+      instanceId: "ui-1",
+      classId: "UserInterface:hud-guid",
+      assetGuid: "hud-guid",
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("uiApply");
+    expect(command).toEqual({
+      type: "uiApply",
+      instanceId: "ui-1",
+      classId: "UserInterface:hud-guid",
+      assetGuid: "hud-guid",
+    });
+  });
+
+  it("uiSetVisible is instance-scoped", () => {
+    const command = {
+      type: "uiSetVisible",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      visible: false,
+    } satisfies CommandMessage;
+    expect(command).toEqual({
+      type: "uiSetVisible",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      visible: false,
+    });
+  });
+
+  it("loadUserInterfaces supplies slim widget metadata to the worker", () => {
+    const control = {
+      type: "loadUserInterfaces",
+      documents: [
+        {
+          guid: "hud-guid",
+          widgets: [
+            { id: "root", kind: "Canvas", name: "Canvas" },
+            { id: "play-btn", kind: "Button", name: "Play" },
+          ],
+        },
+      ],
+    } satisfies ControlMessage;
+    expect(controlType(control)).toBe("loadUserInterfaces");
+    expect(control.documents[0]?.widgets).toHaveLength(2);
+  });
+
+  it("uiWidgetEvent routes main-thread widget input to the owning instance", () => {
+    const click = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "click",
+    } satisfies ControlMessage;
+    const value = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "volume",
+      kind: "value",
+      value: 0.4,
+    } satisfies ControlMessage;
+    const checked = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "mute",
+      kind: "checked",
+      value: true,
+    } satisfies ControlMessage;
+    const text = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "name",
+      kind: "text",
+      value: "Ada",
+    } satisfies ControlMessage;
+    expect(click.kind).toBe("click");
+    expect(value.value).toBe(0.4);
+    expect(checked.value).toBe(true);
+    expect(text.value).toBe("Ada");
+  });
+});
