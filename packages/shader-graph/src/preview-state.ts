@@ -132,7 +132,7 @@ export function materialPreviewReducer(
         status: "queued",
         queuedGeneration: state.generation,
       };
-    case "render":
+    case "render": {
       if (
         state.status === "queued" ||
         state.status === "lowering" ||
@@ -150,6 +150,7 @@ export function materialPreviewReducer(
         generation: renderGeneration,
         queuedGeneration: renderGeneration,
       };
+    }
     case "lowerStart":
       if (event.generation !== state.generation) return state;
       return { ...state, status: "lowering", queuedGeneration: null };
