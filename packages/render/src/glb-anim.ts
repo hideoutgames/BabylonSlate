@@ -1,5 +1,5 @@
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
-import type { AbstractMesh, Scene } from "@babylonjs/core";
+import type { AbstractMesh, Node, Scene, TransformNode } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import {
   applyAnimStateToScene,
@@ -91,13 +91,24 @@ function wrapGroup(
   };
 }
 
-function adoptLoadedMeshes(
+export function adoptLoadedHierarchy(
   placeholder: AbstractMesh,
-  loaded: AbstractMesh[],
+  container: {
+    rootNodes?: readonly Node[];
+    transformNodes: readonly TransformNode[];
+    meshes: readonly AbstractMesh[];
+  },
 ): void {
-  const roots = loaded.filter((mesh) => !mesh.parent && mesh !== placeholder);
-  for (const root of roots) {
-    root.parent = placeholder;
+  const candidates = [
+    ...(container.rootNodes ?? []),
+    ...container.transformNodes,
+    ...container.meshes,
+  ];
+  const seen = new Set<Node>();
+  for (const node of candidates) {
+    if (seen.has(node) || node === placeholder) continue;
+    seen.add(node);
+    if (!node.parent) node.parent = placeholder;
   }
   placeholder.visibility = 0;
 }
@@ -132,7 +143,7 @@ export function beginSlotModelAnimLoad(
         return;
       }
       container.addAllToScene();
-      adoptLoadedMeshes(placeholder, container.meshes);
+      adoptLoadedHierarchy(placeholder, container);
       if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
       const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
         (group) => group.clipAssetGuid !== clipAssetGuid,
