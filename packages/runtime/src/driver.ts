@@ -1479,8 +1479,14 @@ class InProcessRuntime implements RuntimeDriver {
       const primary = renderables[0]!;
       const meshKind = playMeshKindOf(primary);
       const assetGuid = primary.assetGuid ?? primary.getVariable("assetGuid");
+      const renderableIds = new Set(renderables.map((component) => component.guid));
       const parts = playPartsNeeded(renderables)
-        ? renderables.map((component) => playMeshPartOf(component))
+        ? renderables.map((component) =>
+            playMeshPartOf(
+              component,
+              nearestVisualParentId(component, actor.components, renderableIds),
+            ),
+          )
         : undefined;
       // #region agent log
       agentDebugLog("B", "driver.ts:emitMeshAssignment", "serialized Play component hierarchy", {
@@ -2011,6 +2017,7 @@ function playPartsNeeded(components: readonly ActorComponent[]): boolean {
 
 function playMeshPartOf(
   component: ActorComponent,
+  parentId = component.parentId,
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["parts"]>[number] {
   const assetGuid = component.assetGuid ?? component.getVariable("assetGuid");
   const { position, rotation, scale } = component.transform;
@@ -2018,11 +2025,27 @@ function playMeshPartOf(
     componentId: component.guid,
     meshKind: playMeshKindOf(component),
     meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
-    parentId: component.parentId,
+    parentId,
     position: [position.x, position.y, position.z],
     rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
     scale: [scale.x, scale.y, scale.z],
   };
+}
+
+function nearestVisualParentId(
+  component: ActorComponent,
+  components: readonly ActorComponent[],
+  renderableIds: ReadonlySet<string>,
+): string | null {
+  const byGuid = new Map(components.map((entry) => [entry.guid, entry]));
+  const visited = new Set<string>();
+  let parentId = component.parentId;
+  while (parentId && !visited.has(parentId)) {
+    if (renderableIds.has(parentId)) return parentId;
+    visited.add(parentId);
+    parentId = byGuid.get(parentId)?.parentId ?? null;
+  }
+  return null;
 }
 
 function rgbTuple(value: unknown): [number, number, number] {
