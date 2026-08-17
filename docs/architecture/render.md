@@ -17,6 +17,7 @@ UserInterface documents store Babylon GUI fields (alignment, px/%, left/top, lay
 - **SafeArea** is a host-injected `Container` (`__safeArea`) under the root Canvas, padded from the device-preset insets. Default Canvas children parent into it; `ignoreSafeArea` parents to the full-bleed canvas.
 - **TouchDPad** is a `Rectangle` plus composed `Ellipse`s; TouchButton is a `Rectangle`. Slider `min` / `max` copy onto the Babylon slider. Unspecified text color is `#ffffff`; TouchJoystick without a background is `#e5e5e5` (not opaque black). Canvas fill is authored only.
 - **Fonts:** `applyFontRegistryToHost` (`registerAll` then `consumeDirty` → `adt.markAsDirty()`) on Play HUD and the designer ADT so a custom face is dirty on the first frame after load.
+- **Images:** `createBabylonControl` / in-place reconcile set Babylon GUI `Image.source` from `resolveImageUrl(guid)`. Designer, Play HUD, and live EUI must pass that hook; blob URLs use Texture `pixels`/`source` with an `image/*` MIME (not `application/octet-stream`).
 
 `ui-runtime` stays Babylon-free: it validates the GUI fields, migrates legacy RectTransform payloads (schema v2), and builds the nested spec. A `previewRect` helper mirrors Babylon’s published alignment/%/padding formulas for jsdom designer hit-tests; when a live Engine exists the designer prefers ADT `widthInPixels` / `centerX` bounds.
 

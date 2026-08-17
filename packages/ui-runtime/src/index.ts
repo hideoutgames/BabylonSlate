@@ -114,3 +114,4 @@ export {
   reparentWidget,
   widgetParentId,
 } from "./widget-tree";
+export { collectImageGuidsFromUiDocuments } from "./image-guids";

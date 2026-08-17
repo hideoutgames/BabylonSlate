@@ -23,6 +23,7 @@ import {
   insertWidget,
   layoutUserInterface,
   mergeDevicePresets,
+  collectImageGuidsFromUiDocuments,
   nestedUiPickableGuids,
   parentOwnsChildLayout,
   type DesignerCanvasId,
@@ -42,6 +43,10 @@ import { useOptionalPlay } from "./play-context";
 import { familyFromAssetPayload } from "../lib/font-preview";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import { collectFontAssetEntries } from "../lib/play-fonts";
+import {
+  collectUiImageUrls,
+  revokeUiImageUrls,
+} from "../lib/play-ui-images";
 import type { FontAssetEntry } from "@babylonslate/render";
 import {
   projectUiAssetCacheKey,
@@ -81,6 +86,7 @@ export interface UiEditingContextValue {
   bitmapScale: number;
   sharedEngine: import("@babylonjs/core").Engine | null;
   fontEntries: FontAssetEntry[];
+  resolveImageUrl: (guid: string) => string | null;
   catalogOpen: boolean;
   setCatalogOpen: (open: boolean) => void;
   actionNames: string[];
@@ -153,6 +159,11 @@ export function UiEditingProvider({
   >(null);
   const [uiLibrary, setUiLibrary] = useState<PlayUiLibrary>({});
   const [fontEntries, setFontEntries] = useState<FontAssetEntry[]>([]);
+  const [imageUrls, setImageUrls] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  const imageUrlsRef = useRef(imageUrls);
+  imageUrlsRef.current = imageUrls;
   const [view, setView] = useState<DesignView>({ zoom: 1, panX: 0, panY: 0 });
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -197,6 +208,48 @@ export function UiEditingProvider({
       cancelled = true;
     };
   }, [assetRegistry, collectPlayUiLibrary, projectName, readAssetChunk]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+      guid: asset.header.guid,
+      path: asset.path,
+      type: asset.header.type,
+      chunks: asset.header.chunks,
+    }));
+    const guids = collectImageGuidsFromUiDocuments([
+      ui,
+      ...Object.values(uiLibrary),
+    ]);
+    void collectUiImageUrls(
+      guids,
+      assets,
+      readAssetChunk ?? (async () => null),
+    ).then((urls) => {
+      if (cancelled) {
+        revokeUiImageUrls(urls);
+        return;
+      }
+      revokeUiImageUrls(imageUrlsRef.current);
+      imageUrlsRef.current = urls;
+      setImageUrls(urls);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetRegistry, readAssetChunk, ui, uiLibrary]);
+
+  useEffect(
+    () => () => {
+      revokeUiImageUrls(imageUrlsRef.current);
+    },
+    [],
+  );
+
+  const resolveImageUrl = useCallback(
+    (guid: string) => imageUrls.get(guid) ?? null,
+    [imageUrls],
+  );
 
   const resolveNested = useCallback(
     (guid: string) => {
@@ -391,6 +444,7 @@ export function UiEditingProvider({
       bitmapScale,
       sharedEngine,
       fontEntries,
+      resolveImageUrl,
       catalogOpen,
       setCatalogOpen,
       actionNames,
@@ -414,6 +468,7 @@ export function UiEditingProvider({
       dockKind,
       fitView,
       fontEntries,
+      resolveImageUrl,
       isEditorUtilityInterface,
       layout,
       patchLayout,

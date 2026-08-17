@@ -84,8 +84,15 @@ import {
 import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
-import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
+import {
+  collectImageGuidsFromUiDocuments,
+  type UserInterfaceDocument,
+} from "@babylonslate/ui-runtime";
 import { collectFontAssetEntries } from "../lib/play-fonts";
+import {
+  collectUiImageUrls,
+  revokeUiImageUrls,
+} from "../lib/play-ui-images";
 import {
   ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
@@ -180,6 +187,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     Record<string, UserInterfaceDocument>
   >({});
   const [playFontEntries, setPlayFontEntries] = useState<FontAssetEntry[]>([]);
+  const [playImageUrls, setPlayImageUrls] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  const playImageUrlsRef = useRef(playImageUrls);
+  playImageUrlsRef.current = playImageUrls;
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
     [],
   );
@@ -589,12 +601,29 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlaySceneLibrary([]);
         }
         try {
-          setPlayUiLibrary(await collectPlayUiLibrary());
+          const library = await collectPlayUiLibrary();
+          setPlayUiLibrary(library);
+          revokeUiImageUrls(playImageUrlsRef.current);
+          const urls = await collectUiImageUrls(
+            collectImageGuidsFromUiDocuments(Object.values(library)),
+            (assetRegistry?.list() ?? []).map((asset) => ({
+              guid: asset.header.guid,
+              path: asset.path,
+              type: asset.header.type,
+              chunks: asset.header.chunks,
+            })),
+            readAssetChunk,
+          );
+          playImageUrlsRef.current = urls;
+          setPlayImageUrls(urls);
         } catch (error) {
           appendLog(
             `UserInterface library failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlayUiLibrary({});
+          revokeUiImageUrls(playImageUrlsRef.current);
+          playImageUrlsRef.current = new Map();
+          setPlayImageUrls(new Map());
         }
         try {
           const fonts = assetRegistry?.list() ?? [];
@@ -781,6 +810,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const handleClose = useCallback(
     (result: PlaySessionResult) => {
       setPlaying(false);
+      revokeUiImageUrls(playImageUrlsRef.current);
+      playImageUrlsRef.current = new Map();
+      setPlayImageUrls(new Map());
       setEncodeQueuePauseReason("play", false);
       setLiveBtState(null);
       setDropped(result.droppedDiagnostics);
@@ -934,6 +966,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             scenes={playSceneLibrary}
             uiLibrary={playUiLibrary}
             fontEntries={playFontEntries}
+            resolveImageUrl={(guid) => playImageUrls.get(guid) ?? null}
             animGraphs={playAnimGraphs}
             behaviourTrees={playBehaviourTrees}
             blackboards={playBlackboards}
