@@ -173,6 +173,13 @@ describe("Minimal Neutral theme tokens", () => {
     }
   });
 
+  it("uses a lime hue for Material and gold for folders", () => {
+    expect(oklchHue(tokenValue(root, "--asset-material"))).toBe(120);
+    expect(oklchHue(tokenValue(dark, "--asset-material"))).toBe(120);
+    expect(oklchHue(tokenValue(root, "--asset-folder"))).toBe(70);
+    expect(oklchHue(tokenValue(dark, "--asset-folder"))).toBe(70);
+  });
+
   it("keeps asset type hues at least 25 degrees apart", () => {
     const hues = ASSET_TOKENS.map((name) => {
       const hue = oklchHue(tokenValue(root, name));
