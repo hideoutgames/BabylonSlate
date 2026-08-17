@@ -1457,7 +1457,7 @@ function GraphEditorCanvas({
               size="sm"
               disabled={selectedNodes.length === 0}
               onClick={formatSelection}
-              title="Format selected nodes, or follow a single node’s then-chain and its data inputs"
+              title="Format selected chain roots independently: exec stays a horizontal highway, data trees hang below-left"
               data-testid="graph-format"
             >
               Format
@@ -1523,10 +1523,10 @@ function GraphEditorCanvas({
             <div
               className="absolute border-2 border-dashed border-primary bg-primary/25"
               style={{
-                left: marqueeScreen.x,
-                top: marqueeScreen.y,
-                width: marqueeScreen.width,
-                height: marqueeScreen.height,
+                left: `${marqueeScreen.x}px`,
+                top: `${marqueeScreen.y}px`,
+                width: `${marqueeScreen.width}px`,
+                height: `${marqueeScreen.height}px`,
               }}
             />
           </div>

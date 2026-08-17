@@ -151,6 +151,52 @@ function dataEdge(
   return { source, target, sourceHandle, targetHandle };
 }
 
+const NODE_W = 100;
+const NODE_H = 40;
+const EXEC_STEP = NODE_W + FORMAT_GAP_X;
+const HANG_Y = NODE_H + FORMAT_GAP_Y;
+
+function pos(
+  nodes: readonly FormatNode[],
+  id: string,
+): { x: number; y: number } {
+  return nodes.find((entry) => entry.id === id)!.position;
+}
+
+function boxOf(entry: FormatNode): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  return {
+    x: entry.position.x,
+    y: entry.position.y,
+    width: entry.width ?? NODE_W,
+    height: entry.height ?? NODE_H,
+  };
+}
+
+function boxesOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+function expectNoOverlaps(nodes: readonly FormatNode[]): void {
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      expect(boxesOverlap(boxOf(nodes[i]!), boxOf(nodes[j]!))).toBe(false);
+    }
+  }
+}
+
 describe("collectThenChain", () => {
   it("includes the start node and exec-out successors", () => {
     const nodes = [node("a", 0, 0), node("b", 40, 80), node("c", 10, 200)];
@@ -275,25 +321,16 @@ describe("formatGraphNodes", () => {
     expect(yes.position.y).toBe(40 + FORMAT_GAP_Y);
   });
 
-  it("tidies several selected nodes into a row from the selection top-left", () => {
+  it("leaves disconnected selected nodes at their origins instead of merging them onto one row", () => {
     const nodes = [
       node("keep", 0, 0),
       node("b", 80, 40),
       node("a", 20, 90),
     ];
     const next = formatGraphNodes(nodes, [], ["a", "b"]);
-    expect(next.find((entry) => entry.id === "keep")?.position).toEqual({
-      x: 0,
-      y: 0,
-    });
-    expect(next.find((entry) => entry.id === "a")?.position).toEqual({
-      x: 20,
-      y: 40,
-    });
-    expect(next.find((entry) => entry.id === "b")?.position).toEqual({
-      x: 20 + 100 + FORMAT_GAP_X,
-      y: 40,
-    });
+    expect(pos(next, "keep")).toEqual({ x: 0, y: 0 });
+    expect(pos(next, "a")).toEqual({ x: 20, y: 90 });
+    expect(pos(next, "b")).toEqual({ x: 80, y: 40 });
   });
 
   it("returns the input nodes when nothing is selected", () => {
@@ -301,7 +338,7 @@ describe("formatGraphNodes", () => {
     expect(formatGraphNodes(nodes, [], [])).toBe(nodes);
   });
 
-  it("places a data input immediately left of a subsequent then-chain node", () => {
+  it("places a data input below-left of a subsequent then-chain node, not on the exec row", () => {
     const nodes = [
       node("a", 10, 20),
       node("b", 12, 90, execWithValueIn),
@@ -309,21 +346,16 @@ describe("formatGraphNodes", () => {
     ];
     const edges = [execEdge("a", "b"), dataEdge("get", "b")];
     const next = formatGraphNodes(nodes, edges, ["a"]);
-    expect(next.find((entry) => entry.id === "a")?.position).toEqual({
-      x: 10,
-      y: 20,
+    expect(pos(next, "a")).toEqual({ x: 10, y: 20 });
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "get")).toEqual({
+      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
+      y: 20 + HANG_Y,
     });
-    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20,
-    });
-    expect(next.find((entry) => entry.id === "b")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 2,
-      y: 20,
-    });
+    expectNoOverlaps(next);
   });
 
-  it("places nested data inputs further left of their consumer", () => {
+  it("places nested data inputs further down-left of their consumer", () => {
     const nodes = [
       node("a", 10, 20),
       node("b", 12, 90, execWithValueIn),
@@ -345,18 +377,16 @@ describe("formatGraphNodes", () => {
       dataEdge("nested", "get", "in"),
     ];
     const next = formatGraphNodes(nodes, edges, ["a"]);
-    expect(next.find((entry) => entry.id === "nested")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20,
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "get")).toEqual({
+      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
+      y: 20 + HANG_Y,
     });
-    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 2,
-      y: 20,
+    expect(pos(next, "nested")).toEqual({
+      x: 10 + EXEC_STEP - (NODE_W + FORMAT_GAP_X) * 2,
+      y: 20 + HANG_Y * 2,
     });
-    expect(next.find((entry) => entry.id === "b")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 3,
-      y: 20,
-    });
+    expectNoOverlaps(next);
   });
 
   it("moves a dangling data input but does not steal a source with incoming exec", () => {
@@ -374,25 +404,16 @@ describe("formatGraphNodes", () => {
       dataEdge("stolen", "b", "second"),
     ];
     const next = formatGraphNodes(nodes, edges, ["a"]);
-    expect(next.find((entry) => entry.id === "stolen")?.position).toEqual({
-      x: 999,
-      y: 888,
-    });
-    expect(next.find((entry) => entry.id === "prev")?.position).toEqual({
-      x: 50,
-      y: 50,
-    });
-    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20,
-    });
-    expect(next.find((entry) => entry.id === "b")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 2,
-      y: 20,
+    expect(pos(next, "stolen")).toEqual({ x: 999, y: 888 });
+    expect(pos(next, "prev")).toEqual({ x: 50, y: 50 });
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "get")).toEqual({
+      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
+      y: 20 + HANG_Y,
     });
   });
 
-  it("stacks a consumer’s data inputs in pin order", () => {
+  it("stacks a consumer’s data inputs in pin order below the exec row", () => {
     const nodes = [
       node("a", 10, 20),
       node("b", 12, 90, twoDataInPins),
@@ -405,21 +426,19 @@ describe("formatGraphNodes", () => {
       dataEdge("getFirst", "b", "first"),
     ];
     const next = formatGraphNodes(nodes, edges, ["a"]);
-    expect(next.find((entry) => entry.id === "getFirst")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20,
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "getFirst")).toEqual({
+      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
+      y: 20 + HANG_Y,
     });
-    expect(next.find((entry) => entry.id === "getSecond")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20 + 40 + FORMAT_GAP_Y,
+    expect(pos(next, "getSecond")).toEqual({
+      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
+      y: 20 + HANG_Y + NODE_H + FORMAT_GAP_Y,
     });
-    expect(next.find((entry) => entry.id === "b")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 2,
-      y: 20,
-    });
+    expectNoOverlaps(next);
   });
 
-  it("places a shared data input once, next to the earliest consumer", () => {
+  it("places a shared data input once, below-left of the earliest consumer", () => {
     const nodes = [
       node("a", 10, 20),
       node("b", 12, 90, execWithValueIn),
@@ -433,38 +452,31 @@ describe("formatGraphNodes", () => {
       dataEdge("get", "c"),
     ];
     const next = formatGraphNodes(nodes, edges, ["a"]);
-    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20,
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "c")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
+    expect(pos(next, "get")).toEqual({
+      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
+      y: 20 + HANG_Y,
     });
-    expect(next.find((entry) => entry.id === "b")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 2,
-      y: 20,
-    });
-    expect(next.find((entry) => entry.id === "c")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 3,
-      y: 20,
-    });
+    expectNoOverlaps(next);
   });
 
-  it("places data inputs of the selected start node to its left", () => {
+  it("places data inputs of the selected start node below-left of it", () => {
     const nodes = [
       node("b", 200, 50, execWithValueIn),
       node("get", 0, 0, dataOutPins),
     ];
     const edges = [dataEdge("get", "b")];
     const next = formatGraphNodes(nodes, edges, ["b"]);
-    expect(next.find((entry) => entry.id === "b")?.position).toEqual({
-      x: 200,
-      y: 50,
+    expect(pos(next, "b")).toEqual({ x: 200, y: 50 });
+    expect(pos(next, "get")).toEqual({
+      x: 200 - NODE_W - FORMAT_GAP_X,
+      y: 50 + HANG_Y,
     });
-    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
-      x: 200 - 100 - FORMAT_GAP_X,
-      y: 50,
-    });
+    expectNoOverlaps(next);
   });
 
-  it("places a call return-value pure left of its consumer, not on the exec row of then", () => {
+  it("places a call return-value pure below-left of its consumer, not on the exec row", () => {
     const nodes = [
       node("event", 10, 20),
       node("call", 12, 90, execWithResultOut),
@@ -478,25 +490,15 @@ describe("formatGraphNodes", () => {
       dataEdge("toUpper", "print", "value", "value"),
     ];
     const next = formatGraphNodes(nodes, edges, ["event"]);
-    expect(next.find((entry) => entry.id === "event")?.position).toEqual({
-      x: 10,
-      y: 20,
-    });
-    expect(next.find((entry) => entry.id === "call")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20,
-    });
-    expect(next.find((entry) => entry.id === "toUpper")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 2,
-      y: 20,
-    });
-    expect(next.find((entry) => entry.id === "print")?.position).toEqual({
-      x: 10 + (100 + FORMAT_GAP_X) * 3,
-      y: 20,
-    });
+    expect(pos(next, "event")).toEqual({ x: 10, y: 20 });
+    expect(pos(next, "call")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "print")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
+    expect(pos(next, "toUpper").y).toBeGreaterThanOrEqual(20 + HANG_Y);
+    expect(pos(next, "toUpper").x).toBe(10 + EXEC_STEP * 2 - NODE_W - FORMAT_GAP_X);
+    expectNoOverlaps(next);
   });
 
-  it("stacks data-out branches of a selected pure node to the right", () => {
+  it("stacks data-out branches of a selected pure node below-right of the source", () => {
     const nodes = [
       node("get", 10, 20, dataOutPins),
       node("first", 0, 200, dataInPins),
@@ -507,18 +509,16 @@ describe("formatGraphNodes", () => {
       dataEdge("get", "second"),
     ];
     const next = formatGraphNodes(nodes, edges, ["get"]);
-    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
-      x: 10,
-      y: 20,
+    expect(pos(next, "get")).toEqual({ x: 10, y: 20 });
+    expect(pos(next, "second")).toEqual({
+      x: 10 + EXEC_STEP,
+      y: 20 + HANG_Y,
     });
-    expect(next.find((entry) => entry.id === "second")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20,
+    expect(pos(next, "first")).toEqual({
+      x: 10 + EXEC_STEP,
+      y: 20 + HANG_Y + NODE_H + FORMAT_GAP_Y,
     });
-    expect(next.find((entry) => entry.id === "first")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20 + 40 + FORMAT_GAP_Y,
-    });
+    expectNoOverlaps(next);
   });
 
   it("does not pull exec successors when formatting from a pure node", () => {
@@ -529,17 +529,70 @@ describe("formatGraphNodes", () => {
     ];
     const edges = [dataEdge("get", "print"), execEdge("print", "later")];
     const next = formatGraphNodes(nodes, edges, ["get"]);
-    expect(next.find((entry) => entry.id === "get")?.position).toEqual({
-      x: 10,
-      y: 20,
+    expect(pos(next, "get")).toEqual({ x: 10, y: 20 });
+    expect(pos(next, "print")).toEqual({
+      x: 10 + EXEC_STEP,
+      y: 20 + HANG_Y,
     });
-    expect(next.find((entry) => entry.id === "print")?.position).toEqual({
-      x: 10 + 100 + FORMAT_GAP_X,
-      y: 20,
-    });
-    expect(next.find((entry) => entry.id === "later")?.position).toEqual({
-      x: 400,
-      y: 80,
-    });
+    expect(pos(next, "later")).toEqual({ x: 400, y: 80 });
+  });
+
+  it("formats two unconnected chain parents independently instead of merging onto one row", () => {
+    const nodes = [
+      node("a", 10, 20),
+      node("b", 12, 90),
+      node("c", 10, 400),
+      node("d", 50, 480),
+    ];
+    const edges = [execEdge("a", "b"), execEdge("c", "d")];
+    const next = formatGraphNodes(nodes, edges, ["a", "c"]);
+    expect(pos(next, "a")).toEqual({ x: 10, y: 20 });
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "c")).toEqual({ x: 10, y: 400 });
+    expect(pos(next, "d")).toEqual({ x: 10 + EXEC_STEP, y: 400 });
+    expectNoOverlaps(next);
+  });
+
+  it("formats from the ancestor when two selected nodes share one then-chain", () => {
+    const nodes = [
+      node("a", 10, 20),
+      node("b", 12, 90),
+      node("c", 15, 200),
+    ];
+    const edges = [execEdge("a", "b"), execEdge("b", "c")];
+    const next = formatGraphNodes(nodes, edges, ["a", "b"]);
+    expect(pos(next, "a")).toEqual({ x: 10, y: 20 });
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "c")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
+  });
+
+  it("keeps branch exec stacked and hangs data off the branch without overlapping", () => {
+    const nodes = [
+      node("branch", 0, 0, branchPins),
+      node("yes", 20, 40, execWithValueIn),
+      node("no", 25, 10),
+      node("get", 1, 300, dataOutPins),
+    ];
+    const edges = [
+      execEdge("branch", "yes", "true"),
+      execEdge("branch", "no", "false"),
+      dataEdge("get", "yes"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["branch"]);
+    expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
+    expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
+    expect(pos(next, "get").x).toBe(EXEC_STEP - NODE_W - FORMAT_GAP_X);
+    expect(pos(next, "get").y).toBeGreaterThanOrEqual(
+      pos(next, "yes").y + HANG_Y,
+    );
+    expectNoOverlaps(next);
+  });
+
+  it("shifts overlapping isolated selected nodes apart", () => {
+    const nodes = [node("a", 0, 0), node("b", 10, 10)];
+    const next = formatGraphNodes(nodes, [], ["a", "b"]);
+    expect(pos(next, "a")).toEqual({ x: 0, y: 0 });
+    expect(pos(next, "b").y).toBeGreaterThanOrEqual(NODE_H + FORMAT_GAP_Y);
+    expectNoOverlaps(next);
   });
 });
