@@ -13,6 +13,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
 import {
   normalizeFontPayload,
+  normalizeAudioPayload,
 } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
@@ -340,6 +341,19 @@ function AssetSettingsEditor({
   onChange: (next: Record<string, unknown>) => void;
 }) {
   const { retryTextureEncoding } = useDocuments();
+  if (assetType === "Audio") {
+    return (
+      <PanelFrame className="flex-1" title={assetType}>
+        <div className="flex flex-col gap-3" data-testid="asset-settings">
+          <AudioSettingsEditor
+            path={path}
+            payload={payload}
+            onChange={onChange}
+          />
+        </div>
+      </PanelFrame>
+    );
+  }
   const rows: PropertyRow[] = [];
   if (assetType === "Texture") {
     const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
@@ -445,5 +459,161 @@ function AssetSettingsEditor({
         <PropertyGrid rows={rows} />
       </div>
     </PanelFrame>
+  );
+}
+
+function AudioSettingsEditor({
+  path,
+  payload,
+  onChange,
+}: {
+  path: string;
+  payload: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const { assetRegistry, readAssetChunk } = useDocuments();
+  const audio = normalizeAudioPayload(payload);
+  const [pick, setPick] = useState<"channel" | "atten" | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const assets = assetRegistry?.list() ?? [];
+  const channel = assets.find(
+    (asset) => asset.header.guid === audio.audioChannelGuid,
+  );
+  const atten = assets.find(
+    (asset) => asset.header.guid === audio.soundAttenuationGuid,
+  );
+  const channelIdentity = channel
+    ? assetRowIdentity({
+        name: channel.header.name,
+        type: channel.header.type,
+      })
+    : {};
+  const attenIdentity = atten
+    ? assetRowIdentity({
+        name: atten.header.name,
+        type: atten.header.type,
+      })
+    : {};
+
+  const playPreview = async () => {
+    const bytes = await readAssetChunk(path, "source");
+    if (!bytes || bytes.byteLength === 0) return;
+    const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+    const element = new Audio(url);
+    setPlaying(true);
+    element.onended = () => {
+      setPlaying(false);
+      URL.revokeObjectURL(url);
+    };
+    void element.play().catch(() => {
+      setPlaying(false);
+      URL.revokeObjectURL(url);
+    });
+  };
+
+  return (
+    <>
+      <div className="flex flex-col gap-3" data-testid="audio-preview">
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-[var(--touch-target,44px)] w-fit"
+          data-testid={playing ? "audio-preview-stop" : "audio-preview-play"}
+          onClick={() => {
+            if (playing) {
+              setPlaying(false);
+              return;
+            }
+            void playPreview();
+          }}
+        >
+          {playing ? "Stop" : "Play"}
+        </Button>
+        <PropertyGrid
+          rows={[
+            {
+              id: "volume",
+              kind: "number",
+              label: "Volume",
+              value: audio.volume,
+              min: 0,
+              max: 1,
+              step: 0.01,
+              onChange: (volume) => onChange({ ...audio, volume }),
+            },
+            {
+              id: "audioChannelGuid",
+              kind: "asset",
+              label: "Audio Channel",
+              value: audio.audioChannelGuid,
+              displayLabel: channelIdentity.displayLabel,
+              displayType: channelIdentity.displayType,
+              visual: channelIdentity.visual,
+              placeholder: "None",
+              onPick: () => setPick("channel"),
+              onChange: (audioChannelGuid) =>
+                onChange({ ...audio, audioChannelGuid }),
+            },
+            {
+              id: "soundAttenuationGuid",
+              kind: "asset",
+              label: "Sound Attenuation",
+              value: audio.soundAttenuationGuid,
+              displayLabel: attenIdentity.displayLabel,
+              displayType: attenIdentity.displayType,
+              visual: attenIdentity.visual,
+              placeholder: "None",
+              onPick: () => setPick("atten"),
+              onChange: (soundAttenuationGuid) =>
+                onChange({ ...audio, soundAttenuationGuid }),
+            },
+          ]}
+        />
+      </div>
+      <AssetPicker
+        open={pick === "channel"}
+        onOpenChange={(open) => {
+          if (!open) setPick(null);
+        }}
+        assets={assets
+          .filter((asset) => asset.header.type === "AudioChannel")
+          .map((asset) => ({
+            guid: asset.header.guid,
+            name: asset.header.name,
+            type: asset.header.type,
+            path: asset.path,
+          }))}
+        allowedTypes={["AudioChannel"]}
+        title="Pick Audio Channel"
+        allowNone
+        onPick={(audioChannelGuid) => {
+          onChange({ ...audio, audioChannelGuid });
+          setPick(null);
+        }}
+        data-testid="audio-channel-picker"
+      />
+      <AssetPicker
+        open={pick === "atten"}
+        onOpenChange={(open) => {
+          if (!open) setPick(null);
+        }}
+        assets={assets
+          .filter((asset) => asset.header.type === "SoundAttenuation")
+          .map((asset) => ({
+            guid: asset.header.guid,
+            name: asset.header.name,
+            type: asset.header.type,
+            path: asset.path,
+          }))}
+        allowedTypes={["SoundAttenuation"]}
+        title="Pick Sound Attenuation"
+        allowNone
+        onPick={(soundAttenuationGuid) => {
+          onChange({ ...audio, soundAttenuationGuid });
+          setPick(null);
+        }}
+        data-testid="audio-attenuation-picker"
+      />
+    </>
   );
 }

@@ -22,6 +22,9 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "anim-graph": ["anim-graph-graph"],
   animGraphObject: ["anim-object-graph"],
   "behaviour-tree": ["behaviour-tree-graph"],
+  "audio-mixer": ["audio-mixer-details"],
+  "audio-channel": ["audio-channel-details"],
+  "sound-attenuation": ["sound-attenuation-details"],
 } as const;
 
 function mutableFocusKeepPanels(): {
@@ -101,6 +104,15 @@ export const engineSettingsSchema = z.object({
       ),
       "behaviour-tree": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["behaviour-tree"],
+      ),
+      "audio-mixer": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["audio-mixer"],
+      ),
+      "audio-channel": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["audio-channel"],
+      ),
+      "sound-attenuation": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["sound-attenuation"],
       ),
     })
     .default(mutableFocusKeepPanels),

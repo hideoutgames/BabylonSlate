@@ -448,7 +448,10 @@ export function DocumentWorkspace() {
           doc.ref.kind === "sprite" ||
           doc.ref.kind === "tileset" ||
           doc.ref.kind === "tilemap" ||
-          doc.ref.kind === "plugin-settings"
+          doc.ref.kind === "plugin-settings" ||
+          doc.ref.kind === "audio-mixer" ||
+          doc.ref.kind === "audio-channel" ||
+          doc.ref.kind === "sound-attenuation"
         ) {
           if (!shouldMount) return null;
           return (

@@ -752,6 +752,13 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("EditorUtilityInterface", "SceneTools")).toBe(
       "SceneTools.eui.babasset",
     );
+    expect(newAssetFileName("AudioMixer", "Master")).toBe(
+      "Master.mixer.babasset",
+    );
+    expect(newAssetFileName("AudioChannel", "SFX")).toBe("SFX.channel.babasset");
+    expect(newAssetFileName("SoundAttenuation", "Near")).toBe(
+      "Near.atten.babasset",
+    );
     expect(newAssetFileName("Scene", "")).toBe("");
     expect(newAssetFileName("Scene", "   ")).toBe("");
     expect(isNewAssetNameTaken(["assets/NewAsset.scene.babasset"], "assets", "Scene", "")).toBe(
@@ -818,6 +825,40 @@ describe("content-browser-helpers", () => {
     expect(Array.isArray(board.payload.keys)).toBe(true);
   });
 
+  it("seeds AudioMixer, AudioChannel, and SoundAttenuation New Asset documents", () => {
+    const mixer = buildNewAssetResult({
+      type: "AudioMixer",
+      name: "Master",
+      guid: "mix-1",
+      parentClass: null,
+    });
+    expect(mixer.type).toBe("AudioMixer");
+    expect(mixer.payload).toEqual({ globalVolume: 1, channels: [] });
+    const channel = buildNewAssetResult({
+      type: "AudioChannel",
+      name: "SFX",
+      guid: "ch-1",
+      parentClass: null,
+    });
+    expect(channel.type).toBe("AudioChannel");
+    expect(channel.payload).toMatchObject({
+      parentChannelGuid: null,
+      effects: [{ kind: "environmentReverb", enabled: false }],
+    });
+    const atten = buildNewAssetResult({
+      type: "SoundAttenuation",
+      name: "Near",
+      guid: "att-1",
+      parentClass: null,
+    });
+    expect(atten.type).toBe("SoundAttenuation");
+    expect(atten.payload).toMatchObject({
+      innerRadius: 1,
+      maxRadius: 50,
+      distanceModel: "linear",
+    });
+  });
+
   it("lists only authored types in New Asset", () => {
     expect([...CREATABLE_ASSET_TYPES]).toEqual([
       "Scene",
@@ -835,6 +876,9 @@ describe("content-browser-helpers", () => {
       "Structure",
       "ScriptInterface",
       "EditorUtilityInterface",
+      "AudioMixer",
+      "AudioChannel",
+      "SoundAttenuation",
     ]);
   });
 
@@ -848,6 +892,9 @@ describe("content-browser-helpers", () => {
     expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
     expect(creatableAssetTypeLabel("BehaviourTree")).toBe("Behaviour Tree");
     expect(creatableAssetTypeLabel("ScriptInterface")).toBe("Script Interface");
+    expect(creatableAssetTypeLabel("AudioMixer")).toBe("Audio Mixer");
+    expect(creatableAssetTypeLabel("AudioChannel")).toBe("Audio Channel");
+    expect(creatableAssetTypeLabel("SoundAttenuation")).toBe("Sound Attenuation");
   });
 
   it("groups every creatable type once", () => {
@@ -862,14 +909,21 @@ describe("content-browser-helpers", () => {
       "2D",
       "Animation",
       "Rendering",
+      "Audio",
       "AI",
     ]);
     const twoD = CREATABLE_ASSET_TYPE_GROUPS.find((group) => group.id === "2d");
     const animation = CREATABLE_ASSET_TYPE_GROUPS.find(
       (group) => group.id === "animation",
     );
+    const audio = CREATABLE_ASSET_TYPE_GROUPS.find((group) => group.id === "audio");
     expect([...twoD!.types]).toEqual(["Sprite", "Tileset", "Tilemap"]);
     expect([...animation!.types]).toEqual(["AnimationGraph"]);
+    expect([...audio!.types]).toEqual([
+      "AudioMixer",
+      "AudioChannel",
+      "SoundAttenuation",
+    ]);
   });
 
   it("describes the selected creatable type", () => {

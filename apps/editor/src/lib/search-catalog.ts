@@ -16,6 +16,7 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   "AnimationGraphComponent",
   "BehaviourTreeComponent",
   "NavAgentComponent",
+  "AudioComponent",
 ];
 
 const nodeRegistry = createDefaultNodeRegistry();

@@ -17,6 +17,7 @@ describe("Add Component catalog", () => {
     expect(ids).not.toContain("NavMeshBlockerComponent");
     expect(ids).toContain("RigidBodyComponent");
     expect(ids).toContain("ColliderComponent");
+    expect(ids).toContain("AudioComponent");
   });
 
   it("groups addable classes into Rendering, Animation, Camera, and Physics", () => {
@@ -31,6 +32,7 @@ describe("Add Component catalog", () => {
       "Animation",
       "AI",
       "Camera",
+      "Audio",
       "Physics",
     ]);
     expect(byCategory.get("Rendering")).toEqual([
@@ -46,6 +48,7 @@ describe("Add Component catalog", () => {
       "NavAgentComponent",
     ]);
     expect(byCategory.get("Camera")).toEqual(["CameraComponent"]);
+    expect(byCategory.get("Audio")).toEqual(["AudioComponent"]);
     expect(byCategory.get("Physics")).toEqual([
       "RigidBodyComponent",
       "ColliderComponent",
@@ -79,6 +82,12 @@ describe("Add Component catalog", () => {
       dynamic: false,
       kind: "box",
       area: "unwalkable",
+    });
+    expect(defaultPropertiesFor("AudioComponent")).toEqual({
+      audioAssetGuid: null,
+      playOnStart: true,
+      loop: false,
+      volume: 1,
     });
   });
 

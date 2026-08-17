@@ -6,6 +6,7 @@ import {
   ListTreeIcon,
   PanelTopIcon,
   PuzzleIcon,
+  Volume2Icon,
   WorkflowIcon,
 } from "lucide-react";
 import {
@@ -61,6 +62,21 @@ describe("resolveTypeVisual", () => {
     expect(visual.colorVar).toBe("var(--asset-script-type)");
     expect(visual.iconKey).toBe("PluginSettings");
     expect(visual.icon).toBe(PuzzleIcon);
+  });
+
+  it("reuses the Volume glyph and audio family for mixer, channel, and attenuation", () => {
+    const audio = resolveTypeVisual({ assetType: "Audio" });
+    const mixer = resolveTypeVisual({ assetType: "AudioMixer" });
+    const channel = resolveTypeVisual({ assetType: "AudioChannel" });
+    const atten = resolveTypeVisual({ assetType: "SoundAttenuation" });
+    expect(audio.family).toBe("audio");
+    expect(mixer.family).toBe("audio");
+    expect(channel.family).toBe("audio");
+    expect(atten.family).toBe("audio");
+    expect(mixer.icon).toBe(Volume2Icon);
+    expect(channel.icon).toBe(Volume2Icon);
+    expect(atten.icon).toBe(Volume2Icon);
+    expect(mixer.colorVar).toBe(audio.colorVar);
   });
 
   it("treats Mesh assets as the model family", () => {

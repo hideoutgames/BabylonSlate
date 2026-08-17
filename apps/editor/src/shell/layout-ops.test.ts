@@ -171,6 +171,15 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("behaviour-tree", [])).toEqual([
       "behaviour-tree-graph",
     ]);
+    expect(resolveFocusKeepPanelIds("audio-mixer", [])).toEqual([
+      "audio-mixer-details",
+    ]);
+    expect(resolveFocusKeepPanelIds("audio-channel", [])).toEqual([
+      "audio-channel-details",
+    ]);
+    expect(resolveFocusKeepPanelIds("sound-attenuation", [])).toEqual([
+      "sound-attenuation-details",
+    ]);
   });
 
   it("keeps already-open Editor Utility tabs when the keep list is the default", () => {

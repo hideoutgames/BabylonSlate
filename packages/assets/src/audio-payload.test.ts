@@ -20,6 +20,7 @@ import {
   AUDIO_VOXEL_SIZE,
   audioAssetDependencies,
   remapAudioPayloadGuids,
+  computeAttenuationGain,
   audioChannelHasParentCycle,
   clampAudioGain,
   computeAudioOutputGain,
@@ -290,6 +291,18 @@ describe("audio payloads", () => {
         channelGains: [0.5],
       }),
     ).toBe(0.5);
+  });
+
+  it("keeps attenuation full inside the inner radius and silent at max", () => {
+    const atten = createDefaultSoundAttenuationPayload();
+    expect(computeAttenuationGain(0, atten)).toBe(1);
+    expect(computeAttenuationGain(1, atten)).toBe(1);
+    expect(computeAttenuationGain(50, atten)).toBe(0);
+    expect(computeAttenuationGain(25.5, atten)).toBeCloseTo(0.5);
+    const farther = computeAttenuationGain(40, atten);
+    const nearer = computeAttenuationGain(10, atten);
+    expect(farther).toBeLessThan(nearer);
+    expect(farther).toBeGreaterThan(0);
   });
 
   it("enforces attenuation radii and known distance models", () => {

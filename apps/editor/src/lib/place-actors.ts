@@ -25,6 +25,7 @@ export type PlaceActorKind =
   | { type: "camera" }
   | { type: "navmesh" }
   | { type: "navmesh-blocker" }
+  | { type: "audio" }
   | { type: "empty" }
   | {
       type: "asset";
@@ -81,6 +82,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "NavMesh Blocker",
     category: "Navigation",
     kind: { type: "navmesh-blocker" },
+  },
+  {
+    id: "audio",
+    title: "Audio",
+    category: "Audio",
+    kind: { type: "audio" },
   },
 ];
 
@@ -154,6 +161,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
       classId: "NavMeshBlockerComponent",
       family: "class",
     });
+  }
+  if (kind.type === "audio") {
+    return resolveTypeVisual({ classId: "AudioComponent", family: "class" });
   }
   if (kind.type === "asset") {
     return resolveTypeVisual({ assetType: kind.assetType });
@@ -268,6 +278,18 @@ export function spawnPlacedActor(
           id: `${id}-blocker`,
           classId: "NavMeshBlockerComponent",
           properties: defaultPropertiesFor("NavMeshBlockerComponent"),
+        },
+      ],
+    });
+  }
+  if (kind.type === "audio") {
+    return createActor(id, "Audio", {
+      transform,
+      components: [
+        {
+          id: `${id}-audio`,
+          classId: "AudioComponent",
+          properties: defaultPropertiesFor("AudioComponent"),
         },
       ],
     });

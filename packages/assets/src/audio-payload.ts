@@ -380,6 +380,48 @@ export function computeAudioOutputGain(options: {
   return clampAudioGain(gain);
 }
 
+export function computeAttenuationGain(
+  distance: number,
+  attenuation: SoundAttenuationPayload,
+): number {
+  const d = typeof distance === "number" && Number.isFinite(distance) ? distance : 0;
+  const inner = attenuation.innerRadius;
+  const max = attenuation.maxRadius;
+  if (d <= inner) return 1;
+  if (max <= inner || d >= max) return 0;
+  const t = (d - inner) / (max - inner);
+  const rolloff = attenuation.rolloff > 0 ? attenuation.rolloff : 1;
+  if (attenuation.distanceModel === "inverse") {
+    const raw = 1 / (1 + rolloff * t);
+    const atMax = 1 / (1 + rolloff);
+    return clampAudioGain((raw - atMax) / (1 - atMax));
+  }
+  if (attenuation.distanceModel === "exponential") {
+    const raw = Math.exp(-rolloff * t);
+    const atMax = Math.exp(-rolloff);
+    if (1 - atMax === 0) return clampAudioGain(1 - t);
+    return clampAudioGain((raw - atMax) / (1 - atMax));
+  }
+  return clampAudioGain(1 - t);
+}
+
+export function attenuationPlotPoints(
+  attenuation: SoundAttenuationPayload,
+  samples = 32,
+): Array<{ distance: number; gain: number }> {
+  const max = Math.max(attenuation.maxRadius, attenuation.innerRadius, 1);
+  const count = Math.max(2, samples);
+  const points: Array<{ distance: number; gain: number }> = [];
+  for (let i = 0; i < count; i += 1) {
+    const distance = (i / (count - 1)) * max;
+    points.push({
+      distance,
+      gain: computeAttenuationGain(distance, attenuation),
+    });
+  }
+  return points;
+}
+
 export function remapAudioPayloadGuids(
   assetType: string,
   payload: Record<string, unknown>,

@@ -473,6 +473,49 @@ export function componentPropertyRows(
           new Set(["treeGuid", "blackboardGuid"]),
         ),
       ];
+    case "AudioComponent":
+      return [
+        assetRow(
+          actorId,
+          component,
+          "audioAssetGuid",
+          "Audio",
+          ["Audio"],
+          update,
+          context,
+          "Pick Audio",
+        ),
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "playOnStart"),
+          label: "Play On Start",
+          value: component.properties.playOnStart !== false,
+          onChange: (next) => update("playOnStart", next),
+        },
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "loop"),
+          label: "Loop",
+          value: component.properties.loop === true,
+          onChange: (next) => update("loop", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "volume"),
+          label: "Volume",
+          value: asNumber(component.properties.volume, 1),
+          min: 0,
+          max: 1,
+          step: 0.01,
+          onChange: (next) => update("volume", next),
+        },
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["audioAssetGuid", "playOnStart", "loop", "volume"]),
+        ),
+      ];
     case "NavMeshComponent": {
       const settings = {
         tiled: component.properties.tiled === true,

@@ -30,7 +30,9 @@ function rowsFor(
                 ? "Locomotion"
                 : guid === "tile-1"
                   ? "Overworld"
-                  : undefined,
+                  : guid === "sfx-1"
+                    ? "Jump"
+                    : undefined,
       assetType: (guid) =>
         guid === "mesh-1"
           ? "Mesh"
@@ -46,7 +48,9 @@ function rowsFor(
                     ? "BehaviourTree"
                     : guid === "bb-1"
                       ? "Blackboard"
-                      : undefined,
+                      : guid === "sfx-1"
+                        ? "Audio"
+                        : undefined,
       physicsWorld: "3d",
       onPickAsset,
       ...context,
@@ -156,6 +160,38 @@ describe("componentPropertyRows", () => {
     expect(tree.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTypes: ["BehaviourTree"] }),
     );
+
+    const audio = rowsFor({
+      id: "speaker",
+      classId: "AudioComponent",
+      properties: {
+        audioAssetGuid: "sfx-1",
+        playOnStart: true,
+        loop: false,
+        volume: 0.5,
+      },
+    });
+    const audioAsset = audio.rows.find((row) => row.id.endsWith("-audioAssetGuid"));
+    expect(audioAsset).toMatchObject({
+      kind: "asset",
+      displayLabel: "Jump",
+    });
+    if (audioAsset?.kind === "asset") audioAsset.onPick();
+    expect(audio.onPickAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedTypes: ["Audio"] }),
+    );
+    expect(audio.rows.find((row) => row.id.endsWith("-playOnStart"))).toMatchObject({
+      kind: "boolean",
+      value: true,
+    });
+    expect(audio.rows.find((row) => row.id.endsWith("-loop"))).toMatchObject({
+      kind: "boolean",
+      value: false,
+    });
+    expect(audio.rows.find((row) => row.id.endsWith("-volume"))).toMatchObject({
+      kind: "number",
+      value: 0.5,
+    });
 
     const navMesh = rowsFor({
       id: "nav",

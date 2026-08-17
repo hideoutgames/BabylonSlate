@@ -18,7 +18,10 @@ export type DockviewDocumentKind =
   | "ui"
   | "plugin-settings"
   | "anim-graph"
-  | "behaviour-tree";
+  | "behaviour-tree"
+  | "audio-mixer"
+  | "audio-channel"
+  | "sound-attenuation";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -36,6 +39,9 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "plugin-settings",
   "anim-graph",
   "behaviour-tree",
+  "audio-mixer",
+  "audio-channel",
+  "sound-attenuation",
 ]);
 
 export function isDockviewDocumentKind(
@@ -80,6 +86,9 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "plugin-settings": "plugin-settings-details",
   "anim-graph": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
+  "audio-mixer": "audio-mixer-details",
+  "audio-channel": "audio-channel-details",
+  "sound-attenuation": "sound-attenuation-details",
 };
 
 export function primaryDockPanel(
@@ -454,6 +463,30 @@ const PLUGIN_SETTINGS_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const AUDIO_MIXER_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "audio-mixer-details",
+    component: "audio-mixer-details",
+    title: "Details",
+  },
+];
+
+const AUDIO_CHANNEL_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "audio-channel-details",
+    component: "audio-channel-details",
+    title: "Details",
+  },
+];
+
+const SOUND_ATTENUATION_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "sound-attenuation-details",
+    component: "sound-attenuation-details",
+    title: "Details",
+  },
+];
+
 const ANIM_GRAPH_STATE_WINDOWS: DockWindowDefinition[] = [
   { id: "anim-graph-graph", component: "anim-graph-graph", title: "Graph" },
   {
@@ -607,6 +640,15 @@ export function listDockWindows(
   }
   if (kind === "plugin-settings") {
     return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);
+  }
+  if (kind === "audio-mixer") {
+    return withOptionalLocks(kind, AUDIO_MIXER_WINDOWS, options);
+  }
+  if (kind === "audio-channel") {
+    return withOptionalLocks(kind, AUDIO_CHANNEL_WINDOWS, options);
+  }
+  if (kind === "sound-attenuation") {
+    return withOptionalLocks(kind, SOUND_ATTENUATION_WINDOWS, options);
   }
   if (kind === "anim-graph") {
     const windows =

@@ -12,8 +12,8 @@ describe("search catalog class ids", () => {
     expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("WidgetComponent");
   });
 
-  it("does not advertise AudioComponent until it is addable", () => {
-    expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("AudioComponent");
+  it("advertises AudioComponent once it is addable", () => {
+    expect(SEARCH_CATALOG_CLASS_IDS).toContain("AudioComponent");
   });
 
   it("still indexes shipped engine classes", () => {

@@ -76,6 +76,9 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   "plugin-settings": primaryDockPanel("plugin-settings"),
   "anim-graph": primaryDockPanel("anim-graph"),
   "behaviour-tree": primaryDockPanel("behaviour-tree"),
+  "audio-mixer": primaryDockPanel("audio-mixer"),
+  "audio-channel": primaryDockPanel("audio-channel"),
+  "sound-attenuation": primaryDockPanel("sound-attenuation"),
 };
 
 /**

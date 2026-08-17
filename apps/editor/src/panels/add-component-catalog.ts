@@ -59,6 +59,12 @@ export const ADDABLE_COMPONENT_CLASSES = [
     category: "Camera",
   },
   {
+    id: "AudioComponent",
+    label: "Audio",
+    description: "Plays an Audio asset",
+    category: "Audio",
+  },
+  {
     id: "RigidBodyComponent",
     label: "Rigid Body",
     description: "Physics body",
@@ -115,6 +121,13 @@ export function defaultPropertiesFor(
         innerAngle: 30,
         enabled: true,
         castShadows: false,
+      };
+    case "AudioComponent":
+      return {
+        audioAssetGuid: null,
+        playOnStart: true,
+        loop: false,
+        volume: 1,
       };
     case "RigidBodyComponent":
       return { ...parseRigidBodyProperties({}) };

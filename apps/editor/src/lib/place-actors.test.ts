@@ -14,7 +14,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
   it("groups shapes, lights, camera, empty, and navigation", () => {
     const categories = new Set(ENGINE_PLACE_ACTORS.map((item) => item.category));
     expect(categories).toEqual(
-      new Set(["Shapes", "Lights", "Camera", "Empty", "Navigation"]),
+      new Set(["Shapes", "Lights", "Camera", "Empty", "Navigation", "Audio"]),
     );
     expect(ENGINE_PLACE_ACTORS.some((entry) => entry.id === "navmesh-blocker")).toBe(
       true,
@@ -36,6 +36,21 @@ describe("ENGINE_PLACE_ACTORS", () => {
     expect(empty.iconKey).toBe("Actor");
     expect(shape.iconKey).toBe("MeshComponent");
     expect(light.iconKey).toBe("LightComponent");
+  });
+
+  it("places an Audio actor with an AudioComponent", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "audio")!;
+    expect(item.category).toBe("Audio");
+    expect(visualForPlaceActor(item).iconKey).toBe("AudioComponent");
+    const actor = spawnPlacedActor(createDefaultScene(), item, "actor-audio");
+    expect(actor.name).toBe("Audio");
+    expect(actor.components[0]?.classId).toBe("AudioComponent");
+    expect(actor.components[0]?.properties).toEqual({
+      audioAssetGuid: null,
+      playOnStart: true,
+      loop: false,
+      volume: 1,
+    });
   });
 });
 

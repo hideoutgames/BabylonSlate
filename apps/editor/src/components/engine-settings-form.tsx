@@ -88,6 +88,21 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     keepKey: "behaviour-tree",
     label: "Behaviour Tree",
   },
+  {
+    kind: "audio-mixer",
+    keepKey: "audio-mixer",
+    label: "Audio Mixer",
+  },
+  {
+    kind: "audio-channel",
+    keepKey: "audio-channel",
+    label: "Audio Channel",
+  },
+  {
+    kind: "sound-attenuation",
+    keepKey: "sound-attenuation",
+    label: "Sound Attenuation",
+  },
 ];
 
 export type EngineSettingsCategoryId =
