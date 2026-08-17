@@ -2,11 +2,11 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import type { PinDefaultPreview } from "./pin-default-preview";
 
 const FIELD_CLASS =
-  "pointer-events-none h-5 max-w-[var(--graph-pin-default-max-width,4.5rem)] shrink-0 truncate rounded-sm border border-input bg-input/30 px-1 text-[10px] leading-5 text-foreground select-none";
+  "pointer-events-none h-8 max-w-[var(--graph-pin-default-max-width,8rem)] shrink-0 truncate rounded-sm border border-input bg-input/30 px-1.5 text-base leading-8 text-foreground select-none";
 
 function CheckMark() {
   return (
-    <svg viewBox="0 0 12 12" className="size-2.5" aria-hidden="true">
+    <svg viewBox="0 0 12 12" className="size-3.5" aria-hidden="true">
       <path
         d="M2.5 6.2 4.8 8.5 9.5 3.5"
         fill="none"
@@ -30,7 +30,7 @@ export function PinDefaultPreviewWidget({
         data-pin-default="bool"
         data-checked={preview.checked ? "true" : "false"}
         className={cn(
-          "pointer-events-none inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm border border-input select-none",
+          "pointer-events-none inline-flex size-5 shrink-0 items-center justify-center rounded-sm border border-input select-none",
           preview.checked &&
             "border-primary bg-primary text-primary-foreground",
         )}
@@ -45,7 +45,7 @@ export function PinDefaultPreviewWidget({
     return (
       <span
         data-pin-default="color"
-        className="pointer-events-none size-3.5 shrink-0 rounded-sm border border-input"
+        className="pointer-events-none size-5 shrink-0 rounded-sm border border-input"
         style={{ background: preview.rgb }}
         aria-hidden="true"
       />
