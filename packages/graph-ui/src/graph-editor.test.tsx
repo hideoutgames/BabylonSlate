@@ -975,6 +975,9 @@ describe("GraphEditor", () => {
     const { container } = render(<GraphEditor initialGraph={graph} />);
     const eventNode = container.querySelector('[data-node-role="event"]');
     expect(eventNode).not.toBeNull();
+    expect(eventNode?.className).toMatch(/min-w-80/);
+    const titleBar = eventNode?.querySelector(".rounded-t-lg");
+    expect(titleBar?.className).toMatch(/text-base/);
 
     const execHandle = container.querySelector(
       '[data-handleid="execOut"][data-pin-type="exec"]',
@@ -2198,6 +2201,9 @@ describe("GraphEditor", () => {
     });
     expect(container.querySelector('[data-id="root"] [data-node-role="bt-root"]')).not.toBeNull();
     expect(container.querySelector('[data-id="task"] [data-node-role="bt-task"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-id="task"] [data-node-role="bt-task"]')?.className,
+    ).toMatch(/min-w-56/);
     expect(getByTestId("bt-node-root").className).toContain("bt-node-drag-handle");
     expect(getByTestId("bt-decorator-dec-1").className).toContain("nodrag");
     expect(getByTestId("bt-service-svc-1").className).toContain("nodrag");

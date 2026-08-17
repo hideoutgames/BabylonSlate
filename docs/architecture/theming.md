@@ -76,7 +76,8 @@ Title-bar fills for Blueprint-like nodes:
 
 | Token | Role |
 | --- | --- |
-| `--node-event` | `flow.event.*` / titles starting `Event` |
+| `--node-event` | `flow.event.*` / titles starting `Event` (not Call Parent) |
+| `--node-call-parent` | `flow.event.callParent` (brown title bar) |
 | `--node-function` | default impure calls |
 | `--node-pure` | `pure` (math, getters) |
 | `--node-flow` | flow control (Branch, Sequence) |
@@ -128,6 +129,8 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 | `--graph-pin-default-max-width` | `4.5rem` | Truncation cap for on-node literal default fields |
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
+
+Default Blueprint shells use Tailwind `min-w-80` (320px); compact BT nodes use `min-w-56`. Title bars are `text-base`. Pin rows stay `--touch-target` (44px).
 
 Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
 

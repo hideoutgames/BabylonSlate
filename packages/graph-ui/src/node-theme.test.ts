@@ -110,6 +110,30 @@ describe("nodeVisualRole", () => {
         pure: true,
       }),
     ).toBe("event");
+    expect(
+      nodeVisualRole({
+        nodeType: "flow.event.call",
+        title: "Call On Hit",
+        category: "flow",
+      }),
+    ).toBe("event");
+  });
+
+  it("maps Call Parent Event to a distinct brown role", () => {
+    expect(
+      nodeVisualRole({
+        nodeType: "flow.event.callParent",
+        title: "Call Begin Play Parent",
+        category: "flow",
+      }),
+    ).toBe("call-parent");
+    expect(
+      nodeVisualRole({
+        nodeType: "flow.event.callParent",
+        title: "Event Call Begin Play Parent",
+        category: "flow",
+      }),
+    ).toBe("call-parent");
   });
 
   it("maps latent and timer nodes", () => {
@@ -144,6 +168,7 @@ describe("nodeRoleClass", () => {
     expect(nodeRoleClass("bt-root")).toBe("bg-node-bt-root");
     expect(nodeRoleClass("bt-composite")).toBe("bg-node-bt-composite");
     expect(nodeRoleClass("bt-task")).toBe("bg-node-bt-task");
+    expect(nodeRoleClass("call-parent")).toBe("bg-node-call-parent");
   });
 });
 

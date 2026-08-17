@@ -128,12 +128,9 @@ async function addMaterialPaletteNode(
 ): Promise<void> {
   const graph = page.getByTestId("material-graph-editor");
   await expect(graph).toBeVisible();
-  const pane = graph.locator(".react-flow__pane");
-  const box = await pane.boundingBox();
-  expect(box).not.toBeNull();
-  await pane.dblclick({
-    position: { x: Math.round(box!.width / 2), y: Math.round(box!.height / 2) },
-  });
+  // Toolbar Add node: default Color / Output shells can cover pane-center
+  // double-tap after the wider Blueprint min-width.
+  await graph.getByTestId("graph-add-node").click();
   await expect(page.getByTestId("node-palette")).toBeVisible();
   await page.getByTestId("node-palette-search").fill(search);
   await page.getByTestId(`node-palette-item-${itemId}`).click();
