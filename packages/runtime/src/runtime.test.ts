@@ -99,6 +99,17 @@ describe("in-process runtime driver", () => {
     runtime.stop();
   });
 
+  it("does not copy a snapshot before the first published tick", () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+    });
+    const buf = new Float32Array(snapshotFloatCount(8));
+    expect(runtime.copySnapshot(buf)).toBe(false);
+    runtime.stop();
+  });
+
   it("resolves mapped actions and axes into TickContext", () => {
     const held: boolean[] = [];
     const runtime = createInProcessRuntime({ seed: 1, maxActors: 4 });

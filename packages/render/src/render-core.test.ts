@@ -170,4 +170,27 @@ describe("snapshot interpolator", () => {
     expect(out!.actorCount).toBe(1);
     expect(out!.actors[0]!.position.x).toBeCloseTo(5);
   });
+
+  it("ignores unpublished zeroed snapshot buffers", () => {
+    const interp = new SnapshotInterpolator(4);
+    interp.push(new Float32Array(snapshotFloatCount(4)));
+    expect(interp.sample(1)).toBeNull();
+  });
+
+  it("samples a published snapshot with no actors", () => {
+    const buf = new Float32Array(snapshotFloatCount(4));
+    writeSnapshotHeader(buf, {
+      frameId: 2,
+      tickIndex: 2,
+      actorCount: 0,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    const interp = new SnapshotInterpolator(4);
+    interp.push(buf);
+    const out = interp.sample(1);
+    expect(out).not.toBeNull();
+    expect(out!.actorCount).toBe(0);
+    expect(out!.frameId).toBe(2);
+  });
 });

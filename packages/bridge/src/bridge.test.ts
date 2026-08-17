@@ -11,6 +11,7 @@ import {
   u32ToFloatBits,
 } from "./layout";
 import {
+  isPublishedSnapshot,
   readActorSlot,
   readSnapshotHeader,
   writeActorSlot,
@@ -74,9 +75,28 @@ describe("snapshot layout", () => {
     expect(header.physicsMs).toBeCloseTo(0.25);
     expect(readActorSlot(buf, 1).position).toEqual({ x: 4, y: 5, z: 6 });
   });
+
+  it("treats only magic+version headers as published snapshots", () => {
+    const empty = new Float32Array(snapshotFloatCount(1));
+    expect(isPublishedSnapshot(empty)).toBe(false);
+    writeSnapshotHeader(empty, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 0,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    expect(isPublishedSnapshot(empty)).toBe(true);
+  });
 });
 
 describe("SAB seq-lock transport", () => {
+  it("does not treat an unpublished zeroed buffer as a snapshot", () => {
+    const pair = SeqLockSnapshotPair.create(4);
+    const copy = new Float32Array(pair.floatCount);
+    expect(pair.tryRead(copy)).toBe(false);
+  });
+
   it("publishes a stable snapshot the reader can copy", () => {
     const pair = SeqLockSnapshotPair.create(4);
     const writer = pair.writerBuffer();

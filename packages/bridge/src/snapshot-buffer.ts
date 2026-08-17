@@ -74,6 +74,13 @@ export function readSnapshotHeader(buf: Float32Array): SnapshotHeader {
   };
 }
 
+/** True when the buffer was published (`magic` + layout version), not a zeroed spare. */
+export function isPublishedSnapshot(buf: Float32Array): boolean {
+  return (
+    buf[0] === SNAPSHOT_MAGIC_F32 && buf[1] === SNAPSHOT_LAYOUT_VERSION
+  );
+}
+
 export function writeActorSlot(
   buf: Float32Array,
   slotIndex: number,

@@ -35,7 +35,7 @@ Play overlay canvas layout comes from Project Settings. When `render.customResol
 
 ## Snapshot apply
 
-- `SnapshotInterpolator` holds the two most recent stable bridge snapshots and can lerp (`sample(α)`). The live Play loop samples **α = 1** (latest published buffer): Play render and the worker tick share the same ~60 Hz cap, so a time-based α would add up to one tick of visual lag with no smoothing. Time-based interpolation waits until render rate exceeds tick rate. `lastActorPositions` always reads the latest snapshot (e2e / HUD), never an interpolated sample.
+- `SnapshotInterpolator` holds the two most recent stable bridge snapshots and can lerp (`sample(α)`). It **ignores unpublished** (zeroed, no `magic`) buffers — the worker's first rAF after `play` copies the seq-lock before any tick, and applying that as `actorCount: 0` despawned `assignMesh` visuals and dropped `assignedMaterialGuids()` (`data-assigned-materials`). A published empty scene (`actorCount: 0` with magic) still despawns. The live Play loop samples **α = 1** (latest published buffer): Play render and the worker tick share the same ~60 Hz cap, so a time-based α would add up to one tick of visual lag with no smoothing. Time-based interpolation waits until render rate exceeds tick rate. `lastActorPositions` always reads the latest snapshot (e2e / HUD), never an interpolated sample.
 - Reuse scratch `Vector3` / `Quaternion` / `Matrix`; no per-actor per-frame allocation.
 - Bulk apply / despawn wrapped in `blockMaterialDirtyMechanism` and `blockfreeActiveMeshesAndRenderingGroups`.
 - `skipPointerMovePicking: true` on every scene.

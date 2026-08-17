@@ -11,6 +11,7 @@ export {
 } from "./layout";
 export {
   clearSnapshot,
+  isPublishedSnapshot,
   readActorSlot,
   readSnapshotHeader,
   writeActorSlot,

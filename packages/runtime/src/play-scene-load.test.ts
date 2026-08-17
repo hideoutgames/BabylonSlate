@@ -7,6 +7,7 @@ import {
 } from "@babylonslate/bridge";
 import {
   createActor,
+  createDefaultScene,
   createDefaultSceneSettings,
   createMeshComponent,
   type SerializedScene,
@@ -591,6 +592,38 @@ describe("p7-play-scene-load", () => {
         materialAssetGuid: "mat-rock",
       },
     ]);
+    runtime.stop();
+  });
+
+  it("emits assignMaterial for a mesh in a default scene that already has a camera", () => {
+    const commands: CommandMessage[] = [];
+    const mesh = createMeshComponent("box-mesh", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const scene = createDefaultScene();
+    scene.actors.push(
+      createActor("actor-2", "box", {
+        components: [mesh],
+      }),
+    );
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/main.scene.babasset",
+        scene,
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "assignMaterial")).toEqual([
+      {
+        type: "assignMaterial",
+        slotId: 2,
+        materialAssetGuid: "mat-rock",
+      },
+    ]);
+    expect(commands.some((command) => command.type === "possessCamera")).toBe(
+      true,
+    );
     runtime.stop();
   });
 
