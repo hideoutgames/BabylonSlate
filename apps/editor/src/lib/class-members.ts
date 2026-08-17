@@ -436,7 +436,15 @@ function seedFunctionGraph(
         },
       },
     ],
-    edges: [],
+    edges: [
+      {
+        id: `e:${member.id}-input:exec:${member.id}-output:then`,
+        source: `${member.id}-input`,
+        target: `${member.id}-output`,
+        sourceHandle: "exec",
+        targetHandle: "then",
+      },
+    ],
   };
 }
 
