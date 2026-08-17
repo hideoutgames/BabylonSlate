@@ -141,11 +141,11 @@ describe("material preview scene", () => {
     expect(widestAtTop).toBeLessThan(1e-5);
   });
 
-  it("falls back to a sphere when a custom mesh has no bytes", () => {
+  it("falls back to a cube when a custom mesh has no bytes", () => {
     const scene = new Scene(engine());
     disposers.push(() => scene.dispose());
     const mesh = createMaterialPreviewMesh(scene, "custom", null);
-    expect(mesh.getTotalVertices()).toBeGreaterThan(0);
+    expect(mesh.getTotalVertices()).toBe(24);
     expect(mesh.name).toBe(MATERIAL_PREVIEW_MESH_NAME);
   });
 
@@ -155,13 +155,14 @@ describe("material preview scene", () => {
     expect(host.scene.cameras.length).toBe(1);
     expect(host.scene.lights.length).toBeGreaterThan(0);
     expect(host.mesh.name).toBe(MATERIAL_PREVIEW_MESH_NAME);
+    expect(host.mesh.getTotalVertices()).toBe(24);
   });
 
   it("swaps the primitive while keeping the applied material", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
     const before = host.mesh.getTotalVertices();
-    const next = host.setMesh("cube");
+    const next = host.setMesh("sphere");
     expect(next.getTotalVertices()).not.toBe(before);
     expect(host.scene.meshes.length).toBe(1);
   });

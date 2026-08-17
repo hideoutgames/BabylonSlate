@@ -489,10 +489,26 @@ test.describe("P9 content systems", () => {
     await expect(canvas).toHaveAttribute("data-status", "ready", {
       timeout: 15000,
     });
-    await expect(page.getByTestId("material-render")).toBeDisabled();
+    const renderButton = page.getByTestId("material-render");
+    await expect(renderButton).toBeVisible();
+    await expect(renderButton).toBeEnabled();
+    await expect(
+      page.getByTestId("editor-global-toolbar").getByTestId("material-render"),
+    ).toHaveCount(1);
+    await expect(
+      page.getByTestId("material-preview-overlay").getByTestId("material-render"),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("material-preview-status")).toHaveCount(0);
+    await expect(page.getByTestId("material-preview-custom-mesh")).toHaveCount(0);
     await expect(page.getByTestId("material-compiler-results")).toContainText(
       "No Issues",
     );
+
+    await renderButton.click();
+    await expect(renderButton).toBeDisabled();
+    await page.waitForTimeout(2_000);
+    await expect(renderButton).toBeDisabled();
+    await expect(renderButton).toBeEnabled({ timeout: 5_000 });
 
     // Every primitive is reachable from the overlay mesh ToggleGroup.
     for (const mesh of ["cube", "cylinder", "cone", "plane"]) {
@@ -501,6 +517,10 @@ test.describe("P9 content systems", () => {
         timeout: 15000,
       });
     }
+    await page.getByTestId("material-preview-mesh-custom").click();
+    await expect(page.getByTestId("material-preview-mesh-picker")).toBeVisible();
+    await page.getByTestId("search-item-__none__").click();
+    await expect(page.getByTestId("material-preview-mesh-picker")).toHaveCount(0);
 
     // A static preview must replace its RTT each frame rather than accumulating
     // prior frames into progressively brighter trails.

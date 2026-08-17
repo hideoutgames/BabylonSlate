@@ -60,8 +60,8 @@ export function createMaterialPreviewMesh(
         const loaded = createMeshFromModelBytes(scene, name, customMeshBytes);
         if (loaded) return loaded;
       }
-      // Fall back to the sphere so an unresolved pick still previews.
-      return MeshBuilder.CreateSphere(name, { diameter: 1.6 }, scene);
+      // Missing or invalid custom bytes return to the canonical preview shape.
+      return MeshBuilder.CreateBox(name, { size: 1.4 }, scene);
     }
     case "sphere":
     default:
@@ -138,7 +138,7 @@ export function createMaterialPreviewScene(
 
   let mesh = createMaterialPreviewMesh(
     scene,
-    options.mesh ?? "sphere",
+    options.mesh ?? "cube",
     options.customMeshBytes,
   );
   aimPreviewCameraAtMesh(camera, mesh);
