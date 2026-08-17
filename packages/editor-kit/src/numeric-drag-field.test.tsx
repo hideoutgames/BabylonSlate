@@ -1,7 +1,29 @@
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NumericDragField } from "./numeric-drag-field";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
+
+function StatefulField({
+  initial,
+  onChange,
+}: {
+  initial: number;
+  onChange?: (value: number) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <NumericDragField
+      label="X"
+      value={value}
+      onChange={(next) => {
+        setValue(next);
+        onChange?.(next);
+      }}
+      data-testid="field"
+    />
+  );
+}
 
 describe("NumericDragField", () => {
   afterEach(() => {
@@ -118,7 +140,7 @@ describe("NumericDragField", () => {
     );
     const input = screen.getByTestId("field") as HTMLInputElement;
     expect(input.type).toBe("text");
-    expect(input.inputMode).toBe("decimal");
+    expect(input.inputMode).toBe("text");
 
     dispatchPointerEvent(input, "pointerdown", { pointerType: "touch" });
     input.focus();
@@ -129,5 +151,58 @@ describe("NumericDragField", () => {
       expect(input.selectionStart).toBe(0);
       expect(input.selectionEnd).toBe(input.value.length);
     });
+  });
+
+  it("shows at most two decimal places while idle", () => {
+    render(
+      <NumericDragField
+        label="X"
+        value={1.22338899332}
+        onChange={() => {}}
+        data-testid="field"
+      />,
+    );
+    expect((screen.getByTestId("field") as HTMLInputElement).value).toBe("1.22");
+  });
+
+  it("commits a complete arithmetic expression and shows two decimals after blur", () => {
+    const onChange = vi.fn();
+    render(<StatefulField initial={1} onChange={onChange} />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "1+2" } });
+    expect(input.value).toBe("1+2");
+    expect(onChange).toHaveBeenCalledWith(3);
+
+    fireEvent.blur(input);
+    expect(input.value).toBe("3");
+  });
+
+  it("applies a leading * to the value from when editing started", () => {
+    const onChange = vi.fn();
+    render(<StatefulField initial={1.5} onChange={onChange} />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "*" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "*2" } });
+    expect(onChange).toHaveBeenCalledWith(3);
+
+    fireEvent.blur(input);
+    expect(input.value).toBe("3");
+  });
+
+  it("does not commit an incomplete formula and restores the previous display on blur", () => {
+    const onChange = vi.fn();
+    render(<StatefulField initial={1.5} onChange={onChange} />);
+    const input = screen.getByTestId("field") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "1+" } });
+    expect(input.value).toBe("1+");
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.blur(input);
+    expect(input.value).toBe("1.5");
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
