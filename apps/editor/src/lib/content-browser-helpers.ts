@@ -987,6 +987,8 @@ export function buildNewAssetResult(options: {
   name: string;
   guid: string;
   parentClass: string | null;
+  parentOf?: (id: string) => string | null | undefined;
+  parentGraphs?: Record<string, import("@babylonslate/core").SerializedGraph>;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
 
@@ -1014,6 +1016,8 @@ export function buildNewAssetResult(options: {
   if (type === "Class") {
     const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry, {
       parentClass,
+      parentOf: options.parentOf,
+      parentGraphs: options.parentGraphs,
     }) as unknown as Record<
       string,
       unknown

@@ -7,6 +7,8 @@ import {
   addVariableAccessNode,
   blueprintSectionsForClass,
   classAllowsMemberKind,
+  ensureCallParentForEvent,
+  ensureEventNodeOnGraph,
   functionLibraryShowsEventGraphEmpty,
   memberNamePromptCopy,
   patchClassMember,
@@ -711,5 +713,98 @@ describe("functionLibraryShowsEventGraphEmpty", () => {
     expect(
       functionLibraryShowsEventGraphEmpty({ parentClass: "Actor" }),
     ).toBe(false);
+  });
+});
+
+describe("ensureEventNodeOnGraph Call Parent", () => {
+  it("adds Call Parent and default wires when a parent class is provided", () => {
+    let graph = emptyGraph();
+    graph = ensureEventNodeOnGraph(graph, "flow.event.beginPlay", {
+      parentClassId: "HeroBase",
+      idFactory: () => "evt-1",
+    });
+    expect(graph.nodes.map((node) => node.type)).toEqual([
+      "flow.event.beginPlay",
+      "flow.event.callParent",
+    ]);
+    expect(graph.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "evt-1",
+          target: "call-parent-flow-event-beginPlay",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        }),
+      ]),
+    );
+  });
+
+  it("does not duplicate Call Parent on a second ensure", () => {
+    let graph = ensureEventNodeOnGraph(emptyGraph(), "flow.event.tick", {
+      parentClassId: "Actor",
+    });
+    const once = graph.nodes.filter(
+      (node) => node.type === "flow.event.callParent",
+    ).length;
+    graph = ensureEventNodeOnGraph(graph, "flow.event.tick", {
+      parentClassId: "Actor",
+    });
+    expect(
+      graph.nodes.filter((node) => node.type === "flow.event.callParent"),
+    ).toHaveLength(once);
+  });
+
+  it("does not rewire when the user already moved Call Parent later", () => {
+    let graph = ensureEventNodeOnGraph(emptyGraph(), "flow.event.beginPlay", {
+      parentClassId: "Actor",
+      idFactory: () => "evt-1",
+    });
+    const callId = "call-parent-flow-event-beginPlay";
+    graph = {
+      ...graph,
+      nodes: [
+        ...graph.nodes,
+        {
+          id: "log-1",
+          type: "debug.log",
+          position: { x: 200, y: 80 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e:evt:log",
+          source: "evt-1",
+          target: "log-1",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+        {
+          id: "e:log:cp",
+          source: "log-1",
+          target: callId,
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    graph = ensureCallParentForEvent(graph, {
+      eventNodeId: "evt-1",
+      eventType: "flow.event.beginPlay",
+      parentClassId: "Actor",
+    });
+    expect(
+      graph.edges.some(
+        (edge) =>
+          edge.source === "evt-1" &&
+          edge.target === callId &&
+          edge.sourceHandle === "execOut",
+      ),
+    ).toBe(false);
+    expect(
+      graph.edges.some(
+        (edge) => edge.source === "log-1" && edge.target === callId,
+      ),
+    ).toBe(true);
   });
 });
