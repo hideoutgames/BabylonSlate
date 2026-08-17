@@ -82,7 +82,29 @@ describe("createPlayMesh", () => {
     await binding.slotAnimLoads?.get(2);
     expect(binding.meshes.get(2)).toBe(root);
     expect(root.isDisposed()).toBe(false);
-    expect(root.getChildMeshes().length).toBeGreaterThan(0);
+    const transformUnderSlot = scene.transformNodes.filter((node) =>
+      node.isDescendantOf(root),
+    );
+    expect(transformUnderSlot.length).toBeGreaterThan(0);
+    const descendant = root.getChildMeshes().find((mesh) => mesh !== root);
+    expect(descendant).toBeDefined();
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 2,
+          position: { x: 10, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    descendant!.computeWorldMatrix(true);
+    expect(descendant!.getAbsolutePosition().x).toBeCloseTo(10);
     const group = binding.slotAnimationGroups?.get(2)?.find(
       (entry) => entry.name === "Idle",
     );
