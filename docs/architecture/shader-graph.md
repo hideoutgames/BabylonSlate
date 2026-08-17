@@ -203,6 +203,9 @@ assignment to one named mesh, re-applies after a mesh rebuild, and releases
 records on despawn. Editor viewports (scene and Prefab) do **not** use that
 Play path: `EditorSceneSync` binds the same guid onto `editorActor:<id>` /
 `editorActor:<id>|<componentId>` through `MaterialLibrary.resolveMaterial`.
+The shared browser fixture asserts the authored material on Scene, Prefab,
+overlay Play, Preview Build, and the packed player rather than relying only on
+command-record tests.
 
 Scene Details authors `SceneSettings.postProcessStack` (ordered Material guid +
 Enabled) with `NamedListEditor` / `AssetPicker`. The picker lists post-process
