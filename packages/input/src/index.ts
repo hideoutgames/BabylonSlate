@@ -19,6 +19,11 @@ export {
   type InputMappings,
 } from "./mappings";
 export {
+  bindingCodeLabel,
+  bindingCodesForDevice,
+  type BindingCatalogEntry,
+} from "./binding-catalog";
+export {
   InputResolver,
   type ActionState,
   type Axis2DValue,
