@@ -103,7 +103,9 @@ export function createMaterialPreviewScene(
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.05, 0.05, 0.07, 1);
   scene.skipPointerMovePicking = true;
-  scene.autoClear = false;
+  // The camera renders into `outputRenderTarget`, so this clears the preview
+  // RTT rather than the shared Engine's default framebuffer.
+  scene.autoClear = true;
 
   const camera = new ArcRotateCamera(
     "materialPreviewCamera",
