@@ -3,7 +3,6 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  createDefaultScene,
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "../packages/core/src/index.ts";
 import {
@@ -15,6 +14,10 @@ import {
   zipExport,
 } from "../packages/exporter/src/index.ts";
 import { collectDirFiles, serveExportFiles } from "./export-static-server";
+import {
+  EXPECTED_PREVIEW_ACTOR_POSITIONS,
+  previewPlacementScene,
+} from "./preview-scene-fixture";
 
 function playerDist(): string {
   return join(process.cwd(), "apps/player/dist");
@@ -22,7 +25,7 @@ function playerDist(): string {
 
 async function packTinyGame() {
   const scene = {
-    ...createDefaultScene(),
+    ...previewPlacementScene(),
     name: "ExportBoot",
   };
   const playerFiles = collectDirFiles(playerDist());
@@ -103,6 +106,26 @@ test.describe("P14 export smoke", () => {
           "data-booted",
           "true",
         );
+        await expect
+          .poll(
+            () =>
+              page.getByTestId("player-root").evaluate(() => {
+                const host = globalThis as unknown as {
+                  __babylonslatePlayerTest?: {
+                    visuals: () => Array<{
+                      visible: boolean;
+                      position: [number, number, number];
+                    }>;
+                  };
+                };
+                return (host.__babylonslatePlayerTest?.visuals() ?? [])
+                  .filter((visual) => visual.visible)
+                  .map((visual) => visual.position)
+                  .sort((a, b) => a[0] - b[0]);
+              }),
+            { timeout: 20_000 },
+          )
+          .toEqual(EXPECTED_PREVIEW_ACTOR_POSITIONS);
       } finally {
         await server.close();
       }

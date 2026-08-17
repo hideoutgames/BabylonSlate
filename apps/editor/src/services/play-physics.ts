@@ -86,6 +86,16 @@ export type PlaySceneLoad = {
   path?: string;
 };
 
+/** Prefer the registry guid so `activeScene` resolves in every Play host. */
+export function canonicalPlaySceneGuid(
+  scene: PlaySceneLoad,
+  guidForPath: (path: string) => string | null,
+): string {
+  return scene.path
+    ? (guidForPath(scene.path) ?? scene.sceneAssetGuid)
+    : scene.sceneAssetGuid;
+}
+
 /** Active (or first) open scene document for the Play `load` message. */
 export function playSceneFromOpenDocuments(
   documents: readonly PlaySceneDocument[],

@@ -68,6 +68,7 @@ export type PlayerDiagnostic = {
 
 export type PlayerBootHandle = {
   ticks: () => number;
+  visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
   stop: () => { diagnostics: PlayerDiagnostic[] };
 };
 
@@ -316,6 +317,7 @@ export function startPlayer(options: {
 
   return {
     ticks: () => ticks,
+    visuals: () => handle.playVisualStates(),
     stop: () => {
       halted = true;
       cancelAnimationFrame(raf);
