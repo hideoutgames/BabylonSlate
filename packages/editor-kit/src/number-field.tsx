@@ -1,6 +1,7 @@
 import { useState, type ComponentProps } from "react";
 import { Input } from "@babylonslate/ui/components/input";
 import { parseNumberInput } from "./parse-number-input";
+import { SelectAllInput } from "./select-all-input";
 
 export interface NumberFieldProps
   extends Omit<
@@ -42,9 +43,12 @@ export function NumberField({
   const [draft, setDraft] = useState<string | null>(null);
 
   return (
-    <Input
+    <SelectAllInput
       {...props}
-      type="number"
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      spellCheck={false}
       min={min}
       max={max}
       value={draft ?? String(value)}

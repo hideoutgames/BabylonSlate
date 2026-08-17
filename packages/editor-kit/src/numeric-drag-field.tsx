@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState, type PointerEvent } from "react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { parseNumberInput } from "./parse-number-input";
+import { useSelectAllOnActivate } from "./select-all-on-activate";
 
 export interface NumericDragFieldProps {
   /** Visual scrub-handle text (axis letter). Omit for a compact unlabeled handle. */
@@ -39,7 +40,6 @@ export function NumericDragField({
   id,
   value,
   sensitivity = 0.01,
-  step = 0.001,
   min,
   max,
   disabled = false,
@@ -57,6 +57,7 @@ export function NumericDragField({
   } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
+  const selectAll = useSelectAllOnActivate();
 
   const onPointerDown = useCallback(
     (event: PointerEvent<HTMLSpanElement>) => {
@@ -118,13 +119,15 @@ export function NumericDragField({
         {label}
       </span>
       <input
-        type="number"
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        spellCheck={false}
         id={id}
         className="h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-background px-1 text-xs"
         aria-label={label || undefined}
         data-testid={testId}
         disabled={disabled}
-        step={step}
         value={draft ?? String(value)}
         onChange={(event) => {
           setDraft(event.target.value);
@@ -132,7 +135,12 @@ export function NumericDragField({
           if (parsed === undefined) return;
           onChange(clamp(parsed, min, max));
         }}
+        onFocus={selectAll.onFocus}
+        onPointerDown={selectAll.onPointerDown}
+        onPointerUp={selectAll.onPointerUp}
+        onMouseUp={selectAll.onMouseUp}
         onBlur={() => {
+          selectAll.onBlur();
           setDraft(null);
           onDragEnd?.(value);
         }}

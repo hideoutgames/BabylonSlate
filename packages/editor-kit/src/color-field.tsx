@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Input } from "@babylonslate/ui/components/input";
+import { SelectAllInput } from "./select-all-input";
 
 export type ColorValue = [number, number, number];
 
@@ -65,7 +65,7 @@ export function ColorField({
         }}
         data-testid={testId}
       />
-      <Input
+      <SelectAllInput
         id={id ? `${id}-hex` : undefined}
         className="min-h-[var(--chrome-row,28px)] min-w-0 flex-1"
         value={draft ?? committed}

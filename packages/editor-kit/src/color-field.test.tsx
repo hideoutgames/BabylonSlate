@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   ColorField,
   parseHexColor,
 } from "./color-field";
+import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 afterEach(() => {
   cleanup();
@@ -89,5 +90,21 @@ describe("ColorField", () => {
       target: { value: "#0000ff" },
     });
     expect(onChange).toHaveBeenCalledWith([0, 0, 1]);
+  });
+
+  it("selects the hex value on tap so typing overwrites it", async () => {
+    render(
+      <ColorField value={[1, 0, 0]} onChange={() => {}} data-testid="tint" />,
+    );
+    const hex = screen.getByTestId("tint-hex") as HTMLInputElement;
+    dispatchPointerEvent(hex, "pointerdown", { pointerType: "touch" });
+    hex.focus();
+    hex.setSelectionRange(1, 1);
+    dispatchPointerEvent(hex, "pointerup", { pointerType: "touch" });
+
+    await waitFor(() => {
+      expect(hex.selectionStart).toBe(0);
+      expect(hex.selectionEnd).toBe(hex.value.length);
+    });
   });
 });
