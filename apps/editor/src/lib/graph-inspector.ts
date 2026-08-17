@@ -25,6 +25,10 @@ import {
   vec4TupleToObject,
 } from "@babylonslate/scripting";
 import { pinTypeForMember } from "@babylonslate/scripting-nodes";
+import {
+  normalizeUserInterfaceClassRef,
+  USER_INTERFACE_ENGINE_CLASS_ID,
+} from "@babylonslate/core";
 
 export function connectedInputPinIds(
   edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
@@ -255,8 +259,12 @@ export function pinDefaultPropertyRows(
       }
       case "classRef": {
         const classId = entry.type.classId;
-        const current =
+        const raw =
           pinDefaultAsString(entry.value) || pinDefaultAsString(typeDefault);
+        const current =
+          classId === USER_INTERFACE_ENGINE_CLASS_ID
+            ? (normalizeUserInterfaceClassRef(raw) ?? raw)
+            : raw;
         const display =
           mappingNames?.classEntries?.find((item) => item.id === current)
             ?.name ?? current;

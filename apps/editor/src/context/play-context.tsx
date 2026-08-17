@@ -88,6 +88,8 @@ import {
   collectImageGuidsFromUiDocuments,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
+import { playUserInterfaceRuntimeDocuments } from "../lib/play-content";
+import type { UserInterfaceRuntimeDocument } from "@babylonslate/bridge";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 import {
   collectUiImageUrls,
@@ -103,6 +105,17 @@ import {
 } from "../lib/shared-engine-generation";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
+
+/** Slim UI metadata for Play. Never auto-applies a HUD. */
+export function playSessionUiOptions(library: Record<string, UserInterfaceDocument>): {
+  userInterfaces: UserInterfaceRuntimeDocument[];
+  autoApply: false;
+} {
+  return {
+    userInterfaces: playUserInterfaceRuntimeDocuments(library),
+    autoApply: false,
+  };
+}
 
 export type LiveBtState = {
   slotId: number;

@@ -9,8 +9,13 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
+import type {
+  UiWidgetEventControl,
+  UserInterfaceRuntimeDocument,
+} from "@babylonslate/bridge";
 import {
   isEditorOnlyAsset,
+  userInterfaceClassId,
   userInterfaceClassMetadata,
   type SerializedGraph,
   type SerializedScene,
@@ -118,9 +123,22 @@ export function collectPlayScriptDocuments(
   }));
 }
 
-export type PlayHudInstance = { instanceId: string; assetGuid: string };
+export type PlayHudInstance = {
+  instanceId: string;
+  assetGuid: string;
+  classId: string;
+};
 
 export type PlayUiLibrary = Record<string, UserInterfaceDocument>;
+
+/** Open in-memory UserInterface payloads win over disk bytes. */
+export function preferOpenPlayUiContent(
+  open: unknown | null | undefined,
+  disk: unknown | null | undefined,
+): unknown | null {
+  if (open != null) return open;
+  return disk ?? null;
+}
 
 export function playUiLibraryFromAssets(
   assets: ReadonlyArray<{ guid: string; path: string; type: string }>,
@@ -136,16 +154,79 @@ export function playUiLibraryFromAssets(
   return library;
 }
 
+/** Slim widget rows for `loadUserInterfaces`. Does not apply a HUD. */
+export function playUserInterfaceRuntimeDocuments(
+  library: PlayUiLibrary,
+): UserInterfaceRuntimeDocument[] {
+  return Object.entries(library).map(([guid, document]) => ({
+    guid,
+    widgets: Object.values(document.widgets).map((widget) => ({
+      id: widget.id,
+      kind: widget.kind,
+      ...(widget.name ? { name: widget.name } : {}),
+    })),
+  }));
+}
+
+export function playHudVisibilityKey(instanceId: string, widgetId: string): string {
+  return `${instanceId}:${widgetId}`;
+}
+
+export function applyPlayHudVisibility(
+  hidden: ReadonlySet<string>,
+  instanceId: string,
+  widgetId: string,
+  visible: boolean,
+): Set<string> {
+  const next = new Set(hidden);
+  const key = playHudVisibilityKey(instanceId, widgetId);
+  if (visible) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
+/** Split `instanceId:widgetId`, keeping nested `/` widget ids after the first colon. */
+export function parsePlayHudControlId(
+  prefixedId: string,
+): { instanceId: string; widgetId: string } | null {
+  const colon = prefixedId.indexOf(":");
+  if (colon <= 0 || colon === prefixedId.length - 1) return null;
+  return {
+    instanceId: prefixedId.slice(0, colon),
+    widgetId: prefixedId.slice(colon + 1),
+  };
+}
+
+export type PlayUiWidgetEvent = Omit<UiWidgetEventControl, "type">;
+
+let playUiWidgetEventSink: ((event: PlayUiWidgetEvent) => boolean) | null = null;
+
+/** Register the live Play session dispatcher for HUD and test-host events. */
+export function setPlayUiWidgetEventSink(
+  sink: ((event: PlayUiWidgetEvent) => boolean) | null,
+): void {
+  playUiWidgetEventSink = sink;
+}
+
+/** Forward a widget event to the mounted Play session, if any. */
+export function dispatchMountedPlayUiWidgetEvent(
+  event: PlayUiWidgetEvent,
+): boolean {
+  return playUiWidgetEventSink?.(event) ?? false;
+}
+
 export function applyPlayHudInstance(
   instances: readonly PlayHudInstance[],
   instanceId: string,
   assetGuid: string,
+  classId?: string,
 ): PlayHudInstance[] {
   const id = instanceId.trim();
   const guid = assetGuid.trim();
   if (!id || !guid) return [...instances];
   if (instances.some((entry) => entry.instanceId === id)) return [...instances];
-  return [...instances, { instanceId: id, assetGuid: guid }];
+  const resolvedClassId = classId?.trim() || userInterfaceClassId(guid);
+  return [...instances, { instanceId: id, assetGuid: guid, classId: resolvedClassId }];
 }
 
 export function removePlayHudInstance(

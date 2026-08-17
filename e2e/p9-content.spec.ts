@@ -838,7 +838,7 @@ test.describe("P9 content systems", () => {
               id: "apply",
               type: "ui.applyToViewport",
               position: { x: 320, y: 80 },
-              data: { asset: guid },
+              data: { "default:asset": `UserInterface:${guid}` },
             },
           ],
           edges: [
@@ -863,6 +863,231 @@ test.describe("P9 content systems", () => {
       timeout: 15_000,
     });
     await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("Play applies a UI class, routes button events, and keeps instances independent", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    const guid = await guidForPath(page, "assets/HUD.ui.babasset");
+    expect(guid).not.toBe("");
+    const classId = `UserInterface:${guid}`;
+    const installedUi = await page.evaluate(
+      async ({ path, content }) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setUiDocumentContent: (
+              path: string,
+              content: Record<string, unknown>,
+            ) => Promise<boolean>;
+          };
+        };
+        return host.__babylonslateTest?.setUiDocumentContent(path, content) ?? false;
+      },
+      {
+        path: "assets/HUD.ui.babasset",
+        content: {
+          name: "HUD",
+          rootId: "canvas",
+          widgets: {
+            canvas: {
+              id: "canvas",
+              kind: "Canvas",
+              name: "Canvas",
+              children: ["play-btn", "logo"],
+              visible: true,
+              style: {},
+              props: {},
+            },
+            "play-btn": {
+              id: "play-btn",
+              kind: "Button",
+              name: "Play",
+              children: [],
+              visible: true,
+              style: {},
+              props: { text: "Play" },
+            },
+            logo: {
+              id: "logo",
+              kind: "Image",
+              name: "Logo",
+              children: [],
+              visible: true,
+              style: {},
+              props: {},
+            },
+          },
+          logic: {
+            nodes: [
+              {
+                id: "click",
+                type: "flow.event.custom",
+                position: { x: 40, y: 80 },
+                data: { name: "onWidgetClick" },
+              },
+              {
+                id: "log",
+                type: "debug.log",
+                position: { x: 320, y: 80 },
+                data: { "default:message": "hud-clicked" },
+              },
+              {
+                id: "self",
+                type: "actor.getSelf",
+                position: { x: 320, y: 200 },
+                data: {},
+              },
+              {
+                id: "cast",
+                type: "casting.cast",
+                position: { x: 440, y: 200 },
+                data: {
+                  "default:class": "UserInterface",
+                  defaultClassId: "UserInterface",
+                  resultKind: "objectRef",
+                },
+              },
+              {
+                id: "remove",
+                type: "ui.removeFromViewport",
+                position: { x: 560, y: 80 },
+                data: {},
+              },
+            ],
+            edges: [
+              {
+                id: "e1",
+                source: "click",
+                target: "log",
+                sourceHandle: "execOut",
+                targetHandle: "execIn",
+              },
+              {
+                id: "e2",
+                source: "log",
+                target: "remove",
+                sourceHandle: "execOut",
+                targetHandle: "execIn",
+              },
+              {
+                id: "e3",
+                source: "self",
+                target: "cast",
+                sourceHandle: "out",
+                targetHandle: "object",
+              },
+              {
+                id: "e4",
+                source: "cast",
+                target: "remove",
+                sourceHandle: "result",
+                targetHandle: "instance",
+              },
+            ],
+          },
+        },
+      },
+    );
+    expect(installedUi).toBe(true);
+
+    const installedGraph = await page.evaluate(
+      async ({ graph }) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setMainGraphContent: (g: unknown) => Promise<boolean>;
+          };
+        };
+        return host.__babylonslateTest?.setMainGraphContent(graph) ?? false;
+      },
+      {
+        graph: {
+          nodes: [
+            {
+              id: "begin",
+              type: "flow.event.beginPlay",
+              position: { x: 40, y: 80 },
+              data: {},
+            },
+            {
+              id: "apply-a",
+              type: "ui.applyToViewport",
+              position: { x: 320, y: 80 },
+              data: { "default:asset": classId },
+            },
+            {
+              id: "apply-b",
+              type: "ui.applyToViewport",
+              position: { x: 600, y: 80 },
+              data: { "default:asset": classId },
+            },
+          ],
+          edges: [
+            {
+              id: "e1",
+              source: "begin",
+              target: "apply-a",
+              sourceHandle: "execOut",
+              targetHandle: "execIn",
+            },
+            {
+              id: "e2",
+              source: "apply-a",
+              target: "apply-b",
+              sourceHandle: "execOut",
+              targetHandle: "execIn",
+            },
+          ],
+        },
+      },
+    );
+    expect(installedGraph).toBe(true);
+
+    await openMainScene(page);
+    await expect(page.getByTestId("play-hud")).toHaveCount(0);
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-hud-widget-ui-1:play-btn")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("play-hud-widget-ui-1:logo")).toBeVisible();
+    await expect(page.getByTestId("play-hud-widget-ui-2:play-btn")).toBeVisible();
+    await expect(page.getByTestId("play-hud-widget-ui-2:logo")).toBeVisible();
+    await expect(page.getByTestId("play-hud-widget-ui-1:play-btn")).toHaveAttribute(
+      "data-kind",
+      "Button",
+    );
+    await expect(page.getByTestId("play-hud-widget-ui-1:logo")).toHaveAttribute(
+      "data-kind",
+      "Image",
+    );
+
+    const dispatched = await page.evaluate(() => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: {
+          dispatchPlayUiWidgetEvent?: (event: {
+            instanceId: string;
+            widgetId: string;
+            kind: "click";
+          }) => boolean;
+        };
+      };
+      return (
+        host.__babylonslateTest?.dispatchPlayUiWidgetEvent?.({
+          instanceId: "ui-1",
+          widgetId: "play-btn",
+          kind: "click",
+        }) ?? false
+      );
+    });
+    expect(dispatched).toBe(true);
+    await expect(page.getByTestId("play-log-tail")).toContainText("hud-clicked", {
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId("play-hud-widget-ui-1:play-btn")).toHaveCount(0);
+    await expect(page.getByTestId("play-hud-widget-ui-2:play-btn")).toBeVisible();
+    await expect(page.getByTestId("play-hud-widget-ui-2:logo")).toBeVisible();
     await page.getByTestId("play-overlay-close").click();
   });
 

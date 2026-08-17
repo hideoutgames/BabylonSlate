@@ -187,7 +187,9 @@ import {
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
   playUiLibraryFromAssets,
+  preferOpenPlayUiContent,
   collectPlayScriptDocuments,
+  dispatchMountedPlayUiWidgetEvent,
   spriteAssetGuidsFromScene,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
@@ -2044,18 +2046,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const asset of assets) {
       if (asset.type !== "UserInterface") continue;
       const openDoc = open.get(documentId({ kind: "ui", path: asset.path }));
-      if (openDoc?.content) {
-        loaded.set(asset.path, openDoc.content);
-        continue;
+      let disk: unknown | null = null;
+      if (!openDoc?.content) {
+        try {
+          disk = await projectService.loadDocument("ui", asset.path);
+        } catch (error) {
+          console.error(`[play] failed to load UserInterface ${asset.path}`, error);
+        }
       }
-      try {
-        loaded.set(
-          asset.path,
-          await projectService.loadDocument("ui", asset.path),
-        );
-      } catch (error) {
-        console.error(`[play] failed to load UserInterface ${asset.path}`, error);
-      }
+      const content = preferOpenPlayUiContent(openDoc?.content, disk);
+      if (content) loaded.set(asset.path, content);
     }
     return playUiLibraryFromAssets(assets, (path) => loaded.get(path) ?? null);
   }, [documentService, projectService]);
@@ -2452,6 +2452,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         } | null) => void;
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
+        setUiDocumentContent: (
+          path: string,
+          content: Record<string, unknown>,
+        ) => Promise<boolean>;
+        dispatchPlayUiWidgetEvent: (event: {
+          instanceId: string;
+          widgetId: string;
+          kind: "click" | "value" | "checked" | "text";
+          value?: unknown;
+        }) => boolean;
         guidForPath: (path: string) => string | null;
         projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
@@ -2648,6 +2658,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         bump();
         return true;
       },
+      setUiDocumentContent: async (
+        path: string,
+        content: Record<string, unknown>,
+      ) => {
+        const id = documentId({ kind: "ui", path });
+        if (!documentService.getState().openDocuments.has(id)) {
+          await documentService.openDocument(
+            projectService,
+            { kind: "ui", path, label: path.split("/").pop() ?? path },
+            null,
+            false,
+          );
+        }
+        return applyAssetDocumentChange(id, content);
+      },
+      dispatchPlayUiWidgetEvent: (event) =>
+        dispatchMountedPlayUiWidgetEvent(event),
       guidForPath: (path: string) => projectService.guidForPath(path),
       textureEncodeState: (path: string) => {
         const asset = projectService.registry

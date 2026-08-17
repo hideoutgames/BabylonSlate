@@ -257,7 +257,8 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   useEffect(() => {
     if (!asset?.path || !payload) return;
     const runtime = createEditorUtilityInterfaceHost({
-      setWidgetVisible: (widgetId, visible) => {
+      setWidgetVisible: (widget, visible) => {
+        const widgetId = typeof widget === "string" ? widget : widget.widgetId;
         surfaceRef.current?.host.setVisible(widgetId, visible);
         surfaceRef.current?.host.markAsDirty();
       },
