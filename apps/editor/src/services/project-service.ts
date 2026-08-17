@@ -84,6 +84,7 @@ import {
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
 import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
+import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
 import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
 
 function headerMetaForSave(
@@ -209,7 +210,7 @@ export class ProjectService {
     this.storage = storage;
     this.blobs = createVfsBlobStore(storage);
     this.workerEncode = canUseWorkerEncode()
-      ? createWorkerEncodeFn({ workerUrl: "/basis/encode-worker.js" })
+      ? createWorkerEncodeFn({ workerUrl: editorEncodeWorkerUrl() })
       : null;
     this.encodeQueue = new EncodeQueue({
       encode: this.workerEncode ?? undefined,

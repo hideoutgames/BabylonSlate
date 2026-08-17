@@ -57,7 +57,9 @@ export function createWorkerEncodeFn(
           return;
         }
         if (msg.type === "error" && msg.id == null) {
-          reject(new Error(msg.error ?? "worker init failed"));
+          const error = new Error(msg.error ?? "worker init failed");
+          reject(error);
+          failPending(error);
           return;
         }
         if (msg.type === "encoded" && msg.id != null) {

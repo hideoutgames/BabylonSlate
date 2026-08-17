@@ -19,6 +19,7 @@ import {
   prefabSelectedActorIds,
   prefabSelectedIdFromPick,
 } from "../lib/prefab-preview";
+import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -82,6 +83,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       editor: true,
       viewportMode,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
+      ktx2BasePath: editorKtx2PublicBase(),
       onPickActor: (actorId) => {
         const ids = new Set(componentsRef.current.map((component) => component.id));
         setSelectedIdRef.current(prefabSelectedIdFromPick(actorId, ids));

@@ -7,44 +7,106 @@ export interface DecodedRgbaImage {
   clamped: boolean;
 }
 
+interface DrawableImage {
+  width: number;
+  height: number;
+  source: CanvasImageSource;
+  close?: () => void;
+}
+
 /**
  * Decode image bytes to RGBA8, clamping longest edge to maxDimension.
- * Uses createImageBitmap + OffscreenCanvas when available (Worker / modern browsers).
+ * Prefers createImageBitmap; falls back to Image.decode() (Safari / odd MIME).
  */
 export async function decodeSourceToRgba(
   source: Uint8Array,
   maxDimension: number,
   mime?: string,
 ): Promise<DecodedRgbaImage> {
-  if (typeof createImageBitmap !== "function") {
-    throw new Error("createImageBitmap is required for texture encode decode");
-  }
   const copy = source.slice();
   const blob = new Blob([copy], mime ? { type: mime } : undefined);
-  const bitmap = await createImageBitmap(blob);
+  const drawable = await decodeToDrawable(blob);
   try {
-    const { width, height, clamped } = clampDimension(
-      bitmap.width,
-      bitmap.height,
-      maxDimension,
-    );
-    const canvas =
-      typeof OffscreenCanvas !== "undefined"
-        ? new OffscreenCanvas(width, height)
-        : (() => {
-            throw new Error("OffscreenCanvas is required for Worker encode path");
-          })();
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("2D context unavailable for texture encode");
-    ctx.drawImage(bitmap, 0, 0, width, height);
-    const imageData = ctx.getImageData(0, 0, width, height);
-    return {
-      rgba: new Uint8Array(imageData.data.buffer.slice(0)),
-      width,
-      height,
-      clamped,
-    };
+    return rasterizeDrawable(drawable, maxDimension);
   } finally {
-    bitmap.close();
+    drawable.close?.();
   }
+}
+
+async function decodeToDrawable(blob: Blob): Promise<DrawableImage> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      return {
+        width: bitmap.width,
+        height: bitmap.height,
+        source: bitmap,
+        close: () => bitmap.close(),
+      };
+    } catch (error) {
+      if (typeof Image === "undefined") throw error;
+      try {
+        return await decodeWithHtmlImage(blob);
+      } catch {
+        throw error;
+      }
+    }
+  }
+  return decodeWithHtmlImage(blob);
+}
+
+async function decodeWithHtmlImage(blob: Blob): Promise<DrawableImage> {
+  if (typeof Image === "undefined") {
+    throw new Error("createImageBitmap is required for texture encode decode");
+  }
+  const url = URL.createObjectURL(blob);
+  const image = new Image();
+  image.src = url;
+  try {
+    await image.decode();
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+  return {
+    width: image.width,
+    height: image.height,
+    source: image,
+    close: () => URL.revokeObjectURL(url),
+  };
+}
+
+function rasterizeDrawable(
+  drawable: DrawableImage,
+  maxDimension: number,
+): DecodedRgbaImage {
+  const { width, height, clamped } = clampDimension(
+    drawable.width,
+    drawable.height,
+    maxDimension,
+  );
+  const canvas =
+    typeof OffscreenCanvas !== "undefined"
+      ? new OffscreenCanvas(width, height)
+      : createHtmlCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("2D context unavailable for texture encode");
+  ctx.drawImage(drawable.source, 0, 0, width, height);
+  const imageData = ctx.getImageData(0, 0, width, height);
+  return {
+    rgba: new Uint8Array(imageData.data.buffer.slice(0)),
+    width,
+    height,
+    clamped,
+  };
+}
+
+function createHtmlCanvas(width: number, height: number): HTMLCanvasElement {
+  if (typeof document === "undefined") {
+    throw new Error("OffscreenCanvas is required for Worker encode path");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  return canvas;
 }
