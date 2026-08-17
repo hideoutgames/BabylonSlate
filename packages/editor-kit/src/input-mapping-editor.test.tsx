@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { InputMappings } from "@babylonslate/input";
+import { normalizeInputMappings, type InputMappings } from "@babylonslate/input";
 import { InputMappingEditor } from "./input-mapping-editor";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -42,6 +42,47 @@ const jumpOnly: InputMappings = {
 };
 
 describe("InputMappingEditor", () => {
+  it("groups mappings into cards with device color marks on binding rows", () => {
+    render(<InputMappingEditor value={jumpOnly} onChange={() => {}} />);
+    expect(
+      screen
+        .getByTestId("input-actions-legend")
+        .querySelector("[data-type-color-swatch]"),
+    ).not.toBeNull();
+    expect(
+      screen
+        .getByTestId("input-axes-legend")
+        .querySelector("[data-type-color-swatch]"),
+    ).not.toBeNull();
+    expect(screen.getByTestId("input-action-0-bindings").textContent).toBe(
+      "Bindings",
+    );
+    const row = screen.getByTestId("input-action-0-binding-0");
+    expect(row.getAttribute("data-device")).toBe("key");
+    expect(row.querySelector("[data-type-color-swatch]")).not.toBeNull();
+    expect(row.className).toMatch(/border-l-2/);
+  });
+
+  it("colors 2D axis component toggles", () => {
+    const value: InputMappings = {
+      actions: [],
+      axes: [
+        {
+          name: "Move",
+          kind: "2d",
+          bindings: [{ device: "key", code: "KeyW", component: "y" }],
+        },
+      ],
+    };
+    render(<InputMappingEditor value={value} onChange={() => {}} />);
+    expect(screen.getByTestId("input-axis-0-binding-0-component-x").className).toMatch(
+      /axis-x/,
+    );
+    expect(screen.getByTestId("input-axis-0-binding-0-component-y").className).toMatch(
+      /axis-y/,
+    );
+  });
+
   it("lists action and axis names", () => {
     render(
       <InputMappingEditor value={jumpOnly} onChange={() => {}} />,
@@ -113,6 +154,48 @@ describe("InputMappingEditor", () => {
         ],
       }),
     );
+  });
+
+  it("keeps a draft row when switching back to Key through authoring normalize", () => {
+    let saved: InputMappings = jumpOnly;
+    const onChange = (next: InputMappings) => {
+      saved = next;
+    };
+    const view = () => (
+      <InputMappingEditor
+        value={normalizeInputMappings(saved, { allowIncomplete: true })}
+        onChange={onChange}
+      />
+    );
+    const { rerender } = render(view());
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-device"));
+    pickSelectItem("input-action-0-binding-0-device-gamepadButton");
+    rerender(view());
+    expect(screen.getByTestId("input-action-0-binding-0-code")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-device"));
+    pickSelectItem("input-action-0-binding-0-device-key");
+    rerender(view());
+    expect(
+      screen.getByTestId("input-action-0-binding-0-code").textContent,
+    ).toContain("Choose Key");
+
+    fireEvent.click(screen.getByTestId("input-action-0-add-binding"));
+    rerender(view());
+    expect(screen.getByTestId("input-action-0-binding-1-code")).toBeTruthy();
+  });
+
+  it("lists layout-agnostic Gamepad Button and Gamepad Axis devices", () => {
+    render(<InputMappingEditor value={jumpOnly} onChange={() => {}} />);
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-device"));
+    expect(
+      screen.getByTestId("input-action-0-binding-0-device-gamepadButton")
+        .textContent,
+    ).toBe("Gamepad Button");
+    expect(
+      screen.getByTestId("input-action-0-binding-0-device-gamepadAxis")
+        .textContent,
+    ).toBe("Gamepad Axis");
   });
 
   it("clears the code when the device changes", () => {

@@ -16,8 +16,15 @@ describe("formatBindingLabel", () => {
     expect(formatBindingLabel("mouseButton", "0")).toBe("Mouse Left");
     expect(formatBindingLabel("mouseButton", "2")).toBe("Mouse Right");
     expect(formatBindingLabel("pointer", "primary")).toBe("Primary Pointer");
-    expect(formatBindingLabel("gamepadButton", "0:0")).toBe("Gamepad 1 A");
-    expect(formatBindingLabel("gamepadButton", "1:1")).toBe("Gamepad 2 B");
+    expect(formatBindingLabel("gamepadButton", "0:0")).toBe(
+      "Gamepad 1 Face Button Down",
+    );
+    expect(formatBindingLabel("gamepadButton", "1:1")).toBe(
+      "Gamepad 2 Face Button Right",
+    );
+    expect(formatBindingLabel("gamepadButton", "0:10")).toBe(
+      "Gamepad 1 Left Stick Click",
+    );
     expect(formatBindingLabel("gamepadAxis", "0:0")).toBe(
       "Gamepad 1 Left Stick X",
     );
