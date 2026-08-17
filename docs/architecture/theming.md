@@ -113,7 +113,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 | `--asset-class` | Blackboard, Structure (indigo; former Class hue) | Blackboard (`List`), Structure (`Braces`) |
 | `--asset-script-type` | Enum, PluginSettings (teal) | Enum, PluginSettings (`Puzzle`) |
 | `--asset-component` | Engine components in Details / Add Component (purple) | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
-| `--asset-folder` | Content Browser folders (yellow-green) | Folder glyph |
+| `--asset-folder` | Content Browser folders (gold / yellow) | Folder glyph |
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-animation` (they spawn as Actors; same token as Class / Object). Unknown types fall back to a file glyph and `--muted-foreground`.
 
