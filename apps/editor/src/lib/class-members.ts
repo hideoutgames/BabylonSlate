@@ -224,6 +224,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "flow.event.call" || nodeId === "functions.call") {
     return false;
   }
+  if (nodeId === "flow.event.callParent") {
+    return false;
+  }
   if (nodeId === "interface.call") {
     return false;
   }

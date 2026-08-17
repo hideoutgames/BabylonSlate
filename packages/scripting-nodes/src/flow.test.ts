@@ -166,6 +166,64 @@ describe("flow nodes", () => {
     );
   });
 
+  it("registers Call Parent Event with passthrough data pins", () => {
+    const callParent = flowNodes.find(
+      (node) => node.id === "flow.event.callParent",
+    );
+    expect(callParent?.title).toBe("Call Parent Event");
+    const pins = callParent?.pins({
+      eventType: "flow.event.custom",
+      eventName: "On Hit",
+      parentClassId: "HeroBase",
+      pins: [{ name: "amount", typeId: "float", direction: "out" }],
+    });
+    expect(
+      pins?.map((pin) => ({
+        id: pin.id,
+        name: pin.name,
+        direction: pin.direction,
+        type: pin.type,
+      })),
+    ).toEqual([
+      { id: "execIn", name: "exec", direction: "in", type: EXEC },
+      { id: "execOut", name: "then", direction: "out", type: EXEC },
+      { id: "amount", name: "amount", direction: "in", type: FLOAT },
+      { id: "amount__out", name: "amount", direction: "out", type: FLOAT },
+    ]);
+  });
+
+  it("compiles Call Parent Event to ctx.invokeEvent on the parent class", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "cp", "flow.event.callParent", {
+          eventType: "flow.event.beginPlay",
+          eventName: "Begin Play",
+          parentClassId: "HeroBase",
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "cp",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+    });
+    expect(compiled.source).toContain(
+      'ctx.invokeEvent("HeroBase", "onBeginPlay", {  });',
+    );
+  });
+
   it("compiles function Output data pins as a return object", () => {
     const registry = createDefaultNodeRegistry();
     const pins = [

@@ -55,6 +55,7 @@ function catalogTypeId(node: {
 function shouldRegeneratePins(typeId: string): boolean {
   return (
     typeId === "flow.event.call" ||
+    typeId === "flow.event.callParent" ||
     typeId === "functions.call" ||
     typeId === "interface.call" ||
     typeId === "flow.function.input" ||
@@ -206,6 +207,31 @@ export function hydrateSerializedGraphForEditor(
         }
       }
 
+      if (typeId === "flow.event.callParent") {
+        const eventType =
+          typeof properties.eventType === "string" ? properties.eventType : "";
+        const rawName =
+          typeof properties.eventName === "string"
+            ? properties.eventName
+            : typeof properties.name === "string"
+              ? properties.name
+              : "";
+        const bodyName = formatEventMemberName(rawName);
+        if (bodyName) {
+          properties.eventName = bodyName;
+          properties.name = bodyName;
+        }
+        const label =
+          eventType && eventType !== "flow.event.custom"
+            ? formatEventMemberName(
+                eventType.startsWith("flow.event.")
+                  ? eventType.slice("flow.event.".length)
+                  : eventType,
+              )
+            : bodyName || "Event";
+        properties.title = `Call ${label} Parent`;
+      }
+
       const def = nodeRegistry.get(typeId);
       const pins: GraphPin[] = def ? def.pins(properties) : [];
 
@@ -218,7 +244,8 @@ export function hydrateSerializedGraphForEditor(
             ...(def
               ? {
                   title:
-                    typeId === "flow.event.call" &&
+                    (typeId === "flow.event.call" ||
+                      typeId === "flow.event.callParent") &&
                     typeof properties.title === "string"
                       ? properties.title
                       : (authoredTitle ?? def.title),

@@ -86,6 +86,13 @@ describe("displayNodeTitle", () => {
     );
     expect(displayNodeTitle("flow.event.call")).toBe("Call Custom Event");
   });
+
+  it("does not Event-prefix Call Parent Event titles", () => {
+    expect(
+      displayNodeTitle("flow.event.callParent", "Call Begin Play Parent"),
+    ).toBe("Call Begin Play Parent");
+    expect(displayNodeTitle("flow.event.callParent")).toBe("Call Parent Event");
+  });
 });
 
 describe("pinsAreCompatible", () => {
