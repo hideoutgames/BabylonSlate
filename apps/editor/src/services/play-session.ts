@@ -37,6 +37,7 @@ import {
   playLoadControl,
   type PlayPhysicsSettings,
 } from "./play-physics";
+import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import {
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   type TracePayload,
@@ -275,6 +276,7 @@ export function startPlaySession(options: {
     pixelsPerUnit: options.pixelsPerUnit,
     pixelPerfect: options.pixelPerfect,
     environmentColor: options.scene?.settings.environmentColor,
+    ktx2BasePath: editorKtx2PublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
     },

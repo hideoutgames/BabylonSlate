@@ -15,6 +15,7 @@ import { Vector2 } from "@babylonjs/core";
 import { Control as GuiControl } from "@babylonjs/gui/2D/controls/control";
 import { Container } from "@babylonjs/gui/2D/controls/container";
 import { Ellipse } from "@babylonjs/gui/2D/controls/ellipse";
+import { Image } from "@babylonjs/gui/2D/controls/image";
 import { Grid } from "@babylonjs/gui/2D/controls/grid";
 import { ScrollViewer } from "@babylonjs/gui/2D/controls/scrollViewers/scrollViewer";
 import { Slider } from "@babylonjs/gui/2D/controls/sliders/slider";
@@ -593,5 +594,50 @@ describe("BabylonUiApplyHost", () => {
     slider.dispose();
     box.dispose();
     input.dispose();
+  });
+});
+
+describe("Babylon GUI Image widgets", () => {
+  it("sets Image.source from resolveImageUrl", () => {
+    const doc = createDefaultUserInterface();
+    const image = createWidget("img", "Image", "Logo", pinLayout("left", "top", 64, 64));
+    image.props.imageGuid = "tex-1";
+    doc.widgets.canvas!.children = ["img"];
+    doc.widgets.img = image;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      resolveImageUrl: (guid) => (guid === "tex-1" ? "blob:tex-1" : null),
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    const control = named(root, "img");
+    expect(control).toBeInstanceOf(Image);
+    expect((control as Image).source).toBe("blob:tex-1");
+    host.clear();
+  });
+
+  it("updates Image.source in place when imageGuid changes", () => {
+    const doc = createDefaultUserInterface();
+    const image = createWidget("img", "Image", "Logo", pinLayout("left", "top", 64, 64));
+    image.props.imageGuid = "tex-1";
+    doc.widgets.canvas!.children = ["img"];
+    doc.widgets.img = image;
+    const urls: Record<string, string> = {
+      "tex-1": "blob:tex-1",
+      "tex-2": "blob:tex-2",
+    };
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      resolveImageUrl: (guid) => urls[guid] ?? null,
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    image.props.imageGuid = "tex-2";
+    applyUiControls(host, describeUiControls(doc, layout));
+    const control = named(root, "img") as Image;
+    expect(control.source).toBe("blob:tex-2");
+    host.clear();
   });
 });

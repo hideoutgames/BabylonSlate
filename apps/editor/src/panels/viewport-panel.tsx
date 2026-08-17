@@ -30,6 +30,7 @@ import { ViewportJoystick } from "../components/viewport-joystick";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
+import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -208,6 +209,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editor: true,
       viewportMode,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
+      ktx2BasePath: editorKtx2PublicBase(),
       onPickActor: (actorId, pick) =>
         selectActorRef.current(actorId, pick?.additive === true),
       onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),

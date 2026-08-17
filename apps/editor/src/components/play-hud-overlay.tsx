@@ -18,6 +18,8 @@ import { Button } from "@babylonslate/ui/components/button";
 import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
 import { playJoystickAxesFromPointer } from "../lib/play-hud-joystick";
 
+const defaultResolveImageUrl = (): string | null => null;
+
 export interface PlayHudOverlayProps {
   instances?: ReadonlyArray<{
     instanceId: string;
@@ -31,6 +33,7 @@ export interface PlayHudOverlayProps {
   /** Play scene; when set, widgets render through Babylon GUI. */
   scene?: Scene | null;
   fontEntries?: readonly FontAssetEntry[];
+  resolveImageUrl?: (guid: string) => string | null;
 }
 
 function numberProp(
@@ -85,10 +88,17 @@ export function PlayHudOverlay({
   onTouchAxis,
   scene = null,
   fontEntries = [],
+  resolveImageUrl = defaultResolveImageUrl,
 }: PlayHudOverlayProps) {
   const pointerIdRef = useRef<number | null>(null);
   const onTouchAxisRef = useRef(onTouchAxis);
   onTouchAxisRef.current = onTouchAxis;
+  const resolveImageUrlRef = useRef(resolveImageUrl);
+  resolveImageUrlRef.current = resolveImageUrl;
+  const boundResolveImageUrl = useCallback(
+    (guid: string) => resolveImageUrlRef.current(guid),
+    [],
+  );
   const extras = useEngineUiDesignerPresets();
   const preset = useMemo(
     () =>
@@ -147,6 +157,7 @@ export function PlayHudOverlay({
         },
         scaleRule: first?.scaleRule ?? "shortestSide",
         safeArea: preset.safeArea,
+        resolveImageUrl: boundResolveImageUrl,
         onTouchAxis: (controlId, value) => onTouchAxisRef.current(controlId, value),
       });
       attachedRef.current = attached;
@@ -172,7 +183,7 @@ export function PlayHudOverlay({
       first?.scaleRule ?? "shortestSide",
     );
     applyUiControls(attached.host, visibleControls);
-  }, [visibleControls, width, height, scene, instances]);
+  }, [visibleControls, width, height, scene, instances, resolveImageUrl]);
 
   useEffect(() => {
     const attached = attachedRef.current;

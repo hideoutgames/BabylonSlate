@@ -33,7 +33,12 @@ export interface UiSurface {
   host: BabylonUiApplyHost;
   present: () => void;
   presentGizmos: (state: DesignerGizmoState) => void;
-  resizeDesign: (width: number, height: number, scaleRule: ScaleRule) => void;
+  resizeDesign: (
+    width: number,
+    height: number,
+    scaleRule: ScaleRule,
+    designResolution?: { width: number; height: number },
+  ) => void;
   resizeGizmos: (width: number, height: number) => void;
   /** Skip ADT blits (markDirty, pointers, present) while the dock tab is hidden. */
   setFrozen: (frozen: boolean) => void;
@@ -86,6 +91,7 @@ export function createUiSurface(
     : null;
 
   let frozen = false;
+  let designResolution = options.designResolution;
   const blitDesign = () =>
     blitIfUnfrozen(frozen, () => presentAdtToCanvas(designAdt, canvas));
   const blitGizmos = () => {
@@ -127,9 +133,10 @@ export function createUiSurface(
       paintDesignerGizmos(gizmoAdt, state);
       blitGizmos();
     },
-    resizeDesign: (width, height, scaleRule) => {
+    resizeDesign: (width, height, scaleRule, nextDesignResolution) => {
+      if (nextDesignResolution) designResolution = nextDesignResolution;
       designAdt.scaleTo(Math.max(1, width), Math.max(1, height));
-      applyAdtIdeal(designAdt, options.designResolution, scaleRule);
+      applyAdtIdeal(designAdt, designResolution, scaleRule);
     },
     resizeGizmos: (width, height) => {
       gizmoAdt?.scaleTo(Math.max(1, width), Math.max(1, height));
@@ -349,7 +356,10 @@ export function presentAdtToCanvas(
   context.drawImage(source as CanvasImageSource, 0, 0);
 }
 
-/** Thrown present errors are always hard; a 0×0 ADT is skipped without throwing. */
+/** Thrown present errors are hard only when the 2D blit cannot run. */
 export function isHardUiPresentFailure(error: unknown): boolean {
-  return error != null;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    /no 2d context/i.test(message) || /backing store is missing/i.test(message)
+  );
 }

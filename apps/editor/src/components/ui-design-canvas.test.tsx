@@ -97,6 +97,10 @@ describe("UiDesignCanvas preview fallback", () => {
     render(<UiDesignCanvas {...hudCanvasProps()} />);
     expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
+    const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
+      resolveImageUrl?: (guid: string) => string | null;
+    };
+    expect(typeof options.resolveImageUrl).toBe("function");
   });
 
   it("skips present when the Design dock tab is hidden", () => {
@@ -156,6 +160,66 @@ describe("UiDesignCanvas preview fallback", () => {
       />,
     );
     expect(addControl).not.toHaveBeenCalled();
+  });
+
+  it("resizes the existing surface when the device viewport changes", () => {
+    const dispose = vi.fn();
+    const resizeDesign = vi.fn();
+    createUiSurfaceMock.mockReturnValue({
+      present: vi.fn(),
+      setFrozen: vi.fn(),
+      dispose,
+      host: {
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl: vi.fn(),
+        markAsDirty: vi.fn(),
+      },
+      resizeDesign,
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    const props = hudCanvasProps();
+    const { rerender } = render(<UiDesignCanvas {...props} />);
+    expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
+    rerender(
+      <UiDesignCanvas
+        {...props}
+        viewport={{ ...props.viewport, width: 800, height: 600 }}
+      />,
+    );
+    expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(resizeDesign).toHaveBeenCalled();
+  });
+
+  it("re-applies when returning from Logic to Designer", () => {
+    const addControl = vi.fn();
+    createUiSurfaceMock.mockReturnValue({
+      present: vi.fn(),
+      setFrozen: vi.fn(),
+      dispose: vi.fn(),
+      host: {
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl,
+        markAsDirty: vi.fn(),
+      },
+      resizeDesign: vi.fn(),
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    const props = hudCanvasProps();
+    const { rerender } = render(
+      <UiDesignCanvas {...props} panelVisible documentActive={false} />,
+    );
+    expect(addControl).not.toHaveBeenCalled();
+    rerender(<UiDesignCanvas {...props} panelVisible documentActive />);
+    expect(addControl).toHaveBeenCalled();
   });
 
   it("commits a widget drag once on pointer up", () => {

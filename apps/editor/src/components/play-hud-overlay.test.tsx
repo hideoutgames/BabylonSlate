@@ -7,9 +7,22 @@ import {
 } from "@babylonslate/vfs";
 import { PlayHudOverlay } from "./play-hud-overlay";
 
+const { attachFullscreenGuiMock } = vi.hoisted(() => ({
+  attachFullscreenGuiMock: vi.fn(),
+}));
+
+vi.mock("@babylonslate/render", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonslate/render")>();
+  return {
+    ...actual,
+    attachFullscreenGui: (...args: unknown[]) => attachFullscreenGuiMock(...args),
+  };
+});
+
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  attachFullscreenGuiMock.mockReset();
 });
 
 function hudWith(kind: "TouchButton" | "TouchDPad" | "TouchJoystick", name?: string) {
@@ -125,5 +138,33 @@ describe("PlayHudOverlay stick chrome", () => {
       />,
     );
     expect(getByTestId("play-hud-stick").textContent).toContain("Move Stick");
+  });
+});
+
+describe("PlayHudOverlay images", () => {
+  it("passes resolveImageUrl into the fullscreen GUI host", () => {
+    attachFullscreenGuiMock.mockReturnValue({
+      adt: { markAsDirty: vi.fn() },
+      host: { clear: vi.fn(), addControl: vi.fn(), markAsDirty: vi.fn() },
+      dispose: vi.fn(),
+    });
+    const resolveImageUrl = (guid: string) =>
+      guid === "tex-1" ? "blob:tex-1" : null;
+    render(
+      <PlayHudOverlay
+        scene={{} as never}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "hud", document: hudWith("TouchButton") }]}
+        onTouchAxis={() => {}}
+        resolveImageUrl={resolveImageUrl}
+      />,
+    );
+    expect(attachFullscreenGuiMock).toHaveBeenCalled();
+    const options = attachFullscreenGuiMock.mock.calls[0]?.[1] as {
+      resolveImageUrl?: (guid: string) => string | null;
+    };
+    expect(options.resolveImageUrl?.("tex-1")).toBe("blob:tex-1");
+    expect(options.resolveImageUrl?.("missing")).toBeNull();
   });
 });

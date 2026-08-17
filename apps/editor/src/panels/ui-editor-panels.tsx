@@ -164,6 +164,7 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
             bitmapScale={editing.bitmapScale}
             sharedEngine={editing.sharedEngine}
             fontEntries={editing.fontEntries}
+            resolveImageUrl={editing.resolveImageUrl}
             panelVisible={panelVisible}
             documentActive={documentActive}
             onSelect={editing.setSelectedId}

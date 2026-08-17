@@ -137,6 +137,7 @@ import {
   type DockviewSurface,
 } from "../shell/dockview-surface";
 import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
+import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import {
   closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
@@ -1038,7 +1039,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const { probeKtx2TranscoderAvailable } = await import(
         "@babylonslate/render"
       );
-      const transcoderOk = await probeKtx2TranscoderAvailable();
+      const transcoderOk = await probeKtx2TranscoderAvailable(
+        editorKtx2PublicBase(),
+      );
       await projectService.setTranscoderAvailable(transcoderOk);
       const derived = await ensureDerived();
       projectService.setDerivedStorage(derived);

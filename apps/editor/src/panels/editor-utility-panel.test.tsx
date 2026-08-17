@@ -101,7 +101,9 @@ describe("EditorUtilityPanel", () => {
     await waitFor(() => expect(createUiSurfaceMock).toHaveBeenCalled());
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
       interactive?: boolean;
+      resolveImageUrl?: (guid: string) => string | null;
     };
     expect(options.interactive).toBe(true);
+    expect(typeof options.resolveImageUrl).toBe("function");
   });
 });

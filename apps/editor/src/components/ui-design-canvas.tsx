@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -59,6 +60,8 @@ import {
 } from "../lib/live-ui-present";
 import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
 
+const defaultResolveImageUrl = (): string | null => null;
+
 export function UiDesignCanvas({
   ui,
   viewport,
@@ -69,6 +72,7 @@ export function UiDesignCanvas({
   previewScale,
   sharedEngine,
   fontEntries = [],
+  resolveImageUrl = defaultResolveImageUrl,
   bitmapScale,
   onSelect,
   onViewChange,
@@ -91,6 +95,7 @@ export function UiDesignCanvas({
   bitmapScale: number;
   sharedEngine: Engine | null;
   fontEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
+  resolveImageUrl?: (guid: string) => string | null;
   onSelect: (id: string) => void;
   onViewChange: (view: DesignView) => void;
   onLayoutChange: (id: string, next: WidgetLayout, mergeKey?: string) => void;
@@ -134,6 +139,12 @@ export function UiDesignCanvas({
   previewLayoutsRef.current = previewLayouts;
   const paintSchedulerRef = useRef(createUiFrameScheduler());
   const gizmoSchedulerRef = useRef(createUiFrameScheduler());
+  const resolveImageUrlRef = useRef(resolveImageUrl);
+  resolveImageUrlRef.current = resolveImageUrl;
+  const boundResolveImageUrl = useCallback(
+    (guid: string) => resolveImageUrlRef.current(guid),
+    [],
+  );
   latestUiRef.current = ui;
   viewRef.current = view;
   const viewScale = previewScale * view.zoom * bitmapScale;
@@ -176,6 +187,7 @@ export function UiDesignCanvas({
         scaleRule: ui.scaleRule,
         gizmoCanvas: gizmoCanvas ?? undefined,
         safeArea: viewport.safeArea,
+        resolveImageUrl: boundResolveImageUrl,
       });
     } catch (error) {
       const message =
@@ -199,21 +211,10 @@ export function UiDesignCanvas({
       paintScheduler.cancel();
       gizmoScheduler.cancel();
     };
-    // panelVisible / documentActive: freezeLiveUiSurface on the new surface this
-    // frame; the next effect updates freeze when those flags change.
+    // Recreate only when the shared Engine identity changes. Viewport, scale
+    // rule, and design resolution go through resizeDesign on the paint path.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
-  }, [
-    sharedEngine,
-    ui.designResolution.height,
-    ui.designResolution.width,
-    ui.scaleRule,
-    viewport.height,
-    viewport.safeArea.bottom,
-    viewport.safeArea.left,
-    viewport.safeArea.right,
-    viewport.safeArea.top,
-    viewport.width,
-  ]);
+  }, [sharedEngine]);
 
   useEffect(() => {
     freezeLiveUiSurface(surfaceRef.current, { panelVisible, documentActive });
@@ -249,7 +250,12 @@ export function UiDesignCanvas({
       if (!live) return;
       try {
         const frozen = !panelVisible || !documentActive;
-        live.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
+        live.resizeDesign(
+          viewport.width,
+          viewport.height,
+          ui.scaleRule,
+          ui.designResolution,
+        );
         applyUiControlsIfUnfrozen(frozen, live.host, displayControls);
         presentLiveUiIfVisible({
           panelVisible,
@@ -274,6 +280,9 @@ export function UiDesignCanvas({
     documentActive,
     guiLive,
     panelVisible,
+    resolveImageUrl,
+    ui.designResolution.height,
+    ui.designResolution.width,
     ui.scaleRule,
     viewport.height,
     viewport.width,

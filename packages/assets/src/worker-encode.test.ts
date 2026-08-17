@@ -29,6 +29,50 @@ describe("createWorkerEncodeFn", () => {
     vi.restoreAllMocks();
   });
 
+  it("respawns the worker after an init error so later encodes can retry", async () => {
+    let constructed = 0;
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor() {
+          constructed += 1;
+          const worker = new FakeWorker();
+          if (constructed === 1) {
+            worker.postMessage = vi.fn((msg: { type: string }) => {
+              if (msg.type === "init") {
+                queueMicrotask(() => {
+                  worker.dispatchEvent(
+                    new MessageEvent("message", {
+                      data: { type: "error", error: "worker init failed" },
+                    }),
+                  );
+                });
+              }
+            });
+          }
+          return worker;
+        }
+      },
+    );
+
+    const encode = createWorkerEncodeFn({ workerUrl: "/basis/encode-worker.js" });
+    const settings = {
+      format: "uastc" as const,
+      quality: 2,
+      maxDimension: 64,
+      generateMipmaps: true,
+    };
+    await expect(encode(new Uint8Array([1]), settings)).rejects.toThrow(
+      /worker init failed/,
+    );
+    expect(constructed).toBe(1);
+
+    const retry = encode(new Uint8Array([1]), settings);
+    await vi.waitFor(() => expect(constructed).toBe(2));
+    encode.dispose();
+    await retry.catch(() => undefined);
+  });
+
   it("rejects in-flight encodes when the worker errors after load", async () => {
     let worker: FakeWorker | null = null;
     vi.stubGlobal(
