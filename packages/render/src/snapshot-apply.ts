@@ -45,6 +45,8 @@ const scratchPos = new Vector3();
 const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
 const scratchMatrix = Matrix.Identity();
+const scratchLocalPos = new Vector3();
+const scratchPartQuat = new Quaternion();
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
@@ -518,6 +520,7 @@ export function createPlayMesh(
     camera.minZ = 0.1;
     camera.maxZ = 1000;
     camera.rotationQuaternion = Quaternion.Identity();
+    camera.rotation.set(0, 0, 0);
     camera.detachControl();
     camera.inputs.clear();
     const props = binding.cameraProps.get(slotId);
@@ -569,11 +572,13 @@ export function applySnapshotToScene(
       }
       const light = binding.lights.get(actor.slotId);
       if (light) {
-        updateAuthoredLightTransform(light, actor.position, actor.rotation);
+        const composed = composeSlotPartTransform(actor, binding, actor.slotId);
+        updateAuthoredLightTransform(light, composed.position, composed.rotation);
       }
       const camera = binding.cameras.get(actor.slotId);
       if (camera) {
-        updateAuthoredCameraTransform(camera, actor.position, actor.rotation);
+        const composed = composeSlotPartTransform(actor, binding, actor.slotId);
+        updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
       }
       applyTilemapParallaxToMesh(
         mesh,
@@ -668,6 +673,52 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.shadowOwnerSlot = null;
   binding.defaultCameraSlotId = null;
   binding.possessedCameraSlotId = null;
+}
+
+function composeSlotPartTransform(
+  actor: ActorSlot,
+  binding: SnapshotSceneBinding,
+  slotId: number,
+): {
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number; w: number };
+} {
+  const part = binding.meshParts.get(slotId)?.[0];
+  if (!part) {
+    return { position: actor.position, rotation: actor.rotation };
+  }
+  scratchQuat.set(
+    actor.rotation.x,
+    actor.rotation.y,
+    actor.rotation.z,
+    actor.rotation.w,
+  );
+  scratchLocalPos.set(
+    part.position[0] * actor.scale.x,
+    part.position[1] * actor.scale.y,
+    part.position[2] * actor.scale.z,
+  );
+  scratchLocalPos.applyRotationQuaternionInPlace(scratchQuat);
+  scratchPartQuat.set(
+    part.rotation[0],
+    part.rotation[1],
+    part.rotation[2],
+    part.rotation[3],
+  );
+  const rotation = scratchQuat.multiply(scratchPartQuat);
+  return {
+    position: {
+      x: actor.position.x + scratchLocalPos.x,
+      y: actor.position.y + scratchLocalPos.y,
+      z: actor.position.z + scratchLocalPos.z,
+    },
+    rotation: {
+      x: rotation.x,
+      y: rotation.y,
+      z: rotation.z,
+      w: rotation.w,
+    },
+  };
 }
 
 function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {

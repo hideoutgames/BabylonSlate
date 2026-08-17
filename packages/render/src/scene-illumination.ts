@@ -231,6 +231,7 @@ function createCamera(
     scene,
   );
   camera.rotationQuaternion = composed.rotation;
+  camera.rotation.set(0, 0, 0);
   detachCameraInputs(camera);
   return camera;
 }
@@ -260,6 +261,7 @@ export function updateAuthoredCameraTransform(
     gameCamera.rotationQuaternion = Quaternion.Identity();
   }
   gameCamera.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+  gameCamera.rotation.set(0, 0, 0);
 }
 
 function refreshShadowCasters(scene: Scene, generator: ShadowGenerator): void {

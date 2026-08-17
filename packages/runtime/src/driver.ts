@@ -1499,6 +1499,7 @@ class InProcessRuntime implements RuntimeDriver {
           outerAngle: Number(light.getVariable("outerAngle") ?? 45),
           castShadows: light.getVariable("castShadows") === true,
         },
+        parts: [playMeshPartOf(light)],
       });
       return;
     }
@@ -1526,6 +1527,7 @@ class InProcessRuntime implements RuntimeDriver {
           farClip: Number(camera.getVariable("farClip") ?? 1000),
           isDefault,
         },
+        parts: [playMeshPartOf(camera)],
       });
     }
   }

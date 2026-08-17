@@ -1,4 +1,4 @@
-import { Material, PointLight, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Material, PointLight, Quaternion, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
@@ -188,6 +188,61 @@ describe("createPlayMesh", () => {
     applyPossessCamera(scene, binding, 0);
     expect(binding.cameras.get(0)).toBeDefined();
     expect(scene.activeCamera?.name).toBe("authoredCamera:0");
+  });
+
+  it("applies camera component rotation on top of the actor snapshot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const yaw: [number, number, number, number] = [
+      0,
+      Math.SQRT1_2,
+      0,
+      Math.SQRT1_2,
+    ];
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { projectionMode: "perspective" },
+      parts: [
+        {
+          componentId: "cam",
+          meshKind: "camera",
+          meshAssetGuid: null,
+          parentId: null,
+          position: [0, 0, 0],
+          rotation: yaw,
+          scale: [1, 1, 1],
+        },
+      ],
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    const camera = binding.cameras.get(0) as UniversalCamera;
+    camera.computeWorldMatrix(true);
+    const expected = Vector3.Forward().applyRotationQuaternion(
+      new Quaternion(...yaw),
+    );
+    const forward = camera.getDirection(Vector3.Forward());
+    expect(forward.x).toBeCloseTo(expected.x, 5);
+    expect(forward.y).toBeCloseTo(expected.y, 5);
+    expect(forward.z).toBeCloseTo(expected.z, 5);
   });
 
   it("applies authored light color and intensity from assignMesh", () => {

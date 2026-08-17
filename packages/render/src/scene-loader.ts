@@ -158,11 +158,20 @@ export function isIdentitySerializedTransform(
   );
 }
 
+function isBillboardComponent(component: SerializedComponent): boolean {
+  return (
+    component.classId === "LightComponent" ||
+    component.classId === "CameraComponent" ||
+    component.classId === "AudioComponent"
+  );
+}
+
 export function needsOriginRoot(actor: SerializedActor): boolean {
   const visuals = visualComponentsOf(actor);
   return (
     visuals.length > 1 ||
-    visuals.some((component) => !isIdentitySerializedTransform(component.transform))
+    visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
+    visuals.some(isBillboardComponent)
   );
 }
 

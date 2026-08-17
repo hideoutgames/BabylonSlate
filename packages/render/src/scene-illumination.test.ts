@@ -219,6 +219,35 @@ describe("syncAuthoredIllumination", () => {
     expect(camera.inputs.attachedToElement).toBeFalsy();
   });
 
+  it("aims the UniversalCamera along actor rotation and zeroes Euler", () => {
+    const { scene } = createHandle();
+    const yaw: [number, number, number, number] = [
+      0,
+      Math.SQRT1_2,
+      0,
+      Math.SQRT1_2,
+    ];
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([cameraActor("rig", { projectionMode: "perspective" }, yaw)]),
+      { stealActiveCamera: false },
+    );
+    const camera = scene.getCameraByName(
+      `${AUTHORED_CAMERA_PREFIX}rig`,
+    ) as UniversalCamera;
+    const expected = Vector3.Forward().applyRotationQuaternion(
+      new Quaternion(...yaw),
+    );
+    camera.computeWorldMatrix(true);
+    const forward = camera.getDirection(Vector3.Forward());
+    expect(forward.x).toBeCloseTo(expected.x, 5);
+    expect(forward.y).toBeCloseTo(expected.y, 5);
+    expect(forward.z).toBeCloseTo(expected.z, 5);
+    expect(camera.rotation.x).toBeCloseTo(0);
+    expect(camera.rotation.y).toBeCloseTo(0);
+    expect(camera.rotation.z).toBeCloseTo(0);
+  });
+
   it("does not steal the first camera when stealActiveCamera is false", () => {
     const { scene } = createHandle();
     setupDefaultViewport(scene);
