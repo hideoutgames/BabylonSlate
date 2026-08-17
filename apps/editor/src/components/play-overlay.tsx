@@ -66,6 +66,7 @@ export interface PlayOverlayProps {
   render?: RenderProjectSettings;
   uiLibrary?: Record<string, UserInterfaceDocument>;
   fontEntries?: readonly FontAssetEntry[];
+  resolveImageUrl?: (guid: string) => string | null;
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
@@ -111,6 +112,7 @@ export function PlayOverlay({
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   uiLibrary = {},
   fontEntries = [],
+  resolveImageUrl,
   animGraphs,
   behaviourTrees,
   blackboards,
@@ -446,6 +448,7 @@ export function PlayOverlay({
         instances={resolvePlayHudDocuments(hudInstances, uiLibrary)}
         uiLibrary={uiLibrary}
         fontEntries={fontEntries}
+        resolveImageUrl={resolveImageUrl}
         width={overlaySize.width}
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}

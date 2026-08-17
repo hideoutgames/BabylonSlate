@@ -97,6 +97,10 @@ describe("UiDesignCanvas preview fallback", () => {
     render(<UiDesignCanvas {...hudCanvasProps()} />);
     expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
+    const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
+      resolveImageUrl?: (guid: string) => string | null;
+    };
+    expect(typeof options.resolveImageUrl).toBe("function");
   });
 
   it("skips present when the Design dock tab is hidden", () => {

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -69,6 +70,7 @@ export function UiDesignCanvas({
   previewScale,
   sharedEngine,
   fontEntries = [],
+  resolveImageUrl = () => null,
   bitmapScale,
   onSelect,
   onViewChange,
@@ -91,6 +93,7 @@ export function UiDesignCanvas({
   bitmapScale: number;
   sharedEngine: Engine | null;
   fontEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
+  resolveImageUrl?: (guid: string) => string | null;
   onSelect: (id: string) => void;
   onViewChange: (view: DesignView) => void;
   onLayoutChange: (id: string, next: WidgetLayout, mergeKey?: string) => void;
@@ -134,6 +137,12 @@ export function UiDesignCanvas({
   previewLayoutsRef.current = previewLayouts;
   const paintSchedulerRef = useRef(createUiFrameScheduler());
   const gizmoSchedulerRef = useRef(createUiFrameScheduler());
+  const resolveImageUrlRef = useRef(resolveImageUrl);
+  resolveImageUrlRef.current = resolveImageUrl;
+  const boundResolveImageUrl = useCallback(
+    (guid: string) => resolveImageUrlRef.current(guid),
+    [],
+  );
   latestUiRef.current = ui;
   viewRef.current = view;
   const viewScale = previewScale * view.zoom * bitmapScale;
@@ -176,6 +185,7 @@ export function UiDesignCanvas({
         scaleRule: ui.scaleRule,
         gizmoCanvas: gizmoCanvas ?? undefined,
         safeArea: viewport.safeArea,
+        resolveImageUrl: boundResolveImageUrl,
       });
     } catch (error) {
       const message =
@@ -274,6 +284,7 @@ export function UiDesignCanvas({
     documentActive,
     guiLive,
     panelVisible,
+    resolveImageUrl,
     ui.scaleRule,
     viewport.height,
     viewport.width,

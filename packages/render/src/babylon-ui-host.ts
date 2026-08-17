@@ -222,7 +222,12 @@ function canUpdateInPlace(previous: GuiControlSpec, next: GuiControlSpec): boole
   );
 }
 
-function applyTypeSpecific(control: Control, spec: GuiControlSpec, previous?: GuiControlSpec): void {
+function applyTypeSpecific(
+  control: Control,
+  spec: GuiControlSpec,
+  previous?: GuiControlSpec,
+  resolveImageUrl?: (guid: string) => string | null,
+): void {
   switch (spec.type) {
     case "Button": {
       if (control instanceof Button && control.textBlock) {
@@ -259,6 +264,15 @@ function applyTypeSpecific(control: Control, spec: GuiControlSpec, previous?: Gu
     case "Checkbox": {
       if (control instanceof Checkbox && (!previous || previous.checked !== spec.checked)) {
         control.isChecked = spec.checked ?? false;
+      }
+      return;
+    }
+    case "Image": {
+      if (control instanceof Image) {
+        const url = spec.imageGuid
+          ? (resolveImageUrl?.(spec.imageGuid) ?? "")
+          : "";
+        if (control.source !== url) control.source = url;
       }
       return;
     }
@@ -574,7 +588,7 @@ export function createAdtControlFactory(
       const control = byId.get(spec.id);
       if (!control) return false;
       applyCommon(control, spec);
-      applyTypeSpecific(control, spec, previous);
+      applyTypeSpecific(control, spec, previous, options.resolveImageUrl);
       return true;
     },
     remove(id) {

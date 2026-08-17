@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   applyUiControlsIfUnfrozen,
@@ -7,6 +7,7 @@ import {
   type UiSurface,
 } from "@babylonslate/render";
 import {
+  collectImageGuidsFromUiDocuments,
   describeUiControls,
   layoutUserInterface,
 } from "@babylonslate/ui-runtime";
@@ -20,6 +21,10 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { asUiDocument } from "../lib/play-content";
+import {
+  collectUiImageUrls,
+  revokeUiImageUrls,
+} from "../lib/play-ui-images";
 import {
   freezeLiveUiSurface,
   presentLiveUiIfVisible,
@@ -35,7 +40,8 @@ import { editorUtilityGuidFromWindowId } from "../shell/editor-utility-windows";
 
 export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const guid = editorUtilityGuidFromWindowId(props.api.id);
-  const { assetRegistry, openDocuments, loadAssetDocument } = useDocuments();
+  const { assetRegistry, openDocuments, loadAssetDocument, readAssetChunk } =
+    useDocuments();
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const surfaceRef = useRef<UiSurface | null>(null);
@@ -46,6 +52,15 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const [payload, setPayload] = useState<unknown>(null);
   const [panelVisible, setPanelVisible] = useState(props.api.isVisible);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [imageUrls, setImageUrls] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  const imageUrlsRef = useRef(imageUrls);
+  imageUrlsRef.current = imageUrls;
+  const resolveImageUrl = useCallback(
+    (guid: string) => imageUrlsRef.current.get(guid) ?? null,
+    [],
+  );
 
   useEffect(() => {
     const api = props.api as IDockviewPanelProps["api"] & {
@@ -91,6 +106,45 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   );
 
   useEffect(() => {
+    if (!ui) {
+      revokeUiImageUrls(imageUrlsRef.current);
+      imageUrlsRef.current = new Map();
+      setImageUrls(new Map());
+      return;
+    }
+    let cancelled = false;
+    const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+      guid: asset.header.guid,
+      path: asset.path,
+      type: asset.header.type,
+      chunks: asset.header.chunks,
+    }));
+    void collectUiImageUrls(
+      collectImageGuidsFromUiDocuments([ui]),
+      assets,
+      readAssetChunk ?? (async () => null),
+    ).then((urls) => {
+      if (cancelled) {
+        revokeUiImageUrls(urls);
+        return;
+      }
+      revokeUiImageUrls(imageUrlsRef.current);
+      imageUrlsRef.current = urls;
+      setImageUrls(urls);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetRegistry, readAssetChunk, ui]);
+
+  useEffect(
+    () => () => {
+      revokeUiImageUrls(imageUrlsRef.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     const engine = play?.ensureSharedEngine() ?? null;
     if (!canvas || !engine || !ui) return;
@@ -106,6 +160,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
           if (!runtime) return;
           bindEditorUtilityWidgetEvent(runtime.host, event);
         },
+        resolveImageUrl,
       });
     } catch (error) {
       console.error("Editor utility surface failed", error);
@@ -190,7 +245,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       paintScheduler.cancel();
       observer.disconnect();
     };
-  }, [panelVisible, ui]);
+  }, [imageUrls, panelVisible, ui]);
 
   useEffect(() => {
     if (!asset?.path || !payload) return;
