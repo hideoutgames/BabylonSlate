@@ -955,6 +955,8 @@ export function MyClassPanel(_props: MyClassPanelProps) {
                 eventType === "flow.event.custom"
                   ? formatEventTitle(member.name)
                   : member.name,
+              parentClassId: membersOptions?.parentClass,
+              pins: member.pins,
             });
             persistGraph(next);
             const spawned = next.nodes.find((node) => {

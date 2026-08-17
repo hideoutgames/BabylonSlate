@@ -243,6 +243,100 @@ describe("script host runs compiled graphs", () => {
     expect(diagnostic?.graphId).toBe("event-graph");
   });
 
+  it("Call Parent Event invokes the parent class Begin Play handler", async () => {
+    const registry = createDefaultNodeRegistry();
+    const parentGraph: LogicGraph = {
+      id: "parent-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "print", "debug.print", {
+          value: "from-parent",
+          key: "parent",
+          duration: 1,
+        }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "print", "execIn")],
+    };
+    const childGraph: LogicGraph = {
+      id: "child-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "cp", "flow.event.callParent", {
+          eventType: "flow.event.beginPlay",
+          eventName: "Begin Play",
+          parentClassId: "ParentHero",
+        }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "cp", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        ...toScript(parentGraph, registry, "ParentHero", "parent-asset"),
+        parentClassId: "Actor",
+      },
+      {
+        ...toScript(childGraph, registry, "ChildHero", "child-asset"),
+        parentClassId: "ParentHero",
+      },
+    ]);
+    runtime.spawnScriptedActor({ classId: "ChildHero" });
+    runtime.start();
+    runtime.tick();
+    const prints = commands.filter((c) => c.type === "print");
+    expect(prints.some((c) => c.key === "parent")).toBe(true);
+  });
+
+  it("skips the parent Begin Play when Call Parent is absent", async () => {
+    const registry = createDefaultNodeRegistry();
+    const parentGraph: LogicGraph = {
+      id: "parent-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "print", "debug.print", {
+          value: "from-parent",
+          key: "parent",
+          duration: 1,
+        }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "print", "execIn")],
+    };
+    const childGraph: LogicGraph = {
+      id: "child-graph",
+      kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay")],
+      edges: [],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        ...toScript(parentGraph, registry, "ParentHero", "parent-asset"),
+        parentClassId: "Actor",
+      },
+      {
+        ...toScript(childGraph, registry, "ChildHero", "child-asset"),
+        parentClassId: "ParentHero",
+      },
+    ]);
+    runtime.spawnScriptedActor({ classId: "ChildHero" });
+    runtime.start();
+    runtime.tick();
+    expect(commands.filter((c) => c.type === "print")).toEqual([]);
+  });
+
   it("records Log error severity into the session report", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

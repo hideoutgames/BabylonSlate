@@ -6,7 +6,7 @@ import {
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
-import { engineParentOf, formatEventMemberName, walkAncestry } from "@babylonslate/editor-kit";
+import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@babylonslate/editor-kit";
 import {
   fromSerializedGraph,
   validateGraphs,
@@ -33,6 +33,8 @@ import { createDefaultNodeRegistry, castDefaultClassId, callInterfaceTitle } fro
 import { warnDebugTierConsoleCommands } from "@babylonslate/debugger";
 import type { PaletteNode, PinCompatibilityRule } from "@babylonslate/graph-ui";
 import {
+  ensureCallParentForEvent,
+  inheritedCustomEventSeeds,
   isScriptCatalogNodeAllowed,
   nativeEventStubs,
   type ClassEventOptions,
@@ -55,6 +57,7 @@ function catalogTypeId(node: {
 function shouldRegeneratePins(typeId: string): boolean {
   return (
     typeId === "flow.event.call" ||
+    typeId === "flow.event.callParent" ||
     typeId === "functions.call" ||
     typeId === "interface.call" ||
     typeId === "flow.function.input" ||
@@ -206,6 +209,31 @@ export function hydrateSerializedGraphForEditor(
         }
       }
 
+      if (typeId === "flow.event.callParent") {
+        const eventType =
+          typeof properties.eventType === "string" ? properties.eventType : "";
+        const rawName =
+          typeof properties.eventName === "string"
+            ? properties.eventName
+            : typeof properties.name === "string"
+              ? properties.name
+              : "";
+        const bodyName = formatEventMemberName(rawName);
+        if (bodyName) {
+          properties.eventName = bodyName;
+          properties.name = bodyName;
+        }
+        const label =
+          eventType && eventType !== "flow.event.custom"
+            ? formatEventMemberName(
+                eventType.startsWith("flow.event.")
+                  ? eventType.slice("flow.event.".length)
+                  : eventType,
+              )
+            : bodyName || "Event";
+        properties.title = `Call ${label} Parent`;
+      }
+
       const def = nodeRegistry.get(typeId);
       const pins: GraphPin[] = def ? def.pins(properties) : [];
 
@@ -218,7 +246,8 @@ export function hydrateSerializedGraphForEditor(
             ...(def
               ? {
                   title:
-                    typeId === "flow.event.call" &&
+                    (typeId === "flow.event.call" ||
+                      typeId === "flow.event.callParent") &&
                     typeof properties.title === "string"
                       ? properties.title
                       : (authoredTitle ?? def.title),
@@ -270,32 +299,119 @@ function defaultEventNodeId(eventType: string): string {
   );
 }
 
-/** New graphs seed native events for the class parent (Actor Begin Play + Tick by default). */
+function pinTypeIdFromPinType(type: PinType | undefined): string {
+  if (!type || typeof type !== "object" || !("kind" in type)) return "float";
+  const kind = String((type as { kind: string }).kind);
+  if (kind === "objectRef" || kind === "actorRef") return "object";
+  if (kind === "classRef") return "class";
+  return kind || "float";
+}
+
+/** New graphs seed native (+ inherited custom) events wired to Call Parent. */
 export function createDefaultLogicGraphSerialized(
   nodeRegistry: NodeRegistry = registry,
   options?: ClassEventOptions,
 ): SerializedGraph {
   const stubs = nativeEventStubs(options);
+  const parentClassId = options?.parentClass?.trim() || null;
   const logic: LogicGraph = {
     id: "main",
     kind: "event",
-    nodes: stubs.map((stub, index) => {
-      const def = nodeRegistry.get(stub.eventType);
-      if (!def) {
-        throw new Error(`Default event node missing from node registry: ${stub.eventType}`);
-      }
-      return {
-        id: defaultEventNodeId(stub.eventType),
-        typeId: def.id,
-        position: { x: 80, y: 80 + index * 140 },
-        pins: def.pins({}),
-        properties: {},
-      };
-    }),
+    nodes: [],
     edges: [],
   };
+  let graph = logicToSerializedGraph(logic);
 
-  return logicToSerializedGraph(logic);
+  stubs.forEach((stub, index) => {
+    const def = nodeRegistry.get(stub.eventType);
+    if (!def) {
+      throw new Error(
+        `Default event node missing from node registry: ${stub.eventType}`,
+      );
+    }
+    const eventId = defaultEventNodeId(stub.eventType);
+    const catalogPins = def.pins({});
+    const dataPins: GraphClassMemberPin[] = catalogPins
+      .filter((pin) => pin.kind !== "exec" && pin.direction === "out")
+      .map((pin) => ({
+        name: pin.name,
+        typeId: pinTypeIdFromPinType(pin.type),
+        direction: "out" as const,
+      }));
+    graph = {
+      ...graph,
+      nodes: [
+        ...graph.nodes,
+        {
+          id: eventId,
+          type: stub.eventType,
+          position: { x: 80, y: 80 + index * 160 },
+          data: {
+            title: stub.name,
+            ...(dataPins.length > 0 ? { pins: dataPins } : {}),
+            __nodeType: stub.eventType,
+          },
+        },
+      ],
+    };
+    if (parentClassId) {
+      graph = ensureCallParentForEvent(graph, {
+        eventNodeId: eventId,
+        eventType: stub.eventType,
+        parentClassId,
+        pins: dataPins,
+      });
+    }
+  });
+
+  const inherited = inheritedCustomEventSeeds(options);
+  inherited.forEach((event, index) => {
+    const eventId = `event-custom-${event.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")}`;
+    if (graph.nodes.some((node) => node.id === eventId)) return;
+    const y = 80 + (stubs.length + index) * 160;
+    graph = {
+      ...graph,
+      nodes: [
+        ...graph.nodes,
+        {
+          id: eventId,
+          type: "flow.event.custom",
+          position: { x: 80, y },
+          data: {
+            title: formatEventTitle(event.name),
+            name: event.name,
+            pins: event.pins,
+            __nodeType: "flow.event.custom",
+          },
+        },
+      ],
+      members: [
+        ...(graph.members ?? []),
+        {
+          id: eventId,
+          kind: "event",
+          name: event.name,
+          pins: event.pins,
+        },
+      ],
+    };
+    if (parentClassId) {
+      graph = ensureCallParentForEvent(graph, {
+        eventNodeId: eventId,
+        eventType: "flow.event.custom",
+        eventName: event.name,
+        parentClassId,
+        pins: event.pins,
+      });
+    }
+  });
+
+  return hydrateSerializedGraphForEditor(graph, nodeRegistry, {
+    parentOf: options?.parentOf,
+  });
 }
 
 export type ScriptPaletteOptions = ClassEventOptions & {

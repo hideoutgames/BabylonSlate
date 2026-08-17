@@ -12,9 +12,25 @@ import {
 import {
   dataMemberPins,
   jsIdent,
+  memberPinRows,
   objectLiteralKey,
   pinTypeForMember,
 } from "./member-pins";
+
+/** Runtime export names for catalog event entry nodes. */
+const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
+  "flow.event.beginPlay": "onBeginPlay",
+  "flow.event.tick": "onTick",
+  "flow.event.commandRun": "onCommandRun",
+  "flow.event.editorStartup": "onEditorStartup",
+  "flow.event.sceneOpen": "onSceneOpen",
+  "flow.event.sceneSaved": "onSceneSaved",
+  "flow.event.editorShutdown": "onEditorShutdown",
+  "bt.event.activate": "onActivate",
+  "bt.event.tick": "onBtTick",
+  "bt.event.abort": "onAbort",
+  "bt.event.evaluate": "onEvaluate",
+};
 
 export const flowNodes: NodeDefinition[] = [
   {
@@ -139,6 +155,64 @@ export const flowNodes: NodeDefinition[] = [
       ctx.emit(
         `ctx.invokeCustomEvent(${targetExpr}, ${JSON.stringify(eventName)}, { ${args.join(", ")} });`,
       );
+    },
+  },
+  {
+    id: "flow.event.callParent",
+    title: "Call Parent Event",
+    category: "flow",
+    pins: (properties) => {
+      const rows = memberPinRows(properties);
+      const dataPins = rows.flatMap((row) => {
+        if (!row || typeof row.name !== "string" || row.name.length === 0) {
+          return [];
+        }
+        if (row.typeId === "exec") return [];
+        const type = pinTypeForMember(row.typeId, row.typeClassId);
+        return [
+          pin(row.name, row.name, "in", type),
+          pin(`${row.name}__out`, row.name, "out", type),
+        ];
+      });
+      return [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        ...dataPins,
+      ];
+    },
+    codegen: (ctx) => {
+      const parentClassId =
+        typeof ctx.node.properties.parentClassId === "string" &&
+        ctx.node.properties.parentClassId.trim()
+          ? ctx.node.properties.parentClassId.trim()
+          : "BObject";
+      const eventType =
+        typeof ctx.node.properties.eventType === "string"
+          ? ctx.node.properties.eventType
+          : "";
+      const rawName =
+        typeof ctx.node.properties.eventName === "string"
+          ? ctx.node.properties.eventName
+          : typeof ctx.node.properties.name === "string"
+            ? ctx.node.properties.name
+            : "Custom";
+      const catalogEvent =
+        eventType && EVENT_EXPORT_BY_TYPE[eventType]
+          ? EVENT_EXPORT_BY_TYPE[eventType]
+          : undefined;
+      const eventName = catalogEvent ?? jsIdent(rawName);
+      const args: string[] = [];
+      for (const pinDef of ctx.node.pins) {
+        if (pinDef.kind === "exec" || pinDef.direction !== "in") continue;
+        args.push(`${JSON.stringify(pinDef.name)}: ${ctx.input(pinDef.name)}`);
+      }
+      ctx.emit(
+        `ctx.invokeEvent(${JSON.stringify(parentClassId)}, ${JSON.stringify(eventName)}, { ${args.join(", ")} });`,
+      );
+      for (const pinDef of ctx.node.pins) {
+        if (pinDef.kind === "exec" || pinDef.direction !== "in") continue;
+        ctx.emit(`${ctx.output(pinDef.name)} = ${ctx.input(pinDef.name)};`);
+      }
     },
   },
   {

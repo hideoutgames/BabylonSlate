@@ -143,6 +143,15 @@ export interface ScriptContext {
     eventName: string,
     args?: Record<string, unknown>,
   ): void;
+  /**
+   * Run a compiled entry point on a specific classId (Call Parent Event).
+   * Uses `self` as the receiver so parent graphs see the child instance.
+   */
+  invokeEvent(
+    classId: string,
+    eventName: string,
+    args?: Record<string, unknown>,
+  ): void;
   invokeFunction(
     target: Actor | string | null | undefined,
     functionName: string,
@@ -549,6 +558,22 @@ export class ScriptHost {
           0,
           0,
           eventArgs ?? {},
+        );
+      },
+      invokeEvent: (classId, eventName, eventArgs) => {
+        if (typeof classId !== "string" || !classId.trim()) return;
+        if (typeof eventName !== "string" || !eventName) return;
+        const loaded = this.byClassId.get(classId.trim());
+        if (!loaded || loaded.length === 0) return;
+        this.dispatchEvent(
+          loaded,
+          eventName,
+          self,
+          deltaSeconds,
+          tickIndex,
+          eventArgs ?? {},
+          tick,
+          extras,
         );
       },
       invokeFunction: (target, functionName, fnArgs) => {

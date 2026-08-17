@@ -66,7 +66,7 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 
 ## Authoring (`p11-bt-authoring`)
 
-- Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (crowd when the runtime host is attached), SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue. RotateToFace, PlayAnimation, and PlaySound are catalogued and **succeed** without a host (no facing / clip / mixer).
+- Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (crowd when the runtime host is attached), SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue. RotateToFace and PlayAnimation are catalogued and **succeed** without a host until **P17**. PlaySound stays a catalog stub until the **Audio plan** (not P17).
 - `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`) and `tickBehaviourTrees()` emits `btState`.
 - Missing `treeGuid` / unloaded tree emits `bt.missing_tree`.
 - Custom `classId` values run compiled graphs: tasks `On Activate` / `On Tick` / `On Abort` (`bt.event.*`) and finish via `bt.finish`; decorators `On Evaluate` plus `bt.returnCondition` (`ctx.btEvaluate`); services `On Tick`. Get/Set Blackboard (`bt.blackboard.get` / `bt.blackboard.set`) compile to `ctx.getBlackboard` / `ctx.setBlackboard`. Abort mode on a decorator stays a tree attachment property, not a class event.
@@ -89,9 +89,10 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 
 ## Honest residuals
 
-- RotateToFace / PlayAnimation / PlaySound succeed without a host.
+- RotateToFace / PlayAnimation succeed without a host until **P17** (`p17-bt-task-hosts`).
+- PlaySound succeeds without a mixer until the **Audio plan** (not P16/P17).
 - §18 patrol, live obstacle close, abort, compiled throw, and `.babtrace` BT replay are the headless harness. Compiled custom decorator On Evaluate (false gates Wait), On Abort, and service Set Blackboard live in `p11-acceptance.test.ts`. Editor e2e covers New Asset, add Wait + duration + keyed decorator + remove attachment, New Class parent `BTDecorator` (Events show On Evaluate, Add Decorator catalogs the class), bake, session-report `btNodeId` (Playwright Preview throw is test-mode `previewThrow` when a tree is attached), and `e2e/bt-editor.spec.ts` (free move, sibling X order, Auto Arrange, save/reopen, drag-off-handle add, Windows Blackboard + Compiler Results).
 - Undo is already via `applyAssetDocumentChange`.
-- Large-tree iPad virtualization (§19) is not this slice.
+- Large-graph off-screen virtualisation is **P16** (`p16-graph-virtualize`) for every `GraphEditor` host, not a BT-only slice.
 
 See [navigation.md](navigation.md) for navmesh / MoveTo. Spec: [engineplan.md](../engineplan.md) §14.1.

@@ -298,11 +298,93 @@ describe("createDefaultLogicGraphSerialized", () => {
     }
   });
 
+  it("seeds Call Parent wires when a parent class is set", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "Actor",
+    });
+    expect(graph.nodes.map((node) => node.type)).toEqual([
+      "flow.event.beginPlay",
+      "flow.event.callParent",
+      "flow.event.tick",
+      "flow.event.callParent",
+    ]);
+    expect(graph.nodes.map((node) => node.id)).toEqual([
+      "event-begin-play",
+      "call-parent-flow-event-beginPlay",
+      "event-tick",
+      "call-parent-flow-event-tick",
+    ]);
+    expect(graph.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "event-begin-play",
+          target: "call-parent-flow-event-beginPlay",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        }),
+        expect.objectContaining({
+          source: "event-tick",
+          target: "call-parent-flow-event-tick",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        }),
+        expect.objectContaining({
+          source: "event-tick",
+          target: "call-parent-flow-event-tick",
+          sourceHandle: "deltaSeconds",
+          targetHandle: "deltaSeconds",
+        }),
+      ]),
+    );
+    expect(
+      graph.nodes.find((node) => node.id === "call-parent-flow-event-beginPlay")
+        ?.data,
+    ).toMatchObject({
+      title: "Call Begin Play Parent",
+      parentClassId: "Actor",
+      eventType: "flow.event.beginPlay",
+    });
+  });
+
+  it("seeds inherited custom events with Call Parent", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "HeroBase",
+      parentOf: (id) => (id === "HeroBase" ? "Actor" : null),
+      parentGraphs: {
+        HeroBase: {
+          nodes: [],
+          edges: [],
+          members: [
+            {
+              id: "evt-1",
+              kind: "event",
+              name: "On Hit",
+              pins: [{ name: "amount", typeId: "float", direction: "out" }],
+            },
+          ],
+        },
+      },
+    });
+    expect(graph.nodes.some((node) => node.type === "flow.event.custom")).toBe(
+      true,
+    );
+    expect(
+      graph.nodes.some(
+        (node) =>
+          node.type === "flow.event.callParent" &&
+          node.data.eventName === "On Hit",
+      ),
+    ).toBe(true);
+  });
+
   it("seeds On Evaluate for a BTDecorator class", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BTDecorator",
     });
-    expect(graph.nodes.map((node) => node.type)).toEqual(["bt.event.evaluate"]);
+    expect(graph.nodes.map((node) => node.type)).toEqual([
+      "bt.event.evaluate",
+      "flow.event.callParent",
+    ]);
     expect(graph.nodes.some((node) => node.type === "flow.event.beginPlay")).toBe(
       false,
     );
@@ -312,18 +394,25 @@ describe("createDefaultLogicGraphSerialized", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BTTask",
     });
-    expect(graph.nodes.map((node) => node.type)).toEqual([
+    expect(graph.nodes.filter((node) => node.type.startsWith("bt.event.")).map((node) => node.type)).toEqual([
       "bt.event.activate",
       "bt.event.tick",
       "bt.event.abort",
     ]);
+    expect(
+      graph.nodes.filter((node) => node.type === "flow.event.callParent"),
+    ).toHaveLength(3);
   });
 
   it("seeds editor lifecycle events for an EditorUtilityObject class", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "EditorUtilityObject",
     });
-    expect(graph.nodes.map((node) => node.type)).toEqual([
+    expect(
+      graph.nodes
+        .filter((node) => node.type.startsWith("flow.event.") && node.type !== "flow.event.callParent")
+        .map((node) => node.type),
+    ).toEqual([
       "flow.event.editorStartup",
       "flow.event.sceneOpen",
       "flow.event.sceneSaved",

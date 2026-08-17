@@ -77,10 +77,12 @@ export function edgesAfterConnect<T extends PinEdgeRef>(
 }
 
 export function displayNodeTitle(nodeType: string, title?: string): string {
-  // Call Custom Event is flow.event.call but must stay "Call …", not "Event Call …".
-  if (nodeType === "flow.event.call") {
+  // Call Custom Event / Call Parent must stay "Call …", not "Event Call …".
+  if (nodeType === "flow.event.call" || nodeType === "flow.event.callParent") {
     if (title && title.trim().length > 0) return title.trim();
-    return "Call Custom Event";
+    return nodeType === "flow.event.callParent"
+      ? "Call Parent Event"
+      : "Call Custom Event";
   }
   if (nodeType.startsWith("flow.event.")) {
     return formatEventTitle(
