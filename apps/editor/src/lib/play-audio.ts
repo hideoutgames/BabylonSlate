@@ -54,3 +54,10 @@ export function playAudioLibraryFromAssets(options: {
   }
   return library;
 }
+
+/** Audio guids the worker uses for BT PlaySound fail-on-missing. */
+export function audioAssetGuidsFromLibrary(
+  library: PlayAudioLibrary,
+): string[] {
+  return [...library.audio.keys()];
+}

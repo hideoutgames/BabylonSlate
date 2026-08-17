@@ -54,6 +54,18 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
+  it("forwards audioAssetGuids onto the runtime", () => {
+    expect(
+      runtimeOptionsFromLoadControl({
+        type: "load",
+        sceneAssetGuid: "play-scene",
+        audioAssetGuids: ["audio-1", "audio-2"],
+      }),
+    ).toMatchObject({
+      audioAssetGuids: ["audio-1", "audio-2"],
+    });
+  });
+
   it("forwards gameInstanceClass and a scene library for changescene", () => {
     const scene = { name: "Level2", actors: [] };
     expect(

@@ -571,6 +571,23 @@ describe("scriptPaletteNodes", () => {
     expect(print?.defaultData).toMatchObject({ developmentOnly: true });
   });
 
+  it("lists Play Sound and mixer volume nodes on Actor and Class with volume 1", () => {
+    const actor = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    const klass = scriptPaletteNodes(registry, { parentClass: "BObject" });
+    for (const nodes of [actor, klass]) {
+      expect(nodes.some((node) => node.id === "audio.play")).toBe(true);
+      expect(nodes.some((node) => node.id === "audio.setChannelVolume")).toBe(
+        true,
+      );
+      expect(nodes.some((node) => node.id === "audio.setGlobalVolume")).toBe(
+        true,
+      );
+      expect(nodes.find((node) => node.id === "audio.play")?.defaultData).toMatchObject({
+        "default:volume": 1,
+      });
+    }
+  });
+
   it("injects Call I rows per ScriptInterface method", () => {
     const nodes = scriptPaletteNodes(registry, {
       scriptInterfaces: [

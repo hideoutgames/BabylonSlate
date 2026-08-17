@@ -304,6 +304,7 @@ function pinTypeIdFromPinType(type: PinType | undefined): string {
   const kind = String((type as { kind: string }).kind);
   if (kind === "objectRef" || kind === "actorRef") return "object";
   if (kind === "classRef") return "class";
+  if (kind === "assetRef") return "asset";
   return kind || "float";
 }
 
@@ -892,6 +893,13 @@ export function scriptPaletteNodes(
     }
     if (def.id === "debug.print") {
       defaultData.developmentOnly = true;
+    }
+    if (
+      def.id === "audio.play" ||
+      def.id === "audio.setChannelVolume" ||
+      def.id === "audio.setGlobalVolume"
+    ) {
+      defaultData["default:volume"] = 1;
     }
     const pins = def.pins(defaultData);
     if (def.editorOnly) defaultData.__editorOnly = true;

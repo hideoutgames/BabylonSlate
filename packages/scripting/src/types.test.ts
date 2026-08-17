@@ -8,6 +8,7 @@ import {
   VEC3,
   BOXED_WILDCARD,
   actorRef,
+  assetRef,
   classRef,
   objectRef,
   defaultValueLiteral,
@@ -83,6 +84,22 @@ describe("pin assignability", () => {
     expect(isAssignable(classRef("Actor"), objectRef("Actor"))).toBe(false);
     expect(defaultValueLiteral(classRef("Actor"))).toBe('"Actor"');
     expect(pinTypeTag(classRef("Actor"))).toBe("classRef:Actor");
+  });
+
+  it("treats assetRef as a guid string constrained to one asset type", () => {
+    expect(assetRef("Audio")).toEqual({ kind: "assetRef", assetType: "Audio" });
+    expect(pinTypeEquals(assetRef("Audio"), assetRef("Audio"))).toBe(true);
+    expect(pinTypeEquals(assetRef("Audio"), assetRef("AudioChannel"))).toBe(
+      false,
+    );
+    expect(isAssignable(assetRef("Audio"), assetRef("Audio"))).toBe(true);
+    expect(isAssignable(assetRef("Audio"), assetRef("AudioChannel"))).toBe(
+      false,
+    );
+    expect(isAssignable(assetRef("Audio"), STRING)).toBe(false);
+    expect(isAssignable(assetRef("Audio"), classRef("Audio"))).toBe(false);
+    expect(defaultValueLiteral(assetRef("Audio"))).toBe('""');
+    expect(pinTypeTag(assetRef("Audio"))).toBe("assetRef:Audio");
   });
 
   it("property: equal types are assignable", () => {

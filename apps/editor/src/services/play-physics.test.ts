@@ -59,6 +59,13 @@ describe("playLoadControl", () => {
     expect(msg.loopCount).toBe(50);
   });
 
+  it("forwards audioAssetGuids onto the load message", () => {
+    const msg = playLoadControl({
+      audioAssetGuids: ["audio-1"],
+    });
+    expect(msg.audioAssetGuids).toEqual(["audio-1"]);
+  });
+
   it("defaults to a 3d world and standard gravity", () => {
     const msg = playLoadControl({});
     expect(msg.physicsWorld).toBe("3d");

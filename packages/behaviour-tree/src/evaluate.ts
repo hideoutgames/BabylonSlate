@@ -109,7 +109,7 @@ function tickTask(
   host?: BtTaskHost,
 ): BtResult {
   const classId = builtinClassId(node.classId);
-  if (host && (!BUILTIN_TASKS.has(classId) || classId === "bt.task.moveTo")) {
+  if (host && (!BUILTIN_TASKS.has(classId) || classId === "bt.task.moveTo" || classId === "bt.task.playSound")) {
     return host.tick(node, blackboard, dtSeconds, memory);
   }
   switch (classId) {

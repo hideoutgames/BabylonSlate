@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { playAudioLibraryFromAssets } from "./play-audio";
+import {
+  audioAssetGuidsFromLibrary,
+  playAudioLibraryFromAssets,
+} from "./play-audio";
 
 describe("playAudioLibraryFromAssets", () => {
   it("normalizes mixer, channel, audio, and attenuation payloads", () => {
@@ -21,5 +24,6 @@ describe("playAudioLibraryFromAssets", () => {
     expect(library.channels.get("sfx")?.parentChannelGuid).toBeNull();
     expect(library.audio.get("jump")?.volume).toBe(0.5);
     expect(library.attenuations.get("near")?.innerRadius).toBe(2);
+    expect(audioAssetGuidsFromLibrary(library)).toEqual(["jump"]);
   });
 });

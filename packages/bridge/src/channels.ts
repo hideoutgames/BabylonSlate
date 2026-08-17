@@ -72,6 +72,8 @@ export type ControlMessage =
       includeDebugCommands?: boolean;
       infiniteLoopDetection?: boolean;
       loopCount?: number;
+      /** Audio asset guids in the Play library (BT PlaySound fail-on-missing). */
+      audioAssetGuids?: string[];
     }
   | {
       type: "loadScripts";

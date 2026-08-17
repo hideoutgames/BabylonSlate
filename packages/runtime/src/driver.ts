@@ -123,6 +123,8 @@ export interface RuntimeDriverOptions {
   infiniteLoopDetection?: boolean;
   /** Iterations in one tick that count as infinite when detection is on. */
   loopCount?: number;
+  /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */
+  audioAssetGuids?: readonly string[];
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
   animGraphs?: Readonly<Record<string, AnimGraphDocument>>;
   /** BehaviourTree documents keyed by asset guid (worker `loadBehaviourTrees`). */
@@ -282,6 +284,7 @@ class InProcessRuntime implements RuntimeDriver {
   private nav: NavigationBackend | null = null;
   private readonly navAgentByActor = new Map<string, string>();
   private readonly navYawByActor = new Map<string, number>();
+  private readonly audioAssetGuids = new Set<string>();
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -357,6 +360,11 @@ class InProcessRuntime implements RuntimeDriver {
     }
     if (options.tilesets) {
       this.tilesets = new Map(Object.entries(options.tilesets));
+    }
+    if (options.audioAssetGuids) {
+      for (const guid of options.audioAssetGuids) {
+        if (guid) this.audioAssetGuids.add(guid);
+      }
     }
     const maxActors = options.maxActors ?? 256;
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
@@ -576,6 +584,19 @@ class InProcessRuntime implements RuntimeDriver {
           emitterActorGuid: options?.emitterActorGuid ?? null,
           loop: options?.loop,
           voiceId: options?.voiceId,
+        });
+      },
+      setChannelVolume: (channelGuid, volume) => {
+        this.emit({
+          type: "setChannelVolume",
+          channelGuid: String(channelGuid ?? ""),
+          volume: Number(volume ?? 1),
+        });
+      },
+      setGlobalVolume: (volume) => {
+        this.emit({
+          type: "setGlobalVolume",
+          volume: Number(volume ?? 1),
         });
       },
       findPathTo: (from, to) => this.findNavPath(from, to),
@@ -1211,6 +1232,9 @@ class InProcessRuntime implements RuntimeDriver {
     if (builtinClassId(node.classId) === "bt.task.moveTo") {
       return this.tickMoveTo(actor, node, memory);
     }
+    if (builtinClassId(node.classId) === "bt.task.playSound") {
+      return this.tickPlaySound(actor, node);
+    }
     if (!this.scriptHost.hasClass(node.classId)) return "failure";
     const extras = {
       btFinish: (result: "success" | "failure") => {
@@ -1264,6 +1288,29 @@ class InProcessRuntime implements RuntimeDriver {
       position.z - target.z,
     );
     return distance <= accept ? "success" : "running";
+  }
+
+  private tickPlaySound(
+    actor: Actor,
+    node: { properties?: Record<string, unknown> },
+  ): BtResult {
+    const guid =
+      typeof node.properties?.audioAssetGuid === "string"
+        ? node.properties.audioAssetGuid.trim()
+        : "";
+    if (!guid || !this.audioAssetGuids.has(guid)) return "failure";
+    const volumeRaw = Number(node.properties?.volume ?? 1);
+    const volume = Number.isFinite(volumeRaw)
+      ? Math.min(1, Math.max(0, volumeRaw))
+      : 1;
+    this.emit({
+      type: "playSound",
+      assetGuid: guid,
+      volume,
+      frameId: this.frameId,
+      emitterActorGuid: actor.guid,
+    });
+    return "success";
   }
 
   private abortBtTask(

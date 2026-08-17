@@ -191,6 +191,19 @@ describe("pinDefaultPreview", () => {
     ).toEqual({ kind: "enumRef", text: "Walk" });
   });
 
+  it("returns an assetRef guid in a text field", () => {
+    const assetPin = pin({
+      id: "asset",
+      name: "asset",
+      kind: "data",
+      direction: "in",
+      type: { kind: "assetRef", assetType: "Audio" },
+    });
+    expect(
+      pinDefaultPreview(assetPin, { "default:asset": "audio-1" }, false),
+    ).toEqual({ kind: "assetRef", text: "audio-1" });
+  });
+
   it("returns null when the pin is connected", () => {
     expect(
       pinDefaultPreview(condition, { "default:condition": true }, true),

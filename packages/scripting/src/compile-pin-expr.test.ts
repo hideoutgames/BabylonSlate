@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "./compile";
 import type { LogicGraph } from "./ir";
 import { NodeRegistry, pin } from "./node-registry";
-import { EXEC, actorRef, classRef, objectRef, BOXED_WILDCARD } from "./types";
+import { EXEC, actorRef, assetRef, classRef, objectRef, BOXED_WILDCARD } from "./types";
 
 function registry(): NodeRegistry {
   const nodes = new NodeRegistry();
@@ -134,6 +134,58 @@ describe("compile pinExpr defaults", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry: registry() });
     expect(compiled.source).toContain('ctx.spawnActor("Pawn")');
+  });
+
+  it("compiles an assetRef default to a guid string", () => {
+    const nodes = registry();
+    nodes.register({
+      id: "audio.play",
+      title: "Play Sound",
+      category: "audio",
+      pins: () => [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        pin("asset", "asset", "in", assetRef("Audio")),
+      ],
+      codegen: (ctx) => {
+        ctx.emit(`ctx.playSound(${ctx.input("asset")});`);
+      },
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "play",
+          typeId: "audio.play",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("asset", "asset", "in", assetRef("Audio")),
+          ],
+          properties: { "default:asset": "audio-1" },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "play",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry: nodes });
+    expect(compiled.source).toContain('ctx.playSound("audio-1")');
   });
 
   it("still compiles a boxedWildcard Print value stored on the node", () => {

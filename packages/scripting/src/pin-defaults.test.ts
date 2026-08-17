@@ -16,6 +16,7 @@ import {
   arrayOf,
   mapOf,
   actorRef,
+  assetRef,
   classRef,
   objectRef,
   enumRef,
@@ -51,6 +52,7 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(VEC4)).toBe(true);
     expect(pinAcceptsLiteralDefault(enumRef("e1"))).toBe(true);
     expect(pinAcceptsLiteralDefault(classRef("Actor"))).toBe(true);
+    expect(pinAcceptsLiteralDefault(assetRef("Audio"))).toBe(true);
   });
 
   it("rejects exec, object refs, containers, transform, and wildcards", () => {
@@ -69,6 +71,7 @@ describe("pinRejectsStoredDefault", () => {
     expect(pinRejectsStoredDefault(objectRef("Actor"))).toBe(true);
     expect(pinRejectsStoredDefault(actorRef("Actor"))).toBe(true);
     expect(pinRejectsStoredDefault(classRef("Actor"))).toBe(false);
+    expect(pinRejectsStoredDefault(assetRef("Audio"))).toBe(false);
     expect(pinRejectsStoredDefault(BOXED_WILDCARD)).toBe(false);
     expect(pinRejectsStoredDefault(STRING)).toBe(false);
   });
@@ -87,6 +90,7 @@ describe("defaultJsValue", () => {
     expect(defaultJsValue(VEC4)).toEqual({ x: 0, y: 0, z: 0, w: 0 });
     expect(defaultJsValue(enumRef("e1"))).toBe("");
     expect(defaultJsValue(classRef("Actor"))).toBe("Actor");
+    expect(defaultJsValue(assetRef("Audio"))).toBe("");
   });
 });
 

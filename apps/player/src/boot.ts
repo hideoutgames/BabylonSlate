@@ -180,6 +180,9 @@ export function startPlayer(options: {
       undefined,
     scenes,
     ...loopGuardLoadFields(manifest),
+    audioAssetGuids: [...game.audioBytes.keys(), ...content.audioLibrary.audio.keys()].filter(
+      (guid, index, all) => all.indexOf(guid) === index,
+    ),
   };
 
   const spawn = spawnListForScripts(game.scripts);

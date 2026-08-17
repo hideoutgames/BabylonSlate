@@ -627,6 +627,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
     serviceCatalog,
     parentOf,
     blackboardKeys,
+    assets,
   } = useBehaviourTreeDocument();
   const {
     selectedId,
@@ -636,6 +637,11 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
     setAttachmentCatalog,
   } = useBehaviourTreeEditing();
   const catalogSearch = useCatalogSearchState();
+  const [assetPick, setAssetPick] = useState<{
+    key: string;
+    assetType: string;
+    write: (value: string | null) => void;
+  } | null>(null);
   const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
   const attachment =
     selected?.decorators.find((row) => row.id === attachmentId) ??
@@ -663,6 +669,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
           label: field.label,
           value: Number(raw ?? 0),
           min: field.min,
+          max: field.max,
           onChange: (value) => write(field.key, value),
         };
       }
@@ -693,6 +700,27 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
           value: String(raw ?? ""),
           options: field.options ?? keyOptions,
           onChange: (value) => write(field.key, value),
+        };
+      }
+      if (field.kind === "asset") {
+        const guid = typeof raw === "string" ? raw : "";
+        const picked = assets.find((asset) => asset.guid === guid);
+        return {
+          id: field.id,
+          kind: "asset",
+          label: field.label,
+          value: guid || null,
+          placeholder: field.assetType ?? "None",
+          onPick: () =>
+            setAssetPick({
+              key: field.key,
+              assetType: field.assetType ?? "Audio",
+              write: (value) => write(field.key, value ?? ""),
+            }),
+          onChange: (value) => write(field.key, value ?? ""),
+          ...assetRowIdentity(
+            picked ? { name: picked.name, type: picked.type } : undefined,
+          ),
         };
       }
       return {
@@ -963,6 +991,21 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
           <p className="text-sm text-muted-foreground">Select a node</p>
         )}
       </div>
+      <AssetPicker
+        open={assetPick !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssetPick(null);
+        }}
+        assets={assets}
+        allowedTypes={assetPick ? [assetPick.assetType] : ["Audio"]}
+        title={assetPick ? `Pick ${assetPick.assetType}` : "Pick Asset"}
+        allowNone
+        onPick={(guid) => {
+          assetPick?.write(guid);
+          setAssetPick(null);
+        }}
+        data-testid="bt-asset-picker"
+      />
       <CatalogDialog
         open={attachmentCatalog !== null}
         onOpenChange={(open) => {
