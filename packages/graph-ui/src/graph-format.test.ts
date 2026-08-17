@@ -566,27 +566,99 @@ describe("formatGraphNodes", () => {
     expect(pos(next, "c")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
   });
 
-  it("keeps branch exec stacked and hangs data off the branch without overlapping", () => {
-    const nodes = [
-      node("branch", 0, 0, branchPins),
-      node("yes", 20, 40, execWithValueIn),
-      node("no", 25, 10),
-      node("get", 1, 300, dataOutPins),
-    ];
-    const edges = [
-      execEdge("branch", "yes", "true"),
-      execEdge("branch", "no", "false"),
-      dataEdge("get", "yes"),
-    ];
-    const next = formatGraphNodes(nodes, edges, ["branch"]);
-    expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
-    expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
-    expect(pos(next, "get").x).toBe(EXEC_STEP - NODE_W - FORMAT_GAP_X);
-    expect(pos(next, "get").y).toBeGreaterThanOrEqual(
-      pos(next, "yes").y + HANG_Y,
-    );
-    expectNoOverlaps(next);
-  });
+    it("keeps branch exec stacked and hangs data off the branch without overlapping", () => {
+      const nodes = [
+        node("branch", 0, 0, branchPins),
+        node("yes", 20, 40, execWithValueIn),
+        node("no", 25, 10),
+        node("get", 1, 300, dataOutPins),
+      ];
+      const edges = [
+        execEdge("branch", "yes", "true"),
+        execEdge("branch", "no", "false"),
+        dataEdge("get", "yes"),
+      ];
+      const next = formatGraphNodes(nodes, edges, ["branch"]);
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
+      expect(pos(next, "get").x).toBe(EXEC_STEP - NODE_W - FORMAT_GAP_X);
+      expect(pos(next, "get").y).toBeGreaterThanOrEqual(
+        pos(next, "yes").y + HANG_Y,
+      );
+      expectNoOverlaps(next);
+    });
+
+    it("does not push the next branch exec below the first successor’s hanging data", () => {
+      const nodes = [
+        node("branch", 0, 0, branchPins),
+        node("yes", 20, 40),
+        node("no", 25, 10, execWithValueIn),
+        node("get", 1, 300, dataOutPins),
+      ];
+      const edges = [
+        execEdge("branch", "yes", "true"),
+        execEdge("branch", "no", "false"),
+        dataEdge("get", "no"),
+      ];
+      const next = formatGraphNodes(nodes, edges, ["branch"]);
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
+      expect(pos(next, "get")).toEqual({
+        x: EXEC_STEP - NODE_W - FORMAT_GAP_X,
+        y: HANG_Y,
+      });
+      expectNoOverlaps(next);
+    });
+
+    it("hangs data off both stacked branch execs without merging them onto one hang row", () => {
+      const nodes = [
+        node("branch", 0, 0, branchPins),
+        node("yes", 20, 40, execWithValueIn),
+        node("no", 25, 10, execWithValueIn),
+        node("getNo", 1, 300, dataOutPins),
+        node("getYes", 2, 400, dataOutPins),
+      ];
+      const edges = [
+        execEdge("branch", "yes", "true"),
+        execEdge("branch", "no", "false"),
+        dataEdge("getNo", "no"),
+        dataEdge("getYes", "yes"),
+      ];
+      const next = formatGraphNodes(nodes, edges, ["branch"]);
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
+      expect(pos(next, "getNo")).toEqual({
+        x: EXEC_STEP - NODE_W - FORMAT_GAP_X,
+        y: HANG_Y,
+      });
+      expect(pos(next, "getYes").x).toBe(EXEC_STEP - NODE_W - FORMAT_GAP_X);
+      expect(pos(next, "getYes").y).toBeGreaterThanOrEqual(
+        pos(next, "yes").y + HANG_Y,
+      );
+      expectNoOverlaps(next);
+    });
+
+    it("nudges hanging data of stacked branches apart without moving the later exec", () => {
+      const nodes = [
+        node("branch", 0, 0, branchPins),
+        node("yes", 20, 40, execWithValueIn),
+        node("no", 25, 10, twoDataInPins),
+        node("getFirst", 1, 300, dataOutPins),
+        node("getSecond", 2, 320, dataOutPins),
+        node("getYes", 3, 400, dataOutPins),
+      ];
+      const edges = [
+        execEdge("branch", "yes", "true"),
+        execEdge("branch", "no", "false"),
+        dataEdge("getFirst", "no", "first"),
+        dataEdge("getSecond", "no", "second"),
+        dataEdge("getYes", "yes"),
+      ];
+      const next = formatGraphNodes(nodes, edges, ["branch"]);
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
+      expectNoOverlaps(next);
+    });
 
   it("shifts overlapping isolated selected nodes apart", () => {
     const nodes = [node("a", 0, 0), node("b", 10, 10)];
