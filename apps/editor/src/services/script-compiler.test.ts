@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
+import {
+  userInterfaceClassId,
+  type SerializedGraph,
+} from "@babylonslate/core";
 import {
   classIdForGraphPath,
   compileGraphDocument,
@@ -360,6 +363,31 @@ describe("script compiler service", () => {
       true,
     );
     expect(spawnListForScripts([script!])).toEqual([]);
+  });
+
+  it("binds a UserInterface script to an explicit guid class id", () => {
+    const classId = userInterfaceClassId("hud-guid");
+    const script = compileGraphDocument(tickToLog, {
+      path: "assets/HUD.ui.babasset",
+      classId,
+      parentClassId: "UserInterface",
+    });
+    expect(script?.classId).toBe(classId);
+    expect(script?.parentClassId).toBe("UserInterface");
+    expect(script?.classId).not.toBe("HUD");
+  });
+
+  it("does not spawn actors for UserInterface script class ids", () => {
+    const classId = userInterfaceClassId("hud-guid");
+    const script = compileGraphDocument(tickToLog, {
+      path: "assets/HUD.ui.babasset",
+      classId,
+      parentClassId: "UserInterface",
+    })!;
+    expect(script.entryPoints.some((entry) => entry.event === "onTick")).toBe(
+      true,
+    );
+    expect(spawnListForScripts([script])).toEqual([]);
   });
 });
 

@@ -6,6 +6,7 @@ import {
   createDefaultLogicGraphSerialized,
   hydrateClassDocumentPayload,
   hydrateSerializedGraphForEditor,
+  knownClassIdSet,
   scriptPaletteNodes,
   scriptPinCompatibility,
   validateSerializedGraph,
@@ -756,6 +757,30 @@ describe("scriptPaletteNodes", () => {
       false,
     );
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+    expect(nodes.some((node) => node.id === "ui.getWidget")).toBe(false);
+  });
+
+  it("injects bound Get Widget rows for the document widget ids", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      assetType: "UserInterface",
+      widgets: [
+        { id: "play-btn", name: "Play Button", kind: "Button" },
+        { id: "logo", name: "Logo", kind: "Image" },
+      ],
+    });
+    const play = nodes.find((node) => node.id === "ui.getWidget:play-btn");
+    const logo = nodes.find((node) => node.id === "ui.getWidget:logo");
+    expect(play?.title).toBe("Get Play Button");
+    expect(play?.nodeType).toBe("ui.getWidget");
+    expect(play?.pins.find((pin) => pin.id === "widget")?.type).toEqual({
+      kind: "objectRef",
+      classId: "ButtonWidget",
+    });
+    expect(logo?.title).toBe("Get Logo");
+    expect(logo?.pins.find((pin) => pin.id === "widget")?.type).toEqual({
+      kind: "objectRef",
+      classId: "ImageWidget",
+    });
   });
 
   it("shows editor lifecycle events and Begin Play on an EditorUtilityInterface logic host", () => {
@@ -1368,6 +1393,18 @@ describe("scriptPaletteNodes", () => {
     expect(giCast?.defaultData).toMatchObject({
       resultKind: "objectRef",
     });
+    const uiCast = nodes.find((node) => node.id === "casting.cast:UserInterface");
+    expect(uiCast?.defaultData).toMatchObject({ resultKind: "objectRef" });
+    const widgetCast = nodes.find((node) => node.id === "casting.cast:Widget");
+    expect(widgetCast?.defaultData).toMatchObject({ resultKind: "objectRef" });
+  });
+
+  it("includes UserInterface and Widget engine classes in the known-class set", () => {
+    const ids = knownClassIdSet(() => null, []);
+    expect(ids.has("UserInterface")).toBe(true);
+    expect(ids.has("Widget")).toBe(true);
+    expect(ids.has("ButtonWidget")).toBe(true);
+    expect(ids.has("ImageWidget")).toBe(true);
   });
 
   it("hides native and editor lifecycle events on FunctionLibrary palettes", () => {

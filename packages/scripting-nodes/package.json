@@ -11,6 +11,7 @@
     "test": "vitest run --config ../../vitest.workspace.ts --project node packages/scripting-nodes"
   },
   "dependencies": {
+    "@babylonslate/core": "workspace:*",
     "@babylonslate/scripting": "workspace:*"
   },
   "devDependencies": {

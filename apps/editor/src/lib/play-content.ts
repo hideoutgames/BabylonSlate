@@ -11,6 +11,7 @@ import {
 } from "@babylonslate/assets";
 import {
   isEditorOnlyAsset,
+  userInterfaceClassMetadata,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -45,32 +46,49 @@ function isSerializedGraph(value: unknown): value is SerializedGraph {
   return Array.isArray(record.nodes) && Array.isArray(record.edges);
 }
 
+export type UiScriptCompileDocument = {
+  path: string;
+  content: SerializedGraph;
+  classId?: string;
+  parentClassId?: string | null;
+};
+
 /** Play compiles UserInterface `logic` the same way as Class graphs. */
 export function logicGraphFromUiPayload(
   path: string,
   payload: unknown,
-): { path: string; content: SerializedGraph } | null {
+  guid?: string,
+): UiScriptCompileDocument | null {
   const logic = asRecord(payload).logic;
   if (!isSerializedGraph(logic) || logic.nodes.length === 0) return null;
-  return { path, content: logic };
+  if (!guid?.trim()) return { path, content: logic };
+  const metadata = userInterfaceClassMetadata(guid.trim());
+  return {
+    path,
+    content: logic,
+    classId: metadata.classId,
+    parentClassId: metadata.parentClassId,
+  };
 }
 
 export function mergePlayScriptDocuments(
   classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
-  uiAssets: ReadonlyArray<{ path: string; payload: unknown }>,
-): Array<{ path: string; content: SerializedGraph }> {
+  uiAssets: ReadonlyArray<{ path: string; payload: unknown; guid?: string }>,
+): Array<UiScriptCompileDocument> {
   const extra = uiAssets.flatMap((asset) => {
-    const graph = logicGraphFromUiPayload(asset.path, asset.payload);
+    const graph = logicGraphFromUiPayload(asset.path, asset.payload, asset.guid);
     return graph ? [graph] : [];
   });
   return [...classGraphs, ...extra];
 }
 
-export function filterPlayScriptDocuments(
-  graphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
+export function filterPlayScriptDocuments<
+  T extends { path: string; content: SerializedGraph },
+>(
+  graphs: ReadonlyArray<T>,
   headers: Record<string, { type: string; parentClass?: string | null }>,
   parentOf: (id: string) => string | null | undefined,
-): Array<{ path: string; content: SerializedGraph }> {
+): T[] {
   return graphs.filter((graph) => {
     const header = headers[graph.path];
     if (!header) return true;
@@ -80,12 +98,13 @@ export function filterPlayScriptDocuments(
 
 export function collectPlayScriptDocuments(
   classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
-  uiAssets: ReadonlyArray<{ path: string; payload: unknown }>,
+  uiAssets: ReadonlyArray<{ path: string; payload: unknown; guid?: string }>,
   headers: Record<string, { type: string; parentClass?: string | null }>,
   parentOf: (id: string) => string | null | undefined,
 ): Array<{
   path: string;
   content: SerializedGraph;
+  classId?: string;
   parentClassId?: string | null;
 }> {
   return filterPlayScriptDocuments(
@@ -94,7 +113,8 @@ export function collectPlayScriptDocuments(
     parentOf,
   ).map((graph) => ({
     ...graph,
-    parentClassId: headers[graph.path]?.parentClass ?? null,
+    parentClassId:
+      graph.parentClassId ?? headers[graph.path]?.parentClass ?? null,
   }));
 }
 

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
+import { createDefaultPlayHud, WIDGET_KINDS } from "@babylonslate/ui-runtime";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  ENGINE_WIDGET_KINDS,
+} from "@babylonslate/core";
 import {
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
@@ -529,6 +533,12 @@ describe("scene-referenced Play content", () => {
   });
 });
 
+describe("UI widget class mapping", () => {
+  it("keeps engine widget kinds aligned with the UserInterface payload kinds", () => {
+    expect([...ENGINE_WIDGET_KINDS]).toEqual([...WIDGET_KINDS]);
+  });
+});
+
 describe("UI logic Play compile", () => {
   it("extracts a UserInterface payload.logic graph for Play", () => {
     const logic = {
@@ -656,6 +666,42 @@ describe("UI logic Play compile", () => {
       "assets/HUD.ui.babasset",
     ]);
     expect(collected[0]?.parentClassId).toBe("Actor");
+  });
+
+  it("identifies UserInterface scripts by asset guid, not the file stem", () => {
+    const collected = collectPlayScriptDocuments(
+      [],
+      [
+        {
+          path: "assets/HUD.ui.babasset",
+          guid: "hud-guid",
+          payload: {
+            logic: {
+              nodes: [
+                {
+                  id: "begin",
+                  type: "flow.event.beginPlay",
+                  position: { x: 0, y: 0 },
+                  data: {},
+                },
+              ],
+              edges: [],
+            },
+          },
+        },
+      ],
+      {
+        "assets/HUD.ui.babasset": { type: "UserInterface", parentClass: null },
+      },
+      () => null,
+    );
+    expect(collected).toEqual([
+      expect.objectContaining({
+        path: "assets/HUD.ui.babasset",
+        classId: "UserInterface:hud-guid",
+        parentClassId: "UserInterface",
+      }),
+    ]);
   });
 
   it("strips EditorUtilityInterface logic even if it is merged into the Play list", () => {

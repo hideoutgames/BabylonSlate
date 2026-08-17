@@ -1,4 +1,8 @@
-import type { GraphClassMember, SerializedGraph } from "@babylonslate/core";
+import {
+  isUserInterfaceClassId,
+  type GraphClassMember,
+  type SerializedGraph,
+} from "@babylonslate/core";
 import type {
   ScriptBundleEntry,
   ScriptConsoleCommand,
@@ -105,6 +109,7 @@ export function compileGraphDocument(
   options: {
     path: string;
     graphId?: string;
+    classId?: string;
     parentClassId?: string | null;
     stripDevelopmentOnly?: boolean;
     instrumentInfiniteLoops?: boolean;
@@ -167,7 +172,7 @@ export function compileGraphDocument(
     }
     entryPoints.push(...extra.entryPoints);
   }
-  const classId = classIdForGraphPath(options.path);
+  const classId = options.classId?.trim() || classIdForGraphPath(options.path);
   const metadata = classMetadataFromGraph(content, options.parentClassId);
   return {
     assetGuid: options.path,
@@ -238,6 +243,7 @@ export function spawnListForScripts(
   const seen = new Set<string>();
   const spawn: Array<{ classId: string }> = [];
   for (const script of scripts) {
+    if (isUserInterfaceClassId(script.classId)) continue;
     if (
       !script.entryPoints.some(
         (entry) => entry.event && ACTOR_LIFECYCLE_EVENTS.has(entry.event),
@@ -293,6 +299,7 @@ export function compileGraphDocuments(
   documents: ReadonlyArray<{
     path: string;
     content: SerializedGraph | LogicGraph;
+    classId?: string;
     parentClassId?: string | null;
   }>,
   options: { stripDevelopmentOnly?: boolean } = {},
@@ -302,6 +309,7 @@ export function compileGraphDocuments(
     try {
       const script = compileGraphDocument(doc.content, {
         path: doc.path,
+        classId: doc.classId,
         parentClassId: doc.parentClassId,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
       });
@@ -320,6 +328,7 @@ export function compileGraphDocumentsForExport(
   documents: ReadonlyArray<{
     path: string;
     content: SerializedGraph | LogicGraph;
+    classId?: string;
     parentClassId?: string | null;
   }>,
 ): ScriptBundleEntry[] {
