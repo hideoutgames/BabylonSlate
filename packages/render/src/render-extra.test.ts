@@ -60,6 +60,24 @@ describe("hardware scaling", () => {
     engine.dispose();
   });
 
+  it("raises the floor when Engine Settings hardware scaling changes so the valve cannot hunt back", () => {
+    const engine = new NullEngine();
+    const scaling = new HardwareScalingController(engine, {
+      minLevel: 1,
+      maxLevel: 4,
+      cooldownFrames: 0,
+      initialLevel: 1,
+      targetFrameMs: 1000 / 30,
+    });
+    scaling.setSettingsLevel(2);
+    expect(scaling.getLevel()).toBe(2);
+    for (let i = 0; i < 20; i++) {
+      scaling.noteFrameTime(4);
+    }
+    expect(scaling.getLevel()).toBe(2);
+    engine.dispose();
+  });
+
   it("steps toward maxLevel on slow frames after cooldown", () => {
     const engine = new NullEngine();
     const scaling = new HardwareScalingController(engine, {

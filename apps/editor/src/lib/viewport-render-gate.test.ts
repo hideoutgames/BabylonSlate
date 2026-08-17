@@ -188,7 +188,7 @@ describe("attachViewportRenderGate", () => {
 
 describe("applyLiveEngineSettings", () => {
   it("applies hardware scaling and the post-processing gate without mutating a scene", () => {
-    const scaling = { setLevel: vi.fn() };
+    const scaling = { setLevel: vi.fn(), setSettingsLevel: vi.fn() };
     const handle = {
       scaling,
       scheduler: { setFrameCap: vi.fn() },
@@ -200,12 +200,13 @@ describe("applyLiveEngineSettings", () => {
       postProcessingEnabled: false,
     });
     expect(handle.scheduler.setFrameCap).toHaveBeenCalledWith(30);
-    expect(scaling.setLevel).toHaveBeenCalledWith(1.5);
+    expect(scaling.setSettingsLevel).toHaveBeenCalledWith(1.5);
+    expect(scaling.setLevel).not.toHaveBeenCalled();
     expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
 
   it("does not apply viewportFrameCap onto a Play scheduler", () => {
-    const scaling = { setLevel: vi.fn() };
+    const scaling = { setLevel: vi.fn(), setSettingsLevel: vi.fn() };
     const handle = {
       scaling,
       scheduler: { setFrameCap: vi.fn() },
@@ -221,7 +222,7 @@ describe("applyLiveEngineSettings", () => {
       { applyFrameCap: false },
     );
     expect(handle.scheduler.setFrameCap).not.toHaveBeenCalled();
-    expect(scaling.setLevel).toHaveBeenCalledWith(1.5);
+    expect(scaling.setSettingsLevel).toHaveBeenCalledWith(1.5);
     expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
 });
