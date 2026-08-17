@@ -278,7 +278,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | Done (`p-lighting-camera`) | Incremental `authoredLight`/`authoredCamera`; direction from actor rotation × `(0,0,1)`; Play color/intensity/range/cone; detached `UniversalCamera`; named Default Camera (`SceneComponentPicker`); Possess Camera; one `ShadowGenerator` from `shadowquality` (`off`/`512`/`1024`/`2048`); fog/IBL; `environmentColor` clear. Spec: [engineplan §2.5](../engineplan.md). |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
-| Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (listen-to-bind); no JSON textarea |
+| Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (searchable code picker); no JSON textarea |
 | Multi-select gizmo (transform all selected) | Done | Outline covers all; gizmo attaches to the first pickable selection root; world-space TRS delta follows onto the other roots; `SetActorsTransformsCommand` is one undo |
 
 ## P7 slice ownership

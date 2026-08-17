@@ -202,7 +202,7 @@ function matchesSearch(
 function collectTouchControlIds(
   documents: ReadonlyArray<{ ref: { kind: string }; content: unknown }>,
 ): string[] {
-  const ids = new Set(["joystick-x", "joystick-y", "dpad-x", "dpad-y"]);
+  const ids = new Set(["joystick-x", "joystick-y", "dpad-x", "dpad-y", "Jump"]);
   for (const doc of documents) {
     if (doc.ref.kind !== "ui") continue;
     const payload =
@@ -521,7 +521,7 @@ export function SettingsModal({
             <FieldLegend>Input</FieldLegend>
             <FieldDescription>
               Named actions and axes bind keys, gamepad, and touch controls.
-              Tap Bind, then press a key or button.
+              Pick a device, then choose a key or button from the list.
             </FieldDescription>
             <InputMappingEditor
               value={normalizeInputMappings(projectDocument.settings.input)}
