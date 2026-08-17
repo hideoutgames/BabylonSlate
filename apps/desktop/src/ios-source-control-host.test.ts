@@ -33,6 +33,20 @@ describe("iOS source-control host", () => {
     expect(gitignore).toContain("App/App/capacitor.config.json");
   });
 
+  it("locks the native shell to landscape on iPad", () => {
+    const infoPlist = readFileSync(join(iosApp, "App/Info.plist"), "utf8");
+    expect(infoPlist).not.toContain("UIInterfaceOrientationPortrait");
+    expect(infoPlist).toContain("UIInterfaceOrientationLandscapeLeft");
+    expect(infoPlist).toContain("UIInterfaceOrientationLandscapeRight");
+
+    const pbxproj = readFileSync(
+      join(iosApp, "App.xcodeproj/project.pbxproj"),
+      "utf8",
+    );
+    expect(pbxproj.match(/TARGETED_DEVICE_FAMILY = "2";/g)).toHaveLength(2);
+    expect(pbxproj).not.toContain('TARGETED_DEVICE_FAMILY = "1,2";');
+  });
+
   it("declares a single applicationDidBecomeActive", () => {
     const delegate = readFileSync(join(iosApp, "App/AppDelegate.swift"), "utf8");
     const matches = delegate.match(/func applicationDidBecomeActive\(/g) ?? [];

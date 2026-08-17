@@ -64,7 +64,7 @@ Number fields (frame cap, hardware scaling, pointer scale, undo length, graph de
 
 ## iOS public copy (P14)
 
-Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/App/public/` (gitignored) from that dist, including `coi-serviceworker.js`, `havok/`, `ktx2/`, and `/player/`. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Do not treat the gitignored iOS `public/` snapshot as source — the copy contract is asserted in `packages/vfs/src/capacitor-ios.test.ts`.
+Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/App/public/` (gitignored) from that dist, including `coi-serviceworker.js`, `havok/`, `ktx2/`, and `/player/`. The native editor shell targets iPad only and is locked to landscape left/right; browser builds remain responsive at arbitrary orientations and sizes. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Do not treat the gitignored iOS `public/` snapshot as source — the copy contract is asserted in `packages/vfs/src/capacitor-ios.test.ts`.
 
 ## Templates folder
 
