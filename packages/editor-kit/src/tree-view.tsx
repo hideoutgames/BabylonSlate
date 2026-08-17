@@ -171,6 +171,20 @@ export function TreeView({
     [nodes, rowHeight],
   );
 
+  const pointerInsideTree = useCallback(
+    (clientX: number, clientY: number): boolean => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect || rect.width === 0 || rect.height === 0) return true;
+      return (
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+      );
+    },
+    [],
+  );
+
   const lastTapRef = useRef<{ id: string; at: number } | null>(null);
 
   const clearDrag = useCallback(() => {
@@ -286,15 +300,7 @@ export function TreeView({
       const moved = Math.hypot(dx, dy);
       if (moved <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
       drag.moved = true;
-      const rect = containerRef.current?.getBoundingClientRect();
-      const inside =
-        !rect ||
-        rect.width === 0 ||
-        rect.height === 0 ||
-        (event.clientX >= rect.left &&
-          event.clientX <= rect.right &&
-          event.clientY >= rect.top &&
-          event.clientY <= rect.bottom);
+      const inside = pointerInsideTree(event.clientX, event.clientY);
       if (inside && isTreeSwipeAdd(dx, dy) && !onExternalDrop) {
         drag.swipeAdd = true;
         drag.canDrag = false;
@@ -325,15 +331,25 @@ export function TreeView({
         if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
         drag.longPressTimer = null;
       }
-      if (onExternalDrop && !onReparent) {
+      if (!inside && onExternalDrop) {
+        setDropTargetId(undefined);
         onExternalDragMove?.(drag.nodeId, event.clientX, event.clientY);
         return;
       }
-      if (!onReparent) return;
-      const target = nodeIdAtClientY(event.clientY);
-      setDropTargetId(target === drag.nodeId ? undefined : target);
+      if (onReparent) {
+        const target = nodeIdAtClientY(event.clientY);
+        setDropTargetId(target === drag.nodeId ? undefined : target);
+        return;
+      }
+      onExternalDragMove?.(drag.nodeId, event.clientX, event.clientY);
     },
-    [nodeIdAtClientY, onExternalDragMove, onExternalDrop, onReparent],
+    [
+      nodeIdAtClientY,
+      onExternalDragMove,
+      onExternalDrop,
+      onReparent,
+      pointerInsideTree,
+    ],
   );
 
   const onPointerUp = useCallback(
@@ -361,21 +377,15 @@ export function TreeView({
       }
       if (drag.swipeAdd) {
         onSelect?.(drag.nodeId, { additive: true });
-      } else if (drag.armed && onReparent) {
-        const target = nodeIdAtClientY(event.clientY);
-        if (target !== drag.nodeId) {
-          onReparent(drag.nodeId, target);
-        }
-      } else if (drag.armed && onExternalDrop) {
-        const rect = containerRef.current?.getBoundingClientRect();
-        const inside =
-          rect &&
-          event.clientX >= rect.left &&
-          event.clientX <= rect.right &&
-          event.clientY >= rect.top &&
-          event.clientY <= rect.bottom;
-        if (!inside) {
+      } else if (drag.armed) {
+        const inside = pointerInsideTree(event.clientX, event.clientY);
+        if (!inside && onExternalDrop) {
           onExternalDrop(drag.nodeId, event.clientX, event.clientY);
+        } else if (onReparent) {
+          const target = nodeIdAtClientY(event.clientY);
+          if (target !== drag.nodeId) {
+            onReparent(drag.nodeId, target);
+          }
         }
       } else if (!drag.armed && !drag.moved) {
         const additive = event.ctrlKey || event.metaKey || event.shiftKey;
@@ -395,7 +405,15 @@ export function TreeView({
       }
       clearDrag();
     },
-    [clearDrag, nodeIdAtClientY, onActivate, onExternalDrop, onReparent, onSelect],
+    [
+      clearDrag,
+      nodeIdAtClientY,
+      onActivate,
+      onExternalDrop,
+      onReparent,
+      onSelect,
+      pointerInsideTree,
+    ],
   );
 
   return (

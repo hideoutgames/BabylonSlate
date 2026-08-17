@@ -494,4 +494,105 @@ describe("TreeView", () => {
     });
     expect(onExternalDrop).not.toHaveBeenCalled();
   });
+
+  it("external-drops outside the tree even when onReparent is also set", () => {
+    const onExternalDrop = vi.fn();
+    const onReparent = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onExternalDrop={onExternalDrop}
+        onReparent={onReparent}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84, width: 200, height: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    expect(onExternalDrop).toHaveBeenCalledWith("child", 260, 180);
+    expect(onReparent).not.toHaveBeenCalled();
+  });
+
+  it("still reparents when both callbacks are set and the pointer stays inside", () => {
+    const onExternalDrop = vi.fn();
+    const onReparent = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onExternalDrop={onExternalDrop}
+        onReparent={onReparent}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84, width: 200, height: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 70,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 70,
+    });
+    expect(onReparent).toHaveBeenCalledWith("child", "other");
+    expect(onExternalDrop).not.toHaveBeenCalled();
+  });
+
+  it("reports external drag move outside the tree when onReparent is also set", () => {
+    const onExternalDragMove = vi.fn();
+    const onReparent = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onExternalDrop={() => {}}
+        onExternalDragMove={onExternalDragMove}
+        onReparent={onReparent}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84, width: 200, height: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    expect(onExternalDragMove).toHaveBeenCalledWith("child", 260, 180);
+    expect(screen.getByTestId("tree-row-other").getAttribute("data-drop-target")).toBeNull();
+  });
 });
