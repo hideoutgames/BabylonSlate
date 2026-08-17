@@ -74,7 +74,7 @@ export const DEFAULT_INPUT_MAPPINGS: InputMappings = {
       name: "Confirm",
       bindings: [
         { device: "key", code: "Enter" },
-        // Face button B (index 1) — Jump already owns A (0:0).
+        // Face Button Right (index 1) — Jump already owns Face Button Down (0:0).
         { device: "gamepadButton", code: "0:1" },
       ],
     },

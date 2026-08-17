@@ -42,6 +42,47 @@ const jumpOnly: InputMappings = {
 };
 
 describe("InputMappingEditor", () => {
+  it("groups mappings into cards with device color marks on binding rows", () => {
+    render(<InputMappingEditor value={jumpOnly} onChange={() => {}} />);
+    expect(
+      screen
+        .getByTestId("input-actions-legend")
+        .querySelector("[data-type-color-swatch]"),
+    ).not.toBeNull();
+    expect(
+      screen
+        .getByTestId("input-axes-legend")
+        .querySelector("[data-type-color-swatch]"),
+    ).not.toBeNull();
+    expect(screen.getByTestId("input-action-0-bindings").textContent).toBe(
+      "Bindings",
+    );
+    const row = screen.getByTestId("input-action-0-binding-0");
+    expect(row.getAttribute("data-device")).toBe("key");
+    expect(row.querySelector("[data-type-color-swatch]")).not.toBeNull();
+    expect(row.className).toMatch(/border-l-2/);
+  });
+
+  it("colors 2D axis component toggles", () => {
+    const value: InputMappings = {
+      actions: [],
+      axes: [
+        {
+          name: "Move",
+          kind: "2d",
+          bindings: [{ device: "key", code: "KeyW", component: "y" }],
+        },
+      ],
+    };
+    render(<InputMappingEditor value={value} onChange={() => {}} />);
+    expect(screen.getByTestId("input-axis-0-binding-0-component-x").className).toMatch(
+      /axis-x/,
+    );
+    expect(screen.getByTestId("input-axis-0-binding-0-component-y").className).toMatch(
+      /axis-y/,
+    );
+  });
+
   it("lists action and axis names", () => {
     render(
       <InputMappingEditor value={jumpOnly} onChange={() => {}} />,
