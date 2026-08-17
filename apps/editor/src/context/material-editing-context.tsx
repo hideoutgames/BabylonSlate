@@ -27,6 +27,7 @@ import {
   materialPreviewReducer,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  renderActionEnabled,
   type MaterialDiagnostic,
   type MaterialDocument,
   type MaterialFunctionDocument,
@@ -35,9 +36,11 @@ import {
 import { useDocuments } from "./document-context";
 import { usePlay } from "./play-context";
 import { registerMaterialPreviewCameraRadius } from "../lib/material-preview-test-host";
+import { useMaterialRenderControl } from "./material-render-control-context";
 
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
 const IDLE_DEBOUNCE_MS = 220;
+export const MANUAL_RENDER_COOLDOWN_MS = 3_000;
 
 export interface MaterialEditingValue {
   /** Material Function documents in the project, keyed by asset guid. */
@@ -84,6 +87,7 @@ export function MaterialEditingProvider({
   const { openDocuments, assetRegistry, projectDocument, readAssetChunk } =
     useDocuments();
   const play = usePlay();
+  const { register: registerRenderControl } = useMaterialRenderControl();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const isFunctionDocument = doc?.ref.kind === "material-function";
 
@@ -99,12 +103,28 @@ export function MaterialEditingProvider({
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
+  const [renderCoolingDown, setRenderCoolingDown] = useState(false);
 
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const libraryRef = useRef<MaterialLibrary | null>(null);
   const generationRef = useRef(0);
+  const manualRenderPendingRef = useRef(false);
+  const renderCooldownTimerRef = useRef<number | null>(null);
   const frozen = !active || play.playing;
+
+  const finishManualRender = useCallback(() => {
+    if (!manualRenderPendingRef.current) return;
+    manualRenderPendingRef.current = false;
+    setRenderCoolingDown(true);
+    if (renderCooldownTimerRef.current !== null) {
+      window.clearTimeout(renderCooldownTimerRef.current);
+    }
+    renderCooldownTimerRef.current = window.setTimeout(() => {
+      renderCooldownTimerRef.current = null;
+      setRenderCoolingDown(false);
+    }, MANUAL_RENDER_COOLDOWN_MS);
+  }, []);
 
   const frameBudgetMs =
     1000 / Math.max(1, projectDocument?.settings.playFrameCap ?? 60);
@@ -151,7 +171,7 @@ export function MaterialEditingProvider({
     let gestures: { dispose: () => void } | null = null;
     try {
       host = createMaterialPreviewScene(sharedEngine, {
-        mesh: document?.preview.mesh ?? "sphere",
+        mesh: document?.preview.mesh ?? "cube",
       });
       presenter = createMaterialPreviewPresenter(host, canvas);
       presenter.setFrozen(frozen);
@@ -277,6 +297,7 @@ export function MaterialEditingProvider({
           durationMs,
           error: result.diagnostics[0]?.message,
         });
+        finishManualRender();
         return;
       }
       setCompileDiagnostics([]);
@@ -288,8 +309,9 @@ export function MaterialEditingProvider({
         host.applyMaterial(result.material);
       }
       dispatch({ type: "result", generation, ok: true, durationMs });
+      finishManualRender();
     },
-    [document, documentId],
+    [document, documentId, finishManualRender],
   );
 
   // Compile whatever the state machine queued.
@@ -303,10 +325,42 @@ export function MaterialEditingProvider({
 
   useEffect(() => {
     return () => {
+      if (renderCooldownTimerRef.current !== null) {
+        window.clearTimeout(renderCooldownTimerRef.current);
+      }
       libraryRef.current?.dispose();
       libraryRef.current = null;
     };
   }, []);
+
+  const renderDisabled =
+    frozen ||
+    isFunctionDocument ||
+    !document ||
+    !canvas ||
+    !sharedEngine ||
+    renderCoolingDown ||
+    !renderActionEnabled(previewState);
+  const requestRender = useCallback(() => {
+    if (renderDisabled) return;
+    manualRenderPendingRef.current = true;
+    dispatch({ type: "render" });
+  }, [renderDisabled]);
+
+  useEffect(() => {
+    if (!active || isFunctionDocument) return;
+    return registerRenderControl(documentId, {
+      disabled: renderDisabled,
+      requestRender,
+    });
+  }, [
+    active,
+    documentId,
+    isFunctionDocument,
+    registerRenderControl,
+    renderDisabled,
+    requestRender,
+  ]);
 
   const value = useMemo<MaterialEditingValue>(
     () => ({
@@ -317,7 +371,7 @@ export function MaterialEditingProvider({
       setSelectedNodeId,
       focusedNodeId,
       focusNode: (nodeId: string) => setFocusedNodeId(nodeId),
-      requestRender: () => dispatch({ type: "render" }),
+      requestRender,
       attachPreviewCanvas: setCanvas,
       frameBudgetMs,
     }),
@@ -327,6 +381,7 @@ export function MaterialEditingProvider({
       frameBudgetMs,
       functions,
       previewState,
+      requestRender,
       selectedNodeId,
     ],
   );
