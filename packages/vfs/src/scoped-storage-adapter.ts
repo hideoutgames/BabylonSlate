@@ -5,20 +5,22 @@ import type {
   ProjectStorage,
 } from "@babylonslate/core";
 import { Preferences } from "@capacitor/preferences";
-import { ScopedStorage } from "@daniele-rolli/capacitor-scoped-storage";
+import {
+  BabylonSlateFolder,
+  type BabylonSlateFolderPort,
+  type FolderIdentity,
+} from "./babylon-slate-folder-port";
 
 const FOLDER_PREF_KEY = "babylonslate:scoped-folder";
 const STALE_PREF_KEY = "babylonslate:scoped-stale";
+const STALE_BOOKMARK_CODE = "STALE_BOOKMARK";
 
-interface FolderRef {
-  id: string;
-  name?: string;
-}
+interface FolderRef extends FolderIdentity {}
 
 function toHandle(folder: FolderRef): ProjectFolderHandle {
   return {
     id: folder.id,
-    name: folder.name ?? "Project",
+    name: folder.name || "Project",
     tier: "external",
   };
 }
@@ -40,14 +42,31 @@ function decodeBinary(b64: string): Uint8Array {
   return out;
 }
 
+function isStaleBookmarkError(error: unknown): boolean {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === STALE_BOOKMARK_CODE
+  ) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /bookmark|secur(e|ity).?scope|not.?access|stale/i.test(message);
+}
+
 /**
- * Opt-in external-folder tier via Capacitor scoped storage.
- * Bookmark staleness surfaces as needsReconnect() → Homepage Reconnect flow.
- * Working Copy / NSFileCoordinator spike: expect a custom Swift plugin; see docs/architecture/vfs.md.
+ * Opt-in external-folder tier through the first-party iOS folder plugin.
+ * The native plugin owns security-scoped access and coordinates file-provider I/O.
  */
 export class ScopedStorageAdapter implements ProjectStorage {
   private folder: FolderRef | null = null;
   private stale = false;
+  private readonly native: BabylonSlateFolderPort;
+
+  constructor(native: BabylonSlateFolderPort = BabylonSlateFolder) {
+    this.native = native;
+  }
 
   async init(): Promise<void> {
     const { value } = await Preferences.get({ key: FOLDER_PREF_KEY });
@@ -56,17 +75,20 @@ export class ScopedStorageAdapter implements ProjectStorage {
     }
     const stale = await Preferences.get({ key: STALE_PREF_KEY });
     this.stale = stale.value === "1";
+    if (this.folder && !this.stale) {
+      try {
+        await this.resolvePersistedFolder(this.folder);
+      } catch (error) {
+        if (!isStaleBookmarkError(error)) throw error;
+      }
+    }
   }
 
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
-    const { folder } = await ScopedStorage.pickFolder();
-    this.folder = folder;
+    const { folder } = await this.native.pickFolder();
+    await this.persistFolder(folder);
     this.stale = false;
-    await Preferences.set({
-      key: FOLDER_PREF_KEY,
-      value: JSON.stringify(folder),
-    });
-    await Preferences.set({ key: STALE_PREF_KEY, value: "0" });
+    await this.persistStale(false);
     return toHandle(folder);
   }
 
@@ -86,16 +108,11 @@ export class ScopedStorageAdapter implements ProjectStorage {
     if (this.stale) {
       throw new Error("Project folder bookmark is stale; reconnect required");
     }
-    // Rebind from persisted bookmark without showing the picker.
-    if (this.folder && this.folder.id === handle.id) {
-      return toHandle(this.folder);
-    }
-    this.folder = { id: handle.id, name: handle.name };
-    await Preferences.set({
-      key: FOLDER_PREF_KEY,
-      value: JSON.stringify(this.folder),
+    const folder = await this.resolvePersistedFolder({
+      id: handle.id,
+      name: handle.name,
     });
-    return toHandle(this.folder);
+    return toHandle(folder);
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
@@ -107,9 +124,11 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async releaseFolder(): Promise<void> {
+    await this.native.releaseFolder();
     this.folder = null;
+    this.stale = false;
     await Preferences.remove({ key: FOLDER_PREF_KEY });
-    await Preferences.set({ key: STALE_PREF_KEY, value: "0" });
+    await this.persistStale(false);
   }
 
   async needsReconnect(): Promise<boolean> {
@@ -120,10 +139,43 @@ export class ScopedStorageAdapter implements ProjectStorage {
     return this.pickProjectFolder();
   }
 
-  /** Test / spike helper — mark the bookmark stale. */
+  /** Test / diagnostic helper for the Homepage reconnect state. */
   async markStale(): Promise<void> {
     this.stale = true;
-    await Preferences.set({ key: STALE_PREF_KEY, value: "1" });
+    await this.persistStale(true);
+  }
+
+  private async resolvePersistedFolder(folder: FolderRef): Promise<FolderRef> {
+    try {
+      const result = await this.native.resolveFolder({ bookmark: folder.id });
+      const resolved = result.folder;
+      await this.persistFolder(resolved);
+      this.folder = resolved;
+      this.stale = false;
+      await this.persistStale(false);
+      return resolved;
+    } catch (error) {
+      if (isStaleBookmarkError(error)) {
+        await this.markStale();
+        throw new Error("Project folder bookmark is stale; reconnect required");
+      }
+      throw error;
+    }
+  }
+
+  private async persistFolder(folder: FolderRef): Promise<void> {
+    this.folder = folder;
+    await Preferences.set({
+      key: FOLDER_PREF_KEY,
+      value: JSON.stringify(folder),
+    });
+  }
+
+  private async persistStale(stale: boolean): Promise<void> {
+    await Preferences.set({
+      key: STALE_PREF_KEY,
+      value: stale ? "1" : "0",
+    });
   }
 
   private getFolder(): FolderRef {
@@ -139,53 +191,42 @@ export class ScopedStorageAdapter implements ProjectStorage {
   private async withScope<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (/bookmark|secur(e|ity).?scope|not.?access|stale/i.test(message)) {
+    } catch (error) {
+      if (isStaleBookmarkError(error)) {
         await this.markStale();
         throw new Error("Project folder bookmark is stale; reconnect required");
       }
-      throw err;
+      throw error;
     }
   }
 
   async readText(path: string): Promise<string> {
     return this.withScope(async () => {
-      const { data } = await ScopedStorage.readFile({
-        folder: this.getFolder(),
-        path,
-        encoding: "utf8",
-      });
+      void this.getFolder();
+      const { data } = await this.native.readFile({ path, encoding: "utf8" });
       return data;
     });
   }
 
   async writeText(path: string, data: string): Promise<void> {
     await this.withScope(async () => {
-      await ScopedStorage.writeFile({
-        folder: this.getFolder(),
-        path,
-        data,
-        encoding: "utf8",
-      });
+      void this.getFolder();
+      await this.native.writeFile({ path, data, encoding: "utf8" });
     });
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
     return this.withScope(async () => {
-      const { data } = await ScopedStorage.readFile({
-        folder: this.getFolder(),
-        path,
-        encoding: "base64",
-      });
+      void this.getFolder();
+      const { data } = await this.native.readFile({ path, encoding: "base64" });
       return decodeBinary(data);
     });
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
     await this.withScope(async () => {
-      await ScopedStorage.writeFile({
-        folder: this.getFolder(),
+      void this.getFolder();
+      await this.native.writeFile({
         path,
         data: encodeBinary(data),
         encoding: "base64",
@@ -195,66 +236,48 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async exists(path: string): Promise<boolean> {
     return this.withScope(async () => {
-      const { exists } = await ScopedStorage.exists({
-        folder: this.getFolder(),
-        path,
-      });
+      void this.getFolder();
+      const { exists } = await this.native.exists({ path });
       return exists;
     });
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
     return this.withScope(async () => {
-      const { entries } = await ScopedStorage.readdir({
-        folder: this.getFolder(),
-        path,
-      });
+      void this.getFolder();
+      const { entries } = await this.native.readdir({ path });
       return entries;
     });
   }
 
   async mkdir(path: string, recursive = true): Promise<void> {
     await this.withScope(async () => {
-      await ScopedStorage.mkdir({
-        folder: this.getFolder(),
-        path,
-        recursive,
-      });
+      void this.getFolder();
+      await this.native.mkdir({ path, recursive });
     });
   }
 
   async remove(path: string): Promise<void> {
     await this.withScope(async () => {
-      // Community plugin may not expose unlink; best-effort via write empty + note.
-      if (typeof (ScopedStorage as { deleteFile?: unknown }).deleteFile === "function") {
-        await (
-          ScopedStorage as unknown as {
-            deleteFile: (opts: {
-              folder: FolderRef;
-              path: string;
-            }) => Promise<void>;
-          }
-        ).deleteFile({ folder: this.getFolder(), path });
-        return;
+      void this.getFolder();
+      const info = await this.native.stat({ path });
+      if (info.type === "directory") {
+        await this.native.rmdir({ path });
+      } else {
+        await this.native.deleteFile({ path });
       }
-      throw new Error(`remove is not supported by scoped-storage plugin: ${path}`);
     });
   }
 
   async stat(path: string): Promise<FileStat> {
-    const exists = await this.exists(path);
-    if (!exists) {
-      throw new Error(`File not found: ${path}`);
-    }
-    const entries = await this.readdir(
-      path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
-    );
-    const name = path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path;
-    const entry = entries.find((e) => e.name === name);
-    return {
-      isDir: entry?.isDir ?? false,
-      size: entry?.size ?? null,
-      mtime: entry?.mtime ?? null,
-    };
+    return this.withScope(async () => {
+      void this.getFolder();
+      const info = await this.native.stat({ path });
+      return {
+        isDir: info.type === "directory",
+        size: info.type === "file" ? info.size : null,
+        mtime: info.mtime,
+      };
+    });
   }
 }
