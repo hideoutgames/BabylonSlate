@@ -18,11 +18,23 @@ describe("iOS source-control host", () => {
     expect(pbxproj).toContain("path = BabylonSlateSecretsPlugin.swift");
   });
 
-  it("registers the Keychain plugin in packageClassList", () => {
+  it("registers the Keychain plugin from the bridge view controller", () => {
+    const mainViewController = readFileSync(
+      join(iosApp, "App/MainViewController.swift"),
+      "utf8",
+    );
+    expect(mainViewController).toContain(
+      "registerPluginInstance(BabylonSlateSecretsPlugin())",
+    );
+    expect(mainViewController).toContain(
+      "registerPluginInstance(BabylonSlateFolderPlugin())",
+    );
     const config = JSON.parse(
       readFileSync(join(iosApp, "App/capacitor.config.json"), "utf8"),
     ) as { packageClassList?: string[] };
-    expect(config.packageClassList).toContain("BabylonSlateSecretsPlugin");
+    expect(config.packageClassList ?? []).not.toContain(
+      "BabylonSlateSecretsPlugin",
+    );
   });
 
   it("declares a single applicationDidBecomeActive", () => {
