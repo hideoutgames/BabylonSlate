@@ -13,20 +13,24 @@ function defaultClock(): UiFrameClock {
 /** Coalesce resize/present work onto the next animation frame. */
 export function createUiFrameScheduler(clock: UiFrameClock = defaultClock()) {
   let handle = 0;
+  let scheduled = false;
   let generation = 0;
   return {
     schedule(work: () => void): void {
-      if (handle) return;
+      if (scheduled) return;
+      scheduled = true;
       const token = ++generation;
       handle = clock.now(() => {
+        scheduled = false;
         handle = 0;
         if (token !== generation) return;
         work();
       });
     },
     cancel(): void {
-      if (!handle) return;
+      if (!scheduled) return;
       clock.cancel(handle);
+      scheduled = false;
       handle = 0;
       generation += 1;
     },

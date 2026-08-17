@@ -39,4 +39,20 @@ describe("createUiFrameScheduler", () => {
     frames[0]?.(0);
     expect(work).not.toHaveBeenCalled();
   });
+
+  it("accepts another schedule after a synchronous frame callback", () => {
+    const scheduler = createUiFrameScheduler({
+      now: (callback) => {
+        callback(0);
+        return 1;
+      },
+      cancel: vi.fn(),
+    });
+    const first = vi.fn();
+    const second = vi.fn();
+    scheduler.schedule(first);
+    scheduler.schedule(second);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
 });

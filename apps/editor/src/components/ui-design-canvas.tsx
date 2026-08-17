@@ -60,6 +60,8 @@ import {
 } from "../lib/live-ui-present";
 import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
 
+const defaultResolveImageUrl = (_guid: string): string | null => null;
+
 export function UiDesignCanvas({
   ui,
   viewport,
@@ -70,7 +72,7 @@ export function UiDesignCanvas({
   previewScale,
   sharedEngine,
   fontEntries = [],
-  resolveImageUrl = () => null,
+  resolveImageUrl = defaultResolveImageUrl,
   bitmapScale,
   onSelect,
   onViewChange,
@@ -209,21 +211,10 @@ export function UiDesignCanvas({
       paintScheduler.cancel();
       gizmoScheduler.cancel();
     };
-    // panelVisible / documentActive: freezeLiveUiSurface on the new surface this
-    // frame; the next effect updates freeze when those flags change.
+    // Recreate only when the shared Engine identity changes. Viewport, scale
+    // rule, and design resolution go through resizeDesign on the paint path.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
-  }, [
-    sharedEngine,
-    ui.designResolution.height,
-    ui.designResolution.width,
-    ui.scaleRule,
-    viewport.height,
-    viewport.safeArea.bottom,
-    viewport.safeArea.left,
-    viewport.safeArea.right,
-    viewport.safeArea.top,
-    viewport.width,
-  ]);
+  }, [sharedEngine]);
 
   useEffect(() => {
     freezeLiveUiSurface(surfaceRef.current, { panelVisible, documentActive });
@@ -259,7 +250,12 @@ export function UiDesignCanvas({
       if (!live) return;
       try {
         const frozen = !panelVisible || !documentActive;
-        live.resizeDesign(viewport.width, viewport.height, ui.scaleRule);
+        live.resizeDesign(
+          viewport.width,
+          viewport.height,
+          ui.scaleRule,
+          ui.designResolution,
+        );
         applyUiControlsIfUnfrozen(frozen, live.host, displayControls);
         presentLiveUiIfVisible({
           panelVisible,
@@ -285,6 +281,8 @@ export function UiDesignCanvas({
     guiLive,
     panelVisible,
     resolveImageUrl,
+    ui.designResolution.height,
+    ui.designResolution.width,
     ui.scaleRule,
     viewport.height,
     viewport.width,

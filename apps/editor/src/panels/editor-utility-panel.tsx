@@ -182,15 +182,9 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       surface?.dispose();
       surfaceRef.current = null;
     };
+    // Recreate only when the shared Engine or utility asset identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- freeze on create; next effect tracks visibility
-  }, [
-    guid,
-    play,
-    play?.sharedEngineGeneration,
-    ui?.designResolution.height,
-    ui?.designResolution.width,
-    ui?.scaleRule,
-  ]);
+  }, [guid, play, play?.sharedEngineGeneration]);
 
   useEffect(() => {
     freezeLiveUiSurface(surfaceRef.current, {
@@ -213,7 +207,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       );
       const layout = layoutUserInterface(ui, { width, height });
       applyUiControlsIfUnfrozen(frozen, surface.host, describeUiControls(ui, layout));
-      surface.resizeDesign(width, height, ui.scaleRule);
+      surface.resizeDesign(width, height, ui.scaleRule, ui.designResolution);
       presentLiveUiIfVisible({
         panelVisible,
         documentActive: true,

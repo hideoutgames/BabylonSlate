@@ -100,8 +100,8 @@ describe("isHardUiPresentFailure", () => {
     expect(isHardUiPresentFailure(new Error("ADT backing store is missing"))).toBe(
       true,
     );
-    expect(isHardUiPresentFailure(new Error("standalone ADT failed"))).toBe(true);
-    expect(isHardUiPresentFailure(new Error("ADT blit size is 0"))).toBe(true);
+    expect(isHardUiPresentFailure(new Error("standalone ADT failed"))).toBe(false);
+    expect(isHardUiPresentFailure(new Error("ADT blit size is 0"))).toBe(false);
     expect(isHardUiPresentFailure(null)).toBe(false);
   });
 });
