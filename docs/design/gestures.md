@@ -127,6 +127,8 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 Outliner, Components, and UserInterface hierarchy `TreeView`s use **immediate** drag-to-parent (pointer move past 8px; drop on a row makes that row the parent). A **horizontal swipe ≥44px** on a row adds it to the selection and does not reparent. A **two-finger tap** range-selects from the current selection to that row. Outliner **Ctrl / Shift / Meta** click toggles actors via `selectActor(id, additive)` (no Shift-range on desktop). Outliner Duplicate / Delete and UserInterface Visible / Ignore Safe Area / Duplicate / Rename / Delete live on a trailing **⋯** button (no 500ms row long-press). **Double-tap** an outliner row frames that actor (folder rows do not frame). Content Browser folder trees keep hold-to-drag so list scroll still works.
 
+**Outliner actor → viewport:** the Outliner tree sets both `onReparent` and `onExternalDrop`. While the pointer is **outside** the tree, `GraphDropHint` (`outliner-drop-hint`) follows it — `+{actor.name}` over `viewport-canvas`, ban icon anywhere else. Drop on the canvas duplicates that one actor at the drop world position (new id, `{name} Copy`, root `parentId`, keep `folderId`; no children). Folders show the ban hint and do not duplicate. Releases **inside** the tree still reparent/group (table below). This is not Place Actors catalog drag-to-viewport.
+
 Class members use the same pointer path (`TreeView.onExternalDrop`), not HTML5 drag-and-drop: mouse arms after 8px, touch after the ~250ms hold, and the drop fires only when the pointer is released **outside** the tree. Swipe-add does not apply on this tree. Dropping onto the Graph canvas spawns Call Custom Event / Call Function, or opens the Get/Set Dialog for variables.
 
 In the Outliner the **drop target decides what a drag means**, because folders group and `parentId` attaches:
@@ -135,6 +137,8 @@ In the Outliner the **drop target decides what a drag means**, because folders g
 | --- | --- | --- |
 | Actor | Folder row | Joins that folder; transform parent cleared |
 | Actor | Actor row | Becomes that actor's transform child; inherits its folder |
-| Actor | Empty space | Back to the scene root; folder and parent cleared |
+| Actor | Empty space in the tree | Back to the scene root; folder and parent cleared |
+| Actor | Scene viewport | Duplicate at the drop world position (root; keep folder) |
 | Folder | Folder row | Nests (cycles rejected) |
 | Folder | Empty space | Back to the root |
+| Folder | Scene viewport | No-op (ban hint) |

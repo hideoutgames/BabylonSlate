@@ -61,7 +61,7 @@ test.describe("Scene Outliner folders", () => {
     await page.getByTestId("place-actors-item-camera").click();
     await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
 
-    // Placed actors must not stack on the default Cube at the origin.
+    // Place Actors uses the view center, not the origin Cube.
     await expect(page.getByTestId("property-actor-position-x")).not.toHaveValue("0");
 
     const toggle = page.getByTestId(
