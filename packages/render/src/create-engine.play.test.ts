@@ -220,6 +220,39 @@ describe("Play createEngine view", () => {
     expect(handle.scaling.getLevel()).toBe(1.5);
   });
 
+  it("does not supersample below the Engine Settings hardware scaling floor", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      hardwareScalingLevel: 1,
+      frameCap: 30,
+    });
+    handles.push(handle);
+    for (let i = 0; i < 40; i++) {
+      handle.scaling.noteFrameTime(4);
+    }
+    expect(handle.scaling.getLevel()).toBe(1);
+  });
+
+  it("uses the view frame cap as the scaling valve target", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      hardwareScalingLevel: 1,
+      frameCap: 30,
+    });
+    handles.push(handle);
+    // 20ms is slow vs 60fps (16.7ms) but cheap vs a 30fps cap (33ms).
+    for (let i = 0; i < 40; i++) {
+      handle.scaling.noteFrameTime(20);
+    }
+    expect(handle.scaling.getLevel()).toBe(1);
+  });
+
   it("attaches an authored post-process stack when the local gate is on", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

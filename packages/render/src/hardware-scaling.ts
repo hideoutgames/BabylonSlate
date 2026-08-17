@@ -28,7 +28,7 @@ export class HardwareScalingController {
     this.maxLevel = options.maxLevel ?? 2;
     this.targetFrameMs = options.targetFrameMs ?? 1000 / 60;
     this.cooldownFrames = options.cooldownFrames ?? 30;
-    this.level = 1;
+    this.level = Number.NaN;
     this.setLevel(options.initialLevel ?? 1);
   }
 
@@ -37,7 +37,9 @@ export class HardwareScalingController {
   }
 
   setLevel(level: number): void {
-    this.level = Math.min(this.maxLevel, Math.max(this.minLevel, level));
+    const next = Math.min(this.maxLevel, Math.max(this.minLevel, level));
+    if (next === this.level) return;
+    this.level = next;
     this.engine.setHardwareScalingLevel(this.level);
   }
 
