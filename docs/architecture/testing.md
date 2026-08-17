@@ -2,6 +2,8 @@
 
 `pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build. CI runs the same command.
 
+GitHub Actions must use **standard** hosted runners only (`ubuntu-latest`, `macos-latest`, …). Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.cursor/rules/github-actions-standard-runners.mdc`](../../.cursor/rules/github-actions-standard-runners.mdc).
+
 ## Vitest projects
 
 Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`.
