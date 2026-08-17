@@ -161,4 +161,13 @@ describe("MaterialEditingProvider preview isolation", () => {
       expect(harness.presenter.setFrozen).toHaveBeenCalledWith(true);
     });
   });
+
+  it("does not keep a present rAF running while the document is frozen", async () => {
+    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(1);
+    mount(false);
+    await waitFor(() => {
+      expect(harness.createPresenter).toHaveBeenCalled();
+    });
+    expect(harness.presenter.present).not.toHaveBeenCalled();
+  });
 });

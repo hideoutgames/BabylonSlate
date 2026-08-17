@@ -149,7 +149,6 @@ export function MaterialEditingProvider({
     let host: MaterialPreviewScene | null = null;
     let presenter: MaterialPreviewPresenter | null = null;
     let gestures: { dispose: () => void } | null = null;
-    let frame = 0;
     try {
       host = createMaterialPreviewScene(sharedEngine, {
         mesh: document?.preview.mesh ?? "sphere",
@@ -168,13 +167,7 @@ export function MaterialEditingProvider({
     registerMaterialPreviewCameraRadius(
       () => hostRef.current?.camera.radius ?? null,
     );
-    const tick = () => {
-      presenter?.present();
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
     return () => {
-      window.cancelAnimationFrame(frame);
       gestures?.dispose();
       presenter?.dispose();
       host?.dispose();
@@ -189,7 +182,19 @@ export function MaterialEditingProvider({
 
   useEffect(() => {
     presenterRef.current?.setFrozen(frozen);
-  }, [frozen]);
+    if (frozen) return;
+    const presenter = presenterRef.current;
+    if (!presenter) return;
+    let frame = 0;
+    const tick = () => {
+      presenter.present();
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [frozen, canvas, sharedEngine]);
 
   // Keep the preview primitive in step with the document.
   useEffect(() => {

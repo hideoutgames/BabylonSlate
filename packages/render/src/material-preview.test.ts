@@ -3,6 +3,7 @@ import {
   ArcRotateCamera,
   MeshBuilder,
   NullEngine,
+  RenderTargetTexture,
   Scene,
   Vector3,
 } from "@babylonjs/core";
@@ -22,11 +23,31 @@ type Listener = (event: Event) => void;
 class FakeCanvas {
   clientWidth = 320;
   clientHeight = 180;
-  width = 320;
-  height = 180;
+  #width = 320;
+  #height = 180;
+  widthAssigns = 0;
+  heightAssigns = 0;
   readonly listeners = new Map<string, Set<Listener>>();
   capturedPointers: number[] = [];
   readonly dataset: Record<string, string> = {};
+
+  get width(): number {
+    return this.#width;
+  }
+
+  set width(value: number) {
+    this.widthAssigns += 1;
+    this.#width = value;
+  }
+
+  get height(): number {
+    return this.#height;
+  }
+
+  set height(value: number) {
+    this.heightAssigns += 1;
+    this.#height = value;
+  }
 
   addEventListener(type: string, listener: Listener): void {
     const set = this.listeners.get(type) ?? new Set<Listener>();
@@ -299,6 +320,87 @@ describe("material preview presenter", () => {
     expect(registerView).not.toHaveBeenCalled();
     expect(resize).not.toHaveBeenCalled();
     expect(host.camera.inputs.attachedToElement).toBeFalsy();
+  });
+
+  it("does not clear the shared default framebuffer", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    expect(host.scene.autoClear).toBe(false);
+  });
+
+  it("does not reset the 2D canvas size when the buffer is unchanged", async () => {
+    const pixels = new Uint8Array(320 * 180 * 4);
+    const readPixels = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockResolvedValue(pixels);
+    disposers.push(() => readPixels.mockRestore());
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    canvas.width = 1;
+    canvas.height = 1;
+    canvas.widthAssigns = 0;
+    canvas.heightAssigns = 0;
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 1000 },
+    );
+    disposers.push(() => presenter.dispose());
+    presenter.present();
+    await vi.waitFor(() => expect(canvas.widthAssigns).toBeGreaterThan(0));
+    const assigns = canvas.widthAssigns + canvas.heightAssigns;
+    presenter.present();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(canvas.widthAssigns + canvas.heightAssigns).toBe(assigns);
+  });
+
+  it("skips scene.render while a blit is in flight", () => {
+    const hang = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockReturnValue(new Promise(() => {}));
+    disposers.push(() => hang.mockRestore());
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    let now = 0;
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 1000, now: () => (now += 50) },
+    );
+    disposers.push(() => presenter.dispose());
+    presenter.present();
+    const render = vi.spyOn(host.scene, "render");
+    presenter.present();
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("caps present to the editor viewport frame cap", async () => {
+    const readPixels = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockResolvedValue(new Uint8Array(4));
+    disposers.push(() => readPixels.mockRestore());
+    let now = 0;
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 30, now: () => now },
+    );
+    disposers.push(() => presenter.dispose());
+    presenter.present();
+    await Promise.resolve();
+    await Promise.resolve();
+    const render = vi.spyOn(host.scene, "render");
+    presenter.present();
+    expect(render).not.toHaveBeenCalled();
+    now = 34;
+    presenter.present();
+    expect(render).toHaveBeenCalledTimes(1);
   });
 
   it("skips scene.render when frozen or the preview canvas has no size", () => {
