@@ -120,7 +120,13 @@ post-process passes are always manual because neither is profiled on the device.
 Timings stay session-local and are never written into an asset.
 
 Layout-only node moves do not recompile: `materialCompileKey` / the plan hash
-ignore positions. The graph canvas commits positions once per drag.
+ignore positions. The graph canvas commits positions once per drag, with a
+per-gesture `transactionId` so Undo restores one drag at a time. Measured-size
+frames and identical payloads do not dirty the document. The preview canvas
+exposes `data-camera-radius` (and test-mode `materialPreviewCameraRadius`) so
+e2e can dispatch wheel and two-pointer pinch on the preview canvas. Gestures
+attach only to that canvas (`attachMaterialPreviewGestures`); never
+`camera.attachControl`, which Babylon binds to the Engine input element.
 
 ## Custom GLSL
 
@@ -128,9 +134,12 @@ ignore positions. The graph canvas commits positions once per drag.
 Details panel edits a persisted `body` (Textarea) with a generated typed
 signature `result = fn(a, b)`. The validator rejects empty bodies, oversized
 source, declarations, preprocessor directives and forbidden globals, and
-reports `material.capability` on WebGPU (`customGlsl: false`). Render realises
-the node through Babylon `CustomBlock`; the expression participates in the plan
-hash so a body edit invalidates the cache.
+reports `material.capability` on WebGPU (`customGlsl: false`). Compiler
+Results show `material.customGlsl`. Playwright wires the validated node
+into Metallic with tap-to-connect (force-click so the dock sash cannot
+steal the pin) and asserts the preview compiles to `data-status="ready"`.
+Render realises the node through Babylon `CustomBlock`; the expression
+participates in the plan hash so a body edit invalidates the cache.
 
 ## Inline Texture Sample
 
@@ -153,11 +162,12 @@ closure. Selected Texture Sample nodes expose an `AssetPicker` in Details.
 
 If a device cannot provide a required buffer, `attachPostProcessStack` skips
 **only that pass** and reports an anchored `material.capability` diagnostic on
-the Scene Depth / Scene Normal node. Runtime probes pre-pass support rather than
-assuming buffers exist. Scene Depth lazily enables a linearized camera depth
-renderer (`useNonLinearDepth = false`, camera near/far from that camera) and
-Scene Normal enables a shared pre-pass renderer; both are released when the
-last dependent pass detaches.
+the Scene Depth / Scene Normal node. Runtime probes depth with a try/catch
+`enableDepthRenderer` and pre-pass support without disposing a renderer another
+subsystem already owns. Compilation runs first; only successful passes lease a
+linearized camera depth renderer (`useNonLinearDepth = false`,
+`storeCameraSpaceZ = false`) or a shared pre-pass renderer. The stack releases
+only buffers it created.
 
 ## Runtime
 
@@ -185,7 +195,10 @@ disabled entries), transitive Material Functions and texture guids. Saving a
 Material writes `domain` onto `header.payload` and `materialDependencies().all`
 onto `header.dependencies[]`. The packaged player hydrates those JSON payloads
 into `createEngine` (`materialDocuments`, `materialFunctions`,
-`postProcessStack`) and forwards `assignMaterial`. Engine Settings
+`postProcessStack`) and forwards `assignMaterial`. After `changescene` /
+`ctx.changeScene` the worker emits `activeScene` with the canonical scene guid;
+editor Play and the packaged player call `loadScene` / `applySceneEnvironment`
+so the destination stack and environment replace the previous scene's. Engine Settings
 `postProcessingEnabled` is not applied to exported games — omitted means the
 authored stack runs.
 

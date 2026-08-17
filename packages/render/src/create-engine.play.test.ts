@@ -13,6 +13,12 @@ import { editorMeshName } from "./scene-loader";
  * The babylon Vitest project runs under Node. createEngine only needs a
  * listener surface plus width/height for registerView.
  */
+function livePassCount(
+  camera: { _postProcesses?: Array<unknown | null> } | null | undefined,
+): number {
+  return camera?._postProcesses?.filter((pass) => pass != null).length ?? 0;
+}
+
 class FakeCanvas {
   width = 256;
   height = 256;
@@ -303,5 +309,112 @@ describe("Play createEngine view", () => {
     });
     const mesh = handle.scene.getMeshByName("actor-1");
     expect(mesh?.material?.name).toContain("mat-1");
+    expect(handle.assignedMaterialGuids()).toEqual(["mat-1"]);
+  });
+
+  it("moves the post-process stack onto the authored Default Camera", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      materialDocuments: new Map([
+        ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
+      ]),
+    });
+    handles.push(handle);
+    const fallback = handle.scene.getCameraByName("camera");
+    expect(livePassCount(fallback)).toBeGreaterThan(0);
+
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: { isDefault: true, projectionMode: "perspective" },
+    });
+    const buf = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(buf, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(buf, 0, {
+      slotId: 1,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    handle.pushSnapshot(buf);
+    runRenderLoop.mock.calls[0]?.[0]?.();
+
+    const authored = handle.scene.activeCamera;
+    expect(authored?.name).toBe("authoredCamera:1");
+    expect(livePassCount(authored)).toBeGreaterThan(0);
+    expect(livePassCount(fallback)).toBe(0);
+  });
+
+  it("reattaches the post-process stack to the fallback camera after Default Camera despawn", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      materialDocuments: new Map([
+        ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
+      ]),
+    });
+    handles.push(handle);
+    const callback = runRenderLoop.mock.calls[0]?.[0];
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: { isDefault: true, projectionMode: "perspective" },
+    });
+    const spawn = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(spawn, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(spawn, 0, {
+      slotId: 1,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    handle.pushSnapshot(spawn);
+    callback?.();
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
+    expect(livePassCount(handle.scene.activeCamera)).toBeGreaterThan(0);
+
+    const empty = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(empty, {
+      frameId: 2,
+      tickIndex: 2,
+      actorCount: 0,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    handle.pushSnapshot(empty);
+    callback?.();
+
+    const fallback = handle.scene.getCameraByName("camera");
+    expect(handle.scene.activeCamera).toBe(fallback);
+    expect(fallback?.isDisposed()).toBe(false);
+    expect(livePassCount(fallback)).toBeGreaterThan(0);
+    expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 });

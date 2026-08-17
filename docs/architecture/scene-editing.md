@@ -90,7 +90,7 @@ Implementation: `editor-camera.ts`, `gizmo-host.ts`, `gizmo-multi-select.ts` in 
 
 Invalidates the render scheduler on apply (`"asset"` reason). Viewport wiring also invalidates on **`camera`**, **`gizmo`**, and **`selection`** (see [render.md](render.md)).
 
-Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorId}`) for one actor, or `SetActorsTransformsCommand.mergeKey` (`transforms:{sortedIds}`) when two or more selection-root transforms change — one undo step per gesture.
+Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorId}`) for one actor, or `SetActorsTransformsCommand.mergeKey` (`transforms:{sortedIds}`) when two or more selection-root transforms change — one undo step per gesture. Viewport `commitGizmoTransform` only runs when `onGizmoDragStart` stored a scene; a Babylon `onDragEnd` without a drag (attach/rebuild) must not write live mesh TRS and re-dirty after Save All.
 
 ## Packages
 

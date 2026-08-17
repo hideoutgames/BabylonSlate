@@ -575,8 +575,13 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           openDocuments,
           activeDocumentId,
         );
+        let playLibrary: Array<{
+          guid: string;
+          scene: import("@babylonslate/core").SerializedScene;
+        }> = [];
         try {
-          setPlaySceneLibrary(await collectPlaySceneLibrary());
+          playLibrary = await collectPlaySceneLibrary();
+          setPlaySceneLibrary(playLibrary);
         } catch (error) {
           appendLog(
             `Scene library failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -660,7 +665,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayTilesets(new Map());
         }
         try {
-          const materials = await collectPlayMaterialLibrary(resolvedScene?.scene);
+          const materials = await collectPlayMaterialLibrary(
+            resolvedScene?.scene,
+            playLibrary.map((entry) => entry.scene),
+          );
           setPlayMaterialDocuments(materials.documents);
           setPlayMaterialFunctions(materials.functions);
           setPlayTextureBytes(

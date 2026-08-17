@@ -15,7 +15,7 @@ import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import type { LoadedGame } from "./artifact";
-import { applyPlayerEngineCommand } from "./engine-commands";
+import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
 import { packedContentFromGame, packedPlayControls } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
 import {
@@ -191,6 +191,7 @@ export function startPlayer(options: {
 
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     applyPlayerEngineCommand(handle, command);
+    applyPlayerActiveScene(handle, game.scenes, command);
     if (command.type === "stats") {
       ticks = Number(command.tickIndex ?? ticks + 1);
       lastWorkerTickIndex = ticks;

@@ -43,4 +43,27 @@ describe("SetAssetDocumentCommand", () => {
     expect(doc).toEqual({ n: 2 });
     expect(stack.undo(doc)?.doc).toEqual({ n: 0 });
   });
+
+  it("two node-move merge keys require two undos", () => {
+    const stack = new DocumentEditStack<Record<string, unknown>>({
+      maxEntries: 10,
+      maxBytes: 10_000,
+    });
+    let doc: Record<string, unknown> = { x: 0 };
+    ({ doc } = stack.apply(
+      doc,
+      new SetAssetDocumentCommand({ x: 0 }, { x: 10 }, "material-node-move:a"),
+    ));
+    ({ doc } = stack.apply(
+      doc,
+      new SetAssetDocumentCommand({ x: 10 }, { x: 20 }, "material-node-move:b"),
+    ));
+    expect(doc).toEqual({ x: 20 });
+    ({ doc } = stack.undo(doc)!);
+    expect(doc).toEqual({ x: 10 });
+    expect(stack.canUndo).toBe(true);
+    ({ doc } = stack.undo(doc)!);
+    expect(doc).toEqual({ x: 0 });
+    expect(stack.canUndo).toBe(false);
+  });
 });

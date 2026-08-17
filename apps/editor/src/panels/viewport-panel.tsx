@@ -29,6 +29,7 @@ import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
+import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
 
 function resizeCanvasIfSized(
   canvas: HTMLCanvasElement,
@@ -177,8 +178,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   /** Turn the mesh state a gizmo drag left behind into one scene command. */
   const commitGizmoTransform = useCallback(() => {
     const handle = engineRef.current;
-    const current = dragStartSceneRef.current ?? sceneRef.current;
-    dragStartSceneRef.current = null;
+    const current = takeGizmoDragScene(dragStartSceneRef);
     const lives = handle?.editor?.selectedActorTransforms() ?? [];
     if (!handle || !current || lives.length === 0) return;
     const byId = new Map(lives.map((live) => [live.actorId, live]));
@@ -307,6 +307,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing]);
 
+  // Key on the scene payload, not `openDocuments` array identity. Save All
+  // calls bump() after markAllClean; a new array would reload the viewport
+  // and can race the write or re-dirty the scene.
   useEffect(() => {
     const handle = engineRef.current;
     if (!scene || !handle) return;
@@ -343,7 +346,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [
     scene,
-    openDocuments,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
@@ -423,6 +425,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
+        hardwareScalingLevel: () => number | null;
+        postProcessPassCount: () => number | null;
       };
     };
     const host = globalThis as ViewportTestHost;
@@ -435,6 +439,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         if (!mesh) return null;
         return [mesh.position.x, mesh.position.y, mesh.position.z];
       },
+      hardwareScalingLevel: () =>
+        engineRef.current?.scaling.getLevel() ?? null,
+      postProcessPassCount: () =>
+        engineRef.current?.postProcessPassCount() ?? null,
       /**
        * Simulate a finished gizmo drag: mutate the live Babylon mesh, then
        * commit through the same path as onGizmoDragEnd (not a document-only nudge).

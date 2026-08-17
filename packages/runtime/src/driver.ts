@@ -115,6 +115,8 @@ export interface RuntimeDriverOptions {
   gameInstanceClass?: string;
   /** Extra authored scenes `changescene` can instantiate by guid or name. */
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;
+  /** Display name or library key → canonical scene asset guid. */
+  sceneGuidByKey?: Readonly<Record<string, string>>;
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
   /** Editor Play / bundled debugger: abort scripts that exceed `loopCount`. */
@@ -252,6 +254,7 @@ class InProcessRuntime implements RuntimeDriver {
   private playSceneGuid: string;
   private readonly gameInstanceClass: string;
   private readonly sceneLibrary = new Map<string, SerializedScene>();
+  private readonly sceneGuidByKey = new Map<string, string>();
   private playWorldRealized = false;
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
@@ -309,10 +312,17 @@ class InProcessRuntime implements RuntimeDriver {
         this.sceneLibrary.set(key, scene);
       }
     }
+    if (options.sceneGuidByKey) {
+      for (const [key, guid] of Object.entries(options.sceneGuidByKey)) {
+        this.sceneGuidByKey.set(key, guid);
+      }
+    }
     if (options.playScene) {
       this.sceneLibrary.set(this.playSceneGuid, options.playScene);
+      this.sceneGuidByKey.set(this.playSceneGuid, this.playSceneGuid);
       if (options.playScene.name) {
         this.sceneLibrary.set(options.playScene.name, options.playScene);
+        this.sceneGuidByKey.set(options.playScene.name, this.playSceneGuid);
       }
     }
     this.commands = createCommandRegistry({
@@ -769,10 +779,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.btEvalBySlot.clear();
     this.clearNavAgents();
     this.playScene = next;
-    this.playSceneGuid = key;
+    this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
     this.playWorldRealized = false;
     // The new scene owns its own camera choice.
     this.cameraPossessedByScript = false;
+    this.emit({ type: "activeScene", sceneAssetGuid: this.playSceneGuid });
     this.realizePlayWorld();
   }
 

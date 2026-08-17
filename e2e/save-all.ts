@@ -1,27 +1,86 @@
 import { expect, type Page } from "@playwright/test";
 
+type SaveAllDiagnostics = {
+  dirty: { kind: string; id: string }[];
+  trace: { kind: string; id: string; via?: string }[];
+  save: {
+    ok: boolean;
+    reason: string;
+    dirtyBefore: number;
+    dirtyAfter: number;
+    error?: string;
+  } | null;
+};
+
+async function readSaveAllDiagnostics(page: Page): Promise<SaveAllDiagnostics> {
+  return page.evaluate(() => {
+    const host = globalThis as {
+      __babylonslateTest?: {
+        documentDirtyTrace?: () => { kind: string; id: string; via?: string }[];
+        saveAllTrace?: () => SaveAllDiagnostics["save"];
+        dirtyDocuments?: () => { kind: string; id: string }[];
+      };
+    };
+    const test = host.__babylonslateTest;
+    return {
+      dirty: test?.dirtyDocuments?.() ?? [],
+      trace: test?.documentDirtyTrace?.() ?? [],
+      save: test?.saveAllTrace?.() ?? null,
+    };
+  });
+}
+
 /**
  * Click Save All when the project has unsaved documents; no-op when clean.
- *
- * Viewport load, camera pose, and layout writes can mark the project dirty
- * again immediately after a successful save, so keep saving until the button
- * stays disabled.
+ * One click, then a short window that must stay clean so a post-save mutation
+ * cannot hide behind retries.
  */
 export async function saveAllIfEnabled(page: Page): Promise<void> {
   const button = page.getByTestId("save-all-project");
   await expect(button).toBeVisible();
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (!(await button.isEnabled())) {
-      return;
-    }
-    await button.click({ force: true });
-    try {
-      await expect(button).toBeDisabled({ timeout: 3_000 });
-      return;
-    } catch {
-      // Saved, then something else dirtied the project. Save again.
-    }
+  if (!(await button.isEnabled())) {
+    return;
   }
-  await expect(button).toBeDisabled();
+  await page.evaluate(() => {
+    (
+      globalThis as {
+        __babylonslateTest?: { clearDocumentDirtyTrace?: () => void };
+      }
+    ).__babylonslateTest?.clearDocumentDirtyTrace?.();
+  });
+  await button.click({ force: true });
+  try {
+    await expect
+      .poll(
+        async () => {
+          const diagnostics = await readSaveAllDiagnostics(page);
+          return {
+            dirty: diagnostics.dirty.length,
+            disabled: await button.isDisabled(),
+          };
+        },
+        { timeout: 15_000 },
+      )
+      .toEqual({ dirty: 0, disabled: true });
+  } catch (error) {
+    const diagnostics = await readSaveAllDiagnostics(page);
+    throw new Error(
+      `Save All stayed dirty: ${JSON.stringify({
+        ...diagnostics,
+        buttonDisabled: await button.isDisabled(),
+      })}`,
+      { cause: error },
+    );
+  }
+  try {
+    await expect
+      .poll(async () => button.isEnabled(), { timeout: 1_500 })
+      .toBe(false);
+  } catch (error) {
+    const diagnostics = await readSaveAllDiagnostics(page);
+    throw new Error(
+      `Save All re-dirtied after markAllClean: ${JSON.stringify(diagnostics)}`,
+      { cause: error },
+    );
+  }
 }

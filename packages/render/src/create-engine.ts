@@ -51,6 +51,7 @@ import {
   applyAssignMesh,
   applyPossessCamera,
   applyShadowQuality,
+  assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
@@ -110,6 +111,8 @@ export interface EngineHandle {
   setShadowQuality: (level: string) => void;
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
+  /** Unique Material guids currently assigned to Play meshes. */
+  assignedMaterialGuids: () => string[];
   /** Diagnostics from the last stack rebuild (missing buffers, failed compiles). */
   postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
@@ -383,6 +386,13 @@ export function createEngine(
     });
   };
 
+  const rebuildIfActiveCameraChanged = (
+    previous: typeof scene.activeCamera,
+  ) => {
+    if (scene.activeCamera === previous) return;
+    rebuildPostProcessStack();
+  };
+
   const editorSync = options.editor ? new EditorSceneSync(scene, scheduler) : null;
 
   const loadScene = (sceneData: SerializedScene) => {
@@ -617,7 +627,9 @@ export function createEngine(
     }
     const sampled = interpolator.sample(interpAlpha);
     if (sampled) {
+      const previousCamera = scene.activeCamera;
       applySnapshotToScene(scene, binding, sampled);
+      rebuildIfActiveCameraChanged(previousCamera);
       lastPositions = positionsFromSample(sampled);
     }
     // Measure render cost only, not wall-clock gap since the previous
@@ -714,7 +726,9 @@ export function createEngine(
     },
     applyCommand: (command: CommandMessage) => {
       if (command.type === "assignMesh") {
+        const previousCamera = scene.activeCamera;
         applyAssignMesh(scene, binding, command);
+        rebuildIfActiveCameraChanged(previousCamera);
         const pending = binding.pendingAnimState?.get(command.slotId);
         if (pending) {
           applyAnimStateToScene(
@@ -732,8 +746,9 @@ export function createEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "possessCamera") {
+        const previousCamera = scene.activeCamera;
         applyPossessCamera(scene, binding, command.slotId);
-        rebuildPostProcessStack();
+        rebuildIfActiveCameraChanged(previousCamera);
         scheduler.invalidate("camera");
       }
       if (command.type === "setShadowQuality") {
@@ -806,6 +821,7 @@ export function createEngine(
       scheduler.invalidate("asset");
     },
     postProcessPassCount: () => attachedStack?.passes.length ?? 0,
+    assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
     postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;

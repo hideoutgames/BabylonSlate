@@ -694,6 +694,81 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("changeScene emits activeScene with the canonical guid when addressed by name", () => {
+    const level2: SerializedScene = {
+      name: "Level 2",
+      viewportMode: "3d",
+      settings: {
+        ...createDefaultSceneSettings(),
+        postProcessStack: [{ materialGuid: "pp-b", enabled: true }],
+      },
+      folders: [],
+      actors: [createActor("other", "Other")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "scene-1",
+        scene: {
+          name: "Level 1",
+          viewportMode: "3d",
+          settings: {
+            ...createDefaultSceneSettings(),
+            postProcessStack: [{ materialGuid: "pp-a", enabled: true }],
+          },
+          folders: [],
+          actors: [createActor("hero", "Hero")],
+        },
+        scenes: [{ guid: "scene-2", scene: level2 }],
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.executeConsoleCommand('changescene scene="Level 2"');
+    expect(
+      commands.filter((command) => command.type === "activeScene"),
+    ).toEqual([{ type: "activeScene", sceneAssetGuid: "scene-2" }]);
+    runtime.stop();
+  });
+
+  it("changeScene emits activeScene when addressed by guid", () => {
+    const level2: SerializedScene = {
+      name: "Level 2",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      folders: [],
+      actors: [createActor("other", "Other")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "scene-1",
+        scene: {
+          name: "Level 1",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [createActor("hero", "Hero")],
+        },
+        scenes: [{ guid: "scene-2", scene: level2 }],
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.executeConsoleCommand("changescene scene-2");
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "activeScene" && command.sceneAssetGuid === "scene-2",
+      ),
+    ).toBe(true);
+    runtime.stop();
+  });
+
   it("changeScene logs when the scene asset is not in the Play library", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

@@ -147,6 +147,11 @@ export type CommandMessage =
   | { type: "possessCamera"; slotId: number }
   | { type: "setShadowQuality"; level: string }
   | {
+      /** Canonical scene after `changescene` / `ctx.changeScene`. */
+      type: "activeScene";
+      sceneAssetGuid: string;
+    }
+  | {
       /**
        * Bind a Material asset to a spawned actor. `componentId` targets one
        * visual component; omitting it overrides the whole actor.

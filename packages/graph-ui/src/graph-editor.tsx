@@ -51,6 +51,7 @@ import {
   graphChangeKindFromNodeChanges,
   isProtectedNode,
   lockNodeDragAxis,
+  allocateGraphDragTransaction,
   nodeChangesMutateGraph,
   reconcileCanvasGraph,
   shouldEmitNodeChanges,
@@ -439,12 +440,13 @@ function GraphEditorCanvas({
   );
 
   const lastEmittedRef = useRef<GraphDocument | null>(null);
+  const dragTransactionRef = useRef<string | null>(null);
 
   const emitChange = useCallback(
     (
       nextNodes: CanvasNode[],
       nextEdges: Edge[],
-      kind: GraphChangeMeta["kind"] = "graph",
+      meta: GraphChangeMeta = { kind: "graph" },
     ) => {
       const graph = toSerializedGraph(
         nextNodes,
@@ -466,7 +468,7 @@ function GraphEditorCanvas({
         return;
       }
       lastEmittedRef.current = graph;
-      onChange?.(graph, { kind });
+      onChange?.(graph, meta);
     },
     [onChange],
   );
@@ -545,15 +547,23 @@ function GraphEditorCanvas({
             )
           : constrained;
         const next = applyNodeChanges(applied, current);
+        const allocated = allocateGraphDragTransaction(
+          dragTransactionRef.current,
+          constrained,
+          () => globalThis.crypto.randomUUID(),
+        );
+        dragTransactionRef.current = allocated.next;
         if (
           !readOnly &&
           shouldEmitNodeChanges(constrained, { commitPositionsOnDragEnd })
         ) {
-          emitChange(
-            next,
-            graphStateRef.current.edges,
-            graphChangeKindFromNodeChanges(constrained),
-          );
+          const kind = graphChangeKindFromNodeChanges(constrained);
+          emitChange(next, graphStateRef.current.edges, {
+            kind,
+            ...(kind === "position" && allocated.id
+              ? { transactionId: allocated.id }
+              : {}),
+          });
         }
         return next;
       });

@@ -158,6 +158,7 @@ export function PlayOverlay({
     null,
   );
   const [postProcessPasses, setPostProcessPasses] = useState(0);
+  const [assignedMaterials, setAssignedMaterials] = useState("");
   const { entries: printEntries, print } = usePrintRegistry();
   const printRef = useRef(print);
   printRef.current = print;
@@ -346,6 +347,7 @@ export function PlayOverlay({
         setDraws(current.drawCalls());
         setBridgeRate(current.bridgeMessagesPerSec());
         setPostProcessPasses(current.handle.postProcessPassCount());
+        setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
         const recorded = current.lastTrace();
         if (recorded) setTrace(recorded);
       }
@@ -382,6 +384,7 @@ export function PlayOverlay({
       )}
       data-testid="play-overlay"
       data-post-process-passes={String(postProcessPasses)}
+      data-assigned-materials={assignedMaterials}
     >
       <PlayOverlayChrome
         paused={paused}

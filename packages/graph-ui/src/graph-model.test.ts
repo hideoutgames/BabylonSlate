@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocateGraphDragTransaction,
   canonicalGraphSignature,
   createEdgeId,
   DEFAULT_NODE_TYPE,
@@ -371,7 +372,7 @@ describe("nodeChangesMutateGraph", () => {
     ).toBe(false);
   });
 
-  it("ignores measurement-only dimension changes", () => {
+  it("ignores measurement-only dimension changes so a remount cannot re-dirty", () => {
     expect(nodeChangesMutateGraph([{ type: "dimensions" }])).toBe(false);
   });
 
@@ -387,6 +388,14 @@ describe("shouldEmitNodeChanges", () => {
   it("skips in-flight position drags when commitPositionsOnDragEnd is set", () => {
     expect(
       shouldEmitNodeChanges([{ type: "position", dragging: true }], {
+        commitPositionsOnDragEnd: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not emit measured-size frames", () => {
+    expect(
+      shouldEmitNodeChanges([{ type: "dimensions" }], {
         commitPositionsOnDragEnd: true,
       }),
     ).toBe(false);
@@ -434,6 +443,74 @@ describe("graphChangeKindFromNodeChanges", () => {
         { type: "remove" },
       ]),
     ).toBe("graph");
+  });
+});
+
+describe("allocateGraphDragTransaction", () => {
+  it("starts a gesture id on the first in-flight position frame", () => {
+    const allocated = allocateGraphDragTransaction(
+      null,
+      [{ type: "position", dragging: true }],
+      () => "drag-1",
+    );
+    expect(allocated).toEqual({ id: "drag-1", next: "drag-1" });
+  });
+
+  it("keeps the same id across in-flight frames of one drag", () => {
+    const allocated = allocateGraphDragTransaction(
+      "drag-1",
+      [{ type: "position", dragging: true }],
+      () => "drag-2",
+    );
+    expect(allocated).toEqual({ id: "drag-1", next: "drag-1" });
+  });
+
+  it("returns the gesture id on pointer up and clears the next id", () => {
+    const allocated = allocateGraphDragTransaction(
+      "drag-1",
+      [{ type: "position", dragging: false }],
+      () => "drag-2",
+    );
+    expect(allocated).toEqual({ id: "drag-1", next: null });
+  });
+
+  it("allocates an id when only the drag-end frame is seen", () => {
+    const allocated = allocateGraphDragTransaction(
+      null,
+      [{ type: "position", dragging: false }],
+      () => "drag-end",
+    );
+    expect(allocated).toEqual({ id: "drag-end", next: null });
+  });
+
+  it("gives sequential drags distinct ids", () => {
+    let n = 0;
+    const createId = () => `drag-${++n}`;
+    const first = allocateGraphDragTransaction(
+      null,
+      [{ type: "position", dragging: true }],
+      createId,
+    );
+    const firstEnd = allocateGraphDragTransaction(
+      first.next,
+      [{ type: "position", dragging: false }],
+      createId,
+    );
+    const second = allocateGraphDragTransaction(
+      firstEnd.next,
+      [{ type: "position", dragging: true }],
+      createId,
+    );
+    expect(first.id).toBe("drag-1");
+    expect(firstEnd.id).toBe("drag-1");
+    expect(second.id).toBe("drag-2");
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it("does not start a transaction for topology-only changes", () => {
+    expect(
+      allocateGraphDragTransaction(null, [{ type: "remove" }], () => "drag-x"),
+    ).toEqual({ id: null, next: null });
   });
 });
 

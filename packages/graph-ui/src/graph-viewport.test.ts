@@ -15,7 +15,7 @@ describe("resolveGraphViewport", () => {
     expect(viewport.minZoom).toBe(0.1);
     expect(viewport.maxZoom).toBe(1.5);
     expect(viewport.defaultViewport).toEqual({ x: 0, y: 0, zoom: 0.5 });
-    expect(viewport.fitViewOptions.maxZoom).toBe(0.5);
+    expect(viewport.fitViewOptions).toEqual({ maxZoom: 0.5, padding: 0.2 });
   });
 
   it("uses a provided default zoom for the viewport and fitView cap", () => {

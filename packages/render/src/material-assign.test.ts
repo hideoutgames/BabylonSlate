@@ -4,6 +4,7 @@ import {
   applyAssignMaterial,
   applyAssignMesh,
   applySnapshotToScene,
+  assignedMaterialGuids,
   createSnapshotSceneBinding,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
@@ -184,5 +185,28 @@ describe("runtime material assignment", () => {
       materialAssetGuid: null,
     });
     expect(binding.materialAssetGuids.get(1)).toBeNull();
+  });
+
+  it("lists unique assigned material guids for Play assertions", () => {
+    const { scene, binding } = host();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "box",
+      meshAssetGuid: null,
+    });
+    spawn(scene, binding, [1]);
+    applyAssignMaterial(scene, binding, {
+      type: "assignMaterial",
+      slotId: 1,
+      componentId: "mesh-1",
+      materialAssetGuid: "mat-rock",
+    });
+    applyAssignMaterial(scene, binding, {
+      type: "assignMaterial",
+      slotId: 1,
+      materialAssetGuid: "mat-rock",
+    });
+    expect(assignedMaterialGuids(binding)).toEqual(["mat-rock"]);
   });
 });

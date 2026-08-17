@@ -31,6 +31,7 @@ describe("runtimeOptionsFromLoadControl", () => {
       seedDemoActors: true,
       gameInstanceClass: undefined,
       sceneLibrary: undefined,
+      sceneGuidByKey: undefined,
       includeDebugCommands: undefined,
       infiniteLoopDetection: undefined,
       loopCount: undefined,
@@ -65,6 +66,21 @@ describe("runtimeOptionsFromLoadControl", () => {
     ).toMatchObject({
       gameInstanceClass: "MyGame",
       sceneLibrary: { Level2: scene },
+      sceneGuidByKey: { Level2: "Level2" },
+    });
+  });
+
+  it("maps a scene display name back to the asset guid", () => {
+    const scene = { name: "Level 2", actors: [] };
+    expect(
+      runtimeOptionsFromLoadControl({
+        type: "load",
+        sceneAssetGuid: "play-scene",
+        scenes: [{ guid: "scene-2", scene: scene as never }],
+      }),
+    ).toMatchObject({
+      sceneLibrary: { "scene-2": scene, "Level 2": scene },
+      sceneGuidByKey: { "scene-2": "scene-2", "Level 2": "scene-2" },
     });
   });
 
@@ -84,6 +100,7 @@ describe("runtimeOptionsFromLoadControl", () => {
       seedDemoActors: true,
       gameInstanceClass: undefined,
       sceneLibrary: undefined,
+      sceneGuidByKey: undefined,
       includeDebugCommands: undefined,
       infiniteLoopDetection: undefined,
       loopCount: undefined,

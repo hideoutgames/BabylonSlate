@@ -29,6 +29,22 @@ function collectStrings(value: unknown, into: Set<string>): void {
   }
 }
 
+function enqueueSceneNameRefs(
+  value: unknown,
+  bySceneName: Map<string, ExportIndexedAsset>,
+  pending: string[],
+  seen: Set<string>,
+): void {
+  const refs = new Set<string>();
+  collectStrings(value, refs);
+  for (const ref of refs) {
+    const asset = bySceneName.get(ref);
+    if (!asset || seen.has(asset.guid)) continue;
+    seen.add(asset.guid);
+    pending.push(asset.guid);
+  }
+}
+
 function enqueueRefs(
   value: unknown,
   byGuid: Map<string, ExportIndexedAsset>,
@@ -89,6 +105,11 @@ export function collectExportClosure(
     list.push(asset);
     byClassName.set(asset.name, list);
   }
+  const bySceneName = new Map<string, ExportIndexedAsset>();
+  for (const asset of input.assets) {
+    if (asset.type !== "Scene" || asset.name.trim() === "") continue;
+    if (!bySceneName.has(asset.name)) bySceneName.set(asset.name, asset);
+  }
 
   const seen = new Set<string>([startup]);
   const pending = [startup];
@@ -129,6 +150,7 @@ export function collectExportClosure(
       const graph: SerializedGraph | null = input.graphByGuid(guid);
       if (graph) {
         enqueueRefs(graph, byGuid, byClassName, pending, seen);
+        enqueueSceneNameRefs(graph, bySceneName, pending, seen);
       }
     }
 

@@ -18,6 +18,7 @@ import {
   parseDocumentId,
 } from "@babylonslate/core";
 import type { ProjectDocument } from "@babylonslate/core";
+import { recordDocumentDirty } from "../lib/dirty-trace";
 import type { ProjectService } from "./project-service";
 
 export type DocumentContent =
@@ -293,6 +294,7 @@ export class DocumentService {
     if (!doc || doc.ref.kind !== "scene") return;
     doc.content = scene;
     doc.dirty = true;
+    recordDocumentDirty(doc.ref.kind, id);
     doc.ref = { ...doc.ref, label: `${scene.name} Scene` };
   }
 
@@ -301,6 +303,7 @@ export class DocumentService {
     if (!doc || doc.ref.kind !== "graph") return;
     doc.content = graph;
     doc.dirty = true;
+    recordDocumentDirty(doc.ref.kind, id);
   }
 
   updateAssetDocument(id: string, content: Record<string, unknown>): void {
@@ -315,6 +318,7 @@ export class DocumentService {
     }
     doc.content = content;
     doc.dirty = true;
+    recordDocumentDirty(doc.ref.kind, id);
     if (typeof content.name === "string" && content.name.trim() !== "") {
       doc.ref = {
         ...doc.ref,
