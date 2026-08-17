@@ -79,7 +79,9 @@ export class ScopedStorageAdapter implements ProjectStorage {
       try {
         await this.resolvePersistedFolder(this.folder);
       } catch (error) {
-        if (!isStaleBookmarkError(error)) throw error;
+        console.warn("Unable to resolve the persisted external folder", error);
+        this.stale = true;
+        await this.persistStale(true);
       }
     }
   }
@@ -178,7 +180,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
     });
   }
 
-  private getFolder(): FolderRef {
+  private assertBound(): FolderRef {
     if (!this.folder) {
       throw new Error("No project folder selected");
     }
@@ -202,7 +204,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async readText(path: string): Promise<string> {
     return this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       const { data } = await this.native.readFile({ path, encoding: "utf8" });
       return data;
     });
@@ -210,14 +212,14 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async writeText(path: string, data: string): Promise<void> {
     await this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       await this.native.writeFile({ path, data, encoding: "utf8" });
     });
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
     return this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       const { data } = await this.native.readFile({ path, encoding: "base64" });
       return decodeBinary(data);
     });
@@ -225,7 +227,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
     await this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       await this.native.writeFile({
         path,
         data: encodeBinary(data),
@@ -236,7 +238,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async exists(path: string): Promise<boolean> {
     return this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       const { exists } = await this.native.exists({ path });
       return exists;
     });
@@ -244,7 +246,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async readdir(path: string): Promise<DirEntry[]> {
     return this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       const { entries } = await this.native.readdir({ path });
       return entries;
     });
@@ -252,14 +254,14 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async mkdir(path: string, recursive = true): Promise<void> {
     await this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       await this.native.mkdir({ path, recursive });
     });
   }
 
   async remove(path: string): Promise<void> {
     await this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       const info = await this.native.stat({ path });
       if (info.type === "directory") {
         await this.native.rmdir({ path });
@@ -271,7 +273,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async stat(path: string): Promise<FileStat> {
     return this.withScope(async () => {
-      void this.getFolder();
+      this.assertBound();
       const info = await this.native.stat({ path });
       return {
         isDir: info.type === "directory",

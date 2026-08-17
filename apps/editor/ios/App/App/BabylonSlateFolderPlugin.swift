@@ -22,19 +22,22 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
     ]
 
     private let staleBookmarkCode = "STALE_BOOKMARK"
+    private let stateQueue = DispatchQueue.main
     private var pendingPickCall: CAPPluginCall?
     private var activeFolderURL: URL?
 
     @objc func pickFolder(_ call: CAPPluginCall) {
-        guard let viewController = bridge?.viewController else {
-            call.reject("Unable to present folder picker", "PICKER_UNAVAILABLE")
-            return
+        stateQueue.async { [weak self] in
+            guard let self, let viewController = self.bridge?.viewController else {
+                call.reject("Unable to present folder picker", "PICKER_UNAVAILABLE")
+                return
+            }
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
+            picker.delegate = self
+            picker.allowsMultipleSelection = false
+            self.pendingPickCall = call
+            viewController.present(picker, animated: true)
         }
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
-        picker.delegate = self
-        picker.allowsMultipleSelection = false
-        pendingPickCall = call
-        viewController.present(picker, animated: true)
     }
 
     @objc func resolveFolder(_ call: CAPPluginCall) {
@@ -57,7 +60,9 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
                 rejectStale(call, message: "Unable to access folder bookmark")
                 return
             }
-            activeFolderURL = folderURL
+            onStateQueue {
+                activeFolderURL = folderURL
+            }
 
             var refreshedBookmark = bookmark
             if stale {
@@ -145,11 +150,30 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
                 data = Data(value.utf8)
             }
             let parent = url.deletingLastPathComponent()
-            try FileManager.default.createDirectory(
-                at: parent,
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
+            var parentCoordinationError: NSError?
+            var parentOperationError: Error?
+            let parentCoordinator = NSFileCoordinator(filePresenter: nil)
+            parentCoordinator.coordinate(
+                writingItemAt: parent,
+                options: [],
+                error: &parentCoordinationError
+            ) { coordinatedParent in
+                do {
+                    try FileManager.default.createDirectory(
+                        at: coordinatedParent,
+                        withIntermediateDirectories: true,
+                        attributes: nil
+                    )
+                } catch {
+                    parentOperationError = error
+                }
+            }
+            if let parentOperationError {
+                throw parentOperationError
+            }
+            if let parentCoordinationError {
+                throw parentCoordinationError
+            }
             var coordinationError: NSError?
             var operationError: Error?
             let coordinator = NSFileCoordinator(filePresenter: nil)
@@ -206,32 +230,38 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
             let url = try fileURL(for: call)
             var files: [[String: Any]] = []
             var coordinationError: NSError?
+            var operationError: Error?
             let coordinator = NSFileCoordinator(filePresenter: nil)
             coordinator.coordinate(
                 readingItemAt: url,
                 options: [],
                 error: &coordinationError
             ) { coordinatedURL in
-                guard let urls = try? FileManager.default.contentsOfDirectory(
-                    at: coordinatedURL,
-                    includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey],
-                    options: [.skipsHiddenFiles]
-                ) else {
-                    return
-                }
-                files = urls.compactMap { childURL in
-                    guard let values = try? childURL.resourceValues(
-                        forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]
-                    ) else {
-                        return nil
+                do {
+                    let urls = try FileManager.default.contentsOfDirectory(
+                        at: coordinatedURL,
+                        includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey],
+                        options: [.skipsHiddenFiles]
+                    )
+                    files = urls.compactMap { childURL in
+                        guard let values = try? childURL.resourceValues(
+                            forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]
+                        ) else {
+                            return nil
+                        }
+                        return [
+                            "name": childURL.lastPathComponent,
+                            "isDir": values.isDirectory ?? false,
+                            "size": values.fileSize ?? 0,
+                            "mtime": (values.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000,
+                        ]
                     }
-                    return [
-                        "name": childURL.lastPathComponent,
-                        "isDir": values.isDirectory ?? false,
-                        "size": values.fileSize ?? 0,
-                        "mtime": (values.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000,
-                    ]
+                } catch {
+                    operationError = error
                 }
+            }
+            if let operationError {
+                throw operationError
             }
             if let coordinationError {
                 throw coordinationError
@@ -318,11 +348,13 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
     }
 
     public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let call = pendingPickCall else {
+        guard let call = onStateQueue({
+            defer { pendingPickCall = nil }
+            return pendingPickCall
+        }) else {
             controller.dismiss(animated: true)
             return
         }
-        pendingPickCall = nil
         guard let url = urls.first else {
             call.reject("No folder was selected", "PICKER_CANCELLED")
             return
@@ -338,7 +370,9 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
                 rejectStale(call, message: "Unable to access selected folder")
                 return
             }
-            activeFolderURL = url
+            onStateQueue {
+                activeFolderURL = url
+            }
             call.resolve([
                 "folder": [
                     "id": bookmarkData.base64EncodedString(),
@@ -351,8 +385,11 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
     }
 
     public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        pendingPickCall?.reject("Folder picker was cancelled", "PICKER_CANCELLED")
-        pendingPickCall = nil
+        let call = onStateQueue {
+            defer { pendingPickCall = nil }
+            return pendingPickCall
+        }
+        call?.reject("Folder picker was cancelled", "PICKER_CANCELLED")
     }
 
     deinit {
@@ -371,6 +408,10 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
                 error: &coordinationError
             ) { coordinatedURL in
                 do {
+                    let values = try coordinatedURL.resourceValues(forKeys: [.isDirectoryKey])
+                    guard values.isDirectory == directory else {
+                        throw FolderPluginError.directoryMismatch
+                    }
                     try FileManager.default.removeItem(at: coordinatedURL)
                 } catch {
                     operationError = error
@@ -386,11 +427,10 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
         } catch {
             rejectOperationError(call, error: error)
         }
-        _ = directory
     }
 
     private func fileURL(for call: CAPPluginCall) throws -> URL {
-        guard let folderURL = activeFolderURL else {
+        guard let folderURL = onStateQueue({ activeFolderURL }) else {
             throw FolderPluginError.missingScope
         }
         let path = call.getString("path") ?? ""
@@ -404,8 +444,17 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
     }
 
     private func stopAccessingFolder() {
-        activeFolderURL?.stopAccessingSecurityScopedResource()
-        activeFolderURL = nil
+        onStateQueue {
+            activeFolderURL?.stopAccessingSecurityScopedResource()
+            activeFolderURL = nil
+        }
+    }
+
+    private func onStateQueue<T>(_ body: () -> T) -> T {
+        if Thread.isMainThread {
+            return body()
+        }
+        return stateQueue.sync(execute: body)
     }
 
     private func rejectStale(_ call: CAPPluginCall, message: String) {
@@ -424,4 +473,5 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
 private enum FolderPluginError: Error {
     case missingScope
     case invalidPath
+    case directoryMismatch
 }

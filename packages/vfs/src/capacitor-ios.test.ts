@@ -48,13 +48,11 @@ describe("Capacitor 8 iOS host", () => {
     );
     expect(pbx).toMatch(/BabylonSlateSecretsPlugin\.swift in Sources/);
     expect(pbx).toMatch(/BabylonSlateSecretsPlugin\.swift \*\/ = \{isa = PBXFileReference/);
-    const cap = JSON.parse(
-      readFileSync(
-        join(repoRoot, "apps/editor/ios/App/App/capacitor.config.json"),
-        "utf8",
-      ),
-    ) as { packageClassList?: string[] };
-    expect(cap.packageClassList ?? []).not.toContain("BabylonSlateSecretsPlugin");
+    const gitignore = readFileSync(
+      join(repoRoot, "apps/editor/ios/.gitignore"),
+      "utf8",
+    );
+    expect(gitignore).toMatch(/App\/App\/capacitor\.config\.json/);
   });
 
   it("registers first-party plugins from the bridge view controller", () => {

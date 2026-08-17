@@ -1149,14 +1149,6 @@ Each phase is a vertical slice with its own acceptance test, landed as its own P
 - **Scoped-storage plugin maturity** at 0.0.3 is a single point of failure for the file format on iPad, and section 12.4 raises the bar further: sustained coordinated I/O inside Working Copy's file provider needs `NSFileCoordinator`, a process-lifetime security scope, and bookmark staleness handling. Assume we write our own Swift plugin rather than hoping the community one suffices, and spike this in P1 with a real Working Copy repository, because the answer determines whether the collaboration story exists at all.
 - **Source control requires a host that implements LFS locking** (GitHub, GitLab, Gitea). A plain git remote gets no locking. The `LockProvider` port keeps a host-agnostic implementation possible later, pushing lock records as git refs, but that is deliberately not built now.
 - **The engine cannot observe a push**, so lock release cannot be automatic without reintroducing git. Resolved by making it a single explicit button with a warning, per 12.2. The failure mode to watch in real use is people holding locks for days; if that happens, the answer is a more visible held-lock count or a reminder, never a silent release.
-- **Many small file writes are slow across the Capacitor bridge.** A project with hundreds of `.babasset` files saved individually could make saving feel broken on iPad, since every write crosses a JS-to-native boundary with base64 encoding. Benchmark this in P1 with a synthetic 500-asset project, and benchmark it again through a file provider, which is slower still. The mitigations, in order, are writing only dirty assets, the blob store from 3.1 keeping large immutable chunks out of every re-save, batching writes behind a debounce, and if that is still not enough, a pack format for the project's asset tree that keeps `.babasset` as the interchange unit while storing many per file. Deciding this in P1 is far cheaper than after the Content Browser and registry depend on one-file-per-asset. **Decided in P1:** dirty-only saves plus the blob store, debounce with the P2 command layer, and **no pack format** — one file per asset stays the unit on disk, so the registry and Content Browser need no pack indirection. The cost model and its regression tests live in [docs/architecture/vfs.md](architecture/vfs.md). The simulator bridge benchmark is recorded below; file-provider timings remain open under `p1-device-spikes`.
-
-### 19.1 iPad simulator write benchmark
-
-The P1 harness writes 500 four-byte binary assets through the real Capacitor Filesystem bridge into the Documents tier, one awaited write per asset. Record the measured wall-clock time here after the simulator run:
-
-- 500 writes: **pending simulator run**
-- Scope: iPad Pro (11-inch) (4th generation), iOS 16.4 simulator; this is a bridge/serialization baseline, not a Working Copy or A16 hardware result.
 - **The undo boundary is exactly the asset-file boundary.** Confirmed: only asset create and delete sit outside undo. Everything within an open document, including adding and removing scene actors, is undoable. The enforcement mechanism is that the command layer owns document mutation while the asset registry owns file creation and deletion, so the two cannot be confused by an agent implementing a later panel.
 - **Babylon 9 versus the v8-era skill docs**: short compatibility spike with a documented fallback.
 - **Fonts fail silently rather than loudly.** Babylon GUI draws with whatever the browser has loaded at that instant, so an unloaded custom font renders as Arial and looks like a styling bug rather than a loading bug. The font registry in 11.4 must be the only way text reaches a texture, and a Playwright check should assert that a custom font actually rendered on a cold load rather than trusting that the code path ran.
@@ -1179,6 +1171,12 @@ The P1 harness writes 500 four-byte binary assets through the real Capacitor Fil
 - **React Flow node graphs on large documents** (hundreds of nodes) need off-screen virtualisation in **P16** (`p16-graph-virtualize`) for every host that uses `GraphEditor`, not only behaviour trees. Collapse-inactive-subtree and cap-auto-layout-to-visible-depth stay candidate later P16 slices. No A16 device gate.
 - **Measuring perturbs the measurement.** The stats channel is capped at roughly 5Hz and the trace recorder is capped by a memory budget, but both need a benchmark showing the HUD costs under a millisecond per frame; if it does not, the collectors move behind an explicit opt-in per stat rather than being on whenever the debugger is bundled.
 - **Re-parenting classes** is the trickiest editor operation because of inherited member invalidation; design for it in P5 rather than retrofitting it later.
+
+### 19.1 iPad simulator write benchmark
+
+The P1 harness writes 500 four-byte binary assets through the real Capacitor Filesystem bridge into the Documents tier, one awaited write per asset. Record the measured wall-clock time here after the simulator run:
+
+- Scope: iPad Pro (11-inch) (4th generation), iOS 16.4 simulator; this is a bridge/serialization baseline, not a Working Copy or A16 hardware result.
 
 ---
 

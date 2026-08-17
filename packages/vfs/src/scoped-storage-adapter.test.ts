@@ -46,16 +46,24 @@ function createFakeFolderPort() {
       files.set(path, data);
     }),
     exists: vi.fn(async ({ path }) => ({ exists: files.has(path) })),
-    readdir: vi.fn(async ({ path }) => ({
-      entries: [...files.keys()]
-        .filter((name) => name.startsWith(path ? `${path}/` : ""))
-        .map((name) => ({
-          name: name.slice(path ? path.length + 1 : 0),
-          isDir: false,
-          size: files.get(name)!.length,
-          mtime: 1,
-        })),
-    })),
+    readdir: vi.fn(async ({ path }) => {
+      if (
+        path &&
+        ![...files.keys()].some((name) => name.startsWith(`${path}/`))
+      ) {
+        throw new Error(`File not found: ${path}`);
+      }
+      return {
+        entries: [...files.keys()]
+          .filter((name) => name.startsWith(path ? `${path}/` : ""))
+          .map((name) => ({
+            name: name.slice(path ? path.length + 1 : 0),
+            isDir: false,
+            size: files.get(name)!.length,
+            mtime: 1,
+          })),
+      };
+    }),
     mkdir: vi.fn(async () => {}),
     deleteFile: vi.fn(async ({ path }) => {
       files.delete(path);
@@ -188,6 +196,36 @@ describe("external tier (first-party folder port)", () => {
     });
     await adapter.remove("project.json");
     expect(await adapter.exists("project.json")).toBe(false);
+  });
+
+  it("reports a missing directory instead of treating it as empty", async () => {
+    const fake = createFakeFolderPort();
+    const adapter = new ScopedStorageAdapter(fake.port);
+    await adapter.pickProjectFolder();
+
+    await expect(adapter.readdir("missing")).rejects.toThrow(
+      "File not found: missing",
+    );
+  });
+
+  it("keeps an unresolved persisted folder reconnectable when native is unavailable", async () => {
+    const fake = createFakeFolderPort();
+    await new ScopedStorageAdapter(fake.port).pickProjectFolder();
+    fake.port.resolveFolder = vi.fn(async () => {
+      throw new Error("not implemented");
+    });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const next = new ScopedStorageAdapter(fake.port);
+    await expect(next.init()).resolves.toBeUndefined();
+
+    expect(await next.needsReconnect()).toBe(true);
+    expect(next.getCurrentFolder()?.id).toBe("bookmark-1");
+    expect(warning).toHaveBeenCalledWith(
+      "Unable to resolve the persisted external folder",
+      expect.any(Error),
+    );
+    warning.mockRestore();
   });
 
   it("refuses tiers it does not own and releases native scope", async () => {

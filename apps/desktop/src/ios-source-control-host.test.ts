@@ -29,12 +29,8 @@ describe("iOS source-control host", () => {
     expect(mainViewController).toContain(
       "registerPluginInstance(BabylonSlateFolderPlugin())",
     );
-    const config = JSON.parse(
-      readFileSync(join(iosApp, "App/capacitor.config.json"), "utf8"),
-    ) as { packageClassList?: string[] };
-    expect(config.packageClassList ?? []).not.toContain(
-      "BabylonSlateSecretsPlugin",
-    );
+    const gitignore = readFileSync(join(iosApp, "../.gitignore"), "utf8");
+    expect(gitignore).toContain("App/App/capacitor.config.json");
   });
 
   it("declares a single applicationDidBecomeActive", () => {
