@@ -1,6 +1,7 @@
 import {
   Engine,
   KhronosTextureContainer2,
+  Mesh,
   Scene,
   ScenePerformancePriority,
   Texture,
@@ -108,6 +109,14 @@ export interface EngineHandle {
   editor: EditorTools | null;
   /** Latest snapshot actor positions (Play), for e2e collision / motion. */
   lastActorPositions: () => PlayActorPosition[];
+  /** Snapshot-driven Babylon visuals for Play/Preview parity assertions. */
+  playVisualStates: () => Array<{
+    slotId: number;
+    name: string;
+    visible: boolean;
+    position: [number, number, number];
+    materialName: string | null;
+  }>;
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
@@ -829,6 +838,40 @@ export function createEngine(
         : null;
     },
     lastActorPositions: () => lastPositions,
+    playVisualStates: () => {
+      const states: Array<{
+        slotId: number;
+        name: string;
+        visible: boolean;
+        position: [number, number, number];
+        materialName: string | null;
+      }> = [];
+      for (const [slotId, root] of binding.meshes) {
+        const componentVisuals = root
+          .getChildMeshes()
+          .filter(
+            (mesh): mesh is Mesh =>
+              mesh instanceof Mesh &&
+              mesh.name.startsWith(`actor-${slotId}|`) &&
+              !mesh.name.slice(mesh.name.indexOf("|") + 1).includes(":"),
+          );
+        const visuals = componentVisuals.length > 0 ? componentVisuals : [root];
+        for (const visual of visuals) {
+          visual.computeWorldMatrix(true);
+          const position = visual.getAbsolutePosition();
+          states.push({
+            slotId,
+            name: visual.name,
+            visible: visual.isVisible && visual.isEnabled(),
+            position: [position.x, position.y, position.z],
+            materialName: visual.material?.name ?? null,
+          });
+        }
+      }
+      return states.sort(
+        (a, b) => a.slotId - b.slotId || a.name.localeCompare(b.name),
+      );
+    },
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;

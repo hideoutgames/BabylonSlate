@@ -180,6 +180,60 @@ describe("Play createEngine view", () => {
     expect(selected!.isDisposed()).toBe(true);
   });
 
+  it("reports hidden pre-snapshot visuals and their published world positions", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(handle);
+    for (const [slotId, meshKind] of [[0, "box"], [1, "sphere"]] as const) {
+      handle.applyCommand({
+        type: "assignMesh",
+        slotId,
+        meshKind,
+        meshAssetGuid: null,
+      });
+    }
+    expect(handle.playVisualStates().every((visual) => !visual.visible)).toBe(true);
+
+    const snapshot = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(snapshot, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 2,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    for (const [index, slotId, x] of [[0, 0, -3], [1, 1, 3]] as const) {
+      writeActorSlot(snapshot, index, {
+        slotId,
+        position: { x, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+        flags: 1,
+      });
+    }
+    handle.pushSnapshot(snapshot);
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    expect(handle.playVisualStates()).toEqual([
+      expect.objectContaining({
+        slotId: 0,
+        name: "actor-0",
+        visible: true,
+        position: [-3, 1, 0],
+      }),
+      expect.objectContaining({
+        slotId: 1,
+        name: "actor-1",
+        visible: true,
+        position: [3, 1, 0],
+      }),
+    ]);
+  });
+
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

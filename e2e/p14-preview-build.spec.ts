@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { saveAllIfEnabled } from "./save-all";
+import {
+  EXPECTED_PREVIEW_ACTOR_POSITIONS,
+  previewPlacementScene,
+} from "./preview-scene-fixture";
 
 test.describe("P14 Preview Build", () => {
   test("default overlay Play is unchanged when Preview Build is off", async ({
@@ -74,6 +79,56 @@ test.describe("P14 Preview Build", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     await expect(page.getByTestId("play-preview")).toBeEnabled();
     await expect(page.getByTestId("debug-menu")).toBeVisible();
+  });
+
+  test("Preview Build preserves authored actor and child world positions", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    await openMainScene(page);
+    const scene = previewPlacementScene();
+    expect(
+      await page.evaluate(async (nextScene) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setActiveSceneContent: (scene: typeof nextScene) => Promise<boolean>;
+          };
+        };
+        return host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false;
+      }, scene),
+    ).toBe(true);
+    await saveAllIfEnabled(page);
+
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("preview-build-toggle").click();
+    await page.getByTestId("play-preview").click();
+    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
+    const root = frame.getByTestId("player-root");
+    await expect(root).toHaveAttribute("data-booted", "true", {
+      timeout: 30_000,
+    });
+    await expect
+      .poll(
+        () =>
+          root.evaluate(() => {
+            const host = globalThis as unknown as {
+              __babylonslatePlayerTest?: {
+                visuals: () => Array<{
+                  visible: boolean;
+                  position: [number, number, number];
+                }>;
+              };
+            };
+            return (host.__babylonslatePlayerTest?.visuals() ?? [])
+              .filter((visual) => visual.visible)
+              .map((visual) => visual.position)
+              .sort((a, b) => a[0] - b[0]);
+          }),
+        { timeout: 30_000 },
+      )
+      .toEqual(EXPECTED_PREVIEW_ACTOR_POSITIONS);
+    await page.getByTestId("preview-build-close").click();
   });
 
   test("missing startup scene alerts and overlay Play still requires a scene tab when off", async ({

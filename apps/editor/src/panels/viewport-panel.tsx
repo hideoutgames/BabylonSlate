@@ -445,6 +445,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
+        sceneVisuals: () => Array<{
+          actorId: string;
+          position: [number, number, number];
+          materialName: string | null;
+        }>;
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
       };
@@ -452,6 +457,22 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const host = globalThis as ViewportTestHost;
 
     host.__babylonslateViewportTest = {
+      sceneVisuals: () => {
+        const sync = engineRef.current?.editor?.sync;
+        const actors = sceneRef.current?.actors ?? [];
+        if (!sync) return [];
+        return actors.flatMap((actor) => {
+          const visual = sync.visualMeshesForActor(actor.id)[0];
+          if (!visual) return [];
+          visual.computeWorldMatrix(true);
+          const position = visual.getAbsolutePosition();
+          return [{
+            actorId: actor.id,
+            position: [position.x, position.y, position.z],
+            materialName: visual.material?.name ?? null,
+          }];
+        });
+      },
       activeSceneMeshPosition: () => {
         const actorId = sceneRef.current?.actors[0]?.id;
         if (!actorId) return null;

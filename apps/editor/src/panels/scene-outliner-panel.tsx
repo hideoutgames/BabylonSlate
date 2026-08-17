@@ -33,6 +33,7 @@ import {
   FolderPlusIcon,
   LockIcon,
   MoreHorizontalIcon,
+  UnlockIcon,
   PlusIcon,
 } from "lucide-react";
 import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
@@ -760,9 +761,10 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       variant="ghost"
                       onClick={() => toggleFlag(actorId, "locked")}
                       data-testid={`outliner-lock-${actorId}`}
+                      aria-pressed={lockedIds.has(actorId)}
                       className={lockedIds.has(actorId) ? "text-primary" : undefined}
                     >
-                      <LockIcon />
+                      {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
                     </IconActionButton>
                     <NestedMenu
                       items={actorMenuItems(actorId)}

@@ -322,10 +322,10 @@ describe("material preview presenter", () => {
     expect(host.camera.inputs.attachedToElement).toBeFalsy();
   });
 
-  it("does not clear the shared default framebuffer", () => {
+  it("clears the preview RTT on every scene render", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
-    expect(host.scene.autoClear).toBe(false);
+    expect(host.scene.autoClear).toBe(true);
   });
 
   it("does not reset the 2D canvas size when the buffer is unchanged", async () => {

@@ -204,6 +204,46 @@ describe("Scene Outliner folders", () => {
   });
 });
 
+function lockIconName(actorId: string): string | null {
+  const svg = screen.getByTestId(`outliner-lock-${actorId}`).querySelector("svg");
+  const className = svg?.getAttribute("class") ?? "";
+  if (className.includes("lucide-lock-open")) return "unlock";
+  if (/(?:^|\s)lucide-lock(?:\s|$)/.test(className)) return "lock";
+  return null;
+}
+
+describe("Scene Outliner lock icons", () => {
+  it("shows an unlock glyph on an unlocked actor and a lock glyph when locked", () => {
+    renderOutliner({
+      ...createDefaultScene(),
+      folders: [],
+      actors: [
+        createActor("open", "Open"),
+        createActor("shut", "Shut", { locked: true }),
+      ],
+    });
+    expect(lockIconName("open")).toBe("unlock");
+    expect(screen.getByTestId("outliner-lock-open").getAttribute("aria-pressed")).toBe("false");
+    expect(lockIconName("shut")).toBe("lock");
+    expect(screen.getByTestId("outliner-lock-shut").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("switches the lock glyph after the toggle is clicked", () => {
+    const view = renderOutliner({
+      ...createDefaultScene(),
+      folders: [],
+      actors: [createActor("lamp", "Lamp")],
+    });
+    expect(lockIconName("lamp")).toBe("unlock");
+    fireEvent.click(screen.getByTestId("outliner-lock-lamp"));
+    expect(lastScene().actors[0]!.locked).toBe(true);
+
+    harness.scene = lastScene();
+    view.rerender(<SceneOutlinerPanel {...({} as IDockviewPanelProps)} />);
+    expect(lockIconName("lamp")).toBe("lock");
+  });
+});
+
 describe("applyOutlinerRowSelect", () => {
   const rows = [actorRowId("hero"), actorRowId("sword"), actorRowId("lamp")];
 
