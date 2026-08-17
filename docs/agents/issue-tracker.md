@@ -532,14 +532,16 @@ Hardening on `cursor/p15-source-control-gaps-44b6`: Git LFS create 409 now consu
 
 ## P16 iPad editor optimisation
 
-Spec: [engineplan.md](../engineplan.md) §18 / §19, Appendix A `p16-*`. **Next slice.** Skeleton — flesh out remaining P16 checklist items before assigning work beyond `p16-graph-virtualize`. No `p1-device-spikes` gate. Pin flash stays parked chrome polish.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p16-*`. **Next phase** (four slices; assign in listed order unless noted). No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P17**. Collapse-inactive-subtree / cap-auto-layout stay parked.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| Off-screen node virtualisation for every `GraphEditor` host | `p16-graph-virtualize` | `graph-ui`, hosts in `apps/editor` | P15 done |
-| Remaining iPad editor optimisation slices | TBD in engineplan | TBD | First slice |
+| Idle-unmount background chrome tabs (2 min grace, cap 3) | `p16-inactive-documents` | `apps/editor` (`document-workspace`, UI/Anim docks) | P15 done |
+| Off-screen node virtualisation for every `GraphEditor` host | `p16-graph-virtualize` | `graph-ui`, hosts in `apps/editor` | P15 done (can parallel) |
+| Windowed Content Browser grid + revoke off-screen thumbs | `p16-content-browser-virtualize` | `apps/editor` Content Browser; `assets` thumbnail LRU | P15 done (can parallel) |
+| Prefab Preview on the app-lifetime Engine | `p16-shared-prefab-engine` | `render`, Prefab viewport in `apps/editor` | P15 done (can parallel) |
 
-Out of scope for the first slice: collapse-inactive-subtree / cap-auto-layout (later P16 candidates); P17 BT hosts; Audio mixer.
+Out of scope: collapse-inactive-subtree / cap-auto-layout; P17 BT hosts; Audio mixer; pin flash; bake-collect hitch.
 
 ## P17 Behaviour tree hosts and navigation leftovers
 

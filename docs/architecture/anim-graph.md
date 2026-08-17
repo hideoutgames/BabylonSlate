@@ -59,7 +59,7 @@ Play `collectPlayPreviewScripts` and export `collectAndExportGame` merge those b
 
 ## Authoring
 
-DockView document (`DockviewShell`, kind `anim-graph`), not `AssetDocumentWorkspace`. Chrome **State Machine | Animation Object** `AnimEditorModeBar` (`ToggleGroup`) sits **outside** DockView — same pattern as UserInterface **Designer | Logic**. `documentKind` stays `"anim-graph"`; modes use `animEditorMode` and DockView surfaces `stateMachine` / `animationObject`. `layout.json` stores `{ animEditorMode, stateMachine, animationObject }`; a raw old snapshot migrates to State Machine.
+DockView document (`DockviewShell`, kind `anim-graph`), not `AssetDocumentWorkspace`. Chrome **State Machine | Animation Object** `AnimEditorModeBar` (`ToggleGroup`) sits **outside** DockView — same pattern as UserInterface **Designer | Logic**. `documentKind` stays `"anim-graph"`; modes use `animEditorMode` and DockView surfaces `stateMachine` / `animationObject`. `layout.json` stores `{ animEditorMode, stateMachine, animationObject }`; a raw old snapshot migrates to State Machine. **P16** mounts only the active mode’s DockView (inactive mode unmounts immediately).
 
 | Mode | Catalog (Windows / Focus) | Primary |
 | --- | --- | --- |

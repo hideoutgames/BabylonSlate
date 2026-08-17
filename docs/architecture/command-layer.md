@@ -83,6 +83,23 @@ Interactive edits mark the document dirty on apply. `applyGraphChange` and `appl
 
 Closing a dirty document tab (the tab **X**) opens the same Save / Discard / Cancel dialog used for Close Project; Cancel leaves the tab open. Discard drops the tab without writing. Save runs **Save All** then closes that tab. A `beforeunload` handler prompts the browser when any open document is dirty (refresh / leave). Autosave interval is unchanged.
 
+## Document tab lifecycle
+
+Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan §2.4, `p16-inactive-documents`):
+
+| State | Chrome tab | `DocumentService` JSON + `EditSession` | DockView / Babylon / GraphEditor |
+| --- | --- | --- | --- |
+| **Open** | In the tab bar | Yes | Maybe |
+| **Mounted-warm** | Open, and either active, Content Browser, or inactive inside the 2-minute grace (cap 3 non-CB) | Yes | Yes (`display: none` + P4 freeze if not active) |
+| **Idle-unmounted** | Still in the tab bar | Yes — undo and dirty flags stay | No. Remount from `layout.json` + session camera / graph viewport / UI/Anim mode |
+| **Closed** | Gone | Dropped (`dropDocument`) | Gone |
+
+- Named constants (not Engine Settings): `DOCUMENT_IDLE_UNMOUNT_MS` = 120_000, `MAX_WARM_DOCUMENT_WORKSPACES` = 3.
+- Pause the idle clock while the app is backgrounded.
+- Designer|Logic and State Machine|Animation Object unmount the **inactive mode** DockView immediately (no grace).
+- Overlay Play still uses the open scene **document** if the viewport has idle-unmounted.
+- Closing a tab still tears down immediately (Save / Discard / Cancel unchanged).
+
 ## Scene apply path
 
 `applySceneChange(id, next)` mirrors `applyGraphChange`: `diffSceneCommands(previous, next)` → sequential `EditSession.apply` → `updateScene` → `notifyDocumentEdited` (bump + scheduled save, then journal). Undo/redo on scene tabs uses the same per-document stack as graphs.
