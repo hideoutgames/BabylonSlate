@@ -149,6 +149,117 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
+  it("software destroyBody drops colliders and character controllers", () => {
+    const backend = createSoftwarePhysicsBackend("2d", {
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    backend.createBody({
+      id: "player",
+      actorId: "p",
+      motionType: "kinematic",
+      mass: 1,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 0,
+      transform: {
+        position: { x: 0, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    });
+    backend.createCollider({
+      id: "pc",
+      bodyId: "player",
+      shape: { kind: "box2d", halfExtents: { x: 0.4, y: 0.4 } },
+      friction: 0,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+    });
+    backend.createCharacterController({
+      id: "cc",
+      bodyId: "player",
+      offset: 0.01,
+    });
+    backend.destroyBody("player");
+    expect(backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60)).toBeNull();
+    expect(backend.sphereOverlap({ x: 0, y: 1, z: 0 }, 1).bodyIds).toEqual([]);
+    expect(backend.getBodyTransform("player")).toBeNull();
+    backend.dispose();
+  });
+
+  it("software destroyCharacterController stops later moves without destroying the body", () => {
+    const backend = createSoftwarePhysicsBackend("2d", {
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    backend.createBody({
+      id: "player",
+      actorId: "p",
+      motionType: "kinematic",
+      mass: 1,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 0,
+      transform: {
+        position: { x: 0, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    });
+    backend.createCharacterController({
+      id: "cc",
+      bodyId: "player",
+      offset: 0.01,
+    });
+    backend.destroyCharacterController("cc");
+    expect(backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60)).toBeNull();
+    expect(backend.getBodyTransform("player")?.position.x).toBe(0);
+    backend.dispose();
+  });
+
+  it("Rapier destroyBody also tears down the character controller", async () => {
+    const backend = await createPhysicsBackend({
+      kind: "2d",
+      gravity: { x: 0, y: 0, z: 0 },
+    });
+    backend.createBody({
+      id: "player",
+      actorId: "p",
+      motionType: "kinematic",
+      mass: 1,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 0,
+      transform: {
+        position: { x: 0, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    });
+    backend.createCollider({
+      id: "pc",
+      bodyId: "player",
+      shape: { kind: "box2d", halfExtents: { x: 0.4, y: 0.4 } },
+      friction: 0,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+    });
+    backend.createCharacterController({
+      id: "cc",
+      bodyId: "player",
+      offset: 0.01,
+    });
+    expect(backend.moveCharacter("cc", { x: 0.5, y: 0, z: 0 }, 1 / 60)).not.toBeNull();
+    backend.destroyBody("player");
+    expect(backend.moveCharacter("cc", { x: 1, y: 0, z: 0 }, 1 / 60)).toBeNull();
+    expect(backend.getBodyTransform("player")).toBeNull();
+    backend.dispose();
+  });
+
   it("lazy factory loads only Havok for 3d worlds", async () => {
     const backend = await createPhysicsBackend({
       kind: "3d",

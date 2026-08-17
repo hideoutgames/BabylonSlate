@@ -232,6 +232,95 @@ describe("GitLfsLockProvider", () => {
     expect(isErr(result) && result.error.kind).toBe("unauthorized");
   });
 
+  it("throws when the repository URL cannot become an LFS endpoint", () => {
+    expect(
+      () =>
+        new GitLfsLockProvider({
+          repositoryUrl: "not-a-url",
+          branch: "main",
+          getToken: async () => "token",
+          fetch: async () => jsonResponse(200, {}),
+        }),
+    ).toThrow(/Invalid source-control repository URL/);
+  });
+
+  it("maps create 201 without a lock object to an http error", async () => {
+    const provider = new GitLfsLockProvider({
+      repositoryUrl: "https://github.com/org/repo",
+      branch: "main",
+      getToken: async () => "token",
+      fetch: async () => jsonResponse(201, { message: "ok" }),
+    });
+    const result = await provider.create("assets/hero.scene.babasset");
+    expect(isErr(result) && result.error.kind).toBe("http");
+    if (!isErr(result)) return;
+    expect(result.error.message).toBe("create response missing lock");
+    expect(result.error.status).toBe(201);
+  });
+
+  it("maps non-success create and unlock statuses to http errors", async () => {
+    const provider = new GitLfsLockProvider({
+      repositoryUrl: "https://github.com/org/repo",
+      branch: "main",
+      getToken: async () => "token",
+      fetch: async (request) => {
+        if (request.url.endsWith("/unlock")) {
+          return jsonResponse(500, { message: "unlock failed" });
+        }
+        return jsonResponse(422, { message: "path required" });
+      },
+    });
+    const created = await provider.create("assets/hero.scene.babasset");
+    expect(isErr(created) && created.error.kind).toBe("http");
+    if (!isErr(created)) return;
+    expect(created.error.message).toBe("path required");
+    const unlocked = await provider.unlock("lock-1");
+    expect(isErr(unlocked) && unlocked.error.kind).toBe("http");
+    if (!isErr(unlocked)) return;
+    expect(unlocked.error.message).toBe("unlock failed");
+  });
+
+  it("treats a JSON array body as empty and maps 403 to unauthorized", async () => {
+    const provider = new GitLfsLockProvider({
+      repositoryUrl: "https://github.com/org/repo",
+      branch: "main",
+      getToken: async () => "token",
+      fetch: async (request) => {
+        if (request.method === "GET") {
+          return { status: 200, bodyText: "[{}]" };
+        }
+        return jsonResponse(403, { message: "forbidden" });
+      },
+    });
+    const listed = await provider.list();
+    expect(isOk(listed) && listed.value).toEqual([]);
+    const created = await provider.create("assets/a.babasset");
+    expect(isErr(created) && created.error.kind).toBe("unauthorized");
+    if (!isErr(created)) return;
+    expect(created.error.status).toBe(403);
+  });
+
+  it("skips list entries missing id or path", async () => {
+    const provider = new GitLfsLockProvider({
+      repositoryUrl: "https://github.com/org/repo",
+      branch: "main",
+      getToken: async () => "token",
+      fetch: async () =>
+        jsonResponse(200, {
+          locks: [
+            sampleLock,
+            { id: "", path: "assets/skip.babasset" },
+            { id: "lock-2", path: "" },
+            { not: "a lock" },
+          ],
+        }),
+    });
+    const result = await provider.list();
+    expect(isOk(result) && result.value.map((lock) => lock.id)).toEqual([
+      "lock-1",
+    ]);
+  });
+
   it("treats 409 as conflict when verify cannot confirm the path is ours", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo.git",

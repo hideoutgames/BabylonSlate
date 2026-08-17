@@ -657,4 +657,44 @@ describe("resolveAnimGraphClips", () => {
       "hero-sprite",
     );
   });
+
+  it("returns the same document when the catalog is empty", () => {
+    const doc = createDefaultAnimGraph();
+    expect(resolveAnimGraphClips(doc, [])).toBe(doc);
+  });
+
+  it("keeps an Animation guid when no Model lists it as a dependency", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "orphan-anim",
+      clipName: "Walk",
+      durationMs: 1000,
+    };
+    const resolved = resolveAnimGraphClips(doc, [
+      {
+        guid: "orphan-anim",
+        type: "Animation",
+        name: "Orphan",
+        clipName: "Walk",
+      },
+    ]);
+    expect(resolved.clips[0]).toMatchObject({
+      assetGuid: "orphan-anim",
+      clipName: "Walk",
+    });
+  });
+
+  it("fills an empty Model clip name from the first glTF group", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "hero-model",
+      clipName: "",
+      durationMs: 1000,
+    };
+    expect(resolveAnimGraphClips(doc, catalog).clips[0]?.clipName).toBe("Idle");
+  });
 });
