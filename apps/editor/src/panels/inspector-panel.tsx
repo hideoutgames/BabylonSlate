@@ -533,6 +533,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     useGraphEditing();
   const {
     selectedId: prefabSelectedId,
+    selectedIds: prefabSelectedIds,
     components: prefabComponents,
     updateComponent,
     updateComponentTransform,
@@ -628,6 +629,23 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       pickerAssets.find((asset) => asset.guid === guid)?.type
     );
   };
+
+  const selectedPrefabComponentIds = prefabSelectedIds.filter(
+    (id) => id !== PREFAB_ROOT_ID,
+  );
+
+  if (selectedPrefabComponentIds.length > 1) {
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        <p
+          className="p-4 text-sm font-semibold text-foreground"
+          data-testid="inspector-prefab-multi"
+        >
+          {`${selectedPrefabComponentIds.length} Components`}
+        </p>
+      </PanelFrame>
+    );
+  }
 
   const selectedPrefabComponent =
     prefabSelectedId && prefabSelectedId !== PREFAB_ROOT_ID

@@ -33,7 +33,9 @@ import { classIdForGraphPath } from "../services/script-compiler";
 interface PrefabEditingContextValue {
   components: PrefabComponentView[];
   selectedId: string | null;
+  selectedIds: string[];
   setSelectedId: (id: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
   addComponent: (classId: string) => void;
   removeSelected: () => void;
   reparentComponent: (dragId: string, targetId: string | null) => void;
@@ -72,15 +74,24 @@ function stripInheritance(
 export function PrefabEditingProvider({
   children,
   initialSelectedId = PREFAB_ROOT_ID,
+  initialSelectedIds,
 }: {
   children: ReactNode;
   initialSelectedId?: string | null;
+  initialSelectedIds?: readonly string[];
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
-  const [selectedId, setSelectedId] = useState<string | null>(
-    initialSelectedId,
-  );
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => {
+    if (initialSelectedIds && initialSelectedIds.length > 0) {
+      return [...initialSelectedIds];
+    }
+    return initialSelectedId ? [initialSelectedId] : [];
+  });
+  const selectedId = selectedIds[selectedIds.length - 1] ?? null;
+  const setSelectedId = useCallback((id: string | null) => {
+    setSelectedIds(id ? [id] : []);
+  }, []);
 
   const graph = useMemo(() => {
     const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -178,23 +189,27 @@ export function PrefabEditingProvider({
   );
 
   const removeSelected = useCallback(() => {
-    if (!selectedId || selectedId === PREFAB_ROOT_ID) return;
-    const selected = components.find((component) => component.id === selectedId);
-    if (selected?.inheritedFrom) return;
-    const doomed = componentSubtreeIds(components, selectedId);
-    // Block if any doomed row is inherited.
-    if (
-      components.some(
-        (component) => doomed.has(component.id) && component.inheritedFrom,
-      )
-    ) {
-      return;
+    const doomed = new Set<string>();
+    for (const id of selectedIds) {
+      if (id === PREFAB_ROOT_ID) continue;
+      const selected = components.find((component) => component.id === id);
+      if (selected?.inheritedFrom) continue;
+      const subtree = componentSubtreeIds(components, id);
+      if (
+        components.some(
+          (component) => subtree.has(component.id) && component.inheritedFrom,
+        )
+      ) {
+        continue;
+      }
+      for (const doomedId of subtree) doomed.add(doomedId);
     }
+    if (doomed.size === 0) return;
     upsertLocalFromViews(
       components.filter((component) => !doomed.has(component.id)),
     );
-    setSelectedId(PREFAB_ROOT_ID);
-  }, [components, selectedId, upsertLocalFromViews]);
+    setSelectedIds([PREFAB_ROOT_ID]);
+  }, [components, selectedIds, upsertLocalFromViews]);
 
   const reparentComponent = useCallback(
     (dragId: string, targetId: string | null) => {
@@ -241,7 +256,9 @@ export function PrefabEditingProvider({
     () => ({
       components,
       selectedId,
+      selectedIds,
       setSelectedId,
+      setSelectedIds,
       addComponent,
       removeSelected,
       reparentComponent,
@@ -256,6 +273,8 @@ export function PrefabEditingProvider({
       removeSelected,
       reparentComponent,
       selectedId,
+      selectedIds,
+      setSelectedId,
       updateComponent,
       updateComponentTransform,
     ],

@@ -43,7 +43,10 @@ vi.mock("../context/document-context", () => ({
           members: [
             { id: "var-1", kind: "variable", name: "Health", typeId: "bool" },
           ],
-          components: [createMeshComponent("prefab-mesh", "box")],
+          components: [
+            createMeshComponent("prefab-mesh", "box"),
+            createMeshComponent("prefab-sphere", "sphere"),
+          ],
         },
         layout: null,
         dirty: false,
@@ -73,11 +76,13 @@ vi.mock("../context/play-context", () => ({
 
 function renderInspector(options?: {
   selectedComponentId?: string | null;
+  selectedComponentIds?: string[];
   selectedMemberId?: string | null;
 }) {
   return render(
     <PrefabEditingProvider
       initialSelectedId={options?.selectedComponentId ?? PREFAB_ROOT_ID}
+      initialSelectedIds={options?.selectedComponentIds}
     >
       <GraphEditingProvider
         initialSelectedMemberId={options?.selectedMemberId ?? null}
@@ -121,5 +126,16 @@ describe("Inspector prefab component details", () => {
   it("describes Prefab Origin when Prefab Root is selected without a member", () => {
     renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
     expect(screen.getByTestId("inspector-prefab-origin")).toBeTruthy();
+  });
+
+  it("titles Inspector with the component count when more than one is selected", () => {
+    renderInspector({
+      selectedComponentIds: ["prefab-mesh", "prefab-sphere"],
+    });
+    expect(screen.getByTestId("inspector-prefab-multi").textContent).toBe(
+      "2 Components",
+    );
+    expect(screen.queryByTestId("inspector-prefab-component")).toBeNull();
+    expect(screen.queryByTestId("inspector-prefab-origin")).toBeNull();
   });
 });
