@@ -1391,6 +1391,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return collectAndExportGame({
         startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
+        audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
         assets: assetsFromIndexed(list),
         plugins: projectService.plugins.map((plugin) => ({
           pluginGuid: plugin.pluginGuid,
@@ -1612,6 +1613,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             fonts: {
               ...current.settings.fonts,
               ...settings.fonts,
+            },
+            audio: {
+              ...current.settings.audio,
+              ...settings.audio,
             },
             sourceControl: {
               ...current.settings.sourceControl,

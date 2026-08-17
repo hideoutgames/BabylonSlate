@@ -306,6 +306,70 @@ describe("collectExportClosure", () => {
     );
   });
 
+  it("includes the project AudioMixer, its channels, and Audio attenuation refs", () => {
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("speaker", "Speaker", {
+          components: [
+            {
+              id: "audio-1",
+              classId: "AudioComponent",
+              properties: { audioAssetGuid: "sfx-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      audioMixerGuid: "mixer-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "mixer-1",
+          type: "AudioMixer",
+          name: "Master",
+          dependencies: ["ch-sfx", "ch-music"],
+        }),
+        asset({
+          guid: "ch-sfx",
+          type: "AudioChannel",
+          name: "SFX",
+          dependencies: ["ch-master"],
+        }),
+        asset({ guid: "ch-master", type: "AudioChannel", name: "Master" }),
+        asset({ guid: "ch-music", type: "AudioChannel", name: "Music" }),
+        asset({
+          guid: "sfx-1",
+          type: "Audio",
+          name: "Jump",
+          dependencies: ["ch-sfx", "att-1"],
+        }),
+        asset({ guid: "att-1", type: "SoundAttenuation", name: "Near" }),
+        asset({ guid: "unused-mix", type: "AudioMixer", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sort()).toEqual(
+      [
+        "att-1",
+        "ch-master",
+        "ch-music",
+        "ch-sfx",
+        "mixer-1",
+        "scene-1",
+        "sfx-1",
+      ].sort(),
+    );
+    expect(result.value).not.toContain("unused-mix");
+  });
+
   it("includes a project GameInstance class when the scene field is empty", () => {
     const scene = createDefaultScene();
     const result = collectExportClosure({

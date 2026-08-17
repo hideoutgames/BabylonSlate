@@ -86,6 +86,15 @@ export const DEFAULT_FONT_PROJECT_SETTINGS: FontProjectSettings = {
   globalFallback: "sans-serif",
 };
 
+export interface AudioProjectSettings {
+  /** Selected AudioMixer asset, or None. */
+  audioMixerGuid: string | null;
+}
+
+export const DEFAULT_AUDIO_PROJECT_SETTINGS: AudioProjectSettings = {
+  audioMixerGuid: null,
+};
+
 export interface RenderProjectSettings {
   /**
    * When false or missing, Play fills the overlay / Follow System path.
@@ -148,6 +157,7 @@ export interface ProjectSettings {
   twoD: TwoDProjectSettings;
   input: ProjectInputSettings;
   fonts: FontProjectSettings;
+  audio: AudioProjectSettings;
   render: RenderProjectSettings;
   /** Class ids (EditorUtilityObject lineage) that run in the editor ScriptHost. */
   editorUtilityObjects: string[];
@@ -635,6 +645,7 @@ export function normalizeProjectSettings(
           ? settings.fonts.globalFallback.trim()
           : DEFAULT_FONT_PROJECT_SETTINGS.globalFallback,
     },
+    audio: normalizeAudioSettings(settings?.audio),
     startupSceneGuid: normalizeStartupSceneGuid(settings?.startupSceneGuid),
     gameInstanceClass: normalizeGameInstanceClass(settings?.gameInstanceClass),
     render: normalizeRender(settings?.render),
@@ -644,6 +655,16 @@ export function normalizeProjectSettings(
     pluginOverrides: normalizePluginOverrides(settings?.pluginOverrides),
     exportPresets: normalizeExportPresets(settings?.exportPresets),
     sourceControl: normalizeSourceControl(settings?.sourceControl),
+  };
+}
+
+function normalizeAudioSettings(
+  value: Partial<AudioProjectSettings> | undefined,
+): AudioProjectSettings {
+  const guid =
+    typeof value?.audioMixerGuid === "string" ? value.audioMixerGuid.trim() : "";
+  return {
+    audioMixerGuid: guid === "" ? null : guid,
   };
 }
 

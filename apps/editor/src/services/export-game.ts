@@ -55,6 +55,7 @@ export type ExportPluginDescriptor = {
 export type CollectExportGameParams = {
   startupSceneGuid: string | null;
   gameInstanceClass?: string | null;
+  audioMixerGuid?: string | null;
   assets: ExportIndexedAsset[];
   plugins: readonly ExportPluginDescriptor[];
   projectPluginOverrides: Record<string, { enabled: boolean }>;
@@ -131,6 +132,7 @@ export async function collectAndExportGame(
   const closure = collectExportClosure({
     startupSceneGuid: params.startupSceneGuid,
     gameInstanceClass: params.gameInstanceClass,
+    audioMixerGuid: params.audioMixerGuid,
     assets: params.assets,
     pluginEnabledGuids,
     parentOf: params.parentOf,

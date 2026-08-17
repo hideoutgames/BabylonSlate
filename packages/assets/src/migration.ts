@@ -8,6 +8,11 @@ import {
   normalizeMaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import { migrateUserInterfacePayload } from "@babylonslate/ui-runtime";
+import {
+  normalizeAudioChannelPayload,
+  normalizeAudioMixerPayload,
+  normalizeSoundAttenuationPayload,
+} from "./audio-payload";
 
 export type MigrationFn = (
   payload: Record<string, unknown>,
@@ -177,6 +182,26 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
           string,
           unknown
         >,
+    ],
+  });
+  const asRecord = <T extends object>(value: T): Record<string, unknown> =>
+    value as unknown as Record<string, unknown>;
+  registry.register({
+    type: "Audio",
+    migrations: [(payload) => ({ ...payload })],
+  });
+  registry.register({
+    type: "AudioMixer",
+    migrations: [(payload) => asRecord(normalizeAudioMixerPayload(payload))],
+  });
+  registry.register({
+    type: "AudioChannel",
+    migrations: [(payload) => asRecord(normalizeAudioChannelPayload(payload))],
+  });
+  registry.register({
+    type: "SoundAttenuation",
+    migrations: [
+      (payload) => asRecord(normalizeSoundAttenuationPayload(payload)),
     ],
   });
   return registry;

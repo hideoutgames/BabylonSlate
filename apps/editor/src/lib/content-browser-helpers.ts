@@ -1,6 +1,7 @@
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
+  audioAssetDependencies,
   createDefaultMigrationRegistry,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
@@ -1206,6 +1207,18 @@ export function materialAssetDependencies(
     return materialDependencies(normalizeMaterialFunctionDocument(payload)).all;
   }
   return [];
+}
+
+/** Header `dependencies[]` written on save for Show References, remap, and export. */
+export function assetHeaderDependencies(
+  assetType: string,
+  payload: Record<string, unknown>,
+): string[] {
+  const unique = new Set<string>([
+    ...materialAssetDependencies(assetType, payload),
+    ...audioAssetDependencies(assetType, payload),
+  ]);
+  return [...unique].sort();
 }
 
 /** Header payload fields Content Browser / pickers can read without loading the document. */

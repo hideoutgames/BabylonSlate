@@ -138,6 +138,9 @@ export function collectExportClosure(
         seen,
       );
     }
+    if (asset.guid === startup && input.audioMixerGuid) {
+      enqueueRefs(input.audioMixerGuid, byGuid, byClassName, pending, seen);
+    }
 
     if (asset.type === "Scene") {
       const scene: SerializedScene | null = input.sceneByGuid(guid);

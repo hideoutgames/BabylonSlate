@@ -40,6 +40,7 @@ import {
   textureCompressionState,
   visualForIndexedAsset,
   materialAssetDependencies,
+  assetHeaderDependencies,
   materialHeaderMeta,
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
@@ -1204,6 +1205,28 @@ describe("content-browser-helpers", () => {
       }),
     ).toEqual(["fn-tint", "tex-albedo"]);
     expect(materialAssetDependencies("Class", {})).toEqual([]);
+  });
+
+  it("extracts Audio mixer and channel guids for header.dependencies", () => {
+    expect(
+      assetHeaderDependencies("Audio", {
+        volume: 1,
+        audioChannelGuid: "ch-1",
+        soundAttenuationGuid: "att-1",
+      }),
+    ).toEqual(["att-1", "ch-1"]);
+    expect(
+      assetHeaderDependencies("AudioMixer", {
+        globalVolume: 1,
+        channels: [{ channelGuid: "ch-sfx", volume: 0.5 }],
+      }),
+    ).toEqual(["ch-sfx"]);
+    expect(
+      assetHeaderDependencies("AudioChannel", {
+        parentChannelGuid: "ch-master",
+        effects: [],
+      }),
+    ).toEqual(["ch-master"]);
   });
 
   it("stores Material domain on the scanned header", () => {

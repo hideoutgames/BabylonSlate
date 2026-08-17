@@ -22,6 +22,9 @@ const JSON_TYPES = new Set([
   "Enum",
   "Structure",
   "ScriptInterface",
+  "AudioMixer",
+  "AudioChannel",
+  "SoundAttenuation",
 ]);
 
 const encoder = new TextEncoder();

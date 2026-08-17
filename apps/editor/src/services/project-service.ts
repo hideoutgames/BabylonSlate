@@ -76,7 +76,7 @@ import {
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
-  materialAssetDependencies,
+  assetHeaderDependencies,
   materialHeaderMeta,
 } from "../lib/content-browser-helpers";
 import {
@@ -1108,7 +1108,7 @@ export class ProjectService {
             ? (content as unknown as Record<string, unknown>)
             : undefined,
           headerMeta: headerMetaForSave(type, content),
-          dependencies: materialAssetDependencies(
+          dependencies: assetHeaderDependencies(
             type,
             content as unknown as Record<string, unknown>,
           ),
