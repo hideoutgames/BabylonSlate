@@ -398,7 +398,11 @@ export function createEngine(
     rebuildPostProcessStack();
   };
 
-  const editorSync = options.editor ? new EditorSceneSync(scene, scheduler) : null;
+  const editorSync = options.editor
+    ? new EditorSceneSync(scene, scheduler, {
+        resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
+      })
+    : null;
 
   const loadScene = (sceneData: SerializedScene) => {
     postProcessStack = normalizePostProcessStack(
@@ -853,6 +857,8 @@ export function createEngine(
         }
       }
       rebuildPostProcessStack();
+      const serialized = editorSync?.serializedScene();
+      if (editorSync && serialized) editorSync.apply(serialized);
       scheduler.invalidate("asset");
     },
   };

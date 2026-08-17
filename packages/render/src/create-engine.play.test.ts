@@ -5,6 +5,11 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
 } from "@babylonslate/bridge";
+import {
+  createActor,
+  createDefaultScene,
+  createMeshComponent,
+} from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { editorMeshName } from "./scene-loader";
@@ -173,6 +178,30 @@ describe("Play createEngine view", () => {
     expect(live!.isDisposed()).toBe(false);
     expect(editor!.gizmos.attachedMesh()).toBe(live);
     expect(selected!.isDisposed()).toBe(true);
+  });
+
+  it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+    });
+    handles.push(handle);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.materialGuid = "mat-1";
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [createActor("a", "A", { components: [mesh] })],
+    });
+    const visual = handle.editor!.sync.meshForActor("a");
+    expect(visual).not.toBeNull();
+    expect(visual?.material?.name ?? "").not.toContain("mat-1");
+
+    handle.setMaterialDocuments(
+      new Map([["mat-1", createDefaultMaterialDocument()]]),
+    );
+    expect(handle.editor!.sync.meshForActor("a")).toBe(visual);
+    expect(visual?.material?.name).toContain("mat-1");
   });
 
   it("syncEditorPlayState unpauses, resizes, and invalidates when Play ends", () => {
