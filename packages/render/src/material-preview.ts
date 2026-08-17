@@ -3,6 +3,7 @@ import {
   Color4,
   HemisphericLight,
   MeshBuilder,
+  RenderTargetTexture,
   Scene,
   Vector3,
   type Engine,
@@ -90,7 +91,7 @@ export interface MaterialPreviewScene {
  * A disposable Scene on the shared app Engine.
  *
  * The editor keeps one Engine for its lifetime, so a Material tab adds a Scene
- * and a view rather than a second WebGL context.
+ * presented via RTT rather than a second WebGL context or `registerView`.
  */
 export function createMaterialPreviewScene(
   engine: Engine,
@@ -176,91 +177,115 @@ export function createMaterialPreviewScene(
   return host;
 }
 
-export interface MaterialPreviewGestureHandle {
-  dispose: () => void;
+const TAP_TOLERANCE_PX = 8;
+const ORBIT_SCALE = 0.005;
+export const MATERIAL_PREVIEW_MAX_SIZE = 512;
+
+interface PointerSample {
+  x: number;
+  y: number;
 }
 
-function clampPreviewRadius(camera: ArcRotateCamera, radius: number): number {
-  const lower = camera.lowerRadiusLimit ?? 0.01;
-  const upper = camera.upperRadiusLimit ?? Number.POSITIVE_INFINITY;
-  return Math.min(upper, Math.max(lower, radius));
+function pointerSpread(points: PointerSample[]): number {
+  if (points.length < 2) return 0;
+  return Math.hypot(points[0]!.x - points[1]!.x, points[0]!.y - points[1]!.y);
+}
+
+function zoomPreviewCamera(camera: ArcRotateCamera, factor: number): void {
+  const lower = camera.lowerRadiusLimit ?? 0.5;
+  const upper = camera.upperRadiusLimit ?? 400;
+  camera.radius = Math.min(upper, Math.max(lower, camera.radius / factor));
 }
 
 /**
- * Drive the preview orbit camera from the registerView canvas.
+ * Orbit / pinch / wheel on the preview canvas only.
  *
- * `camera.attachControl` listens on the shared Engine's hidden canvas, so
- * wheel and pinch on the visible preview would otherwise never move radius.
+ * Do not use `camera.attachControl` — Babylon 8 binds that to the Engine
+ * input element (the Scene / Play canvas).
  */
 export function attachMaterialPreviewGestures(
   canvas: HTMLCanvasElement,
   camera: ArcRotateCamera,
-): MaterialPreviewGestureHandle {
-  const pointers = new Map<number, { x: number; y: number }>();
+): { dispose: () => void } {
+  const pointers = new Map<number, PointerSample>();
+  let lastPoint: PointerSample | null = null;
+  let downPoint: PointerSample | null = null;
   let lastSpread = 0;
-  let lastPoint: { x: number; y: number } | null = null;
+  let moved = false;
 
-  const pointOf = (event: PointerEvent) => ({
-    x: event.clientX,
-    y: event.clientY,
-  });
-
-  const applyPinch = () => {
-    if (pointers.size !== 2) {
-      lastSpread = 0;
-      return;
-    }
-    const samples = [...pointers.values()];
-    const spread = Math.hypot(
-      samples[0]!.x - samples[1]!.x,
-      samples[0]!.y - samples[1]!.y,
-    );
-    if (lastSpread > 1 && spread > 1) {
-      camera.radius = clampPreviewRadius(
-        camera,
-        camera.radius * (lastSpread / spread),
-      );
-    }
-    lastSpread = spread;
+  const toCanvas = (event: PointerEvent): PointerSample => {
+    const rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
 
   const onPointerDown = (event: PointerEvent) => {
-    pointers.set(event.pointerId, pointOf(event));
-    lastPoint = pointOf(event);
-    try {
-      canvas.setPointerCapture?.(event.pointerId);
-    } catch {
-      /* jsdom / already captured */
+    const point = toCanvas(event);
+    pointers.set(event.pointerId, point);
+    canvas.setPointerCapture?.(event.pointerId);
+    if (pointers.size === 1) {
+      downPoint = point;
+      lastPoint = point;
+      moved = false;
+      lastSpread = 0;
+    } else {
+      lastSpread = pointerSpread([...pointers.values()]);
+      lastPoint = null;
     }
-    if (pointers.size === 2) lastPoint = null;
-    applyPinch();
   };
 
   const onPointerMove = (event: PointerEvent) => {
     if (!pointers.has(event.pointerId)) return;
-    const next = pointOf(event);
-    pointers.set(event.pointerId, next);
-    if (pointers.size === 2) {
-      applyPinch();
+    pointers.set(event.pointerId, toCanvas(event));
+    const samples = [...pointers.values()];
+    if (samples.length === 1 && lastPoint) {
+      const point = samples[0]!;
+      if (
+        downPoint &&
+        Math.hypot(point.x - downPoint.x, point.y - downPoint.y) >
+          TAP_TOLERANCE_PX
+      ) {
+        moved = true;
+      }
+      if (moved) {
+        camera.alpha -= (point.x - lastPoint.x) * ORBIT_SCALE;
+        camera.beta = Math.min(
+          Math.PI - 0.01,
+          Math.max(0.01, camera.beta + (point.y - lastPoint.y) * ORBIT_SCALE),
+        );
+      }
+      lastPoint = point;
       return;
     }
-    if (pointers.size === 1 && lastPoint) {
-      camera.alpha -= (next.x - lastPoint.x) * 0.005;
-      camera.beta += (next.y - lastPoint.y) * 0.005;
-      lastPoint = next;
+    if (samples.length === 2) {
+      const currentSpread = pointerSpread(samples);
+      if (lastSpread > 0 && currentSpread > 0) {
+        const factor = currentSpread / lastSpread;
+        if (Math.abs(factor - 1) > 0.001) {
+          zoomPreviewCamera(camera, factor);
+        }
+      }
+      lastSpread = currentSpread;
     }
   };
 
   const endPointer = (event: PointerEvent) => {
     pointers.delete(event.pointerId);
-    lastPoint = pointers.size === 1 ? [...pointers.values()][0]! : null;
-    if (pointers.size < 2) lastSpread = 0;
+    if (pointers.size === 1) {
+      lastPoint = [...pointers.values()][0]!;
+      lastSpread = 0;
+    } else if (pointers.size === 0) {
+      lastPoint = null;
+      downPoint = null;
+      lastSpread = 0;
+      moved = false;
+    } else {
+      lastSpread = pointerSpread([...pointers.values()]);
+    }
   };
 
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
-    const factor = event.deltaY < 0 ? 1 / 1.1 : 1.1;
-    camera.radius = clampPreviewRadius(camera, camera.radius * factor);
+    zoomPreviewCamera(camera, event.deltaY < 0 ? 1.1 : 1 / 1.1);
   };
 
   const onTouch = (event: TouchEvent) => {
@@ -285,6 +310,110 @@ export function attachMaterialPreviewGestures(
       canvas.removeEventListener("touchstart", onTouch);
       canvas.removeEventListener("touchmove", onTouch);
       pointers.clear();
+    },
+  };
+}
+
+export interface MaterialPreviewPresenter {
+  present: () => void;
+  setFrozen: (frozen: boolean) => void;
+  dispose: () => void;
+}
+
+function previewBufferSize(
+  canvas: HTMLCanvasElement,
+  maxSize: number,
+): { width: number; height: number } | null {
+  const width = Math.floor(canvas.clientWidth || 0);
+  const height = Math.floor(canvas.clientHeight || 0);
+  if (width <= 0 || height <= 0) return null;
+  const longest = Math.max(width, height);
+  const scale = longest > maxSize ? maxSize / longest : 1;
+  return {
+    width: Math.max(1, Math.floor(width * scale)),
+    height: Math.max(1, Math.floor(height * scale)),
+  };
+}
+
+/**
+ * Draw the preview Scene into an RTT (`camera.outputRenderTarget`) and blit
+ * that buffer onto a 2D canvas. Never `registerView` or default-framebuffer
+ * `scene.render()` — those overwrite Scene viewport and Play overlay.
+ */
+export function createMaterialPreviewPresenter(
+  host: MaterialPreviewScene,
+  canvas: HTMLCanvasElement,
+  options: { maxSize?: number } = {},
+): MaterialPreviewPresenter {
+  const maxSize = options.maxSize ?? MATERIAL_PREVIEW_MAX_SIZE;
+  let frozen = false;
+  let rtt: RenderTargetTexture | null = null;
+  let blitInFlight = false;
+
+  const releaseRtt = () => {
+    host.camera.outputRenderTarget = null;
+    rtt?.dispose();
+    rtt = null;
+  };
+
+  const ensureRtt = (width: number, height: number): RenderTargetTexture => {
+    const current = rtt?.getSize();
+    if (rtt && current && current.width === width && current.height === height) {
+      return rtt;
+    }
+    releaseRtt();
+    rtt = new RenderTargetTexture(
+      "materialPreview",
+      { width, height },
+      host.scene,
+      false,
+    );
+    host.camera.outputRenderTarget = rtt;
+    return rtt;
+  };
+
+  const blit = (texture: RenderTargetTexture) => {
+    if (blitInFlight) return;
+    blitInFlight = true;
+    void (async () => {
+      try {
+        const buffer = await texture.readPixels();
+        if (!buffer || !canvas.getContext) return;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const { width, height } = texture.getSize();
+        canvas.width = width;
+        canvas.height = height;
+        const bytes =
+          buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
+        ctx.putImageData(
+          new ImageData(new Uint8ClampedArray(bytes), width, height),
+          0,
+          0,
+        );
+      } catch {
+        // NullEngine / missing GPU readback is fine — tests assert the RTT.
+      } finally {
+        blitInFlight = false;
+      }
+    })();
+  };
+
+  return {
+    present: () => {
+      canvas.dataset.cameraRadius = String(host.camera.radius);
+      if (frozen) return;
+      const size = previewBufferSize(canvas, maxSize);
+      if (!size) return;
+      const texture = ensureRtt(size.width, size.height);
+      host.scene.render();
+      blit(texture);
+    },
+    setFrozen: (value) => {
+      frozen = value;
+    },
+    dispose: () => {
+      releaseRtt();
     },
   };
 }

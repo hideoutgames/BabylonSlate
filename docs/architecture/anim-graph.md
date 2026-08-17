@@ -10,7 +10,7 @@ Worker-side state machine plus per-instance Animation Object graphs that drive g
 
 | Field | Role |
 | --- | --- |
-| `states` / `entryStateId` / `clips` | FSM. Clip kind is `animation` (glTF group name) or `sprite` (named sprite clip). |
+| `states` / `entryStateId` / `clips` | FSM. Clip kind is `animation` (Model guid + glTF `AnimationGroup` name) or `sprite` (Sprite guid + named clip). |
 | `variables[]` | Typed graph-owned store (`bool` / `int` / `float` / `string`). Bool names stay mirrored on legacy `parameters`. |
 | `animationObject` | Serialized scripting graph. Default seeds protected `Event Initialize Animation` and `Event Update Animation`. |
 | `transitions[]` | `blendSeconds`, `priority` (lower wins), `ruleGraph`. Legacy `condition` / `hasExitTime` remain as evaluator fallback. |
@@ -47,15 +47,15 @@ Drives:
 
 ## Render
 
-`applyAnimStateToScene` applies **all** weighted `layers[]` (or synthesizes one from `clipName`). Lookup is per-slot: `getAnimationGroup(slotId, clipName, clipAssetGuid)`, then `scene.animationGroups`. Missing clip → `onMissingClip` (create-engine skips the warn when no groups are registered yet). Sprite two-layer blend: base mesh + overlay; visibilities = weights. Overlay is created in `createPlayMesh` when a sprite frame exists and disposed with the slot. Pending `animState` is replayed after `assignMesh` and after GLB groups land.
+`applyAnimStateToScene` applies **all** weighted `layers[]` (or synthesizes one from `clipName`). Lookup is per-slot: `getAnimationGroup(slotId, clipName, clipAssetGuid)`, then `scene.animationGroups`. When `clipAssetGuid` is set, name-only / untagged groups do not match — two slots can both play `"Idle"` from different Models. Missing clip → `onMissingClip` (create-engine skips the warn when no groups are registered yet). Sprite two-layer blend: base mesh + overlay; visibilities = weights. Overlay is created in `createPlayMesh` when a sprite frame exists and disposed with the slot. Pending `animState` is replayed after `assignMesh` and after GLB groups land.
 
-GLB `createMeshFromModelBytes` still builds the first primitive synchronously so the actor appears immediately. When the GLB lists animations, `beginSlotModelAnimLoad` extracts `AnimationGroup`s with `LoadAssetContainerAsync`, parents them onto the slot, pauses them (Babylon must not auto-advance gameplay clips), stamps `clipAssetGuid`, and replays the last `animState`.
+GLB `createMeshFromModelBytes` still builds the first primitive synchronously so the actor appears immediately. When the GLB lists animations, `beginSlotModelAnimLoad` extracts `AnimationGroup`s with `LoadAssetContainerAsync`. The Play slot mesh stays the **transform root**: `addAllToScene`, parent container roots under that placeholder, hide placeholder geometry (do not dispose the slot or promote the first `Mesh`). Groups are paused (Babylon must not auto-advance gameplay clips), stamped with the **Model** guid, and the last `animState` is replayed.
 
 ## Compile / Play / export
 
 `compileAnimGraphScripts([{ guid, path, document }])` emits `AnimGraph:{guid}` (Animation Object → `onInitializeAnimation` / `onUpdateAnimation`) and one `AnimRule:{guid}:{transitionId}` per transition (`export function evaluate(ctx)`). `parentClassId: "BObject"`. Failures log and skip that asset. `spawnListForScripts` only spawns `onBeginPlay` / `onTick`, so these classes do not spawn extra actors.
 
-Play `collectPlayPreviewScripts` and export `collectAndExportGame` merge those bundles with Class/UI scripts. The packaged player hydrates `loadAnimGraphs` before `play` ([exporter.md](exporter.md)).
+Play `collectPlayPreviewScripts` and export `collectAndExportGame` merge those bundles with Class/UI scripts. The packaged player hydrates `loadAnimGraphs` before `play` ([exporter.md](exporter.md)). Editor Play parses graphs then `resolveAnimGraphClips` so worker layers carry the Model guid + glTF group name.
 
 ## Authoring
 
@@ -72,7 +72,7 @@ Engine Settings Focus keep-lists: **Animation Graph State Machine** (`anim-graph
 
 - **Variables** (left) — typed name + type enum, **Add Variable** (`anim-graph-add-variable`), plus a States list and **Add State**. Keeps `data-testid="anim-graph-parameters"` for existing e2e.
 - **Graph** (primary) — `GraphEditor` with `animGraphNodeTypes` / `animGraphEdgeTypes`, `defaultEdgeOptions` type `animTransition`. Unreal-style rounded state nodes (Entry mark) and CSS-triangle transition badges (no lucide). Double-click a badge (or Details **Open Rule**) opens a nested rule graph: breadcrumb `State Machine > Source To Target`, undeletable Enter/Exit sinks. Palette: `scriptPaletteNodes(..., { animationGraphHost: "rule" })` — `anim.state.*` queries, pure math/bool, Get Variable; no events, no Set Variable, no `debug.log`.
-- **Details** (right) — selected state (name, entry, clip kind, Animation/Sprite `AssetPicker`, clip name, speed, loop) and outgoing `blendSeconds` / `priority` / Open Rule. Condition / hasExitTime / exit-time rows live in the rule graph, not Details.
+- **Details** (right) — selected state (name, entry, clip kind, **Model**/Sprite `AssetPicker`, Clip Name enum from Model `payload.clipNames` or Sprite clips, speed, loop) and outgoing `blendSeconds` / `priority` / Open Rule. Condition / hasExitTime / exit-time rows live in the rule graph, not Details. `kind: "animation"` `assetGuid` is the Model Play loads (`modelBytes`), not a Content Browser Animation row. `resolveAnimGraphClips` rewrites legacy Animation guids to the owning Model (`Model.dependencies`) and fills `clipName` from the Animation payload `{ clipName }` or the Model’s `clipNames`. Importers store those fields on Animation / Model payloads.
 
 `AnimState.position` round-trips through `animGraphToSerialized` / `serializedToAnimGraph`. Transition blend / priority / `ruleGraph` merge when canvas edge ids change.
 

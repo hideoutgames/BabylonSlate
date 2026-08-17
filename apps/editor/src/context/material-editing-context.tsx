@@ -13,8 +13,10 @@ import type { Engine } from "@babylonjs/core";
 import {
   MaterialLibrary,
   attachMaterialPreviewGestures,
+  createMaterialPreviewPresenter,
   createMaterialPreviewScene,
   materialUnavailable,
+  type MaterialPreviewPresenter,
   type MaterialPreviewScene,
 } from "@babylonslate/render";
 import {
@@ -64,16 +66,19 @@ export function useMaterialEditing(): MaterialEditingValue {
 /**
  * Owns the Material preview for one document tab.
  *
- * The preview renders on the app-lifetime Engine through an extra Scene and
- * registered view, never a second WebGL context. Compilation is generation
- * safe: an edit during a compile is never dropped, and a stale result never
- * replaces a newer one.
+ * The preview Scene lives on the app-lifetime Engine but presents through an
+ * RTT + 2D blit — never `registerView` or default-framebuffer `scene.render()`,
+ * which would overwrite the Scene viewport and Play overlay. Compilation is
+ * generation safe: an edit during a compile is never dropped, and a stale
+ * result never replaces a newer one.
  */
 export function MaterialEditingProvider({
   documentId,
+  active = true,
   children,
 }: {
   documentId: string;
+  active?: boolean;
   children: ReactNode;
 }) {
   const { openDocuments, assetRegistry, projectDocument, readAssetChunk } =
@@ -96,8 +101,10 @@ export function MaterialEditingProvider({
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
 
   const hostRef = useRef<MaterialPreviewScene | null>(null);
+  const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const libraryRef = useRef<MaterialLibrary | null>(null);
   const generationRef = useRef(0);
+  const frozen = !active || play.playing;
 
   const frameBudgetMs =
     1000 / Math.max(1, projectDocument?.settings.playFrameCap ?? 60);
@@ -136,54 +143,53 @@ export function MaterialEditingProvider({
     }
   }, [functions]);
 
-  // One preview Scene per tab, on the shared Engine.
+  // One preview Scene per tab, presented to a 2D canvas via RTT.
   useEffect(() => {
     if (!sharedEngine || !canvas) return;
     let host: MaterialPreviewScene | null = null;
+    let presenter: MaterialPreviewPresenter | null = null;
     let gestures: { dispose: () => void } | null = null;
+    let frame = 0;
     try {
-      sharedEngine.registerView(canvas, undefined, true);
       host = createMaterialPreviewScene(sharedEngine, {
         mesh: document?.preview.mesh ?? "sphere",
       });
+      presenter = createMaterialPreviewPresenter(host, canvas);
+      presenter.setFrozen(frozen);
       gestures = attachMaterialPreviewGestures(canvas, host.camera);
     } catch {
       gestures?.dispose();
+      presenter?.dispose();
       host?.dispose();
       return;
     }
     hostRef.current = host;
+    presenterRef.current = presenter;
     registerMaterialPreviewCameraRadius(
       () => hostRef.current?.camera.radius ?? null,
     );
-    const render = () => {
-      if (!host) return;
-      sharedEngine.activeView = sharedEngine.views.find(
-        (view) => view.target === canvas,
-      );
-      canvas.dataset.cameraRadius = String(host.camera.radius);
-      host.scene.render();
+    const tick = () => {
+      presenter?.present();
+      frame = window.requestAnimationFrame(tick);
     };
-    const resize = () => {
-      if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-        sharedEngine.resize();
-      }
-    };
-    resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
-    sharedEngine.runRenderLoop(render);
+    frame = window.requestAnimationFrame(tick);
     return () => {
-      observer.disconnect();
-      sharedEngine.stopRenderLoop(render);
-      sharedEngine.unRegisterView(canvas);
+      window.cancelAnimationFrame(frame);
       gestures?.dispose();
+      presenter?.dispose();
       host?.dispose();
       hostRef.current = null;
+      presenterRef.current = null;
       registerMaterialPreviewCameraRadius(null);
       dispatch({ type: "dispose" });
     };
+    // Mesh choice is applied in the effect below; freeze is pushed separately.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, sharedEngine]);
+
+  useEffect(() => {
+    presenterRef.current?.setFrozen(frozen);
+  }, [frozen]);
 
   // Keep the preview primitive in step with the document.
   useEffect(() => {

@@ -88,10 +88,17 @@ material on screen.
 
 ## Preview and the Render button
 
-The preview is a disposable Scene and registered view on the **app-lifetime
-Engine** — never a second WebGL context. `createMaterialPreviewScene` builds
-cube, sphere, cylinder, cone, plane, or a custom Model, and applies either the
-material or a camera post-process.
+The preview is a disposable Scene on the **app-lifetime Engine** — never a
+second WebGL context. `createMaterialPreviewScene` builds cube, sphere,
+cylinder, cone, plane, or a custom Model, and applies either the material or a
+camera post-process. Present goes through `camera.outputRenderTarget` (an RTT)
+and a 2D blit onto `material-preview-canvas`. Do **not** `registerView` or
+default-framebuffer `scene.render()` — those overwrite the Scene viewport and
+Play overlay, which share that Engine. Prefab Preview is a separate Engine and
+is out of this contract. Orbit / pinch / wheel attach to the preview canvas
+only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
+Babylon binds to the Engine input element (Scene / Play). Hidden Material tabs
+and in-editor Play freeze present.
 
 `materialPreviewReducer` is generation safe:
 
@@ -117,9 +124,9 @@ ignore positions. The graph canvas commits positions once per drag, with a
 per-gesture `transactionId` so Undo restores one drag at a time. Measured-size
 frames and identical payloads do not dirty the document. The preview canvas
 exposes `data-camera-radius` (and test-mode `materialPreviewCameraRadius`) so
-e2e can dispatch wheel and two-pointer pinch on the preview canvas. Those
-gestures attach to the visible canvas because `camera.attachControl` listens
-on the shared Engine's hidden canvas.
+e2e can dispatch wheel and two-pointer pinch on the preview canvas. Gestures
+attach only to that canvas (`attachMaterialPreviewGestures`); never
+`camera.attachControl`, which Babylon binds to the Engine input element.
 
 ## Custom GLSL
 

@@ -380,7 +380,7 @@ export function DocumentWorkspace() {
           return (
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
-                <MaterialEditingProvider documentId={id}>
+                <MaterialEditingProvider documentId={id} active={active}>
                   <DocumentShell
                     path={doc.ref.path}
                     testId={`document-workspace-${doc.ref.kind}`}

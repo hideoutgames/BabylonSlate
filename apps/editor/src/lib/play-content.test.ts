@@ -183,6 +183,46 @@ describe("playAnimGraphsFromOpenDocuments", () => {
     expect(entries).toEqual([{ guid: "graph-guid", document: graph }]);
   });
 
+  it("rewrites Animation clip guids to the owning Model before Play", () => {
+    const graph = createDefaultAnimGraph("Loco");
+    graph.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "hero-walk-anim",
+      clipName: "Idle",
+      durationMs: 1000,
+    };
+    const entries = playAnimGraphsFromOpenDocuments(
+      [
+        {
+          id: "anim-graph:assets/Loco.anim.babasset",
+          ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
+          content: graph,
+        },
+      ],
+      () => "graph-guid",
+      [
+        {
+          guid: "hero-model",
+          type: "Model",
+          name: "Hero",
+          clipNames: ["Idle", "Walk"],
+          dependencyGuids: ["hero-walk-anim"],
+        },
+        {
+          guid: "hero-walk-anim",
+          type: "Animation",
+          name: "Hero_Walk",
+          clipName: "Walk",
+        },
+      ],
+    );
+    expect((entries[0]!.document as { clips: Array<{ assetGuid: string; clipName: string }> }).clips[0]).toMatchObject({
+      assetGuid: "hero-model",
+      clipName: "Walk",
+    });
+  });
+
   it("maps Play AnimationGraph entries onto compile documents", () => {
     const graph = createDefaultAnimGraph("Loco");
     expect(

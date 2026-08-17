@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ArcRotateCamera,
   MeshBuilder,
@@ -12,8 +12,70 @@ import {
   aimPreviewCameraAtMesh,
   attachMaterialPreviewGestures,
   createMaterialPreviewMesh,
+  createMaterialPreviewPresenter,
   createMaterialPreviewScene,
 } from "./material-preview";
+
+type Listener = (event: Event) => void;
+
+/** Node has no DOM canvas; gestures only need the listener surface. */
+class FakeCanvas {
+  clientWidth = 320;
+  clientHeight = 180;
+  width = 320;
+  height = 180;
+  readonly listeners = new Map<string, Set<Listener>>();
+  capturedPointers: number[] = [];
+  readonly dataset: Record<string, string> = {};
+
+  addEventListener(type: string, listener: Listener): void {
+    const set = this.listeners.get(type) ?? new Set<Listener>();
+    set.add(listener);
+    this.listeners.set(type, set);
+  }
+
+  removeEventListener(type: string, listener: Listener): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  setPointerCapture(pointerId: number): void {
+    this.capturedPointers.push(pointerId);
+  }
+
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight };
+  }
+
+  getContext(): {
+    clearRect: () => void;
+    putImageData: () => void;
+    createImageData: (width: number, height: number) => ImageData;
+  } {
+    return {
+      clearRect: () => {},
+      putImageData: () => {},
+      createImageData: (width, height) =>
+        ({ data: new Uint8ClampedArray(width * height * 4), width, height }) as ImageData,
+    };
+  }
+
+  emit(type: string, event: Record<string, unknown>): void {
+    const payload = { preventDefault: () => {}, ...event } as unknown as Event;
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener(payload);
+    }
+  }
+
+  listenerCount(): number {
+    let total = 0;
+    for (const set of this.listeners.values()) total += set.size;
+    return total;
+  }
+}
+
+function pointer(pointerId: number, x: number, y: number) {
+  return { pointerId, clientX: x, clientY: y };
+}
 
 const disposers: Array<() => void> = [];
 
@@ -147,67 +209,131 @@ describe("material preview scene", () => {
   });
 });
 
-type Listener = (event: Event) => void;
-
-class FakePreviewCanvas {
-  readonly listeners = new Map<string, Set<Listener>>();
-
-  addEventListener(type: string, listener: Listener): void {
-    const set = this.listeners.get(type) ?? new Set<Listener>();
-    set.add(listener);
-    this.listeners.set(type, set);
-  }
-
-  removeEventListener(type: string, listener: Listener): void {
-    this.listeners.get(type)?.delete(listener);
-  }
-
-  setPointerCapture(): void {}
-
-  emit(type: string, event: Record<string, unknown>): void {
-    const payload = { preventDefault: () => {}, ...event } as unknown as Event;
-    for (const listener of this.listeners.get(type) ?? []) {
-      listener(payload);
-    }
-  }
-
-  listenerCount(): number {
-    let total = 0;
-    for (const set of this.listeners.values()) total += set.size;
-    return total;
-  }
-}
-
-describe("attachMaterialPreviewGestures", () => {
-  it("zooms the orbit camera on wheel", () => {
+describe("material preview orbit gestures", () => {
+  it("orbits around a fixed target so the camera position moves", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
-    const canvas = new FakePreviewCanvas();
-    const gestures = attachMaterialPreviewGestures(
+    const canvas = new FakeCanvas();
+    const handle = attachMaterialPreviewGestures(
       canvas as unknown as HTMLCanvasElement,
       host.camera,
     );
-    const before = host.camera.radius;
-    canvas.emit("wheel", { deltaY: 400 });
-    expect(host.camera.radius).toBeGreaterThan(before);
-    gestures.dispose();
-    expect(canvas.listenerCount()).toBe(0);
+    disposers.push(() => handle.dispose());
+    host.camera.getViewMatrix();
+    const targetBefore = host.camera.target.clone();
+    const positionBefore = host.camera.position.clone();
+    const alphaBefore = host.camera.alpha;
+
+    canvas.emit("pointerdown", pointer(1, 160, 90));
+    canvas.emit("pointermove", pointer(1, 220, 110));
+    canvas.emit("pointerup", pointer(1, 220, 110));
+    host.camera.getViewMatrix();
+
+    expect(host.camera.alpha).not.toBeCloseTo(alphaBefore, 5);
+    expect(host.camera.target.x).toBeCloseTo(targetBefore.x, 5);
+    expect(host.camera.target.y).toBeCloseTo(targetBefore.y, 5);
+    expect(host.camera.target.z).toBeCloseTo(targetBefore.z, 5);
+    expect(host.camera.position.subtract(positionBefore).length()).toBeGreaterThan(
+      0.01,
+    );
   });
 
-  it("zooms the orbit camera when pinch spread changes", () => {
+  it("zooms radius on wheel and pinch without panning the target", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
-    const canvas = new FakePreviewCanvas();
-    const gestures = attachMaterialPreviewGestures(
+    const canvas = new FakeCanvas();
+    const handle = attachMaterialPreviewGestures(
       canvas as unknown as HTMLCanvasElement,
       host.camera,
     );
-    const before = host.camera.radius;
-    canvas.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
-    canvas.emit("pointerdown", { pointerId: 2, clientX: 172, clientY: 100 });
-    canvas.emit("pointermove", { pointerId: 1, clientX: 64, clientY: 100 });
-    canvas.emit("pointermove", { pointerId: 2, clientX: 208, clientY: 100 });
-    expect(host.camera.radius).toBeLessThan(before);
-    gestures.dispose();
+    disposers.push(() => handle.dispose());
+    const targetBefore = host.camera.target.clone();
+    const radiusBefore = host.camera.radius;
+
+    canvas.emit("wheel", { deltaY: 240 });
+    expect(host.camera.radius).toBeGreaterThan(radiusBefore);
+    expect(host.camera.target.equals(targetBefore)).toBe(true);
+
+    const afterWheel = host.camera.radius;
+    canvas.emit("pointerdown", pointer(1, 100, 90));
+    canvas.emit("pointerdown", pointer(2, 220, 90));
+    canvas.emit("pointermove", pointer(1, 40, 90));
+    canvas.emit("pointermove", pointer(2, 280, 90));
+    expect(host.camera.radius).toBeLessThan(afterWheel);
+    expect(host.camera.target.equals(targetBefore)).toBe(true);
+  });
+
+  it("attaches listeners only to the preview canvas and drops them on dispose", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const other = new FakeCanvas();
+    const handle = attachMaterialPreviewGestures(
+      canvas as unknown as HTMLCanvasElement,
+      host.camera,
+    );
+    expect(canvas.listenerCount()).toBeGreaterThan(0);
+    expect(other.listenerCount()).toBe(0);
+    handle.dispose();
+    expect(canvas.listenerCount()).toBe(0);
+  });
+});
+
+describe("material preview presenter", () => {
+  it("renders through an output RenderTargetTexture instead of the default framebuffer", () => {
+    const created = engine();
+    const host = createMaterialPreviewScene(created as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const registerView = vi.spyOn(created, "registerView");
+    const resize = vi.spyOn(created, "resize");
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+    );
+    disposers.push(() => presenter.dispose());
+
+    presenter.present();
+
+    expect(host.camera.outputRenderTarget).not.toBeNull();
+    expect(registerView).not.toHaveBeenCalled();
+    expect(resize).not.toHaveBeenCalled();
+    expect(host.camera.inputs.attachedToElement).toBeFalsy();
+  });
+
+  it("skips scene.render when frozen or the preview canvas has no size", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+    );
+    disposers.push(() => presenter.dispose());
+    const render = vi.spyOn(host.scene, "render");
+
+    presenter.setFrozen(true);
+    presenter.present();
+    expect(render).not.toHaveBeenCalled();
+
+    presenter.setFrozen(false);
+    canvas.clientWidth = 0;
+    canvas.clientHeight = 0;
+    presenter.present();
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("clears the camera output target on dispose", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+    );
+    presenter.present();
+    expect(host.camera.outputRenderTarget).not.toBeNull();
+    presenter.dispose();
+    expect(host.camera.outputRenderTarget).toBeNull();
   });
 });

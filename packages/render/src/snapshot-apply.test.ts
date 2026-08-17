@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { ResourceCache } from "./resource-cache";
-import { encodeAnimatedTriangleGlb, encodeTriangleGlb, glbClipNames } from "./model-mesh";
+import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, glbClipNames } from "./model-mesh";
 import { setupDefaultViewport } from "./viewport";
 import {
   applyAssignMesh,
@@ -67,6 +67,26 @@ describe("createPlayMesh", () => {
     });
     expect(group).toBeDefined();
     expect(group?.from).toBeLessThan(group?.to ?? 0);
+  });
+
+  it("keeps the slot mesh as the transform root for a parented animated GLB", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([
+      ["hero-model", encodeParentedAnimatedTriangleGlb()],
+    ]);
+    const root = createPlayMesh(scene, 2, "box", "hero-model", binding);
+    binding.meshes.set(2, root);
+    await binding.slotAnimLoads?.get(2);
+    expect(binding.meshes.get(2)).toBe(root);
+    expect(root.isDisposed()).toBe(false);
+    expect(root.getChildMeshes().length).toBeGreaterThan(0);
+    const group = binding.slotAnimationGroups?.get(2)?.find(
+      (entry) => entry.name === "Idle",
+    );
+    expect(group).toBeDefined();
   });
 
   it("does not start an AnimationGroup load for a GLB with no clips", async () => {

@@ -15,7 +15,7 @@ export type AnimVariableTypeId = "bool" | "int" | "float" | "string";
 export interface AnimClipRef {
   id: string;
   kind: AnimClipKind;
-  /** Animation or Sprite asset guid. */
+  /** Model (glTF) or Sprite asset guid. */
   assetGuid: string;
   /** glTF AnimationGroup name or sprite clip name. */
   clipName: string;
@@ -907,4 +907,81 @@ export function parseAnimGraphDocument(
       .filter((variable) => variable.typeId === "bool")
       .map((variable) => variable.name),
   };
+}
+
+/** Asset index used to bind animation clips to the Model GLB Play actually loads. */
+export interface AnimClipCatalogEntry {
+  guid: string;
+  type: string;
+  name: string;
+  clipName?: string;
+  clipNames?: string[];
+  dependencyGuids?: string[];
+}
+
+function stateNameForClip(
+  doc: AnimGraphDocument,
+  clipId: string,
+): string | undefined {
+  return doc.states.find((state) => state.clipId === clipId)?.name;
+}
+
+function shouldReplaceClipName(
+  current: string,
+  stateName: string | undefined,
+  available: readonly string[],
+): boolean {
+  if (current === "") return true;
+  if (available.includes(current)) return false;
+  return Boolean(stateName && current === stateName);
+}
+
+function resolveOneClip(
+  clip: AnimClipRef,
+  catalog: readonly AnimClipCatalogEntry[],
+  stateName?: string,
+): AnimClipRef {
+  if (clip.kind !== "animation") return clip;
+  const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
+  const entry = byGuid.get(clip.assetGuid);
+  if (!entry) return clip;
+  if (entry.type === "Model") {
+    const names = entry.clipNames ?? [];
+    if (!shouldReplaceClipName(clip.clipName, stateName, names)) return clip;
+    const nextName = names[0] ?? clip.clipName;
+    return nextName === clip.clipName ? clip : { ...clip, clipName: nextName };
+  }
+  if (entry.type !== "Animation") return clip;
+  const owner = catalog.find(
+    (row) =>
+      row.type === "Model" &&
+      (row.dependencyGuids ?? []).includes(entry.guid),
+  );
+  if (!owner) return clip;
+  const names = owner.clipNames ?? [];
+  const fromAnimation = entry.clipName;
+  const nextName =
+    fromAnimation &&
+    (shouldReplaceClipName(clip.clipName, stateName, names) ||
+      clip.clipName === stateName)
+      ? fromAnimation
+      : shouldReplaceClipName(clip.clipName, stateName, names)
+        ? (names[0] ?? clip.clipName)
+        : clip.clipName;
+  return { ...clip, assetGuid: owner.guid, clipName: nextName };
+}
+
+/** Rewrite Animation-asset clip guids to the owning Model and fill glTF group names. */
+export function resolveAnimGraphClips(
+  doc: AnimGraphDocument,
+  catalog: readonly AnimClipCatalogEntry[],
+): AnimGraphDocument {
+  if (catalog.length === 0) return doc;
+  let changed = false;
+  const clips = doc.clips.map((clip) => {
+    const next = resolveOneClip(clip, catalog, stateNameForClip(doc, clip.id));
+    if (next !== clip) changed = true;
+    return next;
+  });
+  return changed ? { ...doc, clips } : doc;
 }
