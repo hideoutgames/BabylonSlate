@@ -66,7 +66,7 @@ Cache key includes `url`, `noMipmap`, `samplingMode`, `invertY`, `useSRGBBuffer`
 
 Self-computed bytes: RGBA8 = 4 B/texel, ASTC 4×4 = 1, plus ~⅓ for mipmaps. Context-loss restore drops one quality tier and flushes the LRU.
 
-Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().length` (asserted in Play stop + unit cache cycle).
+Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().length` (asserted in Play stop + unit cache cycle). Playwright repeats three real Play sessions and checks texture counts stay equal while asynchronous mesh counts remain bounded.
 
 ## Picking
 
