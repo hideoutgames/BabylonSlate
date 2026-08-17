@@ -16,6 +16,13 @@ afterEach(() => {
   cleanup();
 });
 
+/** Base UI Select ignores a click that did not start on the item. */
+function pickSelectItem(testId: string) {
+  const item = screen.getByTestId(testId);
+  fireEvent.pointerDown(item);
+  fireEvent.click(item);
+}
+
 const jumpOnly: InputMappings = {
   actions: [
     {
@@ -45,9 +52,11 @@ describe("InputMappingEditor", () => {
     expect(
       (screen.getByTestId("input-axis-0-name") as HTMLInputElement).value,
     ).toBe("Look");
-    expect(screen.getByTestId("input-action-0-binding-0-listen").textContent).toContain(
+    expect(screen.getByTestId("input-action-0-binding-0-code").textContent).toContain(
       "Space",
     );
+    expect(screen.queryByTestId("input-action-0-binding-0-listen")).toBeNull();
+    expect(screen.queryByText(/press a key/i)).toBeNull();
   });
 
   it("renames an action", () => {
@@ -74,7 +83,7 @@ describe("InputMappingEditor", () => {
     });
   });
 
-  it("adds a binding and records a key via listen-to-bind", () => {
+  it("adds a binding and picks a key from the searchable catalog", () => {
     const onChange = vi.fn();
     render(<InputMappingEditor value={jumpOnly} onChange={onChange} />);
     fireEvent.click(screen.getByTestId("input-action-0-add-binding"));
@@ -87,11 +96,9 @@ describe("InputMappingEditor", () => {
 
     onChange.mockClear();
     render(<InputMappingEditor value={withBinding} onChange={onChange} />);
-    fireEvent.click(screen.getByTestId("input-action-0-binding-1-listen"));
-    expect(screen.getByTestId("input-action-0-binding-1-listen").textContent).toMatch(
-      /press/i,
-    );
-    fireEvent.keyDown(window, { code: "KeyW", key: "w", shiftKey: true });
+    fireEvent.click(screen.getByTestId("input-action-0-binding-1-code"));
+    expect(screen.getByTestId("input-action-0-binding-1-code-menu")).toBeTruthy();
+    screen.getByTestId("search-item-KeyW").click();
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         actions: [
@@ -100,13 +107,66 @@ describe("InputMappingEditor", () => {
               expect.objectContaining({
                 device: "key",
                 code: "KeyW",
-                modifiers: { shift: true },
               }),
             ]),
           }),
         ],
       }),
     );
+  });
+
+  it("clears the code when the device changes", () => {
+    const onChange = vi.fn();
+    render(<InputMappingEditor value={jumpOnly} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-device"));
+    pickSelectItem("input-action-0-binding-0-device-gamepadButton");
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actions: [
+          expect.objectContaining({
+            bindings: [
+              expect.objectContaining({ device: "gamepadButton", code: "" }),
+            ],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("toggles keyboard modifiers on a binding", () => {
+    const onChange = vi.fn();
+    render(<InputMappingEditor value={jumpOnly} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-mod-shift"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actions: [
+          expect.objectContaining({
+            bindings: [expect.objectContaining({ modifiers: { shift: true } })],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("hides analog extras on a digital key axis and shows them on a gamepad axis", () => {
+    const value: InputMappings = {
+      actions: [],
+      axes: [
+        {
+          name: "Move",
+          kind: "1d",
+          bindings: [
+            { device: "key", code: "KeyW", digitalValue: 1 },
+            { device: "gamepadAxis", code: "0:0", deadZone: 0.15 },
+          ],
+        },
+      ],
+    };
+    render(<InputMappingEditor value={value} onChange={() => {}} />);
+    expect(screen.getByTestId("input-axis-0-binding-0-digital-value")).toBeTruthy();
+    expect(screen.queryByTestId("input-axis-0-binding-0-dead-zone")).toBeNull();
+    expect(screen.getByTestId("input-axis-0-binding-1-dead-zone")).toBeTruthy();
+    expect(screen.queryByTestId("input-axis-0-binding-1-digital-value")).toBeNull();
   });
 
   it("reorders bindings with 44px targets", () => {
@@ -156,7 +216,7 @@ describe("InputMappingEditor", () => {
     );
   });
 
-  it("picks a touch control id from the provided list", () => {
+  it("picks a touch control id from the searchable catalog", () => {
     const onChange = vi.fn();
     const value: InputMappings = {
       actions: [],
@@ -175,7 +235,8 @@ describe("InputMappingEditor", () => {
         touchControlIds={["joystick-x", "custom-stick"]}
       />,
     );
-    fireEvent.click(screen.getByTestId("input-axis-0-binding-0-touch-custom-stick"));
+    fireEvent.click(screen.getByTestId("input-axis-0-binding-0-code"));
+    screen.getByTestId("search-item-custom-stick").click();
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         axes: [

@@ -2,6 +2,7 @@ import { OctagonAlertIcon, SaveIcon } from "lucide-react";
 import { useState } from "react";
 import {
   AssetPicker,
+  BindingCodePicker,
   CatalogDialog,
   ClassPicker,
   SceneComponentPicker,
@@ -166,6 +167,7 @@ function GalleryComposites() {
     { id: "gallery-amount", name: "amount", type: "float" },
   ]);
   const [pinType, setPinType] = useState<PinPickerType>("float");
+  const [bindingCode, setBindingCode] = useState("Space");
   const [pins, setPins] = useState<PinListRow[]>([
     { id: "gallery-hit", name: "hit", type: "bool", direction: "out" },
     {
@@ -270,6 +272,15 @@ function GalleryComposites() {
       <div className="rounded-lg border border-border p-3" data-testid="gallery-pin-type-picker">
         <div className="mb-2 text-sm font-medium">Pin Type Picker</div>
         <PinTypePicker value={pinType} onChange={setPinType} />
+      </div>
+      <div className="rounded-lg border border-border p-3" data-testid="gallery-binding-code-picker">
+        <div className="mb-2 text-sm font-medium">Binding Code Picker</div>
+        <BindingCodePicker
+          device="key"
+          code={bindingCode}
+          onChange={setBindingCode}
+          data-testid="gallery-binding-code"
+        />
       </div>
       <div className="rounded-lg border border-border">
         <PanelFrame title="Pin list" data-testid="gallery-pin-list">
