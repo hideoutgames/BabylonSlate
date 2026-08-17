@@ -31,7 +31,7 @@ describe("resolveTypeVisual", () => {
     expect(scene.colorVar).toBe("var(--asset-scene)");
     expect(texture.colorVar).toBe("var(--asset-texture)");
     expect(graph.colorVar).toBe("var(--asset-graph)");
-    expect(classAsset.colorVar).toBe("var(--asset-class)");
+    expect(classAsset.colorVar).toBe("var(--asset-animation)");
   });
 
   it("uses the folder asset color for folder visuals", () => {
@@ -40,13 +40,17 @@ describe("resolveTypeVisual", () => {
     );
   });
 
-  it("shares script-type color across Enum, Structure, and ScriptInterface", () => {
+  it("keeps Enum on script-type and Structure on the old Class color", () => {
     const enumVisual = resolveTypeVisual({ assetType: "Enum" });
     const structVisual = resolveTypeVisual({ assetType: "Structure" });
+    const blackboard = resolveTypeVisual({ assetType: "Blackboard" });
     const ifaceVisual = resolveTypeVisual({ assetType: "ScriptInterface" });
     expect(enumVisual.colorVar).toBe("var(--asset-script-type)");
-    expect(structVisual.colorVar).toBe(enumVisual.colorVar);
-    expect(ifaceVisual.colorVar).toBe(enumVisual.colorVar);
+    expect(structVisual.family).toBe("struct");
+    expect(structVisual.colorVar).toBe("var(--asset-class)");
+    expect(blackboard.family).toBe("struct");
+    expect(blackboard.colorVar).toBe(structVisual.colorVar);
+    expect(ifaceVisual.colorVar).toBe("var(--asset-animation)");
     expect(enumVisual.icon).not.toBe(structVisual.icon);
     expect(structVisual.icon).not.toBe(ifaceVisual.icon);
   });
@@ -74,7 +78,7 @@ describe("resolveTypeVisual", () => {
       classId: "WidgetComponent",
       family: "class",
     });
-    expect(objectVisual.colorVar).toBe("var(--asset-class)");
+    expect(objectVisual.colorVar).toBe("var(--asset-animation)");
     expect(actorVisual.colorVar).toBe(objectVisual.colorVar);
     expect(widgetVisual.colorVar).toBe(objectVisual.colorVar);
     expect(objectVisual.icon).not.toBe(actorVisual.icon);
@@ -110,7 +114,7 @@ describe("resolveTypeVisual", () => {
       assetType: "Class",
       parentClass: "Actor",
     });
-    expect(actorClass.colorVar).toBe("var(--asset-class)");
+    expect(actorClass.colorVar).toBe("var(--asset-animation)");
     expect(actorClass.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
   });
 
@@ -120,7 +124,7 @@ describe("resolveTypeVisual", () => {
       assetType: "Class",
       ancestry: ["MyMesh", "MeshComponent", "ActorComponent", "BObject"],
     });
-    expect(userMesh.colorVar).toBe("var(--asset-class)");
+    expect(userMesh.colorVar).toBe("var(--asset-animation)");
     expect(userMesh.icon).toBe(mesh.icon);
     expect(userMesh.icon).not.toBe(
       resolveTypeVisual({ classId: "ActorComponent" }).icon,
@@ -184,6 +188,7 @@ describe("resolveTypeVisual", () => {
       classId: "BehaviourTreeComponent",
     });
     expect(tree.icon).toBe(ListTreeIcon);
+    expect(tree.colorVar).toBe("var(--asset-animation)");
     expect(tree.icon).not.toBe(FilmIcon);
     expect(component.icon).toBe(ListTreeIcon);
   });
@@ -197,7 +202,7 @@ describe("resolveTypeVisual", () => {
     expect(mesh.icon).not.toBe(light.icon);
     expect(
       resolveTypeVisual({ classId: "MeshComponent", family: "class" }).colorVar,
-    ).toBe("var(--asset-class)");
+    ).toBe("var(--asset-animation)");
   });
 
   it("falls back to a muted file glyph for unknown types", () => {
@@ -233,7 +238,7 @@ describe("resolveActorTypeVisual", () => {
       components: [{ classId: "MeshComponent" }],
     });
     expect(visual.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
-    expect(visual.colorVar).toBe("var(--asset-class)");
+    expect(visual.colorVar).toBe("var(--asset-animation)");
   });
 
   it("uses the component icon with Actor color for engine Actor placeholders", () => {
@@ -244,7 +249,7 @@ describe("resolveActorTypeVisual", () => {
     expect(boxed.icon).toBe(
       resolveTypeVisual({ classId: "MeshComponent" }).icon,
     );
-    expect(boxed.colorVar).toBe("var(--asset-class)");
+    expect(boxed.colorVar).toBe("var(--asset-animation)");
   });
 });
 

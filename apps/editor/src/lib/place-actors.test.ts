@@ -31,7 +31,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
     const empty = visualForPlaceActor(
       ENGINE_PLACE_ACTORS.find((entry) => entry.id === "empty")!,
     );
-    expect(shape.colorVar).toBe("var(--asset-class)");
+    expect(shape.colorVar).toBe("var(--asset-animation)");
     expect(light.colorVar).toBe(shape.colorVar);
     expect(empty.iconKey).toBe("Actor");
     expect(shape.iconKey).toBe("MeshComponent");
