@@ -90,6 +90,10 @@ export {
 export { NumberField, type NumberFieldProps } from "./number-field";
 export { parseNumberInput } from "./parse-number-input";
 export {
+  evaluateNumericExpression,
+  formatNumericDisplay,
+} from "./numeric-expression";
+export {
   formatEventMemberName,
   formatEventTitle,
   humanizePropertyLabel,
