@@ -31,6 +31,23 @@ function dispatchPointerEvent(
   target.dispatchEvent(event);
 }
 
+function widgetCenter(target: HTMLElement): { x: number; y: number } {
+  const canvas = screen.getByTestId("ui-design-canvas");
+  const canvasWidth = Number.parseFloat(canvas.style.width);
+  const canvasHeight = Number.parseFloat(canvas.style.height);
+  const zoom = Number(canvas.getAttribute("data-zoom"));
+  const panX = Number(canvas.getAttribute("data-pan-x"));
+  const panY = Number(canvas.getAttribute("data-pan-y"));
+  const left = Number.parseFloat(target.style.left) / 100;
+  const top = Number.parseFloat(target.style.top) / 100;
+  const width = Number.parseFloat(target.style.width) / 100;
+  const height = Number.parseFloat(target.style.height) / 100;
+  return {
+    x: panX + (left + width / 2) * canvasWidth * zoom,
+    y: panY + (top + height / 2) * canvasHeight * zoom,
+  };
+}
+
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
@@ -184,10 +201,20 @@ describe("UiDesigner", () => {
   it("drags a widget to write left/top once on pointer up", () => {
     const { onChange } = renderHud();
     const stick = screen.getByTestId("ui-widget-stick");
-    dispatchPointerEvent(stick, "pointerdown", { clientX: 10, clientY: 10 });
-    dispatchPointerEvent(stick, "pointermove", { clientX: 55, clientY: 10 });
+    const start = widgetCenter(stick);
+    dispatchPointerEvent(stick, "pointerdown", {
+      clientX: start.x,
+      clientY: start.y,
+    });
+    dispatchPointerEvent(stick, "pointermove", {
+      clientX: start.x + 45,
+      clientY: start.y,
+    });
     expect(onChange).not.toHaveBeenCalled();
-    dispatchPointerEvent(stick, "pointerup", { clientX: 55, clientY: 10 });
+    dispatchPointerEvent(stick, "pointerup", {
+      clientX: start.x + 45,
+      clientY: start.y,
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     const [next] = onChange.mock.calls[0] as [Record<string, unknown>];
     const widgets = next.widgets as Record<
