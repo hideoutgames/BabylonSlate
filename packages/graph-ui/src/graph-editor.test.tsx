@@ -2,7 +2,7 @@ import { act, fireEvent, render, cleanup, waitFor } from "@testing-library/react
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
-import { GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
+import { GRAPH_DEFAULT_ZOOM, GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
 import { MARQUEE_FALLBACK_HEIGHT, MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
@@ -269,7 +269,35 @@ const pinDragPalette = [
   },
 ];
 
+function flowPositionFromScreen(
+  container: HTMLElement,
+  client: { x: number; y: number },
+): { x: number; y: number } {
+  const flow = container.querySelector(".react-flow");
+  const viewport = container.querySelector(
+    ".react-flow__viewport",
+  ) as HTMLElement | null;
+  expect(flow).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  const origin = flow!.getBoundingClientRect();
+  const match = viewport!.style.transform.match(
+    /translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/,
+  );
+  expect(match).not.toBeNull();
+  const panX = Number(match![1]);
+  const panY = Number(match![2]);
+  const zoom = Number(match![3]);
+  expect(zoom).toBe(GRAPH_DEFAULT_ZOOM);
+  return {
+    x: (client.x - origin.left - panX) / zoom,
+    y: (client.y - origin.top - panY) / zoom,
+  };
+}
+
 function mockPinDragLayout(container: HTMLElement): Element {
+  const flow = container.querySelector(".react-flow");
+  expect(flow).not.toBeNull();
+  mockHandleRect(flow!, { left: 0, top: 0, width: 800, height: 600 });
   container.querySelectorAll(".react-flow__node").forEach((node, index) => {
     mockHandleRect(node, {
       left: index * 280,
@@ -775,7 +803,11 @@ describe("GraphEditor", () => {
       const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
       const added = lastGraph.nodes.find((node) => node.id !== "log-a" && node.id !== "log-b");
       expect(added).toBeDefined();
-      expect(added?.position.x).not.toBe(0);
+      const expected = flowPositionFromScreen(container, farDrop);
+      expect(added?.position.x).toBeCloseTo(expected.x);
+      expect(added?.position.y).toBeCloseTo(expected.y);
+      expect(added?.position).not.toEqual(farDrop);
+      expect(added?.position).not.toEqual({ x: 0, y: 0 });
       expect(
         lastGraph.edges.some(
           (edge) =>
