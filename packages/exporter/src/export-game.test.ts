@@ -468,6 +468,58 @@ describe("exportGame", () => {
     expect(manifest.loopCount).toBe(1_000_000);
   });
 
+  it("packs UserInterface JSON in the boot pack and omits EditorUtilityInterface", async () => {
+    const hud = { name: "HUD", rootId: "canvas", widgets: { canvas: { id: "canvas", kind: "Canvas" } } };
+    const result = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [
+        {
+          assetGuid: "hud-1",
+          classId: "UserInterface:hud-1",
+          source: "export function onBeginPlay() {}\n",
+          anchors: [],
+          entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+          parentClassId: "UserInterface",
+        },
+      ],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new TextEncoder().encode('{"name":"Main"}'),
+        },
+        {
+          guid: "hud-1",
+          type: "UserInterface",
+          sceneGuid: "scene-1",
+          name: "HUD",
+          bytes: new TextEncoder().encode(JSON.stringify(hud)),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const entry = result.value.manifest.assets.find((asset) => asset.guid === "hud-1");
+    expect(entry).toEqual(
+      expect.objectContaining({
+        guid: "hud-1",
+        type: "UserInterface",
+        encoding: "json",
+        name: "HUD",
+      }),
+    );
+    expect(
+      result.value.manifest.assets.some((asset) => asset.type === "EditorUtilityInterface"),
+    ).toBe(false);
+    expect(parseScriptRegistry(
+      new TextDecoder().decode(result.value.files.get("scripts.js")),
+    ).some((script) => script.classId === "UserInterface:hud-1")).toBe(true);
+  });
+
   it("records Font names on loose-mode index entries", async () => {
     const result = await exportGame({
       mode: "loose",
