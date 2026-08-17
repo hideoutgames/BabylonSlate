@@ -49,7 +49,7 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
             var stale = false
             let folderURL = try URL(
                 resolvingBookmarkData: bookmarkData,
-                options: [.withSecurityScope],
+                options: [],
                 relativeTo: nil,
                 bookmarkDataIsStale: &stale
             )
@@ -63,7 +63,7 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
             if stale {
                 do {
                     let data = try folderURL.bookmarkData(
-                        options: [.withSecurityScope],
+                        options: [],
                         includingResourceValuesForKeys: nil,
                         relativeTo: nil
                     )
@@ -321,7 +321,7 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
         }
         do {
             let bookmarkData = try url.bookmarkData(
-                options: [.withSecurityScope],
+                options: [],
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             )

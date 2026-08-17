@@ -17,9 +17,9 @@ describe("Capacitor 8 iOS host", () => {
     expect(pkg.dependencies["@capacitor/core"]).toMatch(/^\^8/);
     expect(editorPkg.dependencies["@capacitor/filesystem"]).toMatch(/^\^8/);
     expect(editorPkg.dependencies["@capacitor/preferences"]).toMatch(/^\^8/);
-    expect(pkg.dependencies["@daniele-rolli/capacitor-scoped-storage"]).toBe(
-      undefined,
-    );
+    expect(
+      pkg.dependencies["@daniele-rolli/capacitor-scoped-storage"],
+    ).toBeUndefined();
   });
 
   it("copies wasm, transcoder, and coi from editor dist into iOS public/", () => {
@@ -58,6 +58,10 @@ describe("Capacitor 8 iOS host", () => {
   });
 
   it("registers first-party plugins from the bridge view controller", () => {
+    const pbx = readFileSync(
+      join(repoRoot, "apps/editor/ios/App/App.xcodeproj/project.pbxproj"),
+      "utf8",
+    );
     const main = readFileSync(
       join(repoRoot, "apps/editor/ios/App/App/MainViewController.swift"),
       "utf8",

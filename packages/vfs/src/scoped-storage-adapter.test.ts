@@ -26,11 +26,12 @@ function createFakeFolderPort() {
   const files = new Map<string, string>();
   let folder: FolderIdentity = { id: "bookmark-1", name: "Repo" };
   let stale = false;
+  const pickFolder = vi.fn(async () => {
+    stale = false;
+    return { folder };
+  });
   const port: BabylonSlateFolderPort = {
-    pickFolder: vi.fn(async () => {
-      stale = false;
-      return { folder };
-    }),
+    pickFolder,
     resolveFolder: vi.fn(async () => {
       if (stale) throw { code: "STALE_BOOKMARK" };
       return { folder };
@@ -67,6 +68,7 @@ function createFakeFolderPort() {
   };
   return {
     port,
+    pickFolder,
     setFolder(next: FolderIdentity) {
       folder = next;
     },
@@ -103,7 +105,7 @@ describe("external tier (first-party folder port)", () => {
     expect(fake.port.resolveFolder).toHaveBeenCalledWith({
       bookmark: "bookmark-1",
     });
-    expect(fake.port.pickFolder).toHaveBeenCalledTimes(1);
+    expect(fake.pickFolder).toHaveBeenCalledTimes(1);
     expect(next.getCurrentFolder()?.id).toBe("bookmark-1");
   });
 
@@ -111,13 +113,13 @@ describe("external tier (first-party folder port)", () => {
     const fake = createFakeFolderPort();
     const adapter = new ScopedStorageAdapter(fake.port);
     const handle = await adapter.pickProjectFolder();
-    fake.port.pickFolder.mockClear();
+    fake.pickFolder.mockClear();
 
     await expect(adapter.openKnownFolder(handle)).resolves.toEqual(handle);
     expect(fake.port.resolveFolder).toHaveBeenCalledWith({
       bookmark: "bookmark-1",
     });
-    expect(fake.port.pickFolder).not.toHaveBeenCalled();
+    expect(fake.pickFolder).not.toHaveBeenCalled();
   });
 
   it("persists a refreshed identity returned by resolve", async () => {
@@ -148,7 +150,7 @@ describe("external tier (first-party folder port)", () => {
     const reconnected = await adapter.reconnectFolder();
     expect(reconnected.id).toBe("bookmark-1");
     expect(await adapter.needsReconnect()).toBe(false);
-    expect(fake.port.pickFolder).toHaveBeenCalledTimes(2);
+    expect(fake.pickFolder).toHaveBeenCalledTimes(2);
   });
 
   it("round-trips text and binary through the injected coordinated-I/O port", async () => {
