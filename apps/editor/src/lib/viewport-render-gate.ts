@@ -28,7 +28,10 @@ export function dispatchEngineSettingsChanged(settings: {
 }
 
 export type LiveEngineSettingsTarget = {
-  scaling?: { setLevel: (level: number) => void };
+  scaling?: {
+    setLevel: (level: number) => void;
+    setSettingsLevel?: (level: number) => void;
+  };
   scheduler?: { setFrameCap: (fps: number) => void };
   setPostProcessingEnabled?: (enabled: boolean) => void;
 };
@@ -43,8 +46,10 @@ export type LiveEngineSettings = {
 export function applyLiveEngineSettings(
   target: LiveEngineSettingsTarget,
   settings: LiveEngineSettings,
+  options?: { applyFrameCap?: boolean },
 ): void {
   if (
+    options?.applyFrameCap !== false &&
     typeof settings.viewportFrameCap === "number" &&
     Number.isFinite(settings.viewportFrameCap) &&
     settings.viewportFrameCap > 0
@@ -56,7 +61,11 @@ export function applyLiveEngineSettings(
     Number.isFinite(settings.hardwareScalingLevel) &&
     settings.hardwareScalingLevel > 0
   ) {
-    target.scaling?.setLevel(settings.hardwareScalingLevel);
+    if (target.scaling?.setSettingsLevel) {
+      target.scaling.setSettingsLevel(settings.hardwareScalingLevel);
+    } else {
+      target.scaling?.setLevel(settings.hardwareScalingLevel);
+    }
   }
   if (typeof settings.postProcessingEnabled === "boolean") {
     target.setPostProcessingEnabled?.(settings.postProcessingEnabled);

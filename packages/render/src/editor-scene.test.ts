@@ -440,9 +440,13 @@ describe("EditorSceneSync", () => {
     );
     const after = sync.meshForActor("a");
     expect(after).not.toBe(before);
-    expect(after!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(after!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    const icon = after!
+      .getChildMeshes()
+      .find((mesh) => (mesh.metadata as { editorBillboard?: string } | null)?.editorBillboard === "light");
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(
-      (after!.metadata as { editorBillboard?: string }).editorBillboard,
+      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
     ).toBe("light");
   });
 
@@ -463,6 +467,9 @@ describe("EditorSceneSync", () => {
       ]),
     );
     const mesh = sync.meshForActor("a");
+    const icon = mesh!
+      .getChildMeshes()
+      .find((entry) => (entry.metadata as { editorBillboard?: string } | null)?.editorBillboard === "light");
     sync.apply(
       sceneWith([
         createActor("a", "A", {
@@ -477,7 +484,7 @@ describe("EditorSceneSync", () => {
       ]),
     );
     expect(sync.meshForActor("a")).toBe(mesh);
-    const material = mesh!.material as StandardMaterial;
+    const material = icon!.material as StandardMaterial;
     expect(material.emissiveColor.r).toBeCloseTo(1);
     expect(material.emissiveColor.g).toBeCloseTo(0);
     expect(material.emissiveColor.b).toBeCloseTo(0);

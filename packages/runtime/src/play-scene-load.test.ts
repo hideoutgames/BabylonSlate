@@ -7,6 +7,7 @@ import {
 } from "@babylonslate/bridge";
 import {
   createActor,
+  createDefaultScene,
   createDefaultSceneSettings,
   createMeshComponent,
   type SerializedScene,
@@ -208,6 +209,91 @@ describe("p7-play-scene-load", () => {
     expect([first.position.x, second.position.x].sort((a, b) => a - b)).toEqual([
       -3, 3,
     ]);
+    runtime.stop();
+  });
+
+  it("assigns a cube primitive and a class actor mesh as separate visible slots", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "CubeAndHero",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("actor-1", "Cube", {
+            components: [createMeshComponent("component-1", "box")],
+          }),
+          createActor("hero", "Hero", {
+            classId: "Hero",
+            transform: {
+              position: [2, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [createMeshComponent("hero-mesh", "sphere")],
+          }),
+        ],
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    const assigned = commands.filter((c) => c.type === "assignMesh");
+    expect(assigned.map((c) => (c as { meshKind: string }).meshKind)).toEqual([
+      "box",
+      "sphere",
+    ]);
+    expect(new Set(assigned.map((c) => (c as { slotId: number }).slotId)).size).toBe(
+      2,
+    );
+    runtime.stop();
+  });
+
+  it("publishes child actor snapshot positions in world space", () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "Parented",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("parent", "Parent", {
+            transform: {
+              position: [5, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [createMeshComponent("parent-mesh", "box")],
+          }),
+          createActor("child", "Child", {
+            parentId: "parent",
+            transform: {
+              position: [1, 2, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [createMeshComponent("child-mesh", "sphere")],
+          }),
+        ],
+      },
+    });
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.tick();
+    const buf = new Float32Array(snapshotFloatCount(8));
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    const slots = [readActorSlot(buf, 0), readActorSlot(buf, 1)];
+    const child = slots.find((slot) => slot.position.x === 6);
+    expect(child).toBeDefined();
+    expect(child!.position.y).toBe(2);
     runtime.stop();
   });
 
@@ -506,6 +592,38 @@ describe("p7-play-scene-load", () => {
         materialAssetGuid: "mat-rock",
       },
     ]);
+    runtime.stop();
+  });
+
+  it("emits assignMaterial for a mesh in a default scene that already has a camera", () => {
+    const commands: CommandMessage[] = [];
+    const mesh = createMeshComponent("box-mesh", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const scene = createDefaultScene();
+    scene.actors.push(
+      createActor("actor-2", "box", {
+        components: [mesh],
+      }),
+    );
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/main.scene.babasset",
+        scene,
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "assignMaterial")).toEqual([
+      {
+        type: "assignMaterial",
+        slotId: 2,
+        materialAssetGuid: "mat-rock",
+      },
+    ]);
+    expect(commands.some((command) => command.type === "possessCamera")).toBe(
+      true,
+    );
     runtime.stop();
   });
 

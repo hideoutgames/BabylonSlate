@@ -84,8 +84,9 @@ The Worker's per-frame snapshot is produced by `TransferablePingPong` (`packages
 ## Seq-lock (SAB)
 
 1. Writer increments `seq` to odd before writing.
-2. Writer copies header + slots, then sets `seq` to even.
+2. Writer copies header + slots, then sets `seq` to even (`magic` + layout version are written here).
 3. Reader samples `seq`, copies, re-reads `seq`; if odd or changed, retry (bounded).
+4. `tryRead` returns `false` until a buffer has been published. Spare seq-lock slots are zeroed; treating that as `actorCount: 0` would despawn every Play mesh created by `assignMesh` and drop `assignMaterial` records before the first tick. `isPublishedSnapshot` requires header `magic` + layout version. A published snapshot with `actorCount: 0` (empty scene) is still valid.
 
 ## Related docs
 

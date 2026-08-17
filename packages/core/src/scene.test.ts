@@ -45,12 +45,13 @@ function nestedScene(): SerializedScene {
 }
 
 describe("scene schema", () => {
-  it("creates a default scene with one actor carrying a mesh component", () => {
+  it("creates a default scene with a cube and a possessing camera", () => {
     const scene = createDefaultScene();
     expect(scene.viewportMode).toBe("3d");
     expect(scene.settings.physicsWorld).toBe("3d");
-    expect(scene.actors).toHaveLength(1);
+    expect(scene.actors.map((actor) => actor.name)).toEqual(["Cube", "Camera"]);
     expect(scene.actors[0]?.components[0]?.classId).toBe("MeshComponent");
+    expect(scene.actors[1]?.components[0]?.classId).toBe("CameraComponent");
   });
 
   it("normalizes a partial payload into a valid scene", () => {

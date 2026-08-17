@@ -314,10 +314,15 @@ export function createEngine(
     ? scheduler.acquireContinuous("play")
     : null;
   const resourceCache = new ResourceCache();
+  const settingsLevel = options.hardwareScalingLevel ?? 1;
   const scaling = new HardwareScalingController(engine, {
-    minLevel: 0.25,
+    minLevel: settingsLevel,
     maxLevel: 4,
-    initialLevel: options.hardwareScalingLevel ?? 1,
+    initialLevel: settingsLevel,
+    targetFrameMs:
+      options.frameCap && options.frameCap > 0
+        ? 1000 / options.frameCap
+        : 1000 / 60,
   });
   const interpolator = new SnapshotInterpolator(options.maxActors ?? 256);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();

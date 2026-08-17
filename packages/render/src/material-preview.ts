@@ -103,6 +103,7 @@ export function createMaterialPreviewScene(
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.05, 0.05, 0.07, 1);
   scene.skipPointerMovePicking = true;
+  scene.autoClear = false;
 
   const camera = new ArcRotateCamera(
     "materialPreviewCamera",
@@ -343,12 +344,16 @@ function previewBufferSize(
 export function createMaterialPreviewPresenter(
   host: MaterialPreviewScene,
   canvas: HTMLCanvasElement,
-  options: { maxSize?: number } = {},
+  options: { maxSize?: number; maxFps?: number; now?: () => number } = {},
 ): MaterialPreviewPresenter {
   const maxSize = options.maxSize ?? MATERIAL_PREVIEW_MAX_SIZE;
+  const maxFps = options.maxFps ?? 30;
+  const minIntervalMs = 1000 / Math.max(1, maxFps);
+  const now = options.now ?? (() => performance.now());
   let frozen = false;
   let rtt: RenderTargetTexture | null = null;
   let blitInFlight = false;
+  let lastPresentMs = Number.NEGATIVE_INFINITY;
 
   const releaseRtt = () => {
     host.camera.outputRenderTarget = null;
@@ -382,8 +387,8 @@ export function createMaterialPreviewPresenter(
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         const { width, height } = texture.getSize();
-        canvas.width = width;
-        canvas.height = height;
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
         const bytes =
           buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
         ctx.putImageData(
@@ -402,9 +407,12 @@ export function createMaterialPreviewPresenter(
   return {
     present: () => {
       canvas.dataset.cameraRadius = String(host.camera.radius);
-      if (frozen) return;
+      if (frozen || blitInFlight) return;
+      const at = now();
+      if (at - lastPresentMs < minIntervalMs) return;
       const size = previewBufferSize(canvas, maxSize);
       if (!size) return;
+      lastPresentMs = at;
       const texture = ensureRtt(size.width, size.height);
       host.scene.render();
       blit(texture);

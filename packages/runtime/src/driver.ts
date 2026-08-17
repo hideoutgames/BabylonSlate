@@ -15,7 +15,7 @@ import {
   type ClassKind,
   type TickPhase,
 } from "@babylonslate/object-model";
-import { eulerDegreesToQuaternion, type SerializedScene } from "@babylonslate/core";
+import { eulerDegreesToQuaternion, type SerializedScene, type Transform } from "@babylonslate/core";
 import {
   InputRingBuffer,
   InputResolver,
@@ -1499,6 +1499,7 @@ class InProcessRuntime implements RuntimeDriver {
           outerAngle: Number(light.getVariable("outerAngle") ?? 45),
           castShadows: light.getVariable("castShadows") === true,
         },
+        parts: [playMeshPartOf(light)],
       });
       return;
     }
@@ -1526,6 +1527,7 @@ class InProcessRuntime implements RuntimeDriver {
           farClip: Number(camera.getVariable("farClip") ?? 1000),
           isDefault,
         },
+        parts: [playMeshPartOf(camera)],
       });
     }
   }
@@ -1917,11 +1919,12 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of actors) {
       const slotId = this.slotByGuid.get(actor.guid);
       if (slotId === undefined) continue;
+      const world = worldTransformOf(actor, actors);
       writeActorSlot(buf, count, {
         slotId,
-        position: actor.transform.position,
-        rotation: actor.transform.rotation,
-        scale: actor.transform.scale,
+        position: world.position,
+        rotation: world.rotation,
+        scale: world.scale,
         flags: 1,
       });
       count += 1;
@@ -2029,5 +2032,91 @@ function navPointFromUnknown(value: unknown): NavPoint | null {
     x: row.x,
     y: typeof row.y === "number" && Number.isFinite(row.y) ? row.y : 0,
     z: typeof row.z === "number" && Number.isFinite(row.z) ? row.z : 0,
+  };
+}
+
+function actorParentGuid(actor: Actor): string | null {
+  const parentId = actor.getVariable("parentId");
+  return typeof parentId === "string" && parentId.length > 0 ? parentId : null;
+}
+
+function worldTransformOf(
+  actor: Actor,
+  actors: readonly Actor[],
+): Transform {
+  const byGuid = new Map(actors.map((entry) => [entry.guid, entry]));
+  const chain: Actor[] = [];
+  const visited = new Set<string>();
+  let current: Actor | undefined = actor;
+  while (current && !visited.has(current.guid)) {
+    visited.add(current.guid);
+    chain.push(current);
+    const parentId = actorParentGuid(current);
+    current = parentId ? byGuid.get(parentId) : undefined;
+  }
+  let world: Transform = copyTransform(chain[chain.length - 1]!.transform);
+  for (let index = chain.length - 2; index >= 0; index -= 1) {
+    world = composeParentChildTransform(world, chain[index]!.transform);
+  }
+  return world;
+}
+
+function copyTransform(value: Transform): Transform {
+  return {
+    position: { ...value.position },
+    rotation: { ...value.rotation },
+    scale: { ...value.scale },
+  };
+}
+
+function composeParentChildTransform(
+  parent: Transform,
+  local: Transform,
+): Transform {
+  const scaled = {
+    x: local.position.x * parent.scale.x,
+    y: local.position.y * parent.scale.y,
+    z: local.position.z * parent.scale.z,
+  };
+  const rotated = rotateVecByQuat(parent.rotation, scaled);
+  return {
+    position: {
+      x: parent.position.x + rotated.x,
+      y: parent.position.y + rotated.y,
+      z: parent.position.z + rotated.z,
+    },
+    rotation: multiplyQuat(parent.rotation, local.rotation),
+    scale: {
+      x: parent.scale.x * local.scale.x,
+      y: parent.scale.y * local.scale.y,
+      z: parent.scale.z * local.scale.z,
+    },
+  };
+}
+
+function multiplyQuat(
+  a: Transform["rotation"],
+  b: Transform["rotation"],
+): Transform["rotation"] {
+  return {
+    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+  };
+}
+
+function rotateVecByQuat(
+  q: Transform["rotation"],
+  v: { x: number; y: number; z: number },
+): { x: number; y: number; z: number } {
+  const ix = q.w * v.x + q.y * v.z - q.z * v.y;
+  const iy = q.w * v.y + q.z * v.x - q.x * v.z;
+  const iz = q.w * v.z + q.x * v.y - q.y * v.x;
+  const iw = -q.x * v.x - q.y * v.y - q.z * v.z;
+  return {
+    x: ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y,
+    y: iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z,
+    z: iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x,
   };
 }

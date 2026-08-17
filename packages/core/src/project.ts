@@ -2,11 +2,14 @@ import {
   createActor,
   createDefaultSceneSettings,
   createMeshComponent,
+  identitySerializedTransform,
   normalizeTransform,
+  type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
   type ViewportMode,
 } from "./scene";
+import { lookAtRotation } from "./euler";
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
@@ -703,22 +706,78 @@ export function createEmptyProject(
   };
 }
 
+const DEFAULT_SCENE_CAMERA_ACTOR_ID = "actor-camera";
+const DEFAULT_SCENE_CAMERA_COMPONENT_ID = "component-camera";
+/** Matches the editor ArcRotate radius in `@babylonslate/render` (no render import). */
+const DEFAULT_SCENE_CAMERA_RADIUS = 8;
+
+function defaultEditorOrbitPosition(): [number, number, number] {
+  const alpha = -Math.PI / 2;
+  const beta = Math.PI / 2.5;
+  const radius = DEFAULT_SCENE_CAMERA_RADIUS;
+  return [
+    radius * Math.cos(alpha) * Math.sin(beta),
+    radius * Math.cos(beta),
+    radius * Math.sin(alpha) * Math.sin(beta),
+  ];
+}
+
+function createDefaultCameraActor(viewportMode: ViewportMode): SerializedActor {
+  const position: [number, number, number] =
+    viewportMode === "2d"
+      ? [0, 0, -DEFAULT_SCENE_CAMERA_RADIUS]
+      : defaultEditorOrbitPosition();
+  return createActor(DEFAULT_SCENE_CAMERA_ACTOR_ID, "Camera", {
+    transform: {
+      position,
+      rotation:
+        viewportMode === "2d"
+          ? [0, 0, 0, 1]
+          : lookAtRotation(position, [0, 0, 0]),
+      scale: [1, 1, 1],
+    },
+    components: [
+      {
+        id: DEFAULT_SCENE_CAMERA_COMPONENT_ID,
+        classId: "CameraComponent",
+        properties: {
+          fieldOfView: 60,
+          orthographicSize: 5,
+          projectionMode: viewportMode === "2d" ? "orthographic" : "perspective",
+          nearClip: 0.1,
+          farClip: 1000,
+          attemptPossessViewTarget: true,
+        },
+        parentId: null,
+        transform: identitySerializedTransform(),
+      },
+    ],
+  });
+}
+
 export function createDefaultScene(
   viewportMode: ViewportMode = "3d",
 ): SerializedScene {
+  const camera = createDefaultCameraActor(viewportMode);
+  const actors =
+    viewportMode === "2d"
+      ? [camera]
+      : [
+          createActor("actor-1", "Cube", {
+            components: [createMeshComponent("component-1", "box")],
+          }),
+          camera,
+        ];
   return {
     name: "Main",
     viewportMode,
-    settings: createDefaultSceneSettings(viewportMode),
+    settings: {
+      ...createDefaultSceneSettings(viewportMode),
+      mainCameraActorId: camera.id,
+      mainCameraComponentId: DEFAULT_SCENE_CAMERA_COMPONENT_ID,
+    },
     folders: [],
-    actors:
-      viewportMode === "2d"
-        ? []
-        : [
-            createActor("actor-1", "Cube", {
-              components: [createMeshComponent("component-1", "box")],
-            }),
-          ],
+    actors,
   };
 }
 

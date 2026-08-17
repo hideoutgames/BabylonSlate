@@ -14,7 +14,7 @@ export interface HardwareScalingOptions {
  */
 export class HardwareScalingController {
   private readonly engine: Engine;
-  private readonly minLevel: number;
+  private minLevel: number;
   private readonly maxLevel: number;
   private readonly targetFrameMs: number;
   private readonly cooldownFrames: number;
@@ -28,7 +28,7 @@ export class HardwareScalingController {
     this.maxLevel = options.maxLevel ?? 2;
     this.targetFrameMs = options.targetFrameMs ?? 1000 / 60;
     this.cooldownFrames = options.cooldownFrames ?? 30;
-    this.level = 1;
+    this.level = Number.NaN;
     this.setLevel(options.initialLevel ?? 1);
   }
 
@@ -36,8 +36,21 @@ export class HardwareScalingController {
     return this.level;
   }
 
+  /**
+   * Engine Settings hardware scaling is both the current level and the valve
+   * floor. Live settings changes must call this so cheap frames cannot hunt
+   * back below the user's choice.
+   */
+  setSettingsLevel(level: number): void {
+    if (!Number.isFinite(level) || level <= 0) return;
+    this.minLevel = Math.min(this.maxLevel, level);
+    this.setLevel(level);
+  }
+
   setLevel(level: number): void {
-    this.level = Math.min(this.maxLevel, Math.max(this.minLevel, level));
+    const next = Math.min(this.maxLevel, Math.max(this.minLevel, level));
+    if (next === this.level) return;
+    this.level = next;
     this.engine.setHardwareScalingLevel(this.level);
   }
 

@@ -220,6 +220,39 @@ describe("Play createEngine view", () => {
     expect(handle.scaling.getLevel()).toBe(1.5);
   });
 
+  it("does not supersample below the Engine Settings hardware scaling floor", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      hardwareScalingLevel: 1,
+      frameCap: 30,
+    });
+    handles.push(handle);
+    for (let i = 0; i < 40; i++) {
+      handle.scaling.noteFrameTime(4);
+    }
+    expect(handle.scaling.getLevel()).toBe(1);
+  });
+
+  it("uses the view frame cap as the scaling valve target", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      hardwareScalingLevel: 1,
+      frameCap: 30,
+    });
+    handles.push(handle);
+    // 20ms is slow vs 60fps (16.7ms) but cheap vs a 30fps cap (33ms).
+    for (let i = 0; i < 40; i++) {
+      handle.scaling.noteFrameTime(20);
+    }
+    expect(handle.scaling.getLevel()).toBe(1);
+  });
+
   it("attaches an authored post-process stack when the local gate is on", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -310,6 +343,105 @@ describe("Play createEngine view", () => {
     const mesh = handle.scene.getMeshByName("actor-1");
     expect(mesh?.material?.name).toContain("mat-1");
     expect(handle.assignedMaterialGuids()).toEqual(["mat-1"]);
+  });
+
+  it("records a mesh material after a possessing Default Camera is assigned", () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 0,
+      meshKind: "box",
+      meshAssetGuid: null,
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        isDefault: true,
+      },
+    });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 2,
+      meshKind: "box",
+      meshAssetGuid: null,
+    });
+    handle.applyCommand({
+      type: "assignMaterial",
+      slotId: 2,
+      materialAssetGuid: "mat-rock",
+    });
+    expect(handle.assignedMaterialGuids()).toEqual(["mat-rock"]);
+  });
+
+  it("keeps assigned materials when an unpublished snapshot arrives before the first tick", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(handle);
+    const callback = runRenderLoop.mock.calls[0]?.[0];
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 0,
+      meshKind: "box",
+      meshAssetGuid: null,
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        isDefault: true,
+      },
+    });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 2,
+      meshKind: "box",
+      meshAssetGuid: null,
+    });
+    handle.applyCommand({
+      type: "assignMaterial",
+      slotId: 2,
+      materialAssetGuid: "mat-rock",
+    });
+    handle.pushSnapshot(new Float32Array(snapshotFloatCount(8)));
+    callback?.();
+    expect(handle.assignedMaterialGuids()).toEqual(["mat-rock"]);
+
+    const live = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(live, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 3,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    for (const slotId of [0, 1, 2]) {
+      writeActorSlot(live, slotId, {
+        slotId,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+        flags: 1,
+      });
+    }
+    handle.pushSnapshot(live);
+    callback?.();
+    expect(handle.assignedMaterialGuids()).toEqual(["mat-rock"]);
   });
 
   it("moves the post-process stack onto the authored Default Camera", () => {

@@ -52,11 +52,12 @@ describe("scene-loader", () => {
     return handle;
   }
 
-  it("creates one mesh per actor from default scene data", () => {
+  it("creates editor meshes for the default cube and camera", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());
-    expect(countSceneMeshes(scene)).toBe(1);
     expect(scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
+    expect(scene.getMeshByName(editorMeshName("actor-camera"))).not.toBeNull();
+    expect(countSceneMeshes(scene)).toBeGreaterThan(1);
   });
 
   it("replaces meshes when loading a new scene", () => {
@@ -153,7 +154,9 @@ describe("scene-loader", () => {
         createActor("lamp", "Point Light", { components: [lightComponent()] }),
       ]),
     );
-    const mesh = scene.getMeshByName(editorMeshName("lamp"));
+    const origin = scene.getMeshByName(editorMeshName("lamp"));
+    const mesh = scene.getMeshByName(editorComponentMeshName("lamp", "light"));
+    expect(origin!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
     expect(mesh).not.toBeNull();
     expect(mesh!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(
@@ -186,8 +189,11 @@ describe("scene-loader", () => {
         }),
       ]),
     );
-    const camera = scene.getMeshByName(editorMeshName("cam"));
-    const audio = scene.getMeshByName(editorMeshName("spk"));
+    const camera = scene.getMeshByName(editorComponentMeshName("cam", "camera"));
+    const audio = scene.getMeshByName(editorComponentMeshName("spk", "audio"));
+    expect(scene.getMeshByName(editorMeshName("cam"))!.billboardMode).toBe(
+      Mesh.BILLBOARDMODE_NONE,
+    );
     expect(camera!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(
       (camera!.metadata as { editorBillboard?: string }).editorBillboard,
@@ -196,6 +202,38 @@ describe("scene-loader", () => {
     expect(
       (audio!.metadata as { editorBillboard?: string }).editorBillboard,
     ).toBe("audio");
+  });
+
+  it("parents camera, light, and audio billboards under a non-billboard origin", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("cam", "Camera", {
+          transform: {
+            position: [1, 2, 3],
+            rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2],
+            scale: [1, 1, 1],
+          },
+          components: [
+            {
+              id: "camera",
+              classId: "CameraComponent",
+              properties: {},
+            },
+          ],
+        }),
+      ]),
+    );
+    const origin = scene.getMeshByName(editorMeshName("cam"));
+    const icon = scene.getMeshByName(editorComponentMeshName("cam", "camera"));
+    expect(origin!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    expect(origin!.rotationQuaternion!.y).toBeCloseTo(Math.SQRT1_2, 5);
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(icon!.parent).toBe(origin);
+    expect(
+      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("camera");
   });
 
   it("keeps a MeshComponent visual when the actor also has a LightComponent", () => {
@@ -226,7 +264,7 @@ describe("scene-loader", () => {
         }),
       ]),
     );
-    const mesh = scene.getMeshByName(editorMeshName("lamp"))!;
+    const mesh = scene.getMeshByName(editorComponentMeshName("lamp", "light"))!;
     const material = mesh.material as StandardMaterial;
     expect(material.emissiveColor.r).toBeCloseTo(1);
     expect(material.emissiveColor.g).toBeCloseTo(0.2);

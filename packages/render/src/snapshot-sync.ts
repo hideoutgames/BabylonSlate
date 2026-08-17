@@ -1,4 +1,5 @@
 import {
+  isPublishedSnapshot,
   readActorSlot,
   readSnapshotHeader,
   type ActorSlot,
@@ -46,6 +47,7 @@ export class SnapshotInterpolator {
   }
 
   push(buffer: Float32Array): void {
+    if (!isPublishedSnapshot(buffer)) return;
     if (!this.next) {
       this.next = buffer.slice();
       return;
@@ -55,10 +57,10 @@ export class SnapshotInterpolator {
   }
 
   sample(alpha: number): SampledSnapshot | null {
-    if (!this.next) return null;
+    if (!this.next || !isPublishedSnapshot(this.next)) return null;
     const t = Math.min(1, Math.max(0, alpha));
     const nextHeader = readSnapshotHeader(this.next);
-    if (!this.prev || t >= 1) {
+    if (!this.prev || t >= 1 || !isPublishedSnapshot(this.prev)) {
       const count = Math.min(nextHeader.actorCount, this.maxActors);
       for (let i = 0; i < count; i++) {
         copySlot(readActorSlot(this.next, i), this.scratch[i]!);

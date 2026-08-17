@@ -1,4 +1,4 @@
-import { Material, PointLight, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Material, PointLight, Quaternion, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
@@ -170,6 +170,78 @@ describe("createPlayMesh", () => {
       expect((camera as { position: { x: number; y: number; z: number } }).position.x).toBeCloseTo(3);
       expect((camera as { position: { y: number } }).position.y).toBeCloseTo(4);
     }
+  });
+
+  it("possesses a camera created by assignMesh before the first snapshot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    setupDefaultViewport(scene);
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: true, projectionMode: "perspective" },
+    });
+    applyPossessCamera(scene, binding, 0);
+    expect(binding.cameras.get(0)).toBeDefined();
+    expect(scene.activeCamera?.name).toBe("authoredCamera:0");
+  });
+
+  it("applies camera component rotation on top of the actor snapshot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const yaw: [number, number, number, number] = [
+      0,
+      Math.SQRT1_2,
+      0,
+      Math.SQRT1_2,
+    ];
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { projectionMode: "perspective" },
+      parts: [
+        {
+          componentId: "cam",
+          meshKind: "camera",
+          meshAssetGuid: null,
+          parentId: null,
+          position: [0, 0, 0],
+          rotation: yaw,
+          scale: [1, 1, 1],
+        },
+      ],
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    const camera = binding.cameras.get(0) as UniversalCamera;
+    const expected = Vector3.Forward().applyRotationQuaternion(
+      new Quaternion(...yaw),
+    );
+    const forward = camera.getDirection(Vector3.Forward());
+    expect(forward.x).toBeCloseTo(expected.x, 5);
+    expect(forward.y).toBeCloseTo(expected.y, 5);
+    expect(forward.z).toBeCloseTo(expected.z, 5);
   });
 
   it("applies authored light color and intensity from assignMesh", () => {
@@ -455,6 +527,31 @@ describe("createPlayMesh", () => {
     const rebuilt = binding.meshes.get(7);
     expect(rebuilt?.isVisible).toBe(true);
     expect(rebuilt!.getTotalVertices()).not.toBe(placeholderVertices);
+  });
+
+  it("creates a visible box primitive when assignMesh arrives before the first snapshot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "box",
+    });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshAssetGuid: null,
+      meshKind: "sphere",
+    });
+    const box = binding.meshes.get(0);
+    const sphere = binding.meshes.get(1);
+    expect(box?.isVisible).toBe(true);
+    expect(sphere?.isVisible).toBe(true);
+    expect(box!.getTotalVertices()).not.toBe(sphere!.getTotalVertices());
+    expect(box!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(0.2);
   });
 
   it("parents assignMesh parts under the snapshot-driven actor origin", () => {

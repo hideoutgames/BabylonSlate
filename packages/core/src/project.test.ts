@@ -77,6 +77,25 @@ describe("project schema", () => {
     expect(createDefaultGraph().nodes.length).toBeGreaterThan(0);
   });
 
+  it("seeds a 3D default scene with a cube and a possessing Default Camera", () => {
+    const scene = createDefaultScene();
+    const cube = scene.actors.find((actor) => actor.id === "actor-1");
+    const camera = scene.actors.find((actor) =>
+      actor.components.some((component) => component.classId === "CameraComponent"),
+    );
+    expect(cube?.name).toBe("Cube");
+    expect(camera).toBeDefined();
+    const cameraComponent = camera!.components.find(
+      (component) => component.classId === "CameraComponent",
+    );
+    expect(cameraComponent?.properties.attemptPossessViewTarget).toBe(true);
+    expect(cameraComponent?.properties.projectionMode).toBe("perspective");
+    expect(scene.settings.mainCameraActorId).toBe(camera!.id);
+    expect(scene.settings.mainCameraComponentId).toBe(cameraComponent!.id);
+    expect(camera!.transform.position[2]).toBeLessThan(0);
+    expect(camera!.transform.position[1]).toBeGreaterThan(0);
+  });
+
   it("creates a 2D project without a cube and with pixel-perfect units", () => {
     const project = createEmptyProject("SideScroller", { kind: "2d" });
     expect(project.settings.twoD.pixelPerfect).toBe(true);
@@ -84,7 +103,17 @@ describe("project schema", () => {
     const scene = createDefaultScene("2d");
     expect(scene.viewportMode).toBe("2d");
     expect(scene.settings.physicsWorld).toBe("2d");
-    expect(scene.actors).toEqual([]);
+    expect(scene.actors.some((actor) => actor.name === "Cube")).toBe(false);
+    const camera = scene.actors.find((actor) =>
+      actor.components.some((component) => component.classId === "CameraComponent"),
+    );
+    expect(camera).toBeDefined();
+    expect(camera!.transform.position).toEqual([0, 0, -8]);
+    expect(
+      camera!.components[0]?.properties.attemptPossessViewTarget,
+    ).toBe(true);
+    expect(camera!.components[0]?.properties.projectionMode).toBe("orthographic");
+    expect(scene.settings.mainCameraActorId).toBe(camera!.id);
   });
 
   it("normalizes graph class members and drops invalid rows", () => {

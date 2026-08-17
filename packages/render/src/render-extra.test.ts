@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NullEngine, Scene } from "@babylonjs/core";
 import {
   createDefaultTilemapPayload,
@@ -19,7 +19,7 @@ describe("hardware scaling", () => {
   it("drops a hardware scaling tier and applies an initial Engine Settings level", () => {
     const engine = new NullEngine();
     const scaling = new HardwareScalingController(engine, {
-      minLevel: 0.25,
+      minLevel: 1,
       maxLevel: 2,
       cooldownFrames: 0,
       initialLevel: 1.5,
@@ -27,6 +27,70 @@ describe("hardware scaling", () => {
     expect(scaling.getLevel()).toBe(1.5);
     scaling.dropTier();
     expect(scaling.getLevel()).toBe(1.75);
+    engine.dispose();
+  });
+
+  it("does not call setHardwareScalingLevel when the clamped level is unchanged", () => {
+    const engine = new NullEngine();
+    const scaling = new HardwareScalingController(engine, {
+      minLevel: 1,
+      maxLevel: 4,
+      initialLevel: 1,
+    });
+    const apply = vi.spyOn(engine, "setHardwareScalingLevel");
+    const calls = apply.mock.calls.length;
+    scaling.setLevel(1);
+    expect(apply.mock.calls.length).toBe(calls);
+    engine.dispose();
+  });
+
+  it("does not hunt below the Engine Settings floor on cheap frames", () => {
+    const engine = new NullEngine();
+    const scaling = new HardwareScalingController(engine, {
+      minLevel: 1,
+      maxLevel: 4,
+      cooldownFrames: 0,
+      initialLevel: 1,
+      targetFrameMs: 1000 / 30,
+    });
+    for (let i = 0; i < 20; i++) {
+      scaling.noteFrameTime(4);
+    }
+    expect(scaling.getLevel()).toBe(1);
+    engine.dispose();
+  });
+
+  it("raises the floor when Engine Settings hardware scaling changes so the valve cannot hunt back", () => {
+    const engine = new NullEngine();
+    const scaling = new HardwareScalingController(engine, {
+      minLevel: 1,
+      maxLevel: 4,
+      cooldownFrames: 0,
+      initialLevel: 1,
+      targetFrameMs: 1000 / 30,
+    });
+    scaling.setSettingsLevel(2);
+    expect(scaling.getLevel()).toBe(2);
+    for (let i = 0; i < 20; i++) {
+      scaling.noteFrameTime(4);
+    }
+    expect(scaling.getLevel()).toBe(2);
+    engine.dispose();
+  });
+
+  it("steps toward maxLevel on slow frames after cooldown", () => {
+    const engine = new NullEngine();
+    const scaling = new HardwareScalingController(engine, {
+      minLevel: 1,
+      maxLevel: 4,
+      cooldownFrames: 30,
+      initialLevel: 1,
+      targetFrameMs: 1000 / 60,
+    });
+    for (let i = 0; i < 5; i++) {
+      scaling.noteFrameTime(40);
+    }
+    expect(scaling.getLevel()).toBe(1.25);
     engine.dispose();
   });
 
