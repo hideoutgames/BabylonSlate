@@ -10,7 +10,14 @@ import {
   type Node,
   type Scene,
 } from "@babylonjs/core";
-import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";
+import {
+  identitySerializedTransform,
+  type SerializedActor,
+  type SerializedComponent,
+  type SerializedScene,
+} from "@babylonslate/core";
+import { composeActorComponentTransform } from "./scene-illumination";
+import { editorMeshName } from "./scene-loader";
 
 export const CAMERA_PREVIEW_INTERVAL_MS = 1000;
 export const CAMERA_PREVIEW_WIDTH = 320;
@@ -38,6 +45,14 @@ function actorForward(actor: SerializedActor): Vector3 {
   return Vector3.Forward().applyRotationQuaternion(actorRotation(actor));
 }
 
+const FRUSTUM_ASPECT = 16 / 9;
+const DEBUG_FAR_MIN = 8;
+const DEBUG_FAR_NEAR_SCALE = 40;
+
+function debugFarDistance(nearClip: number, farClip: number): number {
+  return Math.min(farClip, Math.max(DEBUG_FAR_MIN, nearClip * DEBUG_FAR_NEAR_SCALE));
+}
+
 function asNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -59,32 +74,29 @@ function dashedLines(
   return mesh;
 }
 
-function buildFrustumPoints(
-  actor: SerializedActor,
-  component: SerializedComponent,
-): Vector3[] {
-  const origin = actorPosition(actor);
-  const rotation = actorRotation(actor);
-  const ortho = asNumber(component.properties.orthographicSize, 0);
-  const near = 0.25;
-  const far = 8;
+function buildFrustumCornersLocal(component: SerializedComponent): Vector3[] {
+  const near = Math.max(0.01, asNumber(component.properties.nearClip, 0.1));
+  const farClip = Math.max(near + 0.01, asNumber(component.properties.farClip, 1000));
+  const far = debugFarDistance(near, farClip);
   let nearH: number;
   let nearW: number;
   let farH: number;
   let farW: number;
-  if (ortho > 0) {
+  if (component.properties.projectionMode === "orthographic") {
+    const ortho = Math.max(0.01, asNumber(component.properties.orthographicSize, 5));
     nearH = ortho;
     farH = ortho;
-    nearW = ortho * (16 / 9);
+    nearW = ortho * FRUSTUM_ASPECT;
     farW = nearW;
   } else {
     const fov = (asNumber(component.properties.fieldOfView, 60) * Math.PI) / 180;
-    nearH = Math.tan(fov / 2) * near;
-    farH = Math.tan(fov / 2) * far;
-    nearW = nearH * (16 / 9);
-    farW = farH * (16 / 9);
+    const t = Math.tan(fov / 2);
+    nearH = t * near;
+    farH = t * far;
+    nearW = nearH * FRUSTUM_ASPECT;
+    farW = farH * FRUSTUM_ASPECT;
   }
-  const local = [
+  return [
     new Vector3(-nearW, -nearH, near),
     new Vector3(nearW, -nearH, near),
     new Vector3(nearW, nearH, near),
@@ -94,9 +106,6 @@ function buildFrustumPoints(
     new Vector3(farW, farH, far),
     new Vector3(-farW, farH, far),
   ];
-  return local.map((point) =>
-    origin.add(point.applyRotationQuaternion(rotation)),
-  );
 }
 
 function ringPoints(center: Vector3, axis: Vector3, radius: number, segments = 32): Vector3[] {
@@ -207,8 +216,25 @@ export class EditorDebugOverlay {
   }
 
   private buildCameraDebug(actor: SerializedActor, component: SerializedComponent): void {
+    const composed = composeActorComponentTransform(actor, component);
     const root = new TransformNode(`debugFrustum:${actor.id}`, this.scene);
-    const corners = buildFrustumPoints(actor, component);
+    const origin = this.scene.getMeshByName(editorMeshName(actor.id));
+    if (origin) {
+      const local = component.transform ?? identitySerializedTransform();
+      root.parent = origin;
+      root.position.set(local.position[0], local.position[1], local.position[2]);
+      root.rotationQuaternion = new Quaternion(
+        local.rotation[0],
+        local.rotation[1],
+        local.rotation[2],
+        local.rotation[3],
+      );
+      root.scaling.set(local.scale[0], local.scale[1], local.scale[2]);
+    } else {
+      root.position.copyFrom(composed.position);
+      root.rotationQuaternion = composed.rotation.clone();
+    }
+    const corners = buildFrustumCornersLocal(component);
     const edges: Array<[number, number]> = [
       [0, 1], [1, 2], [2, 3], [3, 0],
       [4, 5], [5, 6], [6, 7], [7, 4],
@@ -226,21 +252,22 @@ export class EditorDebugOverlay {
 
     const camera = new FreeCamera(
       `debugPreviewCam:${actor.id}`,
-      actorPosition(actor),
+      composed.position.clone(),
       this.scene,
       false,
     );
-    camera.minZ = 0.1;
-    camera.maxZ = 100;
+    camera.minZ = Math.max(0.01, asNumber(component.properties.nearClip, 0.1));
+    camera.maxZ = Math.max(camera.minZ + 0.01, asNumber(component.properties.farClip, 1000));
     camera.fov = (asNumber(component.properties.fieldOfView, 60) * Math.PI) / 180;
-    camera.rotationQuaternion = actorRotation(actor);
-    const ortho = asNumber(component.properties.orthographicSize, 0);
-    if (ortho > 0) {
+    camera.rotationQuaternion = composed.rotation.clone();
+    camera.rotation.set(0, 0, 0);
+    if (component.properties.projectionMode === "orthographic") {
+      const ortho = Math.max(0.01, asNumber(component.properties.orthographicSize, 5));
       camera.mode = 1;
       camera.orthoTop = ortho;
       camera.orthoBottom = -ortho;
-      camera.orthoLeft = -ortho * (16 / 9);
-      camera.orthoRight = ortho * (16 / 9);
+      camera.orthoLeft = -ortho * FRUSTUM_ASPECT;
+      camera.orthoRight = ortho * FRUSTUM_ASPECT;
     }
     this.previewCamera = camera;
     const rtt = new RenderTargetTexture(

@@ -113,7 +113,7 @@ function actorRotation(actor: SerializedActor): Quaternion {
   return new Quaternion(x, y, z, w);
 }
 
-function composeActorComponentTransform(
+export function composeActorComponentTransform(
   actor: SerializedActor,
   component: SerializedComponent | undefined,
 ): { position: Vector3; rotation: Quaternion } {
