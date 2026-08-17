@@ -293,6 +293,8 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("settings-modal-category-input").click();
     await expect(page.getByTestId("settings-input-mapping")).toBeVisible();
     await expect(page.getByTestId("settings-input-actions")).toHaveCount(0);
+    await expect(page.getByTestId("input-action-0-binding-0-code")).toBeVisible();
+    await expect(page.getByText(/press a key/i)).toHaveCount(0);
   });
 
   test("Play overlay stick drives the same Move.x as the gamepad path", async ({
