@@ -16,6 +16,7 @@ import {
   childrenOfPrefabParent,
   type PrefabComponentView,
 } from "../lib/prefab-preview";
+import { applyPrefabTreeSelect } from "../lib/prefab-tree-select";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
 
@@ -76,7 +77,8 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   const {
     components,
     selectedId,
-    setSelectedId,
+    selectedIds,
+    setSelectedIds,
     addComponent,
     removeSelected,
     reparentComponent,
@@ -90,9 +92,11 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     [collapsed, components],
   );
 
-  const selectedInherited = Boolean(
-    components.find((component) => component.id === selectedId)?.inheritedFrom,
-  );
+  const canRemove = selectedIds.some((id) => {
+    if (id === PREFAB_ROOT_ID) return false;
+    const row = components.find((component) => component.id === id);
+    return Boolean(row && !row.inheritedFrom);
+  });
 
   return (
     <PanelFrame
@@ -108,11 +112,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           </IconActionButton>
           <IconActionButton
             label="Remove component"
-            disabled={
-              !selectedId ||
-              selectedId === PREFAB_ROOT_ID ||
-              selectedInherited
-            }
+            disabled={!canRemove}
             onClick={removeSelected}
             data-testid="prefab-remove-component"
           >
@@ -125,9 +125,18 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         <TreeView
           nodes={nodes}
           selectedId={selectedId}
-          onSelect={(id) => {
-            setSelectedId(id);
-            if (id && id !== PREFAB_ROOT_ID) {
+          selectedIds={selectedIds}
+          onSelect={(id, options) => {
+            if (!id) return;
+            const next = applyPrefabTreeSelect({
+              visibleIds: nodes.map((node) => node.id),
+              selectedIds,
+              id,
+              additive: options?.additive,
+              range: options?.range,
+            });
+            setSelectedIds(next);
+            if (next.some((entry) => entry !== PREFAB_ROOT_ID)) {
               setSelectedMemberId(null);
               setSelectedNodeIds([]);
             }
