@@ -48,9 +48,7 @@ describe("collectUiImageUrls", () => {
 
 describe("mimeForUiTexture", () => {
   it("prefers an image/* chunk MIME over a generic fallback", () => {
-    expect(mimeForUiTexture("image/webp", "assets/a.texture.babasset")).toBe(
-      "image/webp",
-    );
-    expect(mimeForUiTexture("application/octet-stream", "x")).toBe("image/png");
+    expect(mimeForUiTexture("image/webp")).toBe("image/webp");
+    expect(mimeForUiTexture("application/octet-stream")).toBe("image/png");
   });
 });

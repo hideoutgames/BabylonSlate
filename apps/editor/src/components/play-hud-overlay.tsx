@@ -18,7 +18,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
 import { playJoystickAxesFromPointer } from "../lib/play-hud-joystick";
 
-const defaultResolveImageUrl = (_guid: string): string | null => null;
+const defaultResolveImageUrl = (): string | null => null;
 
 export interface PlayHudOverlayProps {
   instances?: ReadonlyArray<{

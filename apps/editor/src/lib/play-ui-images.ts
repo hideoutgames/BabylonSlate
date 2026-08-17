@@ -5,10 +5,7 @@ export interface UiTextureAssetSource {
   chunks?: readonly { id: string; mime?: string }[];
 }
 
-export function mimeForUiTexture(
-  mime: string | undefined,
-  _path: string,
-): string {
+export function mimeForUiTexture(mime: string | undefined): string {
   if (mime && mime.startsWith("image/")) return mime;
   return "image/png";
 }
@@ -40,7 +37,6 @@ export async function collectUiImageUrls(
     if (!source || source.byteLength === 0) continue;
     const mime = mimeForUiTexture(
       chunkMime(asset, pixels && pixels.byteLength > 0 ? "pixels" : "source"),
-      asset.path,
     );
     const copy = new Uint8Array(source);
     urls.set(guid, URL.createObjectURL(new Blob([copy], { type: mime })));

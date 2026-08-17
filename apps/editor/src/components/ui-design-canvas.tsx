@@ -60,7 +60,7 @@ import {
 } from "../lib/live-ui-present";
 import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
 
-const defaultResolveImageUrl = (_guid: string): string | null => null;
+const defaultResolveImageUrl = (): string | null => null;
 
 export function UiDesignCanvas({
   ui,
