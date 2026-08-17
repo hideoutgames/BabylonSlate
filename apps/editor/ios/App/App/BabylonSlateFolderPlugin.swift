@@ -151,6 +151,7 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
                 attributes: nil
             )
             var coordinationError: NSError?
+            var operationError: Error?
             let coordinator = NSFileCoordinator(filePresenter: nil)
             let options: NSFileCoordinator.WritingOptions = FileManager.default.fileExists(atPath: url.path)
                 ? [.forReplacing]
@@ -163,8 +164,11 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
                 do {
                     try data.write(to: coordinatedURL, options: .atomic)
                 } catch {
-                    coordinationError = error as NSError
+                    operationError = error
                 }
+            }
+            if let operationError {
+                throw operationError
             }
             if let coordinationError {
                 throw coordinationError
@@ -242,6 +246,7 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
         do {
             let url = try fileURL(for: call)
             var coordinationError: NSError?
+            var operationError: Error?
             let coordinator = NSFileCoordinator(filePresenter: nil)
             coordinator.coordinate(
                 writingItemAt: url,
@@ -255,8 +260,11 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
                         attributes: nil
                     )
                 } catch {
-                    coordinationError = error as NSError
+                    operationError = error
                 }
+            }
+            if let operationError {
+                throw operationError
             }
             if let coordinationError {
                 throw coordinationError
@@ -355,6 +363,7 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
         do {
             let url = try fileURL(for: call)
             var coordinationError: NSError?
+            var operationError: Error?
             let coordinator = NSFileCoordinator(filePresenter: nil)
             coordinator.coordinate(
                 writingItemAt: url,
@@ -364,8 +373,11 @@ public class BabylonSlateFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
                 do {
                     try FileManager.default.removeItem(at: coordinatedURL)
                 } catch {
-                    coordinationError = error as NSError
+                    operationError = error
                 }
+            }
+            if let operationError {
+                throw operationError
             }
             if let coordinationError {
                 throw coordinationError
