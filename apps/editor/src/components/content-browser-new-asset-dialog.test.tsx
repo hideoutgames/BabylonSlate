@@ -78,6 +78,49 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(onParentClassChange).toHaveBeenCalledWith("Actor");
   });
 
+  it("matches Project Settings CatalogDialog shell size", () => {
+    renderDialog();
+    const dialog = screen.getByTestId("content-browser-new-asset-dialog");
+    expect(dialog.className).toContain("h-[min(90vh,52rem)]");
+    expect(dialog.className).toContain("w-[min(96vw,64rem)]");
+    expect(dialog.className).not.toContain("h-[min(85vh,40rem)]");
+    expect(dialog.className).not.toContain("w-[min(96vw,56rem)]");
+  });
+
+  it("uses the Actor icon for Actor subclasses and nested user classes", () => {
+    renderDialog({
+      type: "Class",
+      classAssets: [
+        {
+          path: "assets/Hero.class.babasset",
+          header: { type: "Class", name: "Hero", parentClass: "Actor" },
+        },
+        {
+          path: "assets/Warrior.class.babasset",
+          header: { type: "Class", name: "Warrior", parentClass: "Hero" },
+        },
+      ],
+    });
+    expect(
+      screen
+        .getByTestId("new-asset-parent-Hero")
+        .querySelector("[data-type-icon]")
+        ?.getAttribute("data-type-icon"),
+    ).toBe("Actor");
+    expect(
+      screen
+        .getByTestId("new-asset-parent-Warrior")
+        .querySelector("[data-type-icon]")
+        ?.getAttribute("data-type-icon"),
+    ).toBe("Actor");
+    expect(
+      screen
+        .getByTestId("new-asset-parent-Actor")
+        .querySelector("[data-type-icon]")
+        ?.getAttribute("data-type-icon"),
+    ).toBe("Actor");
+  });
+
   it("lists project Classes in the Parent Class tree and filters by search", () => {
     renderDialog({
       type: "Class",

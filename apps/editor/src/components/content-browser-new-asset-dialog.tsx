@@ -4,6 +4,7 @@ import {
   TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
   resolveTypeVisual,
+  walkAncestry,
 } from "@babylonslate/editor-kit";
 import { MAX_CLASS_INHERITANCE_DEPTH } from "@babylonslate/object-model";
 import { Button } from "@babylonslate/ui/components/button";
@@ -40,6 +41,7 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import {
   CREATABLE_ASSET_TYPE_GROUPS,
   buildParentClassTreeRows,
+  classParentLookup,
   creatableAssetTypeDescription,
   creatableAssetTypeLabel,
   filterCreatableAssetTypes,
@@ -102,6 +104,10 @@ export function ContentBrowserNewAssetDialog({
     });
   }, [search]);
 
+  const parentOf = useMemo(
+    () => classParentLookup(classAssets),
+    [classAssets],
+  );
   const parentRows = useMemo(
     () =>
       buildParentClassTreeRows(classAssets, {
@@ -119,7 +125,7 @@ export function ContentBrowserNewAssetDialog({
       <DialogContent
         data-testid="content-browser-new-asset-dialog"
         initialFocus={bodyRef}
-        className="flex h-[min(85vh,40rem)] w-[min(96vw,56rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+        className="flex h-[min(90vh,52rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
       >
         <DialogHeader className="shrink-0 border-b px-4 py-3 pr-12">
           <DialogTitle>New Asset</DialogTitle>
@@ -308,6 +314,8 @@ export function ContentBrowserNewAssetDialog({
                             <TypeVisualIcon
                               visual={resolveTypeVisual({
                                 classId: row.id,
+                                parentClass: row.parentClassId,
+                                ancestry: walkAncestry(row.id, parentOf),
                                 family: "class",
                               })}
                             />
