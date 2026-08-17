@@ -230,6 +230,7 @@ export async function collectAndExportGame(
     bundleDebugger,
     startupSceneGuid: startup,
     gameInstanceClass: params.gameInstanceClass,
+    audioMixerGuid: params.audioMixerGuid,
     customResolution: params.customResolution,
     playFrameCap: params.playFrameCap,
     pixelsPerUnit: params.pixelsPerUnit,

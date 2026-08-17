@@ -79,7 +79,15 @@ export interface ScriptHostServices {
   applyUserInterface?(assetGuid: string): string;
   removeUserInterface?(instanceId: string): void;
   changeScene?(scene: string): void;
-  playSound?(asset: string, volume?: number): void;
+  playSound?(
+    asset: string,
+    volume?: number,
+    options?: {
+      emitterActorGuid?: string | null;
+      loop?: boolean;
+      voiceId?: string;
+    },
+  ): void;
   setRenderResolution?(width: number, height: number): void;
   possessCamera?(target: unknown): void;
   updateIllumination?(target: unknown): void;
@@ -672,7 +680,9 @@ export class ScriptHost {
         );
       },
       playSound: (asset, volume) => {
-        services.playSound?.(String(asset ?? ""), Number(volume ?? 1));
+        services.playSound?.(String(asset ?? ""), Number(volume ?? 1), {
+          emitterActorGuid: self?.guid ?? null,
+        });
       },
       setWidgetVisible: (widget, visible) => {
         services.setWidgetVisible?.(widget, visible);

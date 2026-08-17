@@ -1,3 +1,5 @@
+import { concatBytes, readU32LE, writeU32LE } from "./bytes";
+
 /** A16-oriented audio budgets (engineplan §2.6). */
 export const AUDIO_OCCUPANCY_GRID_MAX_X = 24;
 export const AUDIO_OCCUPANCY_GRID_MAX_Y = 24;
@@ -363,6 +365,72 @@ export function audioAssetDependencies(
   return [];
 }
 
+export type AudioPlaybackResolution = {
+  gain: number;
+  channelGuids: string[];
+  environmentReverb: boolean;
+};
+
+export function resolveAudioPlayback(options: {
+  audio: AudioPayload;
+  playCallVolume: number;
+  mixer: AudioMixerPayload | null;
+  channels: ReadonlyMap<string, AudioChannelPayload>;
+  sessionChannelVolumes?: ReadonlyMap<string, number>;
+  sessionGlobalVolume?: number | null;
+}): AudioPlaybackResolution {
+  const channelGuids: string[] = [];
+  let environmentReverb = false;
+  const start = options.audio.audioChannelGuid;
+  if (start) {
+    const seen = new Set<string>();
+    let current: string | null = start;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      channelGuids.push(current);
+      const channel = options.channels.get(current);
+      if (
+        channel?.effects.some(
+          (effect) => effect.kind === "environmentReverb" && effect.enabled,
+        )
+      ) {
+        environmentReverb = true;
+      }
+      current = channel?.parentChannelGuid ?? null;
+    }
+  }
+  const mixer = options.mixer;
+  const channelGains: number[] = [];
+  if (mixer) {
+    const byGuid = new Map(
+      mixer.channels.map((entry) => [entry.channelGuid, entry.volume] as const),
+    );
+    for (const guid of channelGuids) {
+      const session = options.sessionChannelVolumes?.get(guid);
+      const fallback = byGuid.get(guid);
+      if (session !== undefined) channelGains.push(clampAudioGain(session));
+      else if (fallback !== undefined) channelGains.push(clampAudioGain(fallback));
+    }
+  }
+  const globalGain =
+    mixer === null
+      ? undefined
+      : options.sessionGlobalVolume !== undefined &&
+          options.sessionGlobalVolume !== null
+        ? options.sessionGlobalVolume
+        : mixer.globalVolume;
+  return {
+    gain: computeAudioOutputGain({
+      assetVolume: options.audio.volume,
+      playCallVolume: options.playCallVolume,
+      channelGains: mixer ? channelGains : undefined,
+      globalGain,
+    }),
+    channelGuids,
+    environmentReverb,
+  };
+}
+
 export function computeAudioOutputGain(options: {
   assetVolume: number;
   playCallVolume: number;
@@ -455,4 +523,45 @@ export function remapAudioPayloadGuids(
     };
   }
   return payload;
+}
+
+const PACKED_AUDIO_MAGIC = new Uint8Array([0x42, 0x53, 0x41, 0x55]); // BSAU
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+/** Pack Audio JSON payload with source bytes so export can ship both. */
+export function encodePackedAudioAsset(
+  payload: AudioPayload,
+  source: Uint8Array,
+): Uint8Array {
+  const json = encoder.encode(JSON.stringify(normalizeAudioPayload(payload)));
+  return concatBytes([
+    PACKED_AUDIO_MAGIC,
+    writeU32LE(json.byteLength),
+    json,
+    source,
+  ]);
+}
+
+/** Unwrap a packed Audio envelope; raw WAV/MP3/OGG returns null. */
+export function decodePackedAudioAsset(
+  bytes: Uint8Array,
+): { payload: AudioPayload; source: Uint8Array } | null {
+  if (bytes.byteLength < 8) return null;
+  for (let i = 0; i < PACKED_AUDIO_MAGIC.length; i++) {
+    if (bytes[i] !== PACKED_AUDIO_MAGIC[i]) return null;
+  }
+  const jsonLen = readU32LE(bytes, 4);
+  const jsonStart = 8;
+  const jsonEnd = jsonStart + jsonLen;
+  if (jsonLen < 0 || jsonEnd > bytes.byteLength) return null;
+  try {
+    const parsed = JSON.parse(decoder.decode(bytes.subarray(jsonStart, jsonEnd)));
+    return {
+      payload: normalizeAudioPayload(parsed),
+      source: bytes.subarray(jsonEnd),
+    };
+  } catch {
+    return null;
+  }
 }

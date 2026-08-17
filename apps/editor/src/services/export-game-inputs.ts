@@ -3,7 +3,12 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { selectTextureChunk, type IndexedAsset } from "@babylonslate/assets";
+import {
+  encodePackedAudioAsset,
+  normalizeAudioPayload,
+  selectTextureChunk,
+  type IndexedAsset,
+} from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
 const JSON_TYPES = new Set([
@@ -59,6 +64,14 @@ async function bytesForAsset(
       return null;
     }
   }
+  if (asset.header.type === "Audio") {
+    const source = await readAssetChunk(asset.path, "source");
+    if (!source || source.byteLength === 0) return null;
+    return encodePackedAudioAsset(
+      normalizeAudioPayload(document ?? asset.header.payload),
+      source,
+    );
+  }
   for (const chunk of asset.header.chunks) {
     if (chunk.id === "document") continue;
     const bytes = await readAssetChunk(asset.path, chunk.id);
@@ -78,7 +91,13 @@ export async function loadExportDocuments(
   for (const asset of loaders.assets) {
     const kind = documentKindForAssetType(asset.header.type);
     let document: unknown = null;
-    if (
+    if (asset.header.type === "Audio") {
+      try {
+        document = await loaders.loadDocument("asset-settings", asset.path);
+      } catch {
+        document = asset.header.payload;
+      }
+    } else if (
       kind &&
       kind !== "asset-settings" &&
       (JSON_TYPES.has(asset.header.type) ||

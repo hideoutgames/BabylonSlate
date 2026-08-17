@@ -199,6 +199,7 @@ import {
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
 } from "../lib/play-content";
+import { playAudioLibraryFromAssets } from "../lib/play-audio";
 import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
   clearDocumentDirtyTrace,
@@ -398,6 +399,11 @@ interface DocumentContextValue {
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, Uint8Array>>;
+  /** Audio source bytes and mixer/channel/attenuation library for Play. */
+  collectPlayAudio: () => Promise<{
+    bytes: Map<string, Uint8Array>;
+    library: import("../lib/play-audio").PlayAudioLibrary;
+  }>;
   /** Surface and post-process materials plus transitive Material Functions. */
   collectPlayMaterialLibrary: (
     scene?: SerializedScene | null,
@@ -2059,7 +2065,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "tileset"
         | "tilemap"
         | "material"
-        | "material-function",
+        | "material-function"
+        | "audio-mixer"
+        | "audio-channel"
+        | "sound-attenuation"
+        | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {
       const openDoc = documentService
@@ -2301,6 +2311,47 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [projectService],
   );
+
+  const collectPlayAudio = useCallback(async () => {
+    const assets = projectService.registry?.list() ?? [];
+    const audioAssets = assets.filter((asset) =>
+      ["Audio", "AudioMixer", "AudioChannel", "SoundAttenuation"].includes(
+        asset.header.type,
+      ),
+    );
+    const payloads: Array<{ guid: string; type: string; payload: unknown }> = [];
+    const bytes = new Map<string, Uint8Array>();
+    for (const asset of audioAssets) {
+      const kind =
+        asset.header.type === "AudioMixer"
+          ? "audio-mixer"
+          : asset.header.type === "AudioChannel"
+            ? "audio-channel"
+            : asset.header.type === "SoundAttenuation"
+              ? "sound-attenuation"
+              : "asset-settings";
+      const content =
+        (await loadPlayAssetContent(kind, asset.path)) ?? asset.header.payload;
+      payloads.push({
+        guid: asset.header.guid,
+        type: asset.header.type,
+        payload: content,
+      });
+      if (asset.header.type === "Audio") {
+        const source = await projectService.readAssetChunk(asset.path, "source");
+        if (source && source.byteLength > 0) {
+          bytes.set(asset.header.guid, source);
+        }
+      }
+    }
+    return {
+      bytes,
+      library: playAudioLibraryFromAssets({
+        mixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
+        assets: payloads,
+      }),
+    };
+  }, [loadPlayAssetContent, projectDocument, projectService]);
 
   const collectPlayMaterialLibrary = useCallback(
     async (
@@ -3253,6 +3304,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayAudio,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       loadGraphDocument,
@@ -3297,6 +3349,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayAudio,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       loadGraphDocument,

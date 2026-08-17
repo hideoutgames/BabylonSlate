@@ -77,6 +77,7 @@ export default defineConfig({
         // renderer adapter is unit-tested with a fake IPC bridge.
         // Needs a real WebGL context; covered by the Playwright viewport specs.
         "**/create-engine.ts",
+        "**/babylon-audio-backend.ts",
         // Standalone CreateFullscreenUI + Canvas2D blit; covered by Playwright HUD / designer.
         "**/ui-surface.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.

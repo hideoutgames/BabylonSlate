@@ -254,7 +254,13 @@ export type CommandMessage =
       assetGuid: string;
       volume: number;
       frameId: number;
+      emitterActorGuid?: string | null;
+      loop?: boolean;
+      voiceId?: string;
     }
+  | { type: "stopSound"; voiceId: string }
+  | { type: "setChannelVolume"; channelGuid: string; volume: number }
+  | { type: "setGlobalVolume"; volume: number }
   | {
       type: "setRenderResolution";
       width: number;

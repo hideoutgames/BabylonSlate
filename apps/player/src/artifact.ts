@@ -12,6 +12,11 @@ import {
   type PackSource,
 } from "@babylonslate/exporter";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import {
+  decodePackedAudioAsset,
+  normalizeAudioPayload,
+  type AudioPayload,
+} from "@babylonslate/assets";
 
 const decoder = new TextDecoder();
 
@@ -24,6 +29,7 @@ export type LoadedGame = {
   fontBytes: Map<string, Uint8Array>;
   fontFamilies: Map<string, string>;
   audioBytes: Map<string, Uint8Array>;
+  audioPayloads: Map<string, AudioPayload>;
   payloads: Map<string, Uint8Array>;
   navmeshBytes: Map<string, Uint8Array>;
 };
@@ -78,6 +84,7 @@ export async function loadGameFromFiles(
   const fontBytes = new Map<string, Uint8Array>();
   const fontFamilies = new Map<string, string>();
   const audioBytes = new Map<string, Uint8Array>();
+  const audioPayloads = new Map<string, AudioPayload>();
   const payloads = new Map<string, Uint8Array>();
   const navmeshBytes = new Map<string, Uint8Array>();
 
@@ -111,7 +118,14 @@ export async function loadGameFromFiles(
       continue;
     }
     if (entry.type === "Audio") {
-      audioBytes.set(entry.guid, bytes);
+      const packed = decodePackedAudioAsset(bytes);
+      if (packed) {
+        audioBytes.set(entry.guid, packed.source);
+        audioPayloads.set(entry.guid, packed.payload);
+      } else {
+        audioBytes.set(entry.guid, bytes);
+        audioPayloads.set(entry.guid, normalizeAudioPayload({}));
+      }
       continue;
     }
     if (entry.type === NAVMESH_EXPORT_TYPE) {
@@ -129,6 +143,7 @@ export async function loadGameFromFiles(
     fontBytes,
     fontFamilies,
     audioBytes,
+    audioPayloads,
     payloads,
     navmeshBytes,
   };

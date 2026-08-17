@@ -34,6 +34,7 @@ import { ProjectSearchProvider } from "./context/project-search-context";
 import { ValidationProvider } from "./context/validation-context";
 import { EditorUtilityRuntime } from "./components/editor-utility-runtime";
 import { TestUiHostStats } from "./lib/test-ui-host-stats";
+import { TestAudioHostStats } from "./lib/test-audio-host-stats";
 import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
@@ -408,6 +409,7 @@ export default function App() {
             <PlayProvider>
               <EditorUtilityRuntime />
               <TestUiHostStats />
+              <TestAudioHostStats />
               <ProjectSearchProvider>
                 <AppRoutes />
               </ProjectSearchProvider>

@@ -51,7 +51,8 @@ function componentAssetGuid(component: SerializedComponent): string | null {
     stringProp(component.properties, "assetGuid") ??
     stringProp(component.properties, "graphGuid") ??
     stringProp(component.properties, "treeGuid") ??
-    stringProp(component.properties, "uiAssetGuid")
+    stringProp(component.properties, "uiAssetGuid") ??
+    stringProp(component.properties, "audioAssetGuid")
   );
 }
 

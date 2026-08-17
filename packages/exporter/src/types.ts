@@ -51,6 +51,7 @@ export type GameAssetIndexEntry = {
 export type GameManifest = {
   startupSceneGuid: string;
   gameInstanceClass?: string;
+  audioMixerGuid?: string;
   bundleDebugger: boolean;
   mode: ExportMode;
   render: RenderProjectSettings;
@@ -72,6 +73,7 @@ export type ExportGameOptions = {
   bundleDebugger: boolean;
   startupSceneGuid: string;
   gameInstanceClass?: string | null;
+  audioMixerGuid?: string | null;
   customResolution: RenderProjectSettings;
   playFrameCap?: number;
   pixelsPerUnit?: number;

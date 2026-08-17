@@ -205,4 +205,71 @@ describe("packedContentFromGame", () => {
       "mat-bloom",
     ]);
   });
+
+  it("hydrates Audio mixer, channel, attenuation, and packed source", async () => {
+    const { encodePackedAudioAsset } = await import("@babylonslate/assets");
+    const packedAudio = encodePackedAudioAsset(
+      { volume: 0.5, audioChannelGuid: "sfx", soundAttenuationGuid: "near" },
+      new Uint8Array([1, 2, 3, 4]),
+    );
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      audioMixerGuid: "mixer-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "mixer-1",
+          type: "AudioMixer",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(
+            JSON.stringify({
+              globalVolume: 1,
+              channels: [{ channelGuid: "sfx", volume: 1 }],
+            }),
+          ),
+        },
+        {
+          guid: "sfx",
+          type: "AudioChannel",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(
+            JSON.stringify({
+              parentChannelGuid: null,
+              effects: [{ kind: "environmentReverb", enabled: false }],
+            }),
+          ),
+        },
+        {
+          guid: "near",
+          type: "SoundAttenuation",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify({ innerRadius: 2, maxRadius: 20 })),
+        },
+        {
+          guid: "jump",
+          type: "Audio",
+          sceneGuid: "scene-1",
+          bytes: packedAudio,
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    expect(game.manifest.audioMixerGuid).toBe("mixer-1");
+    expect(game.audioBytes.get("jump")).toEqual(new Uint8Array([1, 2, 3, 4]));
+    const content = packedContentFromGame(game);
+    expect(content.audioLibrary.mixerGuid).toBe("mixer-1");
+    expect(content.audioLibrary.audio.get("jump")?.volume).toBe(0.5);
+    expect(content.audioLibrary.channels.has("sfx")).toBe(true);
+    expect(content.audioLibrary.attenuations.get("near")?.innerRadius).toBe(2);
+  });
 });

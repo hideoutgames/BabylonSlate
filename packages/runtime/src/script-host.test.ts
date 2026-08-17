@@ -1482,6 +1482,7 @@ describe("script host runs compiled graphs", () => {
         type: "playSound",
         assetGuid: "jump.wav",
         volume: 0.5,
+        emitterActorGuid: expect.any(String),
       }),
     ]);
     runtime.stop();

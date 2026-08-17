@@ -20,6 +20,46 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual(["assignMaterial"]);
   });
 
+  it("forwards playSound and mixer commands onto the Engine handle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "playSound",
+        assetGuid: "jump",
+        volume: 1,
+        frameId: 1,
+      }),
+    ).toBe(true);
+    expect(applyPlayerEngineCommand(handle, { type: "stopSound", voiceId: "v1" })).toBe(
+      true,
+    );
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "setChannelVolume",
+        channelGuid: "sfx",
+        volume: 0.5,
+      }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setGlobalVolume", volume: 0.25 }),
+    ).toBe(true);
+    expect(applyPlayerEngineCommand(handle, { type: "spawn", slotId: 1, actorGuid: "a" })).toBe(
+      true,
+    );
+    expect(applied).toEqual([
+      "playSound",
+      "stopSound",
+      "setChannelVolume",
+      "setGlobalVolume",
+      "spawn",
+    ]);
+  });
+
   it("ignores commands the Engine does not apply", () => {
     const applied: string[] = [];
     const handle = {

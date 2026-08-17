@@ -10,7 +10,7 @@ import {
   createRuntimeFromLoad,
   type RuntimeDriver,
 } from "@babylonslate/runtime";
-import { createEngine, type EngineHandle } from "@babylonslate/render";
+import { createEngine, audioStats, type EngineHandle } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
@@ -21,6 +21,7 @@ import { attachInputCapture, playInputStampTick } from "./input";
 import {
   applyPlayerFpsSample,
   applyWorkerPlayerStats,
+  unlockAudioOnFirstGesture,
   type PlayerHudStats,
 } from "./hud";
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
@@ -104,6 +105,8 @@ export function startPlayer(options: {
     pixelPerfect: content.pixelPerfect,
     textureBytes: game.textureBytes,
     modelBytes: game.modelBytes,
+    audioBytes: game.audioBytes,
+    audioLibrary: content.audioLibrary,
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
     postProcessStack: content.postProcessStack,
@@ -118,9 +121,23 @@ export function startPlayer(options: {
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onAudioDiagnostic: (diagnostic) => {
+      diagnostics.push({
+        message: diagnostic.message,
+        severity: "warning",
+        code: diagnostic.code,
+        assetGuid: diagnostic.assetGuid,
+      });
+      options.onDiagnostic?.(diagnostics);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
+  if (typeof window !== "undefined") {
+    (
+      window as { __babylonslateAudioStats?: typeof audioStats }
+    ).__babylonslateAudioStats = audioStats;
+  }
   const framebuffer = manifest.render.customResolution
     ? {
         width: manifest.render.width,
@@ -277,6 +294,9 @@ export function startPlayer(options: {
   }
 
   const input = attachInputCapture(canvas);
+  const releaseUnlock = unlockAudioOnFirstGesture(() => {
+    void handle.unlockAudio();
+  });
   const snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
   let frames = 0;
@@ -321,6 +341,7 @@ export function startPlayer(options: {
       cancelAnimationFrame(raf);
       resizeObserver?.disconnect();
       input.dispose();
+      releaseUnlock();
       worker?.terminate();
       runtime?.stop();
       handle.dispose();

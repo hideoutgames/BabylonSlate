@@ -24,6 +24,9 @@ import {
   audioChannelHasParentCycle,
   clampAudioGain,
   computeAudioOutputGain,
+  resolveAudioPlayback,
+  encodePackedAudioAsset,
+  decodePackedAudioAsset,
   createDefaultAudioChannelPayload,
   createDefaultAudioMixerPayload,
   createDefaultAudioPayload,
@@ -259,6 +262,80 @@ describe("audio payloads", () => {
     ).toMatchObject({ parentChannelGuid: "ch-new" });
   });
 
+  it("resolves session playback gain without inventing mixer or channel factors", () => {
+    const channels = new Map([
+      [
+        "sfx",
+        {
+          parentChannelGuid: "master",
+          effects: [{ kind: "environmentReverb" as const, enabled: true }],
+        },
+      ],
+      [
+        "master",
+        {
+          parentChannelGuid: null,
+          effects: [{ kind: "environmentReverb" as const, enabled: false }],
+        },
+      ],
+    ]);
+    const mixer = {
+      globalVolume: 0.5,
+      channels: [
+        { channelGuid: "sfx", volume: 0.5 },
+        { channelGuid: "master", volume: 0.5 },
+      ],
+    };
+    expect(
+      resolveAudioPlayback({
+        audio: { volume: 0.5, audioChannelGuid: null, soundAttenuationGuid: null },
+        playCallVolume: 0.5,
+        mixer: null,
+        channels,
+      }).gain,
+    ).toBe(0.25);
+    expect(
+      resolveAudioPlayback({
+        audio: {
+          volume: 1,
+          audioChannelGuid: "sfx",
+          soundAttenuationGuid: null,
+        },
+        playCallVolume: 1,
+        mixer,
+        channels,
+      }),
+    ).toMatchObject({
+      gain: 0.125,
+      environmentReverb: true,
+      channelGuids: ["sfx", "master"],
+    });
+    expect(
+      resolveAudioPlayback({
+        audio: {
+          volume: 1,
+          audioChannelGuid: null,
+          soundAttenuationGuid: null,
+        },
+        playCallVolume: 1,
+        mixer,
+        channels,
+      }).gain,
+    ).toBe(0.5);
+    expect(
+      resolveAudioPlayback({
+        audio: {
+          volume: 1,
+          audioChannelGuid: "sfx",
+          soundAttenuationGuid: null,
+        },
+        playCallVolume: 1,
+        mixer: null,
+        channels,
+      }),
+    ).toMatchObject({ gain: 1, environmentReverb: true });
+  });
+
   it("computes mixer gain as asset × play × channel chain × global", () => {
     expect(clampAudioGain(1.4)).toBe(1);
     expect(clampAudioGain(-0.2)).toBe(0);
@@ -439,5 +516,17 @@ describe("audio asset containers", () => {
     expect(normalizeAudioPayload(results[0]!.payload)).toEqual(
       createDefaultAudioPayload(),
     );
+  });
+
+  it("packs Audio payload with source bytes and round-trips", () => {
+    const payload = {
+      volume: 0.5,
+      audioChannelGuid: "sfx",
+      soundAttenuationGuid: "near",
+    };
+    const source = new Uint8Array([1, 2, 3, 4, 5]);
+    const packed = encodePackedAudioAsset(payload, source);
+    expect(decodePackedAudioAsset(source)).toBeNull();
+    expect(decodePackedAudioAsset(packed)).toEqual({ payload, source });
   });
 });

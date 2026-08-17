@@ -43,3 +43,6 @@ export * from "./editor-billboard";
 export * from "./editor-debug-overlay";
 export * from "./nav-bake-geometry";
 export * from "./nav-debug-overlay";
+export * from "./audio-buffer-cache";
+export * from "./audio-playback-backend";
+export * from "./audio-service";

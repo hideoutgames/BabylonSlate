@@ -75,6 +75,11 @@ import {
   type PostProcessStackDiagnostic,
   type PostProcessStackInput,
 } from "./post-process-material";
+import type { AudioLibrary } from "./audio-service";
+import { AudioService } from "./audio-service";
+import type { AudioPlaybackBackend } from "./audio-playback-backend";
+import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
+import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 
 export interface EngineHandle {
   engine: Engine;
@@ -122,6 +127,10 @@ export interface EngineHandle {
     documents: ReadonlyMap<string, MaterialDocument>,
     functions?: ReadonlyMap<string, MaterialFunctionDocument>,
   ) => void;
+  /** Unlock AudioV2 after a user gesture and drain the pre-unlock queue. */
+  unlockAudio: () => Promise<void>;
+  /** Clear session mixer volumes and stop voices (scene change / Play stop). */
+  resetAudioSession: () => void;
 }
 
 export interface CreateEngineOptions {
@@ -189,6 +198,17 @@ export interface CreateEngineOptions {
   hardwareScalingLevel?: number;
   /** Stack skip / compile messages (exported player and Play overlay). */
   onPostProcessDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
+  /** Injected playback backend (tests). Browser Play uses AudioV2. */
+  audioBackend?: AudioPlaybackBackend;
+  /** Packed or collected Audio source bytes keyed by asset guid. */
+  audioBytes?: ReadonlyMap<string, Uint8Array>;
+  /** Mixer / channel / attenuation / Audio payloads for gain routing. */
+  audioLibrary?: AudioLibrary;
+  onAudioDiagnostic?: (diagnostic: {
+    code: string;
+    message: string;
+    assetGuid?: string;
+  }) => void;
 }
 
 export interface EditorTools {
@@ -263,6 +283,17 @@ function positionsFromSample(
   return next;
 }
 
+function createPlayAudioBackend(
+  injected?: AudioPlaybackBackend,
+): AudioPlaybackBackend {
+  if (injected) return injected;
+  const hasAudioContext =
+    typeof globalThis !== "undefined" &&
+    typeof (globalThis as { AudioContext?: unknown }).AudioContext === "function";
+  if (!hasAudioContext) return new FakeAudioPlaybackBackend();
+  return new BabylonAudioPlaybackBackend();
+}
+
 /**
  * Creates an editor or Play view. Prefer one Engine for the app lifetime and
  * pass it via `sharedEngine` + registerView for Play overlays.
@@ -314,6 +345,18 @@ export function createEngine(
     ? scheduler.acquireContinuous("play")
     : null;
   const resourceCache = new ResourceCache();
+  const audioService = options.playMode
+    ? new AudioService({
+        backend: createPlayAudioBackend(options.audioBackend),
+        onDiagnostic: options.onAudioDiagnostic,
+      })
+    : null;
+  if (audioService) {
+    if (options.audioLibrary) audioService.setLibrary(options.audioLibrary);
+    for (const [guid, bytes] of options.audioBytes ?? []) {
+      audioService.setSourceBytes(guid, bytes);
+    }
+  }
   const settingsLevel = options.hardwareScalingLevel ?? 1;
   const scaling = new HardwareScalingController(engine, {
     minLevel: settingsLevel,
@@ -641,6 +684,19 @@ export function createEngine(
       rebuildIfActiveCameraChanged(previousCamera);
       lastPositions = positionsFromSample(sampled);
     }
+    if (audioService) {
+      audioService.syncSnapshot(
+        lastPositions.map((actor) => ({
+          slotId: actor.slotId,
+          position: { x: actor.x, y: actor.y, z: actor.z },
+        })),
+      );
+      const camera = scene.activeCamera;
+      if (camera) {
+        const pos = camera.globalPosition ?? camera.position;
+        audioService.syncListener({ x: pos.x, y: pos.y, z: pos.z });
+      }
+    }
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
     // between frames, and feeding that gap to the scaling valve would read
@@ -712,6 +768,7 @@ export function createEngine(
       attachedStack?.dispose();
       attachedStack = null;
       materialLibrary.dispose();
+      audioService?.dispose();
       scene.dispose();
       if (options.sharedEngine) {
         engine.unRegisterView(canvas);
@@ -734,6 +791,10 @@ export function createEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      if (command.type === "spawn") {
+        audioService?.noteActorSlot(command.actorGuid, command.slotId);
+      }
+      audioService?.handleCommand(command);
       if (command.type === "assignMesh") {
         const previousCamera = scene.activeCamera;
         applyAssignMesh(scene, binding, command);
@@ -860,6 +921,10 @@ export function createEngine(
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
       scheduler.invalidate("asset");
+    },
+    unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
+    resetAudioSession: () => {
+      audioService?.resetSession();
     },
   };
 }

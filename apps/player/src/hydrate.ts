@@ -1,7 +1,15 @@
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
+  normalizeAudioChannelPayload,
+  normalizeAudioMixerPayload,
+  normalizeAudioPayload,
+  normalizeSoundAttenuationPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  type AudioChannelPayload,
+  type AudioMixerPayload,
+  type AudioPayload,
+  type SoundAttenuationPayload,
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
@@ -22,6 +30,14 @@ import type { LoadedGame } from "./artifact";
 
 const decoder = new TextDecoder();
 
+export type PackedAudioLibrary = {
+  mixerGuid: string | null;
+  mixers: Map<string, AudioMixerPayload>;
+  channels: Map<string, AudioChannelPayload>;
+  audio: Map<string, AudioPayload>;
+  attenuations: Map<string, SoundAttenuationPayload>;
+};
+
 export type PackedGameContent = {
   spritePayloads: Map<string, SpritePayload>;
   tilemapPayloads: Map<string, TilemapPayload>;
@@ -36,6 +52,7 @@ export type PackedGameContent = {
   postProcessStack: ScenePostProcessEntry[];
   pixelsPerUnit: number;
   pixelPerfect: boolean;
+  audioLibrary: PackedAudioLibrary;
 };
 
 function jsonFromBytes(bytes: Uint8Array): unknown | null {
@@ -70,6 +87,10 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const blackboards: Array<{ guid: string; document: unknown }> = [];
   const materialDocuments = new Map<string, MaterialDocument>();
   const materialFunctions = new Map<string, MaterialFunctionDocument>();
+  const mixers = new Map<string, AudioMixerPayload>();
+  const channels = new Map<string, AudioChannelPayload>();
+  const audio = new Map<string, AudioPayload>(game.audioPayloads);
+  const attenuations = new Map<string, SoundAttenuationPayload>();
 
   for (const entry of game.manifest.assets ?? []) {
     const bytes = game.payloads.get(entry.guid);
@@ -118,6 +139,22 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
           entry.name ?? "Material Function",
         ),
       );
+      continue;
+    }
+    if (entry.type === "AudioMixer" && parsed) {
+      mixers.set(entry.guid, normalizeAudioMixerPayload(parsed));
+      continue;
+    }
+    if (entry.type === "AudioChannel" && parsed) {
+      channels.set(entry.guid, normalizeAudioChannelPayload(parsed));
+      continue;
+    }
+    if (entry.type === "SoundAttenuation" && parsed) {
+      attenuations.set(entry.guid, normalizeSoundAttenuationPayload(parsed));
+      continue;
+    }
+    if (entry.type === "Audio" && parsed && !audio.has(entry.guid)) {
+      audio.set(entry.guid, normalizeAudioPayload(parsed));
     }
   }
 
@@ -144,6 +181,13 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     postProcessStack: startupScene?.settings.postProcessStack ?? [],
     pixelsPerUnit,
     pixelPerfect: game.manifest.pixelPerfect === true,
+    audioLibrary: {
+      mixerGuid: game.manifest.audioMixerGuid?.trim() || null,
+      mixers,
+      channels,
+      audio,
+      attenuations,
+    },
   };
 }
 

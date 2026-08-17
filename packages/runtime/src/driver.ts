@@ -486,7 +486,9 @@ class InProcessRuntime implements RuntimeDriver {
         });
       },
       destroyActor: (actor) => {
-        if (actor) this.world.destroyActor(actor.guid);
+        if (!actor) return;
+        this.emitAudioStops(actor);
+        this.world.destroyActor(actor.guid);
       },
       addComponent: (actor, classId) => {
         const target = actor;
@@ -565,12 +567,15 @@ class InProcessRuntime implements RuntimeDriver {
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
-      playSound: (asset, volume) => {
+      playSound: (asset, volume, options) => {
         this.emit({
           type: "playSound",
           assetGuid: String(asset ?? ""),
           volume: Number(volume ?? 1),
           frameId: this.frameId,
+          emitterActorGuid: options?.emitterActorGuid ?? null,
+          loop: options?.loop,
+          voiceId: options?.voiceId,
         });
       },
       findPathTo: (from, to) => this.findNavPath(from, to),
@@ -767,6 +772,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     for (const actor of [...this.world.getActors()]) {
       const slotId = this.slotByGuid.get(actor.guid);
+      this.emitAudioStops(actor);
       if (slotId !== undefined) {
         this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
         this.slotByGuid.delete(actor.guid);
@@ -1535,7 +1541,37 @@ class InProcessRuntime implements RuntimeDriver {
   private realizeActor(actor: Actor): void {
     const slotId = this.assignSlot(actor);
     this.emitMeshAssignment(actor, slotId);
+    this.emitAudioComponents(actor);
     this.world.spawnActorNow(actor);
+  }
+
+  private emitAudioComponents(actor: Actor): void {
+    for (const component of actor.components) {
+      if (component.destroyed || component.classId !== "AudioComponent") continue;
+      const playOnStart = component.getVariable("playOnStart") !== false;
+      const assetGuid =
+        (typeof component.getVariable("audioAssetGuid") === "string"
+          ? component.getVariable("audioAssetGuid")
+          : null) ?? component.assetGuid;
+      if (!playOnStart || typeof assetGuid !== "string" || !assetGuid) continue;
+      const volume = Number(component.getVariable("volume") ?? 1);
+      this.emit({
+        type: "playSound",
+        assetGuid,
+        volume: Number.isFinite(volume) ? volume : 1,
+        frameId: this.frameId,
+        loop: component.getVariable("loop") === true,
+        voiceId: component.guid,
+        emitterActorGuid: actor.guid,
+      });
+    }
+  }
+
+  private emitAudioStops(actor: Actor): void {
+    for (const component of actor.components) {
+      if (component.classId !== "AudioComponent") continue;
+      this.emit({ type: "stopSound", voiceId: component.guid });
+    }
   }
 
   private emitMaterialAssignments(
