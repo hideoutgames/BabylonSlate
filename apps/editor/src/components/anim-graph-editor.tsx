@@ -10,6 +10,7 @@ import {
   defaultAnimVariableValue,
   hydrateAnimGraphForEditor,
   parseAnimGraphDocument,
+  resolveAnimGraphClips,
   serializedToAnimGraph,
   validateAnimGraph,
   type AnimClipKind,
@@ -45,6 +46,7 @@ import {
   scriptPaletteNodes,
   validateSerializedGraph,
 } from "../services/graph-validation";
+import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 
 const VARIABLE_TYPE_OPTIONS: Array<{ value: AnimVariableTypeId; label: string }> =
   [
@@ -54,8 +56,14 @@ const VARIABLE_TYPE_OPTIONS: Array<{ value: AnimVariableTypeId; label: string }>
     { value: "string", label: "String" },
   ];
 
-function asAnimGraph(payload: Record<string, unknown>): AnimGraphDocument {
-  return parseAnimGraphDocument(payload) ?? createDefaultAnimGraph();
+function asAnimGraph(
+  payload: Record<string, unknown>,
+  catalog: Parameters<typeof resolveAnimGraphClips>[1] = [],
+): AnimGraphDocument {
+  return resolveAnimGraphClips(
+    parseAnimGraphDocument(payload) ?? createDefaultAnimGraph(),
+    catalog,
+  );
 }
 
 function nextAnimStatePosition(
@@ -200,9 +208,23 @@ function useAnimGraphDocument() {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
   const entry = openDocuments.find((item) => item.id === documentId);
+  const listed = assetRegistry?.list() ?? [];
+  const catalogKey = listed
+    .map(
+      (asset) =>
+        `${asset.header.guid}:${asset.header.type}:${JSON.stringify(asset.header.payload ?? {})}`,
+    )
+    .join("|");
+  const catalog = useMemo(
+    () => animClipCatalogFromAssets(listed),
+    // listed is rebuilt each render; catalogKey is the actual input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [catalogKey],
+  );
   const doc = useMemo(
-    () => asAnimGraph((entry?.content ?? {}) as Record<string, unknown>),
-    [entry?.content],
+    () =>
+      asAnimGraph((entry?.content ?? {}) as Record<string, unknown>, catalog),
+    [entry?.content, catalog],
   );
   const commit = (next: AnimGraphDocument) => {
     void applyAssetDocumentChange(
@@ -210,7 +232,7 @@ function useAnimGraphDocument() {
       next as unknown as Record<string, unknown>,
     );
   };
-  return { doc, commit, assetRegistry, documentId };
+  return { doc, commit, assetRegistry, documentId, catalog };
 }
 
 function AnimGraphVariablesList({
@@ -558,7 +580,7 @@ function transitionPropertyRows(
 
 export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, commit, assetRegistry } = useAnimGraphDocument();
+  const { doc, commit, assetRegistry, catalog } = useAnimGraphDocument();
   const { selectedId, selectedTransitionId, openTransitionRule } =
     useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
@@ -569,6 +591,9 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     ? doc.clips.find((row) => row.id === selected.clipId)
     : undefined;
   const clipKind: AnimClipKind = clip?.kind ?? "animation";
+  const clipNameOptions = (
+    catalog.find((entry) => entry.guid === clip?.assetGuid)?.clipNames ?? []
+  ).map((name) => ({ value: name, label: name }));
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
@@ -626,27 +651,50 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           value: clip?.assetGuid || null,
           placeholder: "None",
           onPick: () => setClipPick(true),
-          onChange: (value) =>
-            commit(upsertStateClip(doc, selected.id, { assetGuid: value ?? "" })),
+          onChange: (value) => {
+            const guid = value ?? "";
+            const names =
+              catalog.find((entry) => entry.guid === guid)?.clipNames ?? [];
+            const nextName =
+              names.includes(clip?.clipName ?? "")
+                ? clip?.clipName
+                : (names[0] ?? clip?.clipName);
+            commit(
+              upsertStateClip(doc, selected.id, {
+                assetGuid: guid,
+                ...(nextName ? { clipName: nextName } : {}),
+              }),
+            );
+          },
           ...assetRowIdentity(
             clip?.assetGuid
               ? (() => {
                   const asset = assetRegistry?.getByGuid(clip.assetGuid);
                   return asset
                     ? { name: asset.header.name, type: asset.header.type }
-                    : { name: clip.assetGuid, type: clipKind === "sprite" ? "Sprite" : "Animation" };
+                    : { name: clip.assetGuid, type: clipKind === "sprite" ? "Sprite" : "Model" };
                 })()
               : undefined,
           ),
         },
-        {
-          id: "clipName",
-          kind: "text",
-          label: "Clip Name",
-          value: clip?.clipName ?? "",
-          onChange: (clipName) =>
-            commit(upsertStateClip(doc, selected.id, { clipName })),
-        },
+        clipKind === "sprite" || clipNameOptions.length === 0
+          ? {
+              id: "clipName",
+              kind: "text" as const,
+              label: "Clip Name",
+              value: clip?.clipName ?? "",
+              onChange: (clipName: string) =>
+                commit(upsertStateClip(doc, selected.id, { clipName })),
+            }
+          : {
+              id: "clipName",
+              kind: "enum" as const,
+              label: "Clip Name",
+              value: clip?.clipName ?? clipNameOptions[0]!.value,
+              options: clipNameOptions,
+              onChange: (clipName: string) =>
+                commit(upsertStateClip(doc, selected.id, { clipName })),
+            },
         {
           id: "speed",
           kind: "number",
@@ -700,12 +748,24 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         open={clipPick}
         onOpenChange={setClipPick}
         assets={assets}
-        allowedTypes={clipKind === "sprite" ? ["Sprite"] : ["Animation"]}
-        title={clipKind === "sprite" ? "Pick Sprite" : "Pick Animation"}
+        allowedTypes={clipKind === "sprite" ? ["Sprite"] : ["Model"]}
+        title={clipKind === "sprite" ? "Pick Sprite" : "Pick Model"}
         allowNone
         onPick={(guid) => {
           if (selected) {
-            commit(upsertStateClip(doc, selected.id, { assetGuid: guid ?? "" }));
+            const names =
+              catalog.find((entry) => entry.guid === (guid ?? ""))
+                ?.clipNames ?? [];
+            const nextName =
+              names.includes(clip?.clipName ?? "")
+                ? clip?.clipName
+                : (names[0] ?? clip?.clipName);
+            commit(
+              upsertStateClip(doc, selected.id, {
+                assetGuid: guid ?? "",
+                ...(nextName ? { clipName: nextName } : {}),
+              }),
+            );
           }
           setClipPick(false);
         }}

@@ -72,7 +72,22 @@ vi.mock("../context/document-context", async () => {
             path: "assets/Hero.sprite.babasset",
           },
           {
-            header: { guid: "anim-1", name: "Walk", type: "Animation" },
+            header: {
+              guid: "model-1",
+              name: "HeroModel",
+              type: "Model",
+              payload: { clipNames: ["Idle", "Walk"] },
+              dependencies: ["anim-1"],
+            },
+            path: "assets/Hero.model.babasset",
+          },
+          {
+            header: {
+              guid: "anim-1",
+              name: "Hero_Walk",
+              type: "Animation",
+              payload: { clipName: "Walk" },
+            },
             path: "assets/Walk.animation.babasset",
           },
           {
@@ -83,9 +98,25 @@ vi.mock("../context/document-context", async () => {
         getByGuid: (guid: string) =>
           guid === "spr-1"
             ? { header: { guid: "spr-1", name: "Hero", type: "Sprite" } }
-            : guid === "anim-1"
-              ? { header: { guid: "anim-1", name: "Walk", type: "Animation" } }
-              : undefined,
+            : guid === "model-1"
+              ? {
+                  header: {
+                    guid: "model-1",
+                    name: "HeroModel",
+                    type: "Model",
+                    payload: { clipNames: ["Idle", "Walk"] },
+                  },
+                }
+              : guid === "anim-1"
+                ? {
+                    header: {
+                      guid: "anim-1",
+                      name: "Hero_Walk",
+                      type: "Animation",
+                      payload: { clipName: "Walk" },
+                    },
+                  }
+                : undefined,
       },
     };
   },
@@ -255,25 +286,28 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
   });
 
-  it("picks an Animation clip for the selected state", async () => {
+  it("picks a Model clip for the selected state and lists glTF group names", async () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     fireEvent.click(screen.getByTestId("property-clipAsset"));
     await waitFor(() => {
-      expect(screen.getByTestId("search-item-anim-1")).toBeTruthy();
+      expect(screen.getByTestId("search-item-model-1")).toBeTruthy();
     });
+    expect(screen.queryByTestId("search-item-anim-1")).toBeNull();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
-    fireEvent.click(screen.getByTestId("search-item-anim-1"));
+    fireEvent.click(screen.getByTestId("search-item-model-1"));
     expect(lastCommit()).toEqual(
       expect.objectContaining({
         clips: expect.arrayContaining([
           expect.objectContaining({
             id: "idle-clip",
             kind: "animation",
-            assetGuid: "anim-1",
+            assetGuid: "model-1",
+            clipName: "Idle",
           }),
         ]),
       }),
     );
+    expect(screen.getByTestId("property-clipName")).toBeTruthy();
   });
 });

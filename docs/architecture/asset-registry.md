@@ -85,7 +85,7 @@ Loader prefers KTX2 when present (`selectTextureChunk`); self-hosted transcoder 
 
 **Encode path:** the editor wires `createWorkerEncodeFn` (`/basis/encode-worker.js` + vendored Basis encoder wasm under `apps/editor/public/basis/`) into `EncodeQueue`. Unit tests keep `stubEncodeKtx2` as the default when no Worker is injected. CI runs a real Basis encode smoke (`a16-encode-smoke.test.ts` / `createNodeBasisEncodeFn`) against checked-in A16 wall envelopes in `@babylonslate/test-kit`. On project enter, `probeKtx2TranscoderAvailable` marks compressed textures `fallback_uncompressed` when decoder files are missing.
 
-**GLB/glTF import:** `parseGlbForBrowse` extracts materials, embedded images (pixel chunks), and animation names so CB dependents are browsable; mesh runtime fidelity stays thin until Play.
+**GLB/glTF import:** `parseGlbForBrowse` extracts materials, embedded images (pixel chunks), and animation names so CB dependents are browsable; mesh runtime fidelity stays thin until Play. Animation payloads store `{ clipName }` (glTF group name). Model payloads store `clipNames[]` so Animation Graph Details can enum clips without importing `@babylonslate/render`.
 
 ## Content Browser (P2)
 

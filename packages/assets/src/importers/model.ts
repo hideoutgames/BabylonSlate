@@ -171,7 +171,7 @@ function importFromBrowse(
       version: 1,
       dependencies: [],
       parentClass: null,
-      payload: {},
+      payload: { clipName: animation.name },
       chunks: [],
     });
   }
@@ -188,6 +188,7 @@ function importFromBrowse(
       materialCount: materialGuids.length,
       textureCount: imageGuids.length,
       animationCount: animationGuids.length,
+      clipNames: animations.map((animation) => animation.name),
       // Ordered slots so a MeshComponent can override one material per slot.
       materialSlots: materialGuids.map((guid, index) => ({
         index,
@@ -218,7 +219,7 @@ function importStubDependents(
       version: 1,
       dependencies: [materialGuid, animationGuid],
       parentClass: null,
-      payload: {},
+      payload: { clipNames: ["Animation"] },
       chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
     },
     {
@@ -248,7 +249,7 @@ function importStubDependents(
       version: 1,
       dependencies: [],
       parentClass: null,
-      payload: {},
+      payload: { clipName: "Animation" },
       chunks: [],
     },
   ];

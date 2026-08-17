@@ -10,6 +10,7 @@ import {
   createDefaultTransitionRuleGraph,
   evaluateAnimGraph,
   parseAnimGraphDocument,
+  resolveAnimGraphClips,
   validateAnimGraph,
   animGraphToSerialized,
   serializedToAnimGraph,
@@ -586,5 +587,74 @@ describe("anim graph v2 evaluator", () => {
     });
     expect(seen[1]?.justFinished).toBe(true);
     expect(finished.stateId).toBe("done");
+  });
+});
+
+describe("resolveAnimGraphClips", () => {
+  const catalog = [
+    {
+      guid: "hero-model",
+      type: "Model",
+      name: "Hero",
+      clipNames: ["Idle", "Walk"],
+      dependencyGuids: ["hero-walk-anim"],
+    },
+    {
+      guid: "hero-walk-anim",
+      type: "Animation",
+      name: "Hero_Walk",
+      clipName: "Walk",
+    },
+    {
+      guid: "hero-sprite",
+      type: "Sprite",
+      name: "HeroSprite",
+    },
+  ];
+
+  it("rewrites an Animation guid to the owning Model and fills the glTF clip name", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "hero-walk-anim",
+      clipName: "Idle",
+      durationMs: 1000,
+    };
+    const resolved = resolveAnimGraphClips(doc, catalog);
+    expect(resolved.clips[0]).toMatchObject({
+      assetGuid: "hero-model",
+      clipName: "Walk",
+    });
+  });
+
+  it("keeps a Model guid and a clip name that exists on that Model", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "hero-model",
+      clipName: "Idle",
+      durationMs: 1000,
+    };
+    const resolved = resolveAnimGraphClips(doc, catalog);
+    expect(resolved.clips[0]).toMatchObject({
+      assetGuid: "hero-model",
+      clipName: "Idle",
+    });
+  });
+
+  it("does not rewrite Sprite clips", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "sprite",
+      assetGuid: "hero-sprite",
+      clipName: "Idle",
+      durationMs: 1000,
+    };
+    expect(resolveAnimGraphClips(doc, catalog).clips[0]!.assetGuid).toBe(
+      "hero-sprite",
+    );
   });
 });

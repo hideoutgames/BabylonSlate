@@ -1,4 +1,5 @@
-import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
+import { parseAnimGraphDocument, resolveAnimGraphClips } from "@babylonslate/anim-graph";
+import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
@@ -158,6 +159,7 @@ export type PlayBlackboardEntry = { guid: string; document: unknown };
 export function playAnimGraphsFromOpenDocuments(
   documents: readonly PlayContentDocument[],
   guidForPath: (path: string) => string | null,
+  catalog: readonly AnimClipCatalogEntry[] = [],
 ): PlayAnimGraphEntry[] {
   const graphs: PlayAnimGraphEntry[] = [];
   for (const entry of documents) {
@@ -165,7 +167,7 @@ export function playAnimGraphsFromOpenDocuments(
     const parsed = parseAnimGraphDocument(entry.content);
     if (!parsed) continue;
     const guid = guidForPath(entry.ref.path) ?? entry.ref.path;
-    graphs.push({ guid, document: parsed });
+    graphs.push({ guid, document: resolveAnimGraphClips(parsed, catalog) });
   }
   return graphs;
 }
@@ -239,6 +241,7 @@ export function tilemapAssetGuidsFromScene(
 export function playAnimGraphsFromGuids(
   guids: readonly string[],
   documentForGuid: (guid: string) => unknown | null,
+  catalog: readonly AnimClipCatalogEntry[] = [],
 ): PlayAnimGraphEntry[] {
   const graphs: PlayAnimGraphEntry[] = [];
   for (const guid of guids) {
@@ -246,7 +249,7 @@ export function playAnimGraphsFromGuids(
     if (!content) continue;
     const parsed = parseAnimGraphDocument(content);
     if (!parsed) continue;
-    graphs.push({ guid, document: parsed });
+    graphs.push({ guid, document: resolveAnimGraphClips(parsed, catalog) });
   }
   return graphs;
 }

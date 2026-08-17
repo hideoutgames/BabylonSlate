@@ -197,6 +197,7 @@ import {
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
 } from "../lib/play-content";
+import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -2024,6 +2025,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlayAnimGraphs = useCallback(
     async (scene?: SerializedScene | null): Promise<PlayAnimGraphEntry[]> => {
       const assets = projectService.registry?.list() ?? [];
+      const clipCatalog = animClipCatalogFromAssets(assets);
       const byGuid = new Map(
         assets
           .filter((asset) => asset.header.type === "AnimationGraph")
@@ -2033,6 +2035,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         [...documentService.getState().openDocuments.values()],
         (path) =>
           assets.find((asset) => asset.path === path)?.header.guid ?? null,
+        clipCatalog,
       );
       const needed = new Set([
         ...animationGraphGuidsFromScene(scene),
@@ -2047,7 +2050,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       return mergePlayAnimGraphs(
         openEntries,
-        playAnimGraphsFromGuids([...needed], (guid) => loaded.get(guid) ?? null),
+        playAnimGraphsFromGuids(
+          [...needed],
+          (guid) => loaded.get(guid) ?? null,
+          clipCatalog,
+        ),
       );
     },
     [documentService, loadPlayAssetContent, projectService],
