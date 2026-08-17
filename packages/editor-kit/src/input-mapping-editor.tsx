@@ -45,8 +45,8 @@ export const INPUT_DEVICES: Array<{ value: InputDevice; label: string }> = [
   { value: "key", label: "Key" },
   { value: "mouseButton", label: "Mouse" },
   { value: "pointer", label: "Pointer" },
-  { value: "gamepadButton", label: "Pad Button" },
-  { value: "gamepadAxis", label: "Pad Axis" },
+  { value: "gamepadButton", label: "Gamepad Button" },
+  { value: "gamepadAxis", label: "Gamepad Axis" },
   { value: "touch", label: "Touch" },
 ];
 

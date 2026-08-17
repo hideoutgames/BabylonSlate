@@ -144,6 +144,19 @@ describe("InputMappingEditor", () => {
     expect(screen.getByTestId("input-action-0-binding-1-code")).toBeTruthy();
   });
 
+  it("lists layout-agnostic Gamepad Button and Gamepad Axis devices", () => {
+    render(<InputMappingEditor value={jumpOnly} onChange={() => {}} />);
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-device"));
+    expect(
+      screen.getByTestId("input-action-0-binding-0-device-gamepadButton")
+        .textContent,
+    ).toBe("Gamepad Button");
+    expect(
+      screen.getByTestId("input-action-0-binding-0-device-gamepadAxis")
+        .textContent,
+    ).toBe("Gamepad Axis");
+  });
+
   it("clears the code when the device changes", () => {
     const onChange = vi.fn();
     render(<InputMappingEditor value={jumpOnly} onChange={onChange} />);
