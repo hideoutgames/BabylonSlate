@@ -10,9 +10,16 @@ export interface DecodedRgbaImage {
 interface DrawableImage {
   width: number;
   height: number;
-  source: CanvasImageSource;
+  source: ImageBitmap;
   close?: () => void;
 }
+
+type HtmlImageCtor = new () => {
+  width: number;
+  height: number;
+  src: string;
+  decode: () => Promise<void>;
+};
 
 /**
  * Decode image bytes to RGBA8, clamping longest edge to maxDimension.
@@ -33,6 +40,11 @@ export async function decodeSourceToRgba(
   }
 }
 
+function htmlImageCtor(): HtmlImageCtor | undefined {
+  const ctor = (globalThis as { Image?: HtmlImageCtor }).Image;
+  return typeof ctor === "function" ? ctor : undefined;
+}
+
 async function decodeToDrawable(blob: Blob): Promise<DrawableImage> {
   if (typeof createImageBitmap === "function") {
     try {
@@ -44,7 +56,7 @@ async function decodeToDrawable(blob: Blob): Promise<DrawableImage> {
         close: () => bitmap.close(),
       };
     } catch (error) {
-      if (typeof Image === "undefined") throw error;
+      if (!htmlImageCtor()) throw error;
       try {
         return await decodeWithHtmlImage(blob);
       } catch {
@@ -56,11 +68,12 @@ async function decodeToDrawable(blob: Blob): Promise<DrawableImage> {
 }
 
 async function decodeWithHtmlImage(blob: Blob): Promise<DrawableImage> {
-  if (typeof Image === "undefined") {
+  const ImageCtor = htmlImageCtor();
+  if (!ImageCtor) {
     throw new Error("createImageBitmap is required for texture encode decode");
   }
   const url = URL.createObjectURL(blob);
-  const image = new Image();
+  const image = new ImageCtor();
   image.src = url;
   try {
     await image.decode();
@@ -71,7 +84,7 @@ async function decodeWithHtmlImage(blob: Blob): Promise<DrawableImage> {
   return {
     width: image.width,
     height: image.height,
-    source: image,
+    source: image as unknown as ImageBitmap,
     close: () => URL.revokeObjectURL(url),
   };
 }
@@ -85,10 +98,10 @@ function rasterizeDrawable(
     drawable.height,
     maxDimension,
   );
-  const canvas =
-    typeof OffscreenCanvas !== "undefined"
-      ? new OffscreenCanvas(width, height)
-      : createHtmlCanvas(width, height);
+  if (typeof OffscreenCanvas === "undefined") {
+    throw new Error("OffscreenCanvas is required for Worker encode path");
+  }
+  const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("2D context unavailable for texture encode");
   ctx.drawImage(drawable.source, 0, 0, width, height);
@@ -99,14 +112,4 @@ function rasterizeDrawable(
     height,
     clamped,
   };
-}
-
-function createHtmlCanvas(width: number, height: number): HTMLCanvasElement {
-  if (typeof document === "undefined") {
-    throw new Error("OffscreenCanvas is required for Worker encode path");
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  return canvas;
 }
