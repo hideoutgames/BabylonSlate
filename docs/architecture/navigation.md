@@ -2,7 +2,7 @@
 
 Shared surface for navmesh bake and worker queries (engineplan §14.2). Implementation: `@babylonslate/navigation`. Recast wasm is allowed; no React, no Babylon, no `@recast-navigation/babylon`.
 
-Tile-cache obstacles, 2D bake input, scripting nodes, and crowd `MoveTo` are in (`p11-nav-blockers-2d`). Auto-bake-on-save stays **off**. Dynamic **cost** volumes are recorded but do not carve (Recast tile cache has no cost-area obstacle). §18: `packages/runtime/src/p11-acceptance.test.ts` (including a dynamic box that **closes** an open route after MoveTo is running) plus `e2e/p11-ai.spec.ts`.
+Tile-cache obstacles, 2D bake input, scripting nodes, and crowd `MoveTo` are in (`p11-nav-blockers-2d`). Auto-bake-on-save stays **off** until **P17** (`p17-nav-leftovers`). Dynamic **cost** volumes are recorded but do not yet affect path cost (Recast tile cache obstacles are unwalkable-only; P17 picks a mechanism that can express cost). Bake bounds collect is P17. §18: `packages/runtime/src/p11-acceptance.test.ts` (including a dynamic box that **closes** an open route after MoveTo is running) plus `e2e/p11-ai.spec.ts`.
 
 ## Package
 
@@ -30,7 +30,7 @@ Recast settings (`NavMeshSettings`) are data: cell size/height, walkable slope/h
 
 ## Editor host
 
-- Place Actors **NavMesh** spawns an Actor with `NavMeshComponent` (Recast numbers, solo/tiled enum, support-dynamic-obstacles, debug overlay). Auto-bake-on-save stays **off** and is not shown in Details until it is wired. Not an Add Component row.
+- Place Actors **NavMesh** spawns an Actor with `NavMeshComponent` (Recast numbers, solo/tiled enum, support-dynamic-obstacles, debug overlay). Auto-bake-on-save stays **off** and is not shown in Details until **P17** wires it. Not an Add Component row.
 - Place Actors **NavMesh Blocker** spawns an Actor with `NavMeshBlockerComponent` (`dynamic` default false, `kind` box/cylinder, `area` unwalkable/cost). Scale is the blocker size. Not Add Component / Search.
 - Details **Bake NavMesh** opens a non-dismissable modal on a painted frame, collects geometry, runs `generateNavMesh` in a dedicated bake worker (tile cache when Support Dynamic Obstacles is on), writes the Scene `navmesh` chunk.
 - 3D collect: `MeshComponent` world meshes + static unwalkable blockers. Dynamic / cost blockers are skipped at bake.

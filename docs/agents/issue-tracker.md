@@ -370,7 +370,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`); dual-mode State Machine \| Animation Object + compiled rules on `cursor/complete-animation-graph-9a46` |
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
-| G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`) |
+| G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P17**, not this wave |
 
 Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
@@ -449,7 +449,7 @@ Foundation-hardening is on `main`. Chrome polish (pin flash) is not P11 work. Mu
 | Blockers + 2D + nodes | `p11-nav-blockers-2d` | `navigation`, `scripting-nodes`, `apps/editor`, `runtime` (landed) | Nav editor host |
 | §18 acceptance | `p11-acceptance` | `runtime` harness + `e2e/p11-ai.spec.ts` (landed) | Blockers + editor host |
 
-`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default (Details hides the unwired toggle). Dynamic cost volumes do not carve. RotateToFace / PlayAnimation / PlaySound succeed without a host. **P11 is Done** (packages + §18). Do not start a new P11 slice.
+`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default (Details hides the unwired toggle until **P17**). Dynamic cost volumes do not yet affect path cost (**P17**). RotateToFace / PlayAnimation succeed without a host until **P17**. PlaySound waits on the **Audio plan**. **P11 is Done** (packages + §18). Do not uncheck P11; P17 is additive.
 
 ## Behaviour tree editor authoring (`p-bt-editor-authoring`)
 
@@ -461,7 +461,7 @@ Authoring-surface residual, same class as the Anim Graph host pass. Do **not** u
 | Tree ops + canvas diagnostics | same | `apps/editor`, `graph-ui`, `behaviour-tree` (validate) | Details |
 | Loop/Cooldown/TimeLimit + Play stack overlay | same | `behaviour-tree` (eval), `bridge`/`runtime` `btState.stack`, `e2e/p11-ai.spec.ts` | Tree ops |
 
-Out of scope: RotateToFace / PlayAnimation / PlaySound hosts; nav cost-carve / auto-bake; Dockview for asset tabs; large-tree iPad virtualization; P12; lighting.
+Out of scope: RotateToFace / PlayAnimation hosts (**P17**); PlaySound (**Audio plan**); nav cost-carve / auto-bake (**P17**); Dockview for asset tabs; large-graph virtualisation (**P16**); P12; lighting.
 
 ## Behaviour tree editor UX (`p-bt-editor-ux`)
 
@@ -473,7 +473,7 @@ Authoring-surface residual. Do **not** uncheck `p11-bt-editor` or `p-bt-editor-a
 | GraphEditor `connectEndMode="add-node"` + TreeNode chrome | same | `graph-ui` | connect policies |
 | Blackboard / Compiler Results docks, free drag, one-undo moves | same | `apps/editor`, `e2e/bt-editor.spec.ts` | GraphEditor policies |
 
-Out of scope: changing `children[]` semantics at runtime; 96px cancel / wire-break on script, material, or anim graphs; large-tree iPad virtualization; reopening P11.
+Out of scope: changing `children[]` semantics at runtime; 96px cancel / wire-break on script, material, or anim graphs; large-graph virtualisation (**P16** `p16-graph-virtualize`); reopening P11; RotateToFace / PlayAnimation hosts (**P17**); PlaySound (**Audio plan**).
 
 ## Behaviour tree class events (`p-bt-class-events`)
 
@@ -485,7 +485,7 @@ Authoring-surface residual. Do **not** uncheck `p11-bt-authoring`. Packages: `ap
 | Decorator host, abort, Return Condition, blackboard nodes | same | `behaviour-tree`, `scripting-nodes`, `runtime` | Class events |
 | Composite kind from ancestry + e2e | same | `behaviour-tree`, `e2e/p11-ai.spec.ts` | hosts |
 
-Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation / PlaySound hosts; reopening P11; P12; lighting.
+Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation hosts (**P17**); PlaySound (**Audio plan**); reopening P11; P12; lighting.
 
 ## P12 editor extensions
 
@@ -529,6 +529,32 @@ Spec: [engineplan.md](../engineplan.md) §12, Appendix A `p15-*`. Design note: [
 **P15 is Done** in CI (FakeLockProvider + Playwright). Two-device GitHub lock visibility and Working Copy branch-switch on a real iPad remain **manual** native acceptance. Out of scope: git clone/commit/pull/push UI, `lockable` in `.gitattributes`, git status badges, CORS proxy, web production source control. Review follow-up (`cursor/p15-review-fixes-419b`): 409 already-ours via verify, rename/folder lock ops, iOS Keychain plugin compile wiring.
 
 Hardening on `cursor/p15-source-control-gaps-44b6`: Git LFS create 409 now consults verify so a lock we already hold is not treated as theirs after restart; auto-lock skips create when verify already lists the path as ours; deleting an asset we hold unlocks that path; the iOS Keychain plugin is in the App target and `packageClassList` (it was an uncompiled Swift file).
+
+## P16 iPad editor optimisation
+
+Spec: [engineplan.md](../engineplan.md) §18 / §19, Appendix A `p16-*`. **Next slice.** Skeleton — flesh out remaining P16 checklist items before assigning work beyond `p16-graph-virtualize`. No `p1-device-spikes` gate. Pin flash stays parked chrome polish.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Off-screen node virtualisation for every `GraphEditor` host | `p16-graph-virtualize` | `graph-ui`, hosts in `apps/editor` | P15 done |
+| Remaining iPad editor optimisation slices | TBD in engineplan | TBD | First slice |
+
+Out of scope for the first slice: collapse-inactive-subtree / cap-auto-layout (later P16 candidates); P17 BT hosts; Audio mixer.
+
+## P17 Behaviour tree hosts and navigation leftovers
+
+Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p17-*`. Additive on Done P11. Do **not** uncheck `p11-*`. Do not start until P16 is marked Done.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| RotateToFace + PlayAnimation runtime hosts | `p17-bt-task-hosts` | `behaviour-tree`, `runtime`, `apps/editor` | P11 hosts; P16 Done |
+| Auto-bake-on-save, bake bounds, cost volumes | `p17-nav-leftovers` | `navigation`, `apps/editor`, `runtime` | `p11-nav-blockers-2d`; P16 Done |
+
+Out of scope: BT **PlaySound** (Audio plan); scripted custom composite VM; reopening P11 evaluator/abort matrix; `p1-device-spikes`. Crowd MoveTo is already live.
+
+## Later — Audio plan (unnumbered)
+
+`AudioComponent`, `AudioContext` mixer, first-touch unlock, and the BT **PlaySound** task host. Graph `audio.play` → `playSound` is a logged command until then.
 
 
 
