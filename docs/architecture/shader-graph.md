@@ -196,10 +196,13 @@ only buffers it created.
 ## Runtime
 
 `MeshComponent.materialGuid` binds a Material; imported models also carry
-ordered `materialSlots`. The runtime emits `assignMaterial`, optionally with a
-`componentId`. The renderer applies a whole-actor assignment across a multipart
-actor's descendants and a component assignment to one named mesh, re-applies
-after a mesh rebuild, and releases records on despawn.
+ordered `materialSlots`. Play emits `assignMaterial`, optionally with a
+`componentId` (slot ids / `actor-<slot>` names). The renderer applies a
+whole-actor assignment across a multipart actor's descendants and a component
+assignment to one named mesh, re-applies after a mesh rebuild, and releases
+records on despawn. Editor viewports (scene and Prefab) do **not** use that
+Play path: `EditorSceneSync` binds the same guid onto `editorActor:<id>` /
+`editorActor:<id>|<componentId>` through `MaterialLibrary.resolveMaterial`.
 
 Scene Details authors `SceneSettings.postProcessStack` (ordered Material guid +
 Enabled) with `NamedListEditor` / `AssetPicker`. The picker lists post-process
