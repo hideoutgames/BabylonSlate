@@ -100,6 +100,14 @@ only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
 Babylon binds to the Engine input element (Scene / Play). Hidden Material tabs
 and in-editor Play freeze present.
 
+Mesh / **Render** / status live in a compact overlay chip on the canvas
+(`material-preview-overlay`) — viewport-style `ToggleGroup` `size="sm"` icons
+and a `size="sm"` Render button, not a `ToolbarStrip` of 44px controls.
+
+The default Material dock stacks **Preview** over **Details** on the left
+(~25% width, 50/50 height) so **Graph** keeps about 75% width. Compiler Results
+still sit under the graph. Persisted `layout.json` is unchanged until reset.
+
 `materialPreviewReducer` is generation safe:
 
 ```
@@ -127,6 +135,22 @@ exposes `data-camera-radius` (and test-mode `materialPreviewCameraRadius`) so
 e2e can dispatch wheel and two-pointer pinch on the preview canvas. Gestures
 attach only to that canvas (`attachMaterialPreviewGestures`); never
 `camera.attachControl`, which Babylon binds to the Engine input element.
+
+## Pin defaults and Details
+
+Unconnected numeric and color inputs show the same read-only canvas widgets as
+the Class graph (`PinDefaultPreviewWidget`). Catalog `defaultValue` (and
+`colorHint` swatches) hydrate onto `__pins`; authored overrides persist as
+`default:<pinId>` number arrays on the node. Widgets hide when that pin is
+wired. Lowering prefers the authored override, then the catalog default;
+unwired pins with neither stay unset (Normal, Alpha Clip).
+
+Details is selection-aware:
+
+- **No node selected:** Domain, Shading Model, Blend Mode, Two Sided (and Alpha
+  Cutoff when masked) plus the cost line.
+- **A node selected:** those material settings hide; the panel shows only that
+  node's properties and unconnected pin-default editors.
 
 ## Custom GLSL
 

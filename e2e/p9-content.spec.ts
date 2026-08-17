@@ -490,9 +490,8 @@ test.describe("P9 content systems", () => {
       "No Issues",
     );
 
-    // Every primitive is reachable from the compact preview mesh Select.
+    // Every primitive is reachable from the overlay mesh ToggleGroup.
     for (const mesh of ["cube", "cylinder", "cone", "plane"]) {
-      await page.getByTestId("material-preview-mesh").click();
       await page.getByTestId(`material-preview-mesh-${mesh}`).click();
       await expect(canvas).toHaveAttribute("data-status", "ready", {
         timeout: 15000,

@@ -113,46 +113,27 @@ function lastCommit(): MaterialDocument {
   return calls[calls.length - 1]![1] as MaterialDocument;
 }
 
-/** Base UI Select ignores a click that did not start on the item. */
-function pickSelectItem(testId: string) {
-  const item = screen.getByTestId(testId);
-  fireEvent.pointerDown(item);
-  fireEvent.click(item);
-}
-
 describe("Material preview panel", () => {
-  it("offers preview primitives from a compact select", async () => {
-    render(<MaterialPreviewPanel {...panelProps} />);
-    expect(screen.queryByTestId("material-preview-mesh-cube")).toBeNull();
-    fireEvent.click(screen.getByTestId("material-preview-mesh"));
-    await waitFor(() => {
-      expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
-    });
-    for (const mesh of ["cube", "sphere", "cylinder", "cone", "plane", "custom"]) {
-      expect(screen.getByTestId(`material-preview-mesh-${mesh}`)).toBeTruthy();
-    }
+  it("overlays compact mesh actions on the canvas instead of a toolbar strip", () => {
+    const { container } = render(<MaterialPreviewPanel {...panelProps} />);
+    expect(screen.getByTestId("material-preview-overlay")).toBeTruthy();
+    expect(container.querySelector("[data-slot=toolbar]")).toBeNull();
+    expect(screen.getByTestId("material-preview-mesh")).toBeTruthy();
+    expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
+    expect(screen.getByTestId("material-render")).toBeTruthy();
   });
 
-  it("stores the chosen primitive on the document", async () => {
+  it("stores the chosen primitive on the document", () => {
     render(<MaterialPreviewPanel {...panelProps} />);
-    fireEvent.click(screen.getByTestId("material-preview-mesh"));
-    await waitFor(() => {
-      expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
-    });
-    pickSelectItem("material-preview-mesh-cube");
+    fireEvent.click(screen.getByTestId("material-preview-mesh-cube"));
     expect(lastCommit().preview.mesh).toBe("cube");
   });
 
-  it("opens the model picker when Custom is chosen with no mesh", async () => {
+  it("opens the model picker when Custom is chosen with no mesh", () => {
     render(<MaterialPreviewPanel {...panelProps} />);
-    fireEvent.click(screen.getByTestId("material-preview-mesh"));
-    await waitFor(() => {
-      expect(screen.getByTestId("material-preview-mesh-custom")).toBeTruthy();
-    });
-    pickSelectItem("material-preview-mesh-custom");
-    await waitFor(() => {
-      expect(screen.getByTestId("material-preview-mesh-picker")).toBeTruthy();
-    });
+    fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
+    expect(lastCommit().preview.mesh).toBe("custom");
+    expect(screen.getByTestId("material-preview-mesh-picker")).toBeTruthy();
   });
 
   it("shows the picked custom mesh name", () => {
@@ -234,6 +215,23 @@ describe("Material preview panel", () => {
 });
 
 describe("Material details panel", () => {
+  it("shows material settings when no node is selected", () => {
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("material-settings")).toBeTruthy();
+    expect(screen.getByTestId("property-domain")).toBeTruthy();
+    expect(screen.queryByTestId("material-node-details")).toBeNull();
+  });
+
+  it("hides material settings and shows node details when a node is selected", () => {
+    harness.selectedNodeId = "output";
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.queryByTestId("material-settings")).toBeNull();
+    expect(screen.queryByTestId("property-domain")).toBeNull();
+    expect(screen.getByTestId("material-node-details")).toBeTruthy();
+    expect(screen.getByTestId("property-metallic")).toBeTruthy();
+    expect(screen.queryByTestId("property-baseColor")).toBeNull();
+  });
+
   it("switches the material domain", () => {
     render(<MaterialDetailsPanel {...panelProps} />);
     const select = screen.getByTestId("property-domain");
@@ -307,9 +305,14 @@ describe("Material details panel", () => {
     );
   });
 
-  it("shows nothing extra when no node is selected", () => {
+  it("writes an authored pin default from Details", () => {
+    harness.selectedNodeId = "output";
     render(<MaterialDetailsPanel {...panelProps} />);
-    expect(screen.queryByTestId("material-node-details")).toBeNull();
+    const input = screen.getByTestId("property-metallic");
+    fireEvent.change(input, { target: { value: "0.25" } });
+    expect(
+      lastCommit().nodes.find((node) => node.id === "output")?.properties,
+    ).toEqual({ "default:metallic": [0.25] });
   });
 });
 
@@ -365,5 +368,26 @@ describe("Material graph panel", () => {
     await waitFor(() => {
       expect(container.querySelector('[data-handleid="baseColor"]')).not.toBeNull();
     });
+  });
+
+  it("shows read-only default widgets on unconnected material pins", async () => {
+    const { container } = render(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '[data-id="output"] [data-pin-label="Metallic"]',
+        ),
+      ).not.toBeNull();
+    });
+    expect(
+      container.querySelector(
+        '[data-id="output"] [data-handleid="metallic"]',
+      )?.parentElement?.querySelector('[data-pin-default="float"]')?.textContent,
+    ).toBe("0");
+    expect(
+      container.querySelector(
+        '[data-id="output"] [data-handleid="baseColor"]',
+      )?.parentElement?.querySelector("[data-pin-default]"),
+    ).toBeNull();
   });
 });

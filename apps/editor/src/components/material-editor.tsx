@@ -6,7 +6,6 @@ import {
   PinListEditor,
   PropertyGrid,
   SelectableText,
-  ToolbarStrip,
   assetRowIdentity,
   selectedPickerIdentity,
   type PinListRow,
@@ -22,21 +21,20 @@ import {
 } from "@babylonslate/ui/components/field";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@babylonslate/ui/components/select";
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@babylonslate/ui/components/toggle-group";
 import { Textarea } from "@babylonslate/ui/components/textarea";
 import { GraphEditor } from "@babylonslate/graph-ui";
 import {
   MATERIAL_PREVIEW_MESHES,
   classifyMaterialCost,
   hydrateMaterialGraphForEditor,
+  listUnconnectedMaterialPinDefaults,
   lowerMaterialDocument,
   materialGraphToSerialized,
   materialPaletteNodes,
+  materialPinDefaultPropertyKey,
   materialPinsAreCompatible,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -51,6 +49,15 @@ import {
   type MaterialFunctionPin,
   type MaterialPreviewMesh,
 } from "@babylonslate/shader-graph";
+import {
+  BoxIcon,
+  BoxSelectIcon,
+  CircleIcon,
+  ConeIcon,
+  CylinderIcon,
+  SquareIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
@@ -66,6 +73,104 @@ const PREVIEW_MESH_LABEL: Record<MaterialPreviewMesh, string> = {
   plane: "Plane",
   custom: "Custom",
 };
+
+const PREVIEW_MESH_ICON: Record<MaterialPreviewMesh, LucideIcon> = {
+  cube: BoxIcon,
+  sphere: CircleIcon,
+  cylinder: CylinderIcon,
+  cone: ConeIcon,
+  plane: SquareIcon,
+  custom: BoxSelectIcon,
+};
+
+type MaterialGraphDocument = MaterialDocument | MaterialFunctionDocument;
+
+function materialPinDefaultRows(
+  document: MaterialGraphDocument,
+  nodeId: string,
+  functions: Record<string, MaterialFunctionDocument>,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  return listUnconnectedMaterialPinDefaults(document, nodeId, { functions }).map(
+    (entry) => {
+      const key = materialPinDefaultPropertyKey(entry.pinId);
+      if (entry.colorHint) {
+        const alpha = entry.type === "vec4" ? (entry.value[3] ?? 1) : undefined;
+        return {
+          id: entry.pinId,
+          kind: "color",
+          label: entry.name,
+          value: [
+            entry.value[0] ?? 0,
+            entry.value[1] ?? 0,
+            entry.value[2] ?? 0,
+          ],
+          onChange: (next) =>
+            onPatch({
+              [key]:
+                alpha === undefined
+                  ? [next[0], next[1], next[2]]
+                  : [next[0], next[1], next[2], alpha],
+            }),
+        };
+      }
+      if (entry.type === "float" || entry.type === "generic") {
+        return {
+          id: entry.pinId,
+          kind: "number",
+          label: entry.name,
+          value: entry.value[0] ?? 0,
+          onChange: (next) => onPatch({ [key]: [next] }),
+        };
+      }
+      if (entry.type === "vec2") {
+        return {
+          id: entry.pinId,
+          kind: "vector3",
+          label: entry.name,
+          value: [entry.value[0] ?? 0, entry.value[1] ?? 0, 0],
+          axes: ["X", "Y"],
+          onChange: (next) => onPatch({ [key]: [next[0], next[1]] }),
+        };
+      }
+      if (entry.type === "vec4") {
+        return {
+          id: entry.pinId,
+          kind: "vector3",
+          label: entry.name,
+          value: [
+            entry.value[0] ?? 0,
+            entry.value[1] ?? 0,
+            entry.value[2] ?? 0,
+            entry.value[3] ?? 0,
+          ],
+          axes: ["X", "Y", "Z", "W"],
+          onChange: (next) =>
+            onPatch({
+              [key]: [
+                next[0],
+                next[1],
+                next[2],
+                next.length > 3 ? next[3]! : 0,
+              ],
+            }),
+        };
+      }
+      return {
+        id: entry.pinId,
+        kind: "vector3",
+        label: entry.name,
+        value: [
+          entry.value[0] ?? 0,
+          entry.value[1] ?? 0,
+          entry.value[2] ?? 0,
+        ],
+        axes: ["X", "Y", "Z"],
+        onChange: (next) => onPatch({ [key]: [next[0], next[1], next[2]] }),
+      };
+    },
+  );
+}
 
 function useMaterialDocument(): {
   documentId: string;
@@ -260,87 +365,85 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
 
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
-      <div className="flex h-full min-h-0 flex-col">
-        <ToolbarStrip>
-          <Select
-            value={document.preview.mesh}
-            onValueChange={(value) => {
-              const next = value as MaterialPreviewMesh | undefined;
-              if (!next) return;
-              commit({
-                ...document,
-                preview: {
-                  mesh: next,
-                  customMeshGuid:
-                    next === "custom" ? document.preview.customMeshGuid : null,
-                },
-              });
-              if (next === "custom" && !document.preview.customMeshGuid) {
-                setMeshPickOpen(true);
-              }
-            }}
+      <div className="relative flex h-full min-h-0 flex-col">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+          <div
+            className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
+            data-testid="material-preview-overlay"
           >
-            <SelectTrigger
+            <ToggleGroup
+              variant="outline"
+              size="sm"
+              spacing={1}
+              value={[document.preview.mesh]}
+              onValueChange={(value) => {
+                const next = value[0] as MaterialPreviewMesh | undefined;
+                if (!next) return;
+                commit({
+                  ...document,
+                  preview: {
+                    mesh: next,
+                    customMeshGuid:
+                      next === "custom" ? document.preview.customMeshGuid : null,
+                  },
+                });
+                if (next === "custom" && !document.preview.customMeshGuid) {
+                  setMeshPickOpen(true);
+                }
+              }}
               aria-label="Preview Mesh"
-              className="min-h-[var(--touch-target,44px)] w-[9.5rem]"
               data-testid="material-preview-mesh"
             >
-              <SelectValue>
-                {(value: unknown) =>
-                  PREVIEW_MESH_LABEL[value as MaterialPreviewMesh] ??
-                  String(value ?? "")
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {MATERIAL_PREVIEW_MESHES.map((mesh) => (
-                <SelectItem
-                  key={mesh}
-                  value={mesh}
-                  data-testid={`material-preview-mesh-${mesh}`}
-                >
-                  {PREVIEW_MESH_LABEL[mesh]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="touch"
-            disabled={!canRender}
-            onClick={() => editing.requestRender()}
-            data-testid="material-render"
-          >
-            Render
-          </Button>
-          <Badge data-testid="material-preview-status">{status}</Badge>
-        </ToolbarStrip>
-        {document.preview.mesh === "custom" ? (
-          <div className="px-2 pb-2">
+              {MATERIAL_PREVIEW_MESHES.map((mesh) => {
+                const Icon = PREVIEW_MESH_ICON[mesh];
+                return (
+                  <ToggleGroupItem
+                    key={mesh}
+                    value={mesh}
+                    aria-label={PREVIEW_MESH_LABEL[mesh]}
+                    data-testid={`material-preview-mesh-${mesh}`}
+                  >
+                    <Icon />
+                  </ToggleGroupItem>
+                );
+              })}
+            </ToggleGroup>
             <Button
               type="button"
               variant="outline"
-              className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-              onClick={() => setMeshPickOpen(true)}
-              data-testid="material-preview-custom-mesh"
+              size="sm"
+              disabled={!canRender}
+              onClick={() => editing.requestRender()}
+              data-testid="material-render"
             >
-              {selectedPickerIdentity(
-                assetRowIdentity(
-                  (() => {
-                    const asset = assetRegistry?.getByGuid(
-                      document.preview.customMeshGuid ?? "",
-                    );
-                    return asset
-                      ? { name: asset.header.name, type: asset.header.type }
-                      : undefined;
-                  })(),
-                ),
-                "Pick Mesh",
-              )}
+              Render
             </Button>
+            <Badge data-testid="material-preview-status">{status}</Badge>
+            {document.preview.mesh === "custom" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setMeshPickOpen(true)}
+                data-testid="material-preview-custom-mesh"
+              >
+                {selectedPickerIdentity(
+                  assetRowIdentity(
+                    (() => {
+                      const asset = assetRegistry?.getByGuid(
+                        document.preview.customMeshGuid ?? "",
+                      );
+                      return asset
+                        ? { name: asset.header.name, type: asset.header.type }
+                        : undefined;
+                    })(),
+                  ),
+                  "Pick Mesh",
+                )}
+              </Button>
+            ) : null}
           </div>
-        ) : null}
+        </div>
         <canvas
           ref={canvasRef}
           data-testid="material-preview-canvas"
@@ -350,7 +453,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
         />
         {editing.previewState.lastError ? (
           <p
-            className="px-3 py-1 text-xs text-destructive"
+            className="absolute inset-x-0 bottom-0 z-10 px-3 py-1 text-xs text-destructive"
             data-testid="material-preview-error"
           >
             <SelectableText>{editing.previewState.lastError}</SelectableText>
@@ -464,17 +567,24 @@ function MaterialDocumentDetails() {
     });
   }
 
+  const selected = document.nodes.find(
+    (entry) => entry.id === editing.selectedNodeId,
+  );
+
   return (
     <PanelFrame className="flex-1" data-testid="material-details-panel">
-      <div className="flex flex-col gap-2">
-        <PropertyGrid rows={rows} />
-        <MaterialCostSummary />
+      {selected ? (
         <MaterialNodeDetails
           document={document}
           commit={commit}
-          selectedNodeId={editing.selectedNodeId}
+          selectedNodeId={selected.id}
         />
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2" data-testid="material-settings">
+          <PropertyGrid rows={rows} />
+          <MaterialCostSummary />
+        </div>
+      )}
     </PanelFrame>
   );
 }
@@ -511,11 +621,12 @@ function MaterialNodeDetails({
   commit,
   selectedNodeId,
 }: {
-  document: MaterialDocument;
-  commit: (next: MaterialDocument) => void;
+  document: MaterialGraphDocument;
+  commit: (next: MaterialGraphDocument) => void;
   selectedNodeId: string | null;
 }) {
   const { assetRegistry } = useDocuments();
+  const editing = useMaterialEditing();
   const [pickOpen, setPickOpen] = useState(false);
   const node = document.nodes.find((entry) => entry.id === selectedNodeId);
   if (!node) return null;
@@ -531,7 +642,12 @@ function MaterialNodeDetails({
     });
   };
 
-  const rows: PropertyRow[] = [];
+  const rows: PropertyRow[] = materialPinDefaultRows(
+    document,
+    node.id,
+    editing.functions,
+    setProperties,
+  );
   if (node.type === "const.float" || node.type === "param.float") {
     const value = Array.isArray(node.properties.value)
       ? Number(node.properties.value[0] ?? 0)
@@ -664,8 +780,8 @@ function MaterialFunctionPicker({
   commit,
 }: {
   node: string;
-  document: MaterialDocument;
-  commit: (next: MaterialDocument) => void;
+  document: MaterialGraphDocument;
+  commit: (next: MaterialGraphDocument) => void;
 }) {
   const { assetRegistry } = useDocuments();
   const [open, setOpen] = useState(false);
@@ -737,19 +853,33 @@ function MaterialFunctionPicker({
 
 function MaterialFunctionDetails() {
   const { document, commit } = useMaterialFunctionDocument();
+  const editing = useMaterialEditing();
+  const selected = document.nodes.find(
+    (entry) => entry.id === editing.selectedNodeId,
+  );
   return (
     <PanelFrame className="flex-1" data-testid="material-details-panel">
-      <PropertyGrid
-        rows={[
-          {
-            id: "description",
-            kind: "text",
-            label: "Description",
-            value: document.description,
-            onChange: (value) => commit({ ...document, description: value }),
-          },
-        ]}
-      />
+      {selected ? (
+        <MaterialNodeDetails
+          document={document}
+          commit={commit}
+          selectedNodeId={selected.id}
+        />
+      ) : (
+        <div data-testid="material-function-settings">
+          <PropertyGrid
+            rows={[
+              {
+                id: "description",
+                kind: "text",
+                label: "Description",
+                value: document.description,
+                onChange: (value) => commit({ ...document, description: value }),
+              },
+            ]}
+          />
+        </div>
+      )}
     </PanelFrame>
   );
 }
