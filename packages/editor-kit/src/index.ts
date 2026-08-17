@@ -166,6 +166,10 @@ export {
   modifiersFromKeyboardEvent,
 } from "./format-binding-label";
 export {
+  BindingCodePicker,
+  type BindingCodePickerProps,
+} from "./binding-code-picker";
+export {
   BindingCaptureButton,
   type BindingCaptureButtonProps,
 } from "./binding-capture-button";
