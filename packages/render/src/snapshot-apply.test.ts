@@ -548,8 +548,8 @@ describe("createPlayMesh", () => {
     });
     const box = binding.meshes.get(0);
     const sphere = binding.meshes.get(1);
-    expect(box?.isVisible).toBe(false);
-    expect(sphere?.isVisible).toBe(false);
+    expect.soft(box?.isVisible).toBe(false);
+    expect.soft(sphere?.isVisible).toBe(false);
     expect(box!.getTotalVertices()).not.toBe(sphere!.getTotalVertices());
     expect(box!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(0.2);
     applySnapshotToScene(scene, binding, {
