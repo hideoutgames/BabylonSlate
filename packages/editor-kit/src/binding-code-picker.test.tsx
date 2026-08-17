@@ -49,6 +49,8 @@ describe("BindingCodePicker", () => {
     expect(menu.getAttribute("data-slot")).toBe("dropdown-menu-content");
     expect(screen.getByTestId("search-item-KeyW")).toBeTruthy();
     expect(screen.queryByTestId("search-item-0:0")).toBeNull();
+    expect(screen.getByTestId("search-item-Space").textContent).toBe("Space");
+    expect(screen.getByTestId("search-item-KeyW").textContent).toMatch(/KeyW/);
 
     fireEvent.change(screen.getByTestId("binding-code-picker-menu-query"), {
       target: { value: "space" },

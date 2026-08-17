@@ -68,17 +68,20 @@ function catalogItems(
   touchControlIds?: readonly string[],
 ): SearchDialogItem[] {
   if (device === "touch") {
-    return resolveTouchIds(touchControlIds).map((id) => ({
-      id,
-      label: bindingCodeLabel("touch", id),
-      description: id,
-      group: "Touch",
-    }));
+    return resolveTouchIds(touchControlIds).map((id) => {
+      const label = bindingCodeLabel("touch", id);
+      return {
+        id,
+        label,
+        description: id === label ? undefined : id,
+        group: "Touch",
+      };
+    });
   }
   return bindingCodesForDevice(device).map((entry) => ({
     id: entry.code,
     label: entry.label,
-    description: entry.code,
+    description: entry.code === entry.label ? undefined : entry.code,
     group: entry.group,
   }));
 }
