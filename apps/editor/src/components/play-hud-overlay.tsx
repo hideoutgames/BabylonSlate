@@ -18,6 +18,8 @@ import { Button } from "@babylonslate/ui/components/button";
 import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
 import { playJoystickAxesFromPointer } from "../lib/play-hud-joystick";
 
+const defaultResolveImageUrl = (_guid: string): string | null => null;
+
 export interface PlayHudOverlayProps {
   instances?: ReadonlyArray<{
     instanceId: string;
@@ -86,7 +88,7 @@ export function PlayHudOverlay({
   onTouchAxis,
   scene = null,
   fontEntries = [],
-  resolveImageUrl = () => null,
+  resolveImageUrl = defaultResolveImageUrl,
 }: PlayHudOverlayProps) {
   const pointerIdRef = useRef<number | null>(null);
   const onTouchAxisRef = useRef(onTouchAxis);
