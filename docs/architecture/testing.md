@@ -18,6 +18,10 @@ Run one project with `pnpm exec vitest run --config vitest.workspace.ts --projec
 
 The `jsdom` project sets `css: true` so `?raw` stylesheet imports resolve; Vitest stubs CSS to an empty string otherwise, which silently made the radius audit pass on empty input.
 
+## Preview parity fixture
+
+`e2e/preview-scene-fixture.ts` is the shared authored scene for Scene viewport, overlay Play, Preview Build, and served export assertions. It includes separated actors plus a parented child. Test-only hosts expose live Babylon visual positions/material names; tests assert the rendered state, not only command records or tick counters. `p9-content.spec.ts` also compares consecutive static Material Preview frames so RTT accumulation fails in browser coverage.
+
 ## Coverage gates
 
 Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `apps/editor` is outside the gate (Playwright). `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).

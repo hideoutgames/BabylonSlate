@@ -258,6 +258,12 @@ describe("compact dock tab strips", () => {
     expect(dockviewCss).not.toMatch(/min-height:\s*52px/);
   });
 
+  it("keeps dockview tabs wide enough to click when titles are short", () => {
+    expect(dockviewCss).toMatch(/min-width:\s*56px/);
+    expect(dockviewCss).toMatch(/min-width:\s*64px/);
+    expect(dockviewCss).not.toMatch(/min-width:\s*28px/);
+  });
+
   it("gives dockview tabs slight horizontal margins without changing height", () => {
     const theme = cssBlock(dockviewCss, ".dockview-theme-babylonslate");
     expect(tokenValue(theme, "--dv-tab-margin")).toBe("0 2px");

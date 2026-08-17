@@ -332,7 +332,22 @@ export function applyAssignMesh(
   binding.meshes.set(command.slotId, rebuilt);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
+  setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
+}
+
+function setPlayVisualVisibility(mesh: Mesh, visible: boolean): void {
+  const origin = Boolean(
+    (mesh.metadata as { playActorOrigin?: boolean } | null)?.playActorOrigin,
+  );
+  mesh.isVisible = origin ? false : visible;
+  if (!origin) return;
+  for (const child of mesh.getChildMeshes()) {
+    if (!child.name.includes("|")) continue;
+    const afterPipe = child.name.slice(child.name.indexOf("|") + 1);
+    if (afterPipe.includes(":")) continue;
+    child.isVisible = visible;
+  }
 }
 
 export function applyPossessCamera(
@@ -558,18 +573,7 @@ export function applySnapshotToScene(
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
       }
       writeActorTransform(mesh, actor);
-      const origin = Boolean(
-        (mesh.metadata as { playActorOrigin?: boolean } | null)?.playActorOrigin,
-      );
-      mesh.isVisible = origin ? false : (actor.flags & 1) === 1;
-      if (origin) {
-        for (const child of mesh.getChildMeshes()) {
-          if (!child.name.includes("|")) continue;
-          const afterPipe = child.name.slice(child.name.indexOf("|") + 1);
-          if (afterPipe.includes(":")) continue;
-          child.isVisible = (actor.flags & 1) === 1;
-        }
-      }
+      setPlayVisualVisibility(mesh, (actor.flags & 1) === 1);
       const light = binding.lights.get(actor.slotId);
       if (light) {
         const composed = composeSlotPartTransform(actor, binding, actor.slotId);

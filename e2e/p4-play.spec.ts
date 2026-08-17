@@ -51,6 +51,60 @@ test.describe("P4 Play overlay and session report", () => {
     await page.getByTestId("play-overlay-close").click();
   });
 
+  test("repeated Play cycles keep live mesh and texture counts stable", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    await openMainScene(page);
+    const samples: Array<{ meshes: number; textures: number }> = [];
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await clickPlayAndWaitForOverlay(page);
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const host = globalThis as unknown as {
+                __babylonslatePlayTest?: {
+                  liveObjectCounts: () => {
+                    meshes: number;
+                    textures: number;
+                  } | null;
+                };
+              };
+              return (
+                host.__babylonslatePlayTest?.liveObjectCounts()?.meshes ?? 0
+              );
+            }),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(0);
+      samples.push(
+        (await page.evaluate(() => {
+          const host = globalThis as unknown as {
+            __babylonslatePlayTest?: {
+              liveObjectCounts: () => {
+                meshes: number;
+                textures: number;
+              } | null;
+            };
+          };
+          return host.__babylonslatePlayTest?.liveObjectCounts() ?? {
+            meshes: -1,
+            textures: -1,
+          };
+        }))!,
+      );
+      await page.getByTestId("play-overlay-close").click();
+      await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+    }
+    expect(new Set(samples.map((sample) => sample.textures)).size).toBe(1);
+    const meshCounts = samples.map((sample) => sample.meshes);
+    expect(Math.max(...meshCounts) - Math.min(...meshCounts)).toBeLessThanOrEqual(
+      1,
+    );
+  });
+
   test("dirty graph Play shows the prepare dialog, then saves", async ({
     page,
   }) => {

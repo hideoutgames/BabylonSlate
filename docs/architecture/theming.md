@@ -132,7 +132,7 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 
 Default Blueprint shells use Tailwind `min-w-80` (320px); compact BT nodes use `min-w-56`. Title bars are `text-base`. Pin rows stay `--touch-target` (44px).
 
-Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
+Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
 
 ## Axis colors
 
