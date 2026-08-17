@@ -109,6 +109,7 @@ export {
   GRAPH_DEFAULT_ZOOM,
   GRAPH_MAX_ZOOM,
   GRAPH_MIN_ZOOM,
+  GRAPH_ZOOM_ON_DOUBLE_CLICK,
 } from "./graph-viewport";
 
 export interface GraphEditorProps {
@@ -1495,6 +1496,7 @@ function GraphEditorCanvas({
           defaultViewport={graphViewport.defaultViewport}
           minZoom={graphViewport.minZoom}
           maxZoom={graphViewport.maxZoom}
+          zoomOnDoubleClick={graphViewport.zoomOnDoubleClick}
           proOptions={{ hideAttribution: true }}
         >
           <Background

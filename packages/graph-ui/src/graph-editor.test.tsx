@@ -1,8 +1,14 @@
 import { act, fireEvent, render, cleanup, waitFor } from "@testing-library/react";
+import { useStore } from "@xyflow/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
-import { GRAPH_DEFAULT_ZOOM, GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
+import {
+  GRAPH_DEFAULT_ZOOM,
+  GRAPH_MIN_ZOOM,
+  GRAPH_ZOOM_ON_DOUBLE_CLICK,
+  GraphEditor,
+} from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
 import { MARQUEE_FALLBACK_HEIGHT, MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
@@ -228,6 +234,11 @@ function openPalette(container: HTMLElement) {
   expect(pane).not.toBeNull();
   fireEvent.click(pane!);
   fireEvent.click(pane!);
+}
+
+function GraphZoomProbe() {
+  const zoom = useStore((state) => state.transform[2]);
+  return <span data-testid="graph-zoom">{String(zoom)}</span>;
 }
 
 const farDrop = { x: 500, y: 22 };
@@ -1529,6 +1540,31 @@ describe("GraphEditor", () => {
     expect(pane).not.toBeNull();
     fireEvent.contextMenu(pane!);
     expect(getByTestId("node-palette-body")).toBeTruthy();
+  });
+
+  it("opens Add Node on empty-pane double-click without zooming the canvas", () => {
+    const { container, getByTestId } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+        toolbarExtra={<GraphZoomProbe />}
+      />,
+    );
+    const pane = container.querySelector(".react-flow__pane");
+    const viewport = container.querySelector(
+      ".react-flow__viewport",
+    ) as HTMLElement | null;
+    expect(pane).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect(GRAPH_ZOOM_ON_DOUBLE_CLICK).toBe(false);
+    const beforeTransform = viewport!.style.transform;
+    const beforeZoom = getByTestId("graph-zoom").textContent;
+    fireEvent.click(pane!);
+    fireEvent.click(pane!);
+    fireEvent.doubleClick(pane!);
+    expect(getByTestId("node-palette-body")).toBeTruthy();
+    expect(getByTestId("graph-zoom").textContent).toBe(beforeZoom);
+    expect(viewport!.style.transform).toBe(beforeTransform);
   });
 
   it("opens the palette on double-tap after remounting for a new function", () => {

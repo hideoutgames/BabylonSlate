@@ -3,6 +3,7 @@ import {
   GRAPH_DEFAULT_ZOOM,
   GRAPH_MAX_ZOOM,
   GRAPH_MIN_ZOOM,
+  GRAPH_ZOOM_ON_DOUBLE_CLICK,
   resolveGraphViewport,
 } from "./graph-viewport";
 
@@ -51,5 +52,11 @@ describe("resolveGraphViewport", () => {
     expect(viewport.focusedFitViewOptions.maxZoom).toBe(0.8);
     expect(viewport.focusedFitViewOptions.padding).toBe(0.35);
     expect(viewport.focusedFitViewOptions.duration).toBe(250);
+  });
+
+  it("disables double-click zoom so empty-pane double-tap can add a node", () => {
+    const viewport = resolveGraphViewport();
+    expect(GRAPH_ZOOM_ON_DOUBLE_CLICK).toBe(false);
+    expect(viewport.zoomOnDoubleClick).toBe(false);
   });
 });
