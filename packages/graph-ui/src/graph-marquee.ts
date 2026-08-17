@@ -102,10 +102,41 @@ function pointerIdOf(event: Event): number {
   return typeof id === "number" ? id : 1;
 }
 
-function clientOf(event: Event): { x: number; y: number } {
+function finitePoint(x: unknown, y: unknown): { x: number; y: number } | null {
+  if (typeof x !== "number" || typeof y !== "number") return null;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+function touchSample(event: Event): { clientX: number; clientY: number } | undefined {
+  const touchEvent = event as TouchEvent;
+  return touchEvent.changedTouches?.[0] ?? touchEvent.touches?.[0];
+}
+
+/** Client coordinates from pointer/mouse events, or touches[0] on TouchEvent. */
+export function clientPointFromEvent(
+  event: Event,
+): { x: number; y: number } | null {
+  const touch = touchSample(event);
+  if (touch) {
+    return finitePoint(touch.clientX, touch.clientY);
+  }
+  return finitePoint(
+    (event as PointerEvent).clientX,
+    (event as PointerEvent).clientY,
+  );
+}
+
+export function screenRectRelativeTo(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  origin: { left: number; top: number },
+): ScreenRect {
   return {
-    x: (event as PointerEvent).clientX,
-    y: (event as PointerEvent).clientY,
+    x: Math.min(start.x, end.x) - origin.left,
+    y: Math.min(start.y, end.y) - origin.top,
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y),
   };
 }
 
@@ -165,7 +196,8 @@ export function attachGraphPaneMarquee(
     if (!target || !wrapper.contains(target)) return;
     if (!isEmptyPaneTarget(event.target)) return;
     if (gesture?.timer) clearTimeout(gesture.timer);
-    const startClient = clientOf(event);
+    const startClient = clientPointFromEvent(event);
+    if (!startClient) return;
     const next = {
       timer: null as ReturnType<typeof setTimeout> | null,
       pointerId: pointerIdOf(event),
@@ -192,7 +224,12 @@ export function attachGraphPaneMarquee(
       return;
     }
     captureIfArmed();
-    const point = clientOf(event);
+    if (gesture.armed) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+    const point = clientPointFromEvent(event);
+    if (!point) return;
     if (pointerMovedPastTolerance(gesture.startClient, point)) {
       gesture.moved = true;
     }
@@ -208,23 +245,19 @@ export function attachGraphPaneMarquee(
       }
       return;
     }
-    if (gesture.armed) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
     if (phase !== "marquee") return;
-    const box = wrapper.getBoundingClientRect();
-    options.onMarqueeRect({
-      x: Math.min(gesture.startClient.x, point.x) - box.left,
-      y: Math.min(gesture.startClient.y, point.y) - box.top,
-      width: Math.abs(point.x - gesture.startClient.x),
-      height: Math.abs(point.y - gesture.startClient.y),
-    });
+    options.onMarqueeRect(
+      screenRectRelativeTo(
+        gesture.startClient,
+        point,
+        wrapper.getBoundingClientRect(),
+      ),
+    );
   };
 
   const onUp = (event: Event) => {
     if (!gesture || pointerIdOf(event) !== gesture.pointerId) return;
-    const point = clientOf(event);
+    const point = clientPointFromEvent(event) ?? gesture.startClient;
     if (pointerMovedPastTolerance(gesture.startClient, point)) {
       gesture.moved = true;
     }

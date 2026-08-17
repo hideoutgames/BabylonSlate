@@ -1523,10 +1523,10 @@ function GraphEditorCanvas({
             <div
               className="absolute border-2 border-dashed border-primary bg-primary/25"
               style={{
-                left: marqueeScreen.x,
-                top: marqueeScreen.y,
-                width: marqueeScreen.width,
-                height: marqueeScreen.height,
+                left: `${marqueeScreen.x}px`,
+                top: `${marqueeScreen.y}px`,
+                width: `${marqueeScreen.width}px`,
+                height: `${marqueeScreen.height}px`,
               }}
             />
           </div>

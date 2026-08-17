@@ -1827,6 +1827,47 @@ describe("GraphEditor", () => {
       dispatchPointerEvent(pane!, "pointermove", { clientX: 140, clientY: 110 });
     });
     expect(getByTestId("graph-marquee")).toBeTruthy();
+    const box = getByTestId("graph-marquee").firstElementChild as HTMLElement;
+    expect(box.style.left).toBe("20px");
+    expect(box.style.top).toBe("20px");
+    expect(box.style.width).toBe("120px");
+    expect(box.style.height).toBe("90px");
+  });
+
+  it("positions the marquee overlay relative to an offset graph panel", () => {
+    const { container, getByTestId } = render(
+      <GraphEditor initialGraph={graphWithPins()} />,
+    );
+    const editor = getByTestId("graph-editor");
+    editor.getBoundingClientRect = () =>
+      ({
+        left: 80,
+        top: 40,
+        right: 480,
+        bottom: 440,
+        width: 400,
+        height: 400,
+        x: 80,
+        y: 40,
+        toJSON() {
+          return {};
+        },
+      }) as DOMRect;
+    const pane = container.querySelector(".react-flow__pane");
+    expect(pane).not.toBeNull();
+    vi.useFakeTimers();
+    act(() => {
+      dispatchPointerEvent(pane!, "pointerdown", { clientX: 100, clientY: 60 });
+      vi.advanceTimersByTime(DRAG_ARM_MS);
+    });
+    act(() => {
+      dispatchPointerEvent(pane!, "pointermove", { clientX: 220, clientY: 150 });
+    });
+    const box = getByTestId("graph-marquee").firstElementChild as HTMLElement;
+    expect(box.style.left).toBe("20px");
+    expect(box.style.top).toBe("20px");
+    expect(box.style.width).toBe("120px");
+    expect(box.style.height).toBe("90px");
   });
 
   it("selects nodes inside a hold-then-drag marquee", () => {

@@ -4,8 +4,10 @@ import {
   MARQUEE_FALLBACK_HEIGHT,
   MARQUEE_FALLBACK_WIDTH,
   attachGraphPaneMarquee,
+  clientPointFromEvent,
   nodesIntersectingMarquee,
   resolvePaneMarqueePhase,
+  screenRectRelativeTo,
   type MarqueeNode,
   type ScreenRect,
 } from "./graph-marquee";
@@ -55,6 +57,37 @@ describe("resolvePaneMarqueePhase", () => {
         armed: true,
       }),
     ).toBe("armed");
+  });
+});
+
+describe("clientPointFromEvent", () => {
+  it("reads client coordinates from a pointer or mouse event", () => {
+    const event = new MouseEvent("pointermove", { clientX: 40, clientY: 80 });
+    expect(clientPointFromEvent(event)).toEqual({ x: 40, y: 80 });
+  });
+
+  it("reads client coordinates from touches[0] when the event has no clientX", () => {
+    const event = new Event("touchmove");
+    Object.defineProperty(event, "touches", {
+      value: [{ clientX: 220, clientY: 150 }],
+    });
+    expect(clientPointFromEvent(event)).toEqual({ x: 220, y: 150 });
+  });
+
+  it("returns null when neither clientX nor a touch sample is present", () => {
+    expect(clientPointFromEvent(new Event("touchmove"))).toBeNull();
+  });
+});
+
+describe("screenRectRelativeTo", () => {
+  it("subtracts the overlay origin so a drag in an offset panel is not at 0,0", () => {
+    expect(
+      screenRectRelativeTo(
+        { x: 100, y: 60 },
+        { x: 220, y: 150 },
+        { left: 80, top: 40 },
+      ),
+    ).toEqual({ x: 20, y: 20, width: 120, height: 90 });
   });
 });
 
@@ -234,6 +267,84 @@ describe("attachGraphPaneMarquee", () => {
     expect(paneMoves).not.toHaveBeenCalled();
     expect(touch.defaultPrevented).toBe(true);
     expect(mouse.defaultPrevented).toBe(true);
+    handle.dispose();
+  });
+
+  it("emits a wrapper-relative rect when the graph panel is not at the viewport origin", () => {
+    const { wrapper, pane } = mountEmptyPane();
+    wrapper.getBoundingClientRect = () =>
+      ({
+        left: 80,
+        top: 40,
+        right: 480,
+        bottom: 440,
+        width: 400,
+        height: 400,
+      }) as DOMRect;
+
+    const rects: Array<ScreenRect | null> = [];
+    const handle = attachGraphPaneMarquee(wrapper, {
+      onMarqueeRect: (rect) => rects.push(rect),
+      onMarqueeEnd: () => {},
+    });
+
+    vi.useFakeTimers();
+    dispatchPointer(pane, "pointerdown", 100, 60);
+    vi.advanceTimersByTime(DRAG_ARM_MS);
+    dispatchPointer(pane, "pointermove", 220, 150);
+    expect(rects.at(-1)).toEqual({ x: 20, y: 20, width: 120, height: 90 });
+    handle.dispose();
+  });
+
+  it("updates the overlay from a TouchEvent that only has touches[0]", () => {
+    const { wrapper, pane } = mountEmptyPane();
+    wrapper.getBoundingClientRect = () =>
+      ({
+        left: 80,
+        top: 40,
+        right: 480,
+        bottom: 440,
+        width: 400,
+        height: 400,
+      }) as DOMRect;
+
+    const rects: Array<ScreenRect | null> = [];
+    const handle = attachGraphPaneMarquee(wrapper, {
+      onMarqueeRect: (rect) => rects.push(rect),
+      onMarqueeEnd: () => {},
+    });
+
+    vi.useFakeTimers();
+    dispatchPointer(pane, "pointerdown", 100, 60);
+    vi.advanceTimersByTime(DRAG_ARM_MS);
+    const touch = new Event("touchmove", { bubbles: true, cancelable: true });
+    Object.defineProperty(touch, "touches", {
+      value: [{ clientX: 220, clientY: 150 }],
+    });
+    window.dispatchEvent(touch);
+    expect(rects.at(-1)).toEqual({ x: 20, y: 20, width: 120, height: 90 });
+    handle.dispose();
+  });
+
+  it("does not reset the overlay to the origin when a swallowed touchmove has no client point", () => {
+    const { wrapper, pane } = mountEmptyPane();
+    const rects: Array<ScreenRect | null> = [];
+    const handle = attachGraphPaneMarquee(wrapper, {
+      onMarqueeRect: (rect) => rects.push(rect),
+      onMarqueeEnd: () => {},
+    });
+
+    vi.useFakeTimers();
+    dispatchPointer(pane, "pointerdown", 20, 20);
+    vi.advanceTimersByTime(DRAG_ARM_MS);
+    dispatchPointer(pane, "pointermove", 140, 110);
+    expect(rects.at(-1)).toEqual({ x: 20, y: 20, width: 120, height: 90 });
+
+    window.dispatchEvent(new Event("touchmove", { bubbles: true, cancelable: true }));
+    expect(rects.at(-1)).toEqual({ x: 20, y: 20, width: 120, height: 90 });
+    expect(rects.filter((rect) => rect && (rect.x === 0 || Number.isNaN(rect.x)))).toEqual(
+      [],
+    );
     handle.dispose();
   });
 
