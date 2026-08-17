@@ -349,8 +349,10 @@ function layoutThenChain(
         ? start.position.y + layerIndex * (startSize.height + FORMAT_GAP_Y)
         : start.position.y;
     for (const id of layer) {
+      const node = byId.get(id);
+      if (!node) continue;
       placeNodeWithInputs(id, x, y, byId, children, cache, positions);
-      y += hangingSubtreeSize(id, byId, children, cache).height + FORMAT_GAP_Y;
+      y += nodeSize(node).height + FORMAT_GAP_Y;
     }
     x += layerWidth + FORMAT_GAP_X;
   }
@@ -453,6 +455,48 @@ function translateIds(
   return withPositions(nodes, positions);
 }
 
+function lowerOverlappingNode(a: FormatNode, b: FormatNode): FormatNode {
+  if (a.position.y !== b.position.y) {
+    return a.position.y > b.position.y ? a : b;
+  }
+  if (a.position.x !== b.position.x) {
+    return a.position.x > b.position.x ? a : b;
+  }
+  return a.id.localeCompare(b.id) > 0 ? a : b;
+}
+
+function nudgeOverlappingMembers(
+  nodes: FormatNode[],
+  ids: ReadonlySet<string>,
+): FormatNode[] {
+  if (ids.size < 2) return nodes;
+  let current = nodes;
+  for (let pass = 0; pass < 32; pass++) {
+    const members = current.filter((node) => ids.has(node.id));
+    let extra = 0;
+    let movingId: string | undefined;
+    for (let i = 0; i < members.length; i++) {
+      for (let j = i + 1; j < members.length; j++) {
+        const a = members[i]!;
+        const b = members[j]!;
+        if (!boxesOverlap(nodeBox(a), nodeBox(b))) continue;
+        const lower = lowerOverlappingNode(a, b);
+        const upper = lower.id === a.id ? b : a;
+        const upperBox = nodeBox(upper);
+        const needed =
+          upperBox.y + upperBox.height + FORMAT_GAP_Y - lower.position.y;
+        if (needed > extra) {
+          extra = needed;
+          movingId = lower.id;
+        }
+      }
+    }
+    if (extra <= 0 || !movingId) break;
+    current = translateIds(current, new Set([movingId]), 0, extra);
+  }
+  return current;
+}
+
 function shiftChainClearOf(
   nodes: FormatNode[],
   movingIds: ReadonlySet<string>,
@@ -494,7 +538,9 @@ export function formatGraphNodes(
   for (const root of roots) {
     current = layoutThenChain(current, edges, root);
     const members = formatMemberIds(root, current, edges);
+    current = nudgeOverlappingMembers(current, members);
     current = shiftChainClearOf(current, members, placed);
+    current = nudgeOverlappingMembers(current, members);
     for (const id of members) placed.add(id);
   }
   return current;
