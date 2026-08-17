@@ -1076,6 +1076,7 @@ describe("GraphEditor", () => {
     );
     expect(preview).not.toBeNull();
     expect(preview?.getAttribute("data-checked")).toBe("true");
+    expect(preview?.className).toMatch(/\bsize-5\b/);
     expect(label?.className).toMatch(/text-base/);
     expect(handle?.nextElementSibling).toBe(preview);
     expect(preview?.nextElementSibling).toBe(label);
@@ -1138,7 +1139,7 @@ describe("GraphEditor", () => {
     ).not.toBeNull();
   });
 
-  it("shows a tiny capped string field for an unconnected string default", () => {
+  it("shows a capped string field for an unconnected string default", () => {
     const graph: GraphDocument = {
       nodes: [
         {
@@ -1160,7 +1161,9 @@ describe("GraphEditor", () => {
     );
     expect(preview).not.toBeNull();
     expect(preview?.textContent).toBe("Hello World");
-    expect(preview?.className).toMatch(/--graph-pin-default-max-width/);
+    expect(preview?.className).toMatch(/\btext-base\b/);
+    expect(preview?.className).toMatch(/\bh-8\b/);
+    expect(preview?.className).toMatch(/--graph-pin-default-max-width,8rem/);
     expect(
       container.querySelector('[data-id="log"] [data-pin-default]'),
     ).not.toBe(

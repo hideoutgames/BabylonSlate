@@ -162,7 +162,7 @@
     --chrome-row: 28px;
     --touch-target: 44px;
     --graph-pin-size: 22px;
-    --graph-pin-default-max-width: 4.5rem;
+    --graph-pin-default-max-width: 8rem;
     --graph-edge-exec: 5px;
     --graph-edge-data: 4px;
     --pin-exec: oklch(0.145 0 0);
@@ -263,7 +263,7 @@
     --chrome-row: 28px;
     --touch-target: 44px;
     --graph-pin-size: 22px;
-    --graph-pin-default-max-width: 4.5rem;
+    --graph-pin-default-max-width: 8rem;
     --graph-edge-exec: 5px;
     --graph-edge-data: 4px;
     --pin-exec: oklch(0.95 0 0);
