@@ -24,9 +24,16 @@ describe("material document", () => {
     ).toBe(true);
   });
 
-  it("defaults the preview to a sphere with no custom mesh", () => {
+  it("defaults the preview to a cube with no custom mesh", () => {
     const doc = createDefaultMaterialDocument();
-    expect(doc.preview).toEqual({ mesh: "sphere", customMeshGuid: null });
+    expect(doc.preview).toEqual({ mesh: "cube", customMeshGuid: null });
+  });
+
+  it("normalizes a custom preview without a picked model back to cube", () => {
+    const doc = normalizeMaterialDocument({
+      preview: { mesh: "custom", customMeshGuid: null },
+    });
+    expect(doc.preview).toEqual({ mesh: "cube", customMeshGuid: null });
   });
 
   it("fills missing fields when normalizing an unknown payload", () => {
