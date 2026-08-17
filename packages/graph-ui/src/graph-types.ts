@@ -8,6 +8,8 @@ export type SerializedPin = {
   direction: "in" | "out";
   type: { kind: string; [key: string]: unknown };
   optional?: boolean;
+  defaultValue?: unknown;
+  colorHint?: boolean;
 };
 
 /** Serialized graph with optional pin handles on edges (backward compatible with core). */
