@@ -235,7 +235,6 @@ describe("createPlayMesh", () => {
       ],
     });
     const camera = binding.cameras.get(0) as UniversalCamera;
-    camera.computeWorldMatrix(true);
     const expected = Vector3.Forward().applyRotationQuaternion(
       new Quaternion(...yaw),
     );

@@ -238,7 +238,6 @@ describe("syncAuthoredIllumination", () => {
     const expected = Vector3.Forward().applyRotationQuaternion(
       new Quaternion(...yaw),
     );
-    camera.computeWorldMatrix(true);
     const forward = camera.getDirection(Vector3.Forward());
     expect(forward.x).toBeCloseTo(expected.x, 5);
     expect(forward.y).toBeCloseTo(expected.y, 5);

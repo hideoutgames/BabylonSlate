@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  FreeCamera,
   MeshBuilder,
   Quaternion,
   TransformNode,
@@ -292,7 +293,9 @@ describe("EditorDebugOverlay", () => {
       ]),
       selectedActorIds: ["cam"],
     });
-    const preview = scene.getCameraByName("debugPreviewCam:cam");
+    const preview = scene.getCameraByName(
+      "debugPreviewCam:cam",
+    ) as FreeCamera | null;
     expect(preview).toBeTruthy();
     const expected = new Quaternion(
       actorRotation[0],
