@@ -15,7 +15,7 @@ const FOLDER_PREF_KEY = "babylonslate:scoped-folder";
 const STALE_PREF_KEY = "babylonslate:scoped-stale";
 const STALE_BOOKMARK_CODE = "STALE_BOOKMARK";
 
-interface FolderRef extends FolderIdentity {}
+type FolderRef = FolderIdentity;
 
 function toHandle(folder: FolderRef): ProjectFolderHandle {
   return {
