@@ -493,6 +493,54 @@ describe("createPlayMesh", () => {
     expect(first).not.toBe(second);
   });
 
+  it("owns a distinct frozen world matrix for every actor slot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "box",
+    });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshAssetGuid: null,
+      meshKind: "sphere",
+    });
+
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 2,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: -3, y: 1, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+        {
+          slotId: 1,
+          position: { x: 4, y: -1, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+
+    const firstWorld = binding.meshes.get(0)!.getWorldMatrix();
+    const secondWorld = binding.meshes.get(1)!.getWorldMatrix();
+    expect(firstWorld).not.toBe(secondWorld);
+    expect(firstWorld.getTranslation().asArray()).toEqual([-3, 1, 0]);
+    expect(secondWorld.getTranslation().asArray()).toEqual([4, -1, 0]);
+  });
+
   it("rebuilds a slot visual when assignMesh arrives after the first snapshot", () => {
     const handle = createTestEngine();
     handles.push(handle);

@@ -1,6 +1,5 @@
 import {
   DirectionalLight,
-  Matrix,
   Mesh,
   PointLight,
   Quaternion,
@@ -44,7 +43,6 @@ import { snapToPixelGrid } from "./pixel-perfect";
 const scratchPos = new Vector3();
 const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
-const scratchMatrix = Matrix.Identity();
 const scratchLocalPos = new Vector3();
 const scratchPartQuat = new Quaternion();
 
@@ -734,11 +732,12 @@ function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
     actor.rotation.z,
     actor.rotation.w,
   );
-  Matrix.ComposeToRef(scratchScale, scratchQuat, scratchPos, scratchMatrix);
-  mesh.freezeWorldMatrix(scratchMatrix);
   // Keep local TRS in sync for gizmos / picking later.
   mesh.position.copyFrom(scratchPos);
   mesh.rotationQuaternion = mesh.rotationQuaternion ?? new Quaternion();
   mesh.rotationQuaternion.copyFrom(scratchQuat);
   mesh.scaling.copyFrom(scratchScale);
+  // No shared Matrix argument: Babylon caches an independent world matrix for
+  // every actor slot. Sharing the scratch matrix collapses all rendered meshes.
+  mesh.freezeWorldMatrix();
 }
