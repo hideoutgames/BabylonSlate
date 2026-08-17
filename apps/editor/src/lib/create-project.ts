@@ -11,6 +11,22 @@ export function normalizeProjectFolderName(displayName: string): string {
   return base ? `${base}.babproject` : "";
 }
 
+export type CreateProjectNameIssue = "Name required." | "Name already exists.";
+
+/** Validation copy for the Create Project name field. */
+export function createProjectNameIssue(
+  displayName: string,
+  existingFolderNames: readonly string[],
+): CreateProjectNameIssue | null {
+  const folder = normalizeProjectFolderName(displayName);
+  if (!folder) return "Name required.";
+  const wanted = folder.toLowerCase();
+  const taken = existingFolderNames.some(
+    (name) => normalizeProjectFolderName(name).toLowerCase() === wanted,
+  );
+  return taken ? "Name already exists." : null;
+}
+
 export type CreateProjectOptions = {
   /** Native only: pick an external folder, then scaffold into it. */
   pickFolder?: boolean;

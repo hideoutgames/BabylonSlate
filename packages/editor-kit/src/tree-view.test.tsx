@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { TREE_ROW_HEIGHT, TreeView, type TreeViewNode } from "./tree-view";
+import {
+  TREE_ROW_HEIGHT,
+  TREE_SWIPE_ADD_PX,
+  TreeView,
+  rangeSelectTreeIds,
+  type TreeViewNode,
+} from "./tree-view";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 import { CONTEXT_MENU_LONG_PRESS_MS, DRAG_ARM_MS } from "./use-context-menu";
 
@@ -39,6 +45,115 @@ describe("TreeView", () => {
     dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 10 });
     dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 10 });
     expect(onSelect).toHaveBeenCalledWith("child");
+    expect(onSelect.mock.calls[0]).toHaveLength(1);
+  });
+
+  it("adds a row on Ctrl Shift or Meta click", () => {
+    const onSelect = vi.fn();
+    render(<TreeView nodes={nodes} onSelect={onSelect} data-testid="tree" />);
+    const row = screen.getByTestId("tree-row-other");
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 10,
+      ctrlKey: true,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 10,
+      ctrlKey: true,
+    });
+    expect(onSelect).toHaveBeenCalledWith("other", { additive: true });
+  });
+
+  it("adds a row on a horizontal swipe of at least 44px", () => {
+    const onSelect = vi.fn();
+    const onReparent = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onSelect={onSelect}
+        onReparent={onReparent}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 50 });
+    dispatchPointerEvent(row, "pointermove", {
+      clientX: 10 + TREE_SWIPE_ADD_PX,
+      clientY: 50,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      clientX: 10 + TREE_SWIPE_ADD_PX,
+      clientY: 50,
+    });
+    expect(onSelect).toHaveBeenCalledWith("child", { additive: true });
+    expect(onReparent).not.toHaveBeenCalled();
+  });
+
+  it("range-selects from the current row to a two-finger tap", () => {
+    const onSelect = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        selectedId="root"
+        onSelect={onSelect}
+        data-testid="tree"
+      />,
+    );
+    const first = screen.getByTestId("tree-row-root");
+    const second = screen.getByTestId("tree-row-other");
+    dispatchPointerEvent(first, "pointerdown", {
+      pointerId: 1,
+      clientX: 12,
+      clientY: 10,
+    });
+    dispatchPointerEvent(second, "pointerdown", {
+      pointerId: 2,
+      clientX: 12,
+      clientY: 60,
+    });
+    dispatchPointerEvent(second, "pointerup", {
+      pointerId: 2,
+      clientX: 12,
+      clientY: 60,
+    });
+    dispatchPointerEvent(first, "pointerup", {
+      pointerId: 1,
+      clientX: 12,
+      clientY: 10,
+    });
+    expect(onSelect).toHaveBeenCalledWith("other", { range: true });
+  });
+
+  it("highlights every id in selectedIds", () => {
+    render(
+      <TreeView
+        nodes={nodes}
+        selectedIds={["root", "other"]}
+        data-testid="tree"
+      />,
+    );
+    expect(screen.getByTestId("tree-row-root").getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByTestId("tree-row-child").getAttribute("aria-selected")).toBe(
+      "false",
+    );
+    expect(screen.getByTestId("tree-row-other").getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
+
+  it("slices inclusive range ids between two visible rows", () => {
+    expect(rangeSelectTreeIds(["root", "child", "other"], "root", "other")).toEqual(
+      ["root", "child", "other"],
+    );
+    expect(rangeSelectTreeIds(["root", "child", "other"], "other", "child")).toEqual(
+      ["child", "other"],
+    );
   });
 
   it("toggles expansion from the disclosure control", () => {
@@ -158,7 +273,7 @@ describe("TreeView", () => {
     );
   });
 
-  it("does not select a row when the pointer dragged", () => {
+  it("does not select a row on a short drag that is not a swipe-add", () => {
     const onSelect = vi.fn();
     render(
       <TreeView
@@ -170,8 +285,8 @@ describe("TreeView", () => {
     );
     const row = screen.getByTestId("tree-row-child");
     dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 50 });
-    dispatchPointerEvent(row, "pointermove", { clientX: 90, clientY: 50 });
-    dispatchPointerEvent(row, "pointerup", { clientX: 90, clientY: 50 });
+    dispatchPointerEvent(row, "pointermove", { clientX: 20, clientY: 50 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 20, clientY: 50 });
     expect(onSelect).not.toHaveBeenCalled();
   });
 
@@ -273,6 +388,45 @@ describe("TreeView", () => {
     dispatchPointerEvent(row, "pointerdown", {
       pointerType: "mouse",
       clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    dispatchPointerEvent(row, "pointerup", {
+      pointerType: "mouse",
+      clientX: 260,
+      clientY: 180,
+    });
+    expect(onExternalDrop).toHaveBeenCalledWith("child", 260, 180);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("still external-drops after a horizontal move that would swipe-add", () => {
+    const onExternalDrop = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onExternalDrop={onExternalDrop}
+        onSelect={onSelect}
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84, width: 200, height: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    dispatchPointerEvent(row, "pointermove", {
+      pointerType: "mouse",
+      clientX: 10 + TREE_SWIPE_ADD_PX,
       clientY: 40,
     });
     dispatchPointerEvent(row, "pointermove", {

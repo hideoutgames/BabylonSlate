@@ -28,6 +28,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { PlusIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   ContextMenuOverlay,
@@ -1104,7 +1105,7 @@ function GraphEditorCanvas({
       target?: EventTarget | null;
     }) => {
       event.preventDefault();
-      if (readOnly || !contextMenuItemsForNode) return;
+      if (readOnly) return;
       if (
         event.target instanceof Element &&
         event.target.closest(".react-flow__node")
@@ -1112,11 +1113,19 @@ function GraphEditorCanvas({
         return;
       }
       const selected = graphStateRef.current.nodes.find((node) => node.selected);
-      if (!selected) return;
-      const items = contextMenuItemsForNode(selected.id);
-      paneMenu.openMenuAt(event.clientX, event.clientY, items);
+      if (selected && contextMenuItemsForNode) {
+        const items = contextMenuItemsForNode(selected.id);
+        if (items.length > 0) {
+          paneMenu.openMenuAt(event.clientX, event.clientY, items);
+          return;
+        }
+      }
+      if (paletteNodes && paletteNodes.length > 0) {
+        setPendingConnect(null);
+        setPaletteOpen(true);
+      }
     },
-    [contextMenuItemsForNode, paneMenu.openMenuAt, readOnly],
+    [contextMenuItemsForNode, paletteNodes, paneMenu.openMenuAt, readOnly],
   );
 
   const screenToFlowPositionRef = useRef(screenToFlowPosition);
@@ -1366,6 +1375,22 @@ function GraphEditorCanvas({
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card/90 p-1 shadow-md"
             data-testid="graph-toolbar"
           >
+            {paletteNodes && paletteNodes.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label="Add node"
+              title="Add node"
+              onClick={() => {
+                setPendingConnect(null);
+                setPaletteOpen(true);
+              }}
+              data-testid="graph-add-node"
+            >
+              <PlusIcon />
+            </Button>
+            ) : null}
             {hiddenToolbar.has("copy") ? null : (
             <Button
               type="button"

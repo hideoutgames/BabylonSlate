@@ -106,6 +106,43 @@ describe("collectAndExportGame", () => {
     );
   });
 
+  it("packs a project Game Instance when the startup scene omits one", async () => {
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      gameInstanceClass: "MyGame",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "class-game",
+          type: "Class",
+          name: "MyGame",
+          parentClass: "GameInstance",
+        }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      preset: defaultExportPreset(),
+      parentOf: (id) => (id === "MyGame" ? "GameInstance" : null),
+      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
+      graphByGuid: () => null,
+      bytesByGuid: (guid) =>
+        guid === "scene-1"
+          ? new TextEncoder().encode(JSON.stringify(scene))
+          : new TextEncoder().encode("{}"),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.manifest.gameInstanceClass).toBe("MyGame");
+    expect(result.value.manifest.assets.some((entry) => entry.guid === "class-game")).toBe(
+      true,
+    );
+  });
+
   it("packs a sprite textureGuid reached through the sprite payload", async () => {
     const scene = {
       ...createDefaultScene(),

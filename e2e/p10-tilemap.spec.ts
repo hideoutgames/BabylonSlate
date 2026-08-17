@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openMainScene } from "./open-test-project";
+import { openMainScene, submitCreateOrOpenListed } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 
 async function openTwoDProject(page: Page): Promise<void> {
@@ -13,7 +13,7 @@ async function openTwoDProject(page: Page): Promise<void> {
     "data-selected",
     "true",
   );
-  await page.getByTestId("create-project-submit").click();
+  await submitCreateOrOpenListed(page);
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
 

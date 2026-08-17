@@ -155,6 +155,29 @@ describe("NodePalette", () => {
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });
 
+  it("counts categories from the search-filtered set", () => {
+    const { getByPlaceholderText, getByTestId, queryByTestId } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[log, begin]}
+        onAddNode={() => {}}
+      />,
+    );
+
+    expect(getByTestId("node-palette-category-all").textContent).toContain("2");
+    expect(getByTestId("node-palette-category-Debug").textContent).toContain("1");
+    expect(getByTestId("node-palette-category-Flow").textContent).toContain("1");
+
+    fireEvent.change(getByPlaceholderText("Search nodes"), {
+      target: { value: "log" },
+    });
+
+    expect(getByTestId("node-palette-category-all").textContent).toContain("1");
+    expect(getByTestId("node-palette-category-Debug").textContent).toContain("1");
+    expect(queryByTestId("node-palette-category-Flow")).toBeNull();
+  });
+
   it("keeps Context Sensitive off after close and reopen", () => {
     const props = {
       onOpenChange: vi.fn(),

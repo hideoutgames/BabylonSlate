@@ -20,6 +20,16 @@ describe("project round-trip", () => {
     expect(exists).toBe(true);
   });
 
+  it("refuses to create over an existing project folder", async () => {
+    localStorage.clear();
+    const storage = new WebStorageAdapter();
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Taken.babproject");
+    await expect(service.createEmptyProject("Taken.babproject")).rejects.toThrow(
+      "Name already exists.",
+    );
+  });
+
   it("rewrites metadata.name without renaming the folder", async () => {
     localStorage.clear();
     const storage = new WebStorageAdapter();

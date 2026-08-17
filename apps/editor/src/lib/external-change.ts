@@ -11,3 +11,10 @@ export async function readProjectJsonMtime(
     return null;
   }
 }
+
+/** Recapture after Save All / compile-on-save so our project.json is not Reload Project. */
+export async function refreshMtimeSnapshotAfterEditorSave(
+  captureMtimeSnapshot: () => Promise<void>,
+): Promise<void> {
+  await captureMtimeSnapshot();
+}

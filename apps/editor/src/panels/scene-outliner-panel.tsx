@@ -8,9 +8,11 @@ import {
   TreeView,
   TypeVisualIcon,
   engineParentOf,
+  rangeSelectTreeIds,
   resolveActorTypeVisual,
   walkAncestry,
   type NestedMenuItem,
+  type TreeSelectOptions,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import {
@@ -75,6 +77,41 @@ export function outlinerRowTarget(
     return { kind: "actor", id: rowId.slice(ACTOR_ROW_PREFIX.length) };
   }
   return null;
+}
+
+export function applyOutlinerRowSelect(
+  rowId: string,
+  options: TreeSelectOptions | undefined,
+  visibleRowIds: readonly string[],
+  selectedActorIds: readonly string[],
+): { folderId: string | null; actorIds: string[] } {
+  const target = outlinerRowTarget(rowId);
+  if (target?.kind === "folder") {
+    return { folderId: target.id, actorIds: [] };
+  }
+  if (target?.kind !== "actor") {
+    return { folderId: null, actorIds: [] };
+  }
+  if (options?.range) {
+    const actorIds = visibleRowIds
+      .map((id) => outlinerRowTarget(id))
+      .filter((row): row is { kind: "actor"; id: string } => row?.kind === "actor")
+      .map((row) => row.id);
+    const from = selectedActorIds[selectedActorIds.length - 1];
+    return {
+      folderId: null,
+      actorIds: rangeSelectTreeIds(actorIds, from, target.id),
+    };
+  }
+  if (options?.additive) {
+    return {
+      folderId: null,
+      actorIds: selectedActorIds.includes(target.id)
+        ? selectedActorIds.filter((id) => id !== target.id)
+        : [...selectedActorIds, target.id],
+    };
+  }
+  return { folderId: null, actorIds: [target.id] };
 }
 
 /**
@@ -288,25 +325,36 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [applySceneChange, documentId],
   );
 
-  const selectedRowId = selectedFolderId
-    ? folderRowId(selectedFolderId)
-    : selectedActorIds[0]
-      ? actorRowId(selectedActorIds[0])
-      : null;
+  const selectedRowIds = selectedFolderId
+    ? [folderRowId(selectedFolderId)]
+    : selectedActorIds.map((id) => actorRowId(id));
+  const selectedRowId = selectedRowIds[0] ?? null;
 
-  /** A folder is not an actor, so selecting one clears the actor selection. */
   const setSelectedRowId = useCallback(
-    (rowId: string | null) => {
-      const target = outlinerRowTarget(rowId);
-      if (target?.kind === "folder") {
-        setSelectedFolderId(target.id);
+    (rowId: string | null, options?: TreeSelectOptions) => {
+      if (!rowId) {
+        setSelectedFolderId(null);
         selectActor(null);
         return;
       }
-      setSelectedFolderId(null);
-      selectActor(target?.kind === "actor" ? target.id : null);
+      const next = applyOutlinerRowSelect(
+        rowId,
+        options,
+        nodes.map((node) => node.id),
+        selectedActorIds,
+      );
+      setSelectedFolderId(next.folderId);
+      if (next.folderId) {
+        selectActor(null);
+        return;
+      }
+      if (options?.range || options?.additive) {
+        setSelectedActorIds(next.actorIds);
+        return;
+      }
+      selectActor(next.actorIds[0] ?? null);
     },
-    [selectActor],
+    [nodes, selectActor, selectedActorIds, setSelectedActorIds],
   );
 
   const projectItems = useMemo(() => {
@@ -680,6 +728,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               };
             })}
             selectedId={selectedRowId}
+            selectedIds={selectedRowIds}
             onSelect={setSelectedRowId}
             onActivate={(id) => {
               const target = outlinerRowTarget(id);

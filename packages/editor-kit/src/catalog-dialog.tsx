@@ -105,7 +105,7 @@ export function CatalogDialog({
           className,
         )}
       >
-        <DialogHeader className="shrink-0 border-b px-4 py-3 pr-12">
+        <DialogHeader className="shrink-0 border-b px-4 py-3 pr-14">
           <DialogTitle>{title}</DialogTitle>
           {description ? (
             <DialogDescription>{description}</DialogDescription>

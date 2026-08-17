@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
 
@@ -125,5 +125,44 @@ describe("Homepage recent project rows", () => {
     expect(folder.textContent).toMatch(/Chosen folder/);
     expect(device.textContent).not.toMatch(/opfs|idb/i);
     expect(folder.textContent).not.toMatch(/external|idb/i);
+  });
+});
+
+describe("Homepage Create Project dialog", () => {
+  it("shows Name required and disables Create when Name is empty", async () => {
+    renderHomepage();
+    screen.getByTestId("create-project").click();
+    const name = await screen.findByTestId("create-project-name");
+    fireEvent.change(name, { target: { value: "" } });
+    expect(screen.getByTestId("create-project-name-issue").textContent).toBe(
+      "Name required.",
+    );
+    expect(
+      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("shows Name already exists and disables Create on a listed name", async () => {
+    renderHomepage({
+      projects: [listedProject("MyGame.babproject", "opfs")],
+    });
+    screen.getByTestId("create-project").click();
+    expect(
+      (await screen.findByTestId("create-project-name-issue")).textContent,
+    ).toBe("Name already exists.");
+    expect(
+      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("drops template copy, says On this device, and explains Black Bars", async () => {
+    renderHomepage();
+    screen.getByTestId("create-project").click();
+    const dialog = await screen.findByTestId("create-project-dialog");
+    expect(dialog.textContent).not.toMatch(/or a template/i);
+    expect(screen.getByTestId("create-project-location").textContent).toBe(
+      "On this device.",
+    );
+    expect(dialog.textContent).toMatch(/letterboxes/i);
   });
 });

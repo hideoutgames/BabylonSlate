@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createProjectNameIssue,
   defaultCreateProjectDisplayName,
   normalizeProjectFolderName,
 } from "./create-project";
@@ -28,5 +29,27 @@ describe("normalizeProjectFolderName", () => {
   it("trims whitespace and rejects a blank name", () => {
     expect(normalizeProjectFolderName("  Hero  ")).toBe("Hero.babproject");
     expect(normalizeProjectFolderName("   ")).toBe("");
+  });
+});
+
+describe("createProjectNameIssue", () => {
+  it("reports Name required when the display name is blank", () => {
+    expect(createProjectNameIssue("   ", [])).toBe("Name required.");
+    expect(createProjectNameIssue("", ["MyGame.babproject"])).toBe(
+      "Name required.",
+    );
+  });
+
+  it("reports Name already exists when the folder name is listed", () => {
+    expect(
+      createProjectNameIssue("TestProject", ["TestProject.babproject"]),
+    ).toBe("Name already exists.");
+    expect(
+      createProjectNameIssue("TestProject.babproject", ["TestProject.babproject"]),
+    ).toBe("Name already exists.");
+  });
+
+  it("returns null for a free name", () => {
+    expect(createProjectNameIssue("Hero", ["TestProject.babproject"])).toBeNull();
   });
 });

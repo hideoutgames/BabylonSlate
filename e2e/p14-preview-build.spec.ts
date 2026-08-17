@@ -8,6 +8,7 @@ test.describe("P14 Preview Build", () => {
   }) => {
     await openTestProject(page);
     await expect(page.getByTestId("play-preview")).toBeDisabled();
+    await expect(page.getByTestId("play-preview")).toHaveText("Play");
     await page.getByTestId("debug-menu").click();
     await expect(page.getByTestId("preview-build-toggle")).toBeVisible();
     await page.keyboard.press("Escape");
@@ -25,6 +26,7 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("debug-menu").click();
     await page.getByTestId("preview-build-toggle").click();
     await expect(page.getByTestId("play-preview")).toBeEnabled();
+    await expect(page.getByTestId("play-preview")).toHaveText("Preview");
     await page.getByTestId("play-preview").click();
     await expect(page.getByTestId("preparing-preview-dialog")).toBeVisible();
     await expect(page.getByTestId("preview-build-overlay")).toBeVisible({
@@ -51,6 +53,13 @@ test.describe("P14 Preview Build", () => {
       .poll(async () => root.getAttribute("data-ticks"), { timeout: 30_000 })
       .not.toBe("0");
     await expect(root).not.toHaveAttribute("data-error", /.+/);
+    const hud = frame.getByTestId("player-hud");
+    await expect(hud).toBeVisible();
+    await expect
+      .poll(async () => Number((await hud.getAttribute("data-fps")) ?? "0"), {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
 
     const canvasBox = await frame.getByTestId("player-canvas").boundingBox();
     expect(canvasBox, "player canvas should be laid out").not.toBeNull();

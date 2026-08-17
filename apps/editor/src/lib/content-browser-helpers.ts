@@ -25,6 +25,7 @@ import {
 import { createDefaultUserInterface } from "@babylonslate/ui-runtime";
 import {
   engineParentOf,
+  rangeSelectTreeIds,
   resolveTypeVisual,
   walkAncestry,
   type TypeVisual,
@@ -336,6 +337,80 @@ export function exclusiveSelectAsset(guid: string): ContentBrowserSelection {
 /** Single tap / click replaces the whole Content Browser selection with one folder. */
 export function exclusiveSelectFolder(path: string): ContentBrowserSelection {
   return { guids: new Set(), folderPaths: new Set([path]) };
+}
+
+/** Exclusive folder tap sets the grid folder; additive/range keep it. */
+export function applyContentBrowserTreeSelect(
+  rowId: string,
+  options: { additive?: boolean; range?: boolean } | undefined,
+  rows: readonly ContentBrowserTreeRow[],
+  current: {
+    selectedGuids: ReadonlySet<string>;
+    selectedFolderPaths: ReadonlySet<string>;
+    selectedFolderPath: string;
+    anchorId?: string | null;
+  },
+): {
+  selectedGuids: Set<string>;
+  selectedFolderPaths: Set<string>;
+  selectedFolderPath: string;
+} {
+  const row = rows.find((entry) => entry.id === rowId);
+  if (!row) {
+    return {
+      selectedGuids: new Set(current.selectedGuids),
+      selectedFolderPaths: new Set(current.selectedFolderPaths),
+      selectedFolderPath: current.selectedFolderPath,
+    };
+  }
+  if (options?.range) {
+    const range = rangeSelectTreeIds(
+      rows.map((entry) => entry.id),
+      current.anchorId ?? null,
+      rowId,
+    );
+    const selectedGuids = new Set<string>();
+    const selectedFolderPaths = new Set<string>();
+    for (const id of range) {
+      const entry = rows.find((item) => item.id === id);
+      if (!entry) continue;
+      if (entry.kind === "folder") selectedFolderPaths.add(entry.path);
+      else if (entry.guid) selectedGuids.add(entry.guid);
+    }
+    return {
+      selectedGuids,
+      selectedFolderPaths,
+      selectedFolderPath: current.selectedFolderPath,
+    };
+  }
+  if (options?.additive) {
+    const selectedGuids = new Set(current.selectedGuids);
+    const selectedFolderPaths = new Set(current.selectedFolderPaths);
+    if (row.kind === "folder") {
+      if (selectedFolderPaths.has(row.path)) selectedFolderPaths.delete(row.path);
+      else selectedFolderPaths.add(row.path);
+    } else if (row.guid) {
+      if (selectedGuids.has(row.guid)) selectedGuids.delete(row.guid);
+      else selectedGuids.add(row.guid);
+    }
+    return {
+      selectedGuids,
+      selectedFolderPaths,
+      selectedFolderPath: current.selectedFolderPath,
+    };
+  }
+  if (row.kind === "folder") {
+    return {
+      selectedGuids: new Set(),
+      selectedFolderPaths: new Set(),
+      selectedFolderPath: row.path,
+    };
+  }
+  return {
+    selectedGuids: row.guid ? new Set([row.guid]) : new Set(),
+    selectedFolderPaths: new Set(),
+    selectedFolderPath: parentFolderPath(row.path),
+  };
 }
 
 /** Paint-select: union of cards dragged over; does not keep a prior selection. */
@@ -1233,6 +1308,47 @@ export function isFolderNameTaken(
     if (existing === path) return true;
   }
   return false;
+}
+
+/** Names shown in Delete (N) confirm — selected folders and assets, not flattened contents. */
+export function contentBrowserDeleteListNames(options: {
+  folderPaths?: readonly string[];
+  assetNames?: readonly string[];
+}): string[] {
+  return [...(options.folderPaths ?? []), ...(options.assetNames ?? [])];
+}
+
+/** Every asset guid a confirm will remove, including files inside selected folders. */
+export function contentBrowserDeletingGuids(options: {
+  extraGuids: readonly string[];
+  folderPaths: readonly string[];
+  assets: ReadonlyArray<{ header: { guid: string }; path: string }>;
+}): Set<string> {
+  const guids = new Set(options.extraGuids);
+  for (const folder of options.folderPaths) {
+    const prefix = `${folder}/`;
+    for (const asset of options.assets) {
+      if (asset.path === folder || asset.path.startsWith(prefix)) {
+        guids.add(asset.header.guid);
+      }
+    }
+  }
+  return guids;
+}
+
+export function lastSceneClassDeleteLines(
+  assets: ReadonlyArray<{ header: { guid: string; type: string } }>,
+  deletingGuids: ReadonlySet<string>,
+): string[] {
+  const lines: string[] = [];
+  for (const type of ["Scene", "Class"] as const) {
+    const ofType = assets.filter((asset) => asset.header.type === type);
+    if (ofType.length === 0) continue;
+    if (ofType.every((asset) => deletingGuids.has(asset.header.guid))) {
+      lines.push(`This is the last ${type} in the project.`);
+    }
+  }
+  return lines;
 }
 
 export function isRenameNameTaken(

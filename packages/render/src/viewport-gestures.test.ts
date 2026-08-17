@@ -46,8 +46,13 @@ class FakeCanvas {
   }
 }
 
-function pointer(pointerId: number, x: number, y: number) {
-  return { pointerId, clientX: x, clientY: y };
+function pointer(
+  pointerId: number,
+  x: number,
+  y: number,
+  extras: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean } = {},
+) {
+  return { pointerId, clientX: x, clientY: y, ...extras };
 }
 
 describe("attachViewportGestures", () => {
@@ -91,6 +96,19 @@ describe("attachViewportGestures", () => {
 
     expect(taps).toEqual([[122, 92]]);
     expect(canvas.capturedPointers).toEqual([1]);
+  });
+
+  it("marks a Ctrl Meta or Shift tap as additive", () => {
+    const taps: Array<{ x: number; y: number; additive: boolean }> = [];
+    attach("3d", {
+      onTap: (x, y, options) =>
+        taps.push({ x, y, additive: options?.additive === true }),
+    });
+
+    canvas.emit("pointerdown", pointer(1, 40, 50, { ctrlKey: true }));
+    canvas.emit("pointerup", pointer(1, 40, 50, { ctrlKey: true }));
+
+    expect(taps).toEqual([{ x: 40, y: 50, additive: true }]);
   });
 
   it("pans on a moved single finger in 2D and does not marquee", () => {

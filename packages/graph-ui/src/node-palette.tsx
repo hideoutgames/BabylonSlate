@@ -55,22 +55,38 @@ export function NodePalette({
       : nodes;
   }, [contextSensitive, filterPin, paletteNodes, pinCompatibility]);
 
+  const filteredBySearch = useMemo(
+    () => filterNodes(allNodes, search),
+    [allNodes, search],
+  );
+
   const categories = useMemo(() => {
     const map = new Map<string, number>();
-    for (const node of allNodes) {
+    for (const node of filteredBySearch) {
       map.set(node.category, (map.get(node.category) ?? 0) + 1);
     }
     const listed = [...map.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([id, count]) => ({ id, label: id, count }));
-    return [{ id: "all", label: "All", count: allNodes.length }, ...listed];
-  }, [allNodes]);
+    return [
+      { id: "all", label: "All", count: filteredBySearch.length },
+      ...listed,
+    ];
+  }, [filteredBySearch]);
+
+  useEffect(() => {
+    if (
+      activeCategory !== "all" &&
+      !categories.some((category) => category.id === activeCategory)
+    ) {
+      setActiveCategory("all");
+    }
+  }, [activeCategory, categories]);
 
   const filtered = useMemo(() => {
-    const bySearch = filterNodes(allNodes, search);
-    if (activeCategory === "all") return bySearch;
-    return bySearch.filter((node) => node.category === activeCategory);
-  }, [activeCategory, allNodes, search]);
+    if (activeCategory === "all") return filteredBySearch;
+    return filteredBySearch.filter((node) => node.category === activeCategory);
+  }, [activeCategory, filteredBySearch]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, PaletteNode[]>();

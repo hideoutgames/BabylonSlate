@@ -77,6 +77,10 @@ import { IconActionButton } from "./icon-action-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
 import { displayProjectName } from "../lib/display-project-name";
+import {
+  playChromeLaunchAriaLabel,
+  playChromeLaunchLabel,
+} from "../lib/play-chrome-label";
 import { canFocusLayout } from "../shell/layout-ops";
 import "../shell/editor-chrome.css";
 
@@ -454,13 +458,7 @@ export function EditorChromeBar({
               variant="ghost"
               data-testid="play-preview"
               className="chrome-action-button chrome-play-button relative"
-              aria-label={
-                canPlay
-                  ? "Play"
-                  : previewBuild
-                    ? "Play (Set Startup Scene)"
-                    : "Play (Open a Scene)"
-              }
+              aria-label={playChromeLaunchAriaLabel(previewBuild, canPlay)}
               title={
                 canPlay
                   ? undefined
@@ -479,7 +477,7 @@ export function EditorChromeBar({
               }}
             >
               <PlayIcon data-icon="inline-start" />
-              Play
+              {playChromeLaunchLabel(previewBuild)}
               {errorCount > 0 ? (
                 <span
                   className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-md bg-destructive text-[10px] text-white"

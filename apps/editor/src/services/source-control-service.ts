@@ -153,8 +153,10 @@ export class SourceControlService {
   }
 
   async configure(input: SourceControlConfigureInput): Promise<void> {
+    this.settings = { ...input.settings };
+    this.projectGuid = input.projectGuid;
+    this.secretStore = input.secretStore;
     const identity = [
-      input.settings.enabled ? "1" : "0",
       input.settings.repositoryUrl,
       input.settings.branch,
       String(input.settings.pollIntervalMs),
@@ -162,10 +164,21 @@ export class SourceControlService {
       input.testMode ? "t" : "",
       input.fake ? "fake" : input.nativeHttp ? "http" : "",
     ].join("|");
-    this.settings = { ...input.settings };
-    this.projectGuid = input.projectGuid;
-    this.secretStore = input.secretStore;
+    if (!this.settings.enabled) {
+      this.scheduler?.stop();
+      this.emit();
+      return;
+    }
     if (identity === this.providerIdentity && this.provider) {
+      if (!this.scheduler) {
+        this.scheduler = new LockPollScheduler({
+          intervalMs: this.settings.pollIntervalMs,
+          tick: () => {
+            void this.refresh();
+          },
+        });
+      }
+      this.scheduler.start();
       this.emit();
       return;
     }
@@ -176,12 +189,6 @@ export class SourceControlService {
     this.fake = null;
     this.locksByPath.clear();
     this.autoLockAttempted.clear();
-    if (!this.settings.enabled) {
-      this.editMode.clear();
-      this.banners.clear();
-      this.emit();
-      return;
-    }
     const hostOk = isSourceControlHost(input.platform, input.testMode);
     if (!hostOk) {
       this.emit();
@@ -189,7 +196,7 @@ export class SourceControlService {
     }
     this.tokenSaved = Boolean(
       input.projectGuid &&
-        (await input.secretStore.get(sourceControlSecretKey(input.projectGuid))),
+        (await input.secretStore.get(sourceControlSecretKey(this.projectGuid))),
     );
     if (input.fake) {
       this.fake = input.fake;

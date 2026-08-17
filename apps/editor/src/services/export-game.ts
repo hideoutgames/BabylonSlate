@@ -54,6 +54,7 @@ export type ExportPluginDescriptor = {
 
 export type CollectExportGameParams = {
   startupSceneGuid: string | null;
+  gameInstanceClass?: string | null;
   assets: ExportIndexedAsset[];
   plugins: readonly ExportPluginDescriptor[];
   projectPluginOverrides: Record<string, { enabled: boolean }>;
@@ -129,6 +130,7 @@ export async function collectAndExportGame(
   );
   const closure = collectExportClosure({
     startupSceneGuid: params.startupSceneGuid,
+    gameInstanceClass: params.gameInstanceClass,
     assets: params.assets,
     pluginEnabledGuids,
     parentOf: params.parentOf,
@@ -225,6 +227,7 @@ export async function collectAndExportGame(
     mode,
     bundleDebugger,
     startupSceneGuid: startup,
+    gameInstanceClass: params.gameInstanceClass,
     customResolution: params.customResolution,
     playFrameCap: params.playFrameCap,
     pixelsPerUnit: params.pixelsPerUnit,
