@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent } from "@babylonslate/core";
 import {
   ENGINE_PLACE_ACTORS,
+  duplicateSceneActor,
   nextActorId,
   prefabComponentsForGuid,
   projectPlaceActors,
@@ -9,6 +10,8 @@ import {
   visualForPlaceActor,
   type PlaceActorItem,
 } from "./place-actors";
+
+const ORIGIN: [number, number, number] = [0, 0, 0];
 
 describe("ENGINE_PLACE_ACTORS", () => {
   it("groups shapes, lights, camera, empty, and navigation", () => {
@@ -44,7 +47,7 @@ describe("spawnPlacedActor", () => {
 
   it("spawns a mesh primitive", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-sphere")!;
-    const actor = spawnPlacedActor(scene, item, "actor-1");
+    const actor = spawnPlacedActor(scene, item, "actor-1", ORIGIN);
     expect(actor.name).toBe("sphere");
     expect(actor.components[0]?.classId).toBe("MeshComponent");
     expect(actor.components[0]?.properties.meshKind).toBe("sphere");
@@ -52,7 +55,7 @@ describe("spawnPlacedActor", () => {
 
   it("spawns a light actor", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "light-point")!;
-    const actor = spawnPlacedActor(scene, item, "actor-2");
+    const actor = spawnPlacedActor(scene, item, "actor-2", ORIGIN);
     expect(actor.components[0]?.classId).toBe("LightComponent");
     expect(actor.components[0]?.properties.lightKind).toBe("point");
     expect(actor.components[0]?.properties.range).toBe(10);
@@ -60,7 +63,7 @@ describe("spawnPlacedActor", () => {
 
   it("spawns a NavMesh actor with Recast settings", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "navmesh")!;
-    const actor = spawnPlacedActor(scene, item, "actor-nav");
+    const actor = spawnPlacedActor(scene, item, "actor-nav", ORIGIN);
     expect(actor.name).toBe("NavMesh");
     expect(actor.components[0]?.classId).toBe("NavMeshComponent");
     expect(actor.components[0]?.properties.cellSize).toBe(0.2);
@@ -72,7 +75,7 @@ describe("spawnPlacedActor", () => {
 
   it("spawns a NavMesh blocker with static unwalkable defaults", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "navmesh-blocker")!;
-    const actor = spawnPlacedActor(scene, item, "actor-block");
+    const actor = spawnPlacedActor(scene, item, "actor-block", ORIGIN);
     expect(actor.name).toBe("NavMesh Blocker");
     expect(actor.components[0]?.classId).toBe("NavMeshBlockerComponent");
     expect(actor.components[0]?.properties.dynamic).toBe(false);
@@ -82,7 +85,7 @@ describe("spawnPlacedActor", () => {
 
   it("spawns a camera with explicit projection defaults", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "camera")!;
-    const actor = spawnPlacedActor(scene, item, "actor-cam");
+    const actor = spawnPlacedActor(scene, item, "actor-cam", ORIGIN);
     expect(actor.components[0]?.classId).toBe("CameraComponent");
     expect(actor.components[0]?.properties.projectionMode).toBe("perspective");
     expect(actor.components[0]?.properties.nearClip).toBe(0.1);
@@ -93,7 +96,7 @@ describe("spawnPlacedActor", () => {
     const item: PlaceActorItem = ENGINE_PLACE_ACTORS.find(
       (entry) => entry.id === "empty",
     )!;
-    const actor = spawnPlacedActor(scene, item, "actor-3");
+    const actor = spawnPlacedActor(scene, item, "actor-3", ORIGIN);
     expect(actor.components).toEqual([]);
   });
 
@@ -117,7 +120,7 @@ describe("spawnPlacedActor", () => {
         ],
       },
     };
-    const actor = spawnPlacedActor(scene, item, "actor-9");
+    const actor = spawnPlacedActor(scene, item, "actor-9", ORIGIN);
     expect(actor.classId).toBe("Hero");
     expect(actor.components).toEqual([
       {
@@ -140,7 +143,7 @@ describe("spawnPlacedActor", () => {
     expect(
       nextActorId({
         ...empty,
-        actors: [spawnPlacedActor(empty, ENGINE_PLACE_ACTORS[0]!, "actor-1")],
+        actors: [spawnPlacedActor(empty, ENGINE_PLACE_ACTORS[0]!, "actor-1", ORIGIN)],
       }),
     ).toBe("actor-2");
   });
@@ -152,48 +155,58 @@ describe("spawnPlacedActor", () => {
 
 describe("spawnPlacedActor placement", () => {
   const sphere = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-sphere")!;
-  const box = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-box")!;
+  const navmesh = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "navmesh")!;
 
-  it("uses the origin when the scene has no actors", () => {
-    const empty = { ...createDefaultScene(), actors: [] };
-    expect(spawnPlacedActor(empty, sphere, "actor-1").transform.position).toEqual([
-      0, 0, 0,
-    ]);
-  });
-
-  it("does not bury a new actor inside the default Cube at the origin", () => {
+  it("uses the supplied world position", () => {
     const scene = createDefaultScene();
-    const actor = spawnPlacedActor(scene, sphere, "actor-2");
-    expect(actor.transform.position).not.toEqual([0, 0, 0]);
+    const actor = spawnPlacedActor(scene, sphere, "actor-2", [4, 5, 6]);
+    expect(actor.transform.position).toEqual([4, 5, 6]);
   });
 
-  it("keeps successive placements clear of each other", () => {
-    let scene = { ...createDefaultScene(), actors: [] };
-    const positions: number[] = [];
-    for (const [index, item] of [sphere, box, sphere].entries()) {
-      const actor = spawnPlacedActor(scene, item, `actor-${index + 1}`);
-      positions.push(actor.transform.position[0]);
-      scene = { ...scene, actors: [...scene.actors, actor] };
-    }
-    expect(new Set(positions).size).toBe(3);
-    const sorted = [...positions].sort((a, b) => a - b);
-    for (let i = 1; i < sorted.length; i += 1) {
-      expect(sorted[i]! - sorted[i - 1]!).toBeGreaterThanOrEqual(1.5);
-    }
+  it("places a NavMesh at the supplied world position", () => {
+    const scene = createDefaultScene();
+    const actor = spawnPlacedActor(scene, navmesh, "actor-nav", [1, 2, 3]);
+    expect(actor.transform.position).toEqual([1, 2, 3]);
+  });
+});
+
+describe("duplicateSceneActor", () => {
+  it("clones the actor with a new id and Copy name", () => {
+    const scene = createDefaultScene();
+    const source = createActor("actor-1", "Cube", {
+      folderId: "props",
+      parentId: "actor-root",
+      components: [createMeshComponent("mesh-1", "box")],
+    });
+    const copy = duplicateSceneActor(scene, source);
+    expect(copy.id).toBe("actor-2");
+    expect(copy.name).toBe("Cube Copy");
+    expect(copy.parentId).toBe("actor-root");
+    expect(copy.folderId).toBe("props");
+    expect(copy.components).toEqual(source.components);
+    expect(copy.transform).toEqual(source.transform);
+    expect(copy).not.toBe(source);
   });
 
-  it("reuses a gap left by a deleted actor instead of drifting outward", () => {
-    const scene = {
-      ...createDefaultScene(),
-      actors: [] as ReturnType<typeof spawnPlacedActor>[],
-    };
-    const first = spawnPlacedActor(scene, box, "actor-1");
-    const withFirst = { ...scene, actors: [first] };
-    const second = spawnPlacedActor(withFirst, box, "actor-2");
-    const onlySecond = { ...scene, actors: [second] };
-    expect(spawnPlacedActor(onlySecond, box, "actor-3").transform.position).toEqual(
-      first.transform.position,
-    );
+  it("can drop the copy at a world position as a root actor", () => {
+    const scene = createDefaultScene();
+    const source = createActor("actor-1", "Cube", {
+      parentId: "actor-root",
+      folderId: "props",
+      transform: {
+        position: [1, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+      },
+    });
+    const copy = duplicateSceneActor(scene, source, {
+      position: [4, 5, 6],
+      parentId: null,
+    });
+    expect(copy.parentId).toBeNull();
+    expect(copy.folderId).toBe("props");
+    expect(copy.transform.position).toEqual([4, 5, 6]);
+    expect(copy.transform.scale).toEqual([1, 1, 1]);
   });
 });
 

@@ -164,6 +164,43 @@ test.describe("P6 first-playable scene editing", () => {
     await page.getByTestId("play-overlay-close").click();
   });
 
+  test("dragging an Outliner actor onto the viewport duplicates it", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+
+    const cubeRow = page.getByTestId("tree-row-actor:actor-1");
+    await expect(cubeRow).toContainText("Cube");
+    const canvas = page.getByTestId("viewport-canvas");
+    await expect(canvas).toBeVisible();
+
+    const copies = page.locator('[data-testid^="tree-row-actor:"]', {
+      hasText: "Cube Copy",
+    });
+    const before = await copies.count();
+
+    const rowBox = await cubeRow.boundingBox();
+    const canvasBox = await canvas.boundingBox();
+    expect(rowBox).not.toBeNull();
+    expect(canvasBox).not.toBeNull();
+
+    await page.mouse.move(rowBox!.x + 24, rowBox!.y + rowBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      canvasBox!.x + canvasBox!.width / 2,
+      canvasBox!.y + canvasBox!.height / 2,
+      { steps: 12 },
+    );
+    const hint = page.getByTestId("outliner-drop-hint");
+    await expect(hint).toBeVisible();
+    await expect(hint).toHaveAttribute("data-allowed", "true");
+    await expect(hint).toContainText("Cube");
+    await page.mouse.up();
+
+    await expect(copies).toHaveCount(before + 1);
+  });
+
   test("scene panels expose touch-sized toolbar controls", {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {

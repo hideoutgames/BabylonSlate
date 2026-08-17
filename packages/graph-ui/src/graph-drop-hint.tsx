@@ -10,15 +10,17 @@ export type GraphDropHintState = {
 /** Floating badge while dragging Class/Component rows onto the graph. */
 export function GraphDropHint({
   hint,
+  testId = "graph-member-drop-hint",
 }: {
   hint: GraphDropHintState | null;
+  testId?: string;
 }) {
   if (!hint) return null;
   return (
     <div
       className="pointer-events-none fixed z-50"
       style={{ left: hint.clientX + 12, top: hint.clientY + 12 }}
-      data-testid="graph-member-drop-hint"
+      data-testid={testId}
       data-allowed={hint.allowed ? "true" : "false"}
     >
       <Badge

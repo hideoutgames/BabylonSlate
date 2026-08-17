@@ -18,6 +18,10 @@ import {
   createEditorCamera,
   type EditorCameraController,
 } from "./editor-camera";
+import {
+  viewCenterWorldPosition,
+  worldPositionFromCanvas,
+} from "./editor-place";
 import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
@@ -246,6 +250,16 @@ export interface EditorTools {
   /** Preview the named Default Camera without replacing the stored orbit pose. */
   setPreviewGameCamera: (enabled: boolean) => void;
   setShadowQuality: (level: string) => void;
+  /**
+   * World point under a client coordinate on this viewport canvas, or null when
+   * the canvas has no layout size.
+   */
+  worldPositionAtClient: (
+    clientX: number,
+    clientY: number,
+  ) => [number, number, number] | null;
+  /** World point in the middle of this viewport, in front of the editor camera. */
+  worldPositionAtViewCenter: () => [number, number, number];
 }
 
 export type PlayActorPosition = {
@@ -617,6 +631,19 @@ export function createEngine(
         editorSync.setShadowQuality(level);
         scheduler.invalidate("asset");
       },
+      worldPositionAtClient: (clientX, clientY) => {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        return worldPositionFromCanvas(
+          cameraController.camera,
+          clientX - rect.left,
+          clientY - rect.top,
+          { width: rect.width, height: rect.height },
+          cameraController.mode,
+        );
+      },
+      worldPositionAtViewCenter: () =>
+        viewCenterWorldPosition(cameraController.camera, cameraController.mode),
     };
   }
 
