@@ -1457,7 +1457,7 @@ function GraphEditorCanvas({
               size="sm"
               disabled={selectedNodes.length === 0}
               onClick={formatSelection}
-              title="Format selected nodes, or follow a single node’s then-chain and its data inputs"
+              title="Format selected chain roots independently: exec stays a horizontal highway, data trees hang below-left"
               data-testid="graph-format"
             >
               Format

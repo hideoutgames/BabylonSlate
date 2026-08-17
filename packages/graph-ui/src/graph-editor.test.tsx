@@ -4,8 +4,8 @@ import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
 import { GRAPH_MIN_ZOOM, GraphEditor } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
-import { FORMAT_GAP_X } from "./graph-format";
-import { MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
+import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
+import { MARQUEE_FALLBACK_HEIGHT, MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
 import { treeNodeTypes } from "./tree-node";
 
 afterEach(() => {
@@ -1803,11 +1803,11 @@ describe("GraphEditor", () => {
     expect(onChange).toHaveBeenCalled();
     const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
     expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
-      x: MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X,
-      y: 40,
+      x: 0,
+      y: 40 + MARQUEE_FALLBACK_HEIGHT + FORMAT_GAP_Y,
     });
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
-      x: (MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X) * 2,
+      x: MARQUEE_FALLBACK_WIDTH + FORMAT_GAP_X,
       y: 40,
     });
   });

@@ -252,7 +252,7 @@ function withPositions(
   });
 }
 
-function subtreeSize(
+function hangingSubtreeSize(
   nodeId: string,
   byId: Map<string, FormatNode>,
   children: Map<string, string[]>,
@@ -272,52 +272,20 @@ function subtreeSize(
     cache.set(nodeId, size);
     return size;
   }
-  let colWidth = 0;
-  let colHeight = 0;
+  let kidsWidth = 0;
+  let kidsHeight = 0;
   for (let i = 0; i < kids.length; i++) {
-    const kid = subtreeSize(kids[i]!, byId, children, cache);
-    colWidth = Math.max(colWidth, kid.width);
-    if (i > 0) colHeight += FORMAT_GAP_Y;
-    colHeight += kid.height;
+    const kid = hangingSubtreeSize(kids[i]!, byId, children, cache);
+    kidsWidth = Math.max(kidsWidth, kid.width);
+    if (i > 0) kidsHeight += FORMAT_GAP_Y;
+    kidsHeight += kid.height;
   }
   const measured = {
-    width: colWidth + FORMAT_GAP_X + size.width,
-    height: Math.max(size.height, colHeight),
+    width: size.width + FORMAT_GAP_X + kidsWidth,
+    height: size.height + FORMAT_GAP_Y + kidsHeight,
   };
   cache.set(nodeId, measured);
   return measured;
-}
-
-function leftTreeWidth(
-  nodeId: string,
-  byId: Map<string, FormatNode>,
-  children: Map<string, string[]>,
-  cache: Map<string, { width: number; height: number }>,
-): number {
-  const kids = children.get(nodeId) ?? [];
-  if (kids.length === 0) return 0;
-  return Math.max(
-    ...kids.map((kid) => subtreeSize(kid, byId, children, cache).width),
-  );
-}
-
-function stackedHeight(
-  nodeId: string,
-  byId: Map<string, FormatNode>,
-  children: Map<string, string[]>,
-  cache: Map<string, { width: number; height: number }>,
-): number {
-  const node = byId.get(nodeId);
-  if (!node) return 0;
-  const size = nodeSize(node);
-  const kids = children.get(nodeId) ?? [];
-  if (kids.length === 0) return size.height;
-  let colHeight = 0;
-  for (let i = 0; i < kids.length; i++) {
-    if (i > 0) colHeight += FORMAT_GAP_Y;
-    colHeight += subtreeSize(kids[i]!, byId, children, cache).height;
-  }
-  return Math.max(size.height, colHeight);
 }
 
 function placeNodeWithInputs(
@@ -330,8 +298,11 @@ function placeNodeWithInputs(
   positions: Map<string, { x: number; y: number }>,
 ): void {
   positions.set(nodeId, { x, y });
+  const node = byId.get(nodeId);
+  if (!node) return;
+  const size = nodeSize(node);
   const kids = children.get(nodeId) ?? [];
-  let childY = y;
+  let childY = y + size.height + FORMAT_GAP_Y;
   for (const kidId of kids) {
     const kid = byId.get(kidId);
     if (!kid) continue;
@@ -345,7 +316,7 @@ function placeNodeWithInputs(
       cache,
       positions,
     );
-    childY += subtreeSize(kidId, byId, children, cache).height + FORMAT_GAP_Y;
+    childY += hangingSubtreeSize(kidId, byId, children, cache).height + FORMAT_GAP_Y;
   }
 }
 
@@ -357,55 +328,157 @@ function layoutThenChain(
   const start = nodes.find((node) => node.id === startId);
   if (!start) return nodes;
   const byId = new Map(nodes.map((node) => [node.id, node]));
+  const walk = chainWalkKind(startId, nodes, edges);
   const layers = thenChainLayers(startId, nodes, edges);
   const chainOrder = layers.flat();
   const chainIds = new Set(chainOrder);
   const children = claimDataInputTrees(chainIds, chainOrder, nodes, edges);
   const cache = new Map<string, { width: number; height: number }>();
   const positions = new Map<string, { x: number; y: number }>();
+  const startSize = nodeSize(start);
   let x = start.position.x;
   for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
     const layer = layers[layerIndex]!;
-    let maxLeft = 0;
     let layerWidth = 0;
     for (const id of layer) {
-      maxLeft = Math.max(maxLeft, leftTreeWidth(id, byId, children, cache));
       const node = byId.get(id);
       if (node) layerWidth = Math.max(layerWidth, nodeSize(node).width);
     }
-    const consumerX =
-      layerIndex > 0 && maxLeft > 0 ? x + maxLeft + FORMAT_GAP_X : x;
-    let y = start.position.y;
+    let y =
+      walk === "data"
+        ? start.position.y + layerIndex * (startSize.height + FORMAT_GAP_Y)
+        : start.position.y;
     for (const id of layer) {
-      placeNodeWithInputs(id, consumerX, y, byId, children, cache, positions);
-      y += stackedHeight(id, byId, children, cache) + FORMAT_GAP_Y;
+      placeNodeWithInputs(id, x, y, byId, children, cache, positions);
+      y += hangingSubtreeSize(id, byId, children, cache).height + FORMAT_GAP_Y;
     }
-    x = consumerX + layerWidth + FORMAT_GAP_X;
+    x += layerWidth + FORMAT_GAP_X;
   }
   return withPositions(nodes, positions);
 }
 
-function layoutSelectedRow(
-  nodes: FormatNode[],
+function formatMemberIds(
+  startId: string,
+  nodes: readonly FormatNode[],
+  edges: readonly FormatEdge[],
+): Set<string> {
+  const layers = thenChainLayers(startId, nodes, edges);
+  const chainOrder = layers.flat();
+  const children = claimDataInputTrees(
+    new Set(chainOrder),
+    chainOrder,
+    nodes,
+    edges,
+  );
+  const ids = new Set(chainOrder);
+  for (const [parent, kids] of children) {
+    ids.add(parent);
+    for (const kid of kids) ids.add(kid);
+  }
+  return ids;
+}
+
+function formatChainRoots(
   selectedIds: readonly string[],
-): FormatNode[] {
-  const selected = selectedIds
-    .map((id) => nodes.find((node) => node.id === id))
-    .filter((node): node is FormatNode => Boolean(node))
+  nodes: readonly FormatNode[],
+  edges: readonly FormatEdge[],
+): string[] {
+  const selected = selectedIds.filter((id) =>
+    nodes.some((node) => node.id === id),
+  );
+  const contained = new Set<string>();
+  for (const id of selected) {
+    const chain = collectThenChain(id, nodes, edges);
+    for (const other of selected) {
+      if (other !== id && chain.includes(other)) contained.add(other);
+    }
+  }
+  return selected
+    .filter((id) => !contained.has(id))
     .sort((a, b) => {
-      if (a.position.x !== b.position.x) return a.position.x - b.position.x;
-      return a.position.y - b.position.y;
+      const nodeA = nodes.find((node) => node.id === a);
+      const nodeB = nodes.find((node) => node.id === b);
+      const ay = nodeA?.position.y ?? 0;
+      const by = nodeB?.position.y ?? 0;
+      if (ay !== by) return ay - by;
+      const ax = nodeA?.position.x ?? 0;
+      const bx = nodeB?.position.x ?? 0;
+      if (ax !== bx) return ax - bx;
+      return a.localeCompare(b);
     });
-  if (selected.length === 0) return nodes;
-  const originX = Math.min(...selected.map((node) => node.position.x));
-  const originY = Math.min(...selected.map((node) => node.position.y));
+}
+
+function nodeBox(node: FormatNode): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  const size = nodeSize(node);
+  return {
+    x: node.position.x,
+    y: node.position.y,
+    width: size.width,
+    height: size.height,
+  };
+}
+
+function boxesOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+function translateIds(
+  nodes: FormatNode[],
+  ids: ReadonlySet<string>,
+  dx: number,
+  dy: number,
+): FormatNode[] {
+  if (dx === 0 && dy === 0) return nodes;
   const positions = new Map<string, { x: number; y: number }>();
-  let x = originX;
-  for (const node of selected) {
-    positions.set(node.id, { x, y: originY });
-    x += nodeSize(node).width + FORMAT_GAP_X;
+  for (const node of nodes) {
+    if (!ids.has(node.id)) continue;
+    positions.set(node.id, {
+      x: node.position.x + dx,
+      y: node.position.y + dy,
+    });
   }
   return withPositions(nodes, positions);
+}
+
+function shiftChainClearOf(
+  nodes: FormatNode[],
+  movingIds: ReadonlySet<string>,
+  blockerIds: ReadonlySet<string>,
+): FormatNode[] {
+  if (movingIds.size === 0 || blockerIds.size === 0) return nodes;
+  let current = nodes;
+  for (let pass = 0; pass < 32; pass++) {
+    let extra = 0;
+    const moving = current.filter((node) => movingIds.has(node.id));
+    const blockers = current.filter((node) => blockerIds.has(node.id));
+    for (const mover of moving) {
+      const moverBox = nodeBox(mover);
+      for (const blocker of blockers) {
+        const blockerBox = nodeBox(blocker);
+        if (!boxesOverlap(moverBox, blockerBox)) continue;
+        extra = Math.max(
+          extra,
+          blockerBox.y + blockerBox.height + FORMAT_GAP_Y - moverBox.y,
+        );
+      }
+    }
+    if (extra <= 0) break;
+    current = translateIds(current, movingIds, 0, extra);
+  }
+  return current;
 }
 
 export function formatGraphNodes(
@@ -414,8 +487,15 @@ export function formatGraphNodes(
   selectedIds: readonly string[],
 ): FormatNode[] {
   if (selectedIds.length === 0) return nodes;
-  if (selectedIds.length === 1) {
-    return layoutThenChain(nodes, edges, selectedIds[0]!);
+  const roots = formatChainRoots(selectedIds, nodes, edges);
+  if (roots.length === 0) return nodes;
+  let current = nodes;
+  const placed = new Set<string>();
+  for (const root of roots) {
+    current = layoutThenChain(current, edges, root);
+    const members = formatMemberIds(root, current, edges);
+    current = shiftChainClearOf(current, members, placed);
+    for (const id of members) placed.add(id);
   }
-  return layoutSelectedRow(nodes, selectedIds);
+  return current;
 }
