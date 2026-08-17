@@ -22,17 +22,3 @@ export function formatBindingLabel(
 ): string {
   return `${modifierPrefix(modifiers)}${bindingCodeLabel(device, code)}`;
 }
-
-export function modifiersFromKeyboardEvent(event: {
-  shiftKey: boolean;
-  ctrlKey: boolean;
-  altKey: boolean;
-  metaKey: boolean;
-}): BindingModifiers | undefined {
-  const modifiers: BindingModifiers = {};
-  if (event.shiftKey) modifiers.shift = true;
-  if (event.ctrlKey) modifiers.ctrl = true;
-  if (event.altKey) modifiers.alt = true;
-  if (event.metaKey) modifiers.meta = true;
-  return Object.keys(modifiers).length > 0 ? modifiers : undefined;
-}

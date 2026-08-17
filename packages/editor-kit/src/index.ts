@@ -163,16 +163,11 @@ export {
 } from "./name-prompt-dialog";
 export {
   formatBindingLabel,
-  modifiersFromKeyboardEvent,
 } from "./format-binding-label";
 export {
   BindingCodePicker,
   type BindingCodePickerProps,
 } from "./binding-code-picker";
-export {
-  BindingCaptureButton,
-  type BindingCaptureButtonProps,
-} from "./binding-capture-button";
 export {
   InputMappingEditor,
   DEFAULT_TOUCH_CONTROL_IDS,
