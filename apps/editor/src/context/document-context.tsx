@@ -249,6 +249,8 @@ interface DocumentContextValue {
     guid: string,
     options?: { maxDimension?: number; force?: boolean },
   ) => Promise<boolean>;
+  onSessionDiagnostic: (listener: (line: string) => void) => () => void;
+  sessionDiagnostics: string[];
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -955,6 +957,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return ok;
     },
     [bump, projectService],
+  );
+
+  const onSessionDiagnostic = useCallback(
+    (listener: (line: string) => void) => projectService.onDiagnostic(listener),
+    [projectService],
   );
 
   const replayRecoveryJournal = useCallback(async () => {
@@ -1833,24 +1840,34 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [documentService, projectService]);
 
   const loadProjectGraphDocuments = useCallback(async (): Promise<
-    Array<{ path: string; content: SerializedGraph }>
+    Array<{
+      path: string;
+      content: SerializedGraph;
+      classId?: string;
+      parentClassId?: string | null;
+    }>
   > => {
     const documents = await loadClassGraphDocuments();
     const open = documentService.getState().openDocuments;
     const uiAssets = (projectService.registry?.list() ?? []).filter(
       (asset) => asset.header.type === "UserInterface",
     );
-    const uiPayloads: Array<{ path: string; payload: unknown }> = [];
+    const uiPayloads: Array<{ path: string; payload: unknown; guid?: string }> = [];
     for (const asset of uiAssets) {
       const openDoc = open.get(documentId({ kind: "ui", path: asset.path }));
       if (openDoc?.content) {
-        uiPayloads.push({ path: asset.path, payload: openDoc.content });
+        uiPayloads.push({
+          path: asset.path,
+          payload: openDoc.content,
+          guid: asset.header.guid,
+        });
         continue;
       }
       try {
         uiPayloads.push({
           path: asset.path,
           payload: await projectService.loadDocument("ui", asset.path),
+          guid: asset.header.guid,
         });
       } catch (error) {
         console.error(`[play] failed to load UserInterface logic ${asset.path}`, error);
@@ -1994,7 +2011,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
         graphId: documentId({ kind: "graph", path: doc.path }),
-        classId: classIdForGraphPath(doc.path),
+        classId: doc.classId ?? classIdForGraphPath(doc.path),
         hierarchy: classHierarchyFromParentOf(parentOf),
         members: classMemberSymbolsFromGraphs(classGraphs),
         knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
@@ -2469,6 +2486,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           error?: string;
         } | null;
         dirtyDocuments: () => { kind: string; id: string }[];
+        textureEncodeState: (path: string) => {
+          compressionState: string | null;
+          encodeError: string | null;
+          hasPixels: boolean;
+        } | null;
       };
       __babylonslateSourceControl?: SourceControlService;
     };
@@ -2627,6 +2649,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      textureEncodeState: (path: string) => {
+        const asset = projectService.registry
+          ?.list()
+          .find((entry) => entry.path === path);
+        if (!asset) return null;
+        const state = asset.header.payload.compressionState;
+        const encodeError = asset.header.payload.encodeError;
+        return {
+          compressionState: typeof state === "string" ? state : null,
+          encodeError: typeof encodeError === "string" ? encodeError : null,
+          hasPixels: asset.header.chunks.some(
+            (chunk) => chunk.kind === "pixels" || chunk.id === "pixels",
+          ),
+        };
+      },
       projectStartupSceneGuid: () =>
         projectDocument?.settings.startupSceneGuid?.trim() ?? "",
       pluginGuids: () =>
@@ -3234,6 +3271,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,
+      onSessionDiagnostic,
+      sessionDiagnostics: projectService.sessionDiagnostics,
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,
@@ -3278,6 +3317,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,
+      onSessionDiagnostic,
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,

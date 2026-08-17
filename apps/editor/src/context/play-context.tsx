@@ -254,6 +254,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     saveAll,
     assetRegistry,
     readAssetChunk,
+    onSessionDiagnostic,
   } = useDocuments();
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const playScene = resolvePlayScene({
@@ -317,6 +318,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
   }, []);
+
+  useEffect(
+    () => onSessionDiagnostic(appendLog),
+    [appendLog, onSessionDiagnostic],
+  );
 
   const registerSharedEngine = useCallback((engine: Engine | null) => {
     const previous = engineRef.current;
