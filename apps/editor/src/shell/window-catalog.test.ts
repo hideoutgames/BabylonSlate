@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CLASS_PANEL_INITIAL_HEIGHT,
   CLASS_PANEL_TITLE,
+  MATERIAL_SIDE_STACK_WIDTH,
   listDockWindows,
   primaryDockPanel,
 } from "./window-catalog";
@@ -262,11 +263,23 @@ describe("material dock catalog", () => {
     ]);
   });
 
-  it("anchors every Material dock to the graph", () => {
-    for (const entry of listDockWindows("material")) {
-      if (!entry.defaultPosition) continue;
-      expect(entry.defaultPosition.referencePanelId).toBe("material-graph");
-    }
+  it("stacks Details under Preview and keeps Graph about 75% wide", () => {
+    const windows = listDockWindows("material");
+    const preview = windows.find((entry) => entry.id === "material-preview");
+    const details = windows.find((entry) => entry.id === "material-details");
+    const compiler = windows.find(
+      (entry) => entry.id === "material-compiler-results",
+    );
+    expect(preview?.defaultPosition).toEqual({
+      referencePanelId: "material-graph",
+      direction: "left",
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
+    });
+    expect(details?.defaultPosition).toEqual({
+      referencePanelId: "material-preview",
+      direction: "below",
+    });
+    expect(compiler?.defaultPosition?.referencePanelId).toBe("material-graph");
   });
 
   it("titles Material docks in Title Case", () => {
