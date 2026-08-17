@@ -10,28 +10,6 @@ import {
   type TilesetPayload,
 } from "@babylonslate/assets";
 
-function agentDebugLog(
-  hypothesisId: string,
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-): void {
-  const fs = (
-    globalThis as {
-      process?: {
-        getBuiltinModule?: (name: string) => {
-          appendFileSync(path: string, data: string): void;
-        };
-      };
-    }
-  ).process?.getBuiltinModule?.("fs");
-  if (!fs) return;
-  fs.appendFileSync(
-    "/opt/cursor/logs/debug.log",
-    `${JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() })}\n`,
-  );
-}
-
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
  * RigidBodyComponent / ColliderComponent.
@@ -117,15 +95,6 @@ export class PhysicsWorldSync {
       const transform = this.backend.getBodyTransform(bodyId);
       if (!transform) continue;
       const localTransform = actorLocalPhysicsTransform(transform, actor, this.actors);
-      // #region agent log
-      agentDebugLog("D", "physics-sync.ts:step", "copying backend pose into actor local transform", {
-        actorGuid: actor.guid,
-        parentId: actor.getVariable("parentId") ?? null,
-        actorLocalBefore: actorTransform(actor),
-        backendTransform: transform,
-        localTransform,
-      });
-      // #endregion
       actor.transform.position.x = localTransform.position.x;
       actor.transform.position.y = localTransform.position.y;
       actor.transform.position.z = localTransform.position.z;
@@ -206,14 +175,6 @@ export class PhysicsWorldSync {
     const props = parseRigidBodyProperties(
       rigid ? mapToRecord(rigid.variables) : { motionType: "static", mass: 0, gravityScale: 0 },
     );
-    // #region agent log
-    agentDebugLog("D", "physics-sync.ts:createForActor", "creating body from actor transform", {
-      actorGuid: actor.guid,
-      parentId: actor.getVariable("parentId") ?? null,
-      motionType: rigid ? props.motionType : "static",
-      bodyTransform: actorWorldPhysicsTransform(actor, this.actors),
-    });
-    // #endregion
     this.backend.createBody({
       id: bodyId,
       actorId: actor.guid,

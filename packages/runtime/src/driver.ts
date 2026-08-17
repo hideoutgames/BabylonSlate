@@ -89,28 +89,6 @@ import {
   type NavPoint,
 } from "@babylonslate/navigation";
 
-function agentDebugLog(
-  hypothesisId: string,
-  location: string,
-  message: string,
-  data: Record<string, unknown>,
-): void {
-  const fs = (
-    globalThis as {
-      process?: {
-        getBuiltinModule?: (name: string) => {
-          appendFileSync(path: string, data: string): void;
-        };
-      };
-    }
-  ).process?.getBuiltinModule?.("fs");
-  if (!fs) return;
-  fs.appendFileSync(
-    "/opt/cursor/logs/debug.log",
-    `${JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() })}\n`,
-  );
-}
-
 export type TransportMode = "in-process" | "sab" | "transferable";
 
 export interface RuntimeDriverOptions {
@@ -1496,20 +1474,6 @@ class InProcessRuntime implements RuntimeDriver {
             ),
           )
         : undefined;
-      // #region agent log
-      agentDebugLog("B", "driver.ts:emitMeshAssignment", "serialized Play component hierarchy", {
-        actorGuid: actor.guid,
-        allComponents: actor.components.map((component) => ({
-          id: component.guid,
-          classId: component.classId,
-          parentId: component.parentId,
-        })),
-        emittedParts: parts?.map((part) => ({
-          componentId: part.componentId,
-          parentId: part.parentId,
-        })) ?? null,
-      });
-      // #endregion
       this.emit({
         type: "assignMesh",
         slotId,
@@ -1957,13 +1921,6 @@ class InProcessRuntime implements RuntimeDriver {
   private publishSnapshot(): void {
     const buf = this.snapshots.beginWrite();
     const actors = this.world.getActors();
-    // #region agent log
-    agentDebugLog("C", "driver.ts:publishSnapshot", "publishing actor world transforms", {
-      actorCount: actors.length,
-      slottedActorCount: actors.filter((actor) => this.slotByGuid.has(actor.guid)).length,
-      actorGuids: actors.map((actor) => actor.guid),
-    });
-    // #endregion
     let count = 0;
     for (const actor of actors) {
       const slotId = this.slotByGuid.get(actor.guid);
@@ -2124,15 +2081,6 @@ function worldTransformOf(
   for (let index = chain.length - 2; index >= 0; index -= 1) {
     world = composeParentChildTransform(world, chain[index]!.transform);
   }
-  // #region agent log
-  agentDebugLog("C", "driver.ts:worldTransformOf", "composed actor world transform", {
-    actorGuid: actor.guid,
-    actorLookupMapSize: byGuid.size,
-    chain: chain.map((entry) => entry.guid),
-    local: actor.transform,
-    world,
-  });
-  // #endregion
   return world;
 }
 
