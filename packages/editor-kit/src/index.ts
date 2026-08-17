@@ -120,8 +120,10 @@ export {
 export {
   SearchDialog,
   filterSearchItems,
+  groupSearchItems,
   type SearchDialogItem,
   type SearchDialogProps,
+  type SearchItemGroup,
 } from "./search-dialog";
 export {
   SearchDropdown,

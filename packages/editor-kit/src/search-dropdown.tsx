@@ -8,7 +8,11 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { SearchInput } from "./search-input";
-import { filterSearchItems, type SearchDialogItem } from "./search-dialog";
+import {
+  filterSearchItems,
+  groupSearchItems,
+  type SearchDialogItem,
+} from "./search-dialog";
 import { PickerIdentity } from "./picker-identity";
 
 export interface SearchDropdownProps {
@@ -39,6 +43,7 @@ export function SearchDropdown({
 }: SearchDropdownProps) {
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => filterSearchItems(items, query), [items, query]);
+  const grouped = useMemo(() => groupSearchItems(filtered), [filtered]);
 
   return (
     <DropdownMenu
@@ -74,29 +79,36 @@ export function SearchDropdown({
             data-testid={testId ? `${testId}-query` : undefined}
           />
         </div>
-        <DropdownMenuGroup>
-          {filtered.map((item) => (
-            <DropdownMenuItem
-              key={item.id}
-              className="min-h-[var(--touch-target,44px)]"
-              onClick={() => {
-                onSelect(item.id);
-                onOpenChange?.(false);
-              }}
-              data-testid={`search-item-${item.id}`}
-            >
-              <PickerIdentity
-                label={item.label}
-                description={item.description}
-                leading={item.leading}
-              />
-              {item.trailing}
-            </DropdownMenuItem>
-          ))}
-          {filtered.length === 0 ? (
+        {grouped.map((section, index) => (
+          <DropdownMenuGroup key={section.group ?? `ungrouped-${index}`}>
+            {section.group ? (
+              <DropdownMenuLabel>{section.group}</DropdownMenuLabel>
+            ) : null}
+            {section.items.map((item) => (
+              <DropdownMenuItem
+                key={item.id}
+                className="min-h-[var(--touch-target,44px)]"
+                onClick={() => {
+                  onSelect(item.id);
+                  onOpenChange?.(false);
+                }}
+                data-testid={`search-item-${item.id}`}
+              >
+                <PickerIdentity
+                  label={item.label}
+                  description={item.description}
+                  leading={item.leading}
+                />
+                {item.trailing}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+        ))}
+        {filtered.length === 0 ? (
+          <DropdownMenuGroup>
             <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
-          ) : null}
-        </DropdownMenuGroup>
+          </DropdownMenuGroup>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
