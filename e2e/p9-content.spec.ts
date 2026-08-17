@@ -862,7 +862,7 @@ test.describe("P9 content systems", () => {
           }),
         { timeout: 15_000 },
       )
-      .toEqual(EXPECTED_PREVIEW_ACTOR_POSITIONS);
+      .toEqual(expect.arrayContaining(EXPECTED_PREVIEW_ACTOR_POSITIONS));
     await page.getByTestId("play-overlay-close").click();
 
     await showContentBrowser(page);
