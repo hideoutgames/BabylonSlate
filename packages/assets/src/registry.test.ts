@@ -194,9 +194,11 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     registry.setThumbnailWriter(async () => undefined);
-    const createImageBitmap = vi.fn(async (_image: Blob) => {
-      throw new Error("stop-after-blob");
-    });
+    const createImageBitmap = vi.fn<(image: Blob) => Promise<ImageBitmap>>(
+      async () => {
+        throw new Error("stop-after-blob");
+      },
+    );
     vi.stubGlobal("createImageBitmap", createImageBitmap);
     try {
       await registry.importFile(

@@ -20,17 +20,17 @@ vi.mock("./decode-source-rgba", () => ({
 }));
 
 class FakeWorker extends EventTarget {
-  postMessage = vi.fn(
-    (_msg: EncodeWorkerHostMessage, _transfer?: Transferable[]) => {
-      if (_msg.type === "init") {
-        queueMicrotask(() => {
-          this.dispatchEvent(
-            new MessageEvent("message", { data: { type: "loaded" } }),
-          );
-        });
-      }
-    },
-  );
+  postMessage = vi.fn<
+    (msg: EncodeWorkerHostMessage, transfer?: Transferable[]) => void
+  >((msg) => {
+    if (msg.type === "init") {
+      queueMicrotask(() => {
+        this.dispatchEvent(
+          new MessageEvent("message", { data: { type: "loaded" } }),
+        );
+      });
+    }
+  });
   terminate = vi.fn();
 }
 

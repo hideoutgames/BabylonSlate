@@ -23,9 +23,11 @@ describe("thumbnails I/O", () => {
   });
 
   it("passes the source MIME type into the thumbnail Blob", async () => {
-    const createImageBitmap = vi.fn(async (_image: Blob) => {
-      throw new Error("stop-after-blob");
-    });
+    const createImageBitmap = vi.fn<(image: Blob) => Promise<ImageBitmap>>(
+      async () => {
+        throw new Error("stop-after-blob");
+      },
+    );
     vi.stubGlobal("createImageBitmap", createImageBitmap);
     try {
       await expect(
