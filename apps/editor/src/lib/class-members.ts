@@ -75,6 +75,8 @@ const BT_BLACKBOARD_NODE_IDS = ["bt.blackboard.get", "bt.blackboard.set"] as con
 export type ClassEventOptions = {
   parentClass?: string | null;
   parentOf?: (id: string) => string | null | undefined;
+  /** Parent Class graphs keyed by class id (for inherited custom events). */
+  parentGraphs?: Record<string, SerializedGraph>;
   assetType?: string | null;
   editorGraph?: boolean;
   /** Animation Object event graph vs nested transition-rule graph. */
@@ -441,7 +443,13 @@ function seedFunctionGraph(
 export function ensureEventNodeOnGraph(
   graph: SerializedGraph,
   eventType: string,
-  extras?: { name?: string; title?: string; idFactory?: () => string },
+  extras?: {
+    name?: string;
+    title?: string;
+    idFactory?: () => string;
+    parentClassId?: string | null;
+    pins?: GraphClassMemberPin[];
+  },
 ): SerializedGraph {
   const existing = graph.nodes.find((node) => {
     if (node.type !== eventType) return false;
@@ -449,31 +457,258 @@ export function ensureEventNodeOnGraph(
     const named = node.data.name;
     return extras?.name ? named === extras.name : true;
   });
-  if (existing) return graph;
-  const id = nextId(extras?.idFactory);
-  const title =
-    extras?.title ??
-    NATIVE_EVENT_TITLES[eventType] ??
-    formatEventTitle(extras?.name ?? eventType);
-  return {
-    ...graph,
-    nodes: [
-      ...graph.nodes,
-      {
-        id,
-        type: eventType,
-        position: {
-          x: 80,
-          y: 80 + graph.nodes.length * 80,
+  let next = graph;
+  let eventId = existing?.id;
+  if (!existing) {
+    const id = nextId(extras?.idFactory);
+    eventId = id;
+    const title =
+      extras?.title ??
+      NATIVE_EVENT_TITLES[eventType] ??
+      formatEventTitle(extras?.name ?? eventType);
+    const pins = extras?.pins;
+    next = {
+      ...next,
+      nodes: [
+        ...next.nodes,
+        {
+          id,
+          type: eventType,
+          position: {
+            x: 80,
+            y: 80 + next.nodes.length * 80,
+          },
+          data: {
+            title,
+            ...(extras?.name ? { name: extras.name } : {}),
+            ...(pins ? { pins } : {}),
+            __nodeType: eventType,
+          },
         },
-        data: {
-          title,
-          ...(extras?.name ? { name: extras.name } : {}),
-          __nodeType: eventType,
+      ],
+    };
+  }
+  const parentClassId = extras?.parentClassId?.trim();
+  if (!eventId || !parentClassId) return next;
+  return ensureCallParentForEvent(next, {
+    eventNodeId: eventId,
+    eventType,
+    eventName: extras?.name,
+    parentClassId,
+    pins: extras?.pins ?? eventDataPinsFromNode(next, eventId),
+    idFactory: extras?.idFactory,
+  });
+}
+
+/** Data output pins stored on an event node (custom Outputs or catalog). */
+export function eventDataPinsFromNode(
+  graph: SerializedGraph,
+  eventNodeId: string,
+): GraphClassMemberPin[] {
+  const node = graph.nodes.find((entry) => entry.id === eventNodeId);
+  if (!node) return [];
+  if (Array.isArray(node.data.pins)) {
+    return (node.data.pins as GraphClassMemberPin[]).filter(
+      (pin) => pin.direction !== "in" && pin.typeId !== "exec",
+    );
+  }
+  return [];
+}
+
+export function callParentNodeId(
+  eventType: string,
+  eventName?: string,
+): string {
+  if (eventType === "flow.event.custom") {
+    const slug = formatEventMemberName(eventName ?? "Custom")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    return `call-parent-custom-${slug || "event"}`;
+  }
+  return `call-parent-${eventType.replace(/\./g, "-")}`;
+}
+
+export function callParentDisplayTitle(
+  eventType: string,
+  eventName?: string,
+): string {
+  if (eventType === "flow.event.custom") {
+    const body = formatEventMemberName(eventName ?? "Event");
+    return `Call ${body || "Event"} Parent`;
+  }
+  const titled = NATIVE_EVENT_TITLES[eventType];
+  const body = titled
+    ? formatEventMemberName(titled)
+    : formatEventMemberName(
+        eventType.startsWith("flow.event.")
+          ? eventType.slice("flow.event.".length)
+          : eventType,
+      );
+  return `Call ${body || "Event"} Parent`;
+}
+
+/**
+ * Insert Call Parent for an event if missing, and default-wire Event → Call Parent
+ * when neither side already has conflicting exec/data edges for those pins.
+ */
+export function ensureCallParentForEvent(
+  graph: SerializedGraph,
+  options: {
+    eventNodeId: string;
+    eventType: string;
+    eventName?: string;
+    parentClassId: string;
+    pins?: GraphClassMemberPin[];
+    idFactory?: () => string;
+  },
+): SerializedGraph {
+  const parentClassId = options.parentClassId.trim();
+  if (!parentClassId) return graph;
+  const eventNode = graph.nodes.find((node) => node.id === options.eventNodeId);
+  if (!eventNode) return graph;
+
+  const callId = callParentNodeId(options.eventType, options.eventName);
+  const existingCall = graph.nodes.find(
+    (node) =>
+      node.id === callId ||
+      (node.type === "flow.event.callParent" &&
+        node.data.eventType === options.eventType &&
+        (options.eventType !== "flow.event.custom" ||
+          formatEventMemberName(String(node.data.eventName ?? "")) ===
+            formatEventMemberName(options.eventName ?? ""))),
+  );
+  const pins = (options.pins ?? eventDataPinsFromNode(graph, options.eventNodeId)).filter(
+    (pin) => pin.typeId !== "exec" && pin.direction !== "in",
+  );
+  let next = graph;
+  if (!existingCall) {
+    next = {
+      ...next,
+      nodes: [
+        ...next.nodes,
+        {
+          id: callId,
+          type: "flow.event.callParent",
+          position: {
+            x: eventNode.position.x + 280,
+            y: eventNode.position.y,
+          },
+          data: {
+            title: callParentDisplayTitle(options.eventType, options.eventName),
+            eventType: options.eventType,
+            eventName:
+              options.eventType === "flow.event.custom"
+                ? formatEventMemberName(options.eventName ?? "Event")
+                : formatEventMemberName(
+                    NATIVE_EVENT_TITLES[options.eventType] ?? options.eventType,
+                  ),
+            name:
+              options.eventType === "flow.event.custom"
+                ? formatEventMemberName(options.eventName ?? "Event")
+                : undefined,
+            parentClassId,
+            pins,
+            __nodeType: "flow.event.callParent",
+          },
         },
-      },
-    ],
-  };
+      ],
+    };
+  }
+  const callNodeId = existingCall?.id ?? callId;
+  const edges = [...(next.edges ?? [])];
+  const hasExecOut = edges.some(
+    (edge) =>
+      edge.source === options.eventNodeId &&
+      (edge.sourceHandle === "execOut" || edge.sourceHandle === "then"),
+  );
+  const hasExecIn = edges.some(
+    (edge) =>
+      edge.target === callNodeId &&
+      (edge.targetHandle === "execIn" || edge.targetHandle === "exec"),
+  );
+  if (!hasExecOut && !hasExecIn) {
+    edges.push({
+      id: `e:${options.eventNodeId}:execOut:${callNodeId}:execIn`,
+      source: options.eventNodeId,
+      target: callNodeId,
+      sourceHandle: "execOut",
+      targetHandle: "execIn",
+    });
+  }
+  for (const pin of pins) {
+    if (!pin.name) continue;
+    const hasDataOut = edges.some(
+      (edge) =>
+        edge.source === options.eventNodeId && edge.sourceHandle === pin.name,
+    );
+    const hasDataIn = edges.some(
+      (edge) => edge.target === callNodeId && edge.targetHandle === pin.name,
+    );
+    if (hasDataOut || hasDataIn) continue;
+    edges.push({
+      id: `e:${options.eventNodeId}:${pin.name}:${callNodeId}:${pin.name}`,
+      source: options.eventNodeId,
+      target: callNodeId,
+      sourceHandle: pin.name,
+      targetHandle: pin.name,
+    });
+  }
+  return { ...next, edges };
+}
+
+/** Inherited custom events from parent graphs (ancestor-first). */
+export function inheritedCustomEventSeeds(
+  options?: ClassEventOptions,
+): Array<{ name: string; pins: GraphClassMemberPin[] }> {
+  if (!options?.parentGraphs) return [];
+  const parentOf =
+    options.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  const chain: string[] = [];
+  let current = options.parentClass ?? null;
+  const seen = new Set<string>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    chain.push(current);
+    current = parentOf(current) ?? null;
+  }
+  const rows: Array<{ name: string; pins: GraphClassMemberPin[] }> = [];
+  const seenNames = new Set<string>();
+  for (const className of chain) {
+    const parentGraph = options.parentGraphs[className];
+    if (!parentGraph) continue;
+    for (const member of parentGraph.members ?? []) {
+      if (member.kind !== "event") continue;
+      const name = formatEventMemberName(member.name);
+      if (!name || seenNames.has(name)) continue;
+      seenNames.add(name);
+      rows.push({
+        name,
+        pins: (member.pins ?? []).filter(
+          (pin) => pin.typeId !== "exec" && pin.direction !== "in",
+        ),
+      });
+    }
+    for (const node of parentGraph.nodes) {
+      if (node.type !== "flow.event.custom") continue;
+      const raw =
+        typeof node.data.name === "string"
+          ? node.data.name
+          : typeof node.data.title === "string"
+            ? node.data.title
+            : "";
+      const name = formatEventMemberName(raw);
+      if (!name || seenNames.has(name)) continue;
+      seenNames.add(name);
+      const pins = Array.isArray(node.data.pins)
+        ? (node.data.pins as GraphClassMemberPin[]).filter(
+            (pin) => pin.typeId !== "exec" && pin.direction !== "in",
+          )
+        : [];
+      rows.push({ name, pins });
+    }
+  }
+  return rows;
 }
 
 function syncEventPins(
@@ -488,17 +723,29 @@ function syncEventPins(
       const nodeName =
         typeof node.data.name === "string"
           ? formatEventMemberName(node.data.name)
-          : "";
+          : typeof node.data.eventName === "string"
+            ? formatEventMemberName(node.data.eventName)
+            : "";
       const isEvent =
         node.type === "flow.event.custom" &&
         (node.id === member.id || nodeName === memberName);
       const isCall =
         node.type === "flow.event.call" && nodeName === memberName;
-      if (!isEvent && !isCall) return node;
+      const isCallParent =
+        node.type === "flow.event.callParent" &&
+        (node.data.eventType === "flow.event.custom" ||
+          !node.data.eventType) &&
+        nodeName === memberName;
+      if (!isEvent && !isCall && !isCallParent) return node;
       const nextData: Record<string, unknown> = { ...node.data, pins };
       if (isCall) {
         nextData.name = memberName;
         nextData.title = `Call ${memberName}`;
+      }
+      if (isCallParent) {
+        nextData.eventName = memberName;
+        nextData.name = memberName;
+        nextData.title = `Call ${memberName} Parent`;
       }
       delete nextData.__pins;
       return { ...node, data: nextData };

@@ -202,17 +202,17 @@ export const flowNodes: NodeDefinition[] = [
           : undefined;
       const eventName = catalogEvent ?? jsIdent(rawName);
       const args: string[] = [];
-      const outs: Record<string, string> = {};
       for (const pinDef of ctx.node.pins) {
         if (pinDef.kind === "exec" || pinDef.direction !== "in") continue;
         args.push(`${JSON.stringify(pinDef.name)}: ${ctx.input(pinDef.name)}`);
-        outs[pinDef.name] = ctx.input(pinDef.name);
       }
       ctx.emit(
         `ctx.invokeEvent(${JSON.stringify(parentClassId)}, ${JSON.stringify(eventName)}, { ${args.join(", ")} });`,
       );
-      if (Object.keys(outs).length === 0) return;
-      return outs;
+      for (const pinDef of ctx.node.pins) {
+        if (pinDef.kind === "exec" || pinDef.direction !== "in") continue;
+        ctx.emit(`${ctx.output(pinDef.name)} = ${ctx.input(pinDef.name)};`);
+      }
     },
   },
   {

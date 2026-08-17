@@ -112,6 +112,8 @@ import {
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
+import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
@@ -149,6 +151,7 @@ export function ContentBrowserWorkspace() {
     refreshAssetRegistry,
     repathDocument,
     openDocument,
+    openDocuments,
     setActiveDocument,
     tabOrder,
     loadAssetThumbnail,
@@ -1307,6 +1310,15 @@ export function ContentBrowserWorkspace() {
           type === "Class"
             ? newAssetParent
             : defaultParentClassForType(type),
+        parentOf: classParentOf,
+        parentGraphs:
+          type === "Class"
+            ? collectClassGraphsForPalette({
+                assets: allAssets,
+                openDocuments,
+                classIdForPath: classIdForGraphPath,
+              })
+            : undefined,
       });
       const created = await assetRegistry.createAsset(
         selectedRoot.rootId,
@@ -1322,11 +1334,14 @@ export function ContentBrowserWorkspace() {
       setBusy(false);
     }
   }, [
+    allAssets,
     assetRegistry,
+    classParentOf,
     newAssetName,
     newAssetNameTaken,
     newAssetParent,
     newAssetType,
+    openDocuments,
     openOrFocusDocument,
     refreshAssetRegistry,
     selectedRoot,
