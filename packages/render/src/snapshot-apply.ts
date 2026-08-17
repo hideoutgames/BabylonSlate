@@ -54,8 +54,16 @@ function agentDebugLog(
   message: string,
   data: Record<string, unknown>,
 ): void {
-  if (typeof process === "undefined" || !process.getBuiltinModule) return;
-  const fs = process.getBuiltinModule("fs") as typeof import("node:fs");
+  const fs = (
+    globalThis as {
+      process?: {
+        getBuiltinModule?: (name: string) => {
+          appendFileSync(path: string, data: string): void;
+        };
+      };
+    }
+  ).process?.getBuiltinModule?.("fs");
+  if (!fs) return;
   fs.appendFileSync(
     "/opt/cursor/logs/debug.log",
     `${JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() })}\n`,
