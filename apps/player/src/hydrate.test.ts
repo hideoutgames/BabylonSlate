@@ -272,4 +272,41 @@ describe("packedContentFromGame", () => {
     expect(content.audioLibrary.channels.has("sfx")).toBe(true);
     expect(content.audioLibrary.attenuations.get("near")?.innerRadius).toBe(2);
   });
+
+  it("hydrates a packed audioReverb sidecar for the startup scene", async () => {
+    const { audioReverbExportGuid } = await import("@babylonslate/exporter");
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: audioReverbExportGuid("scene-1"),
+          type: "AudioReverb",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([4, 5, 6]),
+        },
+        {
+          guid: audioReverbExportGuid("scene-2"),
+          type: "AudioReverb",
+          sceneGuid: "scene-2",
+          bytes: new Uint8Array([7, 8]),
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    expect(game.audioReverbBytes.get("scene-1")).toEqual(new Uint8Array([4, 5, 6]));
+    const content = packedContentFromGame(game);
+    expect(content.audioReverbBytes).toEqual(new Uint8Array([4, 5, 6]));
+    expect(content.audioReverbByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));
+  });
 });

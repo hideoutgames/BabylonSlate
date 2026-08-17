@@ -430,6 +430,34 @@ describe("collectAndExportGame", () => {
     ).toBe(true);
   });
 
+  it("packs a scene audioReverb chunk under a sidecar guid", async () => {
+    const scene = createDefaultScene();
+    const field = new Uint8Array([3, 2, 1]);
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
+      audioReverbByGuid: (guid) => (guid === "scene-1" ? field : null),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(
+      result.value.manifest.assets.some(
+        (entry) =>
+          entry.type === "AudioReverb" && entry.guid === "audioReverb:scene-1",
+      ),
+    ).toBe(true);
+  });
+
   it("Preview Build always bundles the debugger", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({

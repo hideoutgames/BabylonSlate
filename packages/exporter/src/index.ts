@@ -9,6 +9,10 @@ export {
   NAVMESH_EXPORT_GUID_PREFIX,
   navmeshExportGuid,
   sceneGuidFromNavmeshExport,
+  AUDIO_REVERB_EXPORT_TYPE,
+  AUDIO_REVERB_EXPORT_GUID_PREFIX,
+  audioReverbExportGuid,
+  sceneGuidFromAudioReverbExport,
 } from "./constants";
 export { collectExportClosure } from "./closure";
 export { selectPlayerRuntimeFiles } from "./player-files";

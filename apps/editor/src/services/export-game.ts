@@ -5,6 +5,8 @@ import {
   MISSING_STARTUP_SCENE_MESSAGE,
   NAVMESH_EXPORT_TYPE,
   navmeshExportGuid,
+  AUDIO_REVERB_EXPORT_TYPE,
+  audioReverbExportGuid,
   type ExportAssetBytes,
   type ExportIndexedAsset,
   type ExportArtifact,
@@ -66,6 +68,7 @@ export type CollectExportGameParams = {
   bytesByGuid: (guid: string) => Uint8Array | null;
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
+  audioReverbByGuid?: (guid: string) => Uint8Array | null;
   customResolution: RenderProjectSettings;
   playFrameCap: number;
   pixelsPerUnit?: number;
@@ -212,6 +215,20 @@ export async function collectAndExportGame(
       bytes: nav,
       encoding: "bytes",
       name: `${asset.name} NavMesh`,
+    });
+  }
+  for (const guid of closure.value) {
+    const asset = params.assets.find((entry) => entry.guid === guid);
+    if (!asset || asset.type !== "Scene") continue;
+    const field = params.audioReverbByGuid?.(guid);
+    if (!field || field.byteLength === 0) continue;
+    exportAssets.push({
+      guid: audioReverbExportGuid(guid),
+      type: AUDIO_REVERB_EXPORT_TYPE,
+      sceneGuid: guid,
+      bytes: field,
+      encoding: "bytes",
+      name: `${asset.name} AudioReverb`,
     });
   }
 

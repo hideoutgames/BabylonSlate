@@ -10,6 +10,7 @@ export * from "./encode-queue";
 export * from "./guid";
 export * from "./font-payload";
 export * from "./audio-payload";
+export * from "./audio-reverb";
 export * from "./sprite-packer";
 export * from "./sprite-payload";
 export * from "./tileset-payload";

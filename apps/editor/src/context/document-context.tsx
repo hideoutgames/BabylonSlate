@@ -100,6 +100,7 @@ import {
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
+import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -315,6 +316,11 @@ interface DocumentContextValue {
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
   /** Write Recast bake bytes onto the Scene asset extra chunk. */
   writeSceneNavmeshChunk: (
+    path: string,
+    bytes: Uint8Array,
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
+  writeSceneAudioReverbChunk: (
     path: string,
     bytes: Uint8Array,
     payload: Record<string, unknown>,
@@ -1196,6 +1202,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       saveDebounceRef.current = null;
     }
     try {
+      await flushAudioReverbForSave();
       captureAllLayouts();
       const dirtyDocs = documentService.getDirtyDocuments();
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
@@ -1383,6 +1390,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       onPhase?: (phase: "Compiling" | "Writing Pack") => void;
     }) => {
       const list = projectService.registry?.list() ?? [];
+      await flushAudioReverbForSave();
       const loaded = await loadExportDocuments({
         assets: list,
         loadDocument: (kind, path) =>
@@ -1411,6 +1419,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
+        audioReverbByGuid: loaded.audioReverbByGuid,
         customResolution:
           projectDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap:
@@ -1815,6 +1824,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const writeSceneNavmeshChunk = useCallback(
     (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
       projectService.writeSceneNavmeshChunk(path, bytes, payload),
+    [projectService],
+  );
+
+  const writeSceneAudioReverbChunk = useCallback(
+    (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
+      projectService.writeSceneAudioReverbChunk(path, bytes, payload),
     [projectService],
   );
 
@@ -3221,6 +3236,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyAssetDocumentChange,
       readAssetChunk,
       writeSceneNavmeshChunk,
+      writeSceneAudioReverbChunk,
       updateProjectSettings,
       sourceControl: sourceControlRef.current,
       prefillSourceControlFromGit,
@@ -3394,6 +3410,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyAssetDocumentChange,
       readAssetChunk,
       writeSceneNavmeshChunk,
+      writeSceneAudioReverbChunk,
       updateProjectSettings,
       prefillSourceControlFromGit,
       sourceControlTick,

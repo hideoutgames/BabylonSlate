@@ -86,6 +86,7 @@ export interface PlayOverlayProps {
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
+  audioReverbBytes?: Uint8Array | null;
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -134,6 +135,7 @@ export function PlayOverlay({
   pixelsPerUnit,
   pixelPerfect,
   navmeshBytes,
+  audioReverbBytes,
   onClose,
 }: PlayOverlayProps) {
   const { reportBtState } = usePlay();
@@ -210,6 +212,8 @@ export function PlayOverlay({
   materialFunctionsRef.current = materialFunctions;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
+  const audioReverbBytesRef = useRef(audioReverbBytes);
+  audioReverbBytesRef.current = audioReverbBytes;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
   const pixelPerfectRef = useRef(pixelPerfect);
@@ -295,6 +299,7 @@ export function PlayOverlay({
       pixelsPerUnit: pixelsPerUnitRef.current,
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
+      audioReverbBytes: audioReverbBytesRef.current,
       onUiSetVisible: (widgetId, visible) => {
         setHiddenWidgetIds((prev) => {
           const next = new Set(prev);

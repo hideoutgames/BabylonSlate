@@ -8,6 +8,8 @@ import {
   SCRIPTS_FILE,
   NAVMESH_EXPORT_TYPE,
   sceneGuidFromNavmeshExport,
+  AUDIO_REVERB_EXPORT_TYPE,
+  sceneGuidFromAudioReverbExport,
   type GameManifest,
   type PackSource,
 } from "@babylonslate/exporter";
@@ -32,6 +34,7 @@ export type LoadedGame = {
   audioPayloads: Map<string, AudioPayload>;
   payloads: Map<string, Uint8Array>;
   navmeshBytes: Map<string, Uint8Array>;
+  audioReverbBytes: Map<string, Uint8Array>;
 };
 
 function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
@@ -87,6 +90,7 @@ export async function loadGameFromFiles(
   const audioPayloads = new Map<string, AudioPayload>();
   const payloads = new Map<string, Uint8Array>();
   const navmeshBytes = new Map<string, Uint8Array>();
+  const audioReverbBytes = new Map<string, Uint8Array>();
 
   const packSources = new Map<string, PackSource>();
   for (const packName of manifest.packs) {
@@ -131,6 +135,11 @@ export async function loadGameFromFiles(
     if (entry.type === NAVMESH_EXPORT_TYPE) {
       const sceneGuid = sceneGuidFromNavmeshExport(entry.guid) ?? entry.guid;
       navmeshBytes.set(sceneGuid, bytes);
+      continue;
+    }
+    if (entry.type === AUDIO_REVERB_EXPORT_TYPE) {
+      const sceneGuid = sceneGuidFromAudioReverbExport(entry.guid) ?? entry.guid;
+      audioReverbBytes.set(sceneGuid, bytes);
     }
   }
 
@@ -146,6 +155,7 @@ export async function loadGameFromFiles(
     audioPayloads,
     payloads,
     navmeshBytes,
+    audioReverbBytes,
   };
 }
 

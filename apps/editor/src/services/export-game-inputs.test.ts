@@ -135,6 +135,41 @@ describe("loadExportDocuments", () => {
     expect(loaded.navmeshByGuid("scene-1")).toEqual(new Uint8Array([1, 2, 3]));
   });
 
+  it("reads the Scene audioReverb extra chunk for packed Play", async () => {
+    const scene = createDefaultScene();
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/main.scene.babasset",
+          header: {
+            guid: "scene-1",
+            type: "Scene",
+            name: "Main",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: {},
+            chunks: [
+              {
+                id: "audioReverb",
+                kind: "bytes",
+                mime: "application/octet-stream",
+                sha256: "ee",
+                locator: { inline: { offset: 0, length: 2 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async () => scene,
+      readAssetChunk: async (_path, chunkId) =>
+        chunkId === "audioReverb" ? new Uint8Array([9, 8]) : null,
+    });
+    expect(loaded.audioReverbByGuid("scene-1")).toEqual(new Uint8Array([9, 8]));
+  });
+
   it("loads Font documents into payloads without replacing source bytes", async () => {
     const loaded = await loadExportDocuments({
       assets: [

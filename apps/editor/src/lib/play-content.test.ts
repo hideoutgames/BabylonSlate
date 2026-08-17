@@ -23,6 +23,7 @@ import {
   playAnimGraphsFromGuids,
   playLoadTilemapsControl,
   readPlayNavmeshBytes,
+  readPlayAudioReverbBytes,
   playSpritePayloadsFromGuids,
   playUiLibraryFromAssets,
   removePlayHudInstance,
@@ -708,6 +709,29 @@ describe("readPlayNavmeshBytes", () => {
     expect(await readPlayNavmeshBytes(undefined, async () => new Uint8Array([1]))).toBeNull();
     expect(
       await readPlayNavmeshBytes("assets/Main.scene.babasset", async () => null),
+    ).toBeNull();
+  });
+});
+
+describe("readPlayAudioReverbBytes", () => {
+  it("reads the Scene audioReverb extra chunk and never invents bytes", async () => {
+    const bytes = new Uint8Array([4, 5, 6]);
+    const readChunk = async (path: string, chunkId: string) => {
+      expect(path).toBe("assets/Main.scene.babasset");
+      expect(chunkId).toBe("audioReverb");
+      return bytes;
+    };
+    expect(
+      await readPlayAudioReverbBytes("assets/Main.scene.babasset", readChunk),
+    ).toEqual(bytes);
+  });
+
+  it("returns null when the scene path or chunk is missing", async () => {
+    expect(
+      await readPlayAudioReverbBytes(undefined, async () => new Uint8Array([1])),
+    ).toBeNull();
+    expect(
+      await readPlayAudioReverbBytes("assets/Main.scene.babasset", async () => null),
     ).toBeNull();
   });
 });

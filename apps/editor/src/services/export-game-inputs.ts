@@ -4,6 +4,7 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import {
+  AUDIO_REVERB_CHUNK_ID,
   encodePackedAudioAsset,
   normalizeAudioPayload,
   selectTextureChunk,
@@ -46,6 +47,7 @@ export type LoadedExportDocuments = {
   payloadByGuid: (guid: string) => unknown | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
+  audioReverbByGuid: (guid: string) => Uint8Array | null;
 };
 
 async function bytesForAsset(
@@ -88,6 +90,7 @@ export async function loadExportDocuments(
   const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
   const navmeshes = new Map<string, Uint8Array>();
+  const audioReverbs = new Map<string, Uint8Array>();
   for (const asset of loaders.assets) {
     const kind = documentKindForAssetType(asset.header.type);
     let document: unknown = null;
@@ -135,6 +138,17 @@ export async function loadExportDocuments(
       } catch {
         // Scene JSON still packs when the extra chunk is missing.
       }
+      try {
+        const field = await loaders.readAssetChunk(
+          asset.path,
+          AUDIO_REVERB_CHUNK_ID,
+        );
+        if (field && field.byteLength > 0) {
+          audioReverbs.set(asset.header.guid, field);
+        }
+      } catch {
+        // Scene JSON still packs when the extra chunk is missing.
+      }
     }
   }
   return {
@@ -143,5 +157,6 @@ export async function loadExportDocuments(
     payloadByGuid: (guid) => payloads.get(guid) ?? null,
     bytesByGuid: (guid) => bytes.get(guid) ?? null,
     navmeshByGuid: (guid) => navmeshes.get(guid) ?? null,
+    audioReverbByGuid: (guid) => audioReverbs.get(guid) ?? null,
   };
 }

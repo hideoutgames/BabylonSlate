@@ -73,7 +73,7 @@ import type {
   PlayBehaviourTreeEntry,
   PlayBlackboardEntry,
 } from "../lib/play-content";
-import { readPlayNavmeshBytes } from "../lib/play-content";
+import { readPlayNavmeshBytes, readPlayAudioReverbBytes } from "../lib/play-content";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -231,6 +231,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [postProcessingEnabled, setPostProcessingEnabled] = useState(true);
   const [hardwareScalingLevel, setHardwareScalingLevel] = useState(1);
   const [playNavmeshBytes, setPlayNavmeshBytes] = useState<Uint8Array | null>(
+    null,
+  );
+  const [playAudioReverbBytes, setPlayAudioReverbBytes] = useState<Uint8Array | null>(
     null,
   );
   const [playSceneLibrary, setPlaySceneLibrary] = useState<
@@ -758,6 +761,16 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayNavmeshBytes(null);
         }
+        try {
+          setPlayAudioReverbBytes(
+            await readPlayAudioReverbBytes(resolvedScene?.path, readAssetChunk),
+          );
+        } catch (error) {
+          appendLog(
+            `Audio reverb load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayAudioReverbBytes(null);
+        }
 
         setPrepareState(null);
 
@@ -1001,6 +1014,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             navmeshBytes={playNavmeshBytes}
+            audioReverbBytes={playAudioReverbBytes}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }

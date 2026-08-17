@@ -4,11 +4,15 @@ import {
   clampAudioGain,
   computeAttenuationGain,
   createDefaultAudioPayload,
+  decodeAudioReverbChunk,
+  interpolateAudioReverb,
+  isDryAudioReverbFallback,
   normalizeAudioPayload,
   resolveAudioPlayback,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
+  type AudioReverbField,
   type SoundAttenuationPayload,
 } from "@babylonslate/assets";
 import type { CommandMessage } from "@babylonslate/bridge";
@@ -68,6 +72,7 @@ type LiveVoice = {
   emitterActorGuid: string | null;
   spatial: AudioSpatialPlayOptions | null;
   gain: number;
+  reverbSend: boolean;
 };
 
 function emptyLibrary(): AudioLibrary {
@@ -115,6 +120,7 @@ export class AudioService {
   private wet = 0;
   private voiceSeq = 0;
   private listener: AudioPose = { x: 0, y: 0, z: 0 };
+  private reverbField: AudioReverbField | null = null;
 
   constructor(options: {
     backend: AudioPlaybackBackend;
@@ -136,6 +142,11 @@ export class AudioService {
 
   setSourceBytes(assetGuid: string, bytes: Uint8Array): void {
     this.sourceBytes.set(assetGuid, bytes);
+  }
+
+  setReverbField(bytes: Uint8Array | null | undefined): void {
+    this.reverbField = bytes ? decodeAudioReverbChunk(bytes) : null;
+    this.refreshReverbWet();
   }
 
   noteActorSlot(actorGuid: string, slotId: number): void {
@@ -181,6 +192,7 @@ export class AudioService {
     this.listener = pose;
     this.backend.setListenerPose(pose);
     this.refreshSpatialVoices();
+    this.refreshReverbWet();
   }
 
   syncSnapshot(
@@ -227,6 +239,7 @@ export class AudioService {
     this.lastGain = null;
     this.lastDistance = null;
     this.wet = 0;
+    this.reverbField = null;
     this.publishStats();
   }
 
@@ -336,10 +349,9 @@ export class AudioService {
       emitterActorGuid: emitter,
       spatial,
       gain: resolved.gain,
+      reverbSend: resolved.environmentReverb,
     });
     this.lastGain = resolved.gain;
-    this.wet = resolved.environmentReverb ? Math.max(this.wet, 0.25) : this.wet;
-    this.backend.setReverbWet(this.wet);
     try {
       await this.backend.play(request);
     } catch {
@@ -352,6 +364,7 @@ export class AudioService {
       return;
     }
     this.refreshSpatialVoices();
+    this.refreshReverbWet();
     this.publishStats();
   }
 
@@ -361,6 +374,7 @@ export class AudioService {
     this.backend.stop(voiceId);
     this.voices.delete(voiceId);
     this.cache.unpin(voice.assetGuid);
+    this.refreshReverbWet();
     this.publishStats();
   }
 
@@ -392,6 +406,20 @@ export class AudioService {
         this.backend.setVoiceGain(voice.voiceId, voice.gain * spatialGain);
       }
     }
+    this.publishStats();
+  }
+
+  private refreshReverbWet(): void {
+    const anySend = [...this.voices.values()].some((voice) => voice.reverbSend);
+    if (!anySend || isDryAudioReverbFallback(this.reverbField)) {
+      this.wet = 0;
+    } else {
+      this.wet = interpolateAudioReverb(
+        this.listener,
+        this.reverbField?.probes ?? [],
+      );
+    }
+    this.backend.setReverbWet(this.wet);
     this.publishStats();
   }
 

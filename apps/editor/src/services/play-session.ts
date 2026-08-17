@@ -232,6 +232,8 @@ export function startPlaySession(options: {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: AudioLibrary;
+  /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
+  audioReverbBytes?: Uint8Array | null;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -273,6 +275,7 @@ export function startPlaySession(options: {
     modelBytes: options.modelBytes,
     audioBytes: options.audioBytes,
     audioLibrary: options.audioLibrary,
+    audioReverbBytes: options.audioReverbBytes,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
     postProcessStack: options.scene?.settings.postProcessStack,

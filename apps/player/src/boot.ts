@@ -107,6 +107,7 @@ export function startPlayer(options: {
     modelBytes: game.modelBytes,
     audioBytes: game.audioBytes,
     audioLibrary: content.audioLibrary,
+    audioReverbBytes: content.audioReverbBytes,
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
     postProcessStack: content.postProcessStack,

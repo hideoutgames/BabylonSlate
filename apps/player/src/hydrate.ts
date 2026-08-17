@@ -47,6 +47,8 @@ export type PackedGameContent = {
   blackboards: Array<{ guid: string; document: unknown }>;
   navmeshBytes: Uint8Array | null;
   navmeshByScene: Map<string, Uint8Array>;
+  audioReverbBytes: Uint8Array | null;
+  audioReverbByScene: Map<string, Uint8Array>;
   materialDocuments: Map<string, MaterialDocument>;
   materialFunctions: Map<string, MaterialFunctionDocument>;
   postProcessStack: ScenePostProcessEntry[];
@@ -161,6 +163,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const startup = game.manifest.startupSceneGuid;
   const navmeshByScene = new Map(game.navmeshBytes);
   const navmeshBytes = navmeshByScene.get(startup) ?? null;
+  const audioReverbByScene = new Map(game.audioReverbBytes);
+  const audioReverbBytes = audioReverbByScene.get(startup) ?? null;
   const startupScene = game.scenes.get(startup);
   const pixelsPerUnit =
     typeof game.manifest.pixelsPerUnit === "number" && game.manifest.pixelsPerUnit > 0
@@ -176,6 +180,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     blackboards,
     navmeshBytes,
     navmeshByScene,
+    audioReverbBytes,
+    audioReverbByScene,
     materialDocuments,
     materialFunctions,
     postProcessStack: startupScene?.settings.postProcessStack ?? [],

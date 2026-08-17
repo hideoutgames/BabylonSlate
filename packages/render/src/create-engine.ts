@@ -204,6 +204,8 @@ export interface CreateEngineOptions {
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   /** Mixer / channel / attenuation / Audio payloads for gain routing. */
   audioLibrary?: AudioLibrary;
+  /** Scene `audioReverb` chunk; dry when missing. */
+  audioReverbBytes?: Uint8Array | null;
   onAudioDiagnostic?: (diagnostic: {
     code: string;
     message: string;
@@ -355,6 +357,9 @@ export function createEngine(
     if (options.audioLibrary) audioService.setLibrary(options.audioLibrary);
     for (const [guid, bytes] of options.audioBytes ?? []) {
       audioService.setSourceBytes(guid, bytes);
+    }
+    if (options.audioReverbBytes) {
+      audioService.setReverbField(options.audioReverbBytes);
     }
   }
   const settingsLevel = options.hardwareScalingLevel ?? 1;

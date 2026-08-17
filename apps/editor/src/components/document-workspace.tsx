@@ -10,6 +10,7 @@ import {
   useSceneEditing,
 } from "../context/scene-editing-context";
 import { NavBakeProvider } from "../context/nav-bake-context";
+import { AudioReverbBakeProvider } from "../context/audio-reverb-bake-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { MaterialEditingProvider } from "../context/material-editing-context";
@@ -294,6 +295,7 @@ export function DocumentWorkspace() {
   }
 
   return (
+    <AudioReverbBakeProvider>
     <div className="flex min-h-0 flex-1 flex-col">
       {tabOrder.map((id) => {
         const doc = openDocuments.find((entry) => entry.id === id);
@@ -554,5 +556,6 @@ export function DocumentWorkspace() {
         );
       })}
     </div>
+    </AudioReverbBakeProvider>
   );
 }

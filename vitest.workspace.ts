@@ -84,6 +84,8 @@ export default defineConfig({
         "**/worker-entry.ts",
         // Navmesh bake worker; covered by bake-job unit tests + editor host.
         "**/bake-worker.ts",
+        // Audio reverb bake worker; occupancy/probe bake is covered in audio-reverb.test.ts.
+        "**/audio-reverb-worker.ts",
         // Physics wasm backends: HavokPlugin path is asserted in havok-v2.test.ts;
         // coverage of the Babylon/Havok wasm surface is environment-dependent.
         "**/havok-backend.ts",
