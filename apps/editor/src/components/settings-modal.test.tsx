@@ -18,19 +18,26 @@ const {
   host,
   exportGameArtifact,
   sourceControlEnabled,
-} = vi.hoisted(() => ({
-  updateProjectSettings: vi.fn(),
-  setShowPluginContent: vi.fn(),
-  sourceControl: {
-    hasToken: false,
-    saveToken: vi.fn(async () => undefined),
-    clearToken: vi.fn(async () => undefined),
-    readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
-  },
-  host: { platform: "electron", testMode: true },
-  exportGameArtifact: vi.fn(),
-  sourceControlEnabled: { current: false },
-}));
+  lastProjectInput,
+} = vi.hoisted(() => {
+  const lastProjectInput = { current: null as unknown };
+  return {
+    updateProjectSettings: vi.fn((patch: { input?: unknown }) => {
+      if (patch?.input) lastProjectInput.current = patch.input;
+    }),
+    setShowPluginContent: vi.fn(),
+    sourceControl: {
+      hasToken: false,
+      saveToken: vi.fn(async () => undefined),
+      clearToken: vi.fn(async () => undefined),
+      readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
+    },
+    host: { platform: "electron", testMode: true },
+    exportGameArtifact: vi.fn(),
+    sourceControlEnabled: { current: false },
+    lastProjectInput,
+  };
+});
 
 vi.mock("@babylonslate/vfs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/vfs")>();
@@ -46,6 +53,10 @@ vi.mock("../context/document-context", async () => {
   return {
     useDocuments: () => {
       const projectDocument = emptyProject("Demo");
+      if (lastProjectInput.current) {
+        projectDocument.settings.input =
+          lastProjectInput.current as typeof projectDocument.settings.input;
+      }
       if (sourceControlEnabled.current) {
         projectDocument.settings.sourceControl = {
           ...projectDocument.settings.sourceControl,
@@ -120,6 +131,7 @@ vi.mock("../context/document-context", async () => {
 
 afterEach(() => {
   cleanup();
+  lastProjectInput.current = null;
   updateProjectSettings.mockClear();
   setShowPluginContent.mockClear();
   sourceControl.saveToken.mockClear();
@@ -150,6 +162,20 @@ describe("SettingsModal project authoring", () => {
         }),
       }),
     );
+  });
+
+  it("keeps an added Key binding after settings remount", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-input"));
+    fireEvent.click(screen.getByTestId("input-action-0-add-binding"));
+    cleanup();
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-input"));
+    expect(screen.getByTestId("input-action-0-binding-3-code")).toBeTruthy();
   });
 
   it("picks the default font from Font assets instead of a guid field", async () => {

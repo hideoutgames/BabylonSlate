@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { InputMappings } from "@babylonslate/input";
+import { normalizeInputMappings, type InputMappings } from "@babylonslate/input";
 import { InputMappingEditor } from "./input-mapping-editor";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -113,6 +113,35 @@ describe("InputMappingEditor", () => {
         ],
       }),
     );
+  });
+
+  it("keeps a draft row when switching back to Key through authoring normalize", () => {
+    let saved: InputMappings = jumpOnly;
+    const onChange = (next: InputMappings) => {
+      saved = next;
+    };
+    const view = () => (
+      <InputMappingEditor
+        value={normalizeInputMappings(saved, { allowIncomplete: true })}
+        onChange={onChange}
+      />
+    );
+    const { rerender } = render(view());
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-device"));
+    pickSelectItem("input-action-0-binding-0-device-gamepadButton");
+    rerender(view());
+    expect(screen.getByTestId("input-action-0-binding-0-code")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("input-action-0-binding-0-device"));
+    pickSelectItem("input-action-0-binding-0-device-key");
+    rerender(view());
+    expect(
+      screen.getByTestId("input-action-0-binding-0-code").textContent,
+    ).toContain("Choose Key");
+
+    fireEvent.click(screen.getByTestId("input-action-0-add-binding"));
+    rerender(view());
+    expect(screen.getByTestId("input-action-0-binding-1-code")).toBeTruthy();
   });
 
   it("clears the code when the device changes", () => {
