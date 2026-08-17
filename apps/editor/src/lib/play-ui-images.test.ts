@@ -31,6 +31,33 @@ describe("collectUiImageUrls", () => {
     expect(created[0]?.type).toBe("image/jpeg");
   });
 
+  it("reports a missing pixels/source chunk instead of silently skipping", async () => {
+    const { resolveUiImages } = await import("./play-ui-images");
+    const result = await resolveUiImages(
+      ["tex-missing"],
+      [
+        {
+          guid: "tex-missing",
+          path: "assets/Gone.texture.babasset",
+          type: "Texture",
+          chunks: [],
+        },
+      ],
+      async () => null,
+    );
+    expect(result.urls.size).toBe(0);
+    expect(result.issues).toEqual([
+      { guid: "tex-missing", reason: "missing-chunk" },
+    ]);
+  });
+
+  it("reports an unresolved texture guid", async () => {
+    const { resolveUiImages } = await import("./play-ui-images");
+    const result = await resolveUiImages(["gone"], [], async () => null);
+    expect(result.urls.size).toBe(0);
+    expect(result.issues).toEqual([{ guid: "gone", reason: "missing-asset" }]);
+  });
+
   it("falls back to the source chunk and png when MIME is missing", async () => {
     vi.stubGlobal("URL", {
       createObjectURL: (blob: Blob) => `blob:${blob.type}`,
@@ -43,6 +70,18 @@ describe("collectUiImageUrls", () => {
         chunkId === "source" ? new Uint8Array([9]) : null,
     );
     expect(urls.get("tex-2")).toBe("blob:image/png");
+  });
+});
+
+describe("uiImageIssueMessage", () => {
+  it("names the missing chunk or unresolved texture", async () => {
+    const { uiImageIssueMessage } = await import("./play-ui-images");
+    expect(uiImageIssueMessage({ guid: "tex-1", reason: "missing-chunk" })).toMatch(
+      /chunk/i,
+    );
+    expect(uiImageIssueMessage({ guid: "gone", reason: "missing-asset" })).toMatch(
+      /missing/i,
+    );
   });
 });
 

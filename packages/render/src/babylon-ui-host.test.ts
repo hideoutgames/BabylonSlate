@@ -640,4 +640,71 @@ describe("Babylon GUI Image widgets", () => {
     expect(control.source).toBe("blob:tex-2");
     host.clear();
   });
+
+  it("calls onImageReady when Image.onImageLoadedObservable fires", () => {
+    const onImageReady = vi.fn();
+    const doc = createDefaultUserInterface();
+    const image = createWidget("img", "Image", "Logo", pinLayout("left", "top", 64, 64));
+    image.props.imageGuid = "tex-1";
+    doc.widgets.canvas!.children = ["img"];
+    doc.widgets.img = image;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      resolveImageUrl: () => "blob:tex-1",
+      onImageReady,
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    const control = named(root, "img") as Image;
+    expect(onImageReady).not.toHaveBeenCalled();
+    control.onImageLoadedObservable.notifyObservers(control);
+    expect(onImageReady).toHaveBeenCalledTimes(1);
+    host.clear();
+  });
+
+  it("drops the load observer on source replace, remove, and clear", () => {
+    const onImageReady = vi.fn();
+    const doc = createDefaultUserInterface();
+    const image = createWidget("img", "Image", "Logo", pinLayout("left", "top", 64, 64));
+    image.props.imageGuid = "tex-1";
+    doc.widgets.canvas!.children = ["img"];
+    doc.widgets.img = image;
+    const urls: Record<string, string> = {
+      "tex-1": "blob:tex-1",
+      "tex-2": "blob:tex-2",
+    };
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      resolveImageUrl: (guid) => urls[guid] ?? null,
+      onImageReady,
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    const first = named(root, "img") as Image;
+    const firstHasObservers = () => first.onImageLoadedObservable.hasObservers();
+    expect(firstHasObservers()).toBe(true);
+
+    image.props.imageGuid = "tex-2";
+    applyUiControls(host, describeUiControls(doc, layout));
+    const second = named(root, "img") as Image;
+    expect(second).toBe(first);
+    first.onImageLoadedObservable.notifyObservers(first);
+    expect(onImageReady).toHaveBeenCalledTimes(1);
+
+    factory.remove?.("img");
+    onImageReady.mockClear();
+    first.onImageLoadedObservable.notifyObservers(first);
+    expect(onImageReady).not.toHaveBeenCalled();
+    expect(firstHasObservers()).toBe(false);
+
+    applyUiControls(host, describeUiControls(doc, layout));
+    const recreated = named(root, "img") as Image;
+    expect(recreated.onImageLoadedObservable.hasObservers()).toBe(true);
+    host.clear();
+    recreated.onImageLoadedObservable.notifyObservers(recreated);
+    expect(onImageReady).not.toHaveBeenCalled();
+    expect(recreated.onImageLoadedObservable.hasObservers()).toBe(false);
+  });
 });

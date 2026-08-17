@@ -11,6 +11,12 @@ import {
   describeUiControls,
   layoutUserInterface,
 } from "@babylonslate/ui-runtime";
+import { UiImageIssueAlert } from "../components/ui-image-issue";
+import {
+  resolveUiImages,
+  revokeUiImageUrls,
+  type UiImageIssue,
+} from "../lib/play-ui-images";
 import { PanelFrame } from "@babylonslate/editor-kit";
 import {
   Empty,
@@ -21,10 +27,6 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { asUiDocument } from "../lib/play-content";
-import {
-  collectUiImageUrls,
-  revokeUiImageUrls,
-} from "../lib/play-ui-images";
 import {
   freezeLiveUiSurface,
   presentLiveUiIfVisible,
@@ -55,6 +57,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const [imageUrls, setImageUrls] = useState<Map<string, string>>(
     () => new Map(),
   );
+  const [imageIssues, setImageIssues] = useState<UiImageIssue[]>([]);
   const imageUrlsRef = useRef(imageUrls);
   imageUrlsRef.current = imageUrls;
   const resolveImageUrl = useCallback(
@@ -110,20 +113,29 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       revokeUiImageUrls(imageUrlsRef.current);
       imageUrlsRef.current = new Map();
       setImageUrls(new Map());
+      setImageIssues([]);
       return;
     }
     let cancelled = false;
-    const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+    const listed = assetRegistry?.list() ?? [];
+    const assets = listed.map((asset) => ({
       guid: asset.header.guid,
       path: asset.path,
       type: asset.header.type,
       chunks: asset.header.chunks,
     }));
-    void collectUiImageUrls(
-      collectImageGuidsFromUiDocuments([ui]),
+    void resolveUiImages(
+      collectImageGuidsFromUiDocuments([ui], (nestedGuid) => {
+        const asset = listed.find((entry) => entry.header.guid === nestedGuid);
+        if (!asset) return null;
+        const openDoc = openDocuments.find((doc) => doc.ref.path === asset.path);
+        if (openDoc?.content) return asUiDocument(openDoc.content);
+        if (asset.header.payload) return asUiDocument(asset.header.payload);
+        return null;
+      }),
       assets,
       readAssetChunk ?? (async () => null),
-    ).then((urls) => {
+    ).then(({ urls, issues }) => {
       if (cancelled) {
         revokeUiImageUrls(urls);
         return;
@@ -131,11 +143,12 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       revokeUiImageUrls(imageUrlsRef.current);
       imageUrlsRef.current = urls;
       setImageUrls(urls);
+      setImageIssues(issues);
     });
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, readAssetChunk, ui]);
+  }, [assetRegistry, openDocuments, readAssetChunk, ui]);
 
   useEffect(
     () => () => {
@@ -281,6 +294,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
           onPointerMove={(event) => event.stopPropagation()}
           onPointerUp={(event) => event.stopPropagation()}
         />
+        <UiImageIssueAlert issues={imageIssues} />
         {previewError ? (
           <Empty
             data-testid="ui-gui-preview-error"

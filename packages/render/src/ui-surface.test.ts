@@ -59,6 +59,44 @@ describe("presentAdtToCanvas", () => {
     expect(drawImage).toHaveBeenCalledWith(sourceCanvas, 0, 0);
   });
 
+  it("disables invalidate-rect so an external blit redraws the complete interface", () => {
+    const order: string[] = [];
+    let invalidateRect = true;
+    const adt = {
+      useInvalidateRectOptimization: true,
+      _checkUpdate: vi.fn(() => {
+        order.push(`check:${invalidateRect ? "partial" : "full"}`);
+      }),
+      markAsDirty: vi.fn(() => {
+        order.push("dirty");
+      }),
+      getContext: () => ({ canvas: { id: "adt" } }),
+      getSize: () => ({ width: 8, height: 8 }),
+    } as unknown as AdvancedDynamicTexture;
+    Object.defineProperty(adt, "useInvalidateRectOptimization", {
+      get: () => invalidateRect,
+      set: (value: boolean) => {
+        invalidateRect = value;
+        order.push(`opt:${value}`);
+      },
+    });
+    const canvas = {
+      getContext: () => ({
+        clearRect: vi.fn(),
+        drawImage: vi.fn(),
+      }),
+      width: 0,
+      height: 0,
+    } as unknown as HTMLCanvasElement;
+    presentAdtToCanvas(adt, canvas);
+    expect(adt.useInvalidateRectOptimization).toBe(false);
+    expect(order.indexOf("opt:false")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("opt:false")).toBeLessThan(
+      order.findIndex((step) => step.startsWith("check:")),
+    );
+    expect(order).toContain("check:full");
+  });
+
   it("skips the blit when the ADT size is 0 instead of throwing", () => {
     const clearRect = vi.fn();
     const drawImage = vi.fn();

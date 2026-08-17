@@ -16,7 +16,8 @@ type AddableWidgetKind =
   | "CheckBox"
   | "Slider"
   | "ScrollBox"
-  | "TextInput";
+  | "TextInput"
+  | "Image";
 
 async function createAsset(
   page: Page,
@@ -355,6 +356,60 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
     await expect(page.locator('[data-testid^="ui-widget-scrollbox-"]')).toBeVisible();
     await expect(page.locator('[data-testid^="ui-widget-textinput-"]')).toBeVisible();
     await expectDesignerHostStats(page);
+    await assertNoPageFailures(collector);
+  });
+
+  test("Image appears idle and siblings remain after a widget drag", async ({
+    page,
+  }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    const collector = attachPageFailureCollector(page);
+    await openTestProject(page);
+    await collector.listenForUnhandledRejections();
+    await createAsset(page, "UserInterface", "HUD");
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    await expectDesignerReady(page);
+
+    await addWidget(page, "Image");
+    const image = visibleUiWorkspace(page).locator(
+      '[data-testid^="ui-widget-image-"]',
+    );
+    await expect(image).toBeVisible();
+    const idleX = await image.getAttribute("data-gui-x");
+    const idleY = await image.getAttribute("data-gui-y");
+    await expect.poll(async () => image.getAttribute("data-gui-x")).toBe(idleX);
+    await expect.poll(async () => image.getAttribute("data-gui-y")).toBe(idleY);
+
+    await selectCanvasRoot(page);
+    await addWidget(page, "Button");
+    await selectCanvasRoot(page);
+    await addWidget(page, "CheckBox");
+    const button = visibleUiWorkspace(page).locator(
+      '[data-testid^="ui-widget-button-"]',
+    );
+    const checkbox = visibleUiWorkspace(page).locator(
+      '[data-testid^="ui-widget-checkbox-"]',
+    );
+    await expect(button).toBeVisible();
+    await expect(checkbox).toBeVisible();
+    await expect(image).toBeVisible();
+
+    const before = await button.getAttribute("data-gui-x");
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + 80, box!.y + box!.height / 2, {
+      steps: 8,
+    });
+    await page.mouse.up();
+    await expect
+      .poll(async () => button.getAttribute("data-gui-x"))
+      .not.toBe(before);
+    await expect(button).toBeVisible();
+    await expect(checkbox).toBeVisible();
+    await expect(image).toBeVisible();
+    await expect(image).toHaveAttribute("data-gui-x", idleX ?? "");
     await assertNoPageFailures(collector);
   });
 

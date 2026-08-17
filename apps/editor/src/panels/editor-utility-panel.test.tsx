@@ -106,4 +106,98 @@ describe("EditorUtilityPanel", () => {
     expect(options.interactive).toBe(true);
     expect(typeof options.resolveImageUrl).toBe("function");
   });
+
+  it("collects nested UserInterface image guids for the live utility surface", async () => {
+    docs.openDocuments = [
+      {
+        ref: { path: "assets/Tools.eui.babasset" },
+        content: {
+          rootId: "canvas",
+          widgets: {
+            canvas: { id: "canvas", kind: "Canvas", children: ["host"] },
+            host: {
+              id: "host",
+              kind: "UserInterface",
+              nestedUiGuid: "chip-guid",
+              children: [],
+            },
+          },
+        },
+      },
+    ];
+    const list = docs.assetRegistry.list;
+    docs.assetRegistry.list = () => [
+      ...list(),
+      {
+        path: "assets/Chip.ui.babasset",
+        header: {
+          guid: "chip-guid",
+          type: "UserInterface",
+          payload: {
+            rootId: "canvas",
+            widgets: {
+              canvas: { id: "canvas", kind: "Canvas", children: ["art"] },
+              art: {
+                id: "art",
+                kind: "Image",
+                children: [],
+                props: { imageGuid: "tex-nested" },
+              },
+            },
+          },
+        },
+      },
+      {
+        path: "assets/Icon.texture.babasset",
+        header: {
+          guid: "tex-nested",
+          type: "Texture",
+          chunks: [{ id: "pixels" }],
+        },
+      },
+    ];
+    createUiSurfaceMock.mockReturnValue({
+      present: vi.fn(),
+      setFrozen: vi.fn(),
+      dispose: vi.fn(),
+      host: {
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl: vi.fn(),
+        markAsDirty: vi.fn(),
+        setVisible: vi.fn(),
+      },
+      resizeDesign: vi.fn(),
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    createHostMock.mockReturnValue({
+      loadAll: async () => {},
+      beginPlay: vi.fn(),
+      tick: vi.fn(),
+      dispose: vi.fn(),
+      host: { classIds: () => [], invokeEvent: vi.fn() },
+    });
+    render(
+      <EditorUtilityPanel
+        api={
+          {
+            id: "eui-tools-guid",
+            isVisible: true,
+            onDidVisibilityChange: () => ({ dispose: () => {} }),
+          } as never
+        }
+        containerApi={{} as never}
+        params={{}}
+      />,
+    );
+    await waitFor(() => expect(createUiSurfaceMock).toHaveBeenCalled());
+    try {
+      expect(await screen.findByTestId("ui-image-issue")).toBeTruthy();
+    } finally {
+      docs.assetRegistry.list = list;
+    }
+  });
 });

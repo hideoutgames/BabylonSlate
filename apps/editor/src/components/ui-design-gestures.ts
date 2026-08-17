@@ -86,7 +86,9 @@ export function pointerSpan(
 }
 
 export const UI_DESIGN_DRAG_THRESHOLD_PX = 4;
-export const UI_DESIGN_HANDLE_SIZE_PX = 44;
+export const UI_DESIGN_HANDLE_HIT_SIZE_PX = 44;
+export const UI_DESIGN_HANDLE_VISUAL_SIZE_PX = 14;
+export const UI_DESIGN_HANDLE_SIZE_PX = UI_DESIGN_HANDLE_HIT_SIZE_PX;
 export const UI_DESIGN_FIT_PADDING_PX = 24;
 
 export function previewScaleToFit(
@@ -200,6 +202,60 @@ export function resizeHandleRects(
     sw: { x: screen.x - half, y: screen.y + screen.height - half, width: size, height: size },
     w: { x: screen.x - half, y: midY, width: size, height: size },
   };
+}
+
+function rectContains(rect: ScreenRect, point: PointerPoint): boolean {
+  return (
+    point.x >= rect.x &&
+    point.y >= rect.y &&
+    point.x <= rect.x + rect.width &&
+    point.y <= rect.y + rect.height
+  );
+}
+
+/**
+ * Prefer moving the widget interior so 44px handle hits do not cover a
+ * small control's center. Visual handles stay compact (~14px).
+ */
+/** Unmeasured root/canvas must fill the device frame, especially Desired mode. */
+export function designerControlHitRect(
+  control: { id: string; kind: string; guiRect: ScreenRect },
+  live: ScreenRect | undefined,
+  viewport: { width: number; height: number },
+  bitmapScale: number,
+  rootId: string,
+): ScreenRect {
+  if (live && live.width > 0 && live.height > 0) return live;
+  if (control.id === rootId) {
+    return { x: 0, y: 0, width: viewport.width, height: viewport.height };
+  }
+  return designRectToBitmap(control.guiRect, bitmapScale);
+}
+
+export function designerGestureAt(
+  point: PointerPoint,
+  screen: ScreenRect,
+  options?: { visualSize?: number; hitSize?: number },
+): "move" | HandleEdge | null {
+  const visual = options?.visualSize ?? UI_DESIGN_HANDLE_VISUAL_SIZE_PX;
+  const hit = options?.hitSize ?? UI_DESIGN_HANDLE_HIT_SIZE_PX;
+  const inset = Math.max(1, visual / 2);
+  const inner = {
+    x: screen.x + inset,
+    y: screen.y + inset,
+    width: screen.width - inset * 2,
+    height: screen.height - inset * 2,
+  };
+  if (inner.width > 0 && inner.height > 0 && rectContains(inner, point)) {
+    return "move";
+  }
+  const handles = resizeHandleRects(screen, hit);
+  const edges: HandleEdge[] = ["nw", "ne", "se", "sw", "n", "e", "s", "w"];
+  for (const edge of edges) {
+    if (rectContains(handles[edge], point)) return edge;
+  }
+  if (rectContains(screen, point)) return "move";
+  return null;
 }
 
 export function handleEdges(handle: HandleEdge): {

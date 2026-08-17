@@ -11,6 +11,10 @@ import {
   pivotToScreen,
   previewScaleToFit,
   resizeHandleRects,
+  designerControlHitRect,
+  designerGestureAt,
+  UI_DESIGN_HANDLE_HIT_SIZE_PX,
+  UI_DESIGN_HANDLE_VISUAL_SIZE_PX,
   uiDesignStrokeMergeKey,
   zoomAtPoint,
 } from "./ui-design-gestures";
@@ -106,6 +110,66 @@ describe("ui-design-gestures", () => {
     expect(handles.nw.y).toBe(50 - 22);
     expect(handles.e.x).toBe(100 + 200 - 22);
     expect(handles.e.y).toBe(50 + 40 - 22);
+  });
+
+  it("keeps compact visual handles separate from 44px touch hits", () => {
+    expect(UI_DESIGN_HANDLE_HIT_SIZE_PX).toBe(44);
+    expect(UI_DESIGN_HANDLE_VISUAL_SIZE_PX).toBeGreaterThanOrEqual(12);
+    expect(UI_DESIGN_HANDLE_VISUAL_SIZE_PX).toBeLessThanOrEqual(14);
+    const visual = resizeHandleRects(
+      { x: 100, y: 50, width: 200, height: 80 },
+      UI_DESIGN_HANDLE_VISUAL_SIZE_PX,
+    );
+    expect(visual.se.width).toBe(UI_DESIGN_HANDLE_VISUAL_SIZE_PX);
+    expect(visual.se.height).toBe(UI_DESIGN_HANDLE_VISUAL_SIZE_PX);
+  });
+
+  it("covers the complete device frame when the root has no live measure", () => {
+    const viewport = { width: 400, height: 300 };
+    const bitmapScale = Math.min(400 / 1920, 300 / 1080);
+    expect(
+      designerControlHitRect(
+        { id: "canvas", kind: "Canvas", guiRect: { x: 0, y: 0, width: 1920, height: 1080 } },
+        undefined,
+        viewport,
+        bitmapScale,
+        "canvas",
+      ),
+    ).toEqual({ x: 0, y: 0, width: 400, height: 300 });
+  });
+
+  it("does not stretch a nested Canvas to the device frame", () => {
+    expect(
+      designerControlHitRect(
+        { id: "chip/canvas", kind: "Canvas", guiRect: { x: 10, y: 20, width: 80, height: 40 } },
+        undefined,
+        { width: 400, height: 300 },
+        1,
+        "canvas",
+      ),
+    ).toEqual({ x: 10, y: 20, width: 80, height: 40 });
+  });
+
+  it("keeps bitmap fallback for unmeasured child widgets", () => {
+    expect(
+      designerControlHitRect(
+        { id: "btn", kind: "Button", guiRect: { x: 10, y: 20, width: 100, height: 40 } },
+        undefined,
+        { width: 400, height: 300 },
+        0.5,
+        "canvas",
+      ),
+    ).toEqual({ x: 5, y: 10, width: 50, height: 20 });
+  });
+
+  it("treats the center of a small widget as move, not overlapping resize", () => {
+    const screen = { x: 100, y: 100, width: 160, height: 36 };
+    expect(
+      designerGestureAt({ x: 180, y: 118 }, screen),
+    ).toBe("move");
+    expect(
+      designerGestureAt({ x: 100 + 160, y: 100 + 36 }, screen),
+    ).toBe("se");
   });
 
   it("arms a drag only after the movement threshold", () => {

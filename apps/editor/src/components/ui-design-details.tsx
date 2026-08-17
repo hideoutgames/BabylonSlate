@@ -286,12 +286,13 @@ function colorRow(
   fallback: string,
   onChange: (css: string) => void,
 ): PropertyRow {
-  const hex = css?.startsWith("#") ? css : fallback;
+  const authored = typeof css === "string" && css.length > 0;
+  const hex = authored && css.startsWith("#") ? css : authored ? fallback : "";
   return {
     id,
     kind: "color",
     label,
-    value: colorFromHex(hex),
+    value: authored ? colorFromHex(hex || fallback) : null,
     onChange: (next) => onChange(colorToHex(next)),
   };
 }

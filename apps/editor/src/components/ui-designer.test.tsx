@@ -218,10 +218,13 @@ describe("UiDesigner", () => {
     const next = onChange.mock.calls.at(-1)![0] as {
       widgets: Record<string, { kind: string; layout: { horizontalAlignment: string; verticalAlignment: string } }>;
     };
-    const button = Object.values(next.widgets).find((row) => row.kind === "Button");
+    const button = Object.values(next.widgets).find((row) => row.kind === "Button") as
+      | { layout: { horizontalAlignment: string; verticalAlignment: string }; style?: { background?: string } }
+      | undefined;
     expect(button).toBeTruthy();
     expect(button!.layout.horizontalAlignment).toBe("center");
     expect(button!.layout.verticalAlignment).toBe("center");
+    expect(button!.style?.background).toBe("#333333");
   });
 
   it("deletes a widget from the hierarchy settings menu", () => {
@@ -347,15 +350,25 @@ describe("UiDesigner", () => {
     fireEvent.click(screen.getByTestId("ui-widget-icon"));
     fireEvent.click(screen.getByTestId("property-image"));
     expect(await screen.findByTestId("search-item-tex-1")).toBeTruthy();
+    const iconBefore = screen.getByTestId("ui-widget-icon");
+    const beforeX = iconBefore.getAttribute("data-gui-x");
+    const beforeY = iconBefore.getAttribute("data-gui-y");
     fireEvent.click(screen.getByTestId("search-item-tex-1"));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         widgets: expect.objectContaining({
           icon: expect.objectContaining({
             props: expect.objectContaining({ imageGuid: "tex-1" }),
+            layout: payload.widgets.icon!.layout,
           }),
         }),
       }),
+    );
+    expect(screen.getByTestId("ui-widget-icon").getAttribute("data-gui-x")).toBe(
+      beforeX,
+    );
+    expect(screen.getByTestId("ui-widget-icon").getAttribute("data-gui-y")).toBe(
+      beforeY,
     );
 
     fireEvent.click(screen.getByTestId("ui-widget-header"));

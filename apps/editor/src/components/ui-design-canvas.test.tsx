@@ -4,8 +4,11 @@ import type { Engine } from "@babylonjs/core";
 import { resetUiHostStats, uiHostStats } from "@babylonslate/render";
 import {
   createDefaultPlayHud,
+  createDefaultUserInterface,
+  createWidget,
   describeUiControls,
   layoutUserInterface,
+  pinLayout,
 } from "@babylonslate/ui-runtime";
 import { UiDesignCanvas } from "./ui-design-canvas";
 
@@ -61,6 +64,25 @@ function hudCanvasProps() {
     onSelect: () => {},
     onViewChange: () => {},
     onLayoutChange: () => {},
+  };
+}
+
+function mockSurface() {
+  return {
+    present: vi.fn(),
+    setFrozen: vi.fn(),
+    dispose: vi.fn(),
+    host: {
+      measureControls: () => ({}),
+      clear: vi.fn(),
+      addControl: vi.fn(),
+      markAsDirty: vi.fn(),
+    },
+    resizeDesign: vi.fn(),
+    resizeGizmos: vi.fn(),
+    presentGizmos: vi.fn(),
+    designAdt: { markAsDirty: vi.fn() },
+    gizmoAdt: null,
   };
 }
 
@@ -262,6 +284,124 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(id).toBe("stick");
     expect(layout.left).not.toBe(props.ui.widgets.stick?.layout.left);
     expect(uiHostStats.commit).toBe(1);
+  });
+
+  it("moves a small selected widget from the center instead of resizing", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const ui = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("left", "top", 160, 36, 40, 40),
+    );
+    ui.widgets.canvas!.children = ["btn"];
+    ui.widgets.btn = button;
+    const viewport = {
+      id: "desktop-16-9",
+      width: 800,
+      height: 600,
+      safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+    };
+    const layout = layoutUserInterface(ui, viewport, {
+      designSpace: true,
+      safeArea: viewport.safeArea,
+    });
+    const onLayoutChange = vi.fn();
+    render(
+      <UiDesignCanvas
+        ui={ui}
+        viewport={viewport}
+        layout={layout}
+        controls={describeUiControls(ui, layout)}
+        selectedId="btn"
+        view={{ zoom: 1, panX: 0, panY: 0 }}
+        previewScale={1}
+        bitmapScale={1}
+        sharedEngine={{} as Engine}
+        onSelect={() => {}}
+        onViewChange={() => {}}
+        onLayoutChange={onLayoutChange}
+      />,
+    );
+    const overlapping = screen.getByTestId("ui-resize-n");
+    dispatchPointerEvent(overlapping, "pointerdown", { clientX: 120, clientY: 58 });
+    dispatchPointerEvent(overlapping, "pointermove", { clientX: 200, clientY: 58 });
+    dispatchPointerEvent(overlapping, "pointerup", { clientX: 200, clientY: 58 });
+    expect(onLayoutChange).toHaveBeenCalledTimes(1);
+    const [, next] = onLayoutChange.mock.calls[0] as [
+      string,
+      { left: number; width: number; height: number },
+    ];
+    expect(next.left).toBeGreaterThan(button.layout.left);
+    expect(next.width).toBe(160);
+    expect(next.height).toBe(36);
+  });
+
+  it("resizes from a corner handle that is outside the widget center", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const ui = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("left", "top", 160, 36, 40, 40),
+    );
+    ui.widgets.canvas!.children = ["btn"];
+    ui.widgets.btn = button;
+    const viewport = {
+      id: "desktop-16-9",
+      width: 800,
+      height: 600,
+      safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+    };
+    const layout = layoutUserInterface(ui, viewport, {
+      designSpace: true,
+      safeArea: viewport.safeArea,
+    });
+    const onLayoutChange = vi.fn();
+    render(
+      <UiDesignCanvas
+        ui={ui}
+        viewport={viewport}
+        layout={layout}
+        controls={describeUiControls(ui, layout)}
+        selectedId="btn"
+        view={{ zoom: 1, panX: 0, panY: 0 }}
+        previewScale={1}
+        bitmapScale={1}
+        sharedEngine={{} as Engine}
+        onSelect={() => {}}
+        onViewChange={() => {}}
+        onLayoutChange={onLayoutChange}
+      />,
+    );
+    const corner = screen.getByTestId("ui-resize-se");
+    dispatchPointerEvent(corner, "pointerdown", { clientX: 200, clientY: 76 });
+    dispatchPointerEvent(corner, "pointermove", { clientX: 240, clientY: 96 });
+    dispatchPointerEvent(corner, "pointerup", { clientX: 240, clientY: 96 });
+    expect(onLayoutChange).toHaveBeenCalledTimes(1);
+    const [, next] = onLayoutChange.mock.calls[0] as [
+      string,
+      { width: number; height: number },
+    ];
+    expect(next.width).toBeGreaterThan(160);
+    expect(next.height).toBeGreaterThan(36);
+  });
+
+  it("surfaces missing texture chunk feedback instead of a silent blank Image", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    render(
+      <UiDesignCanvas
+        {...hudCanvasProps()}
+        imageIssues={[
+          { guid: "tex-1", reason: "missing-chunk" },
+        ]}
+      />,
+    );
+    const issue = screen.getByTestId("ui-image-issue");
+    expect(issue.textContent).toMatch(/tex-1/i);
+    expect(issue.textContent).toMatch(/chunk/i);
   });
 });
 

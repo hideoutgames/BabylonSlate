@@ -21,4 +21,24 @@ describe("collectImageGuidsFromUiDocuments", () => {
       "tex-logo",
     ]);
   });
+
+  it("collects imageGuid from nested UserInterface documents", () => {
+    const chip = createDefaultUserInterface("Chip");
+    const art = createWidget("art", "Image", "Art");
+    art.props.imageGuid = "tex-nested";
+    chip.widgets.canvas!.children = ["art"];
+    chip.widgets.art = art;
+
+    const hud = createDefaultUserInterface("HUD");
+    const host = createWidget("chip", "UserInterface", "Chip");
+    host.nestedUiGuid = "chip-guid";
+    hud.widgets.canvas!.children = ["chip"];
+    hud.widgets.chip = host;
+
+    expect(
+      collectImageGuidsFromUiDocuments([hud], (guid) =>
+        guid === "chip-guid" ? chip : null,
+      ),
+    ).toEqual(["tex-nested"]);
+  });
 });
