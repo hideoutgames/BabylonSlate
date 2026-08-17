@@ -10,6 +10,20 @@ import {
   type TilesetPayload,
 } from "@babylonslate/assets";
 
+function agentDebugLog(
+  hypothesisId: string,
+  location: string,
+  message: string,
+  data: Record<string, unknown>,
+): void {
+  if (typeof process === "undefined" || !process.getBuiltinModule) return;
+  const fs = process.getBuiltinModule("fs") as typeof import("node:fs");
+  fs.appendFileSync(
+    "/opt/cursor/logs/debug.log",
+    `${JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() })}\n`,
+  );
+}
+
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
  * RigidBodyComponent / ColliderComponent.
@@ -92,6 +106,14 @@ export class PhysicsWorldSync {
       if (!actor || actor.destroyed) continue;
       const transform = this.backend.getBodyTransform(bodyId);
       if (!transform) continue;
+      // #region agent log
+      agentDebugLog("D", "physics-sync.ts:step", "copying backend pose into actor local transform", {
+        actorGuid: actor.guid,
+        parentId: actor.getVariable("parentId") ?? null,
+        actorLocalBefore: actorTransform(actor),
+        backendTransform: transform,
+      });
+      // #endregion
       actor.transform.position.x = transform.position.x;
       actor.transform.position.y = transform.position.y;
       actor.transform.position.z = transform.position.z;
@@ -171,6 +193,14 @@ export class PhysicsWorldSync {
     const props = parseRigidBodyProperties(
       rigid ? mapToRecord(rigid.variables) : { motionType: "static", mass: 0, gravityScale: 0 },
     );
+    // #region agent log
+    agentDebugLog("D", "physics-sync.ts:createForActor", "creating body from actor transform", {
+      actorGuid: actor.guid,
+      parentId: actor.getVariable("parentId") ?? null,
+      motionType: rigid ? props.motionType : "static",
+      bodyTransform: actorTransform(actor),
+    });
+    // #endregion
     this.backend.createBody({
       id: bodyId,
       actorId: actor.guid,

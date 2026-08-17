@@ -48,6 +48,20 @@ const scratchMatrix = Matrix.Identity();
 const scratchLocalPos = new Vector3();
 const scratchPartQuat = new Quaternion();
 
+function agentDebugLog(
+  hypothesisId: string,
+  location: string,
+  message: string,
+  data: Record<string, unknown>,
+): void {
+  if (typeof process === "undefined" || !process.getBuiltinModule) return;
+  const fs = process.getBuiltinModule("fs") as typeof import("node:fs");
+  fs.appendFileSync(
+    "/opt/cursor/logs/debug.log",
+    `${JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() })}\n`,
+  );
+}
+
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
 
@@ -332,6 +346,17 @@ export function applyAssignMesh(
   binding.meshes.set(command.slotId, rebuilt);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
+  // #region agent log
+  agentDebugLog("A", "snapshot-apply.ts:applyAssignMesh", "visual created before snapshot", {
+    slotId: command.slotId,
+    meshKind,
+    hadExistingVisual: Boolean(existing),
+    slotAlreadyLive: binding.liveSlots.has(command.slotId),
+    rootVisible: rebuilt.isVisible,
+    visibleDescendants: rebuilt.getChildMeshes().filter((mesh) => mesh.isVisible).length,
+    position: rebuilt.position.asArray(),
+  });
+  // #endregion
   refreshPlayActiveCamera(scene, binding);
 }
 
@@ -410,6 +435,16 @@ function createPlayVisual(
     if (!child) continue;
     const parent = part.parentId ? meshes.get(part.parentId) : undefined;
     child.parent = parent ?? root;
+    // #region agent log
+    agentDebugLog("B", "snapshot-apply.ts:createPlayVisual", "resolved Play visual parent", {
+      slotId,
+      componentId: part.componentId,
+      requestedParentId: part.parentId,
+      resolvedParentName: child.parent?.name ?? null,
+      fellBackToActorRoot: child.parent === root,
+      visualComponentIds: [...meshes.keys()],
+    });
+    // #endregion
   }
   return root;
 }
@@ -570,6 +605,17 @@ export function applySnapshotToScene(
           child.isVisible = (actor.flags & 1) === 1;
         }
       }
+      // #region agent log
+      agentDebugLog("A", "snapshot-apply.ts:applySnapshotToScene", "snapshot made visual renderable", {
+        slotId: actor.slotId,
+        actorPosition: actor.position,
+        actorRotation: actor.rotation,
+        actorScale: actor.scale,
+        rootVisible: mesh.isVisible,
+        visibleDescendants: mesh.getChildMeshes().filter((child) => child.isVisible).length,
+        frozenWorldTranslation: mesh.getWorldMatrix().getTranslation().asArray(),
+      });
+      // #endregion
       const light = binding.lights.get(actor.slotId);
       if (light) {
         const composed = composeSlotPartTransform(actor, binding, actor.slotId);

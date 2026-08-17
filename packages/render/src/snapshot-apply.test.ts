@@ -529,7 +529,7 @@ describe("createPlayMesh", () => {
     expect(rebuilt!.getTotalVertices()).not.toBe(placeholderVertices);
   });
 
-  it("creates a visible box primitive when assignMesh arrives before the first snapshot", () => {
+  it("keeps assigned geometry hidden until the first snapshot supplies its TRS", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -548,10 +548,36 @@ describe("createPlayMesh", () => {
     });
     const box = binding.meshes.get(0);
     const sphere = binding.meshes.get(1);
-    expect(box?.isVisible).toBe(true);
-    expect(sphere?.isVisible).toBe(true);
+    expect(box?.isVisible).toBe(false);
+    expect(sphere?.isVisible).toBe(false);
     expect(box!.getTotalVertices()).not.toBe(sphere!.getTotalVertices());
     expect(box!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(0.2);
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 2,
+      actors: [
+        {
+          slotId: 0,
+          position: { x: -4, y: 1, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 2, y: 2, z: 2 },
+          flags: 1,
+        },
+        {
+          slotId: 1,
+          position: { x: 4, y: 2, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    expect(box?.isVisible).toBe(true);
+    expect(sphere?.isVisible).toBe(true);
+    expect(box?.position.asArray()).toEqual([-4, 1, 0]);
+    expect(sphere?.position.asArray()).toEqual([4, 2, 0]);
   });
 
   it("parents assignMesh parts under the snapshot-driven actor origin", () => {
