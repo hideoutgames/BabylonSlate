@@ -1,9 +1,10 @@
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
 import type {
   ActionBinding,
   ActionMapping,
   AxisBinding,
   AxisMapping,
+  BindingModifiers,
   InputDevice,
   InputMappings,
 } from "@babylonslate/input";
@@ -16,12 +17,20 @@ import {
   FieldSet,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
 import { Switch } from "@babylonslate/ui/components/switch";
+import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
-import { BindingCaptureButton } from "./binding-capture-button";
+import { BindingCodePicker } from "./binding-code-picker";
 import { NumericDragField } from "./numeric-drag-field";
 
 export const DEFAULT_TOUCH_CONTROL_IDS = [
@@ -29,6 +38,7 @@ export const DEFAULT_TOUCH_CONTROL_IDS = [
   "joystick-y",
   "dpad-x",
   "dpad-y",
+  "Jump",
 ] as const;
 
 export const INPUT_DEVICES: Array<{ value: InputDevice; label: string }> = [
@@ -38,6 +48,13 @@ export const INPUT_DEVICES: Array<{ value: InputDevice; label: string }> = [
   { value: "gamepadButton", label: "Pad Button" },
   { value: "gamepadAxis", label: "Pad Axis" },
   { value: "touch", label: "Touch" },
+];
+
+const MODIFIER_TOGGLES: Array<{ key: keyof BindingModifiers; label: string }> = [
+  { key: "ctrl", label: "Ctrl" },
+  { key: "shift", label: "Shift" },
+  { key: "alt", label: "Alt" },
+  { key: "meta", label: "Meta" },
 ];
 
 export interface InputMappingEditorProps {
@@ -77,6 +94,29 @@ function patchAxis(
   return { ...value, axes };
 }
 
+function isAnalogBinding(device: InputDevice, code: string): boolean {
+  if (device === "gamepadAxis") return true;
+  if (device === "touch") {
+    return /(joystick|dpad)/i.test(code) || /-(x|y)$/i.test(code);
+  }
+  return false;
+}
+
+function showsModifiers(device: InputDevice): boolean {
+  return device === "key" || device === "mouseButton";
+}
+
+function patchModifiers(
+  current: BindingModifiers | undefined,
+  key: keyof BindingModifiers,
+  on: boolean,
+): BindingModifiers | undefined {
+  const next: BindingModifiers = { ...current };
+  if (on) next[key] = true;
+  else delete next[key];
+  return Object.values(next).some(Boolean) ? next : undefined;
+}
+
 function DevicePicker({
   id,
   device,
@@ -86,30 +126,36 @@ function DevicePicker({
   device: InputDevice;
   onChange: (device: InputDevice) => void;
 }) {
+  const selected =
+    INPUT_DEVICES.find((entry) => entry.value === device)?.label ?? "Key";
   return (
-    <ToggleGroup
-      variant="outline"
-      size="touch"
-      spacing={1}
-      value={[device]}
+    <Select
+      value={device}
       onValueChange={(next) => {
-        const picked = next[0] as InputDevice | undefined;
+        const picked = next as InputDevice | null;
         if (!picked) return;
         onChange(picked);
       }}
-      aria-label="Device"
     >
-      {INPUT_DEVICES.map((entry) => (
-        <ToggleGroupItem
-          key={entry.value}
-          value={entry.value}
-          aria-label={entry.label}
-          data-testid={`${id}-device-${entry.value}`}
-        >
-          {entry.label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+      <SelectTrigger
+        className="min-h-[var(--touch-target,44px)]"
+        aria-label="Device"
+        data-testid={`${id}-device`}
+      >
+        <SelectValue>{() => selected}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {INPUT_DEVICES.map((entry) => (
+          <SelectItem
+            key={entry.value}
+            value={entry.value}
+            data-testid={`${id}-device-${entry.value}`}
+          >
+            {entry.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -129,7 +175,7 @@ function BindingChrome({
   name: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="flex shrink-0 items-center gap-0">
       <Button
         type="button"
         variant="ghost"
@@ -155,51 +201,44 @@ function BindingChrome({
       <Button
         type="button"
         variant="ghost"
-        size="touch"
+        size="touch-icon"
         aria-label={`Remove ${name}`}
         data-testid={`${id}-remove`}
         onClick={onRemove}
       >
-        Remove
+        <Trash2Icon />
       </Button>
     </div>
   );
 }
 
-function TouchControlPicker({
+function ModifierToggles({
   id,
-  code,
-  options,
+  modifiers,
   onChange,
 }: {
   id: string;
-  code: string;
-  options: readonly string[];
-  onChange: (code: string) => void;
+  modifiers?: BindingModifiers;
+  onChange: (next?: BindingModifiers) => void;
 }) {
   return (
-    <ToggleGroup
-      variant="outline"
-      size="touch"
-      spacing={1}
-      value={code ? [code] : []}
-      onValueChange={(next) => {
-        const picked = next[0];
-        if (!picked) return;
-        onChange(picked);
-      }}
-      aria-label="Touch Control"
-    >
-      {options.map((option) => (
-        <ToggleGroupItem
-          key={option}
-          value={option}
-          data-testid={`${id}-touch-${option}`}
+    <div className="flex flex-wrap gap-1" role="group" aria-label="Modifiers">
+      {MODIFIER_TOGGLES.map((entry) => (
+        <Toggle
+          key={entry.key}
+          variant="outline"
+          size="touch"
+          pressed={modifiers?.[entry.key] === true}
+          aria-label={entry.label}
+          data-testid={`${id}-mod-${entry.key}`}
+          onPressedChange={(pressed) =>
+            onChange(patchModifiers(modifiers, entry.key, pressed))
+          }
         >
-          {option}
-        </ToggleGroupItem>
+          {entry.label}
+        </Toggle>
       ))}
-    </ToggleGroup>
+    </div>
   );
 }
 
@@ -223,34 +262,28 @@ function ActionBindingRow({
   onRemove: () => void;
 }) {
   return (
-    <FieldGroup className="rounded-md border border-border p-2">
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2">
       <DevicePicker
         id={id}
         device={binding.device}
-        onChange={(device) => onChange({ ...binding, device, code: "" })}
+        onChange={(device) =>
+          onChange({ device, code: "" })
+        }
       />
-      {binding.device === "touch" ? (
-        <TouchControlPicker
+      <BindingCodePicker
+        device={binding.device}
+        code={binding.code}
+        touchControlIds={touchControlIds}
+        onChange={(code) => onChange({ ...binding, code })}
+        data-testid={`${id}-code`}
+      />
+      {showsModifiers(binding.device) ? (
+        <ModifierToggles
           id={id}
-          code={binding.code}
-          options={touchControlIds}
-          onChange={(code) => onChange({ ...binding, code })}
-        />
-      ) : (
-        <BindingCaptureButton
-          device={binding.device}
-          code={binding.code}
           modifiers={binding.modifiers}
-          onCapture={(next) =>
-            onChange({
-              ...binding,
-              code: next.code,
-              modifiers: next.modifiers,
-            })
-          }
-          data-testid={`${id}-listen`}
+          onChange={(modifiers) => onChange({ ...binding, modifiers })}
         />
-      )}
+      ) : null}
       <BindingChrome
         id={id}
         index={index}
@@ -259,7 +292,7 @@ function ActionBindingRow({
         onRemove={onRemove}
         name={`binding ${index + 1}`}
       />
-    </FieldGroup>
+    </div>
   );
 }
 
@@ -284,38 +317,32 @@ function AxisBindingRow({
   onMove: (delta: number) => void;
   onRemove: () => void;
 }) {
+  const analog = isAnalogBinding(binding.device, binding.code);
   return (
     <FieldGroup className="rounded-md border border-border p-2">
-      <DevicePicker
-        id={id}
-        device={binding.device}
-        onChange={(device) => onChange({ ...binding, device, code: "" })}
-      />
-      {binding.device === "touch" ? (
-        <TouchControlPicker
+      <div className="flex flex-wrap items-center gap-2">
+        <DevicePicker
           id={id}
-          code={binding.code}
-          options={touchControlIds}
-          onChange={(code) => onChange({ ...binding, code })}
+          device={binding.device}
+          onChange={(device) =>
+            onChange({ device, code: "", component: binding.component })
+          }
         />
-      ) : (
-        <BindingCaptureButton
+        <BindingCodePicker
           device={binding.device}
           code={binding.code}
-          modifiers={binding.modifiers}
-          onCapture={(next) =>
-            onChange({
-              ...binding,
-              code: next.code,
-              modifiers: next.modifiers,
-            })
-          }
-          data-testid={`${id}-listen`}
+          touchControlIds={touchControlIds}
+          onChange={(code) => onChange({ ...binding, code })}
+          data-testid={`${id}-code`}
         />
-      )}
-      {kind === "2d" ? (
-        <Field>
-          <FieldLabel>Component</FieldLabel>
+        {showsModifiers(binding.device) ? (
+          <ModifierToggles
+            id={id}
+            modifiers={binding.modifiers}
+            onChange={(modifiers) => onChange({ ...binding, modifiers })}
+          />
+        ) : null}
+        {kind === "2d" ? (
           <ToggleGroup
             variant="outline"
             size="touch"
@@ -335,43 +362,54 @@ function AxisBindingRow({
               Y
             </ToggleGroupItem>
           </ToggleGroup>
+        ) : null}
+        <Field orientation="horizontal">
+          <Switch
+            id={`${id}-invert`}
+            checked={binding.invert === true}
+            onCheckedChange={(checked) =>
+              onChange({ ...binding, invert: checked === true })
+            }
+            data-testid={`${id}-invert`}
+          />
+          <FieldLabel htmlFor={`${id}-invert`}>Invert</FieldLabel>
         </Field>
-      ) : null}
-      <Field orientation="horizontal">
-        <Switch
-          id={`${id}-invert`}
-          checked={binding.invert === true}
-          onCheckedChange={(checked) =>
-            onChange({ ...binding, invert: checked === true })
-          }
-          data-testid={`${id}-invert`}
+        <BindingChrome
+          id={id}
+          index={index}
+          total={total}
+          onMove={onMove}
+          onRemove={onRemove}
+          name={`binding ${index + 1}`}
         />
-        <FieldLabel htmlFor={`${id}-invert`}>Invert</FieldLabel>
-      </Field>
-      <div className="grid grid-cols-2 gap-2">
-        <NumericDragField
-          label="DZ"
-          value={binding.deadZone ?? 0}
-          min={0}
-          max={1}
-          sensitivity={0.005}
-          onChange={(deadZone) => onChange({ ...binding, deadZone })}
-          data-testid={`${id}-dead-zone`}
-        />
-        <NumericDragField
-          label="Scale"
-          value={binding.scale ?? 1}
-          sensitivity={0.01}
-          onChange={(scale) => onChange({ ...binding, scale })}
-          data-testid={`${id}-scale`}
-        />
-        <NumericDragField
-          label="Sens"
-          value={binding.sensitivity ?? 1}
-          sensitivity={0.01}
-          onChange={(sensitivity) => onChange({ ...binding, sensitivity })}
-          data-testid={`${id}-sensitivity`}
-        />
+      </div>
+      {analog ? (
+        <div className="grid grid-cols-3 gap-2">
+          <NumericDragField
+            label="DZ"
+            value={binding.deadZone ?? 0}
+            min={0}
+            max={1}
+            sensitivity={0.005}
+            onChange={(deadZone) => onChange({ ...binding, deadZone })}
+            data-testid={`${id}-dead-zone`}
+          />
+          <NumericDragField
+            label="Scale"
+            value={binding.scale ?? 1}
+            sensitivity={0.01}
+            onChange={(scale) => onChange({ ...binding, scale })}
+            data-testid={`${id}-scale`}
+          />
+          <NumericDragField
+            label="Sens"
+            value={binding.sensitivity ?? 1}
+            sensitivity={0.01}
+            onChange={(sensitivity) => onChange({ ...binding, sensitivity })}
+            data-testid={`${id}-sensitivity`}
+          />
+        </div>
+      ) : (
         <NumericDragField
           label="Dig"
           value={binding.digitalValue ?? 0}
@@ -381,15 +419,7 @@ function AxisBindingRow({
           onChange={(digitalValue) => onChange({ ...binding, digitalValue })}
           data-testid={`${id}-digital-value`}
         />
-      </div>
-      <BindingChrome
-        id={id}
-        index={index}
-        total={total}
-        onMove={onMove}
-        onRemove={onRemove}
-        name={`binding ${index + 1}`}
-      />
+      )}
     </FieldGroup>
   );
 }

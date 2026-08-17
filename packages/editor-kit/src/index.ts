@@ -120,8 +120,10 @@ export {
 export {
   SearchDialog,
   filterSearchItems,
+  groupSearchItems,
   type SearchDialogItem,
   type SearchDialogProps,
+  type SearchItemGroup,
 } from "./search-dialog";
 export {
   SearchDropdown,
@@ -161,12 +163,11 @@ export {
 } from "./name-prompt-dialog";
 export {
   formatBindingLabel,
-  modifiersFromKeyboardEvent,
 } from "./format-binding-label";
 export {
-  BindingCaptureButton,
-  type BindingCaptureButtonProps,
-} from "./binding-capture-button";
+  BindingCodePicker,
+  type BindingCodePickerProps,
+} from "./binding-code-picker";
 export {
   InputMappingEditor,
   DEFAULT_TOUCH_CONTROL_IDS,

@@ -47,6 +47,8 @@ export function isDockviewDocumentKind(
 export const CLASS_PANEL_TITLE = "Class";
 /** About half the left stack so Class is not a 180px stub under Components. */
 export const CLASS_PANEL_INITIAL_HEIGHT = 400;
+/** About 25% of a typical editor so the Material graph keeps ~75% width. */
+export const MATERIAL_SIDE_STACK_WIDTH = 360;
 
 export type DockWindowOptions = {
   /** Actor-lineage class documents get Prefab + Components. Default true. */
@@ -358,7 +360,7 @@ const MATERIAL_WINDOWS: DockWindowDefinition[] = [
     defaultPosition: {
       referencePanelId: "material-graph",
       direction: "left",
-      initialWidth: 320,
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
     },
   },
   {
@@ -366,9 +368,8 @@ const MATERIAL_WINDOWS: DockWindowDefinition[] = [
     component: "material-details",
     title: "Details",
     defaultPosition: {
-      referencePanelId: "material-graph",
-      direction: "right",
-      initialWidth: 300,
+      referencePanelId: "material-preview",
+      direction: "below",
     },
   },
   {

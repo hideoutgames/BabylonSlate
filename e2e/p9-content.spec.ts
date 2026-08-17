@@ -128,12 +128,9 @@ async function addMaterialPaletteNode(
 ): Promise<void> {
   const graph = page.getByTestId("material-graph-editor");
   await expect(graph).toBeVisible();
-  const pane = graph.locator(".react-flow__pane");
-  const box = await pane.boundingBox();
-  expect(box).not.toBeNull();
-  await pane.dblclick({
-    position: { x: Math.round(box!.width / 2), y: Math.round(box!.height / 2) },
-  });
+  // Toolbar Add node: default Color / Output shells can cover pane-center
+  // double-tap after the wider Blueprint min-width.
+  await graph.getByTestId("graph-add-node").click();
   await expect(page.getByTestId("node-palette")).toBeVisible();
   await page.getByTestId("node-palette-search").fill(search);
   await page.getByTestId(`node-palette-item-${itemId}`).click();
@@ -293,6 +290,8 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("settings-modal-category-input").click();
     await expect(page.getByTestId("settings-input-mapping")).toBeVisible();
     await expect(page.getByTestId("settings-input-actions")).toHaveCount(0);
+    await expect(page.getByTestId("input-action-0-binding-0-code")).toBeVisible();
+    await expect(page.getByText(/press a key/i)).toHaveCount(0);
   });
 
   test("Play overlay stick drives the same Move.x as the gamepad path", async ({
@@ -490,9 +489,8 @@ test.describe("P9 content systems", () => {
       "No Issues",
     );
 
-    // Every primitive is reachable from the compact preview mesh Select.
+    // Every primitive is reachable from the overlay mesh ToggleGroup.
     for (const mesh of ["cube", "cylinder", "cone", "plane"]) {
-      await page.getByTestId("material-preview-mesh").click();
       await page.getByTestId(`material-preview-mesh-${mesh}`).click();
       await expect(canvas).toHaveAttribute("data-status", "ready", {
         timeout: 15000,

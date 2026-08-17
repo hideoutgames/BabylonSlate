@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NumericDragField } from "./numeric-drag-field";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
@@ -105,5 +105,29 @@ describe("NumericDragField", () => {
     fireEvent.blur(input);
     expect(input.value).toBe("60");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("selects the value on tap so typing overwrites it", async () => {
+    render(
+      <NumericDragField
+        label="X"
+        value={12.5}
+        onChange={() => {}}
+        data-testid="field"
+      />,
+    );
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    expect(input.type).toBe("text");
+    expect(input.inputMode).toBe("decimal");
+
+    dispatchPointerEvent(input, "pointerdown", { pointerType: "touch" });
+    input.focus();
+    input.setSelectionRange(2, 2);
+    dispatchPointerEvent(input, "pointerup", { pointerType: "touch" });
+
+    await waitFor(() => {
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe(input.value.length);
+    });
   });
 });

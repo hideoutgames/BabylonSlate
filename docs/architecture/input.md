@@ -9,7 +9,7 @@ Mapping model and resolver contract (engineplan §11.1). Raw capture landed in P
 | `ActionMapping` | `name`, `bindings[]` |
 | `AxisMapping` | `name`, `kind` (`"1d"` \| `"2d"`), `bindings[]` |
 
-Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButton`, `gamepadAxis`, `touch`) plus a device-specific `code`. Optional `modifiers` (shift/ctrl/alt/meta).
+Each **binding** targets a device (`key`, `mouseButton`, `pointer`, `gamepadButton`, `gamepadAxis`, `touch`) plus a device-specific `code`. Optional `modifiers` (shift/ctrl/alt/meta). Bindable codes and labels live in `bindingCodesForDevice()` / `bindingCodeLabel()` (`packages/input/src/binding-catalog.ts`) so the Project Settings picker and stored-binding labels stay in sync.
 
 **Axis bindings** additionally carry per-binding tuning:
 
@@ -60,7 +60,7 @@ Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolv
 
 ## Project Settings
 
-**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` (add/remove/reorder actions and axes, per-binding device, listen-to-bind, modifiers, axis extras). Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-x` / `dpad-y` / `Jump`) plus `controlId*` from open UserInterface documents. Persists through `updateProjectSettings({ input })` + `normalizeInputMappings`. No JSON textarea.
+**Input** category in Project Settings (`apps/editor/src/components/settings-modal.tsx`): structured `InputMappingEditor` (add/remove/reorder actions and axes, per-binding device Select, searchable `BindingCodePicker` for that device’s codes, explicit Ctrl/Shift/Alt/Meta toggles, contextual axis extras). Touch bindings pick known control ids (`joystick-x` / `joystick-y` / `dpad-x` / `dpad-y` / `Jump`) plus `controlId*` from open UserInterface documents. Persists through `updateProjectSettings({ input })` + `normalizeInputMappings`. No JSON textarea and no listen-to-bind.
 
 Unconnected graph `action` / `axis` string pins (Is Action Held, Get Axis, …) are Inspector enums populated from `settings.input`. TouchButton widgets pick an action the same way; Play HUD emits that action as a touch axis (1 while held, 0 on release). TouchDPad shares the analog-stick path with defaults `dpad-x` / `dpad-y`.
 

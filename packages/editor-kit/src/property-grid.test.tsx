@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PropertyGrid, type PropertyRow } from "./property-grid";
 import {
   formatEventMemberName,
@@ -470,5 +470,31 @@ describe("PropertyGrid", () => {
     expect(classes).toContain("min-w-(--anchor-width)");
     expect(classes).not.toContain("w-(--anchor-width)");
     expect(content!.getAttribute("data-align-trigger")).toBe("false");
+  });
+
+  it("selects text row values on tap so typing overwrites them", async () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "text",
+            id: "name",
+            label: "Name",
+            value: "Cube",
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const input = screen.getByTestId("property-name") as HTMLInputElement;
+    dispatchPointerEvent(input, "pointerdown", { pointerType: "touch" });
+    input.focus();
+    input.setSelectionRange(1, 1);
+    dispatchPointerEvent(input, "pointerup", { pointerType: "touch" });
+
+    await waitFor(() => {
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe(input.value.length);
+    });
   });
 });

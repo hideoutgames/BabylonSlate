@@ -7,6 +7,7 @@ export type PinTypeRef = {
 
 export type NodeVisualRole =
   | "event"
+  | "call-parent"
   | "function"
   | "pure"
   | "flow"
@@ -20,6 +21,7 @@ export type NodeVisualRole =
 
 const ROLE_CLASS: Record<NodeVisualRole, string> = {
   event: "bg-node-event",
+  "call-parent": "bg-node-call-parent",
   function: "bg-node-function",
   pure: "bg-node-pure",
   flow: "bg-node-flow",
@@ -70,6 +72,9 @@ export function nodeVisualRole(input: {
   const title = input.title ?? "";
   const category = (input.category ?? "").toLowerCase();
 
+  if (nodeType === "flow.event.callParent") {
+    return "call-parent";
+  }
   if (
     nodeType.startsWith("flow.event") ||
     nodeType.startsWith("anim.event") ||

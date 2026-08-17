@@ -154,6 +154,21 @@ describe("material lowering", () => {
     });
   });
 
+  it("prefers an authored default:pinId over the catalog default", () => {
+    const doc = createDefaultMaterialDocument();
+    const output = doc.nodes.find((node) => node.type === "output.surface");
+    expect(output).toBeDefined();
+    output!.properties = { "default:roughness": [0.8] };
+    const result = lowerMaterialDocument(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.outputs.roughness).toEqual({
+      kind: "constant",
+      type: "float",
+      value: [0.8],
+    });
+  });
+
   it("drops nodes that do not reach the output", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({

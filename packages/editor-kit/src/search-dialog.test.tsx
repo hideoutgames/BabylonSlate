@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { filterSearchItems, SearchDialog } from "./search-dialog";
+import { filterSearchItems, groupSearchItems, SearchDialog } from "./search-dialog";
 import { AssetPicker } from "./asset-picker";
 
 const items = [
@@ -18,6 +18,30 @@ describe("filterSearchItems", () => {
       "b",
     ]);
     expect(filterSearchItems(items, "alp").map((item) => item.id)).toEqual(["a"]);
+  });
+});
+
+describe("groupSearchItems", () => {
+  it("keeps consecutive items with the same group in one section", () => {
+    expect(
+      groupSearchItems([
+        { id: "a", label: "A", group: "Letters" },
+        { id: "w", label: "W", group: "Letters" },
+        { id: "1", label: "1", group: "Digits" },
+      ]),
+    ).toEqual([
+      {
+        group: "Letters",
+        items: [
+          { id: "a", label: "A", group: "Letters" },
+          { id: "w", label: "W", group: "Letters" },
+        ],
+      },
+      {
+        group: "Digits",
+        items: [{ id: "1", label: "1", group: "Digits" }],
+      },
+    ]);
   });
 });
 

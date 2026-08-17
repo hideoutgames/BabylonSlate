@@ -5,7 +5,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
-import { Input } from "@babylonslate/ui/components/input";
+import { SelectAllInput } from "./select-all-input";
 import {
   Select,
   SelectContent,
@@ -222,7 +222,7 @@ function RowControl({ row }: { row: PropertyRow }) {
       );
     case "text":
       return (
-        <Input
+        <SelectAllInput
           id={`property-${row.id}`}
           className="min-h-[var(--chrome-row,28px)]"
           value={row.value}

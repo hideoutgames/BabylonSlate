@@ -218,7 +218,12 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "2d",
     label: "2D",
-    types: ["Sprite", "Tileset", "Tilemap", "AnimationGraph"],
+    types: ["Sprite", "Tileset", "Tilemap"],
+  },
+  {
+    id: "animation",
+    label: "Animation",
+    types: ["AnimationGraph"],
   },
   {
     id: "rendering",
@@ -234,7 +239,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
 
 const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Scene: "A 3D or 2D world document.",
-  Class: "A Blueprint-style class with a parent and logic graph.",
+  Class: "A class with a parent and a logic graph.",
   UserInterface: "A game HUD or menu authored with Babylon GUI.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
   AnimationGraph: "A state machine that plays Sprite or Animation clips.",

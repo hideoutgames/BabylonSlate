@@ -12,6 +12,7 @@ import type {
   MaterialGraphNode,
 } from "./document";
 import { createTypeResolver, type TypeResolver } from "./resolve";
+import { resolveMaterialPinDefault } from "./pin-defaults";
 import { componentCount, conversionFor, type MaterialConversion, type MaterialValueType } from "./types";
 import {
   validateMaterialDocument,
@@ -131,10 +132,11 @@ function constantOperand(
 }
 
 function pinDefault(
+  node: MaterialGraphNode,
   pin: MaterialPinDefinition,
   type: MaterialValueType,
 ): MaterialOperand {
-  return constantOperand(type, pin.defaultValue);
+  return constantOperand(type, resolveMaterialPinDefault(node, pin));
 }
 
 function propertyVector(
@@ -304,11 +306,15 @@ export function lowerMaterialDocument(
         candidate.targetNodeId === node.id && candidate.targetPinId === pinId,
     );
     if (!edge) {
-      return pin ? pinDefault(pin, targetType) : constantOperand(targetType, undefined);
+      return pin
+        ? pinDefault(node, pin, targetType)
+        : constantOperand(targetType, undefined);
     }
     const produced = operandForOutput(frame, edge.sourceNodeId, edge.sourcePinId);
     if (!produced) {
-      return pin ? pinDefault(pin, targetType) : constantOperand(targetType, undefined);
+      return pin
+        ? pinDefault(node, pin, targetType)
+        : constantOperand(targetType, undefined);
     }
     return withConversion(frame, produced, edge, targetType);
   }
@@ -432,7 +438,7 @@ export function lowerMaterialDocument(
         (edge) =>
           edge.targetNodeId === terminal.id && edge.targetPinId === pin.id,
       );
-      if (!wired && !pin.defaultValue) {
+      if (!wired && resolveMaterialPinDefault(terminal, pin) === undefined) {
         outputs[pin.id] = null;
         continue;
       }

@@ -76,7 +76,8 @@ Title-bar fills for Blueprint-like nodes:
 
 | Token | Role |
 | --- | --- |
-| `--node-event` | `flow.event.*` / titles starting `Event` |
+| `--node-event` | `flow.event.*` / titles starting `Event` (not Call Parent) |
+| `--node-call-parent` | `flow.event.callParent` (brown title bar) |
 | `--node-function` | default impure calls |
 | `--node-pure` | `pure` (math, getters) |
 | `--node-flow` | flow control (Branch, Sequence) |
@@ -97,26 +98,26 @@ Title-bar fills for Blueprint-like nodes:
 
 ## Asset type colors
 
-Content Browser, Outliner, catalogs, search, and document tabs resolve **icons** through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Colors** come from DataTypes (`assetColorVar` / `--asset-*`). Change a hue in `globals.css`; change which family uses which token in `data-types.ts`. **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent). Graph pin/node tokens stay on the same DataTypes maps. `TypeVisualIcon` passes Lucide `size` so the SVG `width`/`height` match the CSS box: **16** (`TYPE_VISUAL_ICON_CHROME_SIZE`) in chrome/lists, **40** (`TYPE_VISUAL_ICON_TILE_SIZE`) on Content Browser tiles. Tile glyphs also set Lucide `absoluteStrokeWidth` with design stroke **2** so the SVG `stroke-width` is `2 × 24 / 40` (1.2 viewBox units, 2 CSS px). Without that, viewBox-relative stroke 1.5–2 at 40px thickens to 2.5–3.3 px and dense icons (Film, Boxes, Grid) blob. UserInterface uses `PanelTop`, AnimationGraph `Workflow`, BehaviourTree `ListTree`; clip Animation keeps `Film`.
+Content Browser, Outliner, catalogs, search, and document tabs resolve **icons** through `resolveTypeVisual` in [`packages/editor-kit/src/type-visuals.tsx`](../../packages/editor-kit/src/type-visuals.tsx). **Colors** come from DataTypes (`assetColorVar` / `--asset-*`). Change a hue in `globals.css`; change which family uses which token in `data-types.ts`. **Color is by kind; icon is by concrete type.** User-created classes walk `parentClass` ancestry and reuse the first engine icon (so `MyHero` uses Actor, `MyMesh` uses MeshComponent), including the New Asset Parent Class tree. Graph pin/node tokens stay on the same DataTypes maps. `TypeVisualIcon` passes Lucide `size` so the SVG `width`/`height` match the CSS box: **16** (`TYPE_VISUAL_ICON_CHROME_SIZE`) in chrome/lists, **40** (`TYPE_VISUAL_ICON_TILE_SIZE`) on Content Browser tiles. Tile glyphs also set Lucide `absoluteStrokeWidth` with design stroke **2** so the SVG `stroke-width` is `2 × 24 / 40` (1.2 viewBox units, 2 CSS px). Without that, viewBox-relative stroke 1.5–2 at 40px thickens to 2.5–3.3 px and dense icons (Film, Boxes, Grid) blob. UserInterface uses `PanelTop`, AnimationGraph `Workflow`, BehaviourTree `ListTree`; clip Animation keeps `Film`.
 
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
 | `--asset-scene` | Scene (yellow, Unreal Level) | Scene |
-| `--asset-graph` | Graph / UserInterface / EditorUtilityInterface / BehaviourTree (cyan) | Graph, UserInterface (`PanelTop`), EditorUtilityInterface (widget glyph), BehaviourTree (`ListTree`) |
+| `--asset-graph` | Graph / UserInterface / EditorUtilityInterface (cyan) | Graph, UserInterface (`PanelTop`), EditorUtilityInterface (widget glyph) |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
-| `--asset-material` | Material, Shader (red) | Material |
+| `--asset-material` | Material, Material Function, Shader (light green / lime) | Material |
 | `--asset-model` | Model (orange) | Model |
 | `--asset-audio` | Audio (green) | Audio |
 | `--asset-font` | Font (sky) | Font |
-| `--asset-animation` | Animation, AnimationGraph (blue) | Animation (`Film`), AnimationGraph (`Workflow`) |
-| `--asset-class` | Class assets; Object / Actor / Widget identities (indigo) | Object (`BObject`, `GameInstance`, `FunctionLibrary`, `EditorFunctionLibrary`, `ActorComponent`), Actor, Widget (`WidgetComponent` until a Widget base class exists) |
-| `--asset-script-type` | Enum, Structure, ScriptInterface (teal) | one icon each |
+| `--asset-animation` | Animation, AnimationGraph, Class / Object / Actor / ScriptInterface / BehaviourTree (blue) | Animation (`Film`), AnimationGraph (`Workflow`), Object, Actor, Class, ScriptInterface (`Plug`), BehaviourTree (`ListTree`) |
+| `--asset-class` | Blackboard, Structure (indigo; former Class hue) | Blackboard (`List`), Structure (`Braces`) |
+| `--asset-script-type` | Enum, PluginSettings (teal) | Enum, PluginSettings (`Puzzle`) |
 | `--asset-component` | Engine components in Details / Add Component (purple) | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
 | `--asset-folder` | Content Browser folders (yellow-green) | Folder glyph |
 
-Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-class` (they spawn as Actors). Unknown types fall back to a file glyph and `--muted-foreground`.
+Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-animation` (they spawn as Actors; same token as Class / Object). Unknown types fall back to a file glyph and `--muted-foreground`.
 
-Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type-colored border (`typeColorThumbAccent`). The well is inset 2px (`p-0.5`) with `rounded-t-xl`, and the border uses `calc(var(--radius-xl) - 2px)` on the top corners so the outline sits inside the Card clip instead of being chopped. The well, `Card` chrome, and text panel stay `--card`. Glyphs still use the raw `--asset-*` token, Lucide `size={40}`, and `absoluteStrokeWidth` so stroke stays 2 CSS px. **Folder cards** are uncolored (`--card` well, muted folder glyph at the same Lucide size and absolute stroke). Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum / Structure / ScriptInterface keep `--asset-script-type` on tiles; Details type columns use **pin** colors via `PinTypePicker`.
+Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type-colored border (`typeColorThumbAccent`). The well is inset 2px (`p-0.5`) with `rounded-t-xl`, and the border uses `calc(var(--radius-xl) - 2px)` on the top corners so the outline sits inside the Card clip instead of being chopped. The well, `Card` chrome, and text panel stay `--card`. Glyphs still use the raw `--asset-*` token, Lucide `size={40}`, and `absoluteStrokeWidth` so stroke stays 2 CSS px. **Folder cards** are uncolored (`--card` well, muted folder glyph at the same Lucide size and absolute stroke). Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum keeps `--asset-script-type` on tiles; Structure and Blackboard use `--asset-class`; ScriptInterface shares `--asset-animation` with Class. Details type columns use **pin** colors via `PinTypePicker`.
 
 ## Graph sizing tokens
 
@@ -128,6 +129,8 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 | `--graph-pin-default-max-width` | `4.5rem` | Truncation cap for on-node literal default fields |
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
+
+Default Blueprint shells use Tailwind `min-w-80` (320px); compact BT nodes use `min-w-56`. Title bars are `text-base`. Pin rows stay `--touch-target` (44px).
 
 Dockview tab strips: **18px** fine pointer, **26px** coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
 

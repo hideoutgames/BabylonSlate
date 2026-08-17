@@ -195,6 +195,6 @@ describe("visualForSearchEntry", () => {
       target: { kind: "class", classId: "MyHero" },
     });
     expect(klass.iconKey).toBe("Actor");
-    expect(klass.colorVar).toBe("var(--asset-class)");
+    expect(klass.colorVar).toBe("var(--asset-animation)");
   });
 });

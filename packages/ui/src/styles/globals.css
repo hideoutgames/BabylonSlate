@@ -58,6 +58,7 @@
     --color-pin-wildcard: var(--pin-wildcard);
     --color-pin-delegate: var(--pin-delegate);
     --color-node-event: var(--node-event);
+    --color-node-call-parent: var(--node-call-parent);
     --color-node-function: var(--node-function);
     --color-node-pure: var(--node-pure);
     --color-node-flow: var(--node-flow);
@@ -181,6 +182,7 @@
     --pin-wildcard: oklch(0.62 0.02 250);
     --pin-delegate: oklch(0.52 0.22 20);
     --node-event: oklch(0.48 0.16 25);
+    --node-call-parent: oklch(0.42 0.09 55);
     --node-function: oklch(0.42 0.12 250);
     --node-pure: oklch(0.42 0.12 155);
     --node-flow: oklch(0.40 0.02 250);
@@ -198,18 +200,18 @@
     --node-editor-only-tape: oklch(0.78 0.12 210);
     --node-editor-only-stripe: oklch(0.16 0 0);
     --node-title-foreground: oklch(0.98 0.01 250);
-    --asset-scene: oklch(0.58 0.16 90);
+    --asset-scene: oklch(0.58 0.16 95);
     --asset-graph: oklch(0.54 0.16 195);
     --asset-texture: oklch(0.56 0.18 335);
-    --asset-material: oklch(0.56 0.18 18);
-    --asset-model: oklch(0.58 0.16 50);
+    --asset-material: oklch(0.64 0.16 70);
+    --asset-model: oklch(0.58 0.16 45);
     --asset-audio: oklch(0.54 0.16 145);
     --asset-font: oklch(0.55 0.16 225);
     --asset-animation: oklch(0.58 0.16 250);
     --asset-class: oklch(0.54 0.16 275);
     --asset-script-type: oklch(0.54 0.16 170);
     --asset-component: oklch(0.54 0.16 305);
-    --asset-folder: oklch(0.62 0.16 115);
+    --asset-folder: oklch(0.62 0.16 120);
 }
 
 .dark {
@@ -281,6 +283,7 @@
     --pin-wildcard: oklch(0.72 0.02 250);
     --pin-delegate: oklch(0.65 0.20 20);
     --node-event: oklch(0.48 0.16 25);
+    --node-call-parent: oklch(0.42 0.09 55);
     --node-function: oklch(0.42 0.12 250);
     --node-pure: oklch(0.42 0.12 155);
     --node-flow: oklch(0.40 0.02 250);
@@ -298,18 +301,18 @@
     --node-editor-only-tape: oklch(0.78 0.12 210);
     --node-editor-only-stripe: oklch(0.16 0 0);
     --node-title-foreground: oklch(0.98 0.01 250);
-    --asset-scene: oklch(0.72 0.16 90);
+    --asset-scene: oklch(0.72 0.16 95);
     --asset-graph: oklch(0.68 0.16 195);
     --asset-texture: oklch(0.70 0.16 335);
-    --asset-material: oklch(0.68 0.16 18);
-    --asset-model: oklch(0.72 0.16 50);
+    --asset-material: oklch(0.76 0.14 70);
+    --asset-model: oklch(0.72 0.16 45);
     --asset-audio: oklch(0.68 0.16 145);
     --asset-font: oklch(0.70 0.16 225);
     --asset-animation: oklch(0.72 0.16 250);
     --asset-class: oklch(0.68 0.16 275);
     --asset-script-type: oklch(0.68 0.16 170);
     --asset-component: oklch(0.68 0.16 305);
-    --asset-folder: oklch(0.74 0.16 115);
+    --asset-folder: oklch(0.74 0.16 120);
 }
 
 @layer base {

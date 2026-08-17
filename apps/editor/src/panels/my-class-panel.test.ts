@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
+import { ensureEventNodeOnGraph } from "../lib/class-members";
 import {
   blueprintTreeNodes,
   membersForGraph,
@@ -137,6 +138,63 @@ describe("My Class members", () => {
     );
   });
 
+  it("does not list Call Parent canvas nodes as Class events", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          data: { title: "Event Begin Play" },
+        },
+        {
+          id: "call-parent",
+          type: "flow.event.callParent",
+          position: { x: 280, y: 0 },
+          data: {
+            title: "Call Begin Play Parent",
+            eventType: "flow.event.beginPlay",
+            parentClassId: "Actor",
+          },
+        },
+      ],
+      edges: [],
+    };
+    const events = membersForSection(membersForGraph(graph), "event");
+    expect(
+      events.filter((row) => row.eventType === "flow.event.callParent"),
+    ).toEqual([]);
+    expect(events.some((row) => row.name.includes("Call"))).toBe(false);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "flow.event.beginPlay",
+          name: "Event Begin Play",
+          detail: "begin",
+        }),
+      ]),
+    );
+  });
+
+  it("does not list Call Parent after placing a missing parent event stub", () => {
+    const next = ensureEventNodeOnGraph(
+      { nodes: [], edges: [] },
+      "flow.event.beginPlay",
+      { parentClassId: "Actor", idFactory: () => "evt-1" },
+    );
+    expect(next.nodes.some((node) => node.type === "flow.event.callParent")).toBe(
+      true,
+    );
+    const events = membersForSection(membersForGraph(next), "event");
+    expect(
+      events.filter((row) => row.eventType === "flow.event.callParent"),
+    ).toEqual([]);
+    expect(events.map((row) => row.eventType).sort()).toEqual([
+      "flow.event.beginPlay",
+      "flow.event.tick",
+    ]);
+  });
+
   it("lists no native Actor events for a BObject class", () => {
     expect(
       membersForGraph({ nodes: [], edges: [] }, { parentClass: "BObject" }),
@@ -217,6 +275,54 @@ describe("My Class members", () => {
     });
     const health = tree.find((row) => row.label === "Health");
     expect(health?.trailing).toBeTruthy();
+  });
+
+  it("does not list parent Call Parent nodes as inherited events", () => {
+    const members = membersForGraph(
+      { nodes: [], edges: [] },
+      {
+        parentClass: "HeroBase",
+        parentGraphs: {
+          HeroBase: {
+            nodes: [
+              {
+                id: "hit",
+                type: "flow.event.custom",
+                position: { x: 0, y: 0 },
+                data: { name: "On Hit", title: "Event On Hit" },
+              },
+              {
+                id: "call-parent",
+                type: "flow.event.callParent",
+                position: { x: 280, y: 0 },
+                data: {
+                  title: "Call On Hit Parent",
+                  eventType: "flow.event.custom",
+                  eventName: "On Hit",
+                  parentClassId: "Actor",
+                },
+              },
+            ],
+            edges: [],
+          },
+        },
+      },
+    );
+    const events = membersForSection(members, "event");
+    expect(
+      events.filter((row) => row.eventType === "flow.event.callParent"),
+    ).toEqual([]);
+    expect(events.some((row) => row.name.includes("Call"))).toBe(false);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "event",
+          name: "On Hit",
+          inherited: true,
+          inheritedFrom: "HeroBase",
+        }),
+      ]),
+    );
   });
 
   it("places event members under Events and leaves other sections empty", () => {

@@ -75,6 +75,35 @@ describe("addClassMember", () => {
     expect(slice?.nodes.every((node) => node.data.__protected === true)).toBe(
       true,
     );
+    expect(slice?.edges).toEqual([
+      expect.objectContaining({
+        source: "fn-1-input",
+        target: "fn-1-output",
+        sourceHandle: "exec",
+        targetHandle: "then",
+      }),
+    ]);
+  });
+
+  it("wires only Input exec to Output then when a signature has extra data pins", () => {
+    const graph = addClassMember(emptyGraph(), "function", "Apply Damage", () => "fn-1", {
+      pins: [
+        { name: "exec", typeId: "exec", direction: "in" },
+        { name: "amount", typeId: "float", direction: "in" },
+        { name: "then", typeId: "exec", direction: "out" },
+        { name: "result", typeId: "float", direction: "out" },
+      ],
+    });
+    const slice = graph.functionGraphs?.["fn-1"];
+    expect(slice?.edges).toEqual([
+      expect.objectContaining({
+        source: "fn-1-input",
+        target: "fn-1-output",
+        sourceHandle: "exec",
+        targetHandle: "then",
+      }),
+    ]);
+    expect(slice?.edges).toHaveLength(1);
   });
 
   it("drops the function graph when the function member is removed", () => {

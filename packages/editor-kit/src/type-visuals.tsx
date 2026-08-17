@@ -43,6 +43,7 @@ export type AssetVisualFamily =
   | "animation"
   | "class"
   | "scriptType"
+  | "struct"
   | "component"
   | "folder"
   | "unknown";
@@ -193,8 +194,8 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   Font: "font",
   Animation: "animation",
   AnimationGraph: "animation",
-  BehaviourTree: "graph",
-  Blackboard: "scriptType",
+  BehaviourTree: "class",
+  Blackboard: "struct",
   Shader: "material",
   Sprite: "texture",
   Tileset: "texture",
@@ -203,8 +204,8 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   EditorUtilityInterface: "graph",
   Class: "class",
   Enum: "scriptType",
-  Structure: "scriptType",
-  ScriptInterface: "scriptType",
+  Structure: "struct",
+  ScriptInterface: "class",
   PluginSettings: "scriptType",
 };
 
@@ -219,8 +220,9 @@ const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   audio: assetColorVar("audio"),
   font: assetColorVar("font"),
   animation: assetColorVar("animation"),
-  class: assetColorVar("class"),
+  class: assetColorVar("animation"),
   scriptType: assetColorVar("scriptType"),
+  struct: assetColorVar("class"),
   component: assetColorVar("component"),
   folder: assetColorVar("folder"),
   unknown: assetColorVar("unknown"),

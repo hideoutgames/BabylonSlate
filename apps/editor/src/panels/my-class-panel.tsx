@@ -111,6 +111,11 @@ function eventMemberBodyName(node: SerializedGraph["nodes"][number]): string {
   return formatEventMemberName(typeName);
 }
 
+/** Call Custom Event / Call Parent are canvas nodes, not Class Events members. */
+function isFlowEventCallNode(type: string): boolean {
+  return type === "flow.event.call" || type === "flow.event.callParent";
+}
+
 /** Display label for Class Events tree (native stubs keep Event … titles). */
 function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
   if (node.type === "flow.event.custom") {
@@ -269,7 +274,7 @@ export function membersForGraph(
   const listedTypes = new Set(stubs.map((stub) => stub.eventType));
   for (const node of graph.nodes) {
     if (!node.type.startsWith("flow.event.")) continue;
-    if (node.type === "flow.event.call") continue;
+    if (isFlowEventCallNode(node.type)) continue;
     if (listedTypes.has(node.type) && node.type !== "flow.event.custom") {
       continue;
     }
@@ -945,7 +950,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
               focusEvent(existing.id, member.name);
               return;
             }
-            if (!graph) return;
+            if (isFlowEventCallNode(eventType) || !graph) return;
             const next = ensureEventNodeOnGraph(graph, eventType, {
               name:
                 eventType === "flow.event.custom"

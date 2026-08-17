@@ -645,7 +645,7 @@ describe("content-browser-helpers", () => {
     });
     const parentOf = classParentLookup([hero]);
     const visual = visualForIndexedAsset(hero, parentOf);
-    expect(visual.colorVar).toBe("var(--asset-class)");
+    expect(visual.colorVar).toBe("var(--asset-animation)");
     expect(visual.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
     expect(visual.icon).not.toBe(resolveTypeVisual({ classId: "BObject" }).icon);
   });
@@ -859,14 +859,23 @@ describe("content-browser-helpers", () => {
       "Scripting",
       "UI",
       "2D",
+      "Animation",
       "Rendering",
       "AI",
     ]);
+    const twoD = CREATABLE_ASSET_TYPE_GROUPS.find((group) => group.id === "2d");
+    const animation = CREATABLE_ASSET_TYPE_GROUPS.find(
+      (group) => group.id === "animation",
+    );
+    expect([...twoD!.types]).toEqual(["Sprite", "Tileset", "Tilemap"]);
+    expect([...animation!.types]).toEqual(["AnimationGraph"]);
   });
 
   it("describes the selected creatable type", () => {
     expect(creatableAssetTypeDescription("Scene")).toMatch(/world/i);
     expect(creatableAssetTypeDescription("Class")).toMatch(/parent/i);
+    expect(creatableAssetTypeDescription("Class")).toMatch(/logic graph/i);
+    expect(creatableAssetTypeDescription("Class")).not.toMatch(/blueprint/i);
   });
 
   it("filters creatable types by Title Case label", () => {

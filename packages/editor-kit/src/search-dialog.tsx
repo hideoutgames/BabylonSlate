@@ -46,6 +46,25 @@ export function filterSearchItems(
   );
 }
 
+export type SearchItemGroup = {
+  group?: string;
+  items: SearchDialogItem[];
+};
+
+/** Consecutive items that share `group` become one labeled section. */
+export function groupSearchItems(items: SearchDialogItem[]): SearchItemGroup[] {
+  const groups: SearchItemGroup[] = [];
+  for (const item of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.group === item.group) {
+      last.items.push(item);
+    } else {
+      groups.push({ group: item.group, items: [item] });
+    }
+  }
+  return groups;
+}
+
 /** Compact searchable dialog used by asset and class pickers. */
 export function SearchDialog({
   open,
