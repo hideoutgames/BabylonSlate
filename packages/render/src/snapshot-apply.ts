@@ -323,8 +323,9 @@ export function applyAssignMesh(
     return;
   }
   const existing = binding.meshes.get(command.slotId);
-  if (!existing) return;
-  disposeSlotVisuals(scene, binding, command.slotId);
+  if (existing) {
+    disposeSlotVisuals(scene, binding, command.slotId);
+  }
   const rebuilt = createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.

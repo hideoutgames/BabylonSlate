@@ -172,6 +172,24 @@ describe("createPlayMesh", () => {
     }
   });
 
+  it("possesses a camera created by assignMesh before the first snapshot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    setupDefaultViewport(scene);
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: true, projectionMode: "perspective" },
+    });
+    applyPossessCamera(scene, binding, 0);
+    expect(binding.cameras.get(0)).toBeDefined();
+    expect(scene.activeCamera?.name).toBe("authoredCamera:0");
+  });
+
   it("applies authored light color and intensity from assignMesh", () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -455,6 +473,31 @@ describe("createPlayMesh", () => {
     const rebuilt = binding.meshes.get(7);
     expect(rebuilt?.isVisible).toBe(true);
     expect(rebuilt!.getTotalVertices()).not.toBe(placeholderVertices);
+  });
+
+  it("creates a visible box primitive when assignMesh arrives before the first snapshot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 0,
+      meshAssetGuid: null,
+      meshKind: "box",
+    });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshAssetGuid: null,
+      meshKind: "sphere",
+    });
+    const box = binding.meshes.get(0);
+    const sphere = binding.meshes.get(1);
+    expect(box?.isVisible).toBe(true);
+    expect(sphere?.isVisible).toBe(true);
+    expect(box!.getTotalVertices()).not.toBe(sphere!.getTotalVertices());
+    expect(box!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(0.2);
   });
 
   it("parents assignMesh parts under the snapshot-driven actor origin", () => {
