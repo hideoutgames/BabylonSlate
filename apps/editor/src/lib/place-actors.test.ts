@@ -144,6 +144,10 @@ describe("spawnPlacedActor", () => {
       }),
     ).toBe("actor-2");
   });
+
+  it("still yields actor-2 when the default scene already has a named Camera", () => {
+    expect(nextActorId(createDefaultScene())).toBe("actor-2");
+  });
 });
 
 describe("spawnPlacedActor placement", () => {

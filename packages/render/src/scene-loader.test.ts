@@ -52,11 +52,12 @@ describe("scene-loader", () => {
     return handle;
   }
 
-  it("creates one mesh per actor from default scene data", () => {
+  it("creates editor meshes for the default cube and camera", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());
-    expect(countSceneMeshes(scene)).toBe(1);
     expect(scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
+    expect(scene.getMeshByName(editorMeshName("actor-camera"))).not.toBeNull();
+    expect(countSceneMeshes(scene)).toBeGreaterThan(1);
   });
 
   it("replaces meshes when loading a new scene", () => {

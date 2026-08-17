@@ -199,7 +199,7 @@ function placedTransform(scene: SerializedScene) {
 }
 
 export function nextActorId(scene: SerializedScene): string {
-  let index = scene.actors.length + 1;
+  let index = 1;
   while (scene.actors.some((actor) => actor.id === `actor-${index}`)) {
     index += 1;
   }

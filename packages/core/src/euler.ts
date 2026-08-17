@@ -27,6 +27,26 @@ export function eulerDegreesToQuaternion(
   ];
 }
 
+/**
+ * Quaternion that aims Babylon local +Z from `from` toward `target`
+ * (YXZ yaw/pitch, no roll). Degenerate when the two points coincide.
+ */
+export function lookAtRotation(
+  from: readonly [number, number, number],
+  target: readonly [number, number, number] = [0, 0, 0],
+): QuaternionTuple {
+  const dx = target[0] - from[0];
+  const dy = target[1] - from[1];
+  const dz = target[2] - from[2];
+  const horiz = Math.hypot(dx, dz);
+  if (horiz < 1e-8 && Math.abs(dy) < 1e-8) {
+    return [0, 0, 0, 1];
+  }
+  const yaw = Math.atan2(dx, dz) * RAD;
+  const pitch = Math.atan2(-dy, horiz) * RAD;
+  return eulerDegreesToQuaternion([pitch, yaw, 0]);
+}
+
 /** Inverse of {@link eulerDegreesToQuaternion}. */
 export function quaternionToEulerDegrees(
   q: QuaternionTuple,
