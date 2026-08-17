@@ -171,6 +171,104 @@ describe("snapshot interpolator", () => {
     expect(out!.actors[0]!.position.x).toBeCloseTo(5);
   });
 
+  it("matches actors by slotId and includes newly spawned slots", () => {
+    const a = new Float32Array(snapshotFloatCount(3));
+    const b = new Float32Array(snapshotFloatCount(3));
+    writeSnapshotHeader(a, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 2,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(a, 0, {
+      slotId: 1,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    writeActorSlot(a, 1, {
+      slotId: 2,
+      position: { x: 10, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    writeSnapshotHeader(b, {
+      frameId: 2,
+      tickIndex: 2,
+      actorCount: 3,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(b, 0, {
+      slotId: 2,
+      position: { x: 20, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    writeActorSlot(b, 1, {
+      slotId: 1,
+      position: { x: 2, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    writeActorSlot(b, 2, {
+      slotId: 3,
+      position: { x: 30, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+
+    const interp = new SnapshotInterpolator(3);
+    interp.push(a);
+    interp.push(b);
+    const out = interp.sample(0.5)!;
+    expect(out.actorCount).toBe(3);
+    expect(out.actors.slice(0, 3).map((actor) => actor.slotId)).toEqual([
+      2, 1, 3,
+    ]);
+    expect(out.actors[0]!.position.x).toBeCloseTo(15);
+    expect(out.actors[1]!.position.x).toBeCloseTo(1);
+    expect(out.actors[2]!.position.x).toBeCloseTo(30);
+  });
+
+  it("normalizes shortest-path quaternion interpolation", () => {
+    const a = new Float32Array(snapshotFloatCount(1));
+    const b = new Float32Array(snapshotFloatCount(1));
+    for (const [buffer, frameId, w] of [
+      [a, 1, 1],
+      [b, 2, -1],
+    ] as const) {
+      writeSnapshotHeader(buffer, {
+        frameId,
+        tickIndex: frameId,
+        actorCount: 1,
+        scriptMs: 0,
+        physicsMs: 0,
+      });
+      writeActorSlot(buffer, 0, {
+        slotId: 7,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w },
+        scale: { x: 1, y: 1, z: 1 },
+        flags: 1,
+      });
+    }
+
+    const interp = new SnapshotInterpolator(1);
+    interp.push(a);
+    interp.push(b);
+    const rotation = interp.sample(0.5)!.actors[0]!.rotation;
+    const length = Math.hypot(rotation.x, rotation.y, rotation.z, rotation.w);
+    expect(length).toBeCloseTo(1);
+    expect(Math.abs(rotation.w)).toBeCloseTo(1);
+  });
+
   it("ignores unpublished zeroed snapshot buffers", () => {
     const interp = new SnapshotInterpolator(4);
     interp.push(new Float32Array(snapshotFloatCount(4)));

@@ -9,6 +9,14 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
+import {
+  actorParentGuid,
+  actorWorldTransforms,
+  inverseQuaternion,
+  multiplyQuaternion,
+  rotateVector,
+  type ActorTransformMap,
+} from "./actor-world-transform";
 
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
@@ -20,6 +28,7 @@ export class PhysicsWorldSync {
   private readonly characterByActor = new Map<string, string>();
   private synced = false;
   private actors: readonly Actor[] = [];
+  private worldTransforms: ActorTransformMap = new Map();
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
   private pixelsPerUnit = 100;
@@ -53,6 +62,7 @@ export class PhysicsWorldSync {
   /** Ensure every physics-bearing actor has backend bodies (idempotent). */
   syncFromWorld(world: World): void {
     this.actors = world.getActors();
+    this.worldTransforms = actorWorldTransforms(this.actors);
     const live = new Set<string>();
     for (const actor of this.actors) {
       if (actor.destroyed) continue;
@@ -72,7 +82,10 @@ export class PhysicsWorldSync {
           rigid ? mapToRecord(rigid.variables) : { motionType: "static" },
         );
         if (props.motionType !== "dynamic") {
-          this.backend.setBodyTransform(bodyId, actorWorldPhysicsTransform(actor, this.actors));
+          this.backend.setBodyTransform(
+            bodyId,
+            actorWorldPhysicsTransform(actor, this.worldTransforms),
+          );
         }
       }
     }
@@ -94,7 +107,11 @@ export class PhysicsWorldSync {
       if (!actor || actor.destroyed) continue;
       const transform = this.backend.getBodyTransform(bodyId);
       if (!transform) continue;
-      const localTransform = actorLocalPhysicsTransform(transform, actor, this.actors);
+      const localTransform = actorLocalPhysicsTransform(
+        transform,
+        actor,
+        this.worldTransforms,
+      );
       actor.transform.position.x = localTransform.position.x;
       actor.transform.position.y = localTransform.position.y;
       actor.transform.position.z = localTransform.position.z;
@@ -153,7 +170,11 @@ export class PhysicsWorldSync {
     }
     const moved = this.backend.moveCharacter(actor.guid, translation, dt);
     if (!moved) return;
-    const localTransform = actorLocalPhysicsTransform(moved, actor, this.actors);
+    const localTransform = actorLocalPhysicsTransform(
+      moved,
+      actor,
+      this.worldTransforms,
+    );
     actor.transform.position.x = localTransform.position.x;
     actor.transform.position.y = localTransform.position.y;
     actor.transform.position.z = localTransform.position.z;
@@ -183,7 +204,7 @@ export class PhysicsWorldSync {
       linearDamping: props.linearDamping,
       angularDamping: props.angularDamping,
       gravityScale: rigid ? props.gravityScale : 0,
-      transform: actorWorldPhysicsTransform(actor, this.actors),
+      transform: actorWorldPhysicsTransform(actor, this.worldTransforms),
     });
     this.bodyByActor.set(actor.guid, bodyId);
 
@@ -265,59 +286,25 @@ export class PhysicsWorldSync {
   }
 }
 
-function actorTransform(actor: Actor): PhysicsTransform {
-  return {
-    position: {
-      x: actor.transform.position.x,
-      y: actor.transform.position.y,
-      z: actor.transform.position.z,
-    },
-    rotation: {
-      x: actor.transform.rotation.x,
-      y: actor.transform.rotation.y,
-      z: actor.transform.rotation.z,
-      w: actor.transform.rotation.w,
-    },
-  };
-}
-
-type HierarchyTransform = PhysicsTransform & { scale: Vec3 };
-
 function actorWorldPhysicsTransform(
   actor: Actor,
-  actors: readonly Actor[],
+  transforms: ActorTransformMap,
 ): PhysicsTransform {
-  const world = actorWorldTransform(actor, actors);
-  return { position: world.position, rotation: world.rotation };
-}
-
-function actorWorldTransform(actor: Actor, actors: readonly Actor[]): HierarchyTransform {
-  const byGuid = new Map(actors.map((entry) => [entry.guid, entry]));
-  const chain: Actor[] = [];
-  const visited = new Set<string>();
-  let current: Actor | undefined = actor;
-  while (current && !visited.has(current.guid)) {
-    visited.add(current.guid);
-    chain.push(current);
-    const parentId = actorParentGuid(current);
-    current = parentId ? byGuid.get(parentId) : undefined;
-  }
-  let world = hierarchyTransform(chain[chain.length - 1]!);
-  for (let index = chain.length - 2; index >= 0; index -= 1) {
-    world = composeHierarchyTransform(world, hierarchyTransform(chain[index]!));
-  }
-  return world;
+  const world = transforms.get(actor.guid) ?? actor.transform;
+  return {
+    position: { ...world.position },
+    rotation: { ...world.rotation },
+  };
 }
 
 function actorLocalPhysicsTransform(
   world: PhysicsTransform,
   actor: Actor,
-  actors: readonly Actor[],
+  transforms: ActorTransformMap,
 ): PhysicsTransform {
   const parentId = actorParentGuid(actor);
-  const parent = parentId ? actors.find((entry) => entry.guid === parentId) : undefined;
-  if (!parent) return world;
-  const parentWorld = actorWorldTransform(parent, actors);
+  const parentWorld = parentId ? transforms.get(parentId) : undefined;
+  if (!parentWorld) return world;
   const inverseRotation = inverseQuaternion(parentWorld.rotation);
   const offset = rotateVector(inverseRotation, {
     x: world.position.x - parentWorld.position.x,
@@ -331,84 +318,6 @@ function actorLocalPhysicsTransform(
       z: divideScale(offset.z, parentWorld.scale.z),
     },
     rotation: multiplyQuaternion(inverseRotation, world.rotation),
-  };
-}
-
-function hierarchyTransform(actor: Actor): HierarchyTransform {
-  return {
-    ...actorTransform(actor),
-    scale: {
-      x: actor.transform.scale.x,
-      y: actor.transform.scale.y,
-      z: actor.transform.scale.z,
-    },
-  };
-}
-
-function composeHierarchyTransform(
-  parent: HierarchyTransform,
-  local: HierarchyTransform,
-): HierarchyTransform {
-  const offset = rotateVector(parent.rotation, {
-    x: local.position.x * parent.scale.x,
-    y: local.position.y * parent.scale.y,
-    z: local.position.z * parent.scale.z,
-  });
-  return {
-    position: {
-      x: parent.position.x + offset.x,
-      y: parent.position.y + offset.y,
-      z: parent.position.z + offset.z,
-    },
-    rotation: multiplyQuaternion(parent.rotation, local.rotation),
-    scale: {
-      x: parent.scale.x * local.scale.x,
-      y: parent.scale.y * local.scale.y,
-      z: parent.scale.z * local.scale.z,
-    },
-  };
-}
-
-function actorParentGuid(actor: Actor): string | null {
-  const parentId = actor.getVariable("parentId");
-  return typeof parentId === "string" && parentId.length > 0 ? parentId : null;
-}
-
-function multiplyQuaternion(
-  a: PhysicsTransform["rotation"],
-  b: PhysicsTransform["rotation"],
-): PhysicsTransform["rotation"] {
-  return {
-    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-  };
-}
-
-function inverseQuaternion(
-  value: PhysicsTransform["rotation"],
-): PhysicsTransform["rotation"] {
-  const lengthSquared =
-    value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w;
-  if (lengthSquared === 0) return { x: 0, y: 0, z: 0, w: 1 };
-  return {
-    x: -value.x / lengthSquared,
-    y: -value.y / lengthSquared,
-    z: -value.z / lengthSquared,
-    w: value.w / lengthSquared,
-  };
-}
-
-function rotateVector(q: PhysicsTransform["rotation"], value: Vec3): Vec3 {
-  const ix = q.w * value.x + q.y * value.z - q.z * value.y;
-  const iy = q.w * value.y + q.z * value.x - q.x * value.z;
-  const iz = q.w * value.z + q.x * value.y - q.y * value.x;
-  const iw = -q.x * value.x - q.y * value.y - q.z * value.z;
-  return {
-    x: ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y,
-    y: iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z,
-    z: iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x,
   };
 }
 
