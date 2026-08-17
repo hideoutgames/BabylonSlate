@@ -153,7 +153,7 @@ import {
   mergePluginEditorUtilityObjects,
   playSceneLibraryPaths,
 } from "../lib/plugin-ui";
-import { readProjectJsonMtime } from "../lib/external-change";
+import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import {
   classifyExternalChanges,
   snapshotIndexedMtimes,
@@ -1214,6 +1214,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await projectService.saveProject(document, layouts);
       documentService.markAllClean();
       setMigrationPending([]);
+      await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
       const guid = projectService.guid;
       if (guid) {
         const derived = await ensureDerived();
@@ -1243,7 +1244,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       throw error;
     }
-  }, [bump, captureAllLayouts, documentService, ensureDerived, projectService]);
+  }, [
+    bump,
+    captureAllLayouts,
+    captureMtimeSnapshot,
+    documentService,
+    ensureDerived,
+    projectService,
+  ]);
 
   const scheduleDebouncedSave = useCallback(() => {
     if (saveDebounceRef.current) return;
@@ -1292,8 +1300,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await projectService.saveProject(projectDocument, layouts);
     documentService.markAllClean();
     setMigrationPending([]);
+    await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
     bump();
-  }, [bump, captureAllLayouts, documentService, projectDocument, projectService]);
+  }, [
+    bump,
+    captureAllLayouts,
+    captureMtimeSnapshot,
+    documentService,
+    projectDocument,
+    projectService,
+  ]);
 
   const saveAll = saveProject;
 
@@ -1371,6 +1387,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       return collectAndExportGame({
         startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
+        gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
         assets: assetsFromIndexed(list),
         plugins: projectService.plugins.map((plugin) => ({
           pluginGuid: plugin.pluginGuid,

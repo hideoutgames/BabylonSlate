@@ -99,6 +99,16 @@ export function canMutateContentBrowserRoot(
   return Boolean(root && !root.readOnly);
 }
 
+export function isPluginContentFolderPath(
+  folderPath: string,
+  pluginPathPrefixes: readonly string[],
+): boolean {
+  return pluginPathPrefixes.some(
+    (prefix) =>
+      folderPath === prefix || folderPath.startsWith(`${prefix}/`),
+  );
+}
+
 export function contentBrowserFolderOps(
   folderPath: string,
   roots: readonly ContentBrowserRoot[],

@@ -10,6 +10,9 @@ export interface PointerInit {
   pointerType?: "touch" | "mouse" | "pen";
   clientX?: number;
   clientY?: number;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
 }
 
 export function dispatchPointerEvent(
@@ -22,6 +25,9 @@ export function dispatchPointerEvent(
     pointerType = "touch",
     clientX = 0,
     clientY = 0,
+    ctrlKey = false,
+    metaKey = false,
+    shiftKey = false,
   } = init;
 
   const event = new MouseEvent(type, {
@@ -29,6 +35,9 @@ export function dispatchPointerEvent(
     cancelable: true,
     clientX,
     clientY,
+    ctrlKey,
+    metaKey,
+    shiftKey,
   });
 
   Object.defineProperty(event, "pointerId", { value: pointerId });

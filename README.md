@@ -97,7 +97,7 @@ That builds the editor and the VitePress docs site, then copies docs into `apps/
 2. Toolbar: Save All, Undo/Redo, Play, Windows, Focus, Search, Settings
 3. Scene Viewport (2D/3D toggle) and Graph document tabs
 4. Content Browser lists project assets
-5. Play overlay opens and closes with the top-right X
+5. Play overlay opens and closes with **Stop**
 6. Long-press a tab header to drag panels
 7. Two-finger pan/orbit in the Viewport; pan/pinch on a graph
 

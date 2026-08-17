@@ -76,7 +76,7 @@ sourceControl: {
 }
 ```
 
-Missing settings normalize to disabled. Project Settings → **Source Control** (hidden on production web): Enable, Repository URL, Branch, Auto-Lock On First Edit, Poll Interval (seconds), Token (password field + Save / Clear). UI shows **Token Saved** / **Not Saved**, never the secret.
+Missing settings normalize to disabled. Project Settings → **Source Control** (hidden on production web): Enable, Repository URL, Branch, Auto-Lock On First Edit, Poll Interval (seconds), Token (password field + Save / Clear). UI shows **Token Saved** plus **Not written to the project. This browser only.**, never the secret. Enable is not labeled Not Saved. Turning Enable off asks for confirm; Off/On does not clear the in-memory lock list.
 
 ## Editor UX
 
@@ -95,7 +95,7 @@ Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resum
 
 ## External change (mtime, not git)
 
-`IndexedAsset.mtime` comes from `DirEntry` during registry walk. On lifecycle **foreground**, remount/rescan and diff mtimes (plus `project.json` mtime).
+`IndexedAsset.mtime` comes from `DirEntry` during registry walk. On lifecycle **foreground**, remount/rescan and diff mtimes (plus `project.json` mtime). Save All (and compile-on-save writes) recapture that snapshot (`refreshMtimeSnapshotAfterEditorSave`) so the editor’s own `project.json` mtime is not classified as **Reload Project**.
 
 | Classification | Prompt |
 | --- | --- |

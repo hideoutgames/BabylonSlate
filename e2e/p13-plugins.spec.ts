@@ -102,6 +102,9 @@ test.describe("P13 plugins", () => {
     await expect(
       page.getByTestId("tree-row-plugins/starter-content/assets"),
     ).toHaveCount(0);
+    await expect(
+      page.locator('[data-asset-path="assets/main.scene.babasset"]'),
+    ).toBeVisible();
 
     await openPluginsSettings(page);
     await page

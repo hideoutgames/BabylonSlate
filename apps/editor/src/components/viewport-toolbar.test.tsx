@@ -122,9 +122,16 @@ describe("ViewportToolbar", () => {
       for (const tool of GIZMO_LABELS) {
         const button = screen.getByTestId(`gizmo-tool-${tool.id}`);
         if (tool.id === id) {
+          const label = button.querySelector(
+            '[data-testid="gizmo-tool-label"]',
+          ) as HTMLElement | null;
+          expect(label?.style.gridTemplateColumns).toBe("1fr");
           expect(button.textContent).toContain(tool.label);
         } else {
-          expect(button.textContent).not.toContain(tool.label);
+          const label = button.querySelector(
+            '[data-testid="gizmo-tool-label"]',
+          ) as HTMLElement | null;
+          expect(label?.style.gridTemplateColumns).toBe("0fr");
         }
       }
     },

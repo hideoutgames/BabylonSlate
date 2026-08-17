@@ -1,0 +1,36 @@
+import { describe, expect, it } from "vitest";
+import { applyPlayerFpsSample, applyWorkerPlayerStats } from "./hud";
+
+describe("applyPlayerFpsSample", () => {
+  it("sets fps without zeroing worker script and physics ms", () => {
+    const fromWorker = applyWorkerPlayerStats(undefined, {
+      scriptMs: 3,
+      physicsMs: 2,
+    });
+    expect(fromWorker.fps).toBe(0);
+    const afterFps = applyPlayerFpsSample(fromWorker, 60);
+    expect(afterFps.fps).toBe(60);
+    expect(afterFps.scriptMs).toBe(3);
+    expect(afterFps.physicsMs).toBe(2);
+    expect(afterFps.ticks).toBe(0);
+  });
+});
+
+describe("applyWorkerPlayerStats", () => {
+  it("keeps sampled fps when the worker command reports 0", () => {
+    const sampled = applyPlayerFpsSample(
+      { ticks: 12, fps: 60, scriptMs: 1, physicsMs: 1, draws: 4 },
+      48,
+    );
+    const next = applyWorkerPlayerStats(sampled, {
+      ticks: 13,
+      fps: 0,
+      scriptMs: 4,
+      physicsMs: 5,
+    });
+    expect(next.fps).toBe(48);
+    expect(next.ticks).toBe(13);
+    expect(next.scriptMs).toBe(4);
+    expect(next.physicsMs).toBe(5);
+  });
+});

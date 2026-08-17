@@ -306,6 +306,30 @@ describe("collectExportClosure", () => {
     );
   });
 
+  it("includes a project GameInstance class when the scene field is empty", () => {
+    const scene = createDefaultScene();
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      gameInstanceClass: "MyGame",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "class-game",
+          type: "Class",
+          name: "MyGame",
+          parentClass: "GameInstance",
+        }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: (id) => (id === "MyGame" ? "GameInstance" : null),
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(expect.arrayContaining(["scene-1", "class-game"]));
+  });
+
   it("includes mesh materials, post-process stack materials, and header dependencies", () => {
     const mesh = createMeshComponent("mesh-1", "box");
     mesh.properties.materialGuid = "mat-rock";

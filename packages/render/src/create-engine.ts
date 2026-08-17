@@ -134,7 +134,10 @@ export interface CreateEngineOptions {
   editor?: boolean;
   viewportMode?: ViewportMode;
   /** Actor id under an explicit tap, or null when the tap missed. */
-  onPickActor?: (actorId: string | null) => void;
+  onPickActor?: (
+    actorId: string | null,
+    options?: { additive?: boolean },
+  ) => void;
   /** Actors inside a one-finger marquee drag (2D hold, or Drag Select). */
   onMarqueeSelect?: (actorIds: string[]) => void;
   /** Live marquee overlay rect in CSS canvas pixels; null to hide. */
@@ -476,10 +479,10 @@ export function createEngine(
       scheduler,
       blockLook: (x, y) => gizmos.isDragging() || gizmos.hitTest(x, y),
       dragSelectActive: () => options.dragSelectActive?.() === true,
-      onTap: (x, y) => {
+      onTap: (x, y, tap) => {
         const hit = pickAtCanvas(scene, x, y);
         const actorId = hit ? editorSync.actorForMesh(hit.meshName) : null;
-        options.onPickActor?.(actorId);
+        options.onPickActor?.(actorId, { additive: tap?.additive === true });
       },
       onMarqueeMove: options.onMarqueeMove,
       onDragSelectEnd: options.onDragSelectEnd,

@@ -136,6 +136,11 @@ export interface ProjectSettings {
    * Play uses the open scene tab.
    */
   startupSceneGuid: string | null;
+  /**
+   * GameInstance subclass constructed for Play, Preview, and export.
+   * Scene `settings.gameInstanceClass` remains for old files.
+   */
+  gameInstanceClass: string | null;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
   input: ProjectInputSettings;
@@ -451,6 +456,41 @@ function normalizeStartupSceneGuid(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 }
 
+function normalizeGameInstanceClass(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+}
+
+/**
+ * One-shot copy of a scene Game Instance onto the project field so old
+ * projects keep Play/Preview/export after the picker moved to Project Settings.
+ */
+export function migrateGameInstanceClassFromScenes(
+  settings: ProjectSettings,
+  scenes: ReadonlyArray<{
+    settings?: { gameInstanceClass?: string | null };
+  }>,
+): ProjectSettings {
+  if (settings.gameInstanceClass) return settings;
+  for (const scene of scenes) {
+    const value = scene.settings?.gameInstanceClass;
+    if (typeof value === "string" && value.trim()) {
+      return { ...settings, gameInstanceClass: value.trim() };
+    }
+  }
+  return settings;
+}
+
+/** Project field wins; scene value is a fallback for unsaved / in-flight loads. */
+export function resolveGameInstanceClass(
+  project: { gameInstanceClass?: string | null } | null | undefined,
+  scene: { settings?: { gameInstanceClass?: string | null } } | null | undefined,
+): string | undefined {
+  const fromProject = project?.gameInstanceClass?.trim();
+  if (fromProject) return fromProject;
+  const fromScene = scene?.settings?.gameInstanceClass?.trim();
+  return fromScene || undefined;
+}
+
 function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOverride> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const out: Record<string, PluginEnableOverride> = {};
@@ -593,6 +633,7 @@ export function normalizeProjectSettings(
           : DEFAULT_FONT_PROJECT_SETTINGS.globalFallback,
     },
     startupSceneGuid: normalizeStartupSceneGuid(settings?.startupSceneGuid),
+    gameInstanceClass: normalizeGameInstanceClass(settings?.gameInstanceClass),
     render: normalizeRender(settings?.render),
     editorUtilityObjects: normalizeEditorUtilityObjects(
       settings?.editorUtilityObjects,

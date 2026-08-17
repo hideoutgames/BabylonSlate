@@ -21,6 +21,9 @@ import {
   flattenFolderTree,
   filterFolderTreeRows,
   isFolderNameTaken,
+  contentBrowserDeleteListNames,
+  contentBrowserDeletingGuids,
+  lastSceneClassDeleteLines,
   isFolderTreeRoot,
   isNewAssetNameTaken,
   isValidMoveDestination,
@@ -48,6 +51,8 @@ import {
   exclusiveSelectFolder,
   paintSelectTiles,
   resolveContentBrowserPaintHit,
+  applyContentBrowserTreeSelect,
+  type ContentBrowserTreeRow,
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
@@ -1233,5 +1238,121 @@ describe("content-browser-helpers", () => {
       ]),
     ).toBe(true);
     expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
+  });
+
+  it("lists selected folders and assets for Delete confirm, not flattened contents", () => {
+    expect(
+      contentBrowserDeleteListNames({
+        folderPaths: ["assets/fx"],
+        assetNames: ["qa1"],
+      }),
+    ).toEqual(["assets/fx", "qa1"]);
+    expect(
+      contentBrowserDeleteListNames({
+        folderPaths: ["assets/empty"],
+        assetNames: [],
+      }),
+    ).toEqual(["assets/empty"]);
+  });
+
+  it("collects extra guids plus assets inside selected folders for last-Scene checks", () => {
+    const assets = [
+      asset({ guid: "s1", type: "Scene", name: "Main", path: "assets/fx/Main.scene.babasset" }),
+      asset({ guid: "a1", type: "Enum", name: "qa1", path: "assets/qa1.babasset" }),
+    ];
+    expect(
+      [...contentBrowserDeletingGuids({
+        extraGuids: ["a1"],
+        folderPaths: ["assets/fx"],
+        assets,
+      })].sort(),
+    ).toEqual(["a1", "s1"]);
+  });
+
+  it("warns when deleting the last Scene and last Class", () => {
+    const assets = [
+      asset({ guid: "s1", type: "Scene", name: "Main" }),
+      asset({ guid: "c1", type: "Class", name: "Hero" }),
+      asset({ guid: "t1", type: "Texture", name: "Tex" }),
+    ];
+    expect(
+      lastSceneClassDeleteLines(assets, new Set(["s1", "c1"])),
+    ).toEqual([
+      "This is the last Scene in the project.",
+      "This is the last Class in the project.",
+    ]);
+    expect(lastSceneClassDeleteLines(assets, new Set(["s1"]))).toEqual([
+      "This is the last Scene in the project.",
+    ]);
+    expect(
+      lastSceneClassDeleteLines(
+        [
+          asset({ guid: "s1", type: "Scene", name: "Main" }),
+          asset({ guid: "s2", type: "Scene", name: "Other" }),
+        ],
+        new Set(["s1"]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("adds a tree row to the Content Browser selection without replacing the grid folder", () => {
+    const rows: ContentBrowserTreeRow[] = [
+      {
+        id: "assets",
+        kind: "folder",
+        label: "assets",
+        depth: 0,
+        hasChildren: true,
+        expanded: true,
+        path: "assets",
+      },
+      {
+        id: "assets/Hero.class.babasset",
+        kind: "asset",
+        label: "Hero",
+        depth: 1,
+        hasChildren: false,
+        expanded: true,
+        path: "assets/Hero.class.babasset",
+        guid: "hero-1",
+      },
+      {
+        id: "assets/fx",
+        kind: "folder",
+        label: "fx",
+        depth: 1,
+        hasChildren: false,
+        expanded: true,
+        path: "assets/fx",
+      },
+    ];
+    const added = applyContentBrowserTreeSelect(
+      "assets/fx",
+      { additive: true },
+      rows,
+      {
+        selectedGuids: new Set(["hero-1"]),
+        selectedFolderPaths: new Set(),
+        selectedFolderPath: "assets",
+        anchorId: "assets/Hero.class.babasset",
+      },
+    );
+    expect([...added.selectedGuids]).toEqual(["hero-1"]);
+    expect([...added.selectedFolderPaths]).toEqual(["assets/fx"]);
+    expect(added.selectedFolderPath).toBe("assets");
+
+    const ranged = applyContentBrowserTreeSelect(
+      "assets/fx",
+      { range: true },
+      rows,
+      {
+        selectedGuids: new Set(["hero-1"]),
+        selectedFolderPaths: new Set(),
+        selectedFolderPath: "assets",
+        anchorId: "assets/Hero.class.babasset",
+      },
+    );
+    expect([...ranged.selectedGuids]).toEqual(["hero-1"]);
+    expect([...ranged.selectedFolderPaths]).toEqual(["assets/fx"]);
   });
 });

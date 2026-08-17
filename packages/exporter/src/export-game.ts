@@ -211,6 +211,9 @@ export async function exportGame(
 
   const manifest: GameManifest = {
     startupSceneGuid: options.startupSceneGuid,
+    ...(options.gameInstanceClass?.trim()
+      ? { gameInstanceClass: options.gameInstanceClass.trim() }
+      : {}),
     bundleDebugger: options.bundleDebugger,
     mode,
     render: options.customResolution,
@@ -266,9 +269,15 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 
 export function parseGameManifest(source: string): GameManifest {
   const parsed = JSON.parse(source) as GameManifest;
+  const gameInstanceClass =
+    typeof parsed.gameInstanceClass === "string" &&
+    parsed.gameInstanceClass.trim()
+      ? parsed.gameInstanceClass.trim()
+      : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
   return {
     ...parsed,
+    ...(gameInstanceClass ? { gameInstanceClass } : {}),
     bundleDebugger,
     pixelsPerUnit:
       typeof parsed.pixelsPerUnit === "number" && parsed.pixelsPerUnit > 0

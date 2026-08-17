@@ -19,6 +19,16 @@ import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Input } from "@babylonslate/ui/components/input";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
+import {
   Field,
   FieldDescription,
   FieldGroup,
@@ -46,6 +56,7 @@ import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
+import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import {
   EngineSettingsForm,
   type EngineSettingsCategoryId,
@@ -113,8 +124,8 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
   },
   {
     id: "project",
-    label: "Close",
-    keywords: "close project homepage dirty save",
+    label: "Done",
+    keywords: "close project homepage dirty save done",
   },
 ];
 
@@ -239,8 +250,11 @@ export function SettingsModal({
   const [tokenDraft, setTokenDraft] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
+  const [gameInstancePickerOpen, setGameInstancePickerOpen] = useState(false);
   const [exportGameError, setExportGameError] = useState<string | null>(null);
   const [exportGameBusy, setExportGameBusy] = useState(false);
+  const [disableSourceControlOpen, setDisableSourceControlOpen] =
+    useState(false);
   const [utilityPick, setUtilityPick] = useState<"new" | number | null>(null);
   const [activeCategoryId, setActiveCategoryId] = useState(
     scope === "engine" ? "appearance" : "general",
@@ -339,6 +353,8 @@ export function SettingsModal({
       anchor.download = `${projectDocument.metadata.name.replace(/\s+/g, "_")}.zip`;
       anchor.click();
       URL.revokeObjectURL(url);
+    } catch (error) {
+      setExportGameError(error instanceof Error ? error.message : String(error));
     } finally {
       setExportGameBusy(false);
     }
@@ -878,6 +894,30 @@ export function SettingsModal({
               </FieldDescription>
             </Field>
             <Field>
+              <FieldLabel>Game Instance</FieldLabel>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                onClick={() => setGameInstancePickerOpen(true)}
+                data-testid="settings-game-instance"
+              >
+                {selectedPickerIdentity(
+                  classRowIdentity(
+                    gameInstanceClassEntries(assetRegistry?.list() ?? []).find(
+                      (entry) =>
+                        entry.id ===
+                        projectDocument.settings.gameInstanceClass,
+                    ),
+                    projectDocument.settings.gameInstanceClass,
+                  ),
+                )}
+              </Button>
+              <FieldDescription>
+                Play, Preview, and export construct this GameInstance subclass.
+              </FieldDescription>
+            </Field>
+            <Field>
               <FieldLabel htmlFor="setting-export-packed">Packed</FieldLabel>
               <Switch
                 id="setting-export-packed"
@@ -1015,10 +1055,14 @@ export function SettingsModal({
                 onCheckedChange={(checked) => {
                   const enabled = checked === true;
                   const current = projectDocument.settings.sourceControl;
+                  if (!enabled) {
+                    setDisableSourceControlOpen(true);
+                    return;
+                  }
                   updateProjectSettings({
                     sourceControl: { ...current, enabled },
                   });
-                  if (enabled && !current.repositoryUrl) {
+                  if (!current.repositoryUrl) {
                     void prefillSourceControlFromGit().then((prefill) => {
                       if (!prefill.repositoryUrl && !prefill.branch) return;
                       updateProjectSettings({
@@ -1124,8 +1168,9 @@ export function SettingsModal({
                 onChange={(event) => setTokenDraft(event.target.value)}
                 data-testid="settings-source-control-token"
               />
-              <FieldDescription>
-                {sourceControl.hasToken ? "Token Saved" : "Not Saved"}
+              <FieldDescription data-testid="settings-source-control-token-copy">
+                {sourceControl.hasToken ? "Token Saved. " : ""}
+                Not written to the project. This browser only.
               </FieldDescription>
             </Field>
             <div className="flex flex-wrap gap-2">
@@ -1241,6 +1286,21 @@ export function SettingsModal({
       ) : null}
       {scope === "project" ? (
         <ClassPicker
+          open={gameInstancePickerOpen}
+          onOpenChange={setGameInstancePickerOpen}
+          classes={gameInstanceClassEntries(assetRegistry?.list() ?? [])}
+          title="Pick Game Instance"
+          allowNone
+          onPick={(classId) => {
+            if (!projectDocument) return;
+            updateProjectSettings({ gameInstanceClass: classId });
+            setGameInstancePickerOpen(false);
+          }}
+          data-testid="settings-game-instance-picker"
+        />
+      ) : null}
+      {scope === "project" ? (
+        <ClassPicker
           open={utilityPick !== null}
           onOpenChange={(next) => {
             if (!next) setUtilityPick(null);
@@ -1272,6 +1332,36 @@ export function SettingsModal({
           data-testid="settings-editor-utility-object-picker"
         />
       ) : null}
+      <AlertDialog
+        open={disableSourceControlOpen}
+        onOpenChange={setDisableSourceControlOpen}
+      >
+        <AlertDialogContent data-testid="settings-source-control-disable-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Turn Off Source Control?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Locks stay until you release them. Turning Enable back on keeps
+              the lock list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="settings-source-control-disable-confirm-action"
+              onClick={() => {
+                if (!projectDocument) return;
+                const current = projectDocument.settings.sourceControl;
+                updateProjectSettings({
+                  sourceControl: { ...current, enabled: false },
+                });
+                setDisableSourceControlOpen(false);
+              }}
+            >
+              Turn Off
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

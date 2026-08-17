@@ -76,12 +76,16 @@ import {
   addSelectedFolderPath,
   exclusiveSelectAsset,
   exclusiveSelectFolder,
+  applyContentBrowserTreeSelect,
   buildNewAssetResult,
   classParentLookup,
   collectFolderGuidsFromTrees,
   contentBrowserContextActions,
+  contentBrowserDeleteListNames,
+  contentBrowserDeletingGuids,
   contentBrowserMoveFromDrop,
   contentBrowserMovePreviewName,
+  lastSceneClassDeleteLines,
   defaultParentClassForType,
   displayAssetTitle,
   filterAssets,
@@ -109,6 +113,7 @@ import {
   contentBrowserFolderOps,
   contentBrowserRoots,
   filterBabpluginFiles,
+  isPluginContentFolderPath,
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
@@ -256,6 +261,10 @@ export function ContentBrowserWorkspace() {
     () => browserRoots.map((root) => root.pathPrefix),
     [browserRoots],
   );
+  const pluginContentPrefixes = useMemo(
+    () => pluginDescriptors.map((plugin) => plugin.contentPath),
+    [pluginDescriptors],
+  );
   const selectedRoot = useMemo(
     () => contentBrowserFolderOps(selectedFolderPath, browserRoots),
     [browserRoots, selectedFolderPath],
@@ -265,10 +274,13 @@ export function ContentBrowserWorkspace() {
   );
 
   useEffect(() => {
-    if (!showPluginContent && selectedRoot.rootId !== PROJECT_ROOT_ID) {
+    if (
+      !showPluginContent &&
+      isPluginContentFolderPath(selectedFolderPath, pluginContentPrefixes)
+    ) {
       setSelectedFolderPath(ASSETS_ROOT);
     }
-  }, [selectedRoot.rootId, showPluginContent]);
+  }, [pluginContentPrefixes, selectedFolderPath, showPluginContent]);
 
   const folderTrees = useMemo(() => {
     if (!assetRegistry) return [];
@@ -365,6 +377,16 @@ export function ContentBrowserWorkspace() {
     }
     return selectedFolderPath;
   }, [allAssets, selectedFolderPath, selectedGuids]);
+
+  const treeSelectedIds = useMemo(() => {
+    const ids: string[] = [...selectedFolderPaths];
+    for (const guid of selectedGuids) {
+      const asset = allAssets.find((item) => item.header.guid === guid);
+      if (asset) ids.push(asset.path);
+    }
+    if (ids.length === 0 && treeSelectedId) ids.push(treeSelectedId);
+    return ids;
+  }, [allAssets, selectedFolderPaths, selectedGuids, treeSelectedId]);
 
   const treeNodes = useMemo(
     () =>
@@ -534,7 +556,7 @@ export function ContentBrowserWorkspace() {
       setDeleteTarget({
         kind: "selection",
         folders,
-        guids: [...folderGuidsSet, ...extraGuids],
+        guids: extraGuids,
       });
     },
     [folderTrees, requestDelete, requestDeleteFolder, rootPrefixes],
@@ -745,6 +767,41 @@ export function ContentBrowserWorkspace() {
       name: resolveAssetName(guid),
     }));
   }, [assetRegistry, deleteTarget, resolveAssetName]);
+
+  const deleteListNames = useMemo(() => {
+    if (!deleteTarget) return [];
+    if (deleteTarget.kind === "folder") {
+      return contentBrowserDeleteListNames({
+        folderPaths: [deleteTarget.path],
+      });
+    }
+    const assetNames = deleteTarget.guids.map(resolveAssetName);
+    if (deleteTarget.kind === "selection") {
+      return contentBrowserDeleteListNames({
+        folderPaths: deleteTarget.folders,
+        assetNames,
+      });
+    }
+    return contentBrowserDeleteListNames({ assetNames });
+  }, [deleteTarget, resolveAssetName]);
+
+  const deleteLastSceneClassLines = useMemo(() => {
+    if (!deleteTarget) return [];
+    const folderPaths =
+      deleteTarget.kind === "folder"
+        ? [deleteTarget.path]
+        : deleteTarget.kind === "selection"
+          ? deleteTarget.folders
+          : [];
+    return lastSceneClassDeleteLines(
+      allAssets,
+      contentBrowserDeletingGuids({
+        extraGuids: deleteTarget.guids,
+        folderPaths,
+        assets: allAssets,
+      }),
+    );
+  }, [allAssets, deleteTarget]);
 
   const confirmDelete = useCallback(async () => {
     if (!assetRegistry || !deleteTarget) return;
@@ -1158,21 +1215,26 @@ export function ContentBrowserWorkspace() {
     [openSelectionMenu],
   );
 
-  const handleTreeSelect = useCallback((id: string) => {
-    const row = browserRows.find((item) => item.id === id);
-    if (!row) return;
-    if (row.kind === "folder") {
-      setSelectedFolderPath(row.path);
-      setSelectedGuids(new Set());
-      setSelectedFolderPaths(new Set());
-      return;
-    }
-    if (row.guid) {
-      setSelectedFolderPath(parentFolderPath(row.path));
-      setSelectedGuids(new Set([row.guid]));
-      setSelectedFolderPaths(new Set());
-    }
-  }, [browserRows]);
+  const handleTreeSelect = useCallback(
+    (id: string, options?: { additive?: boolean; range?: boolean }) => {
+      const next = applyContentBrowserTreeSelect(id, options, browserRows, {
+        selectedGuids,
+        selectedFolderPaths,
+        selectedFolderPath,
+        anchorId: treeSelectedId,
+      });
+      setSelectedGuids(next.selectedGuids);
+      setSelectedFolderPaths(next.selectedFolderPaths);
+      setSelectedFolderPath(next.selectedFolderPath);
+    },
+    [
+      browserRows,
+      selectedFolderPath,
+      selectedFolderPaths,
+      selectedGuids,
+      treeSelectedId,
+    ],
+  );
 
   const handleTreeActivate = useCallback(
     (id: string) => {
@@ -1474,6 +1536,7 @@ export function ContentBrowserWorkspace() {
             <TreeView
               nodes={treeNodes}
               selectedId={treeSelectedId}
+              selectedIds={treeSelectedIds}
               onSelect={handleTreeSelect}
               onToggleExpanded={(id) => {
                 const row = browserRows.find((item) => item.id === id);
@@ -1634,13 +1697,25 @@ export function ContentBrowserWorkspace() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-            <ul className="list-disc pl-5">
-              {deleteTarget?.guids.map((guid) => (
-                <li key={guid}>
-                  <SelectableText>{resolveAssetName(guid)}</SelectableText>
+            <ul
+              className="list-disc pl-5"
+              data-testid="content-browser-delete-list"
+            >
+              {deleteListNames.map((name) => (
+                <li key={name}>
+                  <SelectableText>{name}</SelectableText>
                 </li>
               ))}
             </ul>
+            {deleteLastSceneClassLines.map((line) => (
+              <p
+                key={line}
+                className="font-medium text-foreground"
+                data-testid="content-browser-delete-last-warning"
+              >
+                {line}
+              </p>
+            ))}
             {deleteInboundRefs.length > 0 ? (
               <>
                 <p>Inbound references from other assets:</p>

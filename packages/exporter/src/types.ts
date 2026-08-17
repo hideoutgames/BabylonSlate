@@ -16,6 +16,8 @@ export type ExportIndexedAsset = {
 
 export type ExportClosureInput = {
   startupSceneGuid: string | null;
+  /** Project Game Instance class id; packed even when scene settings omit it. */
+  gameInstanceClass?: string | null;
   assets: readonly ExportIndexedAsset[];
   pluginEnabledGuids: ReadonlySet<string>;
   parentOf: (classId: string) => string | null | undefined;
@@ -46,6 +48,7 @@ export type GameAssetIndexEntry = {
 
 export type GameManifest = {
   startupSceneGuid: string;
+  gameInstanceClass?: string;
   bundleDebugger: boolean;
   mode: ExportMode;
   render: RenderProjectSettings;
@@ -66,6 +69,7 @@ export type ExportGameOptions = {
   mode?: ExportMode;
   bundleDebugger: boolean;
   startupSceneGuid: string;
+  gameInstanceClass?: string | null;
   customResolution: RenderProjectSettings;
   playFrameCap?: number;
   pixelsPerUnit?: number;

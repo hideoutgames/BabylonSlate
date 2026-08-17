@@ -18,6 +18,11 @@ import type { LoadedGame } from "./artifact";
 import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
 import { packedContentFromGame, packedPlayControls } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
+import {
+  applyPlayerFpsSample,
+  applyWorkerPlayerStats,
+  type PlayerHudStats,
+} from "./hud";
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
@@ -149,7 +154,13 @@ export function startPlayer(options: {
     physicsWorld: manifest.physicsWorld,
     gravity: scene.settings.gravity,
     havokWasmUrl: havokWasmUrl(),
-    gameInstanceClass: scene.settings.gameInstanceClass ?? undefined,
+    gameInstanceClass:
+      (typeof manifest.gameInstanceClass === "string" &&
+      manifest.gameInstanceClass.trim()
+        ? manifest.gameInstanceClass.trim()
+        : undefined) ??
+      scene.settings.gameInstanceClass ??
+      undefined,
     scenes,
     ...loopGuardLoadFields(manifest),
   };
@@ -161,6 +172,12 @@ export function startPlayer(options: {
   let runtime: RuntimeDriver | null = null;
   let raf = 0;
   let halted = false;
+  let hudStats: PlayerHudStats | undefined;
+
+  const emitHudStats = (next: PlayerHudStats) => {
+    hudStats = { ...next, draws: handle.drawCalls() };
+    options.onStats?.(hudStats);
+  };
 
   const haltPlayback = () => {
     if (halted) return;
@@ -178,13 +195,14 @@ export function startPlayer(options: {
     if (command.type === "stats") {
       ticks = Number(command.tickIndex ?? ticks + 1);
       lastWorkerTickIndex = ticks;
-      options.onStats?.({
-        ticks,
-        fps: Number(command.fps ?? 0),
-        scriptMs: Number(command.scriptMs ?? 0),
-        physicsMs: Number(command.physicsMs ?? 0),
-        draws: handle.drawCalls(),
-      });
+      emitHudStats(
+        applyWorkerPlayerStats(hudStats, {
+          ticks,
+          fps: Number(command.fps ?? 0),
+          scriptMs: Number(command.scriptMs ?? 0),
+          physicsMs: Number(command.physicsMs ?? 0),
+        }),
+      );
     }
     if (command.type === "diagnostic") {
       diagnostics.push({
@@ -261,6 +279,8 @@ export function startPlayer(options: {
   const input = attachInputCapture(canvas);
   const snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
+  let frames = 0;
+  let fpsWindowStart = last;
 
   const pump = () => {
     if (halted) return;
@@ -283,6 +303,12 @@ export function startPlayer(options: {
       if (runtime.copySnapshot(snapBuf)) {
         handle.pushSnapshot(snapBuf);
       }
+    }
+    frames += 1;
+    if (now - fpsWindowStart >= 1000) {
+      emitHudStats(applyPlayerFpsSample(hudStats, frames));
+      frames = 0;
+      fpsWindowStart = now;
     }
     raf = requestAnimationFrame(pump);
   };

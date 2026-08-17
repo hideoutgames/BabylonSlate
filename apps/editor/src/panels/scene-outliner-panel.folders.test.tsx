@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
 import { createActor, createDefaultScene } from "@babylonslate/core";
-import { SceneOutlinerPanel, actorRowId, folderRowId } from "./scene-outliner-panel";
+import { SceneOutlinerPanel, actorRowId, applyOutlinerRowSelect, folderRowId } from "./scene-outliner-panel";
 
 /** jsdom has no PointerEvent; a MouseEvent with pointer fields drives TreeView. */
 function dispatchPointerEvent(
@@ -201,5 +201,34 @@ describe("Scene Outliner folders", () => {
     const moved = lastScene().actors.find((actor) => actor.id === "sword")!;
     expect(moved.parentId).toBe("hero");
     expect(moved.folderId).toBeNull();
+  });
+});
+
+describe("applyOutlinerRowSelect", () => {
+  const rows = [actorRowId("hero"), actorRowId("sword"), actorRowId("lamp")];
+
+  it("selects one actor exclusively by default", () => {
+    expect(applyOutlinerRowSelect(actorRowId("sword"), undefined, rows, ["hero"])).toEqual({
+      folderId: null,
+      actorIds: ["sword"],
+    });
+  });
+
+  it("toggles an actor into the selection when additive", () => {
+    expect(
+      applyOutlinerRowSelect(actorRowId("sword"), { additive: true }, rows, ["hero"]),
+    ).toEqual({ folderId: null, actorIds: ["hero", "sword"] });
+  });
+
+  it("range-selects actors between the anchor and the tapped row", () => {
+    expect(
+      applyOutlinerRowSelect(actorRowId("lamp"), { range: true }, rows, ["hero"]),
+    ).toEqual({ folderId: null, actorIds: ["hero", "sword", "lamp"] });
+  });
+
+  it("clears actors when a folder is selected", () => {
+    expect(
+      applyOutlinerRowSelect(folderRowId("f1"), { additive: true }, rows, ["hero"]),
+    ).toEqual({ folderId: "f1", actorIds: [] });
   });
 });

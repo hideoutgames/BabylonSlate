@@ -233,4 +233,31 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
       timeout: 3_000,
     });
   });
+
+  test("project settings close meets the 44px touch target", async ({
+    page,
+  }) => {
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    const dialog = page.getByTestId("settings-modal");
+    await expect(dialog).toBeVisible();
+    const close = dialog.locator('[data-slot="dialog-close"]');
+    await expect(close).toBeVisible();
+    await expect
+      .poll(async () =>
+        dialog.evaluate((el) => {
+          const transform = getComputedStyle(el).transform;
+          return (
+            transform === "none" ||
+            transform.startsWith("matrix(1,") ||
+            transform.startsWith("matrix3d(1, 0, 0, 0, 0, 1,")
+          );
+        }),
+      )
+      .toBe(true);
+    const box = await close.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  });
 });

@@ -11,6 +11,8 @@ import {
   normalizeGraphMembers,
   normalizeGraphComponents,
   normalizeProjectSettings,
+  migrateGameInstanceClassFromScenes,
+  resolveGameInstanceClass,
   type ProjectSettings,
 } from "./project";
 
@@ -55,6 +57,7 @@ describe("project schema", () => {
       globalFallback: "sans-serif",
     });
     expect(project.settings.startupSceneGuid).toBeNull();
+    expect(project.settings.gameInstanceClass).toBeNull();
     expect(project.settings.playFrameCap).toBe(60);
     expect(project.settings.playPreview).toEqual({
       followSystem: true,
@@ -432,6 +435,48 @@ describe("project schema", () => {
       normalizeProjectSettings({ startupSceneGuid: "scene-guid-1" })
         .startupSceneGuid,
     ).toBe("scene-guid-1");
+  });
+
+  it("normalizes a missing Game Instance class to null and keeps a stored id", () => {
+    expect(normalizeProjectSettings(undefined).gameInstanceClass).toBeNull();
+    expect(normalizeProjectSettings({}).gameInstanceClass).toBeNull();
+    expect(
+      normalizeProjectSettings({ gameInstanceClass: "  " }).gameInstanceClass,
+    ).toBeNull();
+    expect(
+      normalizeProjectSettings({ gameInstanceClass: "MyGame" }).gameInstanceClass,
+    ).toBe("MyGame");
+  });
+
+  it("copies Game Instance from a scene when the project field is empty", () => {
+    const settings = normalizeProjectSettings({});
+    expect(
+      migrateGameInstanceClassFromScenes(settings, [
+        { settings: { gameInstanceClass: null } },
+        { settings: { gameInstanceClass: "MyGame" } },
+      ]).gameInstanceClass,
+    ).toBe("MyGame");
+    expect(
+      migrateGameInstanceClassFromScenes(
+        { ...settings, gameInstanceClass: "Keep" },
+        [{ settings: { gameInstanceClass: "MyGame" } }],
+      ).gameInstanceClass,
+    ).toBe("Keep");
+  });
+
+  it("prefers the project Game Instance over a scene value", () => {
+    expect(
+      resolveGameInstanceClass(
+        { gameInstanceClass: "ProjectGame" },
+        { settings: { gameInstanceClass: "SceneGame" } },
+      ),
+    ).toBe("ProjectGame");
+    expect(
+      resolveGameInstanceClass(
+        { gameInstanceClass: null },
+        { settings: { gameInstanceClass: "SceneGame" } },
+      ),
+    ).toBe("SceneGame");
   });
 
   it("normalizes editorUtilityObjects to unique class ids", () => {

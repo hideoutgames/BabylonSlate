@@ -2,7 +2,6 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useState } from "react";
 import {
   AssetPicker,
-  ClassPicker,
   NamedListEditor,
   PanelFrame,
   PropertyGrid,
@@ -57,7 +56,6 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const navBake = useOptionalNavBake();
   const [addComponentOpen, setAddComponentOpen] = useState(false);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
-  const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [envTexturePickOpen, setEnvTexturePickOpen] = useState(false);
   const [postProcessPick, setPostProcessPick] = useState<"add" | number | null>(
@@ -143,22 +141,17 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         kind: "asset",
         id: "scene-game-instance-class",
         label: "Game Instance",
-        value: scene.settings.gameInstanceClass,
+        value: projectDocument?.settings.gameInstanceClass ?? null,
         placeholder: "None",
-        onPick: () => setClassPickerOpen(true),
-        onChange: (gameInstanceClass) =>
-          mutate({
-            ...scene,
-            settings: {
-              ...scene.settings,
-              gameInstanceClass,
-            },
-          }),
+        disabled: true,
+        onPick: () => {},
+        onChange: () => {},
         ...classRowIdentity(
           classEntries.find(
-            (entry) => entry.id === scene.settings.gameInstanceClass,
+            (entry) =>
+              entry.id === projectDocument?.settings.gameInstanceClass,
           ),
-          scene.settings.gameInstanceClass,
+          projectDocument?.settings.gameInstanceClass,
         ),
       },
       {
@@ -212,42 +205,46 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onChange: (fogEnabled) =>
           mutate({ ...scene, settings: { ...scene.settings, fogEnabled } }),
       },
-      {
-        kind: "color",
-        id: "scene-fog-color",
-        label: "Fog Color",
-        value: scene.settings.fogColor,
-        defaultValue: defaults.fogColor,
-        onChange: (fogColor) =>
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, fogColor },
-          }),
-      },
-      {
-        kind: "number",
-        id: "scene-fog-start",
-        label: "Fog Start",
-        value: scene.settings.fogStart,
-        defaultValue: defaults.fogStart,
-        onChange: (fogStart) =>
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, fogStart },
-          }),
-      },
-      {
-        kind: "number",
-        id: "scene-fog-end",
-        label: "Fog End",
-        value: scene.settings.fogEnd,
-        defaultValue: defaults.fogEnd,
-        onChange: (fogEnd) =>
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, fogEnd },
-          }),
-      },
+      ...(scene.settings.fogEnabled
+        ? [
+            {
+              kind: "color" as const,
+              id: "scene-fog-color",
+              label: "Fog Color",
+              value: scene.settings.fogColor,
+              defaultValue: defaults.fogColor,
+              onChange: (fogColor: typeof scene.settings.fogColor) =>
+                mutate({
+                  ...scene,
+                  settings: { ...scene.settings, fogColor },
+                }),
+            },
+            {
+              kind: "number" as const,
+              id: "scene-fog-start",
+              label: "Fog Start",
+              value: scene.settings.fogStart,
+              defaultValue: defaults.fogStart,
+              onChange: (fogStart: number) =>
+                mutate({
+                  ...scene,
+                  settings: { ...scene.settings, fogStart },
+                }),
+            },
+            {
+              kind: "number" as const,
+              id: "scene-fog-end",
+              label: "Fog End",
+              value: scene.settings.fogEnd,
+              defaultValue: defaults.fogEnd,
+              onChange: (fogEnd: number) =>
+                mutate({
+                  ...scene,
+                  settings: { ...scene.settings, fogEnd },
+                }),
+            },
+          ]
+        : []),
       {
         kind: "asset",
         id: "scene-environment-texture",
@@ -494,21 +491,6 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             )}
           />
         </div>
-        <ClassPicker
-          open={classPickerOpen}
-          onOpenChange={setClassPickerOpen}
-          classes={classEntries}
-          title="Pick Game Instance"
-          allowNone
-          onPick={(gameInstanceClass) => {
-            mutate({
-              ...scene,
-              settings: { ...scene.settings, gameInstanceClass },
-            });
-            setClassPickerOpen(false);
-          }}
-          data-testid="scene-game-instance-picker"
-        />
         <AssetPicker
           open={envTexturePickOpen}
           onOpenChange={setEnvTexturePickOpen}
@@ -684,7 +666,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     >
       <div className="flex flex-col gap-3 pb-4">
         <PropertyGrid
-          title={actor.name}
+          title={
+            selectedActorIds.length > 1
+              ? `${selectedActorIds.length} Actors`
+              : actor.name
+          }
           rows={transformRows}
           data-testid="actor-transform-grid"
         />

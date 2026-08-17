@@ -340,6 +340,31 @@ test.describe("Editor density and IA", () => {
     await expect(classTile).toHaveAttribute("data-selected", "true");
   });
 
+  test("Delete confirm lists selected folder path and asset name", {
+    tag: IPAD_TEST_TAG,
+  }, async ({ page }) => {
+    await openTestProject(page);
+    await page.getByTestId("content-browser-new-folder").click();
+    await expect(page.getByTestId("content-browser-name-dialog")).toBeVisible();
+    await page.getByTestId("content-browser-name-input").fill("qa-folder");
+    await page.getByTestId("content-browser-name-confirm").click();
+    await page.getByTestId("tree-row-assets").click();
+    const folderTile = page.getByTestId("content-folder-assets/qa-folder");
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await expect(folderTile).toBeVisible({ timeout: 15_000 });
+    await paintSelectContentTiles(page, folderTile, sceneTile);
+    const deleteSelected = page.getByTestId("content-browser-delete-selected");
+    await expect(deleteSelected).toHaveText(/Delete \(2\)/);
+    await deleteSelected.click();
+    const list = page.getByTestId("content-browser-delete-list");
+    await expect(list).toBeVisible();
+    await expect(list).toContainText("assets/qa-folder");
+    await expect(list.locator("li")).toHaveCount(2);
+    await page.getByTestId("content-browser-delete-cancel").click();
+  });
+
   test("Content Browser folder tree and asset grid scroll vertically", async ({
     page,
   }) => {

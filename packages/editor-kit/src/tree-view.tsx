@@ -14,6 +14,31 @@ import {
 
 /** Row height matches `--chrome-row` (28px). */
 export const TREE_ROW_HEIGHT = 28;
+/** Horizontal swipe distance that adds a row to the selection (touch target). */
+export const TREE_SWIPE_ADD_PX = 44;
+
+export type TreeSelectOptions = {
+  additive?: boolean;
+  range?: boolean;
+};
+
+export function rangeSelectTreeIds(
+  ids: readonly string[],
+  fromId: string | null | undefined,
+  toId: string,
+): string[] {
+  const toIndex = ids.indexOf(toId);
+  if (toIndex < 0) return [toId];
+  const fromIndex = fromId ? ids.indexOf(fromId) : -1;
+  if (fromIndex < 0) return [toId];
+  const start = Math.min(fromIndex, toIndex);
+  const end = Math.max(fromIndex, toIndex);
+  return ids.slice(start, end + 1);
+}
+
+export function isTreeSwipeAdd(dx: number, dy: number): boolean {
+  return Math.abs(dx) >= TREE_SWIPE_ADD_PX && Math.abs(dx) >= Math.abs(dy);
+}
 
 export interface TreeViewNode {
   id: string;
@@ -32,7 +57,9 @@ export interface TreeViewProps {
   /** Flattened list of visible rows, parents before children. */
   nodes: TreeViewNode[];
   selectedId?: string | null;
-  onSelect?: (id: string) => void;
+  /** When set, every listed id is highlighted; otherwise `selectedId`. */
+  selectedIds?: readonly string[];
+  onSelect?: (id: string, options?: TreeSelectOptions) => void;
   onToggleExpanded?: (id: string) => void;
   /** Drop `dragId` onto `targetId`; null means the scene root. */
   onReparent?: (dragId: string, targetId: string | null) => void;
@@ -63,8 +90,17 @@ interface DragState {
   armed: boolean;
   canDrag: boolean;
   moved: boolean;
+  swipeAdd: boolean;
   dragArmTimer: ReturnType<typeof setTimeout> | null;
   longPressTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface ExtraPointer {
+  pointerId: number;
+  nodeId: string;
+  startX: number;
+  startY: number;
+  moved: boolean;
 }
 
 /**
@@ -74,6 +110,7 @@ interface DragState {
 export function TreeView({
   nodes,
   selectedId = null,
+  selectedIds,
   onSelect,
   onToggleExpanded,
   onReparent,
@@ -89,10 +126,14 @@ export function TreeView({
 }: TreeViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const extraPointerRef = useRef<ExtraPointer | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [dropTargetId, setDropTargetId] = useState<string | null | undefined>(
     undefined,
+  );
+  const selectedSet = new Set(
+    selectedIds ?? (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
   );
 
   const overscan = 4;
@@ -148,16 +189,35 @@ export function TreeView({
     }
     const wasArmed = Boolean(drag?.armed);
     dragRef.current = null;
+    extraPointerRef.current = null;
     setDropTargetId(undefined);
     if (wasArmed) onExternalDragEnd?.();
   }, [onExternalDragEnd]);
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>, nodeId: string) => {
+      const existing = dragRef.current;
+      if (existing && existing.pointerId !== event.pointerId) {
+        extraPointerRef.current = {
+          pointerId: event.pointerId,
+          nodeId,
+          startX: event.clientX,
+          startY: event.clientY,
+          moved: false,
+        };
+        if (existing.longPressTimer) clearTimeout(existing.longPressTimer);
+        existing.longPressTimer = null;
+        if (existing.dragArmTimer) clearTimeout(existing.dragArmTimer);
+        existing.dragArmTimer = null;
+        existing.canDrag = false;
+        return;
+      }
       const longPressTimer = onContextMenu
         ? setTimeout(() => {
             const drag = dragRef.current;
-            if (!drag || drag.armed || drag.moved) return;
+            if (!drag || drag.armed || drag.moved || extraPointerRef.current) {
+              return;
+            }
             if (containerRef.current?.hasPointerCapture?.(drag.pointerId)) {
               try {
                 containerRef.current.releasePointerCapture(drag.pointerId);
@@ -176,7 +236,7 @@ export function TreeView({
       const dragArmTimer = holdDrag
         ? setTimeout(() => {
             const drag = dragRef.current;
-            if (!drag || drag.moved) return;
+            if (!drag || drag.moved || extraPointerRef.current) return;
             drag.canDrag = true;
             try {
               containerRef.current?.setPointerCapture?.(drag.pointerId);
@@ -193,6 +253,7 @@ export function TreeView({
         armed: false,
         canDrag: canDragNow,
         moved: false,
+        swipeAdd: false,
         dragArmTimer,
         longPressTimer,
       };
@@ -209,14 +270,49 @@ export function TreeView({
 
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      const extra = extraPointerRef.current;
+      if (extra && extra.pointerId === event.pointerId) {
+        const extraMoved = Math.hypot(
+          event.clientX - extra.startX,
+          event.clientY - extra.startY,
+        );
+        if (extraMoved > CONTEXT_MENU_MOVE_TOLERANCE_PX) extra.moved = true;
+        return;
+      }
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
-      const moved = Math.hypot(
-        event.clientX - drag.startX,
-        event.clientY - drag.startY,
-      );
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      const moved = Math.hypot(dx, dy);
       if (moved <= CONTEXT_MENU_MOVE_TOLERANCE_PX) return;
       drag.moved = true;
+      const rect = containerRef.current?.getBoundingClientRect();
+      const inside =
+        !rect ||
+        rect.width === 0 ||
+        rect.height === 0 ||
+        (event.clientX >= rect.left &&
+          event.clientX <= rect.right &&
+          event.clientY >= rect.top &&
+          event.clientY <= rect.bottom);
+      if (inside && isTreeSwipeAdd(dx, dy) && !onExternalDrop) {
+        drag.swipeAdd = true;
+        drag.canDrag = false;
+        drag.armed = false;
+        if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
+        drag.longPressTimer = null;
+        if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
+        drag.dragArmTimer = null;
+        setDropTargetId(undefined);
+        return;
+      }
+      if (extraPointerRef.current) {
+        if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
+        drag.longPressTimer = null;
+        if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
+        drag.dragArmTimer = null;
+        return;
+      }
       if (!drag.canDrag) {
         if (drag.longPressTimer) clearTimeout(drag.longPressTimer);
         drag.longPressTimer = null;
@@ -242,12 +338,30 @@ export function TreeView({
 
   const onPointerUp = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      const extra = extraPointerRef.current;
       const drag = dragRef.current;
+      if (extra && extra.pointerId === event.pointerId) {
+        extraPointerRef.current = null;
+        if (drag && !extra.moved && !drag.moved && !drag.armed) {
+          onSelect?.(extra.nodeId, { range: true });
+          clearDrag();
+        }
+        return;
+      }
       if (!drag || drag.pointerId !== event.pointerId) {
         clearDrag();
         return;
       }
-      if (drag.armed && onReparent) {
+      if (extraPointerRef.current) {
+        if (!drag.moved && !extraPointerRef.current.moved && !drag.armed) {
+          onSelect?.(extraPointerRef.current.nodeId, { range: true });
+        }
+        clearDrag();
+        return;
+      }
+      if (drag.swipeAdd) {
+        onSelect?.(drag.nodeId, { additive: true });
+      } else if (drag.armed && onReparent) {
         const target = nodeIdAtClientY(event.clientY);
         if (target !== drag.nodeId) {
           onReparent(drag.nodeId, target);
@@ -264,7 +378,12 @@ export function TreeView({
           onExternalDrop(drag.nodeId, event.clientX, event.clientY);
         }
       } else if (!drag.armed && !drag.moved) {
-        onSelect?.(drag.nodeId);
+        const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+        if (additive) {
+          onSelect?.(drag.nodeId, { additive: true });
+        } else {
+          onSelect?.(drag.nodeId);
+        }
         const now = Date.now();
         const last = lastTapRef.current;
         if (last && last.id === drag.nodeId && now - last.at <= 350) {
@@ -295,7 +414,7 @@ export function TreeView({
         <div style={{ height: nodes.length * rowHeight, position: "relative" }}>
           {visible.map((node, index) => {
             const top = (firstIndex + index) * rowHeight;
-            const selected = node.id === selectedId;
+            const selected = selectedSet.has(node.id);
             return (
               <div
                 key={node.id}

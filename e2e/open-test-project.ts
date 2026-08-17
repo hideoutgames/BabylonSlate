@@ -1,12 +1,20 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Homepage → Create Project dialog (test-mode name TestProject) → editor chrome. */
+/** Homepage → Create Project dialog (test-mode name TestProject) → editor chrome.
+ *  If TestProject is already listed (shared OPFS), open it instead of Create.
+ */
 export async function openTestProject(
   page: Page,
   path = "/?test=1",
 ): Promise<void> {
   await page.goto(path);
   await expect(page.getByTestId("homepage")).toBeVisible();
+  const listed = page.getByTestId("open-listed-project-TestProject.babproject");
+  if ((await listed.count()) > 0) {
+    await listed.click();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    return;
+  }
   await page.getByTestId("create-project").click();
   await expect(page.getByTestId("create-project-dialog")).toBeVisible();
   await expect(page.getByTestId("create-project-name")).toHaveValue(
@@ -18,6 +26,21 @@ export async function openTestProject(
   );
   await page.getByTestId("create-project-submit").click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+}
+
+/** Submit Create when the name is free; otherwise dismiss and open the listed project. */
+export async function submitCreateOrOpenListed(
+  page: Page,
+  listedName = "TestProject.babproject",
+): Promise<void> {
+  const submit = page.getByTestId("create-project-submit");
+  if (await submit.isEnabled()) {
+    await submit.click();
+    return;
+  }
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("create-project-dialog")).toHaveCount(0);
+  await page.getByTestId(`open-listed-project-${listedName}`).click();
 }
 
 export async function openContentBrowser(page: Page): Promise<void> {

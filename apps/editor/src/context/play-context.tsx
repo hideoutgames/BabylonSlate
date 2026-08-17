@@ -15,6 +15,7 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   isErr,
+  resolveGameInstanceClass,
 } from "@babylonslate/core";
 import { createAppEngine, type FontAssetEntry } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
@@ -926,7 +927,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             physics={playPhysics}
             sceneAssetGuid={playScene?.sceneAssetGuid}
             scene={playScene?.scene}
-            gameInstanceClass={playScene?.scene.settings.gameInstanceClass ?? undefined}
+            gameInstanceClass={resolveGameInstanceClass(
+              projectDocument?.settings,
+              playScene?.scene,
+            )}
             scenes={playSceneLibrary}
             uiLibrary={playUiLibrary}
             fontEntries={playFontEntries}
