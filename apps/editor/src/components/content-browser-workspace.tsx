@@ -2127,8 +2127,6 @@ export function ContentBrowserWorkspace() {
         </DialogContent>
       </Dialog>
 
-      </AlertDialog>
-
       <AssetPicker
         open={retargetPickerOpen}
         onOpenChange={setRetargetPickerOpen}
