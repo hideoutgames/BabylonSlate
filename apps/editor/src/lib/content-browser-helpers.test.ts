@@ -47,6 +47,8 @@ import {
   materialHeaderMeta,
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
+  isParticleMaterialAsset,
+  isParticleMaterialForPicker,
   classIdFromClassAsset,
   classParentLookup,
   addSelectedAssetGuid,
@@ -1074,6 +1076,12 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("SoundAttenuation", "Near")).toBe(
       "Near.atten.babasset",
     );
+    expect(newAssetFileName("ParticleEmitter", "Sparks")).toBe(
+      "Sparks.emitter.babasset",
+    );
+    expect(newAssetFileName("ParticleSystem", "Fire")).toBe(
+      "Fire.particles.babasset",
+    );
     expect(newAssetFileName("Scene", "")).toBe("");
     expect(newAssetFileName("Scene", "   ")).toBe("");
     expect(isNewAssetNameTaken(["assets/NewAsset.scene.babasset"], "assets", "Scene", "")).toBe(
@@ -1195,6 +1203,35 @@ describe("content-browser-helpers", () => {
     });
   });
 
+  it("seeds Particle Emitter and Particle System New Asset documents", () => {
+    const emitter = buildNewAssetResult({
+      type: "ParticleEmitter",
+      name: "Sparks",
+      guid: "em-1",
+      parentClass: null,
+    });
+    expect(emitter.type).toBe("ParticleEmitter");
+    expect(emitter.payload).toMatchObject({
+      textureGuid: null,
+      materialGuid: null,
+      capacity: 256,
+      emitRate: 30,
+      blendMode: "additive",
+    });
+    const system = buildNewAssetResult({
+      type: "ParticleSystem",
+      name: "Fire",
+      guid: "ps-1",
+      parentClass: null,
+    });
+    expect(system.type).toBe("ParticleSystem");
+    expect(system.payload).toMatchObject({
+      emitterGuids: [],
+      space: "world",
+      looping: true,
+    });
+  });
+
   it("lists only authored types in New Asset", () => {
     expect([...CREATABLE_ASSET_TYPES]).toEqual([
       "Scene",
@@ -1216,6 +1253,8 @@ describe("content-browser-helpers", () => {
       "AudioMixer",
       "AudioChannel",
       "SoundAttenuation",
+      "ParticleEmitter",
+      "ParticleSystem",
     ]);
   });
 
@@ -1233,6 +1272,8 @@ describe("content-browser-helpers", () => {
     expect(creatableAssetTypeLabel("AudioMixer")).toBe("Audio Mixer");
     expect(creatableAssetTypeLabel("AudioChannel")).toBe("Audio Channel");
     expect(creatableAssetTypeLabel("SoundAttenuation")).toBe("Sound Attenuation");
+    expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Particle Emitter");
+    expect(creatableAssetTypeLabel("ParticleSystem")).toBe("Particle System");
   });
 
   it("groups every creatable type once", () => {
@@ -1261,6 +1302,15 @@ describe("content-browser-helpers", () => {
       "AudioMixer",
       "AudioChannel",
       "SoundAttenuation",
+    ]);
+    const rendering = CREATABLE_ASSET_TYPE_GROUPS.find(
+      (group) => group.id === "rendering",
+    );
+    expect([...rendering!.types]).toEqual([
+      "Material",
+      "MaterialFunction",
+      "ParticleEmitter",
+      "ParticleSystem",
     ]);
     expect(audio!.hint).toMatch(/Import/i);
     expect(audio!.hint).toMatch(/WAV/);
@@ -1632,11 +1682,25 @@ describe("content-browser-helpers", () => {
         ],
       }),
     ).toEqual(["tex-a", "tex-b"]);
+    expect(
+      assetHeaderDependencies("ParticleEmitter", {
+        textureGuid: "tex-p",
+        materialGuid: "mat-p",
+      }),
+    ).toEqual(["mat-p", "tex-p"]);
+    expect(
+      assetHeaderDependencies("ParticleSystem", {
+        emitterGuids: ["em-b", "em-a", "em-b"],
+      }),
+    ).toEqual(["em-a", "em-b"]);
   });
 
   it("stores Material domain on the scanned header", () => {
     expect(materialHeaderMeta("Material", { domain: "postProcess" })).toEqual({
       domain: "postProcess",
+    });
+    expect(materialHeaderMeta("Material", { domain: "particle" })).toEqual({
+      domain: "particle",
     });
     expect(materialHeaderMeta("Material", {})).toEqual({ domain: "surface" });
     expect(materialHeaderMeta("Class", { domain: "postProcess" })).toBeUndefined();
@@ -1675,6 +1739,46 @@ describe("content-browser-helpers", () => {
       ]),
     ).toBe(true);
     expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
+  });
+
+  it("recognizes particle-domain Materials from header payload", () => {
+    expect(
+      isParticleMaterialAsset(
+        asset({
+          type: "Material",
+          payload: { domain: "particle" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isParticleMaterialAsset(
+        asset({ type: "Material", payload: { domain: "surface" } }),
+      ),
+    ).toBe(false);
+    expect(
+      isParticleMaterialAsset(
+        asset({ type: "Material", payload: { domain: "postProcess" } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("prefers an open particle Material document domain over a stale header", () => {
+    const sparks = asset({
+      type: "Material",
+      path: "assets/Sparks.material.babasset",
+      guid: "mat-sparks",
+      name: "Sparks",
+      payload: { domain: "surface" },
+    });
+    expect(
+      isParticleMaterialForPicker(sparks, [
+        {
+          ref: { kind: "material", path: "assets/Sparks.material.babasset" },
+          content: { domain: "particle" },
+        },
+      ]),
+    ).toBe(true);
+    expect(isParticleMaterialForPicker(sparks, [])).toBe(false);
   });
 
   it("lists selected folders and assets for Delete confirm, not flattened contents", () => {

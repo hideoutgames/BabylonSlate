@@ -9,7 +9,12 @@ import {
 } from "@babylonjs/core";
 import type { SerializedActor } from "@babylonslate/core";
 
-export const EDITOR_BILLBOARD_ICONS = ["light", "camera", "audio"] as const;
+export const EDITOR_BILLBOARD_ICONS = [
+  "light",
+  "camera",
+  "audio",
+  "particle",
+] as const;
 export type EditorBillboardIcon = (typeof EDITOR_BILLBOARD_ICONS)[number];
 
 const BILLBOARD_KIND_PREFIX = "billboard:";
@@ -28,8 +33,9 @@ export function parseEditorBillboardIcon(
 ): EditorBillboardIcon | null {
   if (!kind?.startsWith(BILLBOARD_KIND_PREFIX)) return null;
   const icon = kind.slice(BILLBOARD_KIND_PREFIX.length);
-  if (icon === "light" || icon === "camera" || icon === "audio") return icon;
-  return null;
+  return EDITOR_BILLBOARD_ICONS.includes(icon as EditorBillboardIcon)
+    ? (icon as EditorBillboardIcon)
+    : null;
 }
 
 /** Camera-facing unlit icon quad for location-only editor helpers. */
@@ -62,7 +68,14 @@ export function applyEditorBillboardFromActor(
 ): void {
   const icon = (mesh.metadata as { editorBillboard?: string } | null)
     ?.editorBillboard;
-  if (icon !== "light" && icon !== "camera" && icon !== "audio") return;
+  if (
+    icon !== "light" &&
+    icon !== "camera" &&
+    icon !== "audio" &&
+    icon !== "particle"
+  ) {
+    return;
+  }
   const material = mesh.material;
   if (!(material instanceof StandardMaterial)) return;
   if (icon !== "light") {
@@ -114,6 +127,7 @@ function rasterizeIcon(icon: EditorBillboardIcon): Uint8Array {
   const data = new Uint8Array(ICON_SIZE * ICON_SIZE * 4);
   if (icon === "light") drawLight(data);
   else if (icon === "camera") drawCamera(data);
+  else if (icon === "particle") drawParticle(data);
   else drawAudio(data);
   return data;
 }
@@ -184,6 +198,16 @@ function drawAudio(data: Uint8Array): void {
   }
   strokeArc(data, 16, 16, 10, 11);
   strokeArc(data, 16, 16, 13, 14);
+}
+
+function drawParticle(data: Uint8Array): void {
+  fillCircle(data, 16, 16, 4);
+  fillCircle(data, 8, 8, 2);
+  fillCircle(data, 24, 8, 2);
+  fillCircle(data, 8, 24, 2);
+  fillCircle(data, 24, 24, 2);
+  fillRect(data, 15, 5, 17, 27);
+  fillRect(data, 5, 15, 27, 17);
 }
 
 function strokeArc(

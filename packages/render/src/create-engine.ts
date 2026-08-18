@@ -82,6 +82,8 @@ import {
 } from "./post-process-material";
 import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
+import type { ParticleLibrary } from "./particle-service";
+import { ParticleService } from "./particle-service";
 import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
@@ -145,6 +147,8 @@ export interface EngineHandle {
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */
   resetAudioSession: () => void;
+  /** Dispose live particle systems (scene change / Play stop). GPU stop still draws leftovers. */
+  resetParticleSession: () => void;
 }
 
 export interface CreateEngineOptions {
@@ -219,6 +223,8 @@ export interface CreateEngineOptions {
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   /** Mixer / channel / attenuation / Audio payloads for gain routing. */
   audioLibrary?: AudioLibrary;
+  /** Particle Emitter / Particle System payloads for Play. */
+  particleLibrary?: ParticleLibrary;
   /** Scene `audioReverb` chunk; dry when missing. */
   audioReverbBytes?: Uint8Array | null;
   /** Project Settings Audio (occlusion master and reverb scales). */
@@ -232,6 +238,11 @@ export interface CreateEngineOptions {
     >
   >;
   onAudioDiagnostic?: (diagnostic: {
+    code: string;
+    message: string;
+    assetGuid?: string;
+  }) => void;
+  onParticleDiagnostic?: (diagnostic: {
     code: string;
     message: string;
     assetGuid?: string;
@@ -464,6 +475,29 @@ export function createEngine(
     if (materialUnavailable(acquired)) return null;
     return acquired.material;
   };
+
+  const particleService = options.playMode
+    ? new ParticleService({
+        scene,
+        resolveTexture: (guid) => {
+          const bytes = binding.textureBytes?.get(guid);
+          if (!bytes) return null;
+          const texture = resourceCache.getTexture(guid, engine, bytes);
+          return texture instanceof Texture ? texture : null;
+        },
+        resolveMaterial: (guid) => {
+          const live = binding.resolveMaterial?.(guid);
+          return live && "createEffectForParticles" in live
+            ? (live as import("@babylonjs/core").NodeMaterial)
+            : null;
+        },
+        resolveEmitter: (slotId) => binding.meshes.get(slotId) ?? null,
+        onDiagnostic: options.onParticleDiagnostic,
+      })
+    : null;
+  if (particleService && options.particleLibrary) {
+    particleService.setLibrary(options.particleLibrary);
+  }
 
   let postProcessingEnabled = options.postProcessingEnabled !== false;
   let postProcessStack = normalizePostProcessStack(
@@ -869,6 +903,7 @@ export function createEngine(
       attachedStack = null;
       materialLibrary.dispose();
       audioService?.dispose();
+      particleService?.dispose();
       scene.dispose();
       if (options.sharedEngine) {
         engine.unRegisterView(canvas);
@@ -895,10 +930,15 @@ export function createEngine(
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
       }
       audioService?.handleCommand(command);
+      particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
         const previousCamera = scene.activeCamera;
         applyAssignMesh(scene, binding, command);
         rebuildIfActiveCameraChanged(previousCamera);
+        particleService?.bindSlot(
+          command.slotId,
+          binding.meshes.get(command.slotId) ?? null,
+        );
         const pending = binding.pendingAnimState?.get(command.slotId);
         if (pending) {
           applyAnimStateToScene(
@@ -1076,6 +1116,9 @@ export function createEngine(
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {
       audioService?.resetSession();
+    },
+    resetParticleSession: () => {
+      particleService?.resetSession();
     },
   };
 }

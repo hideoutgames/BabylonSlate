@@ -199,6 +199,41 @@ export function createDefaultMaterialDocument(
   name = "Material",
   domain: MaterialDomain = "surface",
 ): MaterialDocument {
+  if (domain === "particle") {
+    return {
+      schemaVersion: MATERIAL_SCHEMA_VERSION,
+      name,
+      domain,
+      shadingModel: "unlit",
+      blendMode: "additive",
+      twoSided: false,
+      alphaCutoff: 0.5,
+      preview: { mesh: "cube", customMeshGuid: null },
+      nodes: [
+        {
+          id: "particleColor",
+          type: "input.particleColor",
+          position: { x: 0, y: 0 },
+          properties: {},
+        },
+        {
+          id: "output",
+          type: "output.particle",
+          position: { x: 300, y: 0 },
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e-color-output",
+          sourceNodeId: "particleColor",
+          sourcePinId: "color",
+          targetNodeId: "output",
+          targetPinId: "color",
+        },
+      ],
+    };
+  }
   const nodes: MaterialGraphNode[] =
     domain === "surface"
       ? [
@@ -310,7 +345,9 @@ export function normalizeMaterialDocument(
 ): MaterialDocument {
   const record = asRecord(value);
   const domain: MaterialDomain =
-    record.domain === "postProcess" ? "postProcess" : "surface";
+    record.domain === "postProcess" || record.domain === "particle"
+      ? record.domain
+      : "surface";
   return {
     schemaVersion: asNumber(record.schemaVersion, MATERIAL_SCHEMA_VERSION),
     name: asString(record.name, fallbackName),

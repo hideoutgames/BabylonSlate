@@ -76,6 +76,8 @@ const JSON_TYPES = new Set([
   "SpriteAnimation",
   "Tilemap",
   "Tileset",
+  "ParticleEmitter",
+  "ParticleSystem",
 ]);
 
 function scenePackName(sceneGuid: string): string {

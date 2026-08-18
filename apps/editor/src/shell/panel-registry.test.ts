@@ -26,4 +26,11 @@ describe("panelComponents", () => {
     expect(panelComponents["audio-channel-details"]).toBeTypeOf("function");
     expect(panelComponents["sound-attenuation-details"]).toBeTypeOf("function");
   });
+
+  it("registers Particle Emitter and Particle System Preview and Details docks", () => {
+    expect(panelComponents["particle-emitter-preview"]).toBeTypeOf("function");
+    expect(panelComponents["particle-emitter-details"]).toBeTypeOf("function");
+    expect(panelComponents["particle-system-preview"]).toBeTypeOf("function");
+    expect(panelComponents["particle-system-details"]).toBeTypeOf("function");
+  });
 });

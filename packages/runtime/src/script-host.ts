@@ -101,6 +101,7 @@ export interface ScriptHostServices {
       voiceId?: string;
     },
   ): void;
+  setParticlePlaying?(actorGuid: string, playing: boolean): void;
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   setRenderResolution?(width: number, height: number): void;
@@ -223,6 +224,8 @@ export interface ScriptContext {
     offset?: number,
   ): void;
   playSound(asset: string, volume?: number): void;
+  playParticles(actor?: BObject | null): void;
+  stopParticles(actor?: BObject | null): void;
   setChannelVolume(channelGuid: string, volume: number): void;
   setGlobalVolume(volume: number): void;
   getWidget(widgetId: string): Widget | null;
@@ -729,6 +732,16 @@ export class ScriptHost {
         services.playSound?.(String(asset ?? ""), Number(volume ?? 1), {
           emitterActorGuid: self?.guid ?? null,
         });
+      },
+      playParticles: (actor) => {
+        const target = asActor(actor ?? self);
+        if (!target) return;
+        services.setParticlePlaying?.(target.guid, true);
+      },
+      stopParticles: (actor) => {
+        const target = asActor(actor ?? self);
+        if (!target) return;
+        services.setParticlePlaying?.(target.guid, false);
       },
       setChannelVolume: (channelGuid, volume) => {
         services.setChannelVolume?.(

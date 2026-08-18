@@ -29,6 +29,7 @@ import {
   createEngine,
   type AudioLibrary,
   type EngineHandle,
+  type ParticleLibrary,
   type PlayActorPosition,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
@@ -408,6 +409,7 @@ export function startPlaySession(options: {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: AudioLibrary;
+  particleLibrary?: ParticleLibrary;
   /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
   audioReverbBytes?: Uint8Array | null;
   audioProjectSettings?: Partial<
@@ -463,6 +465,7 @@ export function startPlaySession(options: {
     modelBytes: options.modelBytes,
     audioBytes: options.audioBytes,
     audioLibrary: options.audioLibrary,
+    particleLibrary: options.particleLibrary,
     audioReverbBytes: options.audioReverbBytes,
     audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
@@ -478,6 +481,9 @@ export function startPlaySession(options: {
       options.onLog?.(diagnostic.message, "warning");
     },
     onAudioDiagnostic: (diagnostic) => {
+      options.onLog?.(diagnostic.message, "warning");
+    },
+    onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
     },
   });
@@ -536,7 +542,9 @@ export function startPlaySession(options: {
       command.type === "playSound" ||
       command.type === "stopSound" ||
       command.type === "setChannelVolume" ||
-      command.type === "setGlobalVolume"
+      command.type === "setGlobalVolume" ||
+      command.type === "assignParticle" ||
+      command.type === "setParticlePlaying"
     ) {
       handle.applyCommand(command);
     }
@@ -553,6 +561,7 @@ export function startPlaySession(options: {
         handle.loadScene(scene);
         handle.applySceneEnvironment(scene);
         handle.resetAudioSession();
+        handle.resetParticleSession();
       }
     }
     if (command.type === "log") {

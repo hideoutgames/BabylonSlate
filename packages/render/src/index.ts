@@ -48,3 +48,6 @@ export * from "./audio-buffer-cache";
 export * from "./audio-playback-backend";
 export * from "./audio-service";
 export { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
+export * from "./particle-service";
+export * from "./particle-system-factory";
+export * from "./particle-preview";

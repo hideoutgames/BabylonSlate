@@ -156,6 +156,25 @@ describe("listDockWindows", () => {
       "sprite-animation-preview",
       "sprite-animation-details",
     ]);
+    expect(listDockWindows("particle-emitter").map((entry) => entry.id)).toEqual([
+      "particle-emitter-preview",
+      "particle-emitter-details",
+    ]);
+    expect(listDockWindows("particle-system").map((entry) => entry.id)).toEqual([
+      "particle-system-preview",
+      "particle-system-details",
+    ]);
+    expect(
+      listDockWindows("particle-emitter").find(
+        (entry) => entry.id === "particle-emitter-details",
+      )?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "particle-emitter-preview",
+      direction: "right",
+      initialWidth: 280,
+    });
+    expect(primaryDockPanel("particle-emitter")).toBe("particle-emitter-preview");
+    expect(primaryDockPanel("particle-system")).toBe("particle-system-preview");
     expect(
       listDockWindows("sprite-animation").find(
         (entry) => entry.id === "sprite-animation-details",
@@ -291,6 +310,8 @@ describe("listDockWindows", () => {
       "audio-mixer",
       "audio-channel",
       "sound-attenuation",
+      "particle-emitter",
+      "particle-system",
     ] as const) {
       expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
         false,
