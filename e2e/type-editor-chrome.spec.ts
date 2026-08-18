@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import path from "node:path";
 import { openMainScene, openTestProject } from "./open-test-project";
 
 async function showContentBrowser(page: Page): Promise<void> {
@@ -274,6 +275,42 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(child).toHaveAttribute("data-depth", "1");
     await dragTreeRow(page, id, "prefab-mesh");
     await expect(child).toHaveAttribute("data-depth", "2");
+  });
+
+  test("Add Component binds a project Model onto MeshComponent", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await showContentBrowser(page);
+    const heroTile = page.locator('[data-asset-path="assets/hero.babasset"]');
+    if ((await heroTile.count()) === 0) {
+      await page
+        .getByTestId("content-browser-import-input")
+        .setInputFiles([path.join(process.cwd(), "e2e/fixtures/hero.glb")]);
+      await expect(heroTile).toBeVisible({ timeout: 15_000 });
+    }
+    await page
+      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("prefab-add-component").click();
+    await page
+      .getByTestId("prefab-add-component-catalog-search")
+      .fill("hero");
+    await page
+      .locator('[data-testid^="prefab-add-component-catalog-item-asset-"]')
+      .click();
+    await expect(page.getByTestId("prefab-add-component-catalog")).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByTestId("prefab-tree").getByText("Mesh (hero)"),
+    ).toBeVisible();
+    await expect(page.getByTestId("inspector-prefab-component")).toContainText(
+      "hero",
+    );
   });
 
   test("selecting a prefab component shows Position Rotation and Scale", async ({
