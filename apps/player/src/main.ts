@@ -1,7 +1,7 @@
 import type { GameManifest } from "@babylonslate/exporter";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayer } from "./boot";
-import { mountPlayerHud, unlockAudioOnFirstGesture } from "./hud";
+import { mountPlayerHud } from "./hud";
 import { applyPlayerLayout } from "./layout";
 import { registerPackedFonts } from "./fonts";
 import {
@@ -140,8 +140,6 @@ function previewMode(): boolean {
   const params = new URLSearchParams(window.location.search);
   return params.get("preview") === "1";
 }
-
-unlockAudioOnFirstGesture();
 
 function bootFailure(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);

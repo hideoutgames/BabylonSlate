@@ -7,6 +7,11 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "possessCamera",
   "setShadowQuality",
   "animState",
+  "spawn",
+  "playSound",
+  "stopSound",
+  "setChannelVolume",
+  "setGlobalVolume",
 ]);
 
 export function applyPlayerEngineCommand(
@@ -24,6 +29,7 @@ export function applyPlayerActiveScene(
   handle: {
     loadScene: (scene: SerializedScene) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
+    resetAudioSession?: () => void;
   },
   scenes: ReadonlyMap<string, SerializedScene>,
   command: { type: string; sceneAssetGuid?: unknown },
@@ -35,5 +41,6 @@ export function applyPlayerActiveScene(
   if (!scene) return false;
   handle.loadScene(scene);
   handle.applySceneEnvironment(scene);
+  handle.resetAudioSession?.();
   return true;
 }

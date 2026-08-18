@@ -50,11 +50,26 @@ describe("propertyFieldsForClassId", () => {
     ]);
   });
 
-  it("returns MoveTo destination and accept radius", () => {
-    expect(propertyFieldsForClassId("bt.task.moveTo").map((row) => row.id)).toEqual([
-      "destination",
-      "acceptRadius",
+  it("returns Play Sound audio picker and volume", () => {
+    expect(propertyFieldsForClassId("bt.task.playSound")).toEqual([
+      expect.objectContaining({
+        id: "audioAssetGuid",
+        kind: "asset",
+        key: "audioAssetGuid",
+        assetType: "Audio",
+      }),
+      expect.objectContaining({
+        id: "volume",
+        kind: "number",
+        key: "volume",
+        min: 0,
+        max: 1,
+      }),
     ]);
+    expect(defaultPropertiesForClassId("bt.task.playSound")).toEqual({
+      audioAssetGuid: "",
+      volume: 1,
+    });
   });
 
   it("returns Loop / Cooldown / TimeLimit and compare fields", () => {

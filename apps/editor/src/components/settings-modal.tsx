@@ -97,6 +97,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords: "default font fallback family stack",
   },
   {
+    id: "audio",
+    label: "Audio",
+    keywords: "mixer channel volume attenuation",
+  },
+  {
     id: "rendering",
     label: "Rendering",
     keywords:
@@ -130,7 +135,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Project", ids: ["general", "input", "twoD", "fonts", "rendering", "textures", "plugins", "export", "sourceControl"] },
+  { label: "Project", ids: ["general", "input", "twoD", "fonts", "audio", "rendering", "textures", "plugins", "export", "sourceControl"] },
   { label: "Session", ids: ["project"] },
 ];
 
@@ -249,6 +254,7 @@ export function SettingsModal({
   const [search, setSearch] = useState("");
   const [tokenDraft, setTokenDraft] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
+  const [mixerPickerOpen, setMixerPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
   const [gameInstancePickerOpen, setGameInstancePickerOpen] = useState(false);
   const [exportGameError, setExportGameError] = useState<string | null>(null);
@@ -703,6 +709,48 @@ export function SettingsModal({
               <FieldDescription>
                 Generic CSS family appended to every compiled stack (never silent
                 Arial).
+              </FieldDescription>
+            </Field>
+          </FieldSet>
+        </FieldGroup>
+      ) : null}
+
+      {showProjectBody && projectDocument && activeCategoryId === "audio" ? (
+        <FieldGroup>
+          <FieldSet>
+            <FieldLegend>Audio</FieldLegend>
+            <Field>
+              <FieldLabel>Audio Mixer</FieldLabel>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                onClick={() => setMixerPickerOpen(true)}
+                data-testid="settings-audio-mixer"
+              >
+                {selectedPickerIdentity(
+                  assetRowIdentity(
+                    (() => {
+                      const asset = assetRegistry
+                        ?.list()
+                        .find(
+                          (entry) =>
+                            entry.header.guid ===
+                            projectDocument.settings.audio.audioMixerGuid,
+                        );
+                      return asset
+                        ? {
+                            name: asset.header.name,
+                            type: asset.header.type,
+                          }
+                        : undefined;
+                    })(),
+                  ),
+                )}
+              </Button>
+              <FieldDescription>
+                Optional mixer for Play and export. None plays Audio without
+                channel or global gain.
               </FieldDescription>
             </Field>
           </FieldSet>
@@ -1261,6 +1309,34 @@ export function SettingsModal({
             setFontPickerOpen(false);
           }}
           data-testid="settings-default-font-picker"
+        />
+      ) : null}
+      {scope === "project" ? (
+        <AssetPicker
+          open={mixerPickerOpen}
+          onOpenChange={setMixerPickerOpen}
+          assets={(assetRegistry?.list() ?? [])
+            .filter((asset) => asset.header.type === "AudioMixer")
+            .map((asset) => ({
+              guid: asset.header.guid,
+              name: asset.header.name,
+              type: asset.header.type,
+              path: asset.path,
+            }))}
+          allowedTypes={["AudioMixer"]}
+          title="Pick Audio Mixer"
+          allowNone
+          onPick={(guid) => {
+            if (!projectDocument) return;
+            updateProjectSettings({
+              audio: {
+                ...projectDocument.settings.audio,
+                audioMixerGuid: guid,
+              },
+            });
+            setMixerPickerOpen(false);
+          }}
+          data-testid="settings-audio-mixer-picker"
         />
       ) : null}
       {scope === "project" ? (

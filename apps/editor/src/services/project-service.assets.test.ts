@@ -12,6 +12,7 @@ import {
   encodeBabasset,
   readAssetDocumentHeader,
 } from "@babylonslate/assets";
+import { AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
@@ -275,6 +276,31 @@ describe("project documents as .babasset", () => {
     );
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
       again,
+    );
+  });
+
+  it("writes a Scene audioReverb extra chunk and keeps navmesh", async () => {
+    const { service } = await scaffolded();
+    const scene = (await service.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+    await service.writeSceneNavmeshChunk(
+      MAIN_SCENE_FILE,
+      new Uint8Array([1, 2]),
+      scene as unknown as Record<string, unknown>,
+    );
+    const field = new Uint8Array([9, 8, 7]);
+    await service.writeSceneAudioReverbChunk(
+      MAIN_SCENE_FILE,
+      field,
+      scene as unknown as Record<string, unknown>,
+    );
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(
+      field,
+    );
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
+      new Uint8Array([1, 2]),
     );
   });
 

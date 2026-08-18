@@ -39,3 +39,26 @@ describe("Scene schema version", () => {
     expect(loaded.payload.name).toBe("Legacy");
   });
 });
+
+describe("Audio schema versions", () => {
+  it("registers Audio mixer, channel, and attenuation at version 1", () => {
+    const registry = createDefaultMigrationRegistry();
+    expect(registry.currentVersion("Audio")).toBe(1);
+    expect(registry.currentVersion("AudioMixer")).toBe(1);
+    expect(registry.currentVersion("AudioChannel")).toBe(1);
+    expect(registry.currentVersion("SoundAttenuation")).toBe(1);
+  });
+
+  it("loads current AudioMixer payloads without a pending migration", () => {
+    const registry = createDefaultMigrationRegistry();
+    const loaded = loadPayloadWithMigration(registry, {
+      type: "AudioMixer",
+      version: 1,
+      payload: { globalVolume: 0.5, channels: [] },
+      path: "assets/Master.mixer.babasset",
+    });
+    expect(loaded.pending).toBeNull();
+    expect(loaded.version).toBe(1);
+    expect(loaded.payload.globalVolume).toBe(0.5);
+  });
+});

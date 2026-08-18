@@ -141,6 +141,8 @@ export interface RuntimeDriverOptions {
   infiniteLoopDetection?: boolean;
   /** Iterations in one tick that count as infinite when detection is on. */
   loopCount?: number;
+  /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */
+  audioAssetGuids?: readonly string[];
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
   animGraphs?: Readonly<Record<string, AnimGraphDocument>>;
   /** BehaviourTree documents keyed by asset guid (worker `loadBehaviourTrees`). */
@@ -318,6 +320,7 @@ class InProcessRuntime implements RuntimeDriver {
   private nav: NavigationBackend | null = null;
   private readonly navAgentByActor = new Map<string, string>();
   private readonly navYawByActor = new Map<string, number>();
+  private readonly audioAssetGuids = new Set<string>();
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -393,6 +396,11 @@ class InProcessRuntime implements RuntimeDriver {
     }
     if (options.tilesets) {
       this.tilesets = new Map(Object.entries(options.tilesets));
+    }
+    if (options.audioAssetGuids) {
+      for (const guid of options.audioAssetGuids) {
+        if (guid) this.audioAssetGuids.add(guid);
+      }
     }
     if (options.userInterfaces) {
       for (const [guid, widgets] of Object.entries(options.userInterfaces)) {
@@ -527,7 +535,9 @@ class InProcessRuntime implements RuntimeDriver {
         });
       },
       destroyActor: (actor) => {
-        if (actor) this.world.destroyActor(actor.guid);
+        if (!actor) return;
+        this.emitAudioStops(actor);
+        this.world.destroyActor(actor.guid);
       },
       addComponent: (actor, classId) => {
         const target = actor;
@@ -599,12 +609,28 @@ class InProcessRuntime implements RuntimeDriver {
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
-      playSound: (asset, volume) => {
+      playSound: (asset, volume, options) => {
         this.emit({
           type: "playSound",
           assetGuid: String(asset ?? ""),
           volume: Number(volume ?? 1),
           frameId: this.frameId,
+          emitterActorGuid: options?.emitterActorGuid ?? null,
+          loop: options?.loop,
+          voiceId: options?.voiceId,
+        });
+      },
+      setChannelVolume: (channelGuid, volume) => {
+        this.emit({
+          type: "setChannelVolume",
+          channelGuid: String(channelGuid ?? ""),
+          volume: Number(volume ?? 1),
+        });
+      },
+      setGlobalVolume: (volume) => {
+        this.emit({
+          type: "setGlobalVolume",
+          volume: Number(volume ?? 1),
         });
       },
       findPathTo: (from, to) => this.findNavPath(from, to),
@@ -807,6 +833,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.teardownAllUserInterfaces();
     for (const actor of [...this.world.getActors()]) {
       const slotId = this.slotByGuid.get(actor.guid);
+      this.emitAudioStops(actor);
       if (slotId !== undefined) {
         this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
         this.slotByGuid.delete(actor.guid);
@@ -1341,6 +1368,9 @@ class InProcessRuntime implements RuntimeDriver {
     if (builtinClassId(node.classId) === "bt.task.moveTo") {
       return this.tickMoveTo(actor, node, memory);
     }
+    if (builtinClassId(node.classId) === "bt.task.playSound") {
+      return this.tickPlaySound(actor, node);
+    }
     if (!this.scriptHost.hasClass(node.classId)) return "failure";
     const extras = {
       btFinish: (result: "success" | "failure") => {
@@ -1394,6 +1424,29 @@ class InProcessRuntime implements RuntimeDriver {
       position.z - target.z,
     );
     return distance <= accept ? "success" : "running";
+  }
+
+  private tickPlaySound(
+    actor: Actor,
+    node: { properties?: Record<string, unknown> },
+  ): BtResult {
+    const guid =
+      typeof node.properties?.audioAssetGuid === "string"
+        ? node.properties.audioAssetGuid.trim()
+        : "";
+    if (!guid || !this.audioAssetGuids.has(guid)) return "failure";
+    const volumeRaw = Number(node.properties?.volume ?? 1);
+    const volume = Number.isFinite(volumeRaw)
+      ? Math.min(1, Math.max(0, volumeRaw))
+      : 1;
+    this.emit({
+      type: "playSound",
+      assetGuid: guid,
+      volume,
+      frameId: this.frameId,
+      emitterActorGuid: actor.guid,
+    });
+    return "success";
   }
 
   private abortBtTask(
@@ -1684,7 +1737,37 @@ class InProcessRuntime implements RuntimeDriver {
   private realizeActor(actor: Actor): void {
     const slotId = this.assignSlot(actor);
     this.emitMeshAssignment(actor, slotId);
+    this.emitAudioComponents(actor);
     this.world.spawnActorNow(actor);
+  }
+
+  private emitAudioComponents(actor: Actor): void {
+    for (const component of actor.components) {
+      if (component.destroyed || component.classId !== "AudioComponent") continue;
+      const playOnStart = component.getVariable("playOnStart") !== false;
+      const assetGuid =
+        (typeof component.getVariable("audioAssetGuid") === "string"
+          ? component.getVariable("audioAssetGuid")
+          : null) ?? component.assetGuid;
+      if (!playOnStart || typeof assetGuid !== "string" || !assetGuid) continue;
+      const volume = Number(component.getVariable("volume") ?? 1);
+      this.emit({
+        type: "playSound",
+        assetGuid,
+        volume: Number.isFinite(volume) ? volume : 1,
+        frameId: this.frameId,
+        loop: component.getVariable("loop") === true,
+        voiceId: component.guid,
+        emitterActorGuid: actor.guid,
+      });
+    }
+  }
+
+  private emitAudioStops(actor: Actor): void {
+    for (const component of actor.components) {
+      if (component.classId !== "AudioComponent") continue;
+      this.emit({ type: "stopSound", voiceId: component.guid });
+    }
   }
 
   private emitMaterialAssignments(

@@ -544,6 +544,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     name: string;
     constraintClassId: string;
   } | null>(null);
+  const [assetPinPick, setAssetPinPick] = useState<{
+    pinId: string;
+    name: string;
+    assetType: string;
+  } | null>(null);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const indexed = (assetRegistry?.list() ?? []).find(
@@ -803,6 +808,17 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             ?.name ?? pinId;
         setClassPinPick({ pinId, name, constraintClassId });
       },
+      assetEntries: pickerAssets.map((asset) => ({
+        id: asset.guid,
+        name: asset.name,
+        type: asset.type,
+      })),
+      onPickAsset: (pinId, assetType) => {
+        const name =
+          pinsFromNodeData(selectedNode.data).find((pin) => pin.id === pinId)
+            ?.name ?? pinId;
+        setAssetPinPick({ pinId, name, assetType });
+      },
     },
   );
   const logRows = isLog
@@ -997,6 +1013,25 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           setClassPinPick(null);
         }}
         data-testid="inspector-class-picker"
+      />
+      <AssetPicker
+        open={assetPinPick !== null}
+        onOpenChange={(open) => {
+          if (!open) setAssetPinPick(null);
+        }}
+        assets={pickerAssets}
+        allowedTypes={assetPinPick ? [assetPinPick.assetType] : undefined}
+        allowNone
+        title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
+        onPick={(guid) => {
+          if (assetPinPick) {
+            updateNodeData({
+              [pinDefaultPropertyKey(assetPinPick.name)]: guid ?? "",
+            });
+          }
+          setAssetPinPick(null);
+        }}
+        data-testid="inspector-asset-picker"
       />
     </PanelFrame>
   );

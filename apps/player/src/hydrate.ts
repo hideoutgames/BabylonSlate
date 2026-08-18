@@ -1,7 +1,15 @@
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
+  normalizeAudioChannelPayload,
+  normalizeAudioMixerPayload,
+  normalizeAudioPayload,
+  normalizeSoundAttenuationPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  type AudioChannelPayload,
+  type AudioMixerPayload,
+  type AudioPayload,
+  type SoundAttenuationPayload,
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
@@ -24,6 +32,14 @@ import type { LoadedGame } from "./artifact";
 
 const decoder = new TextDecoder();
 
+export type PackedAudioLibrary = {
+  mixerGuid: string | null;
+  mixers: Map<string, AudioMixerPayload>;
+  channels: Map<string, AudioChannelPayload>;
+  audio: Map<string, AudioPayload>;
+  attenuations: Map<string, SoundAttenuationPayload>;
+};
+
 export type PackedGameContent = {
   spritePayloads: Map<string, SpritePayload>;
   tilemapPayloads: Map<string, TilemapPayload>;
@@ -33,11 +49,14 @@ export type PackedGameContent = {
   blackboards: Array<{ guid: string; document: unknown }>;
   navmeshBytes: Uint8Array | null;
   navmeshByScene: Map<string, Uint8Array>;
+  audioReverbBytes: Uint8Array | null;
+  audioReverbByScene: Map<string, Uint8Array>;
   materialDocuments: Map<string, MaterialDocument>;
   materialFunctions: Map<string, MaterialFunctionDocument>;
   postProcessStack: ScenePostProcessEntry[];
   pixelsPerUnit: number;
   pixelPerfect: boolean;
+  audioLibrary: PackedAudioLibrary;
   userInterfaces: Map<string, UserInterfaceDocument>;
 };
 
@@ -73,6 +92,10 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const blackboards: Array<{ guid: string; document: unknown }> = [];
   const materialDocuments = new Map<string, MaterialDocument>();
   const materialFunctions = new Map<string, MaterialFunctionDocument>();
+  const mixers = new Map<string, AudioMixerPayload>();
+  const channels = new Map<string, AudioChannelPayload>();
+  const audio = new Map<string, AudioPayload>(game.audioPayloads);
+  const attenuations = new Map<string, SoundAttenuationPayload>();
 
   for (const entry of game.manifest.assets ?? []) {
     const bytes = game.payloads.get(entry.guid);
@@ -121,12 +144,30 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
           entry.name ?? "Material Function",
         ),
       );
+      continue;
+    }
+    if (entry.type === "AudioMixer" && parsed) {
+      mixers.set(entry.guid, normalizeAudioMixerPayload(parsed));
+      continue;
+    }
+    if (entry.type === "AudioChannel" && parsed) {
+      channels.set(entry.guid, normalizeAudioChannelPayload(parsed));
+      continue;
+    }
+    if (entry.type === "SoundAttenuation" && parsed) {
+      attenuations.set(entry.guid, normalizeSoundAttenuationPayload(parsed));
+      continue;
+    }
+    if (entry.type === "Audio" && parsed && !audio.has(entry.guid)) {
+      audio.set(entry.guid, normalizeAudioPayload(parsed));
     }
   }
 
   const startup = game.manifest.startupSceneGuid;
   const navmeshByScene = new Map(game.navmeshBytes);
   const navmeshBytes = navmeshByScene.get(startup) ?? null;
+  const audioReverbByScene = new Map(game.audioReverbBytes);
+  const audioReverbBytes = audioReverbByScene.get(startup) ?? null;
   const startupScene = game.scenes.get(startup);
   const pixelsPerUnit =
     typeof game.manifest.pixelsPerUnit === "number" && game.manifest.pixelsPerUnit > 0
@@ -142,11 +183,20 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     blackboards,
     navmeshBytes,
     navmeshByScene,
+    audioReverbBytes,
+    audioReverbByScene,
     materialDocuments,
     materialFunctions,
     postProcessStack: startupScene?.settings.postProcessStack ?? [],
     pixelsPerUnit,
     pixelPerfect: game.manifest.pixelPerfect === true,
+    audioLibrary: {
+      mixerGuid: game.manifest.audioMixerGuid?.trim() || null,
+      mixers,
+      channels,
+      audio,
+      attenuations,
+    },
     userInterfaces: new Map(game.userInterfaces ?? []),
   };
 }

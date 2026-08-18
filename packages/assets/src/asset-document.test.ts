@@ -72,6 +72,36 @@ describe("asset documents", () => {
     );
   });
 
+  it("opens imported Audio with an empty header payload and no document chunk", async () => {
+    const source = new Uint8Array([1, 2, 3, 4]);
+    const bytes = await encodeBabasset({
+      header: {
+        guid: "audio-1",
+        type: "Audio",
+        name: "Beep",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: {},
+      },
+      chunks: [
+        {
+          id: "source",
+          kind: "audio",
+          mime: "audio/wav",
+          data: source,
+        },
+      ],
+    });
+    const decoded = await decodeAssetDocument(bytes);
+    expect(decoded.type).toBe("Audio");
+    expect(decoded.payload).toEqual({});
+    expect(decoded.guid).toBe("audio-1");
+  });
+
+
   it("opens imported assets that store payload in the header (no document chunk)", async () => {
     const bytes = await encodeBabasset({
       header: {

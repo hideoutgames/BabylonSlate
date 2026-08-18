@@ -1,10 +1,14 @@
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
+  audioAssetDependencies,
   createDefaultMigrationRegistry,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
+  createDefaultAudioMixerPayload,
+  createDefaultAudioChannelPayload,
+  createDefaultSoundAttenuationPayload,
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
@@ -197,6 +201,9 @@ export const CREATABLE_ASSET_TYPES = [
   "Structure",
   "ScriptInterface",
   "EditorUtilityInterface",
+  "AudioMixer",
+  "AudioChannel",
+  "SoundAttenuation",
 ] as const;
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
@@ -236,6 +243,11 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
     types: ["Material", "MaterialFunction"],
   },
   {
+    id: "audio",
+    label: "Audio",
+    types: ["AudioMixer", "AudioChannel", "SoundAttenuation"],
+  },
+  {
     id: "ai",
     label: "AI",
     types: ["BehaviourTree", "Blackboard"],
@@ -258,6 +270,9 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Structure: "A user-defined struct of typed fields.",
   ScriptInterface: "A contract of methods that classes can implement.",
   EditorUtilityInterface: "An editor-only Babylon GUI widget for Windows.",
+  AudioMixer: "Global and per-channel default volumes for Play.",
+  AudioChannel: "A routing bus with an optional parent and reverb send.",
+  SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
 };
 
 /** Title Case label for a creatable asset type (`User Interface`). */
@@ -1182,6 +1197,33 @@ export function buildNewAssetResult(options: {
     };
   }
 
+  if (type === "AudioMixer") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultAudioMixerPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "AudioChannel") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultAudioChannelPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "SoundAttenuation") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultSoundAttenuationPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
   const exhaustive: never = type;
   throw new Error(`Unsupported creatable asset type: ${String(exhaustive)}`);
 }
@@ -1199,6 +1241,9 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Tilemap: ".tilemap.babasset",
   BehaviourTree: ".bt.babasset",
   Blackboard: ".blackboard.babasset",
+  AudioMixer: ".mixer.babasset",
+  AudioChannel: ".channel.babasset",
+  SoundAttenuation: ".atten.babasset",
 };
 
 export function newAssetFileName(
@@ -1226,6 +1271,18 @@ export function materialAssetDependencies(
     return materialDependencies(normalizeMaterialFunctionDocument(payload)).all;
   }
   return [];
+}
+
+/** Header `dependencies[]` written on save for Show References, remap, and export. */
+export function assetHeaderDependencies(
+  assetType: string,
+  payload: Record<string, unknown>,
+): string[] {
+  const unique = new Set<string>([
+    ...materialAssetDependencies(assetType, payload),
+    ...audioAssetDependencies(assetType, payload),
+  ]);
+  return [...unique].sort();
 }
 
 /** Header payload fields Content Browser / pickers can read without loading the document. */

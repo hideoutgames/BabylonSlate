@@ -25,6 +25,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Animation graph](anim-graph.md) | Worker Animation Graph evaluator, Animation Object, transition rules |
 | [Behaviour tree](behaviour-tree.md) | Tree IR, blackboard, explicit-stack evaluator |
 | [Navigation](navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
+| [Audio](audio.md) | Mixer/channel/attenuation, AudioService, spatial, reverb bake |
 | [Shader graph](shader-graph.md) | Shader IR to NodeMaterial |
 | [Theming](theming.md) | UI color palette and semantic tokens |
 | [Components](components.md) | Reusable Editor UI primitives and composites |

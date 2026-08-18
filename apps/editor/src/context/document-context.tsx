@@ -100,6 +100,7 @@ import {
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
+import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -201,6 +202,7 @@ import {
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
 } from "../lib/play-content";
+import { playAudioLibraryFromAssets } from "../lib/play-audio";
 import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
   clearDocumentDirtyTrace,
@@ -322,6 +324,11 @@ interface DocumentContextValue {
     bytes: Uint8Array,
     payload: Record<string, unknown>,
   ) => Promise<void>;
+  writeSceneAudioReverbChunk: (
+    path: string,
+    bytes: Uint8Array,
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
   /** Persist project.json settings (Input, 2D units, textures, …). */
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   sourceControl: SourceControlService;
@@ -402,6 +409,11 @@ interface DocumentContextValue {
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, Uint8Array>>;
+  /** Audio source bytes and mixer/channel/attenuation library for Play. */
+  collectPlayAudio: () => Promise<{
+    bytes: Map<string, Uint8Array>;
+    library: import("../lib/play-audio").PlayAudioLibrary;
+  }>;
   /** Surface and post-process materials plus transitive Material Functions. */
   collectPlayMaterialLibrary: (
     scene?: SerializedScene | null,
@@ -1199,6 +1211,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       saveDebounceRef.current = null;
     }
     try {
+      await flushAudioReverbForSave();
       captureAllLayouts();
       const dirtyDocs = documentService.getDirtyDocuments();
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
@@ -1386,6 +1399,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       onPhase?: (phase: "Compiling" | "Writing Pack") => void;
     }) => {
       const list = projectService.registry?.list() ?? [];
+      await flushAudioReverbForSave();
       const loaded = await loadExportDocuments({
         assets: list,
         loadDocument: (kind, path) =>
@@ -1400,6 +1414,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return collectAndExportGame({
         startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
+        audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
         assets: assetsFromIndexed(list),
         plugins: projectService.plugins.map((plugin) => ({
           pluginGuid: plugin.pluginGuid,
@@ -1413,6 +1428,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
+        audioReverbByGuid: loaded.audioReverbByGuid,
         customResolution:
           projectDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap:
@@ -1622,6 +1638,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               ...current.settings.fonts,
               ...settings.fonts,
             },
+            audio: {
+              ...current.settings.audio,
+              ...settings.audio,
+            },
             sourceControl: {
               ...current.settings.sourceControl,
               ...settings.sourceControl,
@@ -1813,6 +1833,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const writeSceneNavmeshChunk = useCallback(
     (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
       projectService.writeSceneNavmeshChunk(path, bytes, payload),
+    [projectService],
+  );
+
+  const writeSceneAudioReverbChunk = useCallback(
+    (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
+      projectService.writeSceneAudioReverbChunk(path, bytes, payload),
     [projectService],
   );
 
@@ -2071,7 +2097,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "tileset"
         | "tilemap"
         | "material"
-        | "material-function",
+        | "material-function"
+        | "audio-mixer"
+        | "audio-channel"
+        | "sound-attenuation"
+        | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {
       const openDoc = documentService
@@ -2313,6 +2343,47 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [projectService],
   );
+
+  const collectPlayAudio = useCallback(async () => {
+    const assets = projectService.registry?.list() ?? [];
+    const audioAssets = assets.filter((asset) =>
+      ["Audio", "AudioMixer", "AudioChannel", "SoundAttenuation"].includes(
+        asset.header.type,
+      ),
+    );
+    const payloads: Array<{ guid: string; type: string; payload: unknown }> = [];
+    const bytes = new Map<string, Uint8Array>();
+    for (const asset of audioAssets) {
+      const kind =
+        asset.header.type === "AudioMixer"
+          ? "audio-mixer"
+          : asset.header.type === "AudioChannel"
+            ? "audio-channel"
+            : asset.header.type === "SoundAttenuation"
+              ? "sound-attenuation"
+              : "asset-settings";
+      const content =
+        (await loadPlayAssetContent(kind, asset.path)) ?? asset.header.payload;
+      payloads.push({
+        guid: asset.header.guid,
+        type: asset.header.type,
+        payload: content,
+      });
+      if (asset.header.type === "Audio") {
+        const source = await projectService.readAssetChunk(asset.path, "source");
+        if (source && source.byteLength > 0) {
+          bytes.set(asset.header.guid, source);
+        }
+      }
+    }
+    return {
+      bytes,
+      library: playAudioLibraryFromAssets({
+        mixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
+        assets: payloads,
+      }),
+    };
+  }, [loadPlayAssetContent, projectDocument, projectService]);
 
   const collectPlayMaterialLibrary = useCallback(
     async (
@@ -3252,6 +3323,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyAssetDocumentChange,
       readAssetChunk,
       writeSceneNavmeshChunk,
+      writeSceneAudioReverbChunk,
       updateProjectSettings,
       sourceControl: sourceControlRef.current,
       prefillSourceControlFromGit,
@@ -3337,6 +3409,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayAudio,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       loadGraphDocument,
@@ -3382,6 +3455,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayAudio,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       loadGraphDocument,
@@ -3426,6 +3500,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyAssetDocumentChange,
       readAssetChunk,
       writeSceneNavmeshChunk,
+      writeSceneAudioReverbChunk,
       updateProjectSettings,
       prefillSourceControlFromGit,
       sourceControlTick,

@@ -12,10 +12,17 @@ import {
   SCRIPTS_FILE,
   NAVMESH_EXPORT_TYPE,
   sceneGuidFromNavmeshExport,
+  AUDIO_REVERB_EXPORT_TYPE,
+  sceneGuidFromAudioReverbExport,
   type GameManifest,
   type PackSource,
 } from "@babylonslate/exporter";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import {
+  decodePackedAudioAsset,
+  normalizeAudioPayload,
+  type AudioPayload,
+} from "@babylonslate/assets";
 
 const decoder = new TextDecoder();
 
@@ -28,8 +35,10 @@ export type LoadedGame = {
   fontBytes: Map<string, Uint8Array>;
   fontFamilies: Map<string, string>;
   audioBytes: Map<string, Uint8Array>;
+  audioPayloads: Map<string, AudioPayload>;
   payloads: Map<string, Uint8Array>;
   navmeshBytes: Map<string, Uint8Array>;
+  audioReverbBytes: Map<string, Uint8Array>;
   userInterfaces: Map<string, UserInterfaceDocument>;
 };
 
@@ -83,8 +92,10 @@ export async function loadGameFromFiles(
   const fontBytes = new Map<string, Uint8Array>();
   const fontFamilies = new Map<string, string>();
   const audioBytes = new Map<string, Uint8Array>();
+  const audioPayloads = new Map<string, AudioPayload>();
   const payloads = new Map<string, Uint8Array>();
   const navmeshBytes = new Map<string, Uint8Array>();
+  const audioReverbBytes = new Map<string, Uint8Array>();
   const userInterfaces = new Map<string, UserInterfaceDocument>();
 
   const packSources = new Map<string, PackSource>();
@@ -117,7 +128,14 @@ export async function loadGameFromFiles(
       continue;
     }
     if (entry.type === "Audio") {
-      audioBytes.set(entry.guid, bytes);
+      const packed = decodePackedAudioAsset(bytes);
+      if (packed) {
+        audioBytes.set(entry.guid, packed.source);
+        audioPayloads.set(entry.guid, packed.payload);
+      } else {
+        audioBytes.set(entry.guid, bytes);
+        audioPayloads.set(entry.guid, normalizeAudioPayload({}));
+      }
       continue;
     }
     if (entry.type === NAVMESH_EXPORT_TYPE) {
@@ -125,8 +143,14 @@ export async function loadGameFromFiles(
       navmeshBytes.set(sceneGuid, bytes);
       continue;
     }
+    if (entry.type === AUDIO_REVERB_EXPORT_TYPE) {
+      const sceneGuid = sceneGuidFromAudioReverbExport(entry.guid) ?? entry.guid;
+      audioReverbBytes.set(sceneGuid, bytes);
+      continue;
+    }
     if (entry.type === "UserInterface") {
       userInterfaces.set(entry.guid, normalizeUserInterfaceDocument(parseJsonAsset(bytes)));
+      continue;
     }
   }
 
@@ -139,8 +163,10 @@ export async function loadGameFromFiles(
     fontBytes,
     fontFamilies,
     audioBytes,
+    audioPayloads,
     payloads,
     navmeshBytes,
+    audioReverbBytes,
     userInterfaces,
   };
 }

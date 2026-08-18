@@ -96,6 +96,8 @@ export type ControlMessage =
       includeDebugCommands?: boolean;
       infiniteLoopDetection?: boolean;
       loopCount?: number;
+      /** Audio asset guids in the Play library (BT PlaySound fail-on-missing). */
+      audioAssetGuids?: string[];
     }
   | {
       type: "loadScripts";
@@ -285,7 +287,13 @@ export type CommandMessage =
       assetGuid: string;
       volume: number;
       frameId: number;
+      emitterActorGuid?: string | null;
+      loop?: boolean;
+      voiceId?: string;
     }
+  | { type: "stopSound"; voiceId: string }
+  | { type: "setChannelVolume"; channelGuid: string; volume: number }
+  | { type: "setGlobalVolume"; volume: number }
   | {
       type: "setRenderResolution";
       width: number;

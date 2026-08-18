@@ -1482,7 +1482,49 @@ describe("script host runs compiled graphs", () => {
         type: "playSound",
         assetGuid: "jump.wav",
         volume: 0.5,
+        emitterActorGuid: expect.any(String),
       }),
+    ]);
+    runtime.stop();
+  });
+
+  it("emits setChannelVolume and setGlobalVolume from audio mixer nodes", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "channel", "audio.setChannelVolume", {
+          "default:channel": "ch-1",
+          "default:volume": 0.25,
+        }),
+        node(registry, "global", "audio.setGlobalVolume", {
+          "default:volume": 0.8,
+        }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "channel", "execIn"),
+        edge("e2", "channel", "execOut", "global", "execIn"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Mixer", "mixer-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Mixer" });
+    runtime.start();
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "setChannelVolume")).toEqual([
+      { type: "setChannelVolume", channelGuid: "ch-1", volume: 0.25 },
+    ]);
+    expect(commands.filter((command) => command.type === "setGlobalVolume")).toEqual([
+      { type: "setGlobalVolume", volume: 0.8 },
     ]);
     runtime.stop();
   });

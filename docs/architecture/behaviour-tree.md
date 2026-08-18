@@ -90,7 +90,7 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 ## Honest residuals
 
 - RotateToFace / PlayAnimation succeed without a host until **P18** (`p18-bt-task-hosts`).
-- PlaySound succeeds without a mixer until **P16 Audio** (`p16-audio-nodes-bt`).
+- **PlaySound** is hosted: success when the Audio guid is in the Play library, failure when missing (same `playSound` command as graphs). Mixer/channel setup is optional.
 - §18 patrol, live obstacle close, abort, compiled throw, and `.babtrace` BT replay are the headless harness. Compiled custom decorator On Evaluate (false gates Wait), On Abort, and service Set Blackboard live in `p11-acceptance.test.ts`. Editor e2e covers New Asset, add Wait + duration + keyed decorator + remove attachment, New Class parent `BTDecorator` (Events show On Evaluate, Add Decorator catalogs the class), bake, session-report `btNodeId` (Playwright Preview throw is test-mode `previewThrow` when a tree is attached), and `e2e/bt-editor.spec.ts` (free move, sibling X order, Auto Arrange, save/reopen, drag-off-handle add, Windows Blackboard + Compiler Results).
 - Undo is already via `applyAssetDocumentChange`.
 - Large-graph off-screen virtualisation is **P17** (`p17-graph-virtualize`) for every `GraphEditor` host, not a BT-only slice. Collapse-inactive-subtree / cap-auto-layout stay parked.

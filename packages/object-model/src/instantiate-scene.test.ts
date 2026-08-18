@@ -152,4 +152,26 @@ describe("createActorsFromSerializedScene", () => {
     expect(actors[0]!.components[0]!.assetGuid).toBe("tree-guid");
     expect(actors[0]!.components[0]!.getVariable("blackboardGuid")).toBe("bb-guid");
   });
+
+  it("copies audioAssetGuid onto AudioComponent assetGuid", () => {
+    const world = testWorld();
+    const actors = createActorsFromSerializedScene(world, {
+      name: "Audio",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      folders: [],
+      actors: [
+        createActor("speaker", "Speaker", {
+          components: [
+            {
+              id: "audio-1",
+              classId: "AudioComponent",
+              properties: { audioAssetGuid: "jump" },
+            },
+          ],
+        }),
+      ],
+    });
+    expect(actors[0]!.components[0]!.assetGuid).toBe("jump");
+  });
 });

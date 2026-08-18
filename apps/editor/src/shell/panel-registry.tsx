@@ -40,6 +40,11 @@ import {
 } from "../components/material-editor";
 import { EditorUtilityPanel } from "../panels/editor-utility-panel";
 import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
+import {
+  AudioChannelDetailsPanel,
+  AudioMixerDetailsPanel,
+  SoundAttenuationDetailsPanel,
+} from "../components/audio-asset-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -137,6 +142,15 @@ export const panelComponents = {
   ),
   "plugin-settings-details": (props: IDockviewPanelProps) => (
     <PluginSettingsDetailsPanel {...props} />
+  ),
+  "audio-mixer-details": (props: IDockviewPanelProps) => (
+    <AudioMixerDetailsPanel {...props} />
+  ),
+  "audio-channel-details": (props: IDockviewPanelProps) => (
+    <AudioChannelDetailsPanel {...props} />
+  ),
+  "sound-attenuation-details": (props: IDockviewPanelProps) => (
+    <SoundAttenuationDetailsPanel {...props} />
   ),
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />

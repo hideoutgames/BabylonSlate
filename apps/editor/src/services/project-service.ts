@@ -40,6 +40,7 @@ import {
   EncodeQueue,
   encodeAssetDocument,
   extraChunksFromDecoded,
+  extraChunksWithAudioReverb,
   exportProjectZip,
   isAssetDocumentPath,
   loadPayloadWithMigration,
@@ -76,7 +77,7 @@ import {
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
-  materialAssetDependencies,
+  assetHeaderDependencies,
   materialHeaderMeta,
 } from "../lib/content-browser-helpers";
 import {
@@ -1138,7 +1139,7 @@ export class ProjectService {
             ? (content as unknown as Record<string, unknown>)
             : undefined,
           headerMeta: headerMetaForSave(type, content),
-          dependencies: materialAssetDependencies(
+          dependencies: assetHeaderDependencies(
             type,
             content as unknown as Record<string, unknown>,
           ),
@@ -1192,6 +1193,36 @@ export class ProjectService {
     }
     const storage = this.storageForPath(path);
     const extra = extraChunksWithNavmesh(await this.extraChunksFor(path), bytes);
+    const existing = await this.readExistingAssetMeta(path);
+    const type = existing?.type ?? "Scene";
+    const encoded = await encodeAssetDocument(
+      {
+        type,
+        name: assetName(path),
+        guid: await this.guidForAsset(path),
+        version: this.migrations.currentVersion(type),
+        payload,
+      },
+      {
+        blobs: this.blobsForPath(path),
+        extraChunks: extra,
+        parentClass: existing?.parentClass ?? null,
+      },
+    );
+    await storage.writeBinary(path, encoded);
+  }
+
+  /** Persist baked `audioReverb` bytes as the Scene extra chunk. */
+  async writeSceneAudioReverbChunk(
+    path: string,
+    bytes: Uint8Array,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
+      throw new Error("Engine plugin assets are read-only");
+    }
+    const storage = this.storageForPath(path);
+    const extra = extraChunksWithAudioReverb(await this.extraChunksFor(path), bytes);
     const existing = await this.readExistingAssetMeta(path);
     const type = existing?.type ?? "Scene";
     const encoded = await encodeAssetDocument(

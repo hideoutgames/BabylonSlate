@@ -18,6 +18,8 @@ export type ExportClosureInput = {
   startupSceneGuid: string | null;
   /** Project Game Instance class id; packed even when scene settings omit it. */
   gameInstanceClass?: string | null;
+  /** Project AudioMixer guid; packed even when no scene actor references it. */
+  audioMixerGuid?: string | null;
   assets: readonly ExportIndexedAsset[];
   pluginEnabledGuids: ReadonlySet<string>;
   parentOf: (classId: string) => string | null | undefined;
@@ -49,6 +51,7 @@ export type GameAssetIndexEntry = {
 export type GameManifest = {
   startupSceneGuid: string;
   gameInstanceClass?: string;
+  audioMixerGuid?: string;
   bundleDebugger: boolean;
   mode: ExportMode;
   render: RenderProjectSettings;
@@ -70,6 +73,7 @@ export type ExportGameOptions = {
   bundleDebugger: boolean;
   startupSceneGuid: string;
   gameInstanceClass?: string | null;
+  audioMixerGuid?: string | null;
   customResolution: RenderProjectSettings;
   playFrameCap?: number;
   pixelsPerUnit?: number;

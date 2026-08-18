@@ -6,6 +6,7 @@ import {
 } from "@babylonslate/behaviour-tree";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
+  AUDIO_REVERB_CHUNK_ID,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
@@ -622,6 +623,15 @@ export async function readPlayNavmeshBytes(
 ): Promise<Uint8Array | null> {
   if (!path) return null;
   return readChunk(path, NAVMESH_CHUNK_ID);
+}
+
+/** Scene `audioReverb` extra chunk for Play import. Never generates. */
+export async function readPlayAudioReverbBytes(
+  path: string | undefined,
+  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+): Promise<Uint8Array | null> {
+  if (!path) return null;
+  return readChunk(path, AUDIO_REVERB_CHUNK_ID);
 }
 
 export function playTilesetPayloadsFromGuids(

@@ -3,7 +3,13 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { selectTextureChunk, type IndexedAsset } from "@babylonslate/assets";
+import {
+  AUDIO_REVERB_CHUNK_ID,
+  encodePackedAudioAsset,
+  normalizeAudioPayload,
+  selectTextureChunk,
+  type IndexedAsset,
+} from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
 const JSON_TYPES = new Set([
@@ -22,6 +28,9 @@ const JSON_TYPES = new Set([
   "Enum",
   "Structure",
   "ScriptInterface",
+  "AudioMixer",
+  "AudioChannel",
+  "SoundAttenuation",
 ]);
 
 const encoder = new TextEncoder();
@@ -38,6 +47,7 @@ export type LoadedExportDocuments = {
   payloadByGuid: (guid: string) => unknown | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
+  audioReverbByGuid: (guid: string) => Uint8Array | null;
 };
 
 async function bytesForAsset(
@@ -56,6 +66,14 @@ async function bytesForAsset(
       return null;
     }
   }
+  if (asset.header.type === "Audio") {
+    const source = await readAssetChunk(asset.path, "source");
+    if (!source || source.byteLength === 0) return null;
+    return encodePackedAudioAsset(
+      normalizeAudioPayload(document ?? asset.header.payload),
+      source,
+    );
+  }
   for (const chunk of asset.header.chunks) {
     if (chunk.id === "document") continue;
     const bytes = await readAssetChunk(asset.path, chunk.id);
@@ -72,10 +90,17 @@ export async function loadExportDocuments(
   const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
   const navmeshes = new Map<string, Uint8Array>();
+  const audioReverbs = new Map<string, Uint8Array>();
   for (const asset of loaders.assets) {
     const kind = documentKindForAssetType(asset.header.type);
     let document: unknown = null;
-    if (
+    if (asset.header.type === "Audio") {
+      try {
+        document = await loaders.loadDocument("asset-settings", asset.path);
+      } catch {
+        document = asset.header.payload;
+      }
+    } else if (
       kind &&
       kind !== "asset-settings" &&
       (JSON_TYPES.has(asset.header.type) ||
@@ -113,6 +138,17 @@ export async function loadExportDocuments(
       } catch {
         // Scene JSON still packs when the extra chunk is missing.
       }
+      try {
+        const field = await loaders.readAssetChunk(
+          asset.path,
+          AUDIO_REVERB_CHUNK_ID,
+        );
+        if (field && field.byteLength > 0) {
+          audioReverbs.set(asset.header.guid, field);
+        }
+      } catch {
+        // Scene JSON still packs when the extra chunk is missing.
+      }
     }
   }
   return {
@@ -121,5 +157,6 @@ export async function loadExportDocuments(
     payloadByGuid: (guid) => payloads.get(guid) ?? null,
     bytesByGuid: (guid) => bytes.get(guid) ?? null,
     navmeshByGuid: (guid) => navmeshes.get(guid) ?? null,
+    audioReverbByGuid: (guid) => audioReverbs.get(guid) ?? null,
   };
 }

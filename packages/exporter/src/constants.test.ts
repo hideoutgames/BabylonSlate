@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   NAVMESH_EXPORT_TYPE,
+  AUDIO_REVERB_EXPORT_TYPE,
   navmeshExportGuid,
+  audioReverbExportGuid,
   sceneGuidFromNavmeshExport,
+  sceneGuidFromAudioReverbExport,
 } from "./constants";
 
 describe("navmesh export ids", () => {
@@ -12,5 +15,15 @@ describe("navmesh export ids", () => {
     expect(guid).toBe("navmesh:scene-1");
     expect(sceneGuidFromNavmeshExport(guid)).toBe("scene-1");
     expect(sceneGuidFromNavmeshExport("scene-1")).toBeNull();
+  });
+});
+
+describe("audio reverb export ids", () => {
+  it("round-trips a scene guid through the sidecar prefix", () => {
+    expect(AUDIO_REVERB_EXPORT_TYPE).toBe("AudioReverb");
+    const guid = audioReverbExportGuid("scene-1");
+    expect(guid).toBe("audioReverb:scene-1");
+    expect(sceneGuidFromAudioReverbExport(guid)).toBe("scene-1");
+    expect(sceneGuidFromAudioReverbExport("scene-1")).toBeNull();
   });
 });

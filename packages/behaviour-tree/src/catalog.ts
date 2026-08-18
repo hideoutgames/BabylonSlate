@@ -16,7 +16,8 @@ export type BtPropertyFieldKind =
   | "enum"
   | "blackboardKey"
   | "boolean"
-  | "vector3";
+  | "vector3"
+  | "asset";
 
 export type BtPropertyField = {
   id: string;
@@ -25,6 +26,8 @@ export type BtPropertyField = {
   key: string;
   options?: Array<{ value: string; label: string }>;
   min?: number;
+  max?: number;
+  assetType?: string;
 };
 
 export const BT_COMPARE_OPS: Array<{ value: string; label: string }> = [
@@ -146,6 +149,13 @@ export function propertyFieldsForClassId(classId: string): BtPropertyField[] {
         field("destination", "Destination", "vector3", "destination"),
         field("acceptRadius", "Accept Radius", "number", "acceptRadius", { min: 0 }),
       ];
+    case "bt.task.playSound":
+      return [
+        field("audioAssetGuid", "Audio", "asset", "audioAssetGuid", {
+          assetType: "Audio",
+        }),
+        field("volume", "Volume", "number", "volume", { min: 0, max: 1 }),
+      ];
     case "bt.decorator.blackboardIsSet":
       return [field("key", "Key", "blackboardKey", "key")];
     case "bt.decorator.compareBlackboardValue":
@@ -173,6 +183,8 @@ export function defaultPropertiesForClassId(classId: string): Record<string, unk
       return { key: "", value: true };
     case "bt.task.moveTo":
       return { destination: { x: 0, y: 0, z: 0 }, acceptRadius: 0.5 };
+    case "bt.task.playSound":
+      return { audioAssetGuid: "", volume: 1 };
     case "bt.decorator.blackboardIsSet":
       return { key: "" };
     case "bt.decorator.compareBlackboardValue":

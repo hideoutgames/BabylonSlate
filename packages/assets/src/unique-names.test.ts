@@ -45,6 +45,9 @@ describe("asset file suffix helpers", () => {
     expect(stripAssetFileSuffix("ground.tileset.babasset")).toBe("ground");
     expect(stripAssetFileSuffix("overworld.tilemap.babasset")).toBe("overworld");
     expect(stripAssetFileSuffix("pack.plugin.babasset")).toBe("pack");
+    expect(stripAssetFileSuffix("master.mixer.babasset")).toBe("master");
+    expect(stripAssetFileSuffix("sfx.channel.babasset")).toBe("sfx");
+    expect(stripAssetFileSuffix("near.atten.babasset")).toBe("near");
     expect(stripAssetFileSuffix("tex.babasset")).toBe("tex");
     expect(stripAssetFileSuffix("Duplicate_1.babasset")).toBe("Duplicate_1");
   });
@@ -63,6 +66,9 @@ describe("asset file suffix helpers", () => {
       ".tilemap.babasset",
     );
     expect(assetFileSuffix("pack.plugin.babasset")).toBe(".plugin.babasset");
+    expect(assetFileSuffix("master.mixer.babasset")).toBe(".mixer.babasset");
+    expect(assetFileSuffix("sfx.channel.babasset")).toBe(".channel.babasset");
+    expect(assetFileSuffix("near.atten.babasset")).toBe(".atten.babasset");
     expect(assetFileSuffix("tex.babasset")).toBe(".babasset");
   });
 });

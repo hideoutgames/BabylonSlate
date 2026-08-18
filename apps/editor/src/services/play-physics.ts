@@ -139,6 +139,7 @@ export function playLoadControl(options: {
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
+  audioAssetGuids?: string[];
 }): Extract<ControlMessage, { type: "load" }> {
   const physics = playPhysicsFromSceneSettings({
     physicsWorld: options.physicsWorld,
@@ -156,6 +157,7 @@ export function playLoadControl(options: {
     scenes: options.scenes,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
+    audioAssetGuids: options.audioAssetGuids,
   };
 }
 

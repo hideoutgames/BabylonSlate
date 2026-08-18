@@ -21,9 +21,10 @@ import { createAppEngine, type FontAssetEntry } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
-import { PlayOverlay } from "../components/play-overlay";
+import { emptyPlayAudioLibrary, type PlayAudioLibrary } from "../lib/play-audio";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
+import { PlayOverlay } from "../components/play-overlay";
 import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
 import { PreviewBuildOverlay } from "../components/preview-build-overlay";
 import {
@@ -74,7 +75,7 @@ import type {
   PlayBehaviourTreeEntry,
   PlayBlackboardEntry,
 } from "../lib/play-content";
-import { readPlayNavmeshBytes } from "../lib/play-content";
+import { readPlayNavmeshBytes, readPlayAudioReverbBytes } from "../lib/play-content";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -230,6 +231,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
   );
+  const [playAudioBytes, setPlayAudioBytes] = useState<Map<string, Uint8Array>>(
+    () => new Map(),
+  );
+  const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
+    () => emptyPlayAudioLibrary(),
+  );
   const [playMaterialDocuments, setPlayMaterialDocuments] = useState<
     Map<string, MaterialDocument>
   >(() => new Map());
@@ -239,6 +246,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [postProcessingEnabled, setPostProcessingEnabled] = useState(true);
   const [hardwareScalingLevel, setHardwareScalingLevel] = useState(1);
   const [playNavmeshBytes, setPlayNavmeshBytes] = useState<Uint8Array | null>(
+    null,
+  );
+  const [playAudioReverbBytes, setPlayAudioReverbBytes] = useState<Uint8Array | null>(
     null,
   );
   const [playSceneLibrary, setPlaySceneLibrary] = useState<
@@ -254,6 +264,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
+    collectPlayAudio,
     collectPlayMaterialLibrary,
     collectPlaySceneLibrary,
     exportGameArtifact,
@@ -759,6 +770,17 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayModelBytes(new Map());
         }
         try {
+          const audio = await collectPlayAudio();
+          setPlayAudioBytes(audio.bytes);
+          setPlayAudioLibrary(audio.library);
+        } catch (error) {
+          appendLog(
+            `Audio load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayAudioBytes(new Map());
+          setPlayAudioLibrary(emptyPlayAudioLibrary());
+        }
+        try {
           setPlayNavmeshBytes(
             await readPlayNavmeshBytes(resolvedScene?.path, readAssetChunk),
           );
@@ -767,6 +789,16 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             `Navmesh load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlayNavmeshBytes(null);
+        }
+        try {
+          setPlayAudioReverbBytes(
+            await readPlayAudioReverbBytes(resolvedScene?.path, readAssetChunk),
+          );
+        } catch (error) {
+          appendLog(
+            `Audio reverb load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayAudioReverbBytes(null);
         }
 
         setPrepareState(null);
@@ -804,6 +836,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayAudio,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       diagnostics,
@@ -1003,11 +1036,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
             modelBytes={playModelBytes}
+            audioBytes={playAudioBytes}
+            audioLibrary={playAudioLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             navmeshBytes={playNavmeshBytes}
+            audioReverbBytes={playAudioReverbBytes}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }

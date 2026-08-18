@@ -15,6 +15,8 @@ export const SCRIPTS_FILE = "scripts.js";
 export const BOOT_PACK_FILE = "boot.babpack";
 export const NAVMESH_EXPORT_TYPE = "NavMesh";
 export const NAVMESH_EXPORT_GUID_PREFIX = "navmesh:";
+export const AUDIO_REVERB_EXPORT_TYPE = "AudioReverb";
+export const AUDIO_REVERB_EXPORT_GUID_PREFIX = "audioReverb:";
 
 export function navmeshExportGuid(sceneGuid: string): string {
   return `${NAVMESH_EXPORT_GUID_PREFIX}${sceneGuid}`;
@@ -23,5 +25,15 @@ export function navmeshExportGuid(sceneGuid: string): string {
 export function sceneGuidFromNavmeshExport(guid: string): string | null {
   return guid.startsWith(NAVMESH_EXPORT_GUID_PREFIX)
     ? guid.slice(NAVMESH_EXPORT_GUID_PREFIX.length)
+    : null;
+}
+
+export function audioReverbExportGuid(sceneGuid: string): string {
+  return `${AUDIO_REVERB_EXPORT_GUID_PREFIX}${sceneGuid}`;
+}
+
+export function sceneGuidFromAudioReverbExport(guid: string): string | null {
+  return guid.startsWith(AUDIO_REVERB_EXPORT_GUID_PREFIX)
+    ? guid.slice(AUDIO_REVERB_EXPORT_GUID_PREFIX.length)
     : null;
 }

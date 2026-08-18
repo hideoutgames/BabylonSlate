@@ -214,6 +214,9 @@ export async function exportGame(
     ...(options.gameInstanceClass?.trim()
       ? { gameInstanceClass: options.gameInstanceClass.trim() }
       : {}),
+    ...(options.audioMixerGuid?.trim()
+      ? { audioMixerGuid: options.audioMixerGuid.trim() }
+      : {}),
     bundleDebugger: options.bundleDebugger,
     mode,
     render: options.customResolution,
@@ -274,10 +277,15 @@ export function parseGameManifest(source: string): GameManifest {
     parsed.gameInstanceClass.trim()
       ? parsed.gameInstanceClass.trim()
       : undefined;
+  const audioMixerGuid =
+    typeof parsed.audioMixerGuid === "string" && parsed.audioMixerGuid.trim()
+      ? parsed.audioMixerGuid.trim()
+      : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
   return {
     ...parsed,
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
+    ...(audioMixerGuid ? { audioMixerGuid } : {}),
     bundleDebugger,
     pixelsPerUnit:
       typeof parsed.pixelsPerUnit === "number" && parsed.pixelsPerUnit > 0

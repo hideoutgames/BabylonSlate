@@ -219,6 +219,9 @@ describe("listDockWindows", () => {
       "plugin-settings",
       "anim-graph",
       "behaviour-tree",
+      "audio-mixer",
+      "audio-channel",
+      "sound-attenuation",
     ] as const) {
       expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
         false,
@@ -253,6 +256,26 @@ describe("listDockWindows", () => {
 });
 
 describe("material dock catalog", () => {
+  it("lists Details as the primary Audio Mixer, Channel, and Attenuation docks", () => {
+    expect(listDockWindows("audio-mixer").map((entry) => entry.id)).toEqual([
+      "audio-mixer-details",
+    ]);
+    expect(listDockWindows("audio-channel").map((entry) => entry.id)).toEqual([
+      "audio-channel-details",
+    ]);
+    expect(listDockWindows("sound-attenuation").map((entry) => entry.id)).toEqual(
+      ["sound-attenuation-details"],
+    );
+    expect(listDockWindows("audio-mixer").map((entry) => entry.title)).toEqual([
+      "Details",
+    ]);
+    expect(primaryDockPanel("audio-mixer")).toBe("audio-mixer-details");
+    expect(primaryDockPanel("audio-channel")).toBe("audio-channel-details");
+    expect(primaryDockPanel("sound-attenuation")).toBe(
+      "sound-attenuation-details",
+    );
+  });
+
   it("lists Graph, Preview, Details and Compiler Results for a Material", () => {
     const windows = listDockWindows("material");
     expect(windows.map((entry) => entry.id)).toEqual([

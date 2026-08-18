@@ -129,6 +129,15 @@ vi.mock("../context/document-context", async () => {
             },
             path: BB_PATH,
           },
+          {
+            header: {
+              guid: "audio-1",
+              name: "Jump",
+              type: "Audio",
+              parentClass: null,
+            },
+            path: "assets/jump.babasset",
+          },
         ],
         getByGuid: (guid: string) =>
           guid === "bb-1"
@@ -136,7 +145,12 @@ vi.mock("../context/document-context", async () => {
                 header: { guid: "bb-1", name: "Guard", type: "Blackboard" },
                 path: BB_PATH,
               }
-            : guid === "class-1"
+            : guid === "audio-1"
+              ? {
+                  header: { guid: "audio-1", name: "Jump", type: "Audio" },
+                  path: "assets/jump.babasset",
+                }
+              : guid === "class-1"
               ? {
                   header: {
                     guid: "class-1",
@@ -330,6 +344,21 @@ describe("BehaviourTreeEditor", () => {
     fireEvent.blur(duration);
     const task = lastCommit().nodes.find((node) => node.id === "task");
     expect(task?.properties.durationMs).toBe(250);
+  });
+
+  it("picks an Audio asset on Play Sound in Details", async () => {
+    const doc = createDefaultBehaviourTree();
+    const task = doc.nodes.find((node) => node.id === "task")!;
+    task.classId = "bt.task.playSound";
+    task.properties = { audioAssetGuid: "", volume: 1 };
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    expect(screen.getByTestId("property-audioAssetGuid")).toBeTruthy();
+    expect(screen.getByTestId("property-volume")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-audioAssetGuid"));
+    fireEvent.click(await screen.findByTestId("search-item-audio-1"));
+    const next = lastCommit().nodes.find((node) => node.id === "task");
+    expect(next?.properties.audioAssetGuid).toBe("audio-1");
   });
 
   it("selects a Wait node added from the palette so Details show duration", async () => {
