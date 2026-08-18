@@ -81,6 +81,17 @@ Main-thread owner shared by overlay Play and `apps/player`. Wraps Babylon 9 Audi
 
 See [audio.md](audio.md).
 
+## ParticleService (P17)
+
+Main-thread owner shared by overlay Play, asset Preview, and `apps/player`. Wraps Babylon `GPUParticleSystem` (default when `IsSupported`) with CPU `ParticleSystem` fallback. Billboard quads only (`isBillboardBased`, `BILLBOARDMODE_ALL`). No second renderer.
+
+- Play library of Particle Emitter / Particle System payloads loads beside `textureBytes`. Optional particle-domain Material uses `createEffectForParticles`.
+- Worker emits `assignParticle` / `setParticlePlaying` only. Actor origin is an invisible emitter mesh parented under the Play helper.
+- GPU `stop()` still draws leftovers; `resetParticleSession` / `dispose()` on Play close, `changescene`, and despawn.
+- Test-mode `window.__babylonslateParticleStats` (`particleStats`) exposes `systems`, `playing`, `gpu`. Play open/close must return systems to 0.
+
+See [particles.md](particles.md).
+
 ## Picking
 
 `skipPointerMovePicking: true` (no hover). Explicit taps use `pickAtCanvas` / `EngineHandle.pickAt`.

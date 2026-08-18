@@ -81,6 +81,8 @@ Focused UserInterface / encode coverage (unit, not e2e): typed apply/remove/visi
 
 `e2e/p16-audio.spec.ts` imports a committed WAV fixture, creates AudioMixer / AudioChannel / SoundAttenuation, wires refs (including Project Settings mixer and AudioComponent), Save All / reopen, preview, and Show References. A second serial case Plays, clicks `play-canvas` to unlock, asserts test-mode `window.__babylonslateAudioStats` (`unlocked`), moves the emitter on X and asserts `lastDistance` changes, then Stop returns `voices` to 0. Cross-package gain / session Set Channel / Set Global / reverb opt-in proofs live in `packages/render/src/p16-acceptance.test.ts`. Packed-player gain smoke lives in `apps/player/src/hydrate.test.ts`. Real-device listening is manual, not CI. Test-mode `window.__babylonslateAudioStats` is the same idea as `uiHostStats`.
 
+`e2e/p17-particles.spec.ts` imports `albedo.png`, creates Particle Emitter / Particle System / particle-domain Material, wires Texture + Material + System slots + ParticleComponent, asserts Windows Preview/Details, Play `window.__babylonslateParticleStats` (`systems` / `playing`), teardown to 0, Class palette Play/Stop Particles, missing-texture Play log, and save/reopen. Packed-player hydrate lives in `apps/player/src/hydrate.test.ts`. NullEngine start/stop/dispose lives in `packages/render/src/particle-service.test.ts`.
+
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
 
 ## Golden files

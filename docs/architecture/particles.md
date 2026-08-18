@@ -22,7 +22,7 @@ Do **not** write a custom thin-instance simulator, Solid Particle System, points
 ## Authoring
 
 - **New Asset → Rendering**: Particle Emitter (`.emitter.babasset`) and Particle System (`.particles.babasset`).
-- DockView **Preview** + **Details** (Sprite-style). Windows toggles those tabs. Preview shows **No Texture** until the Emitter Texture guid is set; live `GPUParticleSystem` construction is the runtime slice.
+- DockView **Preview** + **Details** (Sprite-style). Windows toggles those tabs. Preview with no Texture shows **No Texture**. With a Texture guid, Preview runs `GPUParticleSystem` (CPU fallback) on the Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine).
 - Lucide `Sparkles` (Particle System / ParticleComponent) and `Wind` (Particle Emitter); family color matches Material.
 - **Place Actors → Particles** and **Place Actors → Project** Particle System spawn `ParticleComponent`. Engine Particle stays empty until a System is picked.
 - Add Component / Search: `ParticleComponent` (`particleSystemGuid`, play-on-start, sorting layer/order).
@@ -55,11 +55,27 @@ Shared math / Mix / Combine stay legal. Hide world attributes, WPO, PBR metallic
 
 ## Runtime
 
-`ParticleService` in `@babylonslate/render` is Audio-shaped: main thread, worker never imports Babylon. Commands: `assignParticle` / `setParticlePlaying`. Emitter of each Babylon system is the actor origin (or a `TransformNode` under it). `start()` / `stop()` / `reset()`; `dispose()` on despawn and Play close.
+`ParticleService` in `@babylonslate/render` is Audio-shaped: main thread, worker never imports Babylon. Commands: `assignParticle` / `setParticlePlaying`. Each Particle System slot becomes one Babylon `GPUParticleSystem` (or CPU `ParticleSystem`). The Babylon `emitter` is an invisible mesh parented to the actor origin. `start()` / `stop()` / `reset()`; GPU `stop()` still draws leftovers, so teardown must `dispose()` (Play close, `changescene`, despawn, `assignParticle` with a null guid). CPU fallback capacity is `min(capacity, 512)`.
+
+Overlay Play and `apps/player` pass a particle library (Emitter + System payloads) into `createEngine`, same pattern as `audioLibrary` / `textureBytes`. Packed player hydrates `ParticleEmitter` / `ParticleSystem` JSON from the pack. Test-mode `window.__babylonslateParticleStats` (`particleStats`) exposes `systems`, `playing`, `gpu`. Play open/close must return `systems` to 0.
+
+Missing Texture skips that emitter and logs `particle.missing_texture` (asset guid is the Emitter).
 
 Preview uses the same constructors on a Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Prefab’s separate-Engine exception still closes in P18.
 
-Scripting: **Play Particles** / **Stop Particles** (exec + actor). Graphs emit commands only.
+Scripting: **Play Particles** (`particles.play`) / **Stop Particles** (`particles.stop`) — exec + optional `actorRef("Actor")` (unconnected → `ctx.self`). Graphs emit `setParticlePlaying` only.
+
+## Commands
+
+Worker → main. Main thread resolves Emitter / System payloads from the Play particle library.
+
+```ts
+| { type: "assignParticle"; slotId: number; actorGuid: string; componentId: string;
+    particleSystemGuid: string | null; play?: boolean }
+| { type: "setParticlePlaying"; actorGuid: string; componentId?: string; playing: boolean }
+```
+
+`ParticleComponent` properties: `particleSystemGuid`, `playOnStart`, sorting layer/order. Play-on-start emits `assignParticle` with `play: true`. Graph Play/Stop target `self` when Actor is unconnected.
 
 ## Out of P17
 
