@@ -204,6 +204,12 @@ describe("resolveFocusKeepPanelIds", () => {
       "animation-preview",
     ]);
     expect(FOCUS_PRIMARY_PANEL.animation).toBe("animation-preview");
+    expect(resolveFocusKeepPanelIds("skybox-creator", [])).toEqual([
+      "skybox-creator-preview",
+    ]);
+    expect(FOCUS_PRIMARY_PANEL["skybox-creator"]).toBe(
+      "skybox-creator-preview",
+    );
   });
 
   it("keeps already-open Editor Utility tabs when the keep list is the default", () => {

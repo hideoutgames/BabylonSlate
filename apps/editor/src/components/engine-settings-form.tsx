@@ -121,6 +121,11 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   { kind: "model", keepKey: "model", label: "Model" },
   { kind: "skeleton", keepKey: "skeleton", label: "Skeleton" },
   { kind: "animation", keepKey: "animation", label: "Animation" },
+  {
+    kind: "skybox-creator",
+    keepKey: "skybox-creator",
+    label: "Skybox Creator",
+  },
 ];
 
 export type EngineSettingsCategoryId =

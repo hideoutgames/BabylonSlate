@@ -39,6 +39,7 @@ describe("app settings", () => {
       model: ["model-preview"],
       skeleton: ["skeleton-preview"],
       animation: ["animation-preview"],
+      "skybox-creator": ["skybox-creator-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
@@ -170,6 +171,9 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels.model).toEqual(["model-preview"]);
     expect(parsed.focusKeepPanels.skeleton).toEqual(["skeleton-preview"]);
     expect(parsed.focusKeepPanels.animation).toEqual(["animation-preview"]);
+    expect(parsed.focusKeepPanels["skybox-creator"]).toEqual([
+      "skybox-creator-preview",
+    ]);
   });
 
   it("fills new focus keep-list keys when saved JSON only has scene and graph", () => {

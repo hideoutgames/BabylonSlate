@@ -16,6 +16,7 @@ export * from "./particle-payload";
 export * from "./model-payload";
 export * from "./skeleton-payload";
 export * from "./animation-payload";
+export * from "./skybox-creator-payload";
 export * from "./audio-reverb";
 export * from "./sprite-packer";
 export * from "./sprite-payload";

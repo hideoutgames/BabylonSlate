@@ -85,6 +85,8 @@ Focused UserInterface / encode coverage (unit, not e2e): typed apply/remove/visi
 
 `e2e/p17-particles.spec.ts` imports `albedo.png`, creates Particle Emitter / Particle System / particle-domain Material, wires Texture + Material + System slots + ParticleComponent, asserts Windows Preview/Details, Play `window.__babylonslateParticleStats` (`systems` / `playing`), teardown to 0, Class palette Play/Stop Particles, missing-texture Play log, and save/reopen. Packed-player hydrate lives in `apps/player/src/hydrate.test.ts`. NullEngine start/stop/dispose lives in `packages/render/src/particle-service.test.ts`.
 
+`e2e/skybox-creator.spec.ts` imports `albedo.png`, creates a Skybox Creator helper, picks that Texture, Create writes six `*_px`…`*_nz` Textures in the same folder, asserts Windows Preview/Details and the labeled net, save/reopen, and a packed-closure fixture that omits the helper while keeping referenced face Textures.
+
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
 
 ## Golden files

@@ -984,6 +984,29 @@ describe("UI logic Play compile", () => {
     ]);
   });
 
+  it("drops SkyboxCreator helpers from Play compile", () => {
+    const filtered = filterPlayScriptDocuments(
+      [
+        {
+          path: "assets/Hero.class.babasset",
+          content: { nodes: [], edges: [] },
+        },
+        {
+          path: "assets/Day.skyboxcreator.babasset",
+          content: { nodes: [], edges: [] },
+        },
+      ],
+      {
+        "assets/Hero.class.babasset": { type: "Class", parentClass: "Actor" },
+        "assets/Day.skyboxcreator.babasset": { type: "SkyboxCreator" },
+      },
+      () => null,
+    );
+    expect(filtered.map((doc) => doc.path)).toEqual([
+      "assets/Hero.class.babasset",
+    ]);
+  });
+
   it("merges UserInterface logic then strips EditorUtilityObject graphs", () => {
     const collected = collectPlayScriptDocuments(
       [

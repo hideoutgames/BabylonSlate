@@ -68,6 +68,10 @@ import {
   AnimationDetailsPanel,
   AnimationPreviewPanel,
 } from "../components/animation-editor";
+import {
+  SkyboxCreatorDetailsPanel,
+  SkyboxCreatorPreviewPanel,
+} from "../components/skybox-creator-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -213,6 +217,12 @@ export const panelComponents = {
   ),
   "animation-details": (props: IDockviewPanelProps) => (
     <AnimationDetailsPanel {...props} />
+  ),
+  "skybox-creator-preview": (props: IDockviewPanelProps) => (
+    <SkyboxCreatorPreviewPanel {...props} />
+  ),
+  "skybox-creator-details": (props: IDockviewPanelProps) => (
+    <SkyboxCreatorDetailsPanel {...props} />
   ),
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />

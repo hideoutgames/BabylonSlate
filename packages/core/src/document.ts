@@ -27,6 +27,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "model",
   "skeleton",
   "animation",
+  "skybox-creator",
   "asset-settings",
 ] as const;
 
@@ -108,6 +109,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Skeleton";
     case "animation":
       return "Animation";
+    case "skybox-creator":
+      return "SkyboxCreator";
     case "asset-settings":
       return "Texture";
   }
@@ -188,6 +191,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "particle-emitter";
     case "ParticleSystem":
       return "particle-system";
+    case "SkyboxCreator":
+      return "skybox-creator";
     case "Model":
       return "model";
     case "Skeleton":
@@ -258,6 +263,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Skeleton";
     case "animation":
       return "Animation";
+    case "skybox-creator":
+      return "Skybox Creator";
     case "asset-settings":
       return "Settings";
   }
@@ -353,7 +360,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles)\.(babasset|json)$/i,
+        /\.(scene|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "") ?? path;

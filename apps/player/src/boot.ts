@@ -26,6 +26,7 @@ import {
 import { attachInputCapture, playInputStampTick } from "./input";
 import {
   applyPlayerFpsSample,
+  applyPlayerSnapshotTick,
   applyWorkerPlayerStats,
   unlockAudioOnFirstGesture,
   type PlayerHudStats,
@@ -268,11 +269,9 @@ export function startPlayer(options: {
       input?.setInputMode(String(command.mode ?? "All"));
     }
     if (command.type === "stats") {
-      ticks = Number(command.tickIndex ?? ticks + 1);
-      lastWorkerTickIndex = ticks;
       emitHudStats(
         applyWorkerPlayerStats(hudStats, {
-          ticks,
+          ticks: lastWorkerTickIndex,
           fps: Number(command.fps ?? 0),
           scriptMs: Number(command.scriptMs ?? 0),
           physicsMs: Number(command.physicsMs ?? 0),
@@ -301,7 +300,11 @@ export function startPlayer(options: {
   try {
     worker = createPlayerWorkerHost();
     worker.onCommand((cmd) => onCommand(cmd as never));
-    worker.onSnapshot((buffer) => handle.pushSnapshot(buffer));
+    worker.onSnapshot((buffer) => {
+      lastWorkerTickIndex = applyPlayerSnapshotTick(lastWorkerTickIndex, buffer);
+      ticks = lastWorkerTickIndex;
+      handle.pushSnapshot(buffer);
+    });
     worker.postControl(loadControl);
     for (const control of packedBootControls(content, game.scripts, spawn)) {
       worker.postControl(control);
@@ -385,6 +388,8 @@ export function startPlayer(options: {
     if (runtime) {
       runtime.advance(elapsed);
       if (runtime.copySnapshot(snapBuf)) {
+        lastWorkerTickIndex = applyPlayerSnapshotTick(lastWorkerTickIndex, snapBuf);
+        ticks = lastWorkerTickIndex;
         handle.pushSnapshot(snapBuf);
       }
     }

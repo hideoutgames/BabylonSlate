@@ -345,6 +345,34 @@ export function encodeTranslatedTetrahedronGlb(
   );
 }
 
+/** Triangle at x=1 whose node is rotated 90° about Y (glTF right-hand). */
+export function encodeYRotatedTriangleGlb(): Uint8Array {
+  const positions = new Float32Array([1, 0, 0, 1.2, 0, 0, 1, 0.2, 0]);
+  const half = Math.SQRT1_2;
+  return encodeGlb(
+    {
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0, rotation: [0, half, 0, half] }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: FLOAT,
+          count: 3,
+          type: "VEC3",
+          min: [1, 0, 0],
+          max: [1.2, 0.2, 0],
+        },
+      ],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+      buffers: [{ byteLength: 36 }],
+    },
+    new Uint8Array(positions.buffer),
+  );
+}
+
 /** Minimal one-triangle GLB for NullEngine tests (3 vertices, no indices). */
 export function encodeTriangleGlb(): Uint8Array {
   const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);

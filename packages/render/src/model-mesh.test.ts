@@ -5,6 +5,7 @@ import {
   encodeAnimatedTriangleGlb,
   encodeTranslatedTetrahedronGlb,
   encodeTriangleGlb,
+  encodeYRotatedTriangleGlb,
   glbClipNames,
 } from "./model-mesh";
 
@@ -74,5 +75,20 @@ describe("createMeshFromModelBytes", () => {
     expect(center.x).toBeCloseTo(4.25);
     expect(center.y).toBeCloseTo(0.25);
     expect(center.z).toBeCloseTo(0.25);
+  });
+
+  it("bakes the first mesh node's Y rotation into vertex positions", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createMeshFromModelBytes(
+      handle.scene,
+      "hero",
+      encodeYRotatedTriangleGlb(),
+    );
+    const positions = mesh!.getVerticesData("position");
+    expect(positions).not.toBeNull();
+    expect(positions![0]).toBeCloseTo(0);
+    expect(positions![1]).toBeCloseTo(0);
+    expect(positions![2]).toBeCloseTo(-1);
   });
 });

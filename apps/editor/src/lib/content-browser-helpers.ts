@@ -14,6 +14,8 @@ import {
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
   modelAssetGuids,
+  createDefaultSkyboxCreatorPayload,
+  skyboxCreatorAssetDependencies,
   parseSpriteAnimationPayload,
   skeletonAssetGuids,
   animationAssetGuids,
@@ -218,6 +220,7 @@ export const CREATABLE_ASSET_TYPES = [
   "SoundAttenuation",
   "ParticleEmitter",
   "ParticleSystem",
+  "SkyboxCreator",
 ] as const;
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
@@ -255,7 +258,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialFunction", "ParticleEmitter", "ParticleSystem"],
+    types: ["Material", "MaterialFunction", "ParticleEmitter", "ParticleSystem", "SkyboxCreator"],
   },
   {
     id: "audio",
@@ -292,6 +295,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
   ParticleEmitter: "One Babylon particle recipe: texture, shape, lifetime, and color.",
   ParticleSystem: "Starts several Particle Emitters on one actor.",
+  SkyboxCreator:
+    "Editor-only helper tool that slices a texture into six skybox faces.",
 };
 
 /** Title Case label for a creatable asset type (`User Interface`). */
@@ -1501,6 +1506,15 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "SkyboxCreator") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultSkyboxCreatorPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
   const exhaustive: never = type;
   throw new Error(`Unsupported creatable asset type: ${String(exhaustive)}`);
 }
@@ -1524,6 +1538,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   SoundAttenuation: ".atten.babasset",
   ParticleEmitter: ".emitter.babasset",
   ParticleSystem: ".particles.babasset",
+  SkyboxCreator: ".skyboxcreator.babasset",
 };
 
 export function newAssetFileName(
@@ -1562,6 +1577,7 @@ export function assetHeaderDependencies(
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),
+    ...skyboxCreatorAssetDependencies(assetType, payload),
     ...(assetType === "SpriteAnimation"
       ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
       : []),
