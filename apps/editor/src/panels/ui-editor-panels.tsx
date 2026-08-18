@@ -182,6 +182,7 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
             fontEntries={editing.fontEntries}
             resolveImageUrl={editing.resolveImageUrl}
             resolveInterfaceMaterial={editing.resolveInterfaceMaterial}
+            resolveNested={editing.resolveNested}
             materialFunctions={editing.materialFunctions}
             imageIssues={editing.imageIssues}
             panelVisible={panelVisible}

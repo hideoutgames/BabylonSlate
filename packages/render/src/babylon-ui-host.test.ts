@@ -24,6 +24,7 @@ import { Slider } from "@babylonjs/gui/2D/controls/sliders/slider";
 import { Checkbox } from "@babylonjs/gui/2D/controls/checkbox";
 import { InputText } from "@babylonjs/gui/2D/controls/inputText";
 import { StackPanel } from "@babylonjs/gui/2D/controls/stackPanel";
+import { TextBlock } from "@babylonjs/gui/2D/controls/textBlock";
 import { Vector2WithInfo } from "@babylonjs/gui/2D/math2D";
 import {
   BabylonUiApplyHost,
@@ -295,6 +296,54 @@ describe("BabylonUiApplyHost", () => {
     expect(safe?.getDescendants(false).some((row) => row.name === "bleed")).toBe(false);
     const canvas = named(root, "canvas") as Container;
     expect(canvas.getDescendants(false).some((row) => row.name === "bleed")).toBe(true);
+  });
+
+  it("parents a nested UserInterface label under the host slot, not the ADT root", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const chip = createDefaultUserInterface("Chip");
+    const label = createWidget(
+      "label",
+      "Text",
+      "HP",
+      pinLayout("left", "top", 80, 20),
+    );
+    label.props.text = "HP";
+    chip.widgets.canvas!.children = ["label"];
+    chip.widgets.label = label;
+
+    const hud = createDefaultUserInterface("HUD");
+    const host = createWidget(
+      "chip",
+      "UserInterface",
+      "Chip",
+      pinLayout("left", "top", 80, 20, 0, 0),
+    );
+    host.nestedUiGuid = "chip-guid";
+    hud.widgets.canvas!.children = ["chip"];
+    hud.widgets.chip = host;
+
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const applyHost = new BabylonUiApplyHost(factory, { interactive: false });
+    const layout = layoutUserInterface(
+      hud,
+      { width: 800, height: 600 },
+      { resolveNested: (guid) => (guid === "chip-guid" ? chip : null) },
+    );
+    applyUiControls(applyHost, describeUiControls(hud, layout));
+
+    const nestedLabel = named(root, "chip/label");
+    expect(nestedLabel).toBeInstanceOf(TextBlock);
+    expect((nestedLabel as TextBlock).text).toBe("HP");
+    expect(nestedLabel?.parent?.name).toBe("chip/canvas");
+    expect(nestedLabel?.parent?.name).not.toBe("adt-root");
+    expect(named(root, "chip")?.getDescendants(false).some((row) => row.name === "chip/label")).toBe(
+      true,
+    );
+    applyHost.clear();
+    scene.dispose();
+    engine.dispose();
   });
 
   it("maps scale rules onto ADT ideal width/height", () => {
