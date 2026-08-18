@@ -58,7 +58,7 @@ describe("project round-trip", () => {
 describe("texture encode diagnostics", () => {
   it("records an Output Log line with asset name, guid, and exact error", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("EncodeDiag.babproject");
+    await storage.openDocumentsProject("EncodeDiag");
     await storage.mkdir("assets", true);
     const bytes = await encodeBabasset({
       header: {
@@ -88,7 +88,8 @@ describe("texture encode diagnostics", () => {
         throw new Error("BasisEncoder.encode returned 0");
       },
     });
-    await service.loadCurrentProject();
+    // 2D Empty has no Kenney albedo Texture, so this test does not race scaffold encodes.
+    await service.createEmptyProject("EncodeDiag", { kind: "2d" });
     const lines: string[] = [];
     service.onDiagnostic((line) => lines.push(line));
 
