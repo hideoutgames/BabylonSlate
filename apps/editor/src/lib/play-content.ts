@@ -5,8 +5,10 @@ import {
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
 import {
+  modelMaterialGuids,
   parseSpriteAnimationPayload,
   spriteAnimationTextureGuids,
+  type ModelPayload,
   type SpriteAnimationPayload,
   type SpritePayload,
   type TilemapPayload,
@@ -669,6 +671,18 @@ export function modelAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
   return componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]);
+}
+
+/** Slot Material guids Play must compile so Model overrides are not pink. */
+export function modelSlotMaterialGuidsFromPayloads(
+  payloads: ReadonlyMap<string, ModelPayload> | undefined,
+): string[] {
+  if (!payloads || payloads.size === 0) return [];
+  const guids = new Set<string>();
+  for (const payload of payloads.values()) {
+    for (const guid of modelMaterialGuids(payload)) guids.add(guid);
+  }
+  return [...guids].sort();
 }
 
 /** Scene `navmesh` extra chunk for Play import. Never generates. */

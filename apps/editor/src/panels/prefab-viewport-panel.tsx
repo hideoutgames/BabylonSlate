@@ -23,6 +23,7 @@ import {
 } from "../lib/prefab-preview";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
+import { modelSlotMaterialGuidsFromPayloads } from "../lib/play-content";
 
 /**
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
@@ -46,6 +47,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
+    collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     projectDocument,
   } = useDocuments();
@@ -150,13 +152,18 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       try {
         const sprites = await collectPlaySpritePayloads(scene);
         const tileContent = await collectPlayTilemapContent(scene);
-        const materials = await collectPlayMaterialLibrary(scene);
+        const modelBytes = await collectPlayModelBytes(scene);
+        const modelPayloads = await collectPlayModelPayloads(scene);
+        const materials = await collectPlayMaterialLibrary(
+          scene,
+          [],
+          modelSlotMaterialGuidsFromPayloads(modelPayloads),
+        );
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
           materials.textureGuids,
         );
-        const modelBytes = await collectPlayModelBytes(scene);
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(
           materials.documents,
@@ -169,6 +176,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           tilesets: tileContent.tilesets,
           textureBytes,
           modelBytes,
+          modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
         });
       } catch (error) {
@@ -184,6 +192,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
+    collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
   ]);

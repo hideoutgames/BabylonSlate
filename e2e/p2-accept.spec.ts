@@ -37,6 +37,12 @@ test.describe("P2 acceptance proofs", () => {
       page.locator('[data-asset-path="assets/hero_HeroMat.babasset"]'),
     ).toBeVisible();
 
+    await page.locator('[data-asset-path="assets/hero.babasset"]').dblclick();
+    await expect(page.getByTestId("model-preview")).toBeVisible();
+    await expect(page.getByTestId("model-details-panel")).toBeVisible();
+    await expect(page.getByTestId("property-slot-0")).toBeVisible();
+    await expect(page.getByTestId("property-materialCount")).toHaveCount(0);
+
     const albedo = page.locator('[data-asset-path="assets/albedo.babasset"]');
     await expect(async () => {
       await expect(albedo.getByText("Encoding")).toHaveCount(0);

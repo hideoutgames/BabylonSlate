@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { encodeTriangleGlb } from "@babylonslate/render";
 import { ModelEditor, ModelPreview } from "./model-editor";
+
+vi.mock("../context/play-context", () => ({
+  useOptionalPlay: () => null,
+}));
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
@@ -20,6 +25,12 @@ vi.mock("../context/document-context", () => ({
         },
       ],
     },
+    collectPlayMaterialLibrary: async () => ({
+      documents: new Map(),
+      functions: new Map(),
+      textureGuids: [],
+    }),
+    collectPlayTextureBytes: async () => new Map(),
   }),
 }));
 
@@ -118,5 +129,16 @@ describe("ModelPreview", () => {
     render(<ModelPreview payload={{ materialSlots: [], clipNames: [] }} />);
     expect(screen.getByTestId("model-preview")).toBeTruthy();
     expect(screen.getByText("No Mesh")).toBeTruthy();
+  });
+
+  it("renders a 1fps preview canvas for glTF source bytes", () => {
+    render(
+      <ModelPreview
+        payload={{ materialSlots: [], clipNames: [] }}
+        sourceBytes={encodeTriangleGlb()}
+      />,
+    );
+    expect(screen.getByTestId("model-preview-canvas")).toBeTruthy();
+    expect(screen.queryByText("No Mesh")).toBeNull();
   });
 });

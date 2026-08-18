@@ -1693,6 +1693,16 @@ describe("content-browser-helpers", () => {
         emitterGuids: ["em-b", "em-a", "em-b"],
       }),
     ).toEqual(["em-a", "em-b"]);
+    expect(
+      assetHeaderDependencies("Model", {
+        clipNames: ["Walk"],
+        materialSlots: [
+          { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
+          { index: 1, name: "Eyes", materialGuid: null },
+          { index: 2, name: "Alt", materialGuid: "mat-alt" },
+        ],
+      }),
+    ).toEqual(["mat-alt", "mat-hero"]);
   });
 
   it("stores Material domain on the scanned header", () => {

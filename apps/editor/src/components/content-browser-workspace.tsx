@@ -15,7 +15,12 @@ import {
   UploadIcon,
 } from "lucide-react";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { newAssetGuid, resolvePluginEnabled } from "@babylonslate/assets";
+import {
+  isThumbnailableAssetType,
+  newAssetGuid,
+  resolvePluginEnabled,
+  thumbnailMime,
+} from "@babylonslate/assets";
 import {
   ContextMenuOverlay,
   SearchInput,
@@ -26,6 +31,7 @@ import {
   useContextMenu,
   type TypeVisual,
 } from "@babylonslate/editor-kit";
+import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { documentId, documentKindForAssetType, labelFromPath, CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
@@ -168,6 +174,7 @@ export function ContentBrowserWorkspace() {
     setActiveDocument,
     tabOrder,
     loadAssetThumbnail,
+    thumbnailEpoch,
     thumbnailsEnabled,
     pluginDescriptors,
     showPluginContent,
@@ -472,18 +479,25 @@ export function ContentBrowserWorkspace() {
         : false;
 
   useEffect(() => {
+    setThumbnailUrls((current) => {
+      for (const url of Object.values(current)) URL.revokeObjectURL(url);
+      return {};
+    });
+  }, [thumbnailEpoch]);
+
+  useEffect(() => {
     if (!thumbnailsEnabled) return;
     let cancelled = false;
     const objectUrls: string[] = [];
     void (async () => {
       const next: Record<string, string> = { ...thumbnailUrlsRef.current };
       for (const asset of visibleAssets) {
-        if (asset.header.type !== "Texture") continue;
+        if (!isThumbnailableAssetType(asset.header.type)) continue;
         if (next[asset.header.guid]) continue;
         const bytes = await loadAssetThumbnail(asset.header.guid);
         if (cancelled || !bytes) continue;
         const url = URL.createObjectURL(
-          new Blob([bytes], { type: "image/jpeg" }),
+          new Blob([bytes], { type: thumbnailMime(bytes) }),
         );
         objectUrls.push(url);
         next[asset.header.guid] = url;
@@ -493,7 +507,7 @@ export function ContentBrowserWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [loadAssetThumbnail, thumbnailsEnabled, visibleAssets]);
+  }, [loadAssetThumbnail, thumbnailEpoch, thumbnailsEnabled, visibleAssets]);
 
   const typeChips = useMemo(() => uniqueAssetTypes(allAssets), [allAssets]);
 
@@ -891,6 +905,11 @@ export function ContentBrowserWorkspace() {
         done: 0,
         currentName: incoming[0]!.name,
       });
+      const createdModels: Array<{
+        guid: string;
+        path: string;
+        payload: Record<string, unknown>;
+      }> = [];
       try {
         const folder = selectedRoot.relative;
         for (let index = 0; index < incoming.length; index += 1) {
@@ -901,12 +920,20 @@ export function ContentBrowserWorkspace() {
             currentName: file.name,
           });
           try {
-            await assetRegistry.importFile(
+            const created = await assetRegistry.importFile(
               selectedRoot.rootId,
               folder,
               file.name,
               file.bytes,
             );
+            for (const asset of created) {
+              if (asset.header.type !== "Model") continue;
+              createdModels.push({
+                guid: asset.header.guid,
+                path: asset.path,
+                payload: asset.header.payload ?? {},
+              });
+            }
           } catch (err) {
             errors.push(
               `${file.name}: ${err instanceof Error ? err.message : String(err)}`,
@@ -924,6 +951,7 @@ export function ContentBrowserWorkspace() {
         setBusy(false);
         if (errors.length) setImportErrors(errors);
       }
+      enqueueModelThumbnailJobs(createdModels);
     },
     [assetRegistry, refreshAssetRegistry, selectedRoot],
   );

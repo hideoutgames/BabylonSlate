@@ -68,9 +68,33 @@ export class ThumbnailDecodeLru {
     this.entries.set(key, value);
   }
 
+  delete(key: string): boolean {
+    return this.entries.delete(key);
+  }
+
   get size(): number {
     return this.entries.size;
   }
+}
+
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47];
+
+/** Sniff PNG vs JPEG so Model thumbs keep alpha and Texture JPEGs still decode. */
+export function thumbnailMime(bytes: Uint8Array): string {
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === PNG_MAGIC[0] &&
+    bytes[1] === PNG_MAGIC[1] &&
+    bytes[2] === PNG_MAGIC[2] &&
+    bytes[3] === PNG_MAGIC[3]
+  ) {
+    return "image/png";
+  }
+  return "image/jpeg";
+}
+
+export function isThumbnailableAssetType(type: string): boolean {
+  return type === "Texture" || type === "Model";
 }
 
 /**

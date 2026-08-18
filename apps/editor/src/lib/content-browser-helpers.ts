@@ -13,6 +13,7 @@ import {
   createDefaultSoundAttenuationPayload,
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
+  modelMaterialGuids,
   parseSpriteAnimationPayload,
   spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
@@ -1545,6 +1546,7 @@ export function assetHeaderDependencies(
     ...(assetType === "SpriteAnimation"
       ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
       : []),
+    ...(assetType === "Model" ? modelMaterialGuids(payload) : []),
   ]);
   return [...unique].sort();
 }

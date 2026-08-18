@@ -86,13 +86,14 @@ import type {
   PlayBehaviourTreeEntry,
   PlayBlackboardEntry,
 } from "../lib/play-content";
-import { readPlayNavmeshBytes, readPlayAudioReverbBytes } from "../lib/play-content";
+import { readPlayNavmeshBytes, readPlayAudioReverbBytes, modelSlotMaterialGuidsFromPayloads } from "../lib/play-content";
 import {
   hydrateSpriteAnimationPixelSizes,
   type SpriteAnimationPayload,
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
+  type ModelPayload,
 } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -271,6 +272,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
   );
+  const [playModelPayloads, setPlayModelPayloads] = useState<
+    Map<string, ModelPayload>
+  >(() => new Map());
   const [playAudioBytes, setPlayAudioBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
   );
@@ -307,6 +311,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
+    collectPlayModelPayloads,
     collectPlayAudio,
     collectPlayParticles,
     collectPlayMaterialLibrary,
@@ -830,13 +835,29 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayTilemaps(new Map());
           setPlayTilesets(new Map());
         }
+        let modelPayloads = new Map<string, ModelPayload>();
+        try {
+          setPlayModelBytes(await collectPlayModelBytes(resolvedScene?.scene));
+          modelPayloads = await collectPlayModelPayloads(resolvedScene?.scene);
+          setPlayModelPayloads(modelPayloads);
+        } catch (error) {
+          appendLog(
+            `Model load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayModelBytes(new Map());
+          setPlayModelPayloads(new Map());
+        }
+
         try {
           const particles = await collectPlayParticles();
           setPlayParticleLibrary(particles);
           const materials = await collectPlayMaterialLibrary(
             resolvedScene?.scene,
             playLibrary.map((entry) => entry.scene),
-            particleMaterialGuidsFromLibrary(particles),
+            [
+              ...particleMaterialGuidsFromLibrary(particles),
+              ...modelSlotMaterialGuidsFromPayloads(modelPayloads),
+            ],
           );
           setPlayMaterialDocuments(materials.documents);
           setPlayMaterialFunctions(materials.functions);
@@ -878,14 +899,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         );
         setPlaySpriteAnimationPayloads(spriteAnimations);
 
-        try {
-          setPlayModelBytes(await collectPlayModelBytes(resolvedScene?.scene));
-        } catch (error) {
-          appendLog(
-            `Model load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayModelBytes(new Map());
-        }
         try {
           const audio = await collectPlayAudio();
           setPlayAudioBytes(audio.bytes);
@@ -954,6 +967,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayModelPayloads,
       collectPlayAudio,
       collectPlayParticles,
       collectPlayMaterialLibrary,
@@ -1172,6 +1186,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
             modelBytes={playModelBytes}
+            modelPayloads={playModelPayloads}
             audioBytes={playAudioBytes}
             audioLibrary={playAudioLibrary}
             particleLibrary={playParticleLibrary}

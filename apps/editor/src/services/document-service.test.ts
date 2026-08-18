@@ -315,6 +315,43 @@ describe("DocumentService", () => {
     expect((doc?.content as { members: unknown[] }).members).toHaveLength(2);
   });
 
+  it("reopens a saved asset-settings Model tab as the model document kind", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const loadDocument = vi.fn(async (kind: string) => {
+      if (kind === "scene") return createDefaultScene();
+      if (kind === "model") {
+        return {
+          clipNames: [],
+          materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
+        };
+      }
+      return { nodes: [], edges: [] };
+    });
+    const projectService = {
+      loadDocument,
+      registry: {
+        list: () => [
+          {
+            path: "assets/hero.babasset",
+            header: { type: "Model" },
+          },
+        ],
+      },
+    } as unknown as ProjectService;
+    const oldId = "asset-settings:assets/hero.babasset";
+    const modelId = documentId({ kind: "model", path: "assets/hero.babasset" });
+    await service.initializeFromProject(projectService, project, {
+      ...createEmptyLayouts(),
+      documents: { [oldId]: { preview: true } },
+      tabOrder: [oldId],
+    });
+    expect(service.getState().tabOrder).toContain(modelId);
+    expect(service.getState().tabOrder).not.toContain(oldId);
+    expect(loadDocument).toHaveBeenCalledWith("model", "assets/hero.babasset");
+    expect(service.getDocument(modelId)?.layout).toEqual({ preview: true });
+  });
+
   it("reloads document content from disk without marking dirty", async () => {
     const service = new DocumentService();
     const project = createEmptyProject("Test");

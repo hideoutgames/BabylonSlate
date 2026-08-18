@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -8,6 +8,7 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { normalizeModelPayload, type ModelPayload } from "@babylonslate/assets";
+import { isGltfModelBytes } from "@babylonslate/render";
 import {
   Empty,
   EmptyDescription,
@@ -16,6 +17,7 @@ import {
 } from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { ModelPreviewCanvas } from "./model-preview-canvas";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -26,11 +28,26 @@ function asRecord(value: unknown): Record<string, unknown> {
 export function ModelPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
+  const { openDocuments, readAssetChunk } = useDocuments();
   const doc = openDocuments.find((entry) => entry.id === documentId);
+  const [sourceBytes, setSourceBytes] = useState<Uint8Array | null>(null);
+  useEffect(() => {
+    const path = doc?.ref.path;
+    if (!path) return;
+    let cancelled = false;
+    void readAssetChunk(path, "source").then((bytes) => {
+      if (!cancelled) setSourceBytes(bytes);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc?.ref.path, readAssetChunk]);
   return (
     <PanelFrame data-testid="model-preview-panel">
-      <ModelPreview payload={asRecord(doc?.content)} />
+      <ModelPreview
+        payload={asRecord(doc?.content)}
+        sourceBytes={sourceBytes}
+      />
     </PanelFrame>
   );
 }
@@ -54,21 +71,29 @@ export function ModelDetailsPanel(_props: IDockviewPanelProps) {
 
 export function ModelPreview({
   payload,
+  sourceBytes = null,
 }: {
   payload: Record<string, unknown>;
+  sourceBytes?: Uint8Array | null;
 }) {
-  void payload;
+  if (!sourceBytes || !isGltfModelBytes(sourceBytes)) {
+    return (
+      <div className="flex h-full flex-col p-3" data-testid="model-preview">
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>No Mesh</EmptyTitle>
+            <EmptyDescription>
+              OBJ and STL stay on this empty state. A glTF source loads in the
+              Preview panel.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
   return (
-    <div className="flex h-full flex-col p-3" data-testid="model-preview">
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>No Mesh</EmptyTitle>
-          <EmptyDescription>
-            OBJ and STL stay on this empty state. A glTF source loads in the
-            Preview panel.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+    <div className="h-full min-h-0" data-testid="model-preview">
+      <ModelPreviewCanvas payload={payload} sourceBytes={sourceBytes} />
     </div>
   );
 }

@@ -1121,7 +1121,7 @@ export class ProjectService {
     const parentClass =
       existing?.parentClass ?? (type === "Class" ? "Actor" : null);
     const storeInHeader =
-      kind === "asset-settings" &&
+      (kind === "asset-settings" || kind === "model") &&
       existing !== null &&
       !existing.hasDocumentChunk;
 

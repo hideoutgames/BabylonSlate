@@ -648,4 +648,13 @@ describe("ThumbnailDecodeLru", () => {
     expect(lru.get("b")).toEqual(new Uint8Array([2]));
     expect(lru.size).toBe(2);
   });
+
+  it("deletes a cached key so a later get reloads", () => {
+    const lru = new ThumbnailDecodeLru(4);
+    lru.set("hero", new Uint8Array([9]));
+    expect(lru.delete("hero")).toBe(true);
+    expect(lru.get("hero")).toBeUndefined();
+    expect(lru.size).toBe(0);
+    expect(lru.delete("missing")).toBe(false);
+  });
 });

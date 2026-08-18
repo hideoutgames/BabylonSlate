@@ -257,6 +257,59 @@ describe("project documents as .babasset", () => {
     ).toBe(false);
   });
 
+  it("saves Model slots onto the header without replacing the source GLB", async () => {
+    const { storage, service } = await scaffolded();
+    const source = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);
+    const path = "assets/hero.babasset";
+    await storage.writeBinary(
+      path,
+      await encodeBabasset({
+        header: {
+          guid: "model-guid",
+          type: "Model",
+          name: "hero",
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: ["mat-old"],
+          parentClass: null,
+          payload: {
+            clipNames: ["Walk"],
+            materialSlots: [
+              { index: 0, name: "Hero Mat", materialGuid: "mat-old" },
+            ],
+          },
+        },
+        chunks: [
+          { id: "source", kind: "geometry", mime: "model/gltf-binary", data: source },
+        ],
+      }),
+    );
+
+    const payload = (await service.loadDocument("model", path)) as Record<
+      string,
+      unknown
+    >;
+    await service.saveDocument("model", path, {
+      ...payload,
+      materialSlots: [
+        { index: 0, name: "Hero Mat", materialGuid: "mat-new" },
+      ],
+    });
+
+    const saved = await decodeBabasset(await storage.readBinary(path));
+    expect(saved.header.type).toBe("Model");
+    expect(saved.header.payload.clipNames).toEqual(["Walk"]);
+    expect(saved.header.payload.materialSlots).toEqual([
+      { index: 0, name: "Hero Mat", materialGuid: "mat-new" },
+    ]);
+    expect(saved.header.dependencies).toEqual(["mat-new"]);
+    expect(saved.chunks.get("source")).toEqual(source);
+    expect(
+      saved.header.chunks.some((chunk) => chunk.id === "document"),
+    ).toBe(false);
+  });
+
   it("writes a Scene navmesh extra chunk without regenerating at Play", async () => {
     const { service } = await scaffolded();
     const scene = (await service.loadDocument(

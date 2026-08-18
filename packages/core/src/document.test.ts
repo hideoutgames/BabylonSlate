@@ -15,6 +15,7 @@ import {
   isLogicGraphAssetType,
   labelFromPath,
   migrateLegacyLayout,
+  migrateRestoredDocumentId,
   parseDocumentId,
 } from "./document";
 
@@ -136,6 +137,24 @@ describe("Class and settings documents", () => {
     expect(
       createDocumentRef("model", "assets/hero.babasset", { name: "Hero" }).label,
     ).toBe("Hero Model");
+  });
+
+  it("rewrites a saved asset-settings Model tab to the model document kind", () => {
+    expect(
+      migrateRestoredDocumentId(
+        "asset-settings:assets/hero.babasset",
+        (path) => (path === "assets/hero.babasset" ? "Model" : null),
+      ),
+    ).toBe("model:assets/hero.babasset");
+    expect(
+      migrateRestoredDocumentId(
+        "asset-settings:assets/albedo.babasset",
+        () => "Texture",
+      ),
+    ).toBe("asset-settings:assets/albedo.babasset");
+    expect(
+      migrateRestoredDocumentId("model:assets/hero.babasset", () => "Model"),
+    ).toBe("model:assets/hero.babasset");
   });
 
   it("opens import assets as settings tabs", () => {

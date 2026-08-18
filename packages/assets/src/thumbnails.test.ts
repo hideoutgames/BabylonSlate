@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   generateThumbnailBytes,
+  isThumbnailableAssetType,
   readThumbnail,
+  thumbnailMime,
   thumbnailPath,
   writeThumbnail,
 } from "./thumbnails";
@@ -59,5 +61,17 @@ describe("thumbnails I/O", () => {
     } finally {
       if (original) globalThis.createImageBitmap = original;
     }
+  });
+
+  it("sniffs PNG vs JPEG magic for Content Browser blobs", () => {
+    expect(
+      thumbnailMime(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    ).toBe("image/png");
+    expect(thumbnailMime(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe(
+      "image/jpeg",
+    );
+    expect(isThumbnailableAssetType("Texture")).toBe(true);
+    expect(isThumbnailableAssetType("Model")).toBe(true);
+    expect(isThumbnailableAssetType("Audio")).toBe(false);
   });
 });

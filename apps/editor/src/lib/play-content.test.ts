@@ -54,6 +54,7 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
+  modelSlotMaterialGuidsFromPayloads,
   materialAssetGuidsFromScene,
   postProcessMaterialGuidsFromScene,
   materialGuidsFromScenes,
@@ -674,6 +675,32 @@ describe("scene-referenced Play content", () => {
       }),
     );
     expect(modelAssetGuidsFromScene(scene)).toEqual(["tree-glb"]);
+  });
+
+  it("collects Model slot material guids for Play compile", () => {
+    const payloads = new Map([
+      [
+        "hero",
+        {
+          clipNames: [],
+          materialSlots: [
+            { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
+            { index: 1, name: "Eyes", materialGuid: null },
+          ],
+        },
+      ],
+      [
+        "rock",
+        {
+          clipNames: [],
+          materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }],
+        },
+      ],
+    ]);
+    expect(modelSlotMaterialGuidsFromPayloads(payloads)).toEqual([
+      "mat-hero",
+      "mat-rock",
+    ]);
   });
 
   it("collects MeshComponent materialGuid values as surface materials", () => {

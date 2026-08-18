@@ -270,6 +270,23 @@ export function parseDocumentId(
   return { kind, path: id.slice(colon + 1) };
 }
 
+/**
+ * Reopen a layout.json `asset-settings:…` tab as the current document kind
+ * when the registry type has since gained its own DockView (Model).
+ */
+export function migrateRestoredDocumentId(
+  id: string,
+  typeForPath: (path: string) => string | null | undefined,
+): string {
+  const parsed = parseDocumentId(id);
+  if (!parsed || parsed.kind !== "asset-settings") return id;
+  const type = typeForPath(parsed.path);
+  if (!type) return id;
+  const kind = documentKindForAssetType(type);
+  if (!kind || kind === parsed.kind) return id;
+  return documentId({ kind, path: parsed.path });
+}
+
 export function isContentBrowserId(id: string): boolean {
   return id === CONTENT_BROWSER_ID;
 }
