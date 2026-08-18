@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FreeCamera,
   MeshBuilder,
   Quaternion,
+  RenderTargetTexture,
   TransformNode,
   Vector3,
   VertexBuffer,
@@ -15,7 +16,11 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
-import { EditorDebugOverlay } from "./editor-debug-overlay";
+import {
+  CAMERA_PREVIEW_HEIGHT,
+  CAMERA_PREVIEW_WIDTH,
+  EditorDebugOverlay,
+} from "./editor-debug-overlay";
 import { editorMeshName } from "./scene-loader";
 
 function sceneWith(
@@ -328,5 +333,72 @@ describe("EditorDebugOverlay", () => {
     expect(preview!.position.y).toBeCloseTo(expectedPosition.y, 5);
     expect(preview!.position.z).toBeCloseTo(expectedPosition.z, 5);
     overlay.dispose();
+  });
+
+  it("flips WebGL readPixels so the 2D canvas is not upside down", async () => {
+    const ImageDataStub = class {
+      data: Uint8ClampedArray;
+      width: number;
+      height: number;
+      constructor(data: Uint8ClampedArray, width: number, height: number) {
+        this.data = data;
+        this.width = width;
+        this.height = height;
+      }
+    };
+    const previousImageData = (globalThis as { ImageData?: unknown }).ImageData;
+    (globalThis as { ImageData: unknown }).ImageData = ImageDataStub;
+
+    const width = CAMERA_PREVIEW_WIDTH;
+    const height = CAMERA_PREVIEW_HEIGHT;
+    const row = width * 4;
+    const gpu = new Uint8Array(width * height * 4);
+    for (let x = 0; x < width; x++) {
+      const bottom = x * 4;
+      gpu[bottom] = 255;
+      gpu[bottom + 3] = 255;
+      const top = (height - 1) * row + x * 4;
+      gpu[top + 2] = 255;
+      gpu[top + 3] = 255;
+    }
+    const readPixels = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockResolvedValue(gpu);
+
+    try {
+      const { scene } = createHandle();
+      const overlay = new EditorDebugOverlay(scene);
+      const captured: Array<{ data: Uint8ClampedArray }> = [];
+      const canvas = {
+        hidden: true,
+        dataset: {} as Record<string, string>,
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          putImageData: (image: { data: Uint8ClampedArray }) => {
+            captured.push(image);
+          },
+        }),
+      };
+      overlay.setPreviewCanvas(canvas as unknown as HTMLCanvasElement);
+      overlay.sync({
+        sceneData: sceneWith([cameraActor()]),
+        selectedActorIds: ["cam"],
+      });
+      await vi.waitFor(() => expect(captured.length).toBeGreaterThan(0));
+      const image = captured[0]!;
+      expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
+      expect([...image.data.subarray((height - 1) * row, (height - 1) * row + 4)]).toEqual([
+        255, 0, 0, 255,
+      ]);
+      overlay.dispose();
+    } finally {
+      readPixels.mockRestore();
+      if (previousImageData) {
+        (globalThis as { ImageData: unknown }).ImageData = previousImageData;
+      } else {
+        delete (globalThis as { ImageData?: unknown }).ImageData;
+      }
+    }
   });
 });
