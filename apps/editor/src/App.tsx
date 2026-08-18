@@ -36,6 +36,7 @@ import { MaterialRenderControlProvider } from "./context/material-render-control
 import { EditorUtilityRuntime } from "./components/editor-utility-runtime";
 import { TestUiHostStats } from "./lib/test-ui-host-stats";
 import { TestAudioHostStats } from "./lib/test-audio-host-stats";
+import { TestParticleHostStats } from "./lib/test-particle-host-stats";
 import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
@@ -412,6 +413,7 @@ export default function App() {
                 <EditorUtilityRuntime />
                 <TestUiHostStats />
                 <TestAudioHostStats />
+                <TestParticleHostStats />
                 <ProjectSearchProvider>
                   <AppRoutes />
                 </ProjectSearchProvider>

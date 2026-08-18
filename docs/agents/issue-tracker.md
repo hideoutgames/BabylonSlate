@@ -328,10 +328,16 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 | Gap vs engineplan §9 | Reality | Owner |
 | --- | --- | --- |
-| Core quality commands “mutate real engine settings” | `consoleHost` still `emitSetting` logs ([debugger.md](../architecture/debugger.md) already says this) | Later polish / P14 player |
+| Core quality commands “mutate real engine settings” | `consoleHost` still `emitSetting` logs ([debugger.md](../architecture/debugger.md) already says this) | `p8-console-apply` |
+| No `resume`; console `step` no-ops while paused; overlay Pause/Resume unsynced | `RuntimeDriver.resume()` exists; overlay Step uses resume→tick→pause; console `step` calls `tick()` | `p8-console-session` |
+| No free cam / spectate without pausing | Possess Camera is a graph node; Play cameras are detached `UniversalCamera` | `p8-console-freecam` |
+| `showcollision` / `showbounds` / `wireframe` / `slomo` | Log only | `p8-console-slomo`, `p8-console-viz` |
+| User `BDebugCommand` can overwrite engine names | `registry.register` is last-write-wins | `p8-console-session` |
 | §9.4 HUD (render ms, invalidations/s, HW scale, texture/geometry/compressed bytes, LRU evictions, actors, per-channel bytes) | `StatsHud` shows fps, script/physics ms, tick-budget flag, one accounted-byte total, mesh/texture counts, draws, aggregate bridge msgs/s | `p8-hud-polish` |
 | Trace as document tab + graphs + derived-data `.babtrace` spill | In-memory + overlay `TracePlayback`; `encodeTraceDocument` exists, editor does not write it | `p8-trace-playback` (P11 needs real input replay) |
 | `PinListEditor` on Class / ScriptInterface | Done (Class Inspector function pins + ScriptInterface method Details; ExecuteJavaScript / OnCommandRun keep the `ParameterListEditor` wrapper) | — |
+
+Command catalog and slice order: [console-commands.md](../architecture/console-commands.md).
 
 ## P9 slice ownership
 
@@ -383,7 +389,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`); dual-mode State Machine \| Animation Object + compiled rules on `cursor/complete-animation-graph-9a46` |
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
-| G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P18**, not this wave |
+| G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P19**, not this wave |
 
 Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
@@ -462,7 +468,7 @@ Foundation-hardening is on `main`. Chrome polish (pin flash) is not P11 work. Mu
 | Blockers + 2D + nodes | `p11-nav-blockers-2d` | `navigation`, `scripting-nodes`, `apps/editor`, `runtime` (landed) | Nav editor host |
 | §18 acceptance | `p11-acceptance` | `runtime` harness + `e2e/p11-ai.spec.ts` (landed) | Blockers + editor host |
 
-`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default (Details hides the unwired toggle until **P18**). Dynamic cost volumes do not yet affect path cost (**P18**). RotateToFace / PlayAnimation succeed without a host until **P18**. PlaySound waits on **P16 Audio**. **P11 is Done** (packages + §18). Do not uncheck P11; P18 is additive.
+`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default (Details hides the unwired toggle until **P19**). Dynamic cost volumes do not yet affect path cost (**P19**). RotateToFace / PlayAnimation succeed without a host until **P19**. PlaySound waits on **P16 Audio**. **P11 is Done** (packages + §18). Do not uncheck P11; P19 is additive.
 
 ## Behaviour tree editor authoring (`p-bt-editor-authoring`)
 
@@ -474,7 +480,7 @@ Authoring-surface residual, same class as the Anim Graph host pass. Do **not** u
 | Tree ops + canvas diagnostics | same | `apps/editor`, `graph-ui`, `behaviour-tree` (validate) | Details |
 | Loop/Cooldown/TimeLimit + Play stack overlay | same | `behaviour-tree` (eval), `bridge`/`runtime` `btState.stack`, `e2e/p11-ai.spec.ts` | Tree ops |
 
-Out of scope: RotateToFace / PlayAnimation hosts (**P18**); PlaySound (**P16 Audio**); nav cost-carve / auto-bake (**P18**); Dockview for asset tabs; large-graph virtualisation (**P17**); P12; lighting.
+Out of scope: RotateToFace / PlayAnimation hosts (**P19**); PlaySound (**P16 Audio**); nav cost-carve / auto-bake (**P19**); Dockview for asset tabs; large-graph virtualisation (**P18**); P12; lighting.
 
 ## Behaviour tree editor UX (`p-bt-editor-ux`)
 
@@ -486,7 +492,7 @@ Authoring-surface residual. Do **not** uncheck `p11-bt-editor` or `p-bt-editor-a
 | GraphEditor `connectEndMode="add-node"` + TreeNode chrome | same | `graph-ui` | connect policies |
 | Blackboard / Compiler Results docks, free drag, one-undo moves | same | `apps/editor`, `e2e/bt-editor.spec.ts` | GraphEditor policies |
 
-Out of scope: changing `children[]` semantics at runtime; 96px cancel / wire-break on script, material, or anim graphs; large-graph virtualisation (**P17** `p17-graph-virtualize`); reopening P11; RotateToFace / PlayAnimation hosts (**P18**); PlaySound (**P16 Audio**).
+Out of scope: changing `children[]` semantics at runtime; 96px cancel / wire-break on script, material, or anim graphs; large-graph virtualisation (**P18** `p18-graph-virtualize`); reopening P11; RotateToFace / PlayAnimation hosts (**P19**); PlaySound (**P16 Audio**).
 
 ## Behaviour tree class events (`p-bt-class-events`)
 
@@ -498,7 +504,7 @@ Authoring-surface residual. Do **not** uncheck `p11-bt-authoring`. Packages: `ap
 | Decorator host, abort, Return Condition, blackboard nodes | same | `behaviour-tree`, `scripting-nodes`, `runtime` | Class events |
 | Composite kind from ancestry + e2e | same | `behaviour-tree`, `e2e/p11-ai.spec.ts` | hosts |
 
-Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation hosts (**P18**); PlaySound (**P16 Audio**); reopening P11; P12; lighting.
+Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation hosts (**P19**); PlaySound (**P16 Audio**); reopening P11; P12; lighting.
 
 ## P12 editor extensions
 
@@ -559,28 +565,43 @@ Spec: [engineplan.md](../engineplan.md) §2.6 / §18 / §19, Appendix A `p16-aud
 
 **P16 is Done.** Real-device listening remains **manual**; CI covers routing, gain, unlock, spatial parameters, bake identity, and teardown. Out of scope: streaming music, microphone capture, authored acoustic zones/materials, runtime acoustic ray tracing, waveform editing, DSP plugins and exact impulse-response simulation.
 
-## P17 iPad editor optimisation
+## P17 Particle engine
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p17-*`. **Next phase.** P16 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P18**. Collapse-inactive-subtree / cap-auto-layout stay parked.
-
-| Slice | Checklist | Packages | Depends on |
-| --- | --- | --- | --- |
-| Idle-unmount background chrome tabs (2 min grace, cap 3) | `p17-inactive-documents` | `apps/editor` (`document-workspace`, UI/Anim docks) | P16 done |
-| Off-screen node virtualisation for every `GraphEditor` host | `p17-graph-virtualize` | `graph-ui`, hosts in `apps/editor` | P16 done (can parallel) |
-| Windowed Add Node catalog body (~1000 nodes) | `p17-add-node-virtualize` | `graph-ui` (`NodePalette`); optional `editor-kit` list helper | P16 done (can parallel) |
-| Windowed Content Browser grid + revoke off-screen thumbs | `p17-content-browser-virtualize` | `apps/editor` Content Browser; `assets` thumbnail LRU | P16 done (can parallel) |
-| Prefab Preview on the app-lifetime Engine | `p17-shared-prefab-engine` | `render`, Prefab viewport in `apps/editor` | P16 done (can parallel) |
-
-Out of scope: collapse-inactive-subtree / cap-auto-layout; P18 BT/nav leftovers; pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
-
-## P18 Behaviour tree hosts and navigation leftovers
-
-Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p18-*`. Additive on Done P11. Do **not** uncheck `p11-*`. Do not start until P17 is marked Done.
+Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-*`. Design note: [particles.md](../architecture/particles.md). **Done.** Quads only; wrap `GPUParticleSystem` / `ParticleSystem`; particle-domain NME; two assets. Packed-player hydrate and overlay Play share `ParticleService`. Out of scope remains mesh particles / SPS / NPE / fluid renderer.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| RotateToFace + PlayAnimation runtime hosts | `p18-bt-task-hosts` | `behaviour-tree`, `runtime`, `apps/editor` | P11 hosts; P17 Done |
-| Auto-bake-on-save, bake bounds, cost volumes | `p18-nav-leftovers` | `navigation`, `apps/editor`, `runtime` | `p11-nav-blockers-2d`; P17 Done |
+| Payloads + apply-mapping | Done (`p17-particle-assets`) | `core`, `assets`, `exporter` | P16 done |
+| Particle domain + Particle Color / Texture | Done (`p17-particle-material`) | `shader-graph`, `render` | particle assets |
+| New Asset, DockView, ParticleComponent | Done (`p17-particle-authoring`) | `apps/editor`, `editor-kit`, `object-model` | particle assets |
+| ParticleService GPU/CPU start/stop/dispose | Done (`p17-particle-runtime`) | `render`, `bridge`, `runtime`, `apps/editor`, `apps/player` | authoring + material |
+| Play Particles / Stop Particles | Done (`p17-particle-nodes`) | `scripting`, `scripting-nodes`, `runtime` | runtime |
+| Architecture doc + Playwright + verify | Done (`p17-particle-acceptance`) | unit + e2e | all P17 slices |
+
+**P17 is Done.** Overlay Play and the packed player share `ParticleService`. GPU `stop()` still draws leftovers; teardown must `dispose()`. Out of scope: mesh particles / SPS / NPE / fluid renderer / bursts / sub-emitters / sprite-sheet flipbooks; P18 iPad optimisation; P19 BT/nav leftovers.
+
+## P18 iPad editor optimisation
+
+Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **Next phase.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Collapse-inactive-subtree / cap-auto-layout stay parked.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| Idle-unmount background chrome tabs (2 min grace, cap 3) | `p18-inactive-documents` | `apps/editor` (`document-workspace`, UI/Anim docks) | P17 done |
+| Off-screen node virtualisation for every `GraphEditor` host | `p18-graph-virtualize` | `graph-ui`, hosts in `apps/editor` | P17 done (can parallel) |
+| Windowed Add Node catalog body (~1000 nodes) | `p18-add-node-virtualize` | `graph-ui` (`NodePalette`); optional `editor-kit` list helper | P17 done (can parallel) |
+| Windowed Content Browser grid + revoke off-screen thumbs | `p18-content-browser-virtualize` | `apps/editor` Content Browser; `assets` thumbnail LRU | P17 done (can parallel) |
+| Prefab Preview on the app-lifetime Engine | `p18-shared-prefab-engine` | `render`, Prefab viewport in `apps/editor` | P17 done (can parallel) |
+
+Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers; pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
+
+## P19 Behaviour tree hosts and navigation leftovers
+
+Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. Do not start until P18 is marked Done.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| RotateToFace + PlayAnimation runtime hosts | `p19-bt-task-hosts` | `behaviour-tree`, `runtime`, `apps/editor` | P11 hosts; P18 Done |
+| Auto-bake-on-save, bake bounds, cost volumes | `p19-nav-leftovers` | `navigation`, `apps/editor`, `runtime` | `p11-nav-blockers-2d`; P18 Done |
 
 Out of scope: rebuilding BT **PlaySound** (P16); scripted custom composite VM; reopening P11 evaluator/abort matrix; `p1-device-spikes`. Crowd MoveTo is already live.
 

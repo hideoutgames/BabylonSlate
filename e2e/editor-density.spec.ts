@@ -298,9 +298,9 @@ test.describe("Editor density and IA", () => {
     await page.getByTestId("viewport-settings").click();
     const joystick = page.getByTestId("gizmo-joystick-toggle");
     await expect(joystick).toBeVisible();
-    await expect(joystick).toHaveAttribute("aria-checked", "false");
-    await joystick.click();
     await expect(joystick).toHaveAttribute("aria-checked", "true");
+    await joystick.click();
+    await expect(joystick).toHaveAttribute("aria-checked", "false");
   });
 
   test("tapping empty Content Browser grid clears the tile selection", async ({

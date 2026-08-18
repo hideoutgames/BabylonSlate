@@ -4,6 +4,8 @@ Shared surface for the command system, Play/export console, stats HUD, and trace
 
 The organising idea: **the command system is always present; only the debugger UI and debug-tier commands are optional.** A shipped game can still `changescene` or drop render quality with no console on screen.
 
+Engine command catalog, what actually applies today, and the follow-up pass (`resume`, `freecam`, reserved names): [console-commands.md](console-commands.md).
+
 ## Package API (`@babylonslate/debugger`)
 
 | Export | Role |
@@ -38,8 +40,8 @@ Every registered command has a tier. A non-debug registry **does not register de
 
 | Tier | Ships | Commands |
 | --- | --- | --- |
-| **core** | Every build | `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, plus user `BDebugCommand` classes |
-| **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `wireframe`, `pause`, `step`, `slomo`, `dumplog`, `snapshot start`, `snapshot stop` |
+| **core** | Every build | `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, `help` (planned), plus user `BDebugCommand` classes |
+| **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `wireframe`, `pause`, `resume` (planned), `step`, `slomo`, `freecam` (planned), `dumplog`, `snapshot start`, `snapshot stop`, plus viz/dump names in [console-commands.md](console-commands.md) |
 
 Real export tree-shaking of the debug module is landed: the release player calls `createCommandRegistry({ includeDebug: false })` via `includeDebugCommands: manifest.bundleDebugger`. Preview Build and a **Bundle Debugger** export preset keep the debug tier. See [exporter.md](exporter.md).
 
@@ -63,12 +65,12 @@ The registry does not touch the world or renderer. Runtime implements:
 | `renderquality` / `resolutionscale` / `volume` / `framecap` | typed setters (log `key=value` until a later consumer). `renderquality` stays `low`/`medium`/`high` |
 | `shadowquality` | enum `off`/`512`/`1024`/`2048` (not the render-quality ladder). Runtime emits `{ type: "setShadowQuality"; level }` and the renderer sizes the one `ShadowGenerator` (or disposes it when `off`). `2048` also warns |
 | `quit` | `quit()` → runtime `stop` |
-| debug pause / step / slomo | `pause` / `step` / `setTimeDilation` |
+| debug pause / resume / step / slomo | `pause` / `resume` (planned) / `step` / `setTimeDilation`. Console `step` currently calls `tick()` and no-ops while paused; overlay Step already does resume→tick→pause |
 | `dumplog` | `dumpLog()` from the log ring |
 | overlay flags | `setShowFps`, `setStat`, `setShowCollision`, … |
 | `snapshot start` / `snapshot stop` | `startSnapshot` / `stopSnapshot` → `TraceRecorder`; stop emits a `trace` command |
 
-Core setters that the main thread does not yet apply (`renderquality`, `resolutionscale`, `volume`, `framecap`) still succeed and emit a `log` command so graphs and tests can observe them. `shadowquality` logs and applies.
+Core setters that the main thread does not yet apply (`renderquality`, `resolutionscale`, `volume`, `framecap`) still succeed and emit a `log` command so graphs and tests can observe them. `shadowquality` logs and applies. Wiring those setters, `resume`, and `freecam` is the engine console pass — [console-commands.md](console-commands.md).
 
 ## ExecuteConsoleCommand
 
@@ -76,7 +78,7 @@ The P5 node already compiles to `ctx.executeConsoleCommand(command)` and binds `
 
 ## BDebugCommand
 
-`BDebugCommand` is an Object subclass in the class registry. User classes whose parent chain reaches it are discovered with `ClassRegistry.isA`. Class settings (command name, description, category, typed parameter list) live on the `Event On Command Run` node and drive generated output pins. Compiled graphs register as **core** commands via `RuntimeDriver.loadScripts` (`script.command`). They run from the Play console and from `ExecuteConsoleCommand` even when `includeDebugCommands` is false.
+`BDebugCommand` is an Object subclass in the class registry. User classes whose parent chain reaches it are discovered with `ClassRegistry.isA`. Class settings (command name, description, category, typed parameter list) live on the `Event On Command Run` node and drive generated output pins. Compiled graphs register as **core** commands via `RuntimeDriver.loadScripts` (`script.command`). They run from the Play console and from `ExecuteConsoleCommand` even when `includeDebugCommands` is false. Builtin names are reserved so a user class cannot silently replace `pause` or `changescene` — [console-commands.md](console-commands.md).
 
 The shared `ParameterListEditor` in `editor-kit` authors those rows (types, optional, defaults, enum values, reorder) and ExecuteJavaScript Inputs/Outputs.
 

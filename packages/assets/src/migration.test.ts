@@ -47,6 +47,8 @@ describe("Audio schema versions", () => {
     expect(registry.currentVersion("AudioMixer")).toBe(1);
     expect(registry.currentVersion("AudioChannel")).toBe(1);
     expect(registry.currentVersion("SoundAttenuation")).toBe(1);
+    expect(registry.currentVersion("ParticleEmitter")).toBe(1);
+    expect(registry.currentVersion("ParticleSystem")).toBe(1);
   });
 
   it("loads current AudioMixer payloads without a pending migration", () => {
