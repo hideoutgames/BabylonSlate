@@ -3,7 +3,6 @@ import {
   EdgeLabelRenderer,
   Handle,
   Position,
-  getBezierPath,
   useReactFlow,
   type EdgeProps,
   type Node,
@@ -12,6 +11,7 @@ import {
 import { cn } from "@babylonslate/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
 import { useGraphEditorContext } from "./graph-editor-context";
+import { animTransitionPath } from "./anim-transition-path";
 
 type AnimStateSide = "top" | "right" | "bottom" | "left";
 
@@ -100,16 +100,15 @@ export function AnimTransitionEdge({
   type,
 }: EdgeProps) {
   const { onEdgeDoubleClick } = useGraphEditorContext();
-  const { setEdges } = useReactFlow();
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const { setEdges, setNodes } = useReactFlow();
+  const { path: edgePath, labelX, labelY, angle } = animTransitionPath({
     sourceX,
     sourceY,
+    sourcePosition,
     targetX,
     targetY,
-    sourcePosition,
     targetPosition,
   });
-  const angle = (Math.atan2(targetY - sourceY, targetX - sourceX) * 180) / Math.PI;
   const bidirectional = type === "animTransitionBoth";
   return (
     <>
@@ -136,6 +135,11 @@ export function AnimTransitionEdge({
           aria-label="Select transition"
           onClick={(event) => {
             event.stopPropagation();
+            setNodes((current) =>
+              current.map((node) =>
+                node.selected ? { ...node, selected: false } : node,
+              ),
+            );
             setEdges((current) =>
               current.map((edge) => ({
                 ...edge,
