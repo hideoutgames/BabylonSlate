@@ -2,41 +2,46 @@ import { describe, expect, it, vi } from "vitest";
 import {
   closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
+  editorUtilityEmptyLabel,
   editorUtilityGuidFromWindowId,
+  editorUtilityHostDocumentKind,
   editorUtilityWindowId,
   findDockOrUtilityWindow,
+  listEditorUtilityMenuWindows,
   listEditorUtilityWindows,
   mergeEditorUtilityListingPayload,
+  resolveEditorUtilityLiveHost,
+  editorUtilityLiveTarget,
 } from "./editor-utility-windows";
 
-describe("listEditorUtilityWindows", () => {
-  const assets = [
-    {
-      guid: "eui-scene",
-      name: "SceneTools",
-      type: "EditorUtilityInterface",
-      payload: { dockKind: "scene" },
-    },
-    {
-      guid: "eui-class",
-      name: "ClassTools",
-      type: "EditorUtilityInterface",
-      payload: { dockKind: "class" },
-    },
-    {
-      guid: "hud",
-      name: "HUD",
-      type: "UserInterface",
-      payload: {},
-    },
-    {
-      guid: "eui-default",
-      name: "LegacyTools",
-      type: "EditorUtilityInterface",
-      payload: {},
-    },
-  ];
+const assets = [
+  {
+    guid: "eui-scene",
+    name: "SceneTools",
+    type: "EditorUtilityInterface",
+    payload: { dockKind: "scene" },
+  },
+  {
+    guid: "eui-class",
+    name: "ClassTools",
+    type: "EditorUtilityInterface",
+    payload: { dockKind: "class" },
+  },
+  {
+    guid: "hud",
+    name: "HUD",
+    type: "UserInterface",
+    payload: {},
+  },
+  {
+    guid: "eui-default",
+    name: "LegacyTools",
+    type: "EditorUtilityInterface",
+    payload: {},
+  },
+];
 
+describe("listEditorUtilityWindows", () => {
   it("lists scene EditorUtilityInterface assets for a Scene document", () => {
     const windows = listEditorUtilityWindows({ kind: "scene", assets });
     expect(windows.map((entry) => entry.id)).toEqual([
@@ -64,6 +69,25 @@ describe("listEditorUtilityWindows", () => {
   it("returns an empty list when no matching utilities exist", () => {
     expect(listEditorUtilityWindows({ kind: "sprite", assets })).toEqual([]);
     expect(listEditorUtilityWindows()).toEqual([]);
+  });
+
+  it("lists every EditorUtilityInterface when the active document is a UI editor", () => {
+    const windows = listEditorUtilityMenuWindows({ kind: "ui", assets });
+    expect(windows.map((entry) => entry.title)).toEqual([
+      "SceneTools",
+      "ClassTools",
+      "LegacyTools",
+    ]);
+    expect(windows[0]?.defaultPosition?.referencePanelId).toBe("viewport");
+    expect(windows[1]?.defaultPosition?.referencePanelId).toBe("graph");
+  });
+
+  it("keeps Scene listing unchanged through the Windows menu helper", () => {
+    expect(
+      listEditorUtilityMenuWindows({ kind: "scene", assets }).map(
+        (entry) => entry.title,
+      ),
+    ).toEqual(["SceneTools", "LegacyTools"]);
   });
 
   it("docks scene utilities to the right of Viewport by default", () => {
@@ -182,5 +206,143 @@ describe("closeMismatchedEditorUtilityPanels", () => {
     ];
     closeMismatchedEditorUtilityPanels(api, "scene", assets);
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("editorUtilityHostDocumentKind", () => {
+  it("maps dockKind class to the Class document and anything else to Scene", () => {
+    expect(editorUtilityHostDocumentKind("class")).toBe("graph");
+    expect(editorUtilityHostDocumentKind("scene")).toBe("scene");
+    expect(editorUtilityHostDocumentKind(undefined)).toBe("scene");
+  });
+});
+
+describe("editorUtilityEmptyLabel", () => {
+  it("says the project has no Editor Utility Interfaces", () => {
+    expect(editorUtilityEmptyLabel("scene", [])).toBe(
+      "No Editor Utility Interfaces In This Project",
+    );
+    expect(
+      editorUtilityEmptyLabel("scene", [
+        { guid: "hud", name: "HUD", type: "UserInterface" },
+      ]),
+    ).toBe("No Editor Utility Interfaces In This Project");
+  });
+
+  it("says none match this document when EUIs exist for the other dock", () => {
+    expect(
+      editorUtilityEmptyLabel("graph", [
+        {
+          guid: "eui-scene",
+          name: "SceneTools",
+          type: "EditorUtilityInterface",
+          payload: { dockKind: "scene" },
+        },
+      ]),
+    ).toBe("None For This Document");
+  });
+
+  it("returns null when the menu has entries", () => {
+    expect(
+      editorUtilityEmptyLabel("scene", [
+        {
+          guid: "eui-scene",
+          name: "SceneTools",
+          type: "EditorUtilityInterface",
+          payload: { dockKind: "scene" },
+        },
+      ]),
+    ).toBeNull();
+    expect(
+      editorUtilityEmptyLabel("ui", [
+        {
+          guid: "eui-scene",
+          name: "SceneTools",
+          type: "EditorUtilityInterface",
+          payload: { dockKind: "scene" },
+        },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe("resolveEditorUtilityLiveHost", () => {
+  it("picks the first Scene or Class path for the widget dockKind", () => {
+    expect(
+      resolveEditorUtilityLiveHost({
+        dockKind: "scene",
+        scenes: ["assets/main.scene.babasset"],
+        graphs: ["assets/main.class.babasset"],
+      }),
+    ).toEqual({ kind: "scene", path: "assets/main.scene.babasset" });
+    expect(
+      resolveEditorUtilityLiveHost({
+        dockKind: "class",
+        scenes: ["assets/main.scene.babasset"],
+        graphs: ["assets/main.class.babasset"],
+      }),
+    ).toEqual({ kind: "graph", path: "assets/main.class.babasset" });
+  });
+
+  it("returns null when the project has no host document of that kind", () => {
+    expect(
+      resolveEditorUtilityLiveHost({
+        dockKind: "class",
+        scenes: ["assets/main.scene.babasset"],
+        graphs: [],
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("editorUtilityLiveTarget", () => {
+  const scenes = ["assets/main.scene.babasset"];
+  const graphs = ["assets/main.class.babasset"];
+
+  it("resolves the Scene host and panel id for a scene EditorUtilityInterface", () => {
+    expect(
+      editorUtilityLiveTarget({
+        guid: "eui-scene",
+        assets,
+        scenes,
+        graphs,
+      }),
+    ).toEqual({
+      host: { kind: "scene", path: "assets/main.scene.babasset" },
+      panelId: "eui-eui-scene",
+    });
+  });
+
+  it("resolves the Class host for a class-dock EditorUtilityInterface", () => {
+    expect(
+      editorUtilityLiveTarget({
+        guid: "eui-class",
+        assets,
+        scenes,
+        graphs,
+      }),
+    ).toEqual({
+      host: { kind: "graph", path: "assets/main.class.babasset" },
+      panelId: "eui-eui-class",
+    });
+  });
+
+  it("returns null when the guid is missing or the host document does not exist", () => {
+    expect(
+      editorUtilityLiveTarget({
+        guid: "missing",
+        assets,
+        scenes,
+        graphs,
+      }),
+    ).toBeNull();
+    expect(
+      editorUtilityLiveTarget({
+        guid: "eui-class",
+        assets,
+        scenes,
+        graphs: [],
+      }),
+    ).toBeNull();
   });
 });

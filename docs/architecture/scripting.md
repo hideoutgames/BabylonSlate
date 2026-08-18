@@ -66,7 +66,7 @@ Single module `packages/scripting/src/types.ts` (exhaustively tested, prefer fas
 | Exec | `exec` |
 | Primitives | `bool`, `int`, `float`, `string` |
 | Math | `vec2`, `vec3`, `vec4`, `rotator`, `transform`, `color` |
-| Refs | `objectRef(classId)`, `actorRef(classId)`, `classRef(classId)` (class value, not a live instance), `structRef(guid)`, `enumRef(guid)` |
+| Refs | `objectRef(classId)`, `actorRef(classId)`, `classRef(classId)` (class value, not a live instance), `structRef(guid)`, `enumRef(guid)`, `assetRef(assetType)` (guid string constrained to one Content Browser type, e.g. `Audio`) |
 | Containers | `array(T)`, `map(K, V)` |
 | Other | `delegate(signature)`, `resolvingWildcard`, `boxedWildcard` |
 
@@ -182,11 +182,13 @@ Shared **PinListEditor** / **PinTypePicker** in `editor-kit` author typed named 
 
 One module + one test file per category:
 
-`flow`, `math`, `vector`, `string`, `array`/`map` (`array.*` plus `map.get` / `map.set` / `map.has` / `map.remove` / `map.size` / `map.keys` with K/V wildcards), `actor`, `component`, `transform`, `physics` (LineTrace, Sphere Overlap, Shape Sweep, Add Impulse — sync on calling exec pin), `input`, `audio`, `ui` (**Apply User Interface** `classRef` → `objectRef`; **Remove User Interface** / **Set Widget Visibility** take object refs; generic **Get Widget** is hidden — palette injects `Get <Name>` per document widget as `objectRef(ButtonWidget)` / …), `scene`, `camera` / `light` (Possess Camera, get/set FOV and orthographic size, set light enabled/color/intensity), `debug`, `interface`, `variables` (bound Get/Set; generic catalog ids hidden — palette injects per class member and per open-function local), `casting` (`Cast to <Class>` rows injected per known class; generic `casting.cast` / `casting.castActor` hidden), `timers`, `functions` (Call Function; generic catalog id hidden — palette injects per class member), `behaviour-tree` (On Activate / On Tick / On Abort / On Evaluate / Finish Execute / Return Condition / Get Blackboard / Set Blackboard), `navigation` (FindPathTo, MoveTo, StopMovement, path queries, obstacle add/remove).
+`flow`, `math`, `vector`, `string`, `array`/`map` (`array.*` plus `map.get` / `map.set` / `map.has` / `map.remove` / `map.size` / `map.keys` with K/V wildcards), `actor`, `component`, `transform`, `physics` (LineTrace, Sphere Overlap, Shape Sweep, Add Impulse — sync on calling exec pin), `input`, `audio` (Play Sound, Set Channel Volume, Set Global Volume), `ui` (**Apply User Interface** `classRef` → `objectRef`; **Remove User Interface** / **Set Widget Visibility** take object refs; generic **Get Widget** is hidden — palette injects `Get <Name>` per document widget as `objectRef(ButtonWidget)` / …), `scene`, `camera` / `light` (Possess Camera, get/set FOV and orthographic size, set light enabled/color/intensity), `debug`, `interface`, `variables` (bound Get/Set; generic catalog ids hidden — palette injects per class member and per open-function local), `casting` (`Cast to <Class>` rows injected per known class; generic `casting.cast` / `casting.castActor` hidden), `timers`, `functions` (Call Function; generic catalog id hidden — palette injects per class member), `behaviour-tree` (On Activate / On Tick / On Abort / On Evaluate / Finish Execute / Return Condition / Get Blackboard / Set Blackboard), `navigation` (FindPathTo, MoveTo, StopMovement, path queries, obstacle add/remove).
 
 Each node: `{ id, title, category, pins, codegen(ctx) }`. Physics/input nodes may register with compile-time "not yet available" or emit TODOs that fail validation until those phases — prefer stub codegen that throws a clear diagnostic over silently no-op.
 
 AI / navigation categories: behaviour-tree event/finish/return/blackboard nodes plus `navigation.*` (FindPathTo, MoveTo, StopMovement, path queries, obstacle add/remove). `scripting-nodes` emits `ctx.*` only — Recast stays in `@babylonslate/navigation` / runtime. **Return Condition** (`bt.returnCondition`) is exec in + bool in → `ctx.btEvaluate(bool)` (On Evaluate has exec-out only). **Get/Set Blackboard** (`bt.blackboard.get` / `bt.blackboard.set`) mirror variable nodes onto `ctx.getBlackboard` / `ctx.setBlackboard`. Class Add Node palettes filter by parent ancestry: Actor graphs hide `bt.event.*` / finish / return / blackboard; `BTTask` gets activate/tick/abort + finish + blackboard; `BTDecorator` gets evaluate + return + blackboard; `BTService` gets tick + blackboard; `BTComposite` hides Actor and BT leaf events.
+
+**Audio** (`audio.play` / `audio.setChannelVolume` / `audio.setGlobalVolume`) lives on Class and Actor palettes. Play Sound takes an `assetRef("Audio")` pin and Volume default `1`, and emits `playSound` with `self` as emitter. Set Channel / Set Global clamp `0..1` and replace session mixer values (warned no-op without a selected mixer / unknown channel). Inspector maps `assetRef` pins to `AssetPicker` with `allowedTypes`. See [audio.md](audio.md).
 
 ### Editor-only graphs
 
@@ -241,7 +243,7 @@ The graph canvas shows the same value as a **read-only** preview on the node (`P
 
 | Editable | Not in v1 |
 | --- | --- |
-| `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `vec4` (XYZW scrubs), `rotator`, `color` (RGB; preserve `w`), `enumRef` (member-name Select from open Enum documents / registry), `classRef` (`ClassPicker` filtered to subclasses of the pin’s `classId`; default is that constraint id) | `exec`, `objectRef` / `actorRef` (live instances — no Inspector default; implicit-self Target on Call is the exception), delegate, wildcards, `array`, `map`, `structRef`, `transform` |
+| `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `vec4` (XYZW scrubs), `rotator`, `color` (RGB; preserve `w`), `enumRef` (member-name Select from open Enum documents / registry), `classRef` (`ClassPicker` filtered to subclasses of the pin’s `classId`; default is that constraint id), `assetRef` (`AssetPicker` with `allowedTypes` from `assetType`; default is a guid string) | `exec`, `objectRef` / `actorRef` (live instances — no Inspector default; implicit-self Target on Call is the exception), delegate, wildcards, `array`, `map`, `structRef`, `transform` |
 
 Authored defaults on types that **accept** literals clear `pin.missing_input`. A stored default on an object/actor **instance** pin is `pin.invalid_default`; the compiler ignores it and emits `null`. Boxed-wildcard node values (Print, Set Blackboard) still compile. Spawn Actor / Add Component `classId` pins are `classRef("Actor")` / `classRef("ActorComponent")`.
 

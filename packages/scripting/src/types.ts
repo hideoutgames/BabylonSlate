@@ -20,6 +20,7 @@ export type PinType =
   | { kind: "objectRef"; classId: string }
   | { kind: "actorRef"; classId: string }
   | { kind: "classRef"; classId: string }
+  | { kind: "assetRef"; assetType: string }
   | { kind: "structRef"; guid: string }
   | { kind: "enumRef"; guid: string }
   | { kind: "array"; element: PinType }
@@ -57,6 +58,11 @@ export function classRef(classId: string): PinType {
   return { kind: "classRef", classId };
 }
 
+/** Asset guid constrained to one Content Browser type (`Audio`, `AudioChannel`, …). */
+export function assetRef(assetType: string): PinType {
+  return { kind: "assetRef", assetType };
+}
+
 export function structRef(guid: string): PinType {
   return { kind: "structRef", guid };
 }
@@ -80,6 +86,8 @@ export function pinTypeEquals(a: PinType, b: PinType): boolean {
     case "actorRef":
     case "classRef":
       return a.classId === (b as typeof a).classId;
+    case "assetRef":
+      return a.assetType === (b as typeof a).assetType;
     case "structRef":
     case "enumRef":
       return a.guid === (b as typeof a).guid;
@@ -211,6 +219,8 @@ export function defaultValueLiteral(type: PinType): string {
       return "null";
     case "classRef":
       return JSON.stringify(type.classId);
+    case "assetRef":
+      return '""';
   }
 }
 
@@ -222,6 +232,8 @@ export function pinTypeTag(type: PinType): string {
       return `actorRef:${type.classId}`;
     case "classRef":
       return `classRef:${type.classId}`;
+    case "assetRef":
+      return `assetRef:${type.assetType}`;
     case "structRef":
       return `structRef:${type.guid}`;
     case "enumRef":

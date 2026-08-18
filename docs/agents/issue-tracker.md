@@ -532,23 +532,23 @@ Hardening on `cursor/p15-source-control-gaps-44b6`: Git LFS create 409 now consu
 
 ## P16 Audio engine
 
-Spec: [engineplan.md](../engineplan.md) §2.6 / §18 / §19, Appendix A `p16-audio-*`. **Next phase.** Imported Audio is the one sound asset; AudioMixer, AudioChannel and SoundAttenuation are user-created assets. No mixer/channel/attenuation remains a supported playback path.
+Spec: [engineplan.md](../engineplan.md) §2.6 / §18 / §19, Appendix A `p16-audio-*`. Design note: [audio.md](../architecture/audio.md). Imported Audio is the one sound asset; AudioMixer, AudioChannel and SoundAttenuation are user-created assets. No mixer/channel/attenuation remains a supported playback path.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| Asset schemas, references, migrations, Project Settings mixer | `p16-audio-assets` | `core`, `assets`, `exporter` | P15 done |
-| Audio and routing-asset editors; AudioComponent | `p16-audio-authoring` | `apps/editor`, `editor-kit`, `object-model` | audio assets |
-| AudioV2 service, cache, unlock, editor/player routing | `p16-audio-runtime` | `render`, `bridge`, `runtime`, `apps/editor`, `apps/player` | audio assets |
-| SoundAttenuation emitters and listener | `p16-audio-spatial` | `render`, `runtime`, `apps/editor` | runtime + authoring |
-| Automatic geometry reverb bake and bounded shared effect | `p16-audio-reverb-bake` | `render`, `assets`, `apps/editor`, `exporter` | runtime + audio channels |
-| Typed Play/Set Channel/Set Global nodes + BT PlaySound host | `p16-audio-nodes-bt` | `scripting`, `scripting-nodes`, `runtime`, `behaviour-tree`, `apps/editor` | runtime + assets |
-| Cross-package no-config/mixer/spatial/reverb/export proof | `p16-audio-acceptance` | unit + integration + Playwright/export smoke | all P16 slices |
+| Asset schemas, references, migrations, Project Settings mixer | Done (`p16-audio-assets`) | `core`, `assets`, `exporter` | P15 done |
+| Audio and routing-asset editors; AudioComponent | Done (`p16-audio-authoring`) | `apps/editor`, `editor-kit`, `object-model` | audio assets |
+| AudioV2 service, cache, unlock, editor/player routing | Done (`p16-audio-runtime`) | `render`, `bridge`, `runtime`, `apps/editor`, `apps/player` | audio assets |
+| SoundAttenuation emitters and listener | Done (`p16-audio-spatial`) | `render`, `runtime`, `apps/editor` | runtime + authoring |
+| Automatic geometry reverb bake and bounded shared effect | Done (`p16-audio-reverb-bake`) | `render`, `assets`, `apps/editor`, `exporter` | runtime + audio channels |
+| Typed Play/Set Channel/Set Global nodes + BT PlaySound host | Done (`p16-audio-nodes-bt`) | `scripting`, `scripting-nodes`, `runtime`, `behaviour-tree`, `apps/editor` | runtime + assets |
+| Cross-package no-config/mixer/spatial/reverb/export proof | Done (`p16-audio-acceptance`) | unit + integration + Playwright/export smoke | all P16 slices |
 
-Out of scope: streaming music, microphone capture, authored acoustic zones/materials, runtime acoustic ray tracing, waveform editing, DSP plugins and exact impulse-response simulation. Real-device listening is manual; deterministic routing/parameter evidence stays in CI.
+**P16 is Done.** Real-device listening remains **manual**; CI covers routing, gain, unlock, spatial parameters, bake identity, and teardown. Out of scope: streaming music, microphone capture, authored acoustic zones/materials, runtime acoustic ray tracing, waveform editing, DSP plugins and exact impulse-response simulation.
 
 ## P17 iPad editor optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p17-*`. Do not start until P16 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P18**. Collapse-inactive-subtree / cap-auto-layout stay parked.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p17-*`. **Next phase.** P16 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P18**. Collapse-inactive-subtree / cap-auto-layout stay parked.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |

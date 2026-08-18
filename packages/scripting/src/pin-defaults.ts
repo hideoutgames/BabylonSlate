@@ -13,6 +13,7 @@ const LITERAL_DEFAULT_KINDS = new Set<PinType["kind"]>([
   "color",
   "enumRef",
   "classRef",
+  "assetRef",
 ]);
 
 export function pinAcceptsLiteralDefault(type: PinType): boolean {
@@ -61,6 +62,8 @@ export function defaultJsValue(type: PinType): unknown {
       return "";
     case "classRef":
       return type.classId;
+    case "assetRef":
+      return "";
     default:
       return null;
   }

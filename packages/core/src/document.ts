@@ -18,6 +18,9 @@ export const ASSET_DOCUMENT_KINDS = [
   "structure",
   "script-interface",
   "plugin-settings",
+  "audio-mixer",
+  "audio-channel",
+  "sound-attenuation",
   "asset-settings",
 ] as const;
 
@@ -81,6 +84,12 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "ScriptInterface";
     case "plugin-settings":
       return "PluginSettings";
+    case "audio-mixer":
+      return "AudioMixer";
+    case "audio-channel":
+      return "AudioChannel";
+    case "sound-attenuation":
+      return "SoundAttenuation";
     case "asset-settings":
       return "Texture";
   }
@@ -149,6 +158,12 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "script-interface";
     case "PluginSettings":
       return "plugin-settings";
+    case "AudioMixer":
+      return "audio-mixer";
+    case "AudioChannel":
+      return "audio-channel";
+    case "SoundAttenuation":
+      return "sound-attenuation";
     case "Texture":
     case "Model":
     case "Audio":
@@ -197,6 +212,12 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Script Interface";
     case "plugin-settings":
       return "Plugin Settings";
+    case "audio-mixer":
+      return "Audio Mixer";
+    case "audio-channel":
+      return "Audio Channel";
+    case "sound-attenuation":
+      return "Sound Attenuation";
     case "asset-settings":
       return "Settings";
   }
@@ -275,7 +296,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|eui|ui|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin)\.(babasset|json)$/i,
+        /\.(scene|graph|eui|ui|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "") ?? path;

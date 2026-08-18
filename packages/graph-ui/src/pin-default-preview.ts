@@ -26,7 +26,8 @@ export type PinDefaultPreview =
         | "vec4"
         | "rotator"
         | "enumRef"
-        | "classRef";
+        | "classRef"
+        | "assetRef";
       text: string;
     };
 
@@ -156,6 +157,11 @@ export function pinDefaultPreview(
         text:
           pinDefaultAsString(value) ||
           pinDefaultAsString(defaultJsValue(type)),
+      };
+    case "assetRef":
+      return {
+        kind: "assetRef",
+        text: pinDefaultAsString(value),
       };
     default:
       return null;

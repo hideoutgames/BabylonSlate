@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { COLOR, FLOAT, STRING, VEC2, VEC4, classRef, enumRef, objectRef, pin } from "@babylonslate/scripting";
+import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin } from "@babylonslate/scripting";
 import {
   collectEnumMemberNames,
   connectedInputPinIds,
@@ -255,6 +255,40 @@ describe("pinDefaultPropertyRows", () => {
     const row = rows[0];
     if (row?.kind === "asset") row.onPick();
     expect(onPickClass).toHaveBeenCalledWith("classId", "Actor");
+  });
+
+  it("maps assetRef defaults to an AssetPicker row", () => {
+    const onPatch = vi.fn();
+    const onPickAsset = vi.fn();
+    const rows = pinDefaultPropertyRows(
+      [
+        {
+          pinId: "asset",
+          name: "asset",
+          type: assetRef("Audio"),
+          value: "audio-1",
+        },
+      ],
+      onPatch,
+      {
+        assetEntries: [{ id: "audio-1", name: "Jump", type: "Audio" }],
+        onPickAsset,
+      },
+    );
+    expect(rows).toMatchObject([
+      {
+        kind: "asset",
+        id: "asset",
+        label: "asset",
+        value: "audio-1",
+        displayLabel: "Jump",
+        displayType: "Audio",
+        visual: { assetType: "Audio" },
+      },
+    ]);
+    const row = rows[0];
+    if (row?.kind === "asset") row.onPick();
+    expect(onPickAsset).toHaveBeenCalledWith("asset", "Audio");
   });
 
   it("normalizes a legacy raw UserInterface guid onto the class picker row", () => {

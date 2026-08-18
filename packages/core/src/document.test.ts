@@ -148,6 +148,31 @@ describe("Class and settings documents", () => {
     ).toBe("Hit Script Interface");
   });
 
+  it("opens AudioMixer, AudioChannel, and SoundAttenuation as DockView documents", () => {
+    expect(documentKindForAssetType("AudioMixer")).toBe("audio-mixer");
+    expect(documentKindForAssetType("AudioChannel")).toBe("audio-channel");
+    expect(documentKindForAssetType("SoundAttenuation")).toBe(
+      "sound-attenuation",
+    );
+    expect(assetTypeForDocumentKind("audio-mixer")).toBe("AudioMixer");
+    expect(assetTypeForDocumentKind("audio-channel")).toBe("AudioChannel");
+    expect(assetTypeForDocumentKind("sound-attenuation")).toBe(
+      "SoundAttenuation",
+    );
+    expect(documentKindLabel("audio-mixer")).toBe("Audio Mixer");
+    expect(documentKindLabel("audio-channel")).toBe("Audio Channel");
+    expect(documentKindLabel("sound-attenuation")).toBe("Sound Attenuation");
+    expect(isAssetDocumentKind("audio-mixer")).toBe(true);
+    expect(labelFromPath("assets/master.mixer.babasset")).toBe("Master");
+    expect(labelFromPath("assets/sfx.channel.babasset")).toBe("Sfx");
+    expect(labelFromPath("assets/near.atten.babasset")).toBe("Near");
+    expect(
+      createDocumentRef("audio-mixer", "assets/master.mixer.babasset", {
+        name: "Master",
+      }).label,
+    ).toBe("Master Audio Mixer");
+  });
+
   it("opens PluginSettings as its own document kind", () => {
     expect(documentKindForAssetType("PluginSettings")).toBe("plugin-settings");
     expect(assetTypeForDocumentKind("plugin-settings")).toBe("PluginSettings");

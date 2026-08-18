@@ -30,6 +30,9 @@ describe("app settings", () => {
       "anim-graph": ["anim-graph-graph"],
       animGraphObject: ["anim-object-graph"],
       "behaviour-tree": ["behaviour-tree-graph"],
+      "audio-mixer": ["audio-mixer-details"],
+      "audio-channel": ["audio-channel-details"],
+      "sound-attenuation": ["sound-attenuation-details"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
@@ -117,6 +120,15 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels.animGraphObject).toEqual(["anim-object-graph"]);
     expect(parsed.focusKeepPanels["behaviour-tree"]).toEqual([
       "behaviour-tree-graph",
+    ]);
+    expect(parsed.focusKeepPanels["audio-mixer"]).toEqual([
+      "audio-mixer-details",
+    ]);
+    expect(parsed.focusKeepPanels["audio-channel"]).toEqual([
+      "audio-channel-details",
+    ]);
+    expect(parsed.focusKeepPanels["sound-attenuation"]).toEqual([
+      "sound-attenuation-details",
     ]);
   });
 

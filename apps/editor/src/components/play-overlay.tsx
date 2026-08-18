@@ -34,6 +34,7 @@ import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSiz
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
+import type { PlayAudioLibrary } from "../lib/play-audio";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
@@ -80,6 +81,8 @@ export interface PlayOverlayProps {
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  audioBytes?: ReadonlyMap<string, Uint8Array>;
+  audioLibrary?: PlayAudioLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -87,6 +90,7 @@ export interface PlayOverlayProps {
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
+  audioReverbBytes?: Uint8Array | null;
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -126,6 +130,8 @@ export function PlayOverlay({
   tilesetPayloads,
   textureBytes,
   modelBytes,
+  audioBytes,
+  audioLibrary,
   materialDocuments,
   materialFunctions,
   postProcessingEnabled,
@@ -133,6 +139,7 @@ export function PlayOverlay({
   pixelsPerUnit,
   pixelPerfect,
   navmeshBytes,
+  audioReverbBytes,
   onClose,
 }: PlayOverlayProps) {
   const { reportBtState } = usePlay();
@@ -199,12 +206,18 @@ export function PlayOverlay({
   textureBytesRef.current = textureBytes;
   const modelBytesRef = useRef(modelBytes);
   modelBytesRef.current = modelBytes;
+  const audioBytesRef = useRef(audioBytes);
+  audioBytesRef.current = audioBytes;
+  const audioLibraryRef = useRef(audioLibrary);
+  audioLibraryRef.current = audioLibrary;
   const materialDocumentsRef = useRef(materialDocuments);
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
   materialFunctionsRef.current = materialFunctions;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
+  const audioReverbBytesRef = useRef(audioReverbBytes);
+  audioReverbBytesRef.current = audioReverbBytes;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
   const pixelPerfectRef = useRef(pixelPerfect);
@@ -281,6 +294,8 @@ export function PlayOverlay({
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
       modelBytes: modelBytesRef.current,
+      audioBytes: audioBytesRef.current,
+      audioLibrary: audioLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
       postProcessingEnabled,
@@ -288,6 +303,7 @@ export function PlayOverlay({
       pixelsPerUnit: pixelsPerUnitRef.current,
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
+      audioReverbBytes: audioReverbBytesRef.current,
       userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
       onUiSetVisible: (instanceId, widgetId, visible) => {
         setHiddenWidgetIds((prev) =>

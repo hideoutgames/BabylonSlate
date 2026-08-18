@@ -106,7 +106,10 @@ export async function decodeAssetDocument(
       string,
       unknown
     >;
-  } else if (headerPayload && Object.keys(headerPayload).length > 0) {
+  } else if (
+    headerPayload &&
+    (Object.keys(headerPayload).length > 0 || decoded.header.type === "Audio")
+  ) {
     payload = headerPayload;
   } else {
     throw new Error(

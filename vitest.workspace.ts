@@ -77,12 +77,15 @@ export default defineConfig({
         // renderer adapter is unit-tested with a fake IPC bridge.
         // Needs a real WebGL context; covered by the Playwright viewport specs.
         "**/create-engine.ts",
+        "**/babylon-audio-backend.ts",
         // Standalone CreateFullscreenUI + Canvas2D blit; covered by Playwright HUD / designer.
         "**/ui-surface.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.
         "**/worker-entry.ts",
         // Navmesh bake worker; covered by bake-job unit tests + editor host.
         "**/bake-worker.ts",
+        // Audio reverb bake worker; occupancy/probe bake is covered in audio-reverb.test.ts.
+        "**/audio-reverb-worker.ts",
         // Physics wasm backends: HavokPlugin path is asserted in havok-v2.test.ts;
         // coverage of the Babylon/Havok wasm surface is environment-dependent.
         "**/havok-backend.ts",

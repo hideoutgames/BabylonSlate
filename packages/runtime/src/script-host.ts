@@ -84,7 +84,17 @@ export interface ScriptHostServices {
     instance: UserInterface | string | null | undefined,
   ): void;
   changeScene?(scene: string): void;
-  playSound?(asset: string, volume?: number): void;
+  playSound?(
+    asset: string,
+    volume?: number,
+    options?: {
+      emitterActorGuid?: string | null;
+      loop?: boolean;
+      voiceId?: string;
+    },
+  ): void;
+  setChannelVolume?(channelGuid: string, volume: number): void;
+  setGlobalVolume?(volume: number): void;
   setRenderResolution?(width: number, height: number): void;
   possessCamera?(target: unknown): void;
   updateIllumination?(target: unknown): void;
@@ -201,6 +211,8 @@ export interface ScriptContext {
     offset?: number,
   ): void;
   playSound(asset: string, volume?: number): void;
+  setChannelVolume(channelGuid: string, volume: number): void;
+  setGlobalVolume(volume: number): void;
   getWidget(widgetId: string): Widget | null;
   setWidgetVisible(widget: Widget | string, visible: boolean): void;
   applyUserInterface(classIdOrGuid: string): UserInterface | null;
@@ -692,7 +704,18 @@ export class ScriptHost {
         );
       },
       playSound: (asset, volume) => {
-        services.playSound?.(String(asset ?? ""), Number(volume ?? 1));
+        services.playSound?.(String(asset ?? ""), Number(volume ?? 1), {
+          emitterActorGuid: self?.guid ?? null,
+        });
+      },
+      setChannelVolume: (channelGuid, volume) => {
+        services.setChannelVolume?.(
+          String(channelGuid ?? ""),
+          Number(volume ?? 1),
+        );
+      },
+      setGlobalVolume: (volume) => {
+        services.setGlobalVolume?.(Number(volume ?? 1));
       },
       getWidget: (widgetId) => {
         if (!(self instanceof UserInterface)) return null;

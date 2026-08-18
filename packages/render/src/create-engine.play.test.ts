@@ -634,4 +634,41 @@ describe("Play createEngine view", () => {
     expect(livePassCount(fallback)).toBeGreaterThan(0);
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
+
+  it("routes playSound through an injected audio backend after unlock", async () => {
+    const { createDefaultAudioPayload } = await import("@babylonslate/assets");
+    const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
+    const backend = new FakeAudioPlaybackBackend();
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      audioBackend: backend,
+      audioBytes: new Map([["jump", new Uint8Array([1, 2, 3, 4])]]),
+      audioLibrary: {
+        mixerGuid: null,
+        mixers: new Map(),
+        channels: new Map(),
+        audio: new Map([
+          ["jump", { ...createDefaultAudioPayload(), volume: 0.5 }],
+        ]),
+        attenuations: new Map(),
+      },
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 0.5,
+      frameId: 1,
+      voiceId: "v1",
+    });
+    expect(backend.plays).toHaveLength(0);
+    await handle.unlockAudio();
+    expect(backend.plays).toEqual([
+      expect.objectContaining({ assetGuid: "jump", gain: 0.25, voiceId: "v1" }),
+    ]);
+    handle.dispose();
+  });
 });

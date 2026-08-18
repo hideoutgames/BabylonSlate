@@ -1,4 +1,5 @@
 import { newAssetGuid } from "../guid";
+import { remapAudioPayloadGuids } from "../audio-payload";
 import type { ImportResult } from "./types";
 
 /**
@@ -26,6 +27,7 @@ export function remapImportResultGuids(
     ...result,
     guid: remap.get(result.guid) ?? result.guid,
     dependencies: result.dependencies.map((dep) => remap.get(dep) ?? dep),
+    payload: remapAudioPayloadGuids(result.type, result.payload, remap),
     attachToGuid: result.attachToGuid
       ? remap.get(result.attachToGuid) ?? result.attachToGuid
       : result.attachToGuid,

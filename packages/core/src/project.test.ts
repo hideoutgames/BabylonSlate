@@ -56,6 +56,7 @@ describe("project schema", () => {
       defaultFontGuid: null,
       globalFallback: "sans-serif",
     });
+    expect(project.settings.audio).toEqual({ audioMixerGuid: null });
     expect(project.settings.startupSceneGuid).toBeNull();
     expect(project.settings.gameInstanceClass).toBeNull();
     expect(project.settings.playFrameCap).toBe(60);
@@ -464,6 +465,19 @@ describe("project schema", () => {
       normalizeProjectSettings({ startupSceneGuid: "scene-guid-1" })
         .startupSceneGuid,
     ).toBe("scene-guid-1");
+  });
+
+  it("normalizes a missing Audio mixer guid to null and keeps a stored guid", () => {
+    expect(normalizeProjectSettings(undefined).audio.audioMixerGuid).toBeNull();
+    expect(normalizeProjectSettings({}).audio.audioMixerGuid).toBeNull();
+    expect(
+      normalizeProjectSettings({ audio: { audioMixerGuid: "" } }).audio
+        .audioMixerGuid,
+    ).toBeNull();
+    expect(
+      normalizeProjectSettings({ audio: { audioMixerGuid: "mixer-1" } }).audio
+        .audioMixerGuid,
+    ).toBe("mixer-1");
   });
 
   it("normalizes a missing Game Instance class to null and keeps a stored id", () => {

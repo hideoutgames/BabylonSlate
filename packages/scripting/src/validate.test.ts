@@ -16,6 +16,7 @@ import {
   BOXED_WILDCARD,
   actorRef,
   arrayOf,
+  assetRef,
   classRef,
   objectRef,
 } from "./types";
@@ -251,6 +252,29 @@ describe("validateGraphs", () => {
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
     expect(diags.some((d) => d.code === "pin.invalid_default")).toBe(false);
+  });
+
+  it("clears pin.missing_input for an unconnected assetRef with a stored guid", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "play",
+          typeId: "audio.play",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("asset", "asset", "in", assetRef("Audio")),
+            pin("volume", "volume", "in", FLOAT),
+          ],
+          properties: { "default:asset": "audio-1", "default:volume": 1 },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
+    expect(diags.some((d) => d.code === "member.unknown_class")).toBe(false);
   });
 
   it("does not error pin.invalid_default for a boxedWildcard Print value", () => {

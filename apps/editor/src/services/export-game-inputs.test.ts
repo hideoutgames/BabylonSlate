@@ -136,6 +136,41 @@ describe("loadExportDocuments", () => {
     expect(loaded.navmeshByGuid("scene-1")).toEqual(new Uint8Array([1, 2, 3]));
   });
 
+  it("reads the Scene audioReverb extra chunk for packed Play", async () => {
+    const scene = createDefaultScene();
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/main.scene.babasset",
+          header: {
+            guid: "scene-1",
+            type: "Scene",
+            name: "Main",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: {},
+            chunks: [
+              {
+                id: "audioReverb",
+                kind: "bytes",
+                mime: "application/octet-stream",
+                sha256: "ee",
+                locator: { inline: { offset: 0, length: 2 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async () => scene,
+      readAssetChunk: async (_path, chunkId) =>
+        chunkId === "audioReverb" ? new Uint8Array([9, 8]) : null,
+    });
+    expect(loaded.audioReverbByGuid("scene-1")).toEqual(new Uint8Array([9, 8]));
+  });
+
   it("loads Font documents into payloads without replacing source bytes", async () => {
     const loaded = await loadExportDocuments({
       assets: [
@@ -172,5 +207,52 @@ describe("loadExportDocuments", () => {
     });
     expect(loaded.payloadByGuid("font-1")).toEqual({ family: "Display" });
     expect(loaded.bytesByGuid("font-1")).toEqual(new Uint8Array([7, 8, 9]));
+  });
+
+  it("packs Audio source with payload so the player can route gain", async () => {
+    const { decodePackedAudioAsset } = await import("@babylonslate/assets");
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Jump.babasset",
+          header: {
+            guid: "jump",
+            type: "Audio",
+            name: "Jump",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: { volume: 0.5, audioChannelGuid: "sfx" },
+            chunks: [
+              {
+                id: "source",
+                kind: "audio",
+                mime: "audio/wav",
+                sha256: "aa",
+                locator: { inline: { offset: 0, length: 4 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async (kind) => {
+        expect(kind).toBe("asset-settings");
+        return { volume: 0.5, audioChannelGuid: "sfx", soundAttenuationGuid: null };
+      },
+      readAssetChunk: async (_path, chunkId) =>
+        chunkId === "source" ? new Uint8Array([1, 2, 3, 4]) : null,
+    });
+    const packed = loaded.bytesByGuid("jump");
+    expect(packed).toBeTruthy();
+    expect(decodePackedAudioAsset(packed!)).toEqual({
+      payload: {
+        volume: 0.5,
+        audioChannelGuid: "sfx",
+        soundAttenuationGuid: null,
+      },
+      source: new Uint8Array([1, 2, 3, 4]),
+    });
   });
 });

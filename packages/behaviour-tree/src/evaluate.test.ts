@@ -115,6 +115,23 @@ describe("evaluateBehaviourTree", () => {
     expect(again.status).toBe("running");
   });
 
+  it("ticks Play Sound through the host when one is provided", () => {
+    const leaf = node("sound", "task", "bt.task.playSound");
+    leaf.properties = { audioAssetGuid: "audio-1", volume: 0.5 };
+    const doc = tree([leaf], "sound");
+    const ticks: string[] = [];
+    const next = evaluateBehaviourTree(doc, null, 1 / 60, {
+      host: {
+        tick: (task) => {
+          ticks.push(task.classId);
+          return "success";
+        },
+      },
+    });
+    expect(ticks).toEqual(["bt.task.playSound"]);
+    expect(next.status).toBe("success");
+  });
+
   it("ticks every parallel child and fails if any fail", () => {
     const doc = tree(
       [

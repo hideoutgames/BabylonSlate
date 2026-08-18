@@ -20,6 +20,7 @@ import type {
 import { playLoadTilemapsControl, playSceneByGuid } from "../lib/play-content";
 import {
   createEngine,
+  type AudioLibrary,
   type EngineHandle,
   type PlayActorPosition,
 } from "@babylonslate/render";
@@ -345,6 +346,10 @@ export function startPlaySession(options: {
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  audioBytes?: ReadonlyMap<string, Uint8Array>;
+  audioLibrary?: AudioLibrary;
+  /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
+  audioReverbBytes?: Uint8Array | null;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -384,6 +389,9 @@ export function startPlaySession(options: {
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
     modelBytes: options.modelBytes,
+    audioBytes: options.audioBytes,
+    audioLibrary: options.audioLibrary,
+    audioReverbBytes: options.audioReverbBytes,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
     postProcessStack: options.scene?.settings.postProcessStack,
@@ -394,6 +402,9 @@ export function startPlaySession(options: {
     environmentColor: options.scene?.settings.environmentColor,
     ktx2BasePath: editorKtx2PublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
+      options.onLog?.(diagnostic.message, "warning");
+    },
+    onAudioDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
     },
   });
@@ -445,7 +456,12 @@ export function startPlaySession(options: {
       command.type === "assignMesh" ||
       command.type === "assignMaterial" ||
       command.type === "possessCamera" ||
-      command.type === "setShadowQuality"
+      command.type === "setShadowQuality" ||
+      command.type === "spawn" ||
+      command.type === "playSound" ||
+      command.type === "stopSound" ||
+      command.type === "setChannelVolume" ||
+      command.type === "setGlobalVolume"
     ) {
       handle.applyCommand(command);
     }
@@ -461,6 +477,7 @@ export function startPlaySession(options: {
       if (scene) {
         handle.loadScene(scene);
         handle.applySceneEnvironment(scene);
+        handle.resetAudioSession();
       }
     }
     if (command.type === "log") {
@@ -541,6 +558,12 @@ export function startPlaySession(options: {
     scenes: options.scenes,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
+    audioAssetGuids: [
+      ...new Set([
+        ...(options.audioLibrary?.audio.keys() ?? []),
+        ...(options.audioBytes?.keys() ?? []),
+      ]),
+    ],
   });
 
   try {
@@ -626,21 +649,10 @@ export function startPlaySession(options: {
   const input: InputCaptureHandle = attachInputCapture(canvas);
 
   const unlock = () => {
-    try {
-      const Ctx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext;
-      if (Ctx) {
-        const ctx = new Ctx();
-        void ctx.resume();
-      }
-    } catch {
-      // ignore
-    }
-    canvas.removeEventListener("pointerdown", unlock);
+    void handle.unlockAudio();
   };
   canvas.addEventListener("pointerdown", unlock);
+  canvas.addEventListener("touchstart", unlock);
 
   const snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
@@ -776,6 +788,7 @@ export function startPlaySession(options: {
       stopped = true;
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", unlock);
+      canvas.removeEventListener("touchstart", unlock);
       input.dispose();
       if (runtime) {
         runtime.stop();

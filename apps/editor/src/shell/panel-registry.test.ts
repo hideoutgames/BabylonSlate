@@ -20,4 +20,10 @@ describe("panelComponents", () => {
       "function",
     );
   });
+
+  it("registers Audio Mixer, Channel, and Attenuation details docks", () => {
+    expect(panelComponents["audio-mixer-details"]).toBeTypeOf("function");
+    expect(panelComponents["audio-channel-details"]).toBeTypeOf("function");
+    expect(panelComponents["sound-attenuation-details"]).toBeTypeOf("function");
+  });
 });

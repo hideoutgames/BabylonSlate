@@ -17,6 +17,8 @@ export const NAVMESH_EXPORT_TYPE = "NavMesh";
 export const NAVMESH_EXPORT_GUID_PREFIX = "navmesh:";
 export const UI_IMAGE_EXPORT_TYPE = "UiImage";
 export const UI_IMAGE_EXPORT_GUID_PREFIX = "uiimage:";
+export const AUDIO_REVERB_EXPORT_TYPE = "AudioReverb";
+export const AUDIO_REVERB_EXPORT_GUID_PREFIX = "audioReverb:";
 
 export function navmeshExportGuid(sceneGuid: string): string {
   return `${NAVMESH_EXPORT_GUID_PREFIX}${sceneGuid}`;
@@ -35,5 +37,15 @@ export function uiImageExportGuid(textureGuid: string): string {
 export function textureGuidFromUiImageExport(guid: string): string | null {
   return guid.startsWith(UI_IMAGE_EXPORT_GUID_PREFIX)
     ? guid.slice(UI_IMAGE_EXPORT_GUID_PREFIX.length)
+    : null;
+}
+
+export function audioReverbExportGuid(sceneGuid: string): string {
+  return `${AUDIO_REVERB_EXPORT_GUID_PREFIX}${sceneGuid}`;
+}
+
+export function sceneGuidFromAudioReverbExport(guid: string): string | null {
+  return guid.startsWith(AUDIO_REVERB_EXPORT_GUID_PREFIX)
+    ? guid.slice(AUDIO_REVERB_EXPORT_GUID_PREFIX.length)
     : null;
 }

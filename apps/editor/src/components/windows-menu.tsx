@@ -8,7 +8,9 @@ import {
 } from "../context/document-context";
 import {
   editorUtilityAssetsFromIndexed,
-  listEditorUtilityWindows,
+  editorUtilityEmptyLabel,
+  editorUtilityGuidFromWindowId,
+  listEditorUtilityMenuWindows,
 } from "../shell/editor-utility-windows";
 import {
   isDockviewDocumentKind,
@@ -25,6 +27,7 @@ export function WindowsMenu() {
     openDocuments,
     activeDocumentId,
     toggleDockWindow,
+    openLiveEditorUtility,
     isDockWindowOpen,
     getOpenDockWindowCount,
     assetRegistry,
@@ -70,29 +73,42 @@ export function WindowsMenu() {
             activeKind === "anim-graph" ? animEditorMode : undefined,
         })
       : [];
-    const editorUtilities = listEditorUtilityWindows({
+    const utilityAssets = editorUtilityAssetsFromIndexed(
+      assetRegistry?.list() ?? [],
+      openDocuments,
+    );
+    const editorUtilities = listEditorUtilityMenuWindows({
       kind: activeKind,
-      assets: editorUtilityAssetsFromIndexed(
-        assetRegistry?.list() ?? [],
-        openDocuments,
-      ),
+      assets: utilityAssets,
     });
-    const checkbox = (entry: { id: string; title: string }): NestedMenuItem => {
+    const emptyLabel = editorUtilityEmptyLabel(activeKind, utilityAssets);
+    const openLiveHost = activeKind === "ui";
+    const checkbox = (
+      entry: { id: string; title: string },
+      options?: { liveHost?: boolean },
+    ): NestedMenuItem => {
       const open = isDockWindowOpen(entry.id);
+      const guid = editorUtilityGuidFromWindowId(entry.id);
       return {
         id: entry.id,
         type: "checkbox",
         label: entry.title,
         checked: open,
         closeOnClick: false,
-        disabled: open && openDockWindowCount === 1,
+        disabled: !options?.liveHost && open && openDockWindowCount === 1,
         testId: `windows-menu-${entry.id}`,
-        onCheckedChange: () => toggleDockWindow(entry.id),
+        onCheckedChange: () => {
+          if (options?.liveHost && guid) {
+            void openLiveEditorUtility(guid);
+            return;
+          }
+          toggleDockWindow(entry.id);
+        },
       };
     };
 
     return [
-      ...windows.map(checkbox),
+      ...windows.map((entry) => checkbox(entry)),
       { type: "separator", id: "utilities-sep" },
       {
         type: "submenu",
@@ -101,17 +117,19 @@ export function WindowsMenu() {
         testId: "windows-editor-utilities",
         contentTestId: "windows-editor-utilities-menu",
         items:
-          editorUtilities.length === 0
+          emptyLabel
             ? [
                 {
                   id: "empty",
-                  label: "None registered",
+                  label: emptyLabel,
                   disabled: true,
                   testId: "windows-editor-utilities-empty",
                   onSelect: () => {},
                 },
               ]
-            : editorUtilities.map(checkbox),
+            : editorUtilities.map((entry) =>
+                checkbox(entry, { liveHost: openLiveHost }),
+              ),
       },
     ];
   }, [
@@ -125,6 +143,7 @@ export function WindowsMenu() {
     sourceControl.enabled,
     isDockWindowOpen,
     openDockWindowCount,
+    openLiveEditorUtility,
     toggleDockWindow,
   ]);
 

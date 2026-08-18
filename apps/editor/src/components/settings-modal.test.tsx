@@ -104,6 +104,10 @@ vi.mock("../context/document-context", async () => {
             },
             path: "assets/MyGame.class.babasset",
           },
+          {
+            header: { guid: "mixer-1", name: "Master", type: "AudioMixer" },
+            path: "assets/Master.mixer.babasset",
+          },
         ],
         getByGuid: (guid: string) =>
           guid === "font-1"
@@ -190,6 +194,22 @@ describe("SettingsModal project authoring", () => {
     expect(updateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         fonts: expect.objectContaining({ defaultFontGuid: "font-1" }),
+      }),
+    );
+  });
+
+  it("picks the project AudioMixer from Audio Mixer assets", async () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-audio"));
+    expect(screen.queryByTestId("settings-audio-mixer-guid")).toBeNull();
+    fireEvent.click(screen.getByTestId("settings-audio-mixer"));
+    expect(await screen.findByTestId("search-item-mixer-1")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("search-item-mixer-1"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ audioMixerGuid: "mixer-1" }),
       }),
     );
   });

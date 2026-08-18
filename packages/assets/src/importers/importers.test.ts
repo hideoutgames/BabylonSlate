@@ -104,4 +104,41 @@ describe("importers", () => {
     const remapped = remapImportResultGuids(results, new Set(["taken"]));
     expect(remapped[0]!.guid).not.toBe("taken");
   });
+
+  it("rewrites Audio payload guids when the batch remaps", async () => {
+    const remapped = remapImportResultGuids(
+      [
+        {
+          type: "Audio",
+          name: "Jump",
+          guid: "audio-1",
+          version: 1,
+          dependencies: ["ch-1", "att-1"],
+          parentClass: null,
+          payload: {
+            volume: 1,
+            audioChannelGuid: "ch-1",
+            soundAttenuationGuid: "att-1",
+          },
+          chunks: [],
+        },
+        {
+          type: "AudioChannel",
+          name: "SFX",
+          guid: "ch-1",
+          version: 1,
+          dependencies: [],
+          parentClass: null,
+          payload: { parentChannelGuid: null, effects: [] },
+          chunks: [],
+        },
+      ],
+      new Set(["ch-1"]),
+    );
+    const audio = remapped.find((entry) => entry.type === "Audio")!;
+    const channel = remapped.find((entry) => entry.type === "AudioChannel")!;
+    expect(channel.guid).not.toBe("ch-1");
+    expect(audio.payload.audioChannelGuid).toBe(channel.guid);
+    expect(audio.dependencies).toContain(channel.guid);
+  });
 });

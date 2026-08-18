@@ -62,15 +62,14 @@ export function mountPlayerHud(
   return { setStats };
 }
 
-export function unlockAudioOnFirstGesture(): void {
-  const AudioContextCtor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioContextCtor) return;
-  const context = new AudioContextCtor();
-  const resume = () => {
-    void context.resume();
+export function unlockAudioOnFirstGesture(unlock: () => void): () => void {
+  const handler = () => {
+    unlock();
   };
-  window.addEventListener("pointerdown", resume, { once: true });
-  window.addEventListener("touchstart", resume, { once: true });
+  window.addEventListener("pointerdown", handler);
+  window.addEventListener("touchstart", handler);
+  return () => {
+    window.removeEventListener("pointerdown", handler);
+    window.removeEventListener("touchstart", handler);
+  };
 }
