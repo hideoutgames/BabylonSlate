@@ -281,6 +281,62 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("forwards snapshot emitter orientation so cones aim with the actor", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: null,
+            soundAttenuationGuid: "near",
+          },
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: { innerAngle: 90, outerAngle: 120, outerGain: 0 },
+            doppler: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+      emitterActorGuid: "speaker",
+    });
+    await service.flush();
+    const yaw = { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
+    service.syncSnapshot([
+      {
+        slotId: 1,
+        position: { x: 10, y: 0, z: 0, qx: yaw.x, qy: yaw.y, qz: yaw.z, qw: yaw.w },
+      },
+    ]);
+    expect(backend.poses.get("v1")).toEqual({
+      x: 10,
+      y: 0,
+      z: 0,
+      qx: yaw.x,
+      qy: yaw.y,
+      qz: yaw.z,
+      qw: yaw.w,
+    });
+    service.dispose();
+  });
+
   it("does not invent session gain when Set Channel / Set Global have no mixer", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const diagnostics: Array<{ code: string }> = [];

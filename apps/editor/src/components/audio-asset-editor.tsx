@@ -14,7 +14,6 @@ import {
   normalizeAudioMixerPayload,
   normalizeSoundAttenuationPayload,
   validateAudioMixer,
-  type AudioMixerChannelEntry,
   type SoundAttenuationPayload,
 } from "@babylonslate/assets";
 import { Button } from "@babylonslate/ui/components/button";
@@ -26,6 +25,7 @@ import {
   applyMixerChannelPick,
   type MixerChannelPickTarget,
 } from "../lib/audio-mixer-edit";
+import { soundAttenuationDetailRows } from "../lib/sound-attenuation-rows";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -275,66 +275,7 @@ export function SoundAttenuationDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="sound-attenuation-details-panel">
       <div className="flex flex-col gap-3 p-2">
         <AttenuationFalloffPlot attenuation={attenuation} />
-        <PropertyGrid
-          rows={[
-            {
-              id: "innerRadius",
-              kind: "number",
-              label: "Inner Radius",
-              value: attenuation.innerRadius,
-              min: 0,
-              onChange: (innerRadius) => commit({ ...attenuation, innerRadius }),
-            },
-            {
-              id: "maxRadius",
-              kind: "number",
-              label: "Max Radius",
-              value: attenuation.maxRadius,
-              min: 0,
-              onChange: (maxRadius) => commit({ ...attenuation, maxRadius }),
-            },
-            {
-              id: "distanceModel",
-              kind: "enum",
-              label: "Distance Model",
-              value: attenuation.distanceModel,
-              options: [
-                { value: "linear", label: "Linear" },
-                { value: "inverse", label: "Inverse" },
-                { value: "exponential", label: "Exponential" },
-              ],
-              onChange: (distanceModel) =>
-                commit({
-                  ...attenuation,
-                  distanceModel: distanceModel as SoundAttenuationPayload["distanceModel"],
-                }),
-            },
-            {
-              id: "rolloff",
-              kind: "number",
-              label: "Rolloff",
-              value: attenuation.rolloff,
-              min: 0,
-              onChange: (rolloff) => commit({ ...attenuation, rolloff }),
-            },
-            {
-              id: "spatialisation",
-              kind: "enum",
-              label: "Spatialisation",
-              value: attenuation.spatialisation,
-              options: [
-                { value: "equalPower", label: "Equal Power" },
-                { value: "hrtf", label: "HRTF" },
-              ],
-              onChange: (spatialisation) =>
-                commit({
-                  ...attenuation,
-                  spatialisation:
-                    spatialisation as SoundAttenuationPayload["spatialisation"],
-                }),
-            },
-          ]}
-        />
+        <PropertyGrid rows={soundAttenuationDetailRows(attenuation, commit)} />
       </div>
     </PanelFrame>
   );

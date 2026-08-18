@@ -291,10 +291,21 @@ export type PlayActorPosition = {
   x: number;
   y: number;
   z: number;
+  qx: number;
+  qy: number;
+  qz: number;
+  qw: number;
 };
 
 function positionsFromSample(
-  sampled: { actorCount: number; actors: Array<{ slotId: number; position: { x: number; y: number; z: number } }> },
+  sampled: {
+    actorCount: number;
+    actors: Array<{
+      slotId: number;
+      position: { x: number; y: number; z: number };
+      rotation: { x: number; y: number; z: number; w: number };
+    }>;
+  },
 ): PlayActorPosition[] {
   const next: PlayActorPosition[] = [];
   const count = sampled.actorCount;
@@ -305,6 +316,10 @@ function positionsFromSample(
       x: actor.position.x,
       y: actor.position.y,
       z: actor.position.z,
+      qx: actor.rotation.x,
+      qy: actor.rotation.y,
+      qz: actor.rotation.z,
+      qw: actor.rotation.w,
     });
   }
   return next;
@@ -732,7 +747,15 @@ export function createEngine(
       audioService.syncSnapshot(
         lastPositions.map((actor) => ({
           slotId: actor.slotId,
-          position: { x: actor.x, y: actor.y, z: actor.z },
+          position: {
+            x: actor.x,
+            y: actor.y,
+            z: actor.z,
+            qx: actor.qx,
+            qy: actor.qy,
+            qz: actor.qz,
+            qw: actor.qw,
+          },
         })),
       );
       const camera = scene.activeCamera;
