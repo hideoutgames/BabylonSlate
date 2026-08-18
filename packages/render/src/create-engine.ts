@@ -487,6 +487,17 @@ export function createEngine(
       rebuildPostProcessStack();
       return;
     }
+    if (options.playMode) {
+      // Play visuals come from assignMesh. Document illumination would plant a
+      // second set of lights (`authoredLight:<actorId>`) on changescene.
+      applySerializedSceneEnvironment(scene, sceneData, {
+        applyClearColor: true,
+        assets: binding,
+      });
+      rebuildPostProcessStack();
+      scheduler.invalidate("asset");
+      return;
+    }
     applySceneToBabylonScene(scene, sceneData, binding);
     rebuildPostProcessStack();
     scheduler.invalidate("asset");
