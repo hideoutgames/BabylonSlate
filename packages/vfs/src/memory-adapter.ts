@@ -42,7 +42,7 @@ export class MemoryStorageAdapter implements ProjectStorage {
     this.tier = tier;
   }
 
-  async pickProjectFolder(name = "MyGame.babproject"): Promise<ProjectFolderHandle> {
+  async pickProjectFolder(name = "MyGame"): Promise<ProjectFolderHandle> {
     return this.bindProject(name, this.tier === "documents" ? "documents" : "opfs");
   }
 

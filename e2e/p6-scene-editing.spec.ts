@@ -125,7 +125,7 @@ test.describe("P6 first-playable scene editing", () => {
 
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
-    await page.getByTestId("open-listed-project-TestProject.babproject").click();
+    await page.getByTestId("open-listed-project-TestProject").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openMainScene(page);
     await expect(page.getByTestId("viewport-mode-2d")).toHaveAttribute(

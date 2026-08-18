@@ -52,7 +52,7 @@ test.describe("P2 acceptance proofs", () => {
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page
-      .getByTestId("open-listed-project-TestProject.babproject")
+      .getByTestId("open-listed-project-TestProject")
       .click();
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
     await expect(
@@ -112,7 +112,7 @@ test.describe("P2 acceptance proofs", () => {
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page
-      .getByTestId("open-listed-project-TestProject.babproject")
+      .getByTestId("open-listed-project-TestProject")
       .click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("recovery-prompt")).toBeVisible({
