@@ -246,6 +246,21 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("search-item-mat-rock")).toBeNull();
   });
 
+  it("adds a project Mesh as MeshComponent with assetGuid set", () => {
+    harness.selectedActorIds = ["actor-1"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("details-add-component"));
+    fireEvent.click(screen.getByTestId("add-component-catalog-item-asset-mesh-1"));
+    expect(harness.applySceneChange).toHaveBeenCalled();
+    const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
+    const added = next.actors[0]?.components.at(-1);
+    expect(added?.classId).toBe("MeshComponent");
+    expect(added?.properties).toMatchObject({
+      meshKind: "box",
+      assetGuid: "mesh-1",
+    });
+  });
+
   it("reorders, disables, and removes a post-process pass", () => {
     scene().settings.postProcessStack = [
       { materialGuid: "pp-a", enabled: true },
