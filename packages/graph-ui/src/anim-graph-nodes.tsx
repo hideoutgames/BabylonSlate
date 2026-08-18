@@ -100,7 +100,7 @@ export function AnimTransitionEdge({
   type,
 }: EdgeProps) {
   const { onEdgeDoubleClick } = useGraphEditorContext();
-  const { setEdges } = useReactFlow();
+  const { setEdges, setNodes } = useReactFlow();
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -136,6 +136,11 @@ export function AnimTransitionEdge({
           aria-label="Select transition"
           onClick={(event) => {
             event.stopPropagation();
+            setNodes((current) =>
+              current.map((node) =>
+                node.selected ? { ...node, selected: false } : node,
+              ),
+            );
             setEdges((current) =>
               current.map((edge) => ({
                 ...edge,

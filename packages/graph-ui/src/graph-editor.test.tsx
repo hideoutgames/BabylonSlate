@@ -13,6 +13,7 @@ import type { GraphDocument } from "./graph-types";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
 import { MARQUEE_FALLBACK_HEIGHT, MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
 import { treeNodeTypes } from "./tree-node";
+import { animGraphEdgeTypes } from "./anim-graph-nodes";
 
 afterEach(() => {
   cleanup();
@@ -1825,6 +1826,54 @@ describe("GraphEditor", () => {
     expect(lastGraph.nodes).toHaveLength(3);
   });
 
+  it("enables Break Links for a selected edge and removes only that edge", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransition",
+      }));
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={graph}
+          edgeTypes={animGraphEdgeTypes}
+          defaultEdgeOptions={{ type: "animTransition" }}
+          onChange={onChange}
+        />,
+      );
+      const badge = await waitFor(() => {
+        const found = container.querySelector(
+          '[data-testid="anim-transition-badge-e:log-a:execOut:log-b:execIn"]',
+        );
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      fireEvent.click(
+        container.querySelector('.react-flow__node[data-id="log-a"]')!,
+      );
+      fireEvent.click(badge);
+      expect(getByTestId("graph-break-links")).toHaveProperty("disabled", false);
+      onChange.mockClear();
+      fireEvent.click(getByTestId("graph-break-links"));
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({
+          source: "log-a",
+          target: "log-c",
+        }),
+      ]);
+      expect(lastGraph.nodes.map((node) => node.id)).toEqual([
+        "log-a",
+        "log-b",
+        "log-c",
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("reports selected node ids when a node is clicked", async () => {
     const onSelectionChange = vi.fn();
     const onChange = vi.fn();
@@ -2947,6 +2996,97 @@ describe("GraphEditor", () => {
       });
       fireEvent.doubleClick(edge);
       expect(onEdgeDoubleClick).toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("deselects nodes when an animation transition badge is clicked", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onSelectionChange = vi.fn();
+      const onEdgeSelectionChange = vi.fn();
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransition",
+      }));
+      const { container } = render(
+        <GraphEditor
+          initialGraph={graph}
+          edgeTypes={animGraphEdgeTypes}
+          defaultEdgeOptions={{ type: "animTransition" }}
+          onSelectionChange={onSelectionChange}
+          onEdgeSelectionChange={onEdgeSelectionChange}
+        />,
+      );
+      fireEvent.click(
+        container.querySelector('.react-flow__node[data-id="log-a"]')!,
+      );
+      await waitFor(() => {
+        expect(onSelectionChange).toHaveBeenCalledWith(["log-a"]);
+      });
+      const badge = await waitFor(() => {
+        const found = container.querySelector(
+          '[data-testid="anim-transition-badge-e:log-a:execOut:log-b:execIn"]',
+        );
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      onSelectionChange.mockClear();
+      onEdgeSelectionChange.mockClear();
+      fireEvent.click(badge);
+      await waitFor(() => {
+        expect(onEdgeSelectionChange).toHaveBeenCalledWith([
+          "e:log-a:execOut:log-b:execIn",
+        ]);
+      });
+      await waitFor(() => {
+        expect(onSelectionChange).toHaveBeenCalledWith([]);
+      });
+      expect(
+        container.querySelector('.react-flow__node[data-id="log-a"]')
+          ?.className,
+      ).not.toMatch(/selected/);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("clears edge selection when the pane is clicked", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onEdgeSelectionChange = vi.fn();
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransition",
+      }));
+      const { container } = render(
+        <GraphEditor
+          initialGraph={graph}
+          edgeTypes={animGraphEdgeTypes}
+          onEdgeSelectionChange={onEdgeSelectionChange}
+        />,
+      );
+      const badge = await waitFor(() => {
+        const found = container.querySelector(
+          '[data-testid="anim-transition-badge-e:log-a:execOut:log-b:execIn"]',
+        );
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      fireEvent.click(badge);
+      await waitFor(() => {
+        expect(onEdgeSelectionChange).toHaveBeenCalledWith([
+          "e:log-a:execOut:log-b:execIn",
+        ]);
+      });
+      onEdgeSelectionChange.mockClear();
+      fireEvent.click(container.querySelector(".react-flow__pane")!);
+      await waitFor(() => {
+        expect(onEdgeSelectionChange).toHaveBeenCalledWith([]);
+      });
     } finally {
       restoreLayout();
     }

@@ -35,6 +35,7 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   }, []);
   const setSelectedTransitionId = useCallback((id: string | null) => {
     setSelectedTransitionIdState(id);
+    if (id) setSelectedIdState(null);
   }, []);
   const focusNode = useCallback((nodeId: string) => {
     setSelectedIdState(nodeId);

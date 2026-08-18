@@ -317,7 +317,7 @@ function clientPoint(
 }
 
 function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
-  const { getNode, setNodes } = useReactFlow();
+  const { getNode, setNodes, setEdges } = useReactFlow();
 
   useEffect(() => {
     if (!selectedNodeId) return;
@@ -334,7 +334,12 @@ function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
         selected: entry.id === selectedNodeId,
       }));
     });
-  }, [getNode, selectedNodeId, setNodes]);
+    setEdges((current) =>
+      current.some((edge) => edge.selected)
+        ? current.map((edge) => ({ ...edge, selected: false }))
+        : current,
+    );
+  }, [getNode, selectedNodeId, setEdges, setNodes]);
 
   return null;
 }
@@ -1043,13 +1048,18 @@ function GraphEditorCanvas({
     () => nodes.filter((node) => node.selected),
     [nodes],
   );
+  const selectedEdges = useMemo(
+    () => edges.filter((edge) => edge.selected),
+    [edges],
+  );
   const selectionIsOnlyProtected =
     selectedNodes.length > 0 &&
     selectedNodes.every((node) => isProtectedNode(node));
   const hasBreakableLinks = useMemo(() => {
+    if (selectedEdges.length > 0) return true;
     const selected = new Set(selectedNodes.map((node) => node.id));
     return edgesTouchingNodes(edges, selected).length > 0;
-  }, [edges, selectedNodes]);
+  }, [edges, selectedEdges, selectedNodes]);
 
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
@@ -1062,10 +1072,6 @@ function GraphEditorCanvas({
 
   const onEdgeSelectionChangeRef = useRef(onEdgeSelectionChange);
   onEdgeSelectionChangeRef.current = onEdgeSelectionChange;
-  const selectedEdges = useMemo(
-    () => edges.filter((edge) => edge.selected),
-    [edges],
-  );
   const edgeSelectionKey = selectedEdges.map((edge) => edge.id).join("\0");
   useEffect(() => {
     onEdgeSelectionChangeRef.current?.(
@@ -1159,6 +1165,20 @@ function GraphEditorCanvas({
   }, [emitChange]);
 
   const breakSelectionLinks = useCallback(() => {
+    const selectedEdgeIds = new Set(
+      graphStateRef.current.edges
+        .filter((edge) => edge.selected)
+        .map((edge) => edge.id),
+    );
+    if (selectedEdgeIds.size > 0) {
+      setEdges((current) => {
+        const next = current.filter((edge) => !selectedEdgeIds.has(edge.id));
+        if (next.length === current.length) return current;
+        emitChange(graphStateRef.current.nodes, next);
+        return next;
+      });
+      return;
+    }
     const selected = new Set(
       graphStateRef.current.nodes
         .filter((node) => node.selected)
@@ -1219,6 +1239,11 @@ function GraphEditorCanvas({
   const clearSelection = useCallback(() => {
     setNodes((current) =>
       current.map((node) => ({ ...node, selected: false })),
+    );
+    setEdges((current) =>
+      current.some((edge) => edge.selected)
+        ? current.map((edge) => ({ ...edge, selected: false }))
+        : current,
     );
   }, []);
 
@@ -1579,7 +1604,7 @@ function GraphEditorCanvas({
               size="sm"
               disabled={!hasBreakableLinks}
               onClick={breakSelectionLinks}
-              title="Break all pin links on selected nodes"
+              title="Break links on the selected nodes or the selected blend rule"
               data-testid="graph-break-links"
             >
               Break Links
