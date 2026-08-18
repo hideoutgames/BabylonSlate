@@ -80,15 +80,14 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
-    let name = "MyGame.babproject";
+    let name = "MyGame";
     if (isTestModeEnabled()) {
       name = TEST_PROJECT_NAME;
     } else if (typeof globalThis.prompt === "function") {
       try {
-        name = globalThis.prompt("Project folder name", "MyGame.babproject") ??
-          "MyGame.babproject";
+        name = globalThis.prompt("Project folder name", "MyGame") ?? "MyGame";
       } catch {
-        name = "MyGame.babproject";
+        name = "MyGame";
       }
     }
     return this.bind(name);

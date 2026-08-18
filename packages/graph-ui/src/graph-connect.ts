@@ -194,7 +194,76 @@ export function filterPaletteForPin(
   dragged: SerializedPin,
   rule?: PinCompatibilityRule,
 ): PaletteNode[] {
-  return nodes.filter((node) => firstCompatiblePin(node.pins, dragged, rule));
+  return nodes
+    .map((node, index) => ({ node, index }))
+    .filter(({ node }) => firstCompatiblePin(node.pins, dragged, rule))
+    .sort((left, right) => {
+      const score =
+        palettePreferenceScore(right.node, dragged) -
+        palettePreferenceScore(left.node, dragged);
+      return score !== 0 ? score : left.index - right.index;
+    })
+    .map(({ node }) => node);
+}
+
+function palettePreferenceScore(
+  node: PaletteNode,
+  dragged: SerializedPin,
+): number {
+  const kind = dragged.type.kind;
+  const guid =
+    typeof dragged.type.guid === "string" ? dragged.type.guid.trim() : "";
+  if (guid && kind === "structRef" && isPreferredStructNode(node, guid)) {
+    return 2;
+  }
+  if (guid && kind === "enumRef" && isPreferredEnumNode(node, guid)) {
+    return 2;
+  }
+  if (
+    kind === "rotator" &&
+    (node.id === "struct.makeRotator" || node.id === "struct.breakRotator")
+  ) {
+    return 2;
+  }
+  if (
+    kind === "color" &&
+    (node.id === "struct.makeColor" || node.id === "struct.breakColor")
+  ) {
+    return 2;
+  }
+  if (
+    kind === "transform" &&
+    (node.id === "struct.makeTransform" || node.id === "struct.breakTransform")
+  ) {
+    return 2;
+  }
+  return 0;
+}
+
+function catalogTypeId(node: PaletteNode): string {
+  return node.nodeType ?? node.id.split(":")[0]!;
+}
+
+function isPreferredStructNode(node: PaletteNode, guid: string): boolean {
+  const typeId = catalogTypeId(node);
+  if (typeId !== "struct.make" && typeId !== "struct.break") return false;
+  if (node.id === `${typeId}:${guid}`) return true;
+  return node.defaultData?.structGuid === guid;
+}
+
+function isPreferredEnumNode(node: PaletteNode, guid: string): boolean {
+  const typeId = catalogTypeId(node);
+  if (
+    typeId !== "enum.make" &&
+    typeId !== "enum.equals" &&
+    typeId !== "enum.notEquals" &&
+    typeId !== "enum.toString" &&
+    typeId !== "enum.switch"
+  ) {
+    return false;
+  }
+  if (node.id === `${typeId}:${guid}`) return true;
+  return node.defaultData?.enumGuid === guid;
 }
 
 export function isNearSourcePin(

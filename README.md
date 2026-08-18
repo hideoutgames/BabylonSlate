@@ -22,7 +22,7 @@ apps/editor/          Capacitor shell, Homepage, Dockview, Play overlay
 apps/docs/            VitePress site (content lives in docs/)
 packages/core/        GUIDs, schemas, command bus, storage port
 packages/vfs/         File adapters, platform detection, app settings
-packages/assets/      .babasset / .babproject, registry, importers
+packages/assets/      .babasset / project folder zip, registry, importers
 packages/edit/        Per-document undo
 packages/object-model/ World, actors, tick, class registry
 packages/physics/     Havok 3D + Rapier 2D (game worker)
@@ -46,7 +46,7 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the live 
 
 ## Project file format
 
-Projects are `.babproject` containers (directory or zip). Editor scenes and graphs are `.babasset` files under `assets/`, with large payloads in `assets/.blobs/<sha256>`. Details: [docs/architecture/containers.md](docs/architecture/containers.md).
+Projects are ordinary folders (or a `.zip` of that folder). Editor scenes and graphs are `.babasset` files under `assets/`, with large payloads in `assets/.blobs/<sha256>`. Details: [docs/architecture/containers.md](docs/architecture/containers.md).
 
 ## Development
 
