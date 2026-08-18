@@ -84,7 +84,14 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   async play(request: AudioPlayRequest): Promise<void> {
     const engine = await this.ensureEngine();
     this.stop(request.voiceId);
-    let buffer = this.buffers.get(request.assetGuid);
+    let buffer = this.buffers.get(
+      request.clipChunkId
+        ? `${request.assetGuid}:${request.clipChunkId}`
+        : request.assetGuid,
+    );
+    if (!buffer) {
+      buffer = this.buffers.get(request.assetGuid);
+    }
     if (!buffer) {
       buffer = await CreateSoundBufferAsync(
         sourceBuffer(request.source),

@@ -4,8 +4,10 @@ import {
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
   AUDIO_REVERB_VERSION,
   AUDIO_SPEED_OF_SOUND,
+  audioClipCacheKey,
   createDefaultAudioPayload,
   encodeAudioReverbChunk,
+  normalizeAudioPayload,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
@@ -28,7 +30,12 @@ function library(options?: {
       options?.mixer ? [["mixer-1", options.mixer] as const] : [],
     ),
     channels: new Map(Object.entries(options?.channels ?? {})),
-    audio: new Map(Object.entries(options?.audio ?? {})),
+    audio: new Map(
+      Object.entries(options?.audio ?? {}).map(([guid, payload]) => [
+        guid,
+        normalizeAudioPayload(payload),
+      ]),
+    ),
     attenuations: new Map(Object.entries(options?.attenuations ?? {})),
   };
 }
@@ -534,6 +541,101 @@ describe("AudioService", () => {
     expect(backend.gains.get("v1")).toBeUndefined();
     expect(backend.playbackRates.get("v1")).toBeCloseTo(
       1 + 50 / AUDIO_SPEED_OF_SOUND,
+      5,
+    );
+    service.dispose();
+  });
+
+  it("plays a weighted clip from guid:chunk bytes at authored pitch", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({
+      backend,
+      random: () => 0.25,
+    });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            ...createDefaultAudioPayload(),
+            pitch: 2,
+            clips: [
+              { chunkId: "source", name: "a", weight: 1 },
+              { chunkId: "source:2", name: "b", weight: 3 },
+            ],
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    service.setSourceBytes(
+      audioClipCacheKey("jump", "source"),
+      new Uint8Array([1]),
+    );
+    service.setSourceBytes(
+      audioClipCacheKey("jump", "source:2"),
+      new Uint8Array([9, 8, 7]),
+    );
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+    });
+    await service.flush();
+    expect(backend.plays[0]?.source).toEqual(new Uint8Array([9, 8, 7]));
+    expect(backend.plays[0]?.clipChunkId).toBe("source:2");
+    expect(backend.playbackRates.get("v1")).toBe(2);
+    service.dispose();
+  });
+
+  it("composes authored pitch with Doppler playbackRate", async () => {
+    let now = 0;
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend, now: () => now });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            ...createDefaultAudioPayload(),
+            pitch: 2,
+            soundAttenuationGuid: "near",
+          },
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: null,
+            doppler: { enabled: true, factor: 1 },
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+      emitterActorGuid: "speaker",
+    });
+    await service.flush();
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    now = 0;
+    service.syncSnapshot([{ slotId: 1, position: { x: 10, y: 0, z: 0 } }]);
+    now = 100;
+    service.syncSnapshot([{ slotId: 1, position: { x: 5, y: 0, z: 0 } }]);
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    expect(backend.playbackRates.get("v1")).toBeCloseTo(
+      2 * (1 + 50 / AUDIO_SPEED_OF_SOUND),
       5,
     );
     service.dispose();

@@ -27,6 +27,7 @@ export type AudioPlayRequest = {
   loop: boolean;
   spatial?: AudioSpatialPlayOptions | null;
   reverbSend: boolean;
+  clipChunkId?: string;
 };
 
 export interface AudioPlaybackBackend {

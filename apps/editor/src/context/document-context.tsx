@@ -29,6 +29,7 @@ import {
   readThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
+  collectAudioClipSourceBytes,
   type AssetRegistry,
   type MigrationPending,
   type PluginDescriptor,
@@ -2444,9 +2445,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         payload: content,
       });
       if (asset.header.type === "Audio") {
-        const source = await projectService.readAssetChunk(asset.path, "source");
-        if (source && source.byteLength > 0) {
-          bytes.set(asset.header.guid, source);
+        const mapped = await collectAudioClipSourceBytes({
+          assetGuid: asset.header.guid,
+          payload: content,
+          readChunk: (chunkId) =>
+            projectService.readAssetChunk(asset.path, chunkId),
+        });
+        for (const [key, clipBytes] of mapped) {
+          bytes.set(key, clipBytes);
         }
       }
     }

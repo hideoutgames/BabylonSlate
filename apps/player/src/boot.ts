@@ -200,9 +200,7 @@ export function startPlayer(options: {
       undefined,
     scenes,
     ...loopGuardLoadFields(manifest),
-    audioAssetGuids: [...game.audioBytes.keys(), ...content.audioLibrary.audio.keys()].filter(
-      (guid, index, all) => all.indexOf(guid) === index,
-    ),
+    audioAssetGuids: [...content.audioLibrary.audio.keys()],
   };
 
   const spawn = playerSpawnListForScripts(game.scripts);

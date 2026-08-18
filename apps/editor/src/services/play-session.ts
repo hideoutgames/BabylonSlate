@@ -568,12 +568,7 @@ export function startPlaySession(options: {
     scenes: options.scenes,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
-    audioAssetGuids: [
-      ...new Set([
-        ...(options.audioLibrary?.audio.keys() ?? []),
-        ...(options.audioBytes?.keys() ?? []),
-      ]),
-    ],
+    audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
   });
 
   try {

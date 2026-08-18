@@ -5,6 +5,7 @@ import {
 } from "@babylonslate/core";
 import {
   AUDIO_REVERB_CHUNK_ID,
+  collectPackedAudioClipBlobs,
   encodePackedAudioAsset,
   normalizeAudioPayload,
   selectGuiImageChunk,
@@ -70,11 +71,15 @@ async function bytesForAsset(
     }
   }
   if (asset.header.type === "Audio") {
-    const source = await readAssetChunk(asset.path, "source");
-    if (!source || source.byteLength === 0) return null;
+    const payload = normalizeAudioPayload(document ?? asset.header.payload);
+    const blobs = await collectPackedAudioClipBlobs({
+      payload,
+      readChunk: (chunkId) => readAssetChunk(asset.path, chunkId),
+    });
+    if (!blobs) return null;
     return encodePackedAudioAsset(
-      normalizeAudioPayload(document ?? asset.header.payload),
-      source,
+      payload,
+      blobs.length === 1 ? blobs[0]! : blobs,
     );
   }
   for (const chunk of asset.header.chunks) {

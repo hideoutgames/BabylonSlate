@@ -8,6 +8,9 @@ import {
   interpolateAudioReverb,
   isDryAudioReverbFallback,
   normalizeAudioPayload,
+  pickWeightedAudioClip,
+  resolveAudioPitch,
+  audioClipCacheKey,
   resolveAudioPlayback,
   sanitizeAudioLibrary,
   type AudioChannelPayload,
@@ -70,10 +73,12 @@ type QueuedCommand = Extract<
 type LiveVoice = {
   voiceId: string;
   assetGuid: string;
+  cacheKey: string;
   playCallVolume: number;
   emitterActorGuid: string | null;
   spatial: AudioSpatialPlayOptions | null;
   gain: number;
+  pitch: number;
   reverbSend: boolean;
   previousPose: AudioPose | null;
 };
@@ -126,18 +131,21 @@ export class AudioService {
   private reverbField: AudioReverbField | null = null;
   private readonly now: () => number;
   private lastSnapshotAt: number | null = null;
+  private readonly random: () => number;
 
   constructor(options: {
     backend: AudioPlaybackBackend;
     cache?: AudioBufferCache;
     onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
     now?: () => number;
+    random?: () => number;
   }) {
     this.backend = options.backend;
     this.ownedCache = !options.cache;
     this.cache = options.cache ?? new AudioBufferCache();
     this.onDiagnostic = options.onDiagnostic;
     this.now = options.now ?? (() => performance.now());
+    this.random = options.random ?? Math.random;
     this.publishStats();
   }
 
@@ -333,7 +341,14 @@ export class AudioService {
       sessionChannelVolumes: this.sessionChannelVolumes,
       sessionGlobalVolume: this.sessionGlobalVolume,
     });
-    const source = this.sourceBytes.get(assetGuid) ?? this.cache.get(assetGuid);
+    const clip = pickWeightedAudioClip(payload.clips, this.random);
+    const pitch = resolveAudioPitch(payload, this.random);
+    const cacheKey = audioClipCacheKey(assetGuid, clip.chunkId);
+    const source =
+      this.sourceBytes.get(cacheKey) ??
+      this.sourceBytes.get(assetGuid) ??
+      this.cache.get(cacheKey) ??
+      this.cache.get(assetGuid);
     if (!source || source.byteLength === 0) {
       this.onDiagnostic?.({
         code: "audio.missing_source",
@@ -342,11 +357,11 @@ export class AudioService {
       });
       return;
     }
-    let decoded = this.cache.get(assetGuid);
+    let decoded = this.cache.get(cacheKey);
     if (!decoded) {
       try {
-        const result = await this.backend.decode(assetGuid, source);
-        this.cache.put(assetGuid, source, result.pcmBytes);
+        const result = await this.backend.decode(cacheKey, source);
+        this.cache.put(cacheKey, source, result.pcmBytes);
         decoded = source;
       } catch {
         this.onDiagnostic?.({
@@ -394,21 +409,25 @@ export class AudioService {
       loop: command.loop === true,
       spatial,
       reverbSend: resolved.environmentReverb,
+      clipChunkId: clip.chunkId,
     };
-    this.cache.pin(assetGuid);
+    this.cache.pin(cacheKey);
     this.voices.set(voiceId, {
       voiceId,
       assetGuid,
+      cacheKey,
       playCallVolume: command.volume,
       emitterActorGuid: emitter,
       spatial,
       gain: resolved.gain,
+      pitch,
       reverbSend: resolved.environmentReverb,
       previousPose: null,
     });
     this.lastGain = resolved.gain;
     try {
       await this.backend.play(request);
+      this.backend.setVoicePlaybackRate(voiceId, pitch);
     } catch {
       this.stopVoice(voiceId);
       this.onDiagnostic?.({
@@ -428,7 +447,7 @@ export class AudioService {
     if (!voice) return;
     this.backend.stop(voiceId);
     this.voices.delete(voiceId);
-    this.cache.unpin(voice.assetGuid);
+    this.cache.unpin(voice.cacheKey);
     this.refreshReverbWet();
     this.publishStats();
   }
@@ -495,7 +514,10 @@ export class AudioService {
           dt,
           factor: doppler.factor,
         });
-        this.backend.setVoicePlaybackRate(voice.voiceId, rate);
+        this.backend.setVoicePlaybackRate(
+          voice.voiceId,
+          voice.pitch * rate,
+        );
       }
       if (fromSnapshot) {
         voice.previousPose = { x: pose.x, y: pose.y, z: pose.z };
