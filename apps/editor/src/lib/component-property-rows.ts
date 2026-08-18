@@ -61,6 +61,7 @@ function assetRow(
   update: (property: string, value: unknown) => void,
   context: ComponentPropertyContext,
   title?: string,
+  placeholder = "None",
 ): PropertyRow {
   const value = guidValue(component.properties[property]);
   const name = value ? context.assetLabel(value) : undefined;
@@ -77,7 +78,7 @@ function assetRow(
     displayLabel: identity.displayLabel ?? name,
     displayType: identity.displayType,
     visual: identity.visual,
-    placeholder: "None",
+    placeholder,
     onPick: () =>
       context.onPickAsset({
         componentId: component.id,
@@ -485,6 +486,7 @@ export function componentPropertyRows(
           update,
           context,
           "Pick Audio",
+          "Pick Audio — Play On Start needs an asset",
         ),
         {
           kind: "boolean",

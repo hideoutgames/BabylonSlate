@@ -281,6 +281,62 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("forwards snapshot emitter orientation so cones aim with the actor", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: null,
+            soundAttenuationGuid: "near",
+          },
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: { innerAngle: 90, outerAngle: 120, outerGain: 0 },
+            doppler: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+      emitterActorGuid: "speaker",
+    });
+    await service.flush();
+    const yaw = { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
+    service.syncSnapshot([
+      {
+        slotId: 1,
+        position: { x: 10, y: 0, z: 0, qx: yaw.x, qy: yaw.y, qz: yaw.z, qw: yaw.w },
+      },
+    ]);
+    expect(backend.poses.get("v1")).toEqual({
+      x: 10,
+      y: 0,
+      z: 0,
+      qx: yaw.x,
+      qy: yaw.y,
+      qz: yaw.z,
+      qw: yaw.w,
+    });
+    service.dispose();
+  });
+
   it("does not invent session gain when Set Channel / Set Global have no mixer", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const diagnostics: Array<{ code: string }> = [];
@@ -345,6 +401,53 @@ describe("AudioService", () => {
     service.handleCommand({
       type: "setChannelVolume",
       channelGuid: "ghost",
+      volume: 0,
+    });
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    expect(backend.plays[0]?.gain).toBe(1);
+    expect(diagnostics.map((entry) => entry.code)).toEqual(["audio.unknown_channel"]);
+    service.dispose();
+  });
+
+  it("no-ops Set Channel Volume for a library channel absent from the mixer table", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: Array<{ code: string }> = [];
+    const service = new AudioService({
+      backend,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    });
+    service.setLibrary(
+      library({
+        mixer: {
+          globalVolume: 1,
+          channels: [],
+        },
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [{ kind: "environmentReverb", enabled: false }],
+          },
+        },
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "sfx",
+            soundAttenuationGuid: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "setChannelVolume",
+      channelGuid: "sfx",
       volume: 0,
     });
     service.handleCommand({

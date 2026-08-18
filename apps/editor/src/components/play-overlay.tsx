@@ -40,12 +40,17 @@ import type {
 } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 import type { PlayAudioLibrary } from "../lib/play-audio";
+import {
+  PLAY_AUDIO_UNLOCK_HINT,
+  shouldShowPlayAudioUnlockHint,
+} from "../lib/play-audio-unlock-hint";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { isTestModeEnabled } from "@babylonslate/vfs";
+import { audioStats } from "@babylonslate/render";
 import { usePlay } from "../context/play-context";
 import { PlayHudOverlay } from "./play-hud-overlay";
 import {
@@ -165,6 +170,8 @@ export function PlayOverlay({
   const [moveX, setMoveX] = useState<number | null>(null);
   const [actorGuids, setActorGuids] = useState<string[]>([]);
   const [actorYs, setActorYs] = useState<number[]>([]);
+  const [audioQueued, setAudioQueued] = useState(0);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
@@ -392,6 +399,8 @@ export function PlayOverlay({
       setMoveX(current?.lastMoveX() ?? null);
       setActorGuids([...(current?.spawnedActorGuids() ?? [])]);
       setActorYs((current?.lastActorPositions() ?? []).map((entry) => entry.y));
+      setAudioQueued(audioStats.queued);
+      setAudioUnlocked(audioStats.unlocked);
       if (current) {
         setMemoryBytes(current.accountedBytes());
         const counts = current.liveObjectCounts();
@@ -509,6 +518,17 @@ export function PlayOverlay({
               data-testid="play-actor-y"
               data-ys={actorYs.join(",")}
             />
+            {shouldShowPlayAudioUnlockHint({
+              queued: audioQueued,
+              unlocked: audioUnlocked,
+            }) ? (
+              <p
+                data-testid="play-audio-unlock-hint"
+                className="text-sm text-muted-foreground"
+              >
+                <SelectableText>{PLAY_AUDIO_UNLOCK_HINT}</SelectableText>
+              </p>
+            ) : null}
           </>
         }
       />
