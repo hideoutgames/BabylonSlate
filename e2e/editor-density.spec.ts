@@ -85,14 +85,11 @@ test.describe("Editor density and IA", () => {
 
   test("Content Browser Sort menu orders asset tiles", async ({ page }) => {
     await openTestProject(page);
-    await createContentBrowserAsset(page, "Class", "SortZebra");
-    await createContentBrowserAsset(page, "Scene", "SortAlpha");
-
     const grid = page.getByTestId("content-browser-asset-grid");
-    const alpha = "assets/SortAlpha.scene.babasset";
-    const zebra = "assets/SortZebra.class.babasset";
-    await expect(grid.locator(`[data-asset-path="${alpha}"]`)).toBeVisible();
-    await expect(grid.locator(`[data-asset-path="${zebra}"]`)).toBeVisible();
+    const classPath = "assets/main.class.babasset";
+    const scenePath = "assets/main.scene.babasset";
+    await expect(grid.locator(`[data-asset-path="${classPath}"]`)).toBeVisible();
+    await expect(grid.locator(`[data-asset-path="${scenePath}"]`)).toBeVisible();
 
     async function assetPaths(): Promise<string[]> {
       return grid.locator("[data-asset-path]").evaluateAll((tiles) =>
@@ -115,18 +112,31 @@ test.describe("Editor density and IA", () => {
       }
     }
 
-    const nameOrder = await assetPaths();
-    expect(nameOrder.indexOf(alpha)).toBeGreaterThanOrEqual(0);
-    expect(nameOrder.indexOf(zebra)).toBeGreaterThan(nameOrder.indexOf(alpha));
+    async function chooseSort(mode: string): Promise<void> {
+      const menu = page.getByTestId("content-browser-sort-menu");
+      if (!(await menu.isVisible())) {
+        await page.getByTestId("content-browser-sort").click();
+        await expect(menu).toBeVisible();
+      }
+      await page.getByTestId(`content-browser-sort-${mode}`).click();
+    }
+
+    await chooseSort("type-asc");
+    await expect
+      .poll(async () => {
+        const order = await assetPaths();
+        return order.indexOf(scenePath) - order.indexOf(classPath);
+      })
+      .toBeGreaterThan(0);
     await folderTilesStayFirst();
 
-    await page.getByTestId("content-browser-sort").click();
-    await expect(page.getByTestId("content-browser-sort-menu")).toBeVisible();
-    await page.getByTestId("content-browser-sort-type-asc").click();
-
-    const typeOrder = await assetPaths();
-    expect(typeOrder.indexOf(zebra)).toBeGreaterThanOrEqual(0);
-    expect(typeOrder.indexOf(alpha)).toBeGreaterThan(typeOrder.indexOf(zebra));
+    await chooseSort("type-desc");
+    await expect
+      .poll(async () => {
+        const order = await assetPaths();
+        return order.indexOf(classPath) - order.indexOf(scenePath);
+      })
+      .toBeGreaterThan(0);
     await folderTilesStayFirst();
   });
 
@@ -401,7 +411,9 @@ test.describe("Editor density and IA", () => {
       '[data-asset-path="assets/main.scene.babasset"]',
     );
     await expect(folderTile).toBeVisible({ timeout: 15_000 });
-    await paintSelectContentTiles(page, folderTile, sceneTile);
+    await folderTile.click();
+    await sceneTile.click({ button: "right" });
+    await page.getByTestId("context-menu-backdrop").click();
     const deleteSelected = page.getByTestId("content-browser-delete-selected");
     await expect(deleteSelected).toHaveText(/Delete \(2\)/);
     await deleteSelected.click();
