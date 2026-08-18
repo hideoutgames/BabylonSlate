@@ -76,11 +76,12 @@ import type {
   PlayBlackboardEntry,
 } from "../lib/play-content";
 import { readPlayNavmeshBytes, readPlayAudioReverbBytes } from "../lib/play-content";
-import type {
-  SpriteAnimationPayload,
-  SpritePayload,
-  TilemapPayload,
-  TilesetPayload,
+import {
+  hydrateSpriteAnimationPixelSizes,
+  type SpriteAnimationPayload,
+  type SpritePayload,
+  type TilemapPayload,
+  type TilesetPayload,
 } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -723,6 +724,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         let sprites = new Map<string, SpritePayload>();
         let spriteAnimations = new Map<string, SpriteAnimationPayload>();
         let tilesets = new Map<string, TilesetPayload>();
+        let textureBytes = new Map<string, Uint8Array>();
         try {
           sprites = await collectPlaySpritePayloads(
             resolvedScene?.scene,
@@ -763,14 +765,13 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayMaterialDocuments(materials.documents);
           setPlayMaterialFunctions(materials.functions);
-          setPlayTextureBytes(
-            await collectPlayTextureBytes(
-              sprites,
-              tilesets,
-              materials.textureGuids,
-              spriteAnimations,
-            ),
+          textureBytes = await collectPlayTextureBytes(
+            sprites,
+            tilesets,
+            materials.textureGuids,
+            spriteAnimations,
           );
+          setPlayTextureBytes(textureBytes);
         } catch (error) {
           appendLog(
             `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -778,14 +779,13 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
           try {
-            setPlayTextureBytes(
-              await collectPlayTextureBytes(
-                sprites,
-                tilesets,
-                [],
-                spriteAnimations,
-              ),
+            textureBytes = await collectPlayTextureBytes(
+              sprites,
+              tilesets,
+              [],
+              spriteAnimations,
             );
+            setPlayTextureBytes(textureBytes);
           } catch (textureError) {
             appendLog(
               `Texture load failed: ${textureError instanceof Error ? textureError.message : String(textureError)}`,
@@ -793,6 +793,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             setPlayTextureBytes(new Map());
           }
         }
+        spriteAnimations = hydrateSpriteAnimationPixelSizes(
+          spriteAnimations,
+          textureBytes,
+        );
+        setPlaySpriteAnimationPayloads(spriteAnimations);
+
         try {
           setPlayModelBytes(await collectPlayModelBytes(resolvedScene?.scene));
         } catch (error) {

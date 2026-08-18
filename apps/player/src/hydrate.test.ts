@@ -27,6 +27,17 @@ import {
 
 const encoder = new TextEncoder();
 
+function pngIhdr(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(24);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  bytes.set([0, 0, 0, 13], 8);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
+}
+
 describe("packedContentFromGame", () => {
   it("hydrates sprite, tilemap, and navmesh payloads from the packed game", async () => {
     const scene = {
@@ -84,6 +95,12 @@ describe("packedContentFromGame", () => {
           type: "Sprite",
           sceneGuid: "scene-1",
           bytes: encoder.encode(JSON.stringify(sprite)),
+        },
+        {
+          guid: "tex-walk",
+          type: "Texture",
+          sceneGuid: "scene-1",
+          bytes: pngIhdr(200, 100),
         },
         {
           guid: "walk-anim",
@@ -152,9 +169,11 @@ describe("packedContentFromGame", () => {
     const game = await loadGameFromFiles(packed.value.files);
     const content = packedContentFromGame(game);
     expect(content.spritePayloads.get("sprite-1")?.textureGuid).toBe("tex-1");
-    expect(content.spriteAnimationPayloads.get("walk-anim")?.frames[0]?.textureGuid).toBe(
-      "tex-walk",
-    );
+    expect(content.spriteAnimationPayloads.get("walk-anim")?.frames[0]).toMatchObject({
+      textureGuid: "tex-walk",
+      width: 200,
+      height: 100,
+    });
     expect(content.tilemapPayloads.get("tilemap-1")?.tilesetGuid).toBe("tileset-1");
     expect(content.tilesetPayloads.get("tileset-1")?.textureGuid).toBe("tex-1");
     expect(content.navmeshBytes).toEqual(new Uint8Array([4, 5, 6]));

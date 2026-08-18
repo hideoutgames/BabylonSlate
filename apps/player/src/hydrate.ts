@@ -7,6 +7,7 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
+  hydrateSpriteAnimationPixelSizes,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
@@ -192,9 +193,14 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       ? game.manifest.pixelsPerUnit
       : 100;
 
+  const sizedSpriteAnimations = hydrateSpriteAnimationPixelSizes(
+    spriteAnimationPayloads,
+    game.textureBytes,
+  );
+
   return {
     spritePayloads,
-    spriteAnimationPayloads,
+    spriteAnimationPayloads: sizedSpriteAnimations,
     tilemapPayloads,
     tilesetPayloads,
     animGraphs,
