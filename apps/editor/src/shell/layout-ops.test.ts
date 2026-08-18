@@ -47,6 +47,8 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("anim-graph")).toBe(true);
     expect(canFocusLayout("behaviour-tree")).toBe(true);
     expect(canFocusLayout("model")).toBe(true);
+    expect(canFocusLayout("skeleton")).toBe(true);
+    expect(canFocusLayout("animation")).toBe(true);
   });
 
   it("is disabled on Content Browser and compact asset tabs", () => {
@@ -196,6 +198,12 @@ describe("resolveFocusKeepPanelIds", () => {
     );
     expect(resolveFocusKeepPanelIds("model", [])).toEqual(["model-preview"]);
     expect(FOCUS_PRIMARY_PANEL.model).toBe("model-preview");
+    expect(resolveFocusKeepPanelIds("skeleton", [])).toEqual(["skeleton-preview"]);
+    expect(FOCUS_PRIMARY_PANEL.skeleton).toBe("skeleton-preview");
+    expect(resolveFocusKeepPanelIds("animation", [])).toEqual([
+      "animation-preview",
+    ]);
+    expect(FOCUS_PRIMARY_PANEL.animation).toBe("animation-preview");
   });
 
   it("keeps already-open Editor Utility tabs when the keep list is the default", () => {

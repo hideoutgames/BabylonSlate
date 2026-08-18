@@ -509,6 +509,45 @@ describe("DocumentService", () => {
     expect(service.getDocument(modelId)?.layout).toEqual({ preview: true });
   });
 
+  it("reopens a saved asset-settings Animation tab as the animation document kind", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const loadDocument = vi.fn(async (kind: string) => {
+      if (kind === "scene") return createDefaultScene();
+      if (kind === "animation") {
+        return { clipName: "idle", modelGuid: "model-1", skeletonGuid: null };
+      }
+      return { nodes: [], edges: [] };
+    });
+    const projectService = {
+      loadDocument,
+      registry: {
+        list: () => [
+          {
+            path: "assets/hero_idle.babasset",
+            header: { type: "Animation" },
+          },
+        ],
+      },
+    } as unknown as ProjectService;
+    const oldId = "asset-settings:assets/hero_idle.babasset";
+    const animationId = documentId({
+      kind: "animation",
+      path: "assets/hero_idle.babasset",
+    });
+    await service.initializeFromProject(projectService, project, {
+      ...createEmptyLayouts(),
+      documents: { [oldId]: { preview: true } },
+      tabOrder: [oldId],
+    });
+    expect(service.getState().tabOrder).toContain(animationId);
+    expect(service.getState().tabOrder).not.toContain(oldId);
+    expect(loadDocument).toHaveBeenCalledWith(
+      "animation",
+      "assets/hero_idle.babasset",
+    );
+  });
+
   it("reloads document content from disk without marking dirty", async () => {
     const service = new DocumentService();
     const project = createEmptyProject("Test");

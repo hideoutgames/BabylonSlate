@@ -1,5 +1,5 @@
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
-import type { AbstractMesh, Material } from "@babylonjs/core";
+import type { AbstractMesh, AnimationGroup, Material } from "@babylonjs/core";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { ModelMaterialSlot } from "@babylonslate/assets";
@@ -99,7 +99,7 @@ export function createModelPreviewScene(
 export async function loadModelPreviewSource(
   host: MaterialPreviewScene,
   bytes: Uint8Array,
-): Promise<{ dispose: () => void } | null> {
+): Promise<{ dispose: () => void; animationGroups: AnimationGroup[] } | null> {
   if (!isGltfModelBytes(bytes)) return null;
   const container = await LoadAssetContainerAsync(bytes, host.scene, {
     pluginExtension: gltfLoaderExtension(bytes),
@@ -131,5 +131,6 @@ export async function loadModelPreviewSource(
     dispose: () => {
       container.dispose();
     },
+    animationGroups: container.animationGroups,
   };
 }

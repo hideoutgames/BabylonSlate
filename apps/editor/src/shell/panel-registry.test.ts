@@ -38,4 +38,11 @@ describe("panelComponents", () => {
     expect(panelComponents["model-preview"]).toBeTypeOf("function");
     expect(panelComponents["model-details"]).toBeTypeOf("function");
   });
+
+  it("registers Skeleton and Animation Preview and Details docks", () => {
+    expect(panelComponents["skeleton-preview"]).toBeTypeOf("function");
+    expect(panelComponents["skeleton-details"]).toBeTypeOf("function");
+    expect(panelComponents["animation-preview"]).toBeTypeOf("function");
+    expect(panelComponents["animation-details"]).toBeTypeOf("function");
+  });
 });

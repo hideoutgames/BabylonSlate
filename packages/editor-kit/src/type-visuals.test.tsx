@@ -6,6 +6,7 @@ import {
   FilmIcon,
   ListTreeIcon,
   PanelTopIcon,
+  PersonStandingIcon,
   PuzzleIcon,
   Volume2Icon,
   WorkflowIcon,
@@ -231,11 +232,14 @@ describe("resolveTypeVisual", () => {
 
   it("gives AnimationGraph a workflow glyph distinct from clip Animation Film", () => {
     const animation = resolveTypeVisual({ assetType: "Animation" });
+    const skeleton = resolveTypeVisual({ assetType: "Skeleton" });
     const graph = resolveTypeVisual({ assetType: "AnimationGraph" });
     const component = resolveTypeVisual({
       classId: "AnimationGraphComponent",
     });
     expect(animation.icon).toBe(FilmIcon);
+    expect(skeleton.icon).toBe(PersonStandingIcon);
+    expect(skeleton.family).toBe("animation");
     expect(graph.icon).toBe(WorkflowIcon);
     expect(graph.icon).not.toBe(animation.icon);
     expect(component.icon).toBe(WorkflowIcon);

@@ -119,6 +119,8 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "Particle System",
   },
   { kind: "model", keepKey: "model", label: "Model" },
+  { kind: "skeleton", keepKey: "skeleton", label: "Skeleton" },
+  { kind: "animation", keepKey: "animation", label: "Animation" },
 ];
 
 export type EngineSettingsCategoryId =

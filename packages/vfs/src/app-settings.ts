@@ -29,6 +29,8 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "particle-emitter": ["particle-emitter-preview"],
   "particle-system": ["particle-system-preview"],
   model: ["model-preview"],
+  skeleton: ["skeleton-preview"],
+  animation: ["animation-preview"],
 } as const;
 
 function mutableFocusKeepPanels(): {
@@ -140,6 +142,8 @@ export const engineSettingsSchema = z.object({
         DEFAULT_FOCUS_KEEP_PANELS["particle-system"],
       ),
       model: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.model),
+      skeleton: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.skeleton),
+      animation: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.animation),
     })
     .default(mutableFocusKeepPanels),
   uiDesignerPresets: z

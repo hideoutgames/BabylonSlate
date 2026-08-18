@@ -526,7 +526,9 @@ export function DocumentWorkspace() {
           doc.ref.kind === "sound-attenuation" ||
           doc.ref.kind === "particle-emitter" ||
           doc.ref.kind === "particle-system" ||
-          doc.ref.kind === "model"
+          doc.ref.kind === "model" ||
+          doc.ref.kind === "skeleton" ||
+          doc.ref.kind === "animation"
         ) {
           if (!shouldMount) return null;
           return (

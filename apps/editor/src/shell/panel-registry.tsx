@@ -60,6 +60,14 @@ import {
   ModelDetailsPanel,
   ModelPreviewPanel,
 } from "../components/model-editor";
+import {
+  SkeletonDetailsPanel,
+  SkeletonPreviewPanel,
+} from "../components/skeleton-editor";
+import {
+  AnimationDetailsPanel,
+  AnimationPreviewPanel,
+} from "../components/animation-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -193,6 +201,18 @@ export const panelComponents = {
   ),
   "model-details": (props: IDockviewPanelProps) => (
     <ModelDetailsPanel {...props} />
+  ),
+  "skeleton-preview": (props: IDockviewPanelProps) => (
+    <SkeletonPreviewPanel {...props} />
+  ),
+  "skeleton-details": (props: IDockviewPanelProps) => (
+    <SkeletonDetailsPanel {...props} />
+  ),
+  "animation-preview": (props: IDockviewPanelProps) => (
+    <AnimationPreviewPanel {...props} />
+  ),
+  "animation-details": (props: IDockviewPanelProps) => (
+    <AnimationDetailsPanel {...props} />
   ),
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />

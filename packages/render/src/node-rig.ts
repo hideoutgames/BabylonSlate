@@ -3,11 +3,14 @@ import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import { Bone } from "@babylonjs/core/Bones/bone";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { SkeletonViewer } from "@babylonjs/core/Debug/skeletonViewer";
 import { Matrix, Quaternion } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Node } from "@babylonjs/core/node";
+import type { Scene } from "@babylonjs/core/scene";
 
 export function ensureNodeRotationQuaternion(node: TransformNode): void {
   if (!node.rotationQuaternion) {
@@ -191,4 +194,51 @@ export function retargetAnimationGroupWithMeshProxy(
     dispose();
     avatar.dispose();
   }
+}
+
+export function findSkinnedMesh(root: TransformNode): AbstractMesh | null {
+  if ("skeleton" in root && (root as AbstractMesh).skeleton) {
+    return root as AbstractMesh;
+  }
+  return root.getChildMeshes(false).find((mesh) => mesh.skeleton) ?? null;
+}
+
+/** Skin viewer on a real skinned mesh, or a dummy overlay for hierarchy rigs. */
+export function attachSkeletonPreview(
+  root: TransformNode,
+  scene: Scene,
+  kind: "skin" | "hierarchy",
+): { dispose: () => void } {
+  const extra: Array<{ dispose: () => void }> = [];
+  let mesh: AbstractMesh | null = null;
+  let skeleton: Skeleton | null = null;
+  if (kind === "skin") {
+    mesh = findSkinnedMesh(root);
+    skeleton = mesh?.skeleton ?? null;
+  } else {
+    const linked = createLinkedSkeletonFromNodeRig(root, { createMesh: true });
+    mesh = linked.overlay;
+    skeleton = linked.skeleton;
+    extra.push({
+      dispose: () => {
+        linked.overlay?.dispose();
+        linked.skeleton.dispose();
+      },
+    });
+  }
+  if (mesh && skeleton) {
+    try {
+      const viewer = new SkeletonViewer(skeleton, mesh, scene, true, 1, {
+        displayMode: SkeletonViewer.DISPLAY_LINES,
+      });
+      extra.unshift({ dispose: () => viewer.dispose() });
+    } catch {
+      // NullEngine / missing utility layer — overlay still exists for tests.
+    }
+  }
+  return {
+    dispose: () => {
+      for (const entry of extra) entry.dispose();
+    },
+  };
 }

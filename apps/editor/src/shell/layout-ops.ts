@@ -83,6 +83,8 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   "particle-emitter": primaryDockPanel("particle-emitter"),
   "particle-system": primaryDockPanel("particle-system"),
   model: primaryDockPanel("model"),
+  skeleton: primaryDockPanel("skeleton"),
+  animation: primaryDockPanel("animation"),
 };
 
 /**

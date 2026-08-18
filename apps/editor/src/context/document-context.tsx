@@ -2233,6 +2233,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "particle-emitter"
         | "particle-system"
         | "model"
+        | "skeleton"
+        | "animation"
         | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {

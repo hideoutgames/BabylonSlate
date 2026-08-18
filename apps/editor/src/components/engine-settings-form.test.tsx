@@ -191,6 +191,8 @@ describe("EngineSettingsForm focus", () => {
     expect(getByTestId("focus-keep-animGraphObject-anim-object-graph")).toBeTruthy();
     expect(getByTestId("focus-keep-behaviour-tree-behaviour-tree-graph")).toBeTruthy();
     expect(getByTestId("focus-keep-model-model-preview")).toBeTruthy();
+    expect(getByTestId("focus-keep-skeleton-skeleton-preview")).toBeTruthy();
+    expect(getByTestId("focus-keep-animation-animation-preview")).toBeTruthy();
   });
 
   it("adds a class tab from the keep dropdown", () => {

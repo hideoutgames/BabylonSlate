@@ -192,6 +192,20 @@ describe("listDockWindows", () => {
       initialWidth: 280,
     });
     expect(primaryDockPanel("model")).toBe("model-preview");
+    expect(listDockWindows("skeleton").map((entry) => entry.id)).toEqual([
+      "skeleton-preview",
+      "skeleton-details",
+    ]);
+    expect(listDockWindows("skeleton").map((entry) => entry.title)).toEqual([
+      "Preview",
+      "Details",
+    ]);
+    expect(primaryDockPanel("skeleton")).toBe("skeleton-preview");
+    expect(listDockWindows("animation").map((entry) => entry.id)).toEqual([
+      "animation-preview",
+      "animation-details",
+    ]);
+    expect(primaryDockPanel("animation")).toBe("animation-preview");
     expect(
       listDockWindows("sprite-animation").find(
         (entry) => entry.id === "sprite-animation-details",
@@ -330,6 +344,8 @@ describe("listDockWindows", () => {
       "particle-emitter",
       "particle-system",
       "model",
+      "skeleton",
+      "animation",
     ] as const) {
       expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
         false,

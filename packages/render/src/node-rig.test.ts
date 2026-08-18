@@ -7,6 +7,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import {
+  attachSkeletonPreview,
   createLinkedSkeletonFromNodeRig,
   ensureNodeRotationQuaternion,
   retargetAnimationGroupWithMeshProxy,
@@ -65,6 +66,17 @@ describe("node-rig helpers", () => {
     expect(arm.skeleton).toBeNull();
     expect(overlay?.skeleton).toBe(skeleton);
     expect(overlay?.getVerticesData("matricesIndices")).not.toBeNull();
+  });
+
+  it("parents a hierarchy overlay used for SkeletonViewer", () => {
+    const { engine, scene } = makeScene();
+    engines.push(engine);
+    const { root } = makeHierarchy(scene);
+    const handle = attachSkeletonPreview(root, scene, "hierarchy");
+    expect(
+      root.getChildMeshes(false).some((mesh) => mesh.name.endsWith("_overlay")),
+    ).toBe(true);
+    handle.dispose();
   });
 
   it("ensures rotationQuaternion so Mesh parts can become bones", () => {
