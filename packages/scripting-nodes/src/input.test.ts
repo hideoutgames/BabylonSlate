@@ -110,4 +110,25 @@ describe("input nodes", () => {
     void pin;
     void EXEC;
   });
+
+  it("compiles Set Input Mode to ctx.setInputMode", () => {
+    expect(inputNodes.map((n) => n.id)).toContain("input.setInputMode");
+    const setMode = inputNodes.find((n) => n.id === "input.setInputMode");
+    expect(setMode?.title).toBe("Set Input Mode");
+    expect(setMode?.category).toBe("input");
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "mode", "input.setInputMode", { mode: "Game" }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "mode", "execIn")],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain('ctx.setInputMode("Game")');
+    const modePin = setMode?.pins({}).find((pin) => pin.id === "mode");
+    expect(modePin?.type).toEqual({ kind: "enumRef", guid: "engine:InputMode" });
+  });
 });

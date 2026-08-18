@@ -26,6 +26,8 @@ import {
 } from "@babylonslate/scripting";
 import { pinTypeForMember } from "@babylonslate/scripting-nodes";
 import {
+  ENGINE_INPUT_MODE_ENUM_ID,
+  INPUT_MODE_MEMBERS,
   normalizeUserInterfaceClassRef,
   USER_INTERFACE_ENGINE_CLASS_ID,
 } from "@babylonslate/core";
@@ -99,6 +101,7 @@ export function collectEnumMemberNames(
     const names = memberNamesFromUnknown(record.members);
     if (names) result[record.guid] = names;
   }
+  result[ENGINE_INPUT_MODE_ENUM_ID] = [...INPUT_MODE_MEMBERS];
   return result;
 }
 

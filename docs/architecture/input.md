@@ -82,5 +82,10 @@ Per engineplan §11.1: input is tested through **synthetic event streams** repla
 | `OnAction` | exec on pressed / released |
 | `OnGamepadConnected` / `OnGamepadDisconnected` | exec on pad transitions |
 | `SetGamepadRumble` | `ctx.setGamepadRumble(...)` |
+| `Set Input Mode` | `ctx.setInputMode(mode)` — engine enum `engine:InputMode` (All / Interface / Game). Hidden on EUO / EFL / EUI. Allowed on Actor / GameInstance / BObject / UserInterface Logic. |
 
-See [bridge.md](bridge.md) for the raw input ring buffer wire format.
+See [bridge.md](bridge.md) for the raw input ring buffer wire format and the `setInputMode` command.
+
+## Input mode vs capture
+
+Play overlay `input-capture.ts` and `apps/player` `input.ts` honor the session mode. **All** (default) feeds the ring and GUI hits follow authored Hit Testable. **Interface** keeps HUD picking and Touch* / TextInput, but does not push key/pointer/gamepad into the resolver (`shouldPushRawInput`; `touchAxis` still flows). **Game** paints HUD but forces `allowGuiHits` false so the Layer ADT does not pick. See [ui-runtime.md](ui-runtime.md).

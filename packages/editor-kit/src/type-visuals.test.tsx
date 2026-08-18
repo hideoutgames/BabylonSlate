@@ -157,6 +157,7 @@ describe("resolveTypeVisual", () => {
     expect(engineParentOf("Widget")).toBe("BObject");
     expect(engineParentOf("ButtonWidget")).toBe("Widget");
     expect(engineParentOf("ImageWidget")).toBe("Widget");
+    expect(engineParentOf("MaterialWidget")).toBe("Widget");
   });
 
   it("uses Class color and the parent icon for Class assets", () => {

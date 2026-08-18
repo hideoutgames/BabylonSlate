@@ -34,7 +34,7 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { normalizeUserInterfaceDocument, type UserInterfaceDocument } from "@babylonslate/ui-runtime";
+import { normalizeUserInterfaceDocument, type UserInterfaceDocument, collectMaterialGuidsFromUiDocuments } from "@babylonslate/ui-runtime";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
 export interface PlayContentDocument {
@@ -613,6 +613,52 @@ export function materialGuidsFromScenes(
     }
   }
   return guids;
+}
+
+/** Interface Material guids referenced by HUD / EUI Material widgets. */
+export function interfaceMaterialGuidsFromUiDocuments(
+  documents: Iterable<UserInterfaceDocument>,
+  resolveNested?: (guid: string) => UserInterfaceDocument | null,
+): string[] {
+  return collectMaterialGuidsFromUiDocuments(documents, resolveNested);
+}
+
+/** Scene materials plus HUD Interface materials, in that order, de-duplicated. */
+export function playMaterialGuidsFromSources(
+  scenes: readonly (SerializedScene | null | undefined)[],
+  uiDocuments: Iterable<UserInterfaceDocument>,
+  extraGuids: readonly string[] = [],
+  resolveNested?: (guid: string) => UserInterfaceDocument | null,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (guid: string) => {
+    if (!guid || seen.has(guid)) return;
+    seen.add(guid);
+    out.push(guid);
+  };
+  for (const guid of materialGuidsFromScenes(scenes)) add(guid);
+  for (const guid of interfaceMaterialGuidsFromUiDocuments(
+    uiDocuments,
+    resolveNested,
+  )) {
+    add(guid);
+  }
+  for (const guid of extraGuids) add(guid);
+  return out;
+}
+
+/** Interface-domain Material documents only; other domains do not bind on HUD. */
+export function lookupInterfaceMaterialDocument<
+  T extends { domain?: string },
+>(
+  guid: string,
+  documents: ReadonlyMap<string, T> | undefined | null,
+): T | null {
+  const id = guid.trim();
+  if (!id || !documents) return null;
+  const document = documents.get(id);
+  return document?.domain === "interface" ? document : null;
 }
 
 /** Look up the scene document for an `activeScene` command. */

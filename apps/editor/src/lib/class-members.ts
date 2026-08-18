@@ -1,4 +1,5 @@
 import {
+  isEditorGraphHost,
   isFunctionLibraryClass,
   type GraphClassMember,
   type GraphClassMemberKind,
@@ -286,6 +287,15 @@ export function isScriptCatalogNodeAllowed(
   }
   if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
+  }
+  if (nodeId === "input.setInputMode") {
+    if (options?.animationGraphHost) return false;
+    return !isEditorGraphHost({
+      parentClass: options?.parentClass,
+      parentOf: options?.parentOf,
+      assetType: options?.assetType,
+      editorGraph: options?.editorGraph,
+    });
   }
   if (isAnimCatalogNode(nodeId)) {
     return isAnimCatalogNodeAllowed(

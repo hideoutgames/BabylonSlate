@@ -44,7 +44,7 @@ Always set `system.particleTexture` from the Emitter Texture guid (ResourceCache
 
 ## Particle-domain materials
 
-`createEffectForParticles` requires `NodeMaterialModes.Particle`. Material `domain: "particle"` sits beside `surface` | `postProcess`.
+`createEffectForParticles` requires `NodeMaterialModes.Particle`. Material `domain: "particle"` sits beside `surface` | `postProcess` | `interface`.
 
 | Node | Kind | Babylon |
 | --- | --- | --- |

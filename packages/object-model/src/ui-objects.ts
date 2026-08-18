@@ -57,6 +57,7 @@ export class TextInputWidget extends Widget {}
 export class SliderWidget extends Widget {}
 export class CheckBoxWidget extends Widget {}
 export class ImageWidget extends Widget {}
+export class MaterialWidget extends Widget {}
 export class ProgressBarWidget extends Widget {}
 export class SpacerWidget extends Widget {}
 export class TouchJoystickWidget extends Widget {}
@@ -81,6 +82,7 @@ const WIDGET_CLASS_BY_KIND: Record<string, WidgetCtor> = {
   Slider: SliderWidget,
   CheckBox: CheckBoxWidget,
   Image: ImageWidget,
+  Material: MaterialWidget,
   ProgressBar: ProgressBarWidget,
   Spacer: SpacerWidget,
   TouchJoystick: TouchJoystickWidget,
