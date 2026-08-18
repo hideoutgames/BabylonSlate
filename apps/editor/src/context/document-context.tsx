@@ -142,6 +142,7 @@ import {
 } from "../shell/dockview-surface";
 import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
+import { asDevicePresets } from "../lib/engine-ui-presets";
 import {
   closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
@@ -1483,7 +1484,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
-        uiDesignerPresets: engineSettings.uiDesignerPresets,
+        uiDesignerPresets: asDevicePresets(engineSettings.uiDesignerPresets),
       });
     },
     [projectDocument, projectService, settingsStore],

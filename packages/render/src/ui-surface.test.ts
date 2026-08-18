@@ -100,6 +100,8 @@ describe("presentAdtToCanvas", () => {
 
   it("does not reset destination bitmap size until the ADT has fully redrawn", () => {
     let checkCalled = false;
+    let destWidth = 0;
+    let destHeight = 0;
     const widthSets: number[] = [];
     const adt = {
       useInvalidateRectOptimization: false,
@@ -111,26 +113,24 @@ describe("presentAdtToCanvas", () => {
       getSize: () => ({ width: 16, height: 8 }),
     } as unknown as AdvancedDynamicTexture;
     const canvas = {
-      _width: 0,
-      _height: 0,
       get width() {
-        return this._width;
+        return destWidth;
       },
       set width(value: number) {
         if (!checkCalled) {
           throw new Error("resized destination before ADT redraw");
         }
         widthSets.push(value);
-        this._width = value;
+        destWidth = value;
       },
       get height() {
-        return this._height;
+        return destHeight;
       },
       set height(value: number) {
         if (!checkCalled) {
           throw new Error("resized destination before ADT redraw");
         }
-        this._height = value;
+        destHeight = value;
       },
       getContext: () => ({
         clearRect: vi.fn(),
@@ -144,21 +144,21 @@ describe("presentAdtToCanvas", () => {
   it("does not reassign matching canvas dimensions (assigning width clears the bitmap)", () => {
     const adt = fakeAdt({ canvas: { id: "adt" } }, { width: 8, height: 8 });
     let widthAssigns = 0;
+    let destWidth = 8;
+    let destHeight = 8;
     const canvas = {
-      _width: 8,
-      _height: 8,
       get width() {
-        return this._width;
+        return destWidth;
       },
       set width(value: number) {
         widthAssigns += 1;
-        this._width = value;
+        destWidth = value;
       },
       get height() {
-        return this._height;
+        return destHeight;
       },
       set height(value: number) {
-        this._height = value;
+        destHeight = value;
       },
       getContext: () => ({
         clearRect: vi.fn(),

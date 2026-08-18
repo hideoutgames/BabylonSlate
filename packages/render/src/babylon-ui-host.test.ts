@@ -607,10 +607,10 @@ describe("BabylonUiApplyHost", () => {
       guiSpecFromDescriptor(buttonDesc, { interactive: true }),
     );
     const factory: GuiControlFactory = {
-      create() {
+      create(spec) {
         return {
           id: "btn",
-          type: "button",
+          type: spec.type,
           spec: guiSpecFromDescriptor(buttonDesc, { interactive: true }),
           control: button,
           dispose() {},
@@ -658,10 +658,10 @@ describe("BabylonUiApplyHost", () => {
       guiSpecFromDescriptor(canvasDesc, { interactive: true }),
     );
     const factory: GuiControlFactory = {
-      create() {
+      create(spec) {
         return {
           id: "canvas",
-          type: "rectangle",
+          type: spec.type,
           spec: guiSpecFromDescriptor(canvasDesc, { interactive: true }),
           control: canvas,
           dispose() {},
