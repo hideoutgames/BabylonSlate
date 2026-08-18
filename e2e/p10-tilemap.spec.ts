@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, submitCreateOrOpenListed } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { saveAllIfEnabled } from "./save-all";
 
 async function openTwoDProject(page: Page): Promise<void> {
   await page.goto("/?test=1");
@@ -147,9 +148,12 @@ test.describe("P10 tilemaps", () => {
     await expect(page.getByTestId("tileset-preview-cell-1")).toBeVisible();
     await page.getByTestId("tileset-preview-cell-1").click();
     await page.getByTestId("tileset-collision-full").click();
+    await saveAllIfEnabled(page);
     await page
-      .locator('[data-testid="document-tab"][data-document-kind="tileset"] [data-testid="document-tab-close"]')
+      .locator('[data-testid="document-tab"][data-document-kind="tileset"]')
+      .getByTestId("document-tab-close")
       .click();
+    await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
     await expect(page.getByTestId("document-workspace-tileset")).toHaveCount(0);
 
     await createAsset(page, "Tilemap", "Overworld");
