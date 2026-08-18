@@ -1,6 +1,7 @@
 import { newAssetGuid } from "../guid";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
+import { AUDIO_DEFAULT_SOURCE_CHUNK } from "../audio-payload";
 
 export const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "ogg"]);
 
@@ -66,7 +67,15 @@ export async function importAudio(
       version: 1,
       dependencies: [],
       parentClass: null,
-      payload: {},
+      payload: {
+        clips: [
+          {
+            chunkId: AUDIO_DEFAULT_SOURCE_CHUNK,
+            name: baseName(options.fileName),
+            weight: 1,
+          },
+        ],
+      },
       chunks: [{ id: "source", kind: "audio", mime, data: bytes }],
     },
   ];

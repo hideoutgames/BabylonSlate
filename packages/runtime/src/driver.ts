@@ -1798,6 +1798,9 @@ class InProcessRuntime implements RuntimeDriver {
       setShowNav: (enabled) => {
         this.emit({ type: "setShowNav", enabled: Boolean(enabled) });
       },
+      setShowAudioDebug: (enabled) => {
+        this.emit({ type: "setShowAudioDebug", enabled: Boolean(enabled) });
+      },
       dumpActors: () => formatDumpActors(this.inspectWorld()),
       inspectActor: (query) =>
         formatInspectActor(this.inspectWorld(), query, null),
