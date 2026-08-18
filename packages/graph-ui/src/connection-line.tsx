@@ -13,7 +13,9 @@ import {
   nodePinLists,
   screenCentersForSafePins,
   shouldOpenAddNodeOnConnectEnd,
+  type ConnectEndMode,
 } from "./graph-connect";
+import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins } from "./graph-types";
 import { edgeStyleForPin } from "./node-theme";
 
@@ -31,6 +33,7 @@ export type GraphConnectionLineViewProps = {
   pointer: { x: number; y: number };
   nodes: Array<{ id: string; data?: Record<string, unknown> }>;
   root?: ParentNode;
+  connectEndMode?: ConnectEndMode;
 };
 
 function pinOnDraggedNode(
@@ -70,6 +73,7 @@ export function GraphConnectionLineView({
   pointer,
   nodes,
   root = document,
+  connectEndMode = "default",
 }: GraphConnectionLineViewProps) {
   const pin = pinOnDraggedNode(fromNode, fromHandle.id);
   const pinStyle = edgeStyleForPin(pin?.type);
@@ -82,17 +86,20 @@ export function GraphConnectionLineView({
     targetPosition: toPosition,
   });
   const showHint = pin
-    ? shouldOpenAddNodeOnConnectEnd({
-        hasTargetHandle: Boolean(toHandle),
-        pointerOverNode: isClientPointOverGraphNode(pointer, root),
-        pointer,
-        safePins: screenCentersForSafePins(
-          root,
-          collectSafeConnectPins(nodePinLists(nodes), fromNode.id, pin),
-        ),
-      })
+    ? connectEndMode === "add-node"
+      ? !toHandle
+      : shouldOpenAddNodeOnConnectEnd({
+          hasTargetHandle: Boolean(toHandle),
+          pointerOverNode: isClientPointOverGraphNode(pointer, root),
+          pointer,
+          safePins: screenCentersForSafePins(
+            root,
+            collectSafeConnectPins(nodePinLists(nodes), fromNode.id, pin),
+          ),
+        })
     : false;
   const badge = hintOffset(fromX, fromY, toX, toY);
+  const hintLabel = "Tap to Cancel";
 
   return (
     <>
@@ -117,7 +124,7 @@ export function GraphConnectionLineView({
             aria-hidden="true"
             className="pointer-events-none whitespace-nowrap shadow-md"
           >
-            Tap to Add Node
+            {hintLabel}
           </Badge>
         </foreignObject>
       ) : null}
@@ -127,6 +134,7 @@ export function GraphConnectionLineView({
 
 export function GraphConnectionLine(props: ConnectionLineComponentProps) {
   const nodes = useStore((state) => state.nodes);
+  const { connectEndMode } = useGraphEditorContext();
   const flow = document.querySelector(".react-flow");
   const pointer = flow
     ? containerPointerToClient(props.pointer, flow)
@@ -145,6 +153,7 @@ export function GraphConnectionLine(props: ConnectionLineComponentProps) {
       toHandle={props.toHandle}
       pointer={pointer}
       nodes={nodes}
+      connectEndMode={connectEndMode}
     />
   );
 }

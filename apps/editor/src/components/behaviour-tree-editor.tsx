@@ -37,7 +37,6 @@ import {
   type BtPropertyField,
   type BtResult,
 } from "@babylonslate/behaviour-tree";
-import { documentId } from "@babylonslate/core";
 import {
   AssetPicker,
   CatalogDialog,
@@ -46,25 +45,29 @@ import {
   PanelFrame,
   PropertyGrid,
   SelectableText,
+  TypeColorMark,
   assetRowIdentity,
   humanizePropertyLabel,
+  pinPickerColorVar,
+  pinPickerLabel,
   useCatalogSearchState,
   walkAncestry,
   type NestedMenuItem,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { GraphEditor, treeNodeTypes, type PaletteNode } from "@babylonslate/graph-ui";
+import { defaultJsValue } from "@babylonslate/scripting";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
 import { classParentLookup } from "../lib/content-browser-helpers";
+import { pinDefaultPropertyRows } from "../lib/graph-inspector";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
-import { BlackboardEditor } from "./blackboard-editor";
 
 function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
   return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
@@ -243,7 +246,8 @@ function useBehaviourTreeDocument() {
     }
     return loadedBlackboard;
   }, [linkedBlackboardContent, loadedBlackboard]);
-  const blackboardKeys = blackboardDocument?.keys.map((key) => key.name) ?? [];
+  const blackboardKeyEntries = blackboardDocument?.keys ?? [];
+  const blackboardKeys = blackboardKeyEntries.map((key) => key.name);
   const diagnostics = validateBehaviourTree(doc, {
     assetGuid: blackboardAsset?.header.guid ?? "tree",
     blackboardKeys: blackboardKeys.length > 0 ? blackboardKeys : undefined,
@@ -274,6 +278,7 @@ function useBehaviourTreeDocument() {
     blackboardAsset,
     blackboardDocument,
     blackboardKeys,
+    blackboardKeyEntries,
     diagnostics,
     openClass,
     openDocument,
@@ -483,34 +488,10 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
     assets,
     blackboardAsset,
     blackboardDocument,
-    openDocument,
-    openDocuments,
-    applyAssetDocumentChange,
   } = useBehaviourTreeDocument();
   const [blackboardPick, setBlackboardPick] = useState(false);
   const blackboardWatch = play.liveBtState?.blackboard ?? null;
-  const linked = blackboardAsset
-    ? openDocuments.find(
-        (item) =>
-          item.ref.kind === "blackboard" && item.ref.path === blackboardAsset.path,
-      )
-    : undefined;
-  const payload =
-    (linked?.content as Record<string, unknown> | undefined) ??
-    (blackboardDocument as unknown as Record<string, unknown> | null);
-  const commitBlackboard = (next: Record<string, unknown>) => {
-    if (!blackboardAsset) return;
-    const id = documentId({ kind: "blackboard", path: blackboardAsset.path });
-    if (linked) {
-      void applyAssetDocumentChange(linked.id, next);
-      return;
-    }
-    void openDocument({
-      kind: "blackboard",
-      path: blackboardAsset.path,
-      label: blackboardAsset.header.name,
-    }).then(() => applyAssetDocumentChange(id, next));
-  };
+  const keys = blackboardDocument?.keys ?? [];
 
   return (
     <PanelFrame className="flex-1" data-testid="behaviour-tree-blackboard">
@@ -536,13 +517,38 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
             },
           ]}
         />
-        {doc.blackboardGuid && payload ? (
-          <BlackboardEditor payload={payload} onChange={commitBlackboard} />
+        {doc.blackboardGuid ? (
+          keys.length > 0 ? (
+            <ScrollArea className="min-h-0 flex-1" data-testid="bt-blackboard-keys">
+              <ul className="flex flex-col gap-1">
+                {keys.map((key) => (
+                  <li
+                    key={key.name}
+                    className="flex min-h-11 items-center justify-between gap-2 rounded-md px-2 text-sm"
+                    data-testid={`bt-blackboard-key-${key.name}`}
+                  >
+                    <SelectableText>{key.name}</SelectableText>
+                    <TypeColorMark
+                      colorVar={pinPickerColorVar(key.type.kind)}
+                      label={pinPickerLabel(key.type.kind)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
+          ) : (
+            <Empty>
+              <EmptyTitle>No Keys</EmptyTitle>
+              <EmptyDescription>
+                Open the Blackboard document to add keys.
+              </EmptyDescription>
+            </Empty>
+          )
         ) : (
           <Empty>
             <EmptyTitle>No Blackboard</EmptyTitle>
             <EmptyDescription>
-              Link a Blackboard asset to edit keys.
+              Link a Blackboard asset to inspect keys.
             </EmptyDescription>
           </Empty>
         )}
@@ -627,6 +633,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
     serviceCatalog,
     parentOf,
     blackboardKeys,
+    blackboardKeyEntries,
     assets,
   } = useBehaviourTreeDocument();
   const {
@@ -658,79 +665,139 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
   const toRows = (
     fields: BtPropertyField[],
     properties: Record<string, unknown>,
-    write: (key: string, value: unknown) => void,
-  ): PropertyRow[] =>
-    fields.map((field) => {
+    write: (updates: Record<string, unknown>) => void,
+  ): PropertyRow[] => {
+    const typedValue =
+      fields.some((field) => field.kind === "blackboardKey") &&
+      fields.some((field) => field.key === "value");
+    const selectedKey = typeof properties.key === "string" ? properties.key : "";
+    const selectedType = blackboardKeyEntries.find(
+      (entry) => entry.name === selectedKey,
+    )?.type;
+    return fields.flatMap((field) => {
+      if (typedValue && field.key === "value") {
+        if (!selectedKey || !selectedType) return [];
+        const rows = pinDefaultPropertyRows(
+          [
+            {
+              pinId: field.id,
+              name: field.key,
+              type: selectedType,
+              value: propertyValue(field, properties),
+            },
+          ],
+          (patch) => {
+            if ("default:value" in patch) write({ value: patch["default:value"] });
+          },
+        );
+        if (rows.length > 0) return rows;
+        const raw = propertyValue(field, properties);
+        return [
+          {
+            id: field.id,
+            kind: "text" as const,
+            label: field.label,
+            value: raw === undefined ? "" : String(raw),
+            onChange: (value: string) => write({ [field.key]: value }),
+          },
+        ];
+      }
       const raw = propertyValue(field, properties);
       if (field.kind === "number") {
-        return {
-          id: field.id,
-          kind: "number",
-          label: field.label,
-          value: Number(raw ?? 0),
-          min: field.min,
-          max: field.max,
-          onChange: (value) => write(field.key, value),
-        };
+        return [
+          {
+            id: field.id,
+            kind: "number" as const,
+            label: field.label,
+            value: Number(raw ?? 0),
+            min: field.min,
+            max: field.max,
+            onChange: (value: number) => write({ [field.key]: value }),
+          },
+        ];
       }
       if (field.kind === "boolean") {
-        return {
-          id: field.id,
-          kind: "boolean",
-          label: field.label,
-          value: Boolean(raw),
-          onChange: (value) => write(field.key, value),
-        };
+        return [
+          {
+            id: field.id,
+            kind: "boolean" as const,
+            label: field.label,
+            value: Boolean(raw),
+            onChange: (value: boolean) => write({ [field.key]: value }),
+          },
+        ];
       }
       if (field.kind === "vector3") {
-        return {
-          id: field.id,
-          kind: "vector3",
-          label: field.label,
-          value: vectorFromUnknown(raw),
-          onChange: (value) =>
-            write(field.key, { x: value[0], y: value[1], z: value[2] }),
-        };
+        return [
+          {
+            id: field.id,
+            kind: "vector3" as const,
+            label: field.label,
+            value: vectorFromUnknown(raw),
+            onChange: (value: [number, number, number]) =>
+              write({ [field.key]: { x: value[0], y: value[1], z: value[2] } }),
+          },
+        ];
       }
       if (field.kind === "enum" || (field.kind === "blackboardKey" && keyOptions.length > 1)) {
-        return {
-          id: field.id,
-          kind: "enum",
-          label: field.label,
-          value: String(raw ?? ""),
-          options: field.options ?? keyOptions,
-          onChange: (value) => write(field.key, value),
-        };
+        return [
+          {
+            id: field.id,
+            kind: "enum" as const,
+            label: field.label,
+            value: String(raw ?? ""),
+            options: field.options ?? keyOptions,
+            onChange: (value: string) => {
+              if (field.kind === "blackboardKey" && typedValue) {
+                const type = blackboardKeyEntries.find(
+                  (entry) => entry.name === value,
+                )?.type;
+                write(
+                  type
+                    ? { [field.key]: value, value: defaultJsValue(type) }
+                    : { [field.key]: value },
+                );
+                return;
+              }
+              write({ [field.key]: value });
+            },
+          },
+        ];
       }
       if (field.kind === "asset") {
         const guid = typeof raw === "string" ? raw : "";
         const picked = assets.find((asset) => asset.guid === guid);
-        return {
-          id: field.id,
-          kind: "asset",
-          label: field.label,
-          value: guid || null,
-          placeholder: field.assetType ?? "None",
-          onPick: () =>
-            setAssetPick({
-              key: field.key,
-              assetType: field.assetType ?? "Audio",
-              write: (value) => write(field.key, value ?? ""),
-            }),
-          onChange: (value) => write(field.key, value ?? ""),
-          ...assetRowIdentity(
-            picked ? { name: picked.name, type: picked.type } : undefined,
-          ),
-        };
+        return [
+          {
+            id: field.id,
+            kind: "asset" as const,
+            label: field.label,
+            value: guid || null,
+            placeholder: field.assetType ?? "None",
+            onPick: () =>
+              setAssetPick({
+                key: field.key,
+                assetType: field.assetType ?? "Audio",
+                write: (value) => write({ [field.key]: value ?? "" }),
+              }),
+            onChange: (value: string | null) => write({ [field.key]: value ?? "" }),
+            ...assetRowIdentity(
+              picked ? { name: picked.name, type: picked.type } : undefined,
+            ),
+          },
+        ];
       }
-      return {
-        id: field.id,
-        kind: "text",
-        label: field.label,
-        value: raw === undefined ? "" : String(raw),
-        onChange: (value) => write(field.key, value),
-      };
+      return [
+        {
+          id: field.id,
+          kind: "text" as const,
+          label: field.label,
+          value: raw === undefined ? "" : String(raw),
+          onChange: (value: string) => write({ [field.key]: value }),
+        },
+      ];
     });
+  };
 
   const rows: PropertyRow[] = [];
   if (selected && !attachment) {
@@ -755,10 +822,10 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
         ),
     });
     rows.push(
-      ...toRows(propertyFieldsForClassId(selected.classId), selected.properties, (key, value) =>
+      ...toRows(propertyFieldsForClassId(selected.classId), selected.properties, (updates) =>
         commit(
           patchNode(doc, selected.id, {
-            properties: { ...selected.properties, [key]: value },
+            properties: { ...selected.properties, ...updates },
           }),
         ),
       ),
@@ -815,12 +882,12 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
         ),
     });
     rows.push(
-      ...toRows(propertyFieldsForClassId(attachment.classId), attachment.properties, (key, value) =>
+      ...toRows(propertyFieldsForClassId(attachment.classId), attachment.properties, (updates) =>
         commit(
           patchNode(doc, selected.id, {
             decorators: selected.decorators.map((row) =>
               row.id === attachment.id
-                ? { ...row, properties: { ...row.properties, [key]: value } }
+                ? { ...row, properties: { ...row.properties, ...updates } }
                 : row,
             ),
           }),
@@ -889,12 +956,12 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
       });
     }
     rows.push(
-      ...toRows(propertyFieldsForClassId(attachment.classId), attachment.properties, (key, value) =>
+      ...toRows(propertyFieldsForClassId(attachment.classId), attachment.properties, (updates) =>
         commit(
           patchNode(doc, selected.id, {
             services: selected.services.map((row) =>
               row.id === attachment.id
-                ? { ...row, properties: { ...row.properties, [key]: value } }
+                ? { ...row, properties: { ...row.properties, ...updates } }
                 : row,
             ),
           }),

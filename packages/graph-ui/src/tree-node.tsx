@@ -168,13 +168,15 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
       data={data}
       compact
     >
-      <TreePinHandle
-        nodeId={id}
-        pinId="parent"
-        direction="in"
-        position={Position.Top}
-        label="Parent"
-      />
+      {protectedNode ? null : (
+        <TreePinHandle
+          nodeId={id}
+          pinId="parent"
+          direction="in"
+          position={Position.Top}
+          label="Parent"
+        />
+      )}
       <button
         type="button"
         className="bt-node-drag-handle flex w-full items-center justify-between gap-2 px-3 py-1 text-left text-xs text-muted-foreground"

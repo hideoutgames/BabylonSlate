@@ -342,8 +342,13 @@ export class EditorDebugOverlay {
       canvas.width = width;
       canvas.height = height;
       const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
-      const image = new ImageData(new Uint8ClampedArray(bytes), width, height);
-      ctx.putImageData(image, 0, 0);
+      const row = width * 4;
+      const flipped = new Uint8ClampedArray(width * height * 4);
+      for (let y = 0; y < height; y++) {
+        const src = y * row;
+        flipped.set(bytes.subarray(src, src + row), (height - 1 - y) * row);
+      }
+      ctx.putImageData(new ImageData(flipped, width, height), 0, 0);
     } catch {
       // NullEngine / missing GPU readback is fine — tests assert the RTT itself.
     }

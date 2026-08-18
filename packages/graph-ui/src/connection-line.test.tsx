@@ -100,17 +100,27 @@ function renderLine(
 }
 
 describe("GraphConnectionLineView", () => {
-  it("shows a Tap to Add Node hint when the drop would open the palette", () => {
+  it("shows a Tap to Cancel hint when the drop would open the palette", () => {
     mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
     const { getByTestId, queryByRole } = renderLine();
 
     const hint = getByTestId("add-node-hint");
-    expect(hint.textContent).toBe("Tap to Add Node");
+    expect(hint.textContent).toBe("Tap to Cancel");
     expect(hint.getAttribute("aria-hidden")).toBe("true");
-    expect(queryByRole("button", { name: "Tap to Add Node" })).toBeNull();
+    expect(queryByRole("button", { name: "Tap to Cancel" })).toBeNull();
     const host = hint.closest("foreignObject");
     expect(host).not.toBeNull();
     expect(Number(host?.getAttribute("width"))).toBeGreaterThanOrEqual(140);
+  });
+
+  it("shows a Tap to Cancel hint in add-node mode", () => {
+    mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
+    const { getByTestId, queryByRole } = renderLine({
+      connectEndMode: "add-node",
+    });
+    const hint = getByTestId("add-node-hint");
+    expect(hint.textContent).toBe("Tap to Cancel");
+    expect(queryByRole("button", { name: "Tap to Cancel" })).toBeNull();
   });
 
   it("hides the hint near the source pin", () => {

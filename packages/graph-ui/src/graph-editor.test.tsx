@@ -638,10 +638,10 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("does not open Add Node when a pin drag is released in empty canvas", () => {
+  it("opens a pin-filtered Add Node menu when a far pin drag is released", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
-      const { container, queryByTestId } = render(
+      const { container, getByTestId, queryByTestId } = render(
         <GraphEditor
           initialGraph={graphWithPins()}
           paletteNodes={pinDragPalette}
@@ -651,7 +651,9 @@ describe("GraphEditor", () => {
       act(() => {
         dragHandle(source, { x: 22, y: 22 }, farDrop);
       });
-      expect(queryByTestId("node-palette-body")).toBeNull();
+      expect(getByTestId("node-palette-body")).toBeTruthy();
+      expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
+      expect(queryByTestId("node-palette-item-math.add")).toBeNull();
     } finally {
       restoreLayout();
     }
@@ -711,10 +713,10 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("opens a pin-filtered Add Node menu on a second pointer during a far pin drag", () => {
+  it("does not open Add Node when a second pointer taps during a far pin drag", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
-      const { container, getByTestId, queryByTestId } = render(
+      const { container, queryByTestId } = render(
         <GraphEditor
           initialGraph={graphWithPins()}
           paletteNodes={pinDragPalette}
@@ -737,19 +739,51 @@ describe("GraphEditor", () => {
           });
         });
       });
-      expect(getByTestId("node-palette-body")).toBeTruthy();
-      expect(getByTestId("node-palette-item-debug.log")).toBeTruthy();
-      expect(queryByTestId("node-palette-item-math.add")).toBeNull();
+      expect(queryByTestId("node-palette-body")).toBeNull();
     } finally {
       restoreLayout();
     }
   });
 
-  it("keeps Add Node open after the drag pointer is released", () => {
+  it("cancels a pin drag on a second pointer in add-node mode", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          connectEndMode="add-node"
+          paletteNodes={pinDragPalette}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      const pane = container.querySelector(".react-flow__pane");
+      expect(pane).not.toBeNull();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop, () => {
+          dispatchPointerEvent(pane!, "pointerdown", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+          dispatchPointerEvent(pane!, "pointerup", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+        });
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      expect(queryByTestId("node-palette")).toBeNull();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("does not open Add Node or break wires after a second-pointer cancel", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
       const onChange = vi.fn();
-      const { container, getByTestId } = render(
+      const { container, queryByTestId } = render(
         <GraphEditor
           initialGraph={graphWithWiredPins()}
           paletteNodes={pinDragPalette}
@@ -774,7 +808,7 @@ describe("GraphEditor", () => {
           });
         });
       });
-      expect(getByTestId("node-palette-body")).toBeTruthy();
+      expect(queryByTestId("node-palette-body")).toBeNull();
       expect(onChange).not.toHaveBeenCalled();
     } finally {
       restoreLayout();
@@ -793,21 +827,8 @@ describe("GraphEditor", () => {
         />,
       );
       const source = mockPinDragLayout(container);
-      const pane = container.querySelector(".react-flow__pane");
-      expect(pane).not.toBeNull();
       act(() => {
-        dragHandle(source, { x: 22, y: 22 }, farDrop, () => {
-          dispatchPointerEvent(pane!, "pointerdown", {
-            clientX: 400,
-            clientY: 100,
-            pointerId: 2,
-          });
-          dispatchPointerEvent(pane!, "pointerup", {
-            clientX: 400,
-            clientY: 100,
-            pointerId: 2,
-          });
-        });
+        dragHandle(source, { x: 22, y: 22 }, farDrop);
       });
       fireEvent.click(getByTestId("node-palette-item-debug.log"));
       expect(onChange).toHaveBeenCalled();
@@ -2348,6 +2369,9 @@ describe("GraphEditor", () => {
       ),
     ).not.toBeNull();
     expect(
+      container.querySelector('[data-id="root"] [data-handleid="parent"]'),
+    ).toBeNull();
+    expect(
       container.querySelector(
         '[data-id="task"] [data-handleid="parent"][data-pin-type="exec"] [data-pin-connected]',
       ),
@@ -2434,8 +2458,8 @@ describe("GraphEditor", () => {
     });
   });
 
-  it("opens Add Node from a pin tap plus empty pane in add-node mode", async () => {
-    const { container, getByTestId } = render(
+  it("cancels a pin tap plus empty pane in add-node mode", async () => {
+    const { container, queryByTestId } = render(
       <GraphEditor
         initialGraph={{
           nodes: [
@@ -2482,7 +2506,7 @@ describe("GraphEditor", () => {
       container.querySelector('[data-id="root"] [data-handleid="children"]')!,
     );
     fireEvent.click(container.querySelector(".react-flow__pane")!);
-    expect(getByTestId("node-palette")).toBeTruthy();
+    expect(queryByTestId("node-palette")).toBeNull();
   });
 
   it("does not open Add Node from a pin tap plus empty pane in default mode", async () => {

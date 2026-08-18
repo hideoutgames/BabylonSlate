@@ -15,9 +15,10 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
-import { setupDefaultViewport } from "./viewport";
+import { DEFAULT_LIGHT_INTENSITY, setupDefaultViewport } from "./viewport";
 import {
   AUTHORED_CAMERA_PREFIX,
+  AUTHORED_FILL_LIGHT_INTENSITY,
   AUTHORED_LIGHT_PREFIX,
   shadowMapSizeFromQuality,
   syncAuthoredIllumination,
@@ -382,6 +383,51 @@ describe("syncAuthoredIllumination", () => {
       shadowQuality: "off",
     });
     expect(key?.getShadowGenerator()).toBeNull();
+  });
+
+  it("dims the unnamed hemispheric fill when an authored light exists", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    expect(scene.getLightByName("light")!.intensity).toBe(DEFAULT_LIGHT_INTENSITY);
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([lightActor("lamp", { lightKind: "point", intensity: 1 })]),
+      { stealActiveCamera: false },
+    );
+    expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
+      AUTHORED_FILL_LIGHT_INTENSITY,
+    );
+  });
+
+  it("restores the unnamed hemispheric fill when the last authored light leaves", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([lightActor("lamp", { lightKind: "point", intensity: 1 })]),
+      { stealActiveCamera: false },
+    );
+    syncAuthoredIllumination(scene, sceneWith([]), { stealActiveCamera: false });
+    expect(scene.getLightByName("light")!.intensity).toBe(DEFAULT_LIGHT_INTENSITY);
+  });
+
+  it("dims the unnamed hemispheric fill when the authored light is disabled", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        lightActor("lamp", {
+          lightKind: "point",
+          intensity: 1,
+          enabled: false,
+        }),
+      ]),
+      { stealActiveCamera: false },
+    );
+    expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
+      AUTHORED_FILL_LIGHT_INTENSITY,
+    );
   });
 
   it("honors LightComponent enabled", () => {

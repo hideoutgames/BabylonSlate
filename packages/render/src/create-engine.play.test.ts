@@ -82,6 +82,51 @@ describe("Play createEngine view", () => {
     return { handle, canvas };
   }
 
+  it("does not plant document authored lights from play-mode loadScene", () => {
+    const { handle } = playHandle(sharedEngine());
+    const scene = createDefaultScene();
+    handle.loadScene({
+      ...scene,
+      actors: [
+        createActor("lamp", "Lamp", {
+          components: [
+            {
+              id: "lamp-light",
+              classId: "LightComponent",
+              properties: { lightKind: "point", intensity: 1 },
+            },
+          ],
+        }),
+      ],
+    });
+    expect(handle.scene.getLightByName("authoredLight:lamp")).toBeNull();
+    expect(
+      handle.scene.meshes.filter((mesh) => mesh.name.startsWith("editorActor:")),
+    ).toHaveLength(0);
+  });
+
+  it("still applies environment from play-mode loadScene", () => {
+    const { handle } = playHandle(sharedEngine());
+    const scene = createDefaultScene();
+    handle.loadScene({
+      ...scene,
+      settings: {
+        ...scene.settings,
+        environmentColor: [0.1, 0.2, 0.3],
+        fogEnabled: true,
+        fogColor: [0.4, 0.5, 0.6],
+        fogStart: 2,
+        fogEnd: 40,
+      },
+    });
+    expect(handle.scene.clearColor.r).toBeCloseTo(0.1);
+    expect(handle.scene.clearColor.g).toBeCloseTo(0.2);
+    expect(handle.scene.clearColor.b).toBeCloseTo(0.3);
+    expect(handle.scene.fogEnabled).toBe(true);
+    expect(handle.scene.fogStart).toBe(2);
+    expect(handle.scene.fogEnd).toBe(40);
+  });
+
   it("does not seed the default Cube into a Play scene", () => {
     const { handle } = playHandle(sharedEngine());
     const actorMeshes = handle.scene.meshes.filter((mesh) =>
