@@ -16,6 +16,7 @@ import {
   serializedToAnimGraph,
   hydrateAnimGraphForEditor,
   animGraphMembersFromVariables,
+  setTransitionBidirectional,
 } from "./index";
 
 describe("anim graph evaluator", () => {
@@ -113,7 +114,7 @@ describe("anim graph evaluator", () => {
     expect(clipForState(doc, "idle")?.clipName).toBe("Idle");
   });
 
-  it("hydrates state pins so Add Node is not an empty box", () => {
+  it("hydrates side handles so Add Node is not an empty box", () => {
     const hydrated = hydrateAnimGraphForEditor(
       animGraphToSerialized(createDefaultAnimGraph()),
     );
@@ -121,12 +122,13 @@ describe("anim graph evaluator", () => {
       id: string;
       direction: string;
     }>;
-    expect(pins.some((pin) => pin.id === "in" && pin.direction === "in")).toBe(
+    expect(pins.some((pin) => pin.id === "left-in" && pin.direction === "in")).toBe(
       true,
     );
-    expect(pins.some((pin) => pin.id === "out" && pin.direction === "out")).toBe(
-      true,
-    );
+    expect(
+      pins.some((pin) => pin.id === "right-out" && pin.direction === "out"),
+    ).toBe(true);
+    expect(pins.some((pin) => pin.id === "in" || pin.id === "out")).toBe(false);
   });
 
   it("round-trips dragged node positions through the graph-ui serialized shape", () => {
@@ -219,6 +221,80 @@ describe("anim graph evaluator", () => {
       hasExitTime: true,
       exitTime: 0.8,
     });
+  });
+
+  it("hides the reverse canvas edge and restores it on round-trip", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    const both = setTransitionBidirectional(
+      {
+        ...doc,
+        transitions: [
+          {
+            id: "idle-to-run",
+            fromStateId: "idle",
+            toStateId: "run",
+            blendSeconds: 0.2,
+            priority: 0,
+            ruleGraph: createDefaultTransitionRuleGraph(),
+          },
+        ],
+      },
+      "idle-to-run",
+      true,
+    );
+    expect(both.transitions).toHaveLength(2);
+    const serialized = animGraphToSerialized(both);
+    expect(serialized.edges).toHaveLength(1);
+    expect(serialized.edges[0]?.type).toBe("animTransitionBoth");
+    expect(serialized.edges[0]).toMatchObject({
+      sourceHandle: "right-out",
+      targetHandle: "left-in",
+    });
+    const next = serializedToAnimGraph(serialized, both);
+    expect(next.transitions).toHaveLength(2);
+    expect(next.transitions.map((row) => `${row.fromStateId}->${row.toStateId}`).sort()).toEqual(
+      ["idle->run", "run->idle"],
+    );
+  });
+
+  it("drops both directions when the visual edge is removed", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    const both = setTransitionBidirectional(
+      {
+        ...doc,
+        transitions: [
+          {
+            id: "idle-to-run",
+            fromStateId: "idle",
+            toStateId: "run",
+            blendSeconds: 0.1,
+            priority: 0,
+            ruleGraph: createDefaultTransitionRuleGraph(),
+          },
+        ],
+      },
+      "idle-to-run",
+      true,
+    );
+    const serialized = animGraphToSerialized(both);
+    serialized.edges = [];
+    expect(serializedToAnimGraph(serialized, both).transitions).toHaveLength(0);
   });
 
   it("assigns fallback layout when a document-chunk omits position", () => {
@@ -696,5 +772,48 @@ describe("resolveAnimGraphClips", () => {
       durationMs: 1000,
     };
     expect(resolveAnimGraphClips(doc, catalog).clips[0]?.clipName).toBe("Idle");
+  });
+
+  it("fills Sprite Animation clip duration from the catalog", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "sprite",
+      assetGuid: "walk-anim",
+      clipName: "",
+      durationMs: 1000,
+    };
+    const resolved = resolveAnimGraphClips(doc, [
+      {
+        guid: "walk-anim",
+        type: "SpriteAnimation",
+        name: "Walk",
+        durationMs: 250,
+      },
+    ]);
+    expect(resolved.clips[0]).toMatchObject({
+      assetGuid: "walk-anim",
+      durationMs: 250,
+    });
+  });
+
+  it("keeps a legacy Sprite clip duration unchanged", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "sprite",
+      assetGuid: "hero-sprite",
+      clipName: "Idle",
+      durationMs: 400,
+    };
+    expect(
+      resolveAnimGraphClips(doc, [
+        { guid: "hero-sprite", type: "Sprite", name: "HeroSprite" },
+      ]).clips[0],
+    ).toMatchObject({
+      assetGuid: "hero-sprite",
+      clipName: "Idle",
+      durationMs: 400,
+    });
   });
 });

@@ -309,3 +309,14 @@ describe("UI Designer/Logic stacked surfaces", () => {
   });
 });
 
+describe("document tab strip", () => {
+  it("hides scrollbars while remaining horizontally scrollable", () => {
+    const tabs = cssBlock(chromeCss, ".editor-chrome-tabs");
+    expect(tokenValue(tabs, "overflow-x")).toBe("auto");
+    expect(tokenValue(tabs, "scrollbar-width")).toBe("none");
+    expect(chromeCss).toMatch(
+      /\.editor-chrome-tabs::-webkit-scrollbar\s*\{[^}]*display:\s*none/,
+    );
+  });
+});
+

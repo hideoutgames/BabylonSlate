@@ -3,10 +3,11 @@ import {
   Material,
   StandardMaterial,
   Texture,
+  type AbstractMesh,
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
-import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { ResourceCache } from "./resource-cache";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
@@ -14,6 +15,7 @@ export interface MeshAssetContext {
   resourceCache?: ResourceCache;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   tilemaps?: ReadonlyMap<string, TilemapPayload>;
   tilesets?: ReadonlyMap<string, TilesetPayload>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
@@ -50,6 +52,7 @@ export function meshAssetFingerprint(
   return [
     `ppu:${assets.pixelsPerUnit ?? ""}`,
     `sprites:${sortedMapKeys(assets.spritePayloads)}`,
+    `spriteAnims:${sortedMapKeys(assets.spriteAnimations)}`,
     `tilemaps:${sortedMapKeys(assets.tilemaps)}`,
     `tilesets:${sortedMapKeys(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
@@ -58,7 +61,7 @@ export function meshAssetFingerprint(
 }
 
 export function applyAlbedoTexture(
-  mesh: Mesh,
+  mesh: AbstractMesh,
   scene: Scene,
   textureGuid: string | null | undefined,
   assets?: MeshAssetContext,
@@ -84,7 +87,16 @@ export function applyAlbedoTexture(
   material.transparencyMode = Material.MATERIAL_ALPHATEST;
   material.alphaCutOff = 0.4;
   mesh.material = material;
+}
+
+/** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */
+export function applyTilemapAlbedoTextures(
+  mesh: Mesh,
+  scene: Scene,
+  assets?: MeshAssetContext,
+): void {
   for (const child of mesh.getChildMeshes()) {
-    child.material = material;
+    const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
+    applyAlbedoTexture(child, scene, guid, assets);
   }
 }

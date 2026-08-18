@@ -29,6 +29,13 @@ import { loadCompiledModule, type CompiledModuleExports } from "./module-loader"
 import type { LogSeverity } from "./log-ring";
 import { isInfiniteLoopError } from "@babylonslate/debugger";
 
+export type AnimGraphControl = {
+  getVariable(name: string): unknown;
+  setVariable(name: string, value: unknown): void;
+  getCurrentState(): { id: string; name: string } | null;
+  jumpToState(state: string): void;
+};
+
 export type ScriptColor = { x: number; y: number; z: number; w: number };
 
 /**
@@ -46,6 +53,7 @@ export interface ScriptHostServices {
     actor: Actor | null | undefined,
     classId: string,
   ): unknown;
+  animGraphControl?(self: BObject | null | undefined): AnimGraphControl | null;
   spawnActor?(classId: string): Actor | null;
   print(
     message: string,
@@ -153,6 +161,10 @@ export interface ScriptContext {
   addComponent(actor: BObject | null | undefined, classId: string): unknown;
   spawnActor(classId: string): Actor | null;
   isA(instance: unknown, classId: string): boolean;
+  getAnimGraphVariable(name: string): unknown;
+  setAnimGraphVariable(name: string, value: unknown): void;
+  getAnimGraphCurrentState(): { id: string; name: string } | null;
+  jumpAnimGraphState(state: string): void;
   invokeCustomEvent(
     target: BObject | null | undefined,
     eventName: string,
@@ -573,6 +585,16 @@ export class ScriptHost {
         const target = String(classId ?? "");
         if (!target) return false;
         return services.classRegistry?.isA(id, target) ?? id === target;
+      },
+      getAnimGraphVariable: (name) =>
+        services.animGraphControl?.(self)?.getVariable(String(name ?? "")),
+      setAnimGraphVariable: (name, value) => {
+        services.animGraphControl?.(self)?.setVariable(String(name ?? ""), value);
+      },
+      getAnimGraphCurrentState: () =>
+        services.animGraphControl?.(self)?.getCurrentState() ?? null,
+      jumpAnimGraphState: (state) => {
+        services.animGraphControl?.(self)?.jumpToState(String(state ?? ""));
       },
       invokeCustomEvent: (target, eventName, eventArgs) => {
         const receiver = (target ?? self) as BObject | null;

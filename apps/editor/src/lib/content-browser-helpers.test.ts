@@ -846,6 +846,9 @@ describe("content-browser-helpers", () => {
   it("seeds P9 document assets with typed suffixes", () => {
     expect(newAssetFileName("UserInterface", "HUD")).toBe("HUD.ui.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
+    expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
+      "Walk.spriteanim.babasset",
+    );
     expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.babasset");
     expect(newAssetFileName("Material", "Rock")).toBe("Rock.material.babasset");
     expect(newAssetFileName("MaterialFunction", "Tint")).toBe(
@@ -918,6 +921,24 @@ describe("content-browser-helpers", () => {
     expect(hud.chunks.some((chunk) => chunk.id === "document")).toBe(true);
   });
 
+  it("seeds Sprite Animation New Asset documents", () => {
+    const walk = buildNewAssetResult({
+      type: "SpriteAnimation",
+      name: "Walk",
+      guid: "sa-1",
+      parentClass: null,
+    });
+    expect(walk.type).toBe("SpriteAnimation");
+    expect(walk.payload.frames).toEqual([
+      expect.objectContaining({
+        textureGuid: "",
+        durationMs: 100,
+        pivot: { x: 0.5, y: 0.5 },
+        collision: { x: 0, y: 0, width: 1, height: 1 },
+      }),
+    ]);
+  });
+
   it("seeds BehaviourTree and Blackboard New Asset documents", () => {
     const tree = buildNewAssetResult({
       type: "BehaviourTree",
@@ -980,6 +1001,7 @@ describe("content-browser-helpers", () => {
       "Class",
       "UserInterface",
       "Sprite",
+      "SpriteAnimation",
       "AnimationGraph",
       "Material",
       "MaterialFunction",
@@ -1004,6 +1026,7 @@ describe("content-browser-helpers", () => {
       "Editor Utility Interface",
     );
     expect(creatableAssetTypeLabel("AnimationGraph")).toBe("Animation Graph");
+    expect(creatableAssetTypeLabel("SpriteAnimation")).toBe("Sprite Animation");
     expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
     expect(creatableAssetTypeLabel("BehaviourTree")).toBe("Behaviour Tree");
     expect(creatableAssetTypeLabel("ScriptInterface")).toBe("Script Interface");
@@ -1033,7 +1056,7 @@ describe("content-browser-helpers", () => {
     );
     const audio = CREATABLE_ASSET_TYPE_GROUPS.find((group) => group.id === "audio");
     expect([...twoD!.types]).toEqual(["Sprite", "Tileset", "Tilemap"]);
-    expect([...animation!.types]).toEqual(["AnimationGraph"]);
+    expect([...animation!.types]).toEqual(["AnimationGraph", "SpriteAnimation"]);
     expect([...audio!.types]).toEqual([
       "AudioMixer",
       "AudioChannel",
@@ -1396,6 +1419,15 @@ describe("content-browser-helpers", () => {
         effects: [],
       }),
     ).toEqual(["ch-master"]);
+    expect(
+      assetHeaderDependencies("SpriteAnimation", {
+        frames: [
+          { textureGuid: "tex-a" },
+          { textureGuid: "tex-a" },
+          { textureGuid: "tex-b" },
+        ],
+      }),
+    ).toEqual(["tex-a", "tex-b"]);
   });
 
   it("stores Material domain on the scanned header", () => {

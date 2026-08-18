@@ -238,6 +238,55 @@ describe("runtime AnimationGraph scripts", () => {
     runtime.stop();
   });
 
+  it("jumps to a named state from an Actor Tick graph before evaluating the AnimGraph", async () => {
+    const registry = createDefaultNodeRegistry();
+    const actorGraph: LogicGraph = {
+      id: "hero",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "jump", "anim.actor.jumpToState", { state: "Run" }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "tick",
+          sourcePinId: "execOut",
+          targetNodeId: "jump",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(actorGraph, {
+      assetGuid: "hero-class",
+      registry,
+    });
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: animScene(),
+      animGraphs: { "graph-1": locoDocument() },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "hero-class",
+        classId: "Hero",
+        source: compiled.source,
+        anchors: compiled.anchors,
+        entryPoints: compiled.entryPoints,
+        parentClassId: "Actor",
+      },
+    ]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    expect(lastAnimState(commands)?.stateId).toBe("run");
+    runtime.stop();
+  });
+
   it("emits weighted layers and clipAssetGuid while blending", () => {
     const doc = createDefaultAnimGraph();
     doc.clips[0]!.assetGuid = "anim-idle";

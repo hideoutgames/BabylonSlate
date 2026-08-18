@@ -120,6 +120,12 @@ export type ControlMessage =
       tilesets: Array<{ guid: string; document: unknown }>;
       pixelsPerUnit?: number;
     }
+  | {
+      type: "loadSprites";
+      sprites: Array<{ guid: string; document: unknown }>;
+      spriteAnimations: Array<{ guid: string; document: unknown }>;
+      pixelsPerUnit?: number;
+    }
   | { type: "loadNavMesh"; bytes: ArrayBuffer }
   | {
       type: "loadUserInterfaces";

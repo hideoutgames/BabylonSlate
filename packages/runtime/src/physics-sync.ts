@@ -5,7 +5,14 @@ import {
 } from "@babylonslate/physics";
 import type { Actor, World } from "@babylonslate/object-model";
 import {
+  decodeTileGid,
+  spriteAnimationFrameAt,
+  spriteClipFrameAt,
+  spriteCollisionToBox2d,
   tilemapChunkChains,
+  tilemapTilesetGuids,
+  type SpriteAnimationPayload,
+  type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
@@ -31,6 +38,13 @@ export class PhysicsWorldSync {
   private worldTransforms: ActorTransformMap = new Map();
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
+  private sprites = new Map<string, SpritePayload>();
+  private spriteAnimations = new Map<string, SpriteAnimationPayload>();
+  private spriteClipByActor = new Map<
+    string,
+    { assetGuid: string; clipName: string; normalisedTime: number }
+  >();
+  private spriteColliderKeyByActor = new Map<string, Map<string, string>>();
   private pixelsPerUnit = 100;
 
   constructor(backend: PhysicsBackend) {
@@ -51,6 +65,38 @@ export class PhysicsWorldSync {
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
+  }
+
+  setSpriteContent(options: {
+    sprites:
+      | ReadonlyMap<string, SpritePayload>
+      | Readonly<Record<string, SpritePayload>>;
+    spriteAnimations:
+      | ReadonlyMap<string, SpriteAnimationPayload>
+      | Readonly<Record<string, SpriteAnimationPayload>>;
+    pixelsPerUnit?: number;
+  }): void {
+    this.sprites = toMap(options.sprites);
+    this.spriteAnimations = toMap(options.spriteAnimations);
+    if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
+      this.pixelsPerUnit = options.pixelsPerUnit;
+    }
+    this.spriteColliderKeyByActor.clear();
+  }
+
+  setActorSpriteClip(
+    actorGuid: string,
+    clip: {
+      assetGuid: string;
+      clipName: string;
+      normalisedTime: number;
+    } | null,
+  ): void {
+    if (!clip) {
+      this.spriteClipByActor.delete(actorGuid);
+      return;
+    }
+    this.spriteClipByActor.set(actorGuid, clip);
   }
 
   dispose(): void {
@@ -87,6 +133,7 @@ export class PhysicsWorldSync {
             actorWorldPhysicsTransform(actor, this.worldTransforms),
           );
         }
+        this.applySpriteColliders(actor, bodyId);
       }
     }
     for (const [actorId, bodyId] of [...this.bodyByActor]) {
@@ -94,6 +141,8 @@ export class PhysicsWorldSync {
       this.backend.destroyBody(bodyId);
       this.bodyByActor.delete(actorId);
       this.characterByActor.delete(actorId);
+      this.spriteClipByActor.delete(actorId);
+      this.spriteColliderKeyByActor.delete(actorId);
     }
     this.synced = true;
   }
@@ -234,6 +283,79 @@ export class PhysicsWorldSync {
     }
 
     if (tilemap) this.createTilemapColliders(actor, bodyId, tilemap);
+    this.applySpriteColliders(actor, bodyId);
+  }
+
+  private applySpriteColliders(actor: Actor, bodyId: string): void {
+    const sprite = actor.components.find(
+      (component) => component.classId === "SpriteComponent" && !component.destroyed,
+    );
+    if (!sprite) return;
+    const spriteGuid =
+      sprite.assetGuid ??
+      (typeof sprite.getVariable("assetGuid") === "string"
+        ? String(sprite.getVariable("assetGuid"))
+        : "");
+    const spritePayload = spriteGuid ? this.sprites.get(spriteGuid) : undefined;
+    const playback = this.spriteClipByActor.get(actor.guid);
+    const frame = resolveSpriteCollisionFrame({
+      sprite: spritePayload,
+      animation: playback
+        ? this.spriteAnimations.get(playback.assetGuid)
+        : undefined,
+      playback,
+    });
+    if (!frame) return;
+    const ppu =
+      (spritePayload?.pixelsPerUnit && spritePayload.pixelsPerUnit > 0
+        ? spritePayload.pixelsPerUnit
+        : this.pixelsPerUnit) || 100;
+    const mapped = spriteCollisionToBox2d({
+      collision: frame.collision,
+      pivot: frame.pivot,
+      pixelWidth: frame.width ?? 100,
+      pixelHeight: frame.height ?? 100,
+      pixelsPerUnit: ppu,
+    });
+    const keys = this.spriteColliderKeyByActor.get(actor.guid) ?? new Map();
+    this.spriteColliderKeyByActor.set(actor.guid, keys);
+    for (const component of actor.components) {
+      if (component.classId !== "ColliderComponent" || component.destroyed) {
+        continue;
+      }
+      const collider = parseColliderProperties(
+        mapToRecord(component.variables),
+        this.backend.kind,
+      );
+      if (collider.shape.kind !== "box2d") continue;
+      const colliderId = `collider:${component.guid}`;
+      const translation = {
+        x: component.transform.position.x + mapped.translation.x,
+        y: component.transform.position.y + mapped.translation.y,
+        z: component.transform.position.z,
+      };
+      const fingerprint = [
+        mapped.halfExtents.x,
+        mapped.halfExtents.y,
+        translation.x,
+        translation.y,
+        translation.z,
+      ].join(",");
+      if (keys.get(colliderId) === fingerprint) continue;
+      this.backend.destroyCollider(colliderId);
+      this.backend.createCollider({
+        id: colliderId,
+        bodyId,
+        shape: { kind: "box2d", halfExtents: mapped.halfExtents },
+        friction: collider.friction,
+        restitution: collider.restitution,
+        isTrigger: collider.isTrigger,
+        layer: collider.layer,
+        mask: collider.mask,
+        translation,
+      });
+      keys.set(colliderId, fingerprint);
+    }
   }
 
   private createTilemapColliders(
@@ -248,12 +370,22 @@ export class PhysicsWorldSync {
         : null);
     if (!guid) return;
     const tilemap = this.tilemaps.get(guid);
-    if (!tilemap?.tilesetGuid) return;
-    const tileset = this.tilesets.get(tilemap.tilesetGuid);
-    if (!tileset) return;
+    if (!tilemap || tilemapTilesetGuids(tilemap).length === 0) return;
     const ppu = this.pixelsPerUnit > 0 ? this.pixelsPerUnit : 100;
     const worldTileWidth = tilemap.tileWidth / ppu;
     const worldTileHeight = tilemap.tileHeight / ppu;
+    const resolveGid = (gid: number) => {
+      const hit = decodeTileGid(tilemap, gid, this.tilesets);
+      if (hit) return hit;
+      if (this.tilesets.size === 1) {
+        const [atlasGuid, tileset] = [...this.tilesets.entries()][0]!;
+        return { guid: atlasGuid, localId: gid, tileset };
+      }
+      return null;
+    };
+    const fallback = this.tilesets.get(tilemapTilesetGuids(tilemap)[0] ?? "")
+      ?? this.tilesets.values().next().value;
+    if (!fallback) return;
     let index = 0;
     for (const layer of tilemap.layers) {
       if (!layer.collision) continue;
@@ -263,9 +395,10 @@ export class PhysicsWorldSync {
           chunkSize: tilemap.chunkSize,
           chunkX: chunk.cx,
           chunkY: chunk.cy,
-          tileset,
+          tileset: fallback,
           worldTileWidth,
           worldTileHeight,
+          resolveGid,
         });
         for (const chain of chains) {
           if (chain.points.length < 2) continue;
@@ -318,6 +451,58 @@ function actorLocalPhysicsTransform(
       z: divideScale(offset.z, parentWorld.scale.z),
     },
     rotation: multiplyQuaternion(inverseRotation, world.rotation),
+  };
+}
+
+function resolveSpriteCollisionFrame(options: {
+  sprite: SpritePayload | undefined;
+  animation: SpriteAnimationPayload | undefined;
+  playback:
+    | { assetGuid: string; clipName: string; normalisedTime: number }
+    | undefined;
+}): {
+  collision: { x: number; y: number; width: number; height: number };
+  pivot: { x: number; y: number };
+  width?: number;
+  height?: number;
+} | null {
+  if (options.animation && options.playback) {
+    const frame = spriteAnimationFrameAt(
+      options.animation,
+      options.playback.normalisedTime,
+    );
+    if (frame) {
+      return {
+        collision: frame.collision,
+        pivot: frame.pivot,
+        width: frame.width,
+        height: frame.height,
+      };
+    }
+  }
+  if (!options.sprite) return null;
+  if (options.playback?.clipName) {
+    const clipFrame = spriteClipFrameAt(
+      options.sprite,
+      options.playback.clipName,
+      options.playback.normalisedTime,
+    );
+    if (clipFrame) {
+      return {
+        collision: clipFrame.collision ?? { x: 0, y: 0, width: 1, height: 1 },
+        pivot: clipFrame.pivot,
+        width: clipFrame.width,
+        height: clipFrame.height,
+      };
+    }
+  }
+  const fallback = options.sprite.frames[0];
+  if (!fallback) return null;
+  return {
+    collision: fallback.collision ?? { x: 0, y: 0, width: 1, height: 1 },
+    pivot: fallback.pivot,
+    width: fallback.width,
+    height: fallback.height,
   };
 }
 

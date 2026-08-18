@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultTilemapPayload, getTile, setTile } from "./tilemap-payload";
 import {
+  applyPinchView,
   applyTilemapPaint,
+  applyWheelZoom,
   cellsAlongSegment,
+  MAX_PAINT_CELL_SIZE,
+  MIN_PAINT_CELL_SIZE,
   paintCanvasTileAt,
   pickTileId,
   tilemapStrokeMergeKey,
@@ -44,6 +48,121 @@ describe("paintCanvasTileAt", () => {
         cellSize: 16,
       }),
     ).toEqual({ x: 1, y: 15 });
+  });
+
+  it("scales the cell mapping when the painter zooms", () => {
+    expect(
+      paintCanvasTileAt({
+        localX: 48,
+        localY: 208,
+        canvasHeight: 256,
+        panX: 0,
+        panY: 0,
+        cellSize: 32,
+      }),
+    ).toEqual({ x: 1, y: 1 });
+  });
+});
+
+describe("applyPinchView", () => {
+  it("keeps the tile under the pinch midpoint while scaling and then pans", () => {
+    const before = paintCanvasTileAt({
+      localX: 32,
+      localY: 32,
+      canvasHeight: 256,
+      panX: 0,
+      panY: 0,
+      cellSize: 16,
+    });
+    const zoomed = applyPinchView({
+      panX: 0,
+      panY: 0,
+      cellSize: 16,
+      originX: 32,
+      originY: 32,
+      canvasHeight: 256,
+      spreadRatio: 2,
+    });
+    expect(zoomed.cellSize).toBe(32);
+    expect(
+      paintCanvasTileAt({
+        localX: 32,
+        localY: 32,
+        canvasHeight: 256,
+        panX: zoomed.panX,
+        panY: zoomed.panY,
+        cellSize: zoomed.cellSize,
+      }),
+    ).toEqual(before);
+    const panned = applyPinchView({
+      ...zoomed,
+      originX: 32,
+      originY: 32,
+      canvasHeight: 256,
+      spreadRatio: 1,
+      translationX: 10,
+      translationY: -4,
+    });
+    expect(panned.panX).toBe(zoomed.panX + 10);
+    expect(panned.panY).toBe(zoomed.panY - 4);
+  });
+
+  it("clamps cell size", () => {
+    expect(
+      applyPinchView({
+        panX: 0,
+        panY: 0,
+        cellSize: MIN_PAINT_CELL_SIZE,
+        originX: 0,
+        originY: 0,
+        canvasHeight: 256,
+        spreadRatio: 0.1,
+      }).cellSize,
+    ).toBe(MIN_PAINT_CELL_SIZE);
+    expect(
+      applyPinchView({
+        panX: 0,
+        panY: 0,
+        cellSize: MAX_PAINT_CELL_SIZE,
+        originX: 0,
+        originY: 0,
+        canvasHeight: 256,
+        spreadRatio: 8,
+      }).cellSize,
+    ).toBe(MAX_PAINT_CELL_SIZE);
+  });
+});
+
+describe("applyWheelZoom", () => {
+  it("zooms about the cursor and keeps the tile under it", () => {
+    const before = paintCanvasTileAt({
+      localX: 16,
+      localY: 16,
+      canvasHeight: 256,
+      panX: 0,
+      panY: 0,
+      cellSize: 16,
+    });
+    const next = applyWheelZoom({
+      panX: 0,
+      panY: 0,
+      cellSize: 16,
+      originX: 16,
+      originY: 16,
+      canvasHeight: 256,
+      deltaY: -120,
+    });
+    expect(next.cellSize).toBeGreaterThan(16);
+    expect(
+      paintCanvasTileAt({
+        localX: 16,
+        localY: 16,
+        canvasHeight: 256,
+        panX: next.panX,
+        panY: next.panY,
+        cellSize: next.cellSize,
+      }),
+    ).toEqual(before);
   });
 });
 

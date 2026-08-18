@@ -14,6 +14,7 @@ import {
   createDefaultBehaviourTree,
   createDefaultBlackboard,
 } from "@babylonslate/behaviour-tree";
+import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
 import { resolveAudioPlayback } from "@babylonslate/assets";
 import { loadGameFromFiles, guiTextureBytesFromGame } from "./artifact";
@@ -85,6 +86,24 @@ describe("packedContentFromGame", () => {
           bytes: encoder.encode(JSON.stringify(sprite)),
         },
         {
+          guid: "walk-anim",
+          type: "SpriteAnimation",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(
+            JSON.stringify({
+              ...createDefaultSpriteAnimationPayload(),
+              frames: [
+                {
+                  textureGuid: "tex-walk",
+                  durationMs: 100,
+                  pivot: { x: 0.5, y: 0.5 },
+                  collision: { x: 0, y: 0, width: 1, height: 1 },
+                },
+              ],
+            }),
+          ),
+        },
+        {
           guid: "tilemap-1",
           type: "Tilemap",
           sceneGuid: "scene-1",
@@ -133,6 +152,9 @@ describe("packedContentFromGame", () => {
     const game = await loadGameFromFiles(packed.value.files);
     const content = packedContentFromGame(game);
     expect(content.spritePayloads.get("sprite-1")?.textureGuid).toBe("tex-1");
+    expect(content.spriteAnimationPayloads.get("walk-anim")?.frames[0]?.textureGuid).toBe(
+      "tex-walk",
+    );
     expect(content.tilemapPayloads.get("tilemap-1")?.tilesetGuid).toBe("tileset-1");
     expect(content.tilesetPayloads.get("tileset-1")?.textureGuid).toBe("tex-1");
     expect(content.navmeshBytes).toEqual(new Uint8Array([4, 5, 6]));
@@ -143,6 +165,7 @@ describe("packedContentFromGame", () => {
     expect(content.pixelsPerUnit).toBe(50);
     expect(content.pixelPerfect).toBe(false);
     const controls = packedPlayControls(content);
+    expect(controls.some((entry) => entry.type === "loadSprites")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadTilemaps")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadNavMesh")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadAnimGraphs")).toBe(true);

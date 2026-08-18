@@ -51,6 +51,7 @@
 }
 
 .anim-state-node {
+  position: relative;
   min-width: 140px;
   min-height: 48px;
   padding: 10px 18px;
@@ -86,10 +87,74 @@
 }
 
 .anim-state-handle {
-  width: 10px;
-  height: 10px;
-  background: #cfcfcf;
-  border: 1px solid #1a1a1a;
+  opacity: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  /* xyflow centers 6px dots with translate(±50%). Stretched side plates must not. */
+  transform: none !important;
+}
+
+.anim-state-handle-top {
+  width: calc(100% - 8px) !important;
+  height: var(--touch-target, 44px) !important;
+  top: calc(var(--touch-target, 44px) / -2) !important;
+  left: 4px !important;
+}
+
+.anim-state-handle-bottom {
+  width: calc(100% - 8px) !important;
+  height: var(--touch-target, 44px) !important;
+  bottom: calc(var(--touch-target, 44px) / -2) !important;
+  top: auto !important;
+  left: 4px !important;
+}
+
+.anim-state-handle-left {
+  width: var(--touch-target, 44px) !important;
+  height: calc(100% - 8px) !important;
+  left: calc(var(--touch-target, 44px) / -2) !important;
+  top: 4px !important;
+}
+
+.anim-state-handle-right {
+  width: var(--touch-target, 44px) !important;
+  height: calc(100% - 8px) !important;
+  right: calc(var(--touch-target, 44px) / -2) !important;
+  left: auto !important;
+  top: 4px !important;
+}
+
+.anim-state-handle-source.anim-state-handle-top {
+  top: calc(var(--touch-target, 44px) / -2 - 6px) !important;
+}
+
+.anim-state-handle-target.anim-state-handle-top {
+  top: calc(var(--touch-target, 44px) / -2 + 6px) !important;
+}
+
+.anim-state-handle-source.anim-state-handle-bottom {
+  bottom: calc(var(--touch-target, 44px) / -2 - 6px) !important;
+}
+
+.anim-state-handle-target.anim-state-handle-bottom {
+  bottom: calc(var(--touch-target, 44px) / -2 + 6px) !important;
+}
+
+.anim-state-handle-source.anim-state-handle-left {
+  left: calc(var(--touch-target, 44px) / -2 - 6px) !important;
+}
+
+.anim-state-handle-target.anim-state-handle-left {
+  left: calc(var(--touch-target, 44px) / -2 + 6px) !important;
+}
+
+.anim-state-handle-source.anim-state-handle-right {
+  right: calc(var(--touch-target, 44px) / -2 - 6px) !important;
+}
+
+.anim-state-handle-target.anim-state-handle-right {
+  right: calc(var(--touch-target, 44px) / -2 + 6px) !important;
 }
 
 .anim-transition-badge {
@@ -110,6 +175,13 @@
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
   border-left: 6px solid #1a1a1a;
+}
+
+.anim-transition-badge-both::after {
+  inset: 6px;
+  border: 0;
+  border-left: 2px solid #1a1a1a;
+  border-right: 2px solid #1a1a1a;
 }
 
 .anim-transition-badge-selected {

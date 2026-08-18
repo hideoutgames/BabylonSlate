@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { ensureTilesetTiles, normalizeTilesetPayload } from "./tileset-payload";
 import {
   addTilemapLayer,
+  addTilemapTileset,
   chunkCoordForTile,
   createDefaultTilemapPayload,
+  decodeTileGid,
   emptyChunkTiles,
+  encodeTileGid,
   getTile,
   localIndex,
   normalizeTilemapPayload,
+  removeTilemapTileset,
   reorderTilemapLayers,
   setTile,
+  tilemapTilesetGuids,
 } from "./tilemap-payload";
 
 describe("tilemap payload", () => {
@@ -125,5 +131,73 @@ describe("tilemap payload", () => {
     map = reorderTilemapLayers(map, [ids[1]!, ids[0]!]);
     expect(map.layers.map((layer) => layer.name)).toEqual(["Foreground", "Ground"]);
     expect(getTile(map, "layer-1", 0, 0)).toBe(3);
+  });
+
+  it("migrates a legacy tilesetGuid into a firstGid-1 tileset list", () => {
+    const payload = normalizeTilemapPayload({
+      tilesetGuid: "ground",
+    });
+    expect(payload.tilesetGuid).toBe("ground");
+    expect(payload.tilesets).toEqual([
+      { guid: "ground", firstGid: 1, tileCount: 0 },
+    ]);
+    expect(tilemapTilesetGuids(payload)).toEqual(["ground"]);
+  });
+
+  it("keeps tilesetGuid as an alias of the first listed tileset", () => {
+    const payload = normalizeTilemapPayload({
+      tilesets: [
+        { guid: "a", firstGid: 1, tileCount: 8 },
+        { guid: "b", firstGid: 9, tileCount: 4 },
+      ],
+    });
+    expect(payload.tilesetGuid).toBe("a");
+    expect(tilemapTilesetGuids(payload)).toEqual(["a", "b"]);
+  });
+
+  it("encodes and decodes Tiled-style GIDs without compacting on remove", () => {
+    const ground = ensureTilesetTiles(
+      normalizeTilesetPayload({
+        atlasWidth: 32,
+        atlasHeight: 16,
+        tileWidth: 16,
+        tileHeight: 16,
+      }),
+    );
+    const deco = ensureTilesetTiles(
+      normalizeTilesetPayload({
+        atlasWidth: 16,
+        atlasHeight: 16,
+        tileWidth: 16,
+        tileHeight: 16,
+      }),
+    );
+    const payloads = new Map([
+      ["ground", ground],
+      ["deco", deco],
+    ]);
+    let map = addTilemapTileset(createDefaultTilemapPayload(), "ground", ground);
+    map = addTilemapTileset(map, "deco", deco);
+    expect(map.tilesets).toEqual([
+      { guid: "ground", firstGid: 1, tileCount: 2 },
+      { guid: "deco", firstGid: 3, tileCount: 1 },
+    ]);
+    expect(encodeTileGid(1, 2)).toBe(2);
+    expect(encodeTileGid(3, 1)).toBe(3);
+    expect(decodeTileGid(map, 2, payloads)).toEqual({
+      guid: "ground",
+      localId: 2,
+      tileset: ground,
+    });
+    expect(decodeTileGid(map, 3, payloads)).toEqual({
+      guid: "deco",
+      localId: 1,
+      tileset: deco,
+    });
+    map = removeTilemapTileset(map, "ground");
+    expect(map.tilesets).toEqual([{ guid: "deco", firstGid: 3, tileCount: 1 }]);
+    expect(map.tilesetGuid).toBe("deco");
+    expect(decodeTileGid(map, 3, payloads)?.guid).toBe("deco");
+    expect(decodeTileGid(map, 1, payloads)).toBeNull();
   });
 });

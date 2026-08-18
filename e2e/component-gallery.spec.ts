@@ -46,6 +46,7 @@ test("component gallery renders every editor-kit composite", async ({
 }) => {
   await page.goto("/?test=1&gallery=1");
   await expect(page.getByTestId("gallery-property-grid")).toBeVisible();
+  await expect(page.getByTestId("gallery-atlas-tile-grid")).toBeVisible();
   await expect(page.getByTestId("gallery-type-visuals")).toBeVisible();
   await expect(page.getByTestId("gallery-tree-view")).toBeVisible();
   await expect(page.getByTestId("gallery-tree")).toBeVisible();

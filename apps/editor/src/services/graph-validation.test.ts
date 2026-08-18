@@ -633,6 +633,8 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "anim.state.justFinished")).toBe(
       false,
     );
+    expect(nodes.some((node) => node.id === "anim.actor.jumpToState")).toBe(true);
+    expect(nodes.some((node) => node.id === "anim.actor.getVariable")).toBe(true);
   });
 
   it("shows Animation Object events and hides rule queries", () => {
@@ -642,6 +644,7 @@ describe("scriptPaletteNodes", () => {
     });
     expect(nodes.some((node) => node.id === "anim.event.initialize")).toBe(true);
     expect(nodes.some((node) => node.id === "anim.event.update")).toBe(true);
+    expect(nodes.some((node) => node.id === "anim.actor.jumpToState")).toBe(false);
     expect(nodes.some((node) => node.id === "anim.rule.enterState")).toBe(false);
     expect(nodes.some((node) => node.id === "anim.state.justFinished")).toBe(
       false,

@@ -4,11 +4,14 @@ import {
   audioAssetDependencies,
   createDefaultMigrationRegistry,
   createDefaultSpritePayload,
+  createDefaultSpriteAnimationPayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
   createDefaultAudioMixerPayload,
   createDefaultAudioChannelPayload,
   createDefaultSoundAttenuationPayload,
+  parseSpriteAnimationPayload,
+  spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
@@ -190,6 +193,7 @@ export const CREATABLE_ASSET_TYPES = [
   "Class",
   "UserInterface",
   "Sprite",
+  "SpriteAnimation",
   "AnimationGraph",
   "Material",
   "MaterialFunction",
@@ -235,7 +239,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph"],
+    types: ["AnimationGraph", "SpriteAnimation"],
   },
   {
     id: "rendering",
@@ -259,6 +263,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Class: "A class with a parent and a logic graph.",
   UserInterface: "A game HUD or menu authored with Babylon GUI.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
+  SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
   AnimationGraph: "A state machine that plays Sprite or Animation clips.",
   Material: "A shader graph that compiles to a Babylon material.",
   MaterialFunction: "A reusable shader subgraph for materials.",
@@ -1195,6 +1200,15 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "SpriteAnimation") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultSpriteAnimationPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
   if (type === "AnimationGraph") {
     return documentAsset(
       type,
@@ -1318,6 +1332,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   UserInterface: ".ui.babasset",
   EditorUtilityInterface: ".eui.babasset",
   Sprite: ".sprite.babasset",
+  SpriteAnimation: ".spriteanim.babasset",
   AnimationGraph: ".anim.babasset",
   Material: ".material.babasset",
   MaterialFunction: ".matfunc.babasset",
@@ -1365,6 +1380,9 @@ export function assetHeaderDependencies(
   const unique = new Set<string>([
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
+    ...(assetType === "SpriteAnimation"
+      ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
+      : []),
   ]);
   return [...unique].sort();
 }

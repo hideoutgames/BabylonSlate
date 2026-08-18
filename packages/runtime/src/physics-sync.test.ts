@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  createDefaultSpriteAnimationPayload,
+  createDefaultSpritePayload,
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
@@ -351,6 +353,139 @@ describe("PhysicsWorldSync tilemap colliders", () => {
     expect(
       backend.sphereOverlap({ x: 0.5, y: 0.5, z: 0 }, 0.2).actorIds,
     ).toContain("ground");
+    sync.dispose();
+  });
+});
+
+describe("PhysicsWorldSync sprite collision", () => {
+  it("maps the current Sprite Animation frame AABB onto a box2d collider", () => {
+    const world = createWorld();
+    const actor = world.createActor({
+      classId: "Actor",
+      guid: "hero",
+      transform: identityTransform(),
+    });
+    actor.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        guid: "rb",
+        variables: { motionType: "static", mass: 0, gravityScale: 0 },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        guid: "col",
+        variables: {
+          shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } },
+        },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "SpriteComponent",
+        guid: "spr",
+        assetGuid: "hero-sprite",
+        variables: { assetGuid: "hero-sprite" },
+      }),
+    );
+    world.spawnActorNow(actor);
+
+    const sprite = createDefaultSpritePayload();
+    sprite.pixelsPerUnit = 100;
+    sprite.frames[0]!.width = 100;
+    sprite.frames[0]!.height = 100;
+    const animation = createDefaultSpriteAnimationPayload();
+    animation.frames[0] = {
+      textureGuid: "tex-walk",
+      durationMs: 100,
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0.5, y: 0, width: 0.5, height: 1 },
+      width: 100,
+      height: 100,
+    };
+
+    const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.setSpriteContent({
+      sprites: new Map([["hero-sprite", sprite]]),
+      spriteAnimations: new Map([["walk-anim", animation]]),
+      pixelsPerUnit: 100,
+    });
+    sync.setActorSpriteClip("hero", {
+      assetGuid: "walk-anim",
+      clipName: "",
+      normalisedTime: 0,
+    });
+    sync.syncFromWorld(world);
+
+    expect(
+      backend.sphereOverlap({ x: 0.25, y: 0, z: 0 }, 0.05).actorIds,
+    ).toContain("hero");
+    expect(
+      backend.sphereOverlap({ x: -0.4, y: 0, z: 0 }, 0.05).actorIds,
+    ).toEqual([]);
+    sync.dispose();
+  });
+
+  it("does not override a circle collider with the sprite AABB", () => {
+    const world = createWorld();
+    const actor = world.createActor({
+      classId: "Actor",
+      guid: "hero",
+      transform: identityTransform(),
+    });
+    actor.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        guid: "rb",
+        variables: { motionType: "static", mass: 0, gravityScale: 0 },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        guid: "col",
+        variables: {
+          shape: { kind: "circle", radius: 0.1 },
+        },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "SpriteComponent",
+        guid: "spr",
+        assetGuid: "hero-sprite",
+        variables: { assetGuid: "hero-sprite" },
+      }),
+    );
+    world.spawnActorNow(actor);
+
+    const sprite = createDefaultSpritePayload();
+    const animation = createDefaultSpriteAnimationPayload();
+    animation.frames[0]!.collision = { x: 0.5, y: 0, width: 0.5, height: 1 };
+    animation.frames[0]!.width = 100;
+    animation.frames[0]!.height = 100;
+
+    const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.setSpriteContent({
+      sprites: new Map([["hero-sprite", sprite]]),
+      spriteAnimations: new Map([["walk-anim", animation]]),
+    });
+    sync.setActorSpriteClip("hero", {
+      assetGuid: "walk-anim",
+      clipName: "",
+      normalisedTime: 0,
+    });
+    sync.syncFromWorld(world);
+
+    expect(
+      backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.05).actorIds,
+    ).toContain("hero");
+    expect(
+      backend.sphereOverlap({ x: 0.25, y: 0, z: 0 }, 0.02).actorIds,
+    ).toEqual([]);
     sync.dispose();
   });
 });

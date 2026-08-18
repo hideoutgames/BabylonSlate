@@ -43,6 +43,7 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("script-interface")).toBe(true);
     expect(canFocusLayout("enum")).toBe(true);
     expect(canFocusLayout("sprite")).toBe(true);
+    expect(canFocusLayout("sprite-animation")).toBe(true);
     expect(canFocusLayout("anim-graph")).toBe(true);
     expect(canFocusLayout("behaviour-tree")).toBe(true);
   });
@@ -148,6 +149,9 @@ describe("resolveFocusKeepPanelIds", () => {
       "script-interface-preview",
     ]);
     expect(resolveFocusKeepPanelIds("sprite", [])).toEqual(["sprite-preview"]);
+    expect(resolveFocusKeepPanelIds("sprite-animation", [])).toEqual([
+      "sprite-animation-preview",
+    ]);
     expect(resolveFocusKeepPanelIds("tileset", [])).toEqual(["tileset-preview"]);
     expect(resolveFocusKeepPanelIds("tilemap", [])).toEqual(["tilemap-paint"]);
     expect(resolveFocusKeepPanelIds("ui", [])).toEqual(["ui-design"]);
