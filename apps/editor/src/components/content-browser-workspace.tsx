@@ -129,6 +129,9 @@ import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
+import { contentBrowserTileStyle } from "../lib/content-browser-grid";
+import { syncContentBrowserThumbnailUrls } from "../lib/content-browser-thumbnails";
+import { useContentBrowserGridWindow } from "../lib/use-content-browser-grid-window";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
@@ -156,7 +159,11 @@ type MoveTarget = {
   typeVisual: TypeVisual | null;
 };
 
-export function ContentBrowserWorkspace() {
+export function ContentBrowserWorkspace({
+  hidden = false,
+}: {
+  hidden?: boolean;
+} = {}) {
   const {
     projectDocument,
     assetRegistry,
@@ -379,6 +386,38 @@ export function ContentBrowserWorkspace() {
     return sortChildFolders(matched, sortMode);
   }, [folderTrees, search, selectedFolderPath, sortMode]);
 
+  type GridItem =
+    | { kind: "folder"; path: string; name: string }
+    | { kind: "asset"; asset: IndexedAsset };
+
+  const gridItems = useMemo((): GridItem[] => {
+    const items: GridItem[] = childFolders.map((folder) => ({
+      kind: "folder",
+      path: folder.path,
+      name: folder.name,
+    }));
+    for (const asset of visibleAssets) {
+      items.push({ kind: "asset", asset });
+    }
+    return items;
+  }, [childFolders, visibleAssets]);
+
+  const { scrollerRef, slice, spacerHeight } = useContentBrowserGridWindow(
+    gridItems.length,
+    hidden,
+  );
+
+  const mountedTextureGuids = useMemo(() => {
+    const guids: string[] = [];
+    for (let index = slice.firstIndex; index < slice.lastIndex; index++) {
+      const item = gridItems[index];
+      if (item?.kind === "asset" && item.asset.header.type === "Texture") {
+        guids.push(item.asset.header.guid);
+      }
+    }
+    return guids;
+  }, [gridItems, slice.firstIndex, slice.lastIndex]);
+
   const browserRows = useMemo(() => {
     if (folderTrees.length === 0) return [];
     return flattenContentBrowserForest(folderTrees, allAssets, collapsedFolders);
@@ -474,26 +513,29 @@ export function ContentBrowserWorkspace() {
   useEffect(() => {
     if (!thumbnailsEnabled) return;
     let cancelled = false;
-    const objectUrls: string[] = [];
     void (async () => {
-      const next: Record<string, string> = { ...thumbnailUrlsRef.current };
-      for (const asset of visibleAssets) {
-        if (asset.header.type !== "Texture") continue;
-        if (next[asset.header.guid]) continue;
-        const bytes = await loadAssetThumbnail(asset.header.guid);
-        if (cancelled || !bytes) continue;
-        const url = URL.createObjectURL(
-          new Blob([bytes], { type: "image/jpeg" }),
-        );
-        objectUrls.push(url);
-        next[asset.header.guid] = url;
-      }
+      const next = await syncContentBrowserThumbnailUrls({
+        mountedTextureGuids,
+        urls: thumbnailUrlsRef.current,
+        hidden,
+        load: loadAssetThumbnail,
+        createObjectURL: (blob) => URL.createObjectURL(blob),
+        revokeObjectURL: (url) => URL.revokeObjectURL(url),
+      });
       if (!cancelled) setThumbnailUrls(next);
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadAssetThumbnail, thumbnailsEnabled, visibleAssets]);
+  }, [hidden, loadAssetThumbnail, mountedTextureGuids, thumbnailsEnabled]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of Object.values(thumbnailUrlsRef.current)) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, []);
 
   const typeChips = useMemo(() => uniqueAssetTypes(allAssets), [allAssets]);
 
@@ -1615,6 +1657,7 @@ export function ContentBrowserWorkspace() {
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
+            ref={scrollerRef}
             className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
             data-testid="content-browser-asset-grid"
             style={paintBind.style}
@@ -1641,62 +1684,90 @@ export function ContentBrowserWorkspace() {
             onPointerUpCapture={paintBind.onPointerUpCapture}
             onPointerCancelCapture={paintBind.onPointerCancelCapture}
           >
-            <div className="grid grid-cols-[repeat(auto-fill,9rem)] content-start gap-2 p-3">
-              {childFolders.map((folder) => (
-                <ContentBrowserFolderTile
-                  key={folder.path}
-                  path={folder.path}
-                  name={folder.name}
-                  selected={selectedFolderPaths.has(folder.path)}
-                  consumeSelectClick={consumeSelectClick}
-                  onSelect={() => applyTileSelection(exclusiveSelectFolder(folder.path))}
-                  onOpen={() => {
-                    setSelectedFolderPath(folder.path);
-                    setSelectedGuids(new Set());
-                    setSelectedFolderPaths(new Set());
-                  }}
-                  onLongPressMenu={(x, y) => {
-                    markMenuOpened();
-                    openFolderMenu(folder.path, x, y);
-                  }}
-                />
-              ))}
-              {visibleAssets.map((asset) => (
-                <ContentBrowserAssetTile
-                  key={asset.header.guid}
-                  asset={asset}
-                  selected={selectedGuids.has(asset.header.guid)}
-                  thumbnailUrl={thumbnailUrls[asset.header.guid] ?? null}
-                  typeVisual={visualForIndexedAsset(asset, classParentOf)}
-                  hasCompileError={
-                    compileErrorGuids.has(asset.header.guid) ||
-                    compileErrorGuids.has(asset.path)
-                  }
-                  onSelect={() =>
-                    applyTileSelection(exclusiveSelectAsset(asset.header.guid))
-                  }
-                  consumeSelectClick={consumeSelectClick}
-                  onOpen={() => void openOrFocusDocument(asset)}
-                  sourceControlEnabled={sourceControl.enabled}
-                  lockState={sourceControl.lockStateForPath(asset.path)}
-                  lockOwnerName={
-                    sourceControl.lockForPath(asset.path)?.ownerName
-                  }
-                  onLongPressMenu={(x, y) => {
-                    markMenuOpened();
-                    openTileMenu(asset.header.guid, x, y);
-                  }}
-                />
-              ))}
-              {visibleAssets.length === 0 && childFolders.length === 0 ? (
-                <p
-                  className="col-span-full text-sm text-muted-foreground"
-                  data-testid="content-browser-empty-copy"
-                >
-                  No assets in this folder match the current filters.
-                </p>
-              ) : null}
-            </div>
+            {gridItems.length === 0 ? (
+              <p
+                className="p-3 text-sm text-muted-foreground"
+                data-testid="content-browser-empty-copy"
+              >
+                No assets in this folder match the current filters.
+              </p>
+            ) : (
+              <div className="relative" style={{ height: spacerHeight }}>
+                {gridItems
+                  .slice(slice.firstIndex, slice.lastIndex)
+                  .map((item, offset) => {
+                    const index = slice.firstIndex + offset;
+                    const style = contentBrowserTileStyle(
+                      index,
+                      slice.columnCount,
+                    );
+                    if (item.kind === "folder") {
+                      return (
+                        <div key={item.path} style={style}>
+                          <ContentBrowserFolderTile
+                            path={item.path}
+                            name={item.name}
+                            selected={selectedFolderPaths.has(item.path)}
+                            consumeSelectClick={consumeSelectClick}
+                            onSelect={() =>
+                              applyTileSelection(
+                                exclusiveSelectFolder(item.path),
+                              )
+                            }
+                            onOpen={() => {
+                              setSelectedFolderPath(item.path);
+                              setSelectedGuids(new Set());
+                              setSelectedFolderPaths(new Set());
+                            }}
+                            onLongPressMenu={(x, y) => {
+                              markMenuOpened();
+                              openFolderMenu(item.path, x, y);
+                            }}
+                          />
+                        </div>
+                      );
+                    }
+                    const asset = item.asset;
+                    return (
+                      <div key={asset.header.guid} style={style}>
+                        <ContentBrowserAssetTile
+                          asset={asset}
+                          selected={selectedGuids.has(asset.header.guid)}
+                          thumbnailUrl={
+                            thumbnailUrls[asset.header.guid] ?? null
+                          }
+                          typeVisual={visualForIndexedAsset(
+                            asset,
+                            classParentOf,
+                          )}
+                          hasCompileError={
+                            compileErrorGuids.has(asset.header.guid) ||
+                            compileErrorGuids.has(asset.path)
+                          }
+                          onSelect={() =>
+                            applyTileSelection(
+                              exclusiveSelectAsset(asset.header.guid),
+                            )
+                          }
+                          consumeSelectClick={consumeSelectClick}
+                          onOpen={() => void openOrFocusDocument(asset)}
+                          sourceControlEnabled={sourceControl.enabled}
+                          lockState={sourceControl.lockStateForPath(
+                            asset.path,
+                          )}
+                          lockOwnerName={
+                            sourceControl.lockForPath(asset.path)?.ownerName
+                          }
+                          onLongPressMenu={(x, y) => {
+                            markMenuOpened();
+                            openTileMenu(asset.header.guid, x, y);
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -310,7 +310,7 @@ export function DocumentWorkspace() {
                 className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
                 data-testid="document-workspace-content-browser"
               >
-                <ContentBrowserWorkspace />
+                <ContentBrowserWorkspace hidden={!active} />
               </div>
             </WorkspaceErrorBoundary>
           );
