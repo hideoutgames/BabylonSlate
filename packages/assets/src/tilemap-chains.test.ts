@@ -139,4 +139,34 @@ describe("tilemapCollisionChains", () => {
     const chains = tilemapCollisionChains(map, tileset, 1, 1);
     expect(chains.length).toBeGreaterThan(0);
   });
+
+  it("resolves collision from the tileset that owns each GID", () => {
+    const solid = normalizeTilesetPayload({
+      tiles: [{ id: 1, collision: "full" }],
+    });
+    const empty = normalizeTilesetPayload({
+      tiles: [{ id: 1, collision: "none" }],
+    });
+    const tiles = emptyChunkTiles(2);
+    tiles[0] = 1;
+    tiles[1] = 3;
+    const chains = tilemapChunkChains({
+      tiles,
+      chunkSize: 2,
+      chunkX: 0,
+      chunkY: 0,
+      tileset: solid,
+      worldTileWidth: 1,
+      worldTileHeight: 1,
+      resolveGid: (gid) => {
+        if (gid >= 3) return { tileset: empty, localId: gid - 2, guid: "empty" };
+        if (gid > 0) return { tileset: solid, localId: gid, guid: "solid" };
+        return null;
+      },
+    });
+    expect(chains).toHaveLength(1);
+    const xs = (chains[0]?.points ?? []).map((point) => point.x);
+    expect(Math.min(...xs)).toBe(0);
+    expect(Math.max(...xs)).toBe(1);
+  });
 });

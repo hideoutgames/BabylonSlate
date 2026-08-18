@@ -5,14 +5,16 @@ import {
 } from "@babylonslate/physics";
 import type { Actor, World } from "@babylonslate/object-model";
 import {
+  decodeTileGid,
   spriteAnimationFrameAt,
   spriteClipFrameAt,
   spriteCollisionToBox2d,
+  tilemapChunkChains,
+  tilemapTilesetGuids,
   type SpriteAnimationPayload,
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
-  tilemapChunkChains,
 } from "@babylonslate/assets";
 import {
   actorParentGuid,
@@ -368,12 +370,22 @@ export class PhysicsWorldSync {
         : null);
     if (!guid) return;
     const tilemap = this.tilemaps.get(guid);
-    if (!tilemap?.tilesetGuid) return;
-    const tileset = this.tilesets.get(tilemap.tilesetGuid);
-    if (!tileset) return;
+    if (!tilemap || tilemapTilesetGuids(tilemap).length === 0) return;
     const ppu = this.pixelsPerUnit > 0 ? this.pixelsPerUnit : 100;
     const worldTileWidth = tilemap.tileWidth / ppu;
     const worldTileHeight = tilemap.tileHeight / ppu;
+    const resolveGid = (gid: number) => {
+      const hit = decodeTileGid(tilemap, gid, this.tilesets);
+      if (hit) return hit;
+      if (this.tilesets.size === 1) {
+        const [atlasGuid, tileset] = [...this.tilesets.entries()][0]!;
+        return { guid: atlasGuid, localId: gid, tileset };
+      }
+      return null;
+    };
+    const fallback = this.tilesets.get(tilemapTilesetGuids(tilemap)[0] ?? "")
+      ?? this.tilesets.values().next().value;
+    if (!fallback) return;
     let index = 0;
     for (const layer of tilemap.layers) {
       if (!layer.collision) continue;
@@ -383,9 +395,10 @@ export class PhysicsWorldSync {
           chunkSize: tilemap.chunkSize,
           chunkX: chunk.cx,
           chunkY: chunk.cy,
-          tileset,
+          tileset: fallback,
           worldTileWidth,
           worldTileHeight,
+          resolveGid,
         });
         for (const chain of chains) {
           if (chain.points.length < 2) continue;

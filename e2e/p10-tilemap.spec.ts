@@ -1,7 +1,9 @@
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, submitCreateOrOpenListed } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { saveAllIfEnabled } from "./save-all";
 
 async function openTwoDProject(page: Page): Promise<void> {
   await page.goto("/?test=1");
@@ -80,6 +82,44 @@ async function pickSelectedAsset(
   await expect(picker).toBeHidden();
 }
 
+async function pinchPaintCanvas(
+  canvas: ReturnType<Page["getByTestId"]>,
+  fromSpread: number,
+  toSpread: number,
+): Promise<void> {
+  await canvas.evaluate(
+    (node, spreads) => {
+      const box = node.getBoundingClientRect();
+      const cx = box.left + box.width / 2;
+      const cy = box.top + box.height / 2;
+      const fire = (
+        type: string,
+        pointerId: number,
+        x: number,
+        y: number,
+      ) => {
+        node.dispatchEvent(
+          new PointerEvent(type, {
+            pointerId,
+            pointerType: "touch",
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      };
+      fire("pointerdown", 1, cx - spreads.from, cy);
+      fire("pointerdown", 2, cx + spreads.from, cy);
+      fire("pointermove", 1, cx - spreads.to, cy);
+      fire("pointermove", 2, cx + spreads.to, cy);
+      fire("pointerup", 1, cx - spreads.to, cy);
+      fire("pointerup", 2, cx + spreads.to, cy);
+    },
+    { from: fromSpread, to: toSpread },
+  );
+}
+
 test.describe("P10 tilemaps", () => {
   test("2D project paints tiles, plays an animated sprite, and reports physics", {
     tag: IPAD_TEST_TAG,
@@ -87,13 +127,34 @@ test.describe("P10 tilemaps", () => {
     test.setTimeout(180_000);
     await openTwoDProject(page);
 
+    await showContentBrowser(page);
+    await page
+      .getByTestId("content-browser-import-input")
+      .setInputFiles([path.join(process.cwd(), "e2e/fixtures/albedo.png")]);
+    await expect(
+      page.locator('[data-asset-path="assets/albedo.babasset"]'),
+    ).toBeVisible({ timeout: 15_000 });
+
     await createAsset(page, "Tileset", "Ground");
     await page.locator('[data-asset-path="assets/Ground.tileset.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-tileset")).toBeVisible();
     await expect(page.getByTestId("tileset-preview")).toBeVisible();
     await expect(page.getByTestId("tileset-editor")).toBeVisible();
-    await page.getByTestId("property-collision").click();
-    await page.getByRole("option", { name: "Full" }).click();
+    await page.getByTestId("property-texture").click();
+    const textureGuid = await guidForPath(page, "assets/albedo.babasset");
+    expect(textureGuid.length).toBeGreaterThan(0);
+    await expect(page.getByTestId(`search-item-${textureGuid}`)).toBeVisible();
+    await page.getByTestId(`search-item-${textureGuid}`).click();
+    await expect(page.getByTestId("tileset-preview-cell-1")).toBeVisible();
+    await page.getByTestId("tileset-preview-cell-1").click();
+    await page.getByTestId("tileset-collision-full").click();
+    await saveAllIfEnabled(page);
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="tileset"]')
+      .getByTestId("document-tab-close")
+      .click();
+    await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("document-workspace-tileset")).toHaveCount(0);
 
     await createAsset(page, "Tilemap", "Overworld");
     await page
@@ -102,20 +163,42 @@ test.describe("P10 tilemaps", () => {
     await expect(page.getByTestId("document-workspace-tilemap")).toBeVisible();
     await expect(page.getByTestId("tilemap-details")).toBeVisible();
     await expect(page.getByTestId("tilemap-editor")).toBeVisible();
-    await page.getByTestId("property-tileset").click();
+    await expect(page.getByTestId("tilemap-palette")).toBeVisible();
+    await page.getByTestId("tilemap-tilesets-add").click();
     const tilesetGuid = await guidForPath(page, "assets/Ground.tileset.babasset");
     expect(tilesetGuid.length).toBeGreaterThan(0);
     await expect(page.getByTestId(`search-item-${tilesetGuid}`)).toBeVisible();
     await page.getByTestId(`search-item-${tilesetGuid}`).click();
+    await expect(page.getByTestId("tilemap-palette-tile-1")).toBeVisible();
+    await page.getByTestId("tilemap-palette-tile-1").click();
 
     const canvas = page.getByTestId("tilemap-paint-canvas");
     await expect(canvas).toBeVisible();
     await expect(canvas).toHaveAttribute("data-tool", "brush");
+    await expect(canvas).toHaveAttribute("data-gid", "1");
+    await expect
+      .poll(async () => canvas.getAttribute("data-paint-source"), { timeout: 15_000 })
+      .toBe("atlas");
+    const cellSize = Number(await canvas.getAttribute("data-cell-size"));
+    expect(cellSize).toBeGreaterThan(0);
+    const box = await canvas.boundingBox();
+    expect(box).toBeTruthy();
     for (let i = 0; i < 8; i++) {
-      await canvas.click({ position: { x: 8 + i * 16, y: 248 } });
+      await canvas.click({
+        position: {
+          x: i * cellSize + cellSize / 2,
+          y: (box?.height ?? 0) - cellSize / 2,
+        },
+      });
     }
     await expect.poll(async () => tileAt(page, 0, 0)).toBe(1);
     await expect.poll(async () => tileAt(page, 7, 0)).toBe(1);
+
+    const sizeBefore = Number(await canvas.getAttribute("data-cell-size"));
+    await pinchPaintCanvas(canvas, 40, 80);
+    await expect
+      .poll(async () => Number(await canvas.getAttribute("data-cell-size")))
+      .not.toBe(sizeBefore);
 
     await createAsset(page, "Sprite", "Hero");
     await page.locator('[data-asset-path="assets/Hero.sprite.babasset"]').dblclick();

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  atlasCellAt,
   createDefaultTilesetPayload,
   ensureTilesetTiles,
   normalizeTilesetPayload,
   tilesetAtlasColumns,
   tilesetAtlasRows,
+  tilesetTileRect,
   tilesetTileUv,
 } from "./tileset-payload";
 
@@ -92,5 +94,71 @@ describe("tileset payload", () => {
       flags: 0,
       animation: [],
     });
+  });
+
+  it("returns image-space atlas rects with row 0 at the top", () => {
+    const tileset = normalizeTilesetPayload({
+      atlasWidth: 40,
+      atlasHeight: 20,
+      tileWidth: 16,
+      tileHeight: 16,
+      margin: 2,
+      spacing: 2,
+    });
+    expect(tilesetTileRect(tileset, 0)).toBeNull();
+    expect(tilesetTileRect(tileset, 1)).toEqual({
+      x: 2,
+      y: 2,
+      width: 16,
+      height: 16,
+    });
+    expect(tilesetTileRect(tileset, 2)).toEqual({
+      x: 20,
+      y: 2,
+      width: 16,
+      height: 16,
+    });
+  });
+
+  it("maps a pointer on a displayed atlas onto a 1-based tile id", () => {
+    const tileset = normalizeTilesetPayload({
+      atlasWidth: 32,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+    });
+    expect(
+      atlasCellAt({
+        localX: 8,
+        localY: 8,
+        imageX: 0,
+        imageY: 0,
+        imageWidth: 32,
+        imageHeight: 16,
+        tileset,
+      }),
+    ).toBe(1);
+    expect(
+      atlasCellAt({
+        localX: 24,
+        localY: 8,
+        imageX: 0,
+        imageY: 0,
+        imageWidth: 32,
+        imageHeight: 16,
+        tileset,
+      }),
+    ).toBe(2);
+    expect(
+      atlasCellAt({
+        localX: -1,
+        localY: 8,
+        imageX: 0,
+        imageY: 0,
+        imageWidth: 32,
+        imageHeight: 16,
+        tileset,
+      }),
+    ).toBe(0);
   });
 });

@@ -1,6 +1,6 @@
 # Tilemaps (P10)
 
-Tileset and Tilemap assets, chunked `VertexData`, merged Rapier chain colliders, and (later in the slice) touch painting (engineplan §13.3). Not Babylon `SpriteMap` — that format cannot golden-test geometry or emit collision chains.
+Tileset and Tilemap assets, chunked `VertexData`, merged Rapier chain colliders, and touch painting (engineplan §13.3). Not Babylon `SpriteMap` — that format cannot golden-test geometry or emit collision chains.
 
 Autotile and terrain rules are deferred.
 
@@ -18,7 +18,7 @@ Document kind `tileset` (`.tileset.babasset`). Payload in `@babylonslate/assets`
 | `margin` / `spacing` | Tiled-style atlas layout |
 | `tiles` | per-id metadata: `collision` (`none` \| `full` \| chain points), `flags`, `animation` |
 
-Tile **id 0 is empty**. Id 1 is the first atlas cell (row 0 at the **top** of the image). `tilesetTileUv` flips V so GL `v=0` is the bottom of the texture.
+Tile **id 0 is empty**. Id 1 is the first atlas cell (row 0 at the **top** of the image). `tilesetTileRect` is the image-space source rect (margin/spacing); `tilesetTileUv` uses that rect and flips V so GL `v=0` is the bottom of the texture. `atlasCellAt` maps a pointer on a scaled atlas view to a 1-based tile id (0 if outside).
 
 ### Tilemap
 
@@ -26,7 +26,8 @@ Document kind `tilemap` (`.tilemap.babasset`):
 
 | Field | Role |
 | --- | --- |
-| `tilesetGuid` | Tileset asset |
+| `tilesets` | Tiled-style list of `{ guid, firstGid, tileCount }`. Chunk cells store **global GIDs** (`firstGid + localId - 1`). Removing a tileset does **not** compact GIDs. |
+| `tilesetGuid` | Writable alias of `tilesets[0]?.guid` (legacy maps migrate to one ref at `firstGid: 1`) |
 | `tileWidth` / `tileHeight` | cell size in pixels (world size = px / `pixelsPerUnit`) |
 | `chunkSize` | default **32** |
 | `layers` | ordered layers with visibility, collision opt-in, sorting, parallax, and chunks |
@@ -35,13 +36,15 @@ Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local ind
 
 ## Chunk geometry
 
-`tilemapChunkVertexData` is a **pure**, Babylon-free function: tile ids + tileset → `{ positions, uvs, indices }`. One draw per chunk per atlas; tile 0 is skipped. Quad order matches sprite `CreatePlane`: BL, BR, TR, TL. Callers pass `worldTileWidth` / `worldTileHeight` (`px / pixelsPerUnit`, default PPU 100) so `@babylonslate/assets` does not read project settings.
+`tilemapChunkVertexData` is a **pure**, Babylon-free function: GIDs + a GID resolver → `{ positions, uvs, indices }`. One draw per chunk **per atlas**; tile 0 is skipped. Callers pass `atlasGuid` to emit only that tileset’s quads. Quad order matches sprite `CreatePlane`: BL, BR, TR, TL. Callers pass `worldTileWidth` / `worldTileHeight` (`px / pixelsPerUnit`, default PPU 100) so `@babylonslate/assets` does not read project settings.
+
+`encodeTileGid` / `decodeTileGid(map, gid, tilesetPayloads)` pick the highest `firstGid <= gid`. Play/editor/physics all use the same helpers. Legacy maps with an empty `tilesets[]` and only `tilesetGuid` still treat GIDs as local ids.
 
 Only **affected chunks** are copied in `setTile`. Editor and Play mesh builders still walk every **visible** chunk when the document or scene applies.
 
 Animated tiles (tileset `animation` frame lists) draw as a small separate set; they do not make every static tile dynamic.
 
-Play builds a parent `actor-N` mesh plus one child draw per non-empty static chunk, plus an `:anim` sibling when the chunk has animated tiles (`createTilemapMeshes`). Chunk children are named `editorActor:<id>:<layer>:<cx>:<cy>` (optional `:anim`). Editor picking maps those names back to the actor id; Play picking still walks parents to `actor-N`.
+Play builds a parent `actor-N` mesh plus one child draw per non-empty static chunk **per atlas**, plus an `:anim` sibling when the chunk has animated tiles (`createTilemapMeshes`). Extra atlases append `:a1`, `:a2`, … Children store `metadata.tilemapTextureGuid` so `applyTilemapAlbedoTextures` can bind each atlas. Chunk children are named `editorActor:<id>:<layer>:<cx>:<cy>` (optional `:aN` / `:anim`). Editor picking maps those names back to the actor id; Play picking still walks parents to `actor-N`.
 
 `tilemapChunkVertexData({ kind: "static" | "animated" })` splits the draw: animated tileset ids (`animation.length > 0`) use the first frame’s UVs on the `:anim` mesh. Per-layer `sortingLayer` / `orderInLayer` write `renderingGroupId` / `alphaIndex`. `parallax` is stored on child `metadata` and applied in Play against the active camera (`tilemapParallaxOffset`).
 
@@ -51,7 +54,7 @@ Play builds a parent `actor-N` mesh plus one child draw per non-empty static chu
 
 `PhysicsWorldSync` gives every `TilemapComponent` actor a **static** body (even without `RigidBodyComponent`) and attaches those chains for layers with `collision: true`. Layers with `collision: false`, a missing `assetGuid`, or a missing tileset payload produce no chain colliders. Software 2D treats a chain as its AABB (wasm-failure path); Rapier uses real chain colliders. Closed Rapier loops get a closing **segment** collider (repeating the first polyline point makes Rapier miss raycasts).
 
-Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` values (not only open tabs) and posts worker `loadTilemaps` before `play`. Project `twoD.pixelsPerUnit` sizes both meshes and chains. Chunk meshes bind the tileset `textureGuid` through `ResourceCache` when texture bytes were collected, with the same **alpha-test** unlit material as sprites (`alphaCutOff` 0.4). When `twoD.pixelPerfect` is on, Play snaps the **game** camera to the pixel grid; the editor pan/zoom camera stays continuous (§13.5). Play e2e (`e2e/p10-tilemap.spec.ts`) starts from the 2D Create Project card, paints tiles, binds a Sprite with its default Idle clip, and asserts `physicsMs > 0`, `play-fps > 0`, and a dynamic actor starting at Y=3 settling on the painted tiles (`play-actor-y`). It does **not** claim A16 fill-rate or shimmer-free scrolling.
+Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` values (not only open tabs) and posts worker `loadTilemaps` before `play`. Project `twoD.pixelsPerUnit` sizes both meshes and chains. Chunk meshes bind each tileset `textureGuid` through `ResourceCache` when texture bytes were collected, with the same **alpha-test** unlit material as sprites (`alphaCutOff` 0.4). When `twoD.pixelPerfect` is on, Play snaps the **game** camera to the pixel grid; the editor pan/zoom camera stays continuous (§13.5). Play e2e (`e2e/p10-tilemap.spec.ts`) starts from the 2D Create Project card, paints from a Palette GID after closing the Tileset tab, pinches the painter, binds a Sprite with its default Idle clip, and asserts `physicsMs > 0`, `play-fps > 0`, and a dynamic actor starting at Y=3 settling on the painted tiles (`play-actor-y`). It does **not** claim A16 fill-rate or shimmer-free scrolling.
 
 ## Placement
 
@@ -61,14 +64,26 @@ Play loads Tilemap / Tileset payloads from scene `TilemapComponent.assetGuid` va
 
 Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 
-| Kind | Primary | Details |
-| --- | --- | --- |
-| Tileset | Preview (atlas) | Texture, grid, **selected tile** collision (`none` / `full` / `chain` points), flags, animation frame ids |
-| Tilemap | Paint | Tileset, size, **layer list** (add/reorder/remove) with visibility, collision, sorting, parallax |
+| Kind | Docks |
+| --- | --- |
+| Tileset | **Preview** (clickable pixel-aligned atlas) + **Details** (Atlas + Selected Tile) |
+| Tilemap | **Paint** (primary) + **Palette** (left, ~280px) + **Details** (Tilesets list + layers) |
 
-Paint: brush, eraser, rect, bucket, stamp, picker (`ToggleGroup` + `SearchDropdown` palette). One finger paints; two fingers pan (`touch-none`). **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk. The paint canvas draws the tileset atlas when a Texture is assigned, otherwise HSL placeholders.
+### Tileset
 
-Stamp places a 2×2 of the selected tile. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
+- Preview fills the panel (`object-contain` atlas, grid from `tileWidth/Height`, `margin`, `spacing` in **texture space** — not a CSS grid of `tiles.length`).
+- Tap a cell to select it (`tileset-preview-cell-{id}`). Toolbar `ToggleGroup` None / Full / Chain writes that tile; **Paint Collision** stamps the current collision onto later taps. Full cells show a hatch; Chain draws the stored polyline on the selected cell.
+- Pinch / wheel pan-zooms large sheets (`touch-none`). `Empty` when no Texture is assigned.
+- Picking a Texture sets `atlasWidth/Height` from `img.naturalWidth/Height` and runs `ensureTilesetTiles`. Atlas size fields in Details are read-only.
+
+### Tilemap
+
+- **Tilesets** is a `NamedListEditor` (`Add Tileset` opens `AssetPicker`). Rows use `PickerIdentity`. Empty copy: “Add a Tileset to start painting.” Several tilesets share one GID space on the map — not one tileset per layer.
+- **Palette** loads each listed tileset with `loadAssetDocument` (closed tabs included) plus Texture `pixels`. Thumbs are cropped with `tilesetTileRect` and nearest-neighbor, grouped by tileset name. Tap sets the paint GID. `SearchInput` filters large sets. The Paint toolbar shows a 44px selected-tile thumb (`data-gid` / `data-tile`), not a text Palette dropdown.
+- **Paint** fills `PanelFrame` (`ResizeObserver` backing store, `devicePixelRatio`). Blit with `imageSmoothingEnabled = false` and draw the grid **on top** (full cell, no gutters). Tools `ToggleGroup` unchanged. One finger paints; two-finger pinch zooms about the midpoint and translation pans; wheel zooms about the cursor. Cell size is clamped 8–96 CSS px (default 32). `data-cell-size` / `data-zoom` / `data-paint-source` (`atlas` \| `hsl`) are for Playwright. No tilesets → `Empty` instead of a blank square.
+- **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
+
+Stamp places a 2×2 of the selected GID. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
 
 The Create Project dialog has a built-in **2D** card (`create-project-2d`) next to Empty: `viewportMode` / `physicsWorld` 2d, no default cube, `pixelPerfect` + `integerZoomSteps` on. Do not expand that card into a demo scene.
 

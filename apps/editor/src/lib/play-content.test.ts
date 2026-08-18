@@ -16,6 +16,7 @@ import {
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
+  normalizeTilemapPayload,
 } from "@babylonslate/assets";
 import {
   animationGraphGuidsFromScene,
@@ -563,6 +564,19 @@ describe("scene-referenced Play content", () => {
     };
     expect(tilesetGuidsFromTilemaps(new Map([["overworld", tilemap]]))).toEqual([
       "overworld-set",
+    ]);
+  });
+
+  it("collects every tileset guid listed on a tilemap", () => {
+    const tilemap = normalizeTilemapPayload({
+      tilesets: [
+        { guid: "ground", firstGid: 1, tileCount: 4 },
+        { guid: "deco", firstGid: 5, tileCount: 2 },
+      ],
+    });
+    expect(tilesetGuidsFromTilemaps(new Map([["overworld", tilemap]]))).toEqual([
+      "ground",
+      "deco",
     ]);
   });
 

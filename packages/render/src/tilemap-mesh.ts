@@ -2,6 +2,8 @@ import { Mesh, Scene, VertexData } from "@babylonjs/core";
 import {
   tilemapChunkVertexData,
   tilemapParallaxOffset,
+  decodeTileGid,
+  tilemapTilesetGuids,
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
@@ -9,15 +11,25 @@ import { applySortingToMesh, resolveSortingLayer } from "./sorting";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
-/** Build a parent mesh plus one child draw per non-empty chunk (and an `:anim` sibling). */
+/** Build a parent mesh plus one child draw per non-empty chunk atlas (and an `:anim` sibling). */
 export function createTilemapMeshes(
   scene: Scene,
   name: string,
   tilemap: TilemapPayload,
-  tileset: TilesetPayload,
+  tilesets: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
   worldTileWidth: number,
   worldTileHeight: number,
 ): Mesh {
+  const atlasMap = asTilesetMap(tilemap, tilesets);
+  const resolveGid = (gid: number) => {
+    const hit = decodeTileGid(tilemap, gid, atlasMap);
+    if (hit) return hit;
+    if (atlasMap.size === 1) {
+      const [guid, tileset] = [...atlasMap.entries()][0]!;
+      return { guid, localId: gid, tileset };
+    }
+    return null;
+  };
   const root = new Mesh(name, scene);
   for (const layer of tilemap.layers) {
     if (!layer.visible) continue;
@@ -27,43 +39,104 @@ export function createTilemapMeshes(
       layer.orderInLayer,
     );
     for (const chunk of layer.chunks) {
-      appendChunkMesh(
-        scene,
-        root,
-        `${name}:${layer.id}:${chunk.cx}:${chunk.cy}`,
-        tilemapChunkVertexData({
-          tiles: chunk.tiles,
-          chunkSize: tilemap.chunkSize,
-          chunkX: chunk.cx,
-          chunkY: chunk.cy,
-          tileset,
-          worldTileWidth,
-          worldTileHeight,
-          kind: "static",
-        }),
-        layer.parallax,
-        sorting,
-      );
-      appendChunkMesh(
-        scene,
-        root,
-        `${name}:${layer.id}:${chunk.cx}:${chunk.cy}:anim`,
-        tilemapChunkVertexData({
-          tiles: chunk.tiles,
-          chunkSize: tilemap.chunkSize,
-          chunkX: chunk.cx,
-          chunkY: chunk.cy,
-          tileset,
-          worldTileWidth,
-          worldTileHeight,
-          kind: "animated",
-        }),
-        layer.parallax,
-        sorting,
-      );
+      const atlasGuids = chunkAtlasGuids(chunk.tiles, resolveGid, atlasMap);
+      atlasGuids.forEach((guid, atlasIndex) => {
+        const tileset = atlasMap.get(guid);
+        if (!tileset) return;
+        const suffix = atlasIndex === 0 ? "" : `:a${atlasIndex}`;
+        const staticMesh = appendChunkMesh(
+          scene,
+          root,
+          `${name}:${layer.id}:${chunk.cx}:${chunk.cy}${suffix}`,
+          tilemapChunkVertexData({
+            tiles: chunk.tiles,
+            chunkSize: tilemap.chunkSize,
+            chunkX: chunk.cx,
+            chunkY: chunk.cy,
+            tileset,
+            worldTileWidth,
+            worldTileHeight,
+            kind: "static",
+            resolveGid,
+            atlasGuid: guid,
+          }),
+          layer.parallax,
+          sorting,
+        );
+        const animMesh = appendChunkMesh(
+          scene,
+          root,
+          `${name}:${layer.id}:${chunk.cx}:${chunk.cy}${suffix}:anim`,
+          tilemapChunkVertexData({
+            tiles: chunk.tiles,
+            chunkSize: tilemap.chunkSize,
+            chunkX: chunk.cx,
+            chunkY: chunk.cy,
+            tileset,
+            worldTileWidth,
+            worldTileHeight,
+            kind: "animated",
+            resolveGid,
+            atlasGuid: guid,
+          }),
+          layer.parallax,
+          sorting,
+        );
+        if (staticMesh) {
+          staticMesh.metadata = {
+            ...(staticMesh.metadata ?? {}),
+            tilemapTextureGuid: tileset.textureGuid,
+          };
+        }
+        if (animMesh) {
+          animMesh.metadata = {
+            ...(animMesh.metadata ?? {}),
+            tilemapTextureGuid: tileset.textureGuid,
+          };
+        }
+      });
     }
   }
   return root;
+}
+
+function asTilesetMap(
+  tilemap: TilemapPayload,
+  tilesets: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
+): ReadonlyMap<string, TilesetPayload> {
+  if (isTilesetMap(tilesets)) return tilesets;
+  const guid =
+    tilemap.tilesetGuid ?? tilemap.tilesets[0]?.guid ?? tilemapTilesetGuids(tilemap)[0] ?? "_";
+  return new Map([[guid, tilesets]]);
+}
+
+function isTilesetMap(
+  value: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
+): value is ReadonlyMap<string, TilesetPayload> {
+  return (
+    typeof (value as ReadonlyMap<string, TilesetPayload>).get === "function" &&
+    !Array.isArray((value as TilesetPayload).tiles)
+  );
+}
+
+function chunkAtlasGuids(
+  tiles: readonly number[],
+  resolveGid: (gid: number) => { guid: string } | null,
+  atlasMap: ReadonlyMap<string, TilesetPayload>,
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  const add = (guid: string) => {
+    if (!guid || seen.has(guid) || !atlasMap.has(guid)) return;
+    seen.add(guid);
+    guids.push(guid);
+  };
+  for (const gid of tiles) {
+    if (gid <= 0) continue;
+    const hit = resolveGid(gid);
+    if (hit) add(hit.guid);
+  }
+  return guids;
 }
 
 export function worldTileSize(
