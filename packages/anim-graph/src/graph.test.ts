@@ -332,6 +332,82 @@ describe("anim graph evaluator", () => {
     expect(fromRun.stateId).toBe("idle");
   });
 
+  it("keeps one directed pair when the canvas has a duplicate edge with a generated id", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    const withTransition = {
+      ...doc,
+      transitions: [
+        {
+          id: "idle-to-run",
+          fromStateId: "idle",
+          toStateId: "run",
+          blendSeconds: 0.25,
+          priority: 0,
+          ruleGraph: createDefaultTransitionRuleGraph(),
+        },
+      ],
+    };
+    const serialized = animGraphToSerialized(withTransition);
+    serialized.edges = [
+      ...serialized.edges,
+      {
+        id: "e:idle:right-out:run:left-in",
+        source: "idle",
+        target: "run",
+        sourceHandle: "right-out",
+        targetHandle: "left-in",
+        type: "animTransition",
+      },
+    ];
+    const next = serializedToAnimGraph(serialized, withTransition);
+    const samePair = next.transitions.filter(
+      (row) => row.fromStateId === "idle" && row.toStateId === "run",
+    );
+    expect(samePair).toHaveLength(1);
+    expect(samePair[0]?.id).toBe("idle-to-run");
+    expect(samePair[0]?.blendSeconds).toBe(0.25);
+  });
+
+  it("hides a duplicate same-direction pair from the canvas", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    doc.transitions = [
+      {
+        id: "idle-to-run",
+        fromStateId: "idle",
+        toStateId: "run",
+        blendSeconds: 0.1,
+        priority: 0,
+        ruleGraph: createDefaultTransitionRuleGraph(),
+      },
+      {
+        id: "e:idle:right-out:run:left-in",
+        fromStateId: "idle",
+        toStateId: "run",
+        blendSeconds: 0.1,
+        priority: 0,
+        ruleGraph: createDefaultTransitionRuleGraph(),
+      },
+    ];
+    expect(animGraphToSerialized(doc).edges).toHaveLength(1);
+    expect(animGraphToSerialized(doc).edges[0]?.id).toBe("idle-to-run");
+  });
+
   it("drops both directions when the visual edge is removed", () => {
     const doc = createDefaultAnimGraph();
     doc.states.push({
